@@ -21,6 +21,7 @@ func TestRenderRefreshWithOOB_ContainsSwapTargets(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/refresh", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 
@@ -64,6 +65,7 @@ func TestRenderRefreshWithOOB_MemberFailure_SkipsOOB(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/refresh", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 

@@ -1,16 +1,10 @@
 package templates
 
-import "strconv"
-
 // DiscoveredLib holds info about a library found on a connected service.
 type DiscoveredLib struct {
 	ExternalID string
 	Name       string
 	Imported   bool
-}
-
-func discoverLibCount(libs []DiscoveredLib) string {
-	return strconv.Itoa(len(libs))
 }
 
 func discoverHasImportable(libs []DiscoveredLib) bool {
@@ -22,29 +16,22 @@ func discoverHasImportable(libs []DiscoveredLib) bool {
 	return false
 }
 
-func discoverLibPlural(libs []DiscoveredLib) string {
-	if len(libs) == 1 {
-		return "library"
-	}
-	return "libraries"
-}
-
 // DiscoverResults renders the discovered library checklist returned by
 // GET /api/v1/connections/{id}/libraries when called via HTMX.
 templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 	if len(libs) == 0 {
-		<p class="text-xs text-gray-500 dark:text-gray-400 italic py-2">No music libraries found on this server.</p>
+		<p class="text-xs text-gray-500 dark:text-gray-400 italic py-2">{ t(ctx, "discover.no_libraries") }</p>
 	} else {
 		<div class="rounded border border-gray-200 dark:border-gray-700 p-3 space-y-2">
 			<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
-				Found { discoverLibCount(libs) } music { discoverLibPlural(libs) }:
+				{ tn(ctx, "discover.found_libraries", len(libs)) }
 			</p>
 			<form id={ "import-form-" + connID }>
 				for _, lib := range libs {
 					<label class="flex items-center gap-2 text-sm">
 						if lib.Imported {
 							<input type="checkbox" disabled checked class="rounded border-gray-300 dark:border-gray-600"/>
-							<span class="text-gray-400 dark:text-gray-500">{ lib.Name } (already imported)</span>
+							<span class="text-gray-400 dark:text-gray-500">{ lib.Name } { t(ctx, "discover.already_imported") }</span>
 						} else {
 							<input
 								type="checkbox"
@@ -64,7 +51,7 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 							class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 							onclick={ importSelectedLibrariesOOBE(connID) }
 						>
-							Import Selected
+							{ t(ctx, "discover.import_selected") }
 						</button>
 					} else {
 						<button
@@ -72,7 +59,7 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 							class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 							onclick={ importSelectedLibraries(connID) }
 						>
-							Import Selected
+							{ t(ctx, "discover.import_selected") }
 						</button>
 					}
 				}

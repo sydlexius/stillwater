@@ -17,7 +17,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 		// -- Thumbnail section (1:1) --
 		@imageSectionWithAction(
 			img.ImageTermFor("thumb", profileName),
-			"1:1 square format",
+			t(ctx, "image.format_square"),
 			boolToCount(a.ThumbExists),
 			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=thumb&fetch=1", artistID)),
 		) {
@@ -26,7 +26,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div class="group relative w-48 h-48 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
 						<img
 							src={ fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", artistID) }
-							alt={ fmt.Sprintf("%s thumbnail", a.Name) }
+							alt={ tf(ctx, "image.alt_artist_type", a.Name, "thumbnail") }
 							class="w-full h-full object-cover"
 						/>
 						@imageOverlay(artistID, "thumb", -1)
@@ -50,7 +50,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 		// -- Fanart / Backdrop section (16:9) --
 		@imageSectionWithAction(
 			img.ImageTermFor("fanart", profileName),
-			"16:9 widescreen format",
+			t(ctx, "image.format_widescreen"),
 			a.FanartCount,
 			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=fanart&fetch=1", artistID)),
 		) {
@@ -60,7 +60,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					hx-trigger="revealed"
 					hx-swap="innerHTML"
 				>
-					<p class="text-sm text-gray-400 italic">Loading gallery...</p>
+					<p class="text-sm text-gray-400 italic">{ t(ctx, "image.loading_gallery") }</p>
 				</div>
 			} else {
 				@emptyState(artistID, "fanart", img.ImageTermFor("fanart", profileName))
@@ -70,7 +70,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 		// -- Logo section --
 		@imageSectionWithAction(
 			img.ImageTermFor("logo", profileName),
-			"Transparent PNG format",
+			t(ctx, "image.format_transparent_png"),
 			boolToCount(a.LogoExists),
 			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=logo&fetch=1", artistID)),
 		) {
@@ -79,7 +79,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div class="group relative max-w-md rounded-lg overflow-hidden checkered-bg p-4">
 						<img
 							src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", artistID) }
-							alt={ fmt.Sprintf("%s logo", a.Name) }
+							alt={ tf(ctx, "image.alt_artist_type", a.Name, "logo") }
 							class="max-h-32 w-auto object-contain"
 						/>
 						@imageOverlay(artistID, "logo", -1)
@@ -99,7 +99,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 		// -- Banner section (~4:1) --
 		@imageSectionWithAction(
 			img.ImageTermFor("banner", profileName),
-			"~4:1 wide format",
+			t(ctx, "image.format_wide"),
 			boolToCount(a.BannerExists),
 			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=banner&fetch=1", artistID)),
 		) {
@@ -108,7 +108,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div class="group relative aspect-[4/1] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
 						<img
 							src={ fmt.Sprintf("/api/v1/artists/%s/images/banner/file", artistID) }
-							alt={ fmt.Sprintf("%s banner", a.Name) }
+							alt={ tf(ctx, "image.alt_artist_type", a.Name, "banner") }
 							class="w-full h-full object-cover"
 						/>
 						@imageOverlay(artistID, "banner", -1)
@@ -183,10 +183,10 @@ templ imageSectionWithAction(typeName string, description string, count int, add
 			>
 				if count > 0 {
 					@components.IconArrowPath("w-4 h-4")
-					Replace { typeName }
+					{ tf(ctx, "image.replace_type", typeName) }
 				} else {
 					@components.IconPlusCircle("w-4 h-4")
-					Add { typeName }
+					{ tf(ctx, "image.add_type", typeName) }
 				}
 			</a>
 		</div>
@@ -219,8 +219,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d/file", artistID, imageType, index)) }
 				target="_blank"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-				title="View full-size"
-				aria-label={ "View full-size " + imageType }
+				title={ t(ctx, "image.view_full_size") }
+				aria-label={ tf(ctx, "image.view_full_size_type", imageType) }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
 			</a>
@@ -229,8 +229,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType)) }
 				target="_blank"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-				title="View full-size"
-				aria-label={ "View full-size " + imageType }
+				title={ t(ctx, "image.view_full_size") }
+				aria-label={ tf(ctx, "image.view_full_size_type", imageType) }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
 			</a>
@@ -239,8 +239,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 		<a
 			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
 			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-			title="Replace"
-			aria-label={ "Replace " + imageType }
+			title={ t(ctx, "common.replace") }
+			aria-label={ tf(ctx, "image.replace_type", imageType) }
 		>
 			@components.IconArrowUpTray("w-5 h-5")
 		</a>
@@ -248,12 +248,12 @@ templ imageOverlay(artistID string, imageType string, index int) {
 		if imageType == "logo" {
 			<button
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
-				hx-confirm="Trim transparent edges from this logo?"
+				hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 				hx-swap="none"
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Trim failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-				title="Trim transparent edges"
-				aria-label="Trim transparent edges"
+				title={ t(ctx, "image.trim_transparent_edges") }
+				aria-label={ t(ctx, "image.trim_transparent_edges") }
 			>
 				@components.IconScissors("w-5 h-5")
 			</button>
@@ -262,24 +262,24 @@ templ imageOverlay(artistID string, imageType string, index int) {
 		if index >= 0 {
 			<button
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index) }
-				hx-confirm={ fmt.Sprintf("Delete this %s image?", imageType) }
+				hx-confirm={ tf(ctx, "image.confirm_delete_type", imageType) }
 				hx-swap="none"
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
-				title="Delete"
-				aria-label={ "Delete " + imageType }
+				title={ t(ctx, "common.delete") }
+				aria-label={ tf(ctx, "image.delete_type", imageType) }
 			>
 				@components.IconTrash("w-5 h-5")
 			</button>
 		} else {
 			<button
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
-				hx-confirm={ fmt.Sprintf("Delete this %s image?", imageType) }
+				hx-confirm={ tf(ctx, "image.confirm_delete_type", imageType) }
 				hx-swap="none"
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
-				title="Delete"
-				aria-label={ "Delete " + imageType }
+				title={ t(ctx, "common.delete") }
+				aria-label={ tf(ctx, "image.delete_type", imageType) }
 			>
 				@components.IconTrash("w-5 h-5")
 			</button>
@@ -296,7 +296,7 @@ templ emptyState(artistID string, imageType string, typeName string) {
 			class="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
 		>
 			@components.IconPhoto("w-8 h-8")
-			<span class="text-sm font-medium">Upload or fetch { typeName }</span>
+			<span class="text-sm font-medium">{ tf(ctx, "image.upload_or_fetch", typeName) }</span>
 		</a>
 	</div>
 }

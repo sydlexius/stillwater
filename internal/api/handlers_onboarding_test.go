@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -38,12 +39,18 @@ func testRouterForOnboarding(t *testing.T) *Router {
 		t.Fatalf("creating encryptor: %v", err)
 	}
 
+	i18nBundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+
 	r := NewRouter(RouterDeps{
 		AuthService:       auth.NewService(db),
 		PlatformService:   platform.NewService(db),
 		ProviderSettings:  provider.NewSettingsService(db, enc),
 		ConnectionService: connection.NewService(db, enc),
 		LibraryService:    library.NewService(db),
+		I18nBundle:        i18nBundle,
 		DB:                db,
 		Logger:            logger,
 		StaticDir:         "../../web/static",

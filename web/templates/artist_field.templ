@@ -16,16 +16,16 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 		case "biography":
 			@biographyDisplay(a, providers)
 		case "genres":
-			@tagFieldDisplay(a, "genres", "Genres", a.Genres, "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200", providers)
+			@tagFieldDisplay(a, "genres", t(ctx, "artist.genres"), a.Genres, "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200", providers)
 		case "styles":
-			@tagFieldDisplay(a, "styles", "Styles", a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
+			@tagFieldDisplay(a, "styles", t(ctx, "artist.styles"), a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
 		case "moods":
-			@tagFieldDisplay(a, "moods", "Moods", a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
+			@tagFieldDisplay(a, "moods", t(ctx, "artist.moods"), a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
 		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
 			"name", "sort_name", "disambiguation":
-			@detailFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
+			@detailFieldDisplay(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers)
 		case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
-			@providerIDFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
+			@providerIDFieldDisplay(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field), providers)
 	}
 }
 
@@ -35,15 +35,15 @@ templ FieldEdit(a *artist.Artist, field string) {
 		case "biography":
 			@biographyEdit(a)
 		case "genres":
-			@tagFieldEdit(a, "genres", "Genres", a.Genres)
+			@tagFieldEdit(a, "genres", t(ctx, "artist.genres"), a.Genres)
 		case "styles":
-			@tagFieldEdit(a, "styles", "Styles", a.Styles)
+			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles)
 		case "moods":
-			@tagFieldEdit(a, "moods", "Moods", a.Moods)
+			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods)
 		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
-			@detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field))
+			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field))
 	}
 }
 
@@ -54,14 +54,14 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 		<button
 			type="button"
 			class="inline-flex items-center gap-1 p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
-			title="Fetch from providers"
+			title={ t(ctx, "artist.fetch_from_providers") }
 			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/providers" }
 			hx-target="#field-provider-modal-body"
 			hx-swap="innerHTML"
 			hx-indicator={ "#field-spinner-" + field + "-" + artistID }
 		>
 			@components.IconArrowDownTray("h-3.5 w-3.5")
-			<span class="text-[10px] font-medium">Fetch</span>
+			<span class="text-[10px] font-medium">{ t(ctx, "common.fetch") }</span>
 			<span class="inline-flex -space-x-1.5 ml-0.5">
 				for i, p := range providers {
 					if i < 3 {
@@ -101,8 +101,8 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 		<button
 			type="button"
 			class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-			title={ "Edit " + fieldLabel(field) }
-			aria-label={ "Edit " + fieldLabel(field) }
+			title={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
+			aria-label={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
 			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
 			hx-target={ "#field-" + field + "-" + artistID }
 			hx-swap="outerHTML"
@@ -120,11 +120,11 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 						hx-delete={ "/api/v1/artists/" + artistID + "/fields/" + field }
 						hx-target={ "#field-" + field + "-" + artistID }
 						hx-swap="outerHTML"
-						hx-confirm={ "Clear " + fieldLabel(field) + "?" }
+						hx-confirm={ tf(ctx, "artist.clear_field_confirm", fieldLabel(ctx, field)) }
 						data-confirm-key="field-delete"
 					>
 						@components.IconTrash("h-4 w-4")
-						Clear { fieldLabel(field) }
+						{ tf(ctx, "artist.clear_field", fieldLabel(ctx, field)) }
 					</button>
 				}
 				if len(providers) > 0 {
@@ -141,7 +141,7 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 						hx-indicator={ "#field-spinner-" + field + "-" + artistID }
 					>
 						@components.IconArrowDownTray("h-4 w-4 text-gray-400")
-						Fetch from providers
+						{ t(ctx, "artist.fetch_from_providers") }
 					</button>
 				}
 			}
@@ -160,13 +160,13 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 templ biographyDisplay(a *artist.Artist, providers []string) {
 	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">Biography</h2>
+			<h2 class="text-lg font-semibold">{ t(ctx, "artist.biography") }</h2>
 			@fieldActions(a.ID, "biography", a.Biography != "", providers)
 		</div>
 		if a.Biography != "" {
 			<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ a.Biography }</p>
 		} else {
-			<p class="text-sm text-gray-400 italic">No biography.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_biography") }</p>
 		}
 	</div>
 }
@@ -174,7 +174,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 templ biographyEdit(a *artist.Artist) {
 	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">Biography</h2>
+			<h2 class="text-lg font-semibold">{ t(ctx, "artist.biography") }</h2>
 		</div>
 		<form
 			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/biography" }
@@ -208,7 +208,7 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 				}
 			</div>
 		} else {
-			<p class="text-sm text-gray-400 italic">None set.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "common.none_set") }</p>
 		}
 	</div>
 }
@@ -227,7 +227,7 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
 				type="text"
 				name="value"
 				value={ strings.Join(tags, ", ") }
-				placeholder="Comma-separated values"
+				placeholder={ t(ctx, "artist.comma_separated_values") }
 				class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 			/>
 			@editFormButtons(a.ID, field)
@@ -246,7 +246,7 @@ templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers
 		if value != "" {
 			<dd class="font-medium">{ value }</dd>
 		} else {
-			<dd class="text-gray-400 italic text-xs">Not set</dd>
+			<dd class="text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
 		}
 	</div>
 }
@@ -268,14 +268,14 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
-				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
 					@components.IconCheck("h-4 w-4")
 				</button>
 				<button
 					type="button"
 					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-					title="Cancel"
-					aria-label={ "Cancel editing " + label }
+					title={ t(ctx, "common.cancel") }
+					aria-label={ tf(ctx, "artist.cancel_editing_field", label) }
 					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
 					hx-target={ "#field-" + field + "-" + a.ID }
 					hx-swap="outerHTML"
@@ -312,7 +312,7 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 				<dd class="font-medium font-mono text-xs break-all">{ value }</dd>
 			}
 		} else {
-			<dd class="text-gray-400 italic text-xs">Not set</dd>
+			<dd class="text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
 		}
 	</div>
 }
@@ -325,11 +325,11 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 templ FieldProviderModalContent(a *artist.Artist, field string, results []provider.FieldProviderResult, currentValue string) {
 	<div>
 		<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
-			{ fieldLabel(field) }
+			{ fieldLabel(ctx, field) }
 		</h4>
 		if currentValue != "" {
 			<div class="mb-4 rounded border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/50">
-				<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Current value</div>
+				<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{ t(ctx, "artist.current_value") }</div>
 				<div class="text-sm text-gray-700 dark:text-gray-300 max-h-20 overflow-y-auto">{ currentValue }</div>
 			</div>
 		}
@@ -358,7 +358,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
-										Use this
+										{ t(ctx, "artist.use_this") }
 									</button>
 									<button
 										type="button"
@@ -370,7 +370,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
-										Merge
+										{ t(ctx, "common.merge") }
 									</button>
 								} else if len(r.Members) > 0 {
 									<button
@@ -379,7 +379,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										data-members={ membersJSON(r.Members) }
 										onclick={ saveMembers("/api/v1/artists/" + a.ID + "/members/from-provider", "#members-section-" + a.ID) }
 									>
-										Use this
+										{ t(ctx, "artist.use_this") }
 									</button>
 								} else if r.Value != "" {
 									<button
@@ -392,7 +392,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
-										Use this
+										{ t(ctx, "artist.use_this") }
 									</button>
 								}
 							</div>
@@ -401,7 +401,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 					if r.Error != "" {
 						<p class="text-xs text-red-500">{ r.Error }</p>
 					} else if !r.HasData {
-						<p class="text-xs text-gray-400 italic">No data available</p>
+						<p class="text-xs text-gray-400 italic">{ t(ctx, "artist.no_data_available") }</p>
 					} else if len(r.Members) > 0 {
 						<div class="space-y-1 max-h-32 overflow-y-auto">
 							for _, m := range r.Members {
@@ -439,7 +439,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 templ FieldProviderNoChanges(field string) {
 	<div class="text-center py-6">
 		<p class="text-sm text-gray-500 dark:text-gray-400">
-			All providers returned the same data as the current value for { fieldLabel(field) }.
+			{ tf(ctx, "artist.providers_no_changes", fieldLabel(ctx, field)) }
 		</p>
 	</div>
 }
@@ -485,7 +485,7 @@ templ editFormButtons(artistID, field string) {
 			class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 		>
 			@components.IconCheck("h-3.5 w-3.5")
-			Save
+			{ t(ctx, "common.save") }
 		</button>
 		<button
 			type="button"
@@ -495,7 +495,7 @@ templ editFormButtons(artistID, field string) {
 			hx-swap="outerHTML"
 		>
 			@components.IconXMark("h-3.5 w-3.5")
-			Cancel
+			{ t(ctx, "common.cancel") }
 		</button>
 	</div>
 }

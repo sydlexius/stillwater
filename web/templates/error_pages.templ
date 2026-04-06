@@ -2,7 +2,7 @@ package templates
 
 // Error404Page renders the "page not found" error page inside the sidebar layout.
 templ Error404Page(assets AssetPaths) {
-	@Layout("Page Not Found", assets) {
+	@Layout(t(ctx, "error.page_not_found"), assets) {
 		<div class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
 			<div class="sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6">
 				<div class="flex justify-center">
@@ -12,9 +12,9 @@ templ Error404Page(assets AssetPaths) {
 				</div>
 				<div class="space-y-2">
 					<p class="text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums">404</p>
-					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Page not found</h1>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{ t(ctx, "error.page_not_found") }</h1>
 					<p class="text-sm text-gray-500 dark:text-gray-400">
-						The page you requested could not be found. It may have been moved or deleted.
+						{ t(ctx, "error.page_not_found_description") }
 					</p>
 				</div>
 				<div class="flex flex-col sm:flex-row gap-3 justify-center">
@@ -22,7 +22,7 @@ templ Error404Page(assets AssetPaths) {
 						href={ templ.SafeURL(assets.BasePath + "/") }
 						class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 					>
-						Go to Dashboard
+						{ t(ctx, "error.go_to_dashboard") }
 					</a>
 					<button
 						id="report-404-btn"
@@ -32,11 +32,11 @@ templ Error404Page(assets AssetPaths) {
 						aria-expanded="false"
 						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
-						Report this issue
+						{ t(ctx, "error.report_this_issue") }
 					</button>
 				</div>
 				<div id="issue-preview" class="hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2">
-					<p class="font-semibold text-gray-700 dark:text-gray-300">The following will be pre-filled in the GitHub issue:</p>
+					<p class="font-semibold text-gray-700 dark:text-gray-300">{ t(ctx, "error.issue_prefill_note") }</p>
 					<pre id="issue-preview-body" class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"></pre>
 					<a
 						id="issue-open-link"
@@ -45,7 +45,7 @@ templ Error404Page(assets AssetPaths) {
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
 					>
-						Open GitHub issue
+						{ t(ctx, "error.open_github_issue") }
 						<svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
 					</a>
 				</div>
@@ -57,7 +57,7 @@ templ Error404Page(assets AssetPaths) {
 
 // Error500Page renders the "internal server error" page inside the sidebar layout.
 templ Error500Page(assets AssetPaths) {
-	@Layout("Something Went Wrong", assets) {
+	@Layout(t(ctx, "error.something_went_wrong"), assets) {
 		<div class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
 			<div class="sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6">
 				<div class="flex justify-center">
@@ -67,9 +67,9 @@ templ Error500Page(assets AssetPaths) {
 				</div>
 				<div class="space-y-2">
 					<p class="text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums">500</p>
-					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Something went wrong</h1>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{ t(ctx, "error.something_went_wrong") }</h1>
 					<p class="text-sm text-gray-500 dark:text-gray-400">
-						An unexpected error occurred on the server. You can try again or report the issue.
+						{ t(ctx, "error.something_went_wrong_description") }
 					</p>
 				</div>
 				<div class="flex flex-col sm:flex-row gap-3 justify-center">
@@ -77,14 +77,14 @@ templ Error500Page(assets AssetPaths) {
 						href={ templ.SafeURL(assets.BasePath + "/") }
 						class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 					>
-						Go to Dashboard
+						{ t(ctx, "error.go_to_dashboard") }
 					</a>
 					<button
 						type="button"
 						onclick="history.back()"
 						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
-						Go back
+						{ t(ctx, "error.go_back") }
 					</button>
 					<button
 						id="report-500-btn"
@@ -94,11 +94,11 @@ templ Error500Page(assets AssetPaths) {
 						aria-expanded="false"
 						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
-						Report this issue
+						{ t(ctx, "error.report_this_issue") }
 					</button>
 				</div>
 				<div id="issue-preview" class="hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2">
-					<p class="font-semibold text-gray-700 dark:text-gray-300">The following will be pre-filled in the GitHub issue:</p>
+					<p class="font-semibold text-gray-700 dark:text-gray-300">{ t(ctx, "error.issue_prefill_note") }</p>
 					<pre id="issue-preview-body" class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"></pre>
 					<a
 						id="issue-open-link"
@@ -107,7 +107,7 @@ templ Error500Page(assets AssetPaths) {
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
 					>
-						Open GitHub issue
+						{ t(ctx, "error.open_github_issue") }
 						<svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
 					</a>
 				</div>

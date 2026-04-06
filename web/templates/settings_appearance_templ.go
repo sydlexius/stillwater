@@ -53,103 +53,337 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- Theme --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Theme and Color</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Control the color scheme and visual intensity of glass effects.</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Theme --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">Theme</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Sets the color scheme used across the application.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- Theme --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-theme", "Theme", "Light uses a bright background. Dark uses a dark background. System follows your device's color scheme preference and changes automatically.").Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var2 string
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_and_color"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 28, Col: 84}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_and_color_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 30, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Theme --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 string
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 38, Col: 76}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 39, Col: 102}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme"), t(ctx, "settings.appearance.help_theme")).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-theme", "theme",
 			[]components.SegmentOption{
-				{Value: "light", Label: "Light"},
-				{Value: "dark", Label: "Dark"},
-				{Value: "system", Label: "System"},
+				{Value: "light", Label: t(ctx, "common.light")},
+				{Value: "dark", Label: t(ctx, "common.dark")},
+				{Value: "system", Label: t(ctx, "common.system")},
 			},
 			prefs.Theme,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><!-- Glass intensity --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">Glass Intensity</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Controls the blur and opacity of frosted glass overlays and panels.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div><!-- Glass intensity --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-glass", "Glass Intensity", "Adjusts the blur strength and opacity of frosted glass surfaces. Light is subtle, Heavy gives a stronger diffusion effect. Disable in Lite Mode to remove glass effects entirely.").Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var6 string
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.glass_intensity"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 56, Col: 86}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.glass_intensity_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 57, Col: 112}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-glass", t(ctx, "settings.appearance.glass_intensity"), t(ctx, "settings.appearance.help_glass")).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-glass-intensity", "glass_intensity",
 			[]components.SegmentOption{
-				{Value: "light", Label: "Light"},
-				{Value: "medium", Label: "Medium"},
-				{Value: "heavy", Label: "Heavy"},
+				{Value: "light", Label: t(ctx, "common.light")},
+				{Value: "medium", Label: t(ctx, "common.medium")},
+				{Value: "heavy", Label: t(ctx, "common.heavy")},
 			},
 			prefs.GlassIntensity,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div></div></div><!-- Layout --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Layout</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Control how content and navigation are arranged.</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Thumbnail size --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Thumbnail Size</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Affects image grid card sizes throughout the app.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></div></div><!-- Layout --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var8 string
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.layout"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 75, Col: 75}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.layout_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 77, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Thumbnail size --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.thumbnail_size"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 84, Col: 84}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.thumbnail_size_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 85, Col: 110}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-thumbnail-size", "thumbnail_size",
 			[]components.SegmentOption{
-				{Value: "small", Label: "Small"},
-				{Value: "medium", Label: "Medium"},
-				{Value: "large", Label: "Large"},
+				{Value: "small", Label: t(ctx, "common.small")},
+				{Value: "medium", Label: t(ctx, "common.medium")},
+				{Value: "large", Label: t(ctx, "common.large")},
 			},
 			prefs.ThumbnailSize,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div><!-- Sidebar default state --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Sidebar Default State</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">How the sidebar appears when you open the app.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div><!-- Sidebar default state --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.sidebar_default_state"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 99, Col: 91}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.sidebar_default_state_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 100, Col: 117}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-sidebar-state", "sidebar_state",
 			[]components.SegmentOption{
-				{Value: "full", Label: "Full"},
-				{Value: "icon-only", Label: "Icon-only"},
-				{Value: "hidden", Label: "Hidden"},
+				{Value: "full", Label: t(ctx, "common.full")},
+				{Value: "icon-only", Label: t(ctx, "settings.appearance.icon_only")},
+				{Value: "hidden", Label: t(ctx, "common.hidden")},
 			},
 			prefs.SidebarState,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div><!-- Content width --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Content Width</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Narrow constrains the content area for readability. Full stretches to the viewport.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><!-- Content width --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.content_width"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 114, Col: 83}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var15 string
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.content_width_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 115, Col: 109}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-content-width", "content_width",
 			[]components.SegmentOption{
-				{Value: "narrow", Label: "Narrow"},
-				{Value: "wide", Label: "Full"},
+				{Value: "narrow", Label: t(ctx, "settings.appearance.narrow")},
+				{Value: "wide", Label: t(ctx, "common.full")},
 			},
 			prefs.ContentWidth,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div></div></div><!-- Typography --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Typography</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Adjust font family, size, and letter spacing.</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Font family --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Font Family</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Choose the typeface used for all body text and UI labels.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div></div></div><!-- Typography --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.typography"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 130, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.typography_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 132, Col: 51}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Font family --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_family"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 139, Col: 81}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var19 string
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_family_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 140, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-font-family", "font_family",
 			[]components.SegmentOption{
-				{Value: "system", Label: "System", Style: "font-family: system-ui, sans-serif;"},
+				{Value: "system", Label: t(ctx, "common.system"), Style: "font-family: system-ui, sans-serif;"},
 				{Value: "inter", Label: "Inter", Style: "font-family: 'Inter', sans-serif;"},
 				{Value: "atkinson", Label: "Atkinson", Style: "font-family: 'Atkinson Hyperlegible', sans-serif;"},
 			},
@@ -158,101 +392,296 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><!-- Letter spacing --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">Letter Spacing</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Increase spacing between characters for improved readability.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div><!-- Letter spacing --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", "Letter Spacing", "Increases the space between characters. Wide and Extra Wide are useful for users with dyslexia or low vision. Each option is rendered in its own spacing so you can preview the difference.").Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.letter_spacing"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 155, Col: 85}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.letter_spacing_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 156, Col: 111}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing"), t(ctx, "settings.appearance.help_letter_spacing")).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-letter-spacing", "letter_spacing",
 			[]components.SegmentOption{
-				{Value: "normal", Label: "Normal", Style: "letter-spacing: normal;"},
-				{Value: "wide", Label: "Wide", Style: "letter-spacing: 0.05em;"},
-				{Value: "extra-wide", Label: "Extra Wide", Style: "letter-spacing: 0.12em;"},
+				{Value: "normal", Label: t(ctx, "common.normal"), Style: "letter-spacing: normal;"},
+				{Value: "wide", Label: t(ctx, "common.wide"), Style: "letter-spacing: 0.05em;"},
+				{Value: "extra-wide", Label: t(ctx, "settings.appearance.extra_wide"), Style: "letter-spacing: 0.12em;"},
 			},
 			prefs.LetterSpacing,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><!-- Font size --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Font Size</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Base size for all body text in the interface.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div><!-- Font size --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var22 string
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_size"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 172, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var23 string
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_size_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 173, Col: 105}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-font-size", "font_size",
 			[]components.SegmentOption{
-				{Value: "small", Label: "Small"},
-				{Value: "medium", Label: "Medium"},
-				{Value: "large", Label: "Large"},
+				{Value: "small", Label: t(ctx, "common.small")},
+				{Value: "medium", Label: t(ctx, "common.medium")},
+				{Value: "large", Label: t(ctx, "common.large")},
 			},
 			prefs.FontSize,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div></div><!-- Accessibility and Performance --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Accessibility and Performance</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Reduce motion and disable heavy visual effects for better performance or accessibility.</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Reduced motion --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">Reduced Motion</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Minimizes or removes CSS animations and transitions.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div></div></div><!-- Accessibility and Performance --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", "Reduced Motion", "System follows your OS-level accessibility setting. On forces reduced motion regardless of OS preference, which is useful if your browser does not expose the system setting.").Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var24 string
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.accessibility_and_performance"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 189, Col: 98}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var25 string
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.accessibility_and_performance_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 191, Col: 70}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Reduced motion --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var26 string
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.reduced_motion"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 199, Col: 85}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var27 string
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.reduced_motion_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 200, Col: 111}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion"), t(ctx, "settings.appearance.help_reduced_motion")).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-reduced-motion", "reduced_motion",
 			[]components.SegmentOption{
-				{Value: "system", Label: "System"},
-				{Value: "on", Label: "On"},
-				{Value: "off", Label: "Off"},
+				{Value: "system", Label: t(ctx, "common.system")},
+				{Value: "on", Label: t(ctx, "common.on")},
+				{Value: "off", Label: t(ctx, "common.off")},
 			},
 			prefs.ReducedMotion,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><!-- Lite mode --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">Lite Mode</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Disables glass effects, animations, BlurHash placeholders, and large image loading.</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div><!-- Lite mode --><div class=\"flex items-center justify-between gap-4\"><div class=\"flex items-center gap-2\"><div><div class=\"text-sm font-medium\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", "Lite Mode", "Auto detects low-end devices (fewer than 4 CPU cores or less than 4 GB RAM) and enables Lite Mode automatically. On forces Lite Mode regardless of device, improving performance on constrained hardware or slow connections.").Render(ctx, templ_7745c5c3_Buffer)
+		var templ_7745c5c3_Var28 string
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.lite_mode"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 217, Col: 80}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var29 string
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.lite_mode_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 218, Col: 106}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode"), t(ctx, "settings.appearance.help_lite_mode")).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = components.Segmented("pref-lite-mode", "lite_mode",
 			[]components.SegmentOption{
-				{Value: "off", Label: "Off"},
-				{Value: "on", Label: "On"},
-				{Value: "auto", Label: "Auto"},
+				{Value: "off", Label: t(ctx, "common.off")},
+				{Value: "on", Label: t(ctx, "common.on")},
+				{Value: "auto", Label: t(ctx, "common.auto")},
 			},
 			prefs.LiteMode,
 		).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div></div></div><!-- Language --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Language</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Language settings. Additional locales will appear here when available.</p></div><div class=\"px-6 py-4\"><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">Language</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Interface language. English is the only supported locale in this release.</div></div><select class=\"text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"Interface language\" id=\"pref-language\" onchange=\"swSaveAppearancePref('language', this.value)\"><option value=\"en\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div></div></div><!-- Language --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_section"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 236, Col: 85}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var31 string
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_section_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 238, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</p></div><div class=\"px-6 py-4\"><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var32 string
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 244, Col: 78}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var33 string
+		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 245, Col: 104}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</div></div><select class=\"text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500\" aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var34 string
+		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 249, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" id=\"pref-language\" onchange=\"swSaveAppearancePref('language', this.value)\"><option value=\"en\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if prefs.Language == "en" || prefs.Language == "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, ">English</option></select></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, ">English</option></select></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -283,12 +712,12 @@ func appearanceScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var2 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var2 == nil {
-			templ_7745c5c3_Var2 = templ.NopComponent
+		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var35 == nil {
+			templ_7745c5c3_Var35 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

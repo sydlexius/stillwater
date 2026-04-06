@@ -22,14 +22,14 @@ func isTabActive(currentPath, tabPath string) bool {
 // isAdmin controls visibility of the Settings tab.
 templ BottomTabs(bp string, currentPath string, isAdmin bool) {
 	<nav
-		aria-label="Mobile navigation"
+		aria-label={ t(ctx, "nav.mobile_navigation") }
 		class="sw-bottom-tabs"
 	>
-		@bottomTab(bp, "/", "/", currentPath, "Dashboard", dashboardIcon())
-		@bottomTab(bp, "/artists", "/artists", currentPath, "Artists", artistsIcon())
-		@bottomTab(bp, "/reports/compliance", "/reports", currentPath, "Reports", reportsIcon())
+		@bottomTab(bp, "/", "/", currentPath, t(ctx, "nav.dashboard"), dashboardIcon())
+		@bottomTab(bp, "/artists", "/artists", currentPath, t(ctx, "nav.artists"), artistsIcon())
+		@bottomTab(bp, "/reports/compliance", "/reports", currentPath, t(ctx, "nav.reports"), reportsIcon())
 		if isAdmin {
-			@bottomTab(bp, "/settings", "/settings", currentPath, "Settings", settingsIcon())
+			@bottomTab(bp, "/settings", "/settings", currentPath, t(ctx, "nav.settings"), settingsIcon())
 		}
 	</nav>
 }

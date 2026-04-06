@@ -44,9 +44,9 @@ func guardRailLabel(v string) string {
 templ settingsAuthProvidersTab(data AuthProvidersData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold">Authentication Providers</h2>
+			<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				Configure how users can authenticate with this instance.
+				{ t(ctx, "settings.auth.description") }
 			</p>
 		</div>
 		<div class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -60,7 +60,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							</svg>
 						</div>
 						<div>
-							<span class="font-medium text-sm">Local</span>
+							<span class="font-medium text-sm">{ t(ctx, "settings.auth.local") }</span>
 							<span
 								class={
 									"ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium",
@@ -69,9 +69,9 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 							>
 								if data.LocalEnabled {
-									Enabled
+									{ t(ctx, "common.enabled") }
 								} else {
-									Disabled
+									{ t(ctx, "common.disabled") }
 								}
 							</span>
 						</div>
@@ -86,7 +86,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						role="switch"
 						aria-checked={ boolAttr(data.LocalEnabled) }
-						aria-label="Enable local authentication"
+						aria-label={ t(ctx, "settings.auth.enable_local") }
 						onclick="toggleAuthProvider(this, 'local')"
 					>
 						<span
@@ -99,7 +99,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 					</button>
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400">
-					Username and password authentication managed by Stillwater.
+					{ t(ctx, "settings.auth.local_desc") }
 				</p>
 			</div>
 			<!-- Emby provider -->
@@ -119,9 +119,9 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 							>
 								if data.EmbyEnabled {
-									Enabled
+									{ t(ctx, "common.enabled") }
 								} else {
-									Disabled
+									{ t(ctx, "common.disabled") }
 								}
 							</span>
 						</div>
@@ -136,7 +136,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						role="switch"
 						aria-checked={ boolAttr(data.EmbyEnabled) }
-						aria-label="Enable Emby authentication"
+						aria-label={ t(ctx, "settings.auth.enable_emby") }
 						onclick="toggleAuthProvider(this, 'emby')"
 					>
 						<span
@@ -149,23 +149,23 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 					</button>
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-					Authenticate using an Emby server account. Uses the existing Emby connection.
+					{ t(ctx, "settings.auth.emby_desc") }
 				</p>
 				if data.EmbyEnabled {
 					<div class="space-y-3">
 						if data.EmbyServerURL != "" {
 							<div class="flex items-center justify-between py-2">
 								<div>
-									<div class="text-sm font-medium">Server URL</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">Sourced from your Emby connection</div>
+									<div class="text-sm font-medium">{ t(ctx, "settings.auth.server_url") }</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.sourced_from_emby") }</div>
 								</div>
 								<code class="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{ data.EmbyServerURL }</code>
 							</div>
 						}
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Auto-Provision</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Automatically create accounts for valid Emby users</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_emby_desc") }</div>
 							</div>
 							<button
 								type="button"
@@ -177,7 +177,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 								role="switch"
 								aria-checked={ boolAttr(data.EmbyAutoProvision) }
-								aria-label="Enable auto-provisioning for Emby users"
+								aria-label={ t(ctx, "settings.auth.enable_auto_provision_emby") }
 								onclick="toggleProviderSetting(this, 'auth.providers.emby.auto_provision')"
 							>
 								<span
@@ -191,30 +191,30 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						</div>
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Guard Rail</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Who can auto-provision when enabled</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.guard_rail") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.guard_rail_desc") }</div>
 							</div>
 							<select
 								class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								aria-label="Emby guard rail setting"
+								aria-label={ t(ctx, "settings.auth.emby_guard_rail") }
 								onchange="saveProviderSetting('auth.providers.emby.guard_rail', this.value)"
 							>
-								<option value="admin" selected?={ data.EmbyGuardRail == "admin" || data.EmbyGuardRail == "" }>Admins only</option>
-								<option value="any_user" selected?={ data.EmbyGuardRail == "any_user" }>Any user</option>
+								<option value="admin" selected?={ data.EmbyGuardRail == "admin" || data.EmbyGuardRail == "" }>{ t(ctx, "settings.auth.admins_only") }</option>
+								<option value="any_user" selected?={ data.EmbyGuardRail == "any_user" }>{ t(ctx, "settings.auth.any_user") }</option>
 							</select>
 						</div>
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Default Role</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Role assigned to auto-provisioned users</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.default_role") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.default_role_desc") }</div>
 							</div>
 							<select
 								class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								aria-label="Default role for Emby users"
+								aria-label={ t(ctx, "settings.auth.default_role_emby") }
 								onchange="saveProviderSetting('auth.providers.emby.default_role', this.value)"
 							>
-								<option value="operator" selected?={ data.EmbyDefaultRole == "operator" || data.EmbyDefaultRole == "" }>Operator</option>
-								<option value="administrator" selected?={ data.EmbyDefaultRole == "administrator" }>Administrator</option>
+								<option value="operator" selected?={ data.EmbyDefaultRole == "operator" || data.EmbyDefaultRole == "" }>{ t(ctx, "common.operator") }</option>
+								<option value="administrator" selected?={ data.EmbyDefaultRole == "administrator" }>{ t(ctx, "common.administrator") }</option>
 							</select>
 						</div>
 					</div>
@@ -237,9 +237,9 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 							>
 								if data.JellyfinEnabled {
-									Enabled
+									{ t(ctx, "common.enabled") }
 								} else {
-									Disabled
+									{ t(ctx, "common.disabled") }
 								}
 							</span>
 						</div>
@@ -254,7 +254,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						role="switch"
 						aria-checked={ boolAttr(data.JellyfinEnabled) }
-						aria-label="Enable Jellyfin authentication"
+						aria-label={ t(ctx, "settings.auth.enable_jellyfin") }
 						onclick="toggleAuthProvider(this, 'jellyfin')"
 					>
 						<span
@@ -267,23 +267,23 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 					</button>
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-					Authenticate using a Jellyfin server account. Requires an active Jellyfin connection.
+					{ t(ctx, "settings.auth.jellyfin_desc") }
 				</p>
 				if data.JellyfinEnabled {
 					<div class="space-y-3">
 						if data.JellyfinServerURL != "" {
 							<div class="flex items-center justify-between py-2">
 								<div>
-									<div class="text-sm font-medium">Server URL</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">Sourced from your Jellyfin connection</div>
+									<div class="text-sm font-medium">{ t(ctx, "settings.auth.server_url") }</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.sourced_from_jellyfin") }</div>
 								</div>
 								<code class="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">{ data.JellyfinServerURL }</code>
 							</div>
 						}
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Auto-Provision</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Automatically create accounts for valid Jellyfin users</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_jellyfin_desc") }</div>
 							</div>
 							<button
 								type="button"
@@ -295,7 +295,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 								role="switch"
 								aria-checked={ boolAttr(data.JellyfinAutoProvision) }
-								aria-label="Enable auto-provisioning for Jellyfin users"
+								aria-label={ t(ctx, "settings.auth.enable_auto_provision_jellyfin") }
 								onclick="toggleProviderSetting(this, 'auth.providers.jellyfin.auto_provision')"
 							>
 								<span
@@ -309,30 +309,30 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						</div>
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Guard Rail</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Who can auto-provision when enabled</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.guard_rail") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.guard_rail_desc") }</div>
 							</div>
 							<select
 								class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								aria-label="Jellyfin guard rail setting"
+								aria-label={ t(ctx, "settings.auth.jellyfin_guard_rail") }
 								onchange="saveProviderSetting('auth.providers.jellyfin.guard_rail', this.value)"
 							>
-								<option value="admin" selected?={ data.JellyfinGuardRail == "admin" || data.JellyfinGuardRail == "" }>Admins only</option>
-								<option value="any_user" selected?={ data.JellyfinGuardRail == "any_user" }>Any user</option>
+								<option value="admin" selected?={ data.JellyfinGuardRail == "admin" || data.JellyfinGuardRail == "" }>{ t(ctx, "settings.auth.admins_only") }</option>
+								<option value="any_user" selected?={ data.JellyfinGuardRail == "any_user" }>{ t(ctx, "settings.auth.any_user") }</option>
 							</select>
 						</div>
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">Default Role</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">Role assigned to auto-provisioned users</div>
+								<div class="text-sm font-medium">{ t(ctx, "settings.auth.default_role") }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.default_role_desc") }</div>
 							</div>
 							<select
 								class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								aria-label="Default role for Jellyfin users"
+								aria-label={ t(ctx, "settings.auth.default_role_jellyfin") }
 								onchange="saveProviderSetting('auth.providers.jellyfin.default_role', this.value)"
 							>
-								<option value="operator" selected?={ data.JellyfinDefaultRole == "operator" || data.JellyfinDefaultRole == "" }>Operator</option>
-								<option value="administrator" selected?={ data.JellyfinDefaultRole == "administrator" }>Administrator</option>
+								<option value="operator" selected?={ data.JellyfinDefaultRole == "operator" || data.JellyfinDefaultRole == "" }>{ t(ctx, "common.operator") }</option>
+								<option value="administrator" selected?={ data.JellyfinDefaultRole == "administrator" }>{ t(ctx, "common.administrator") }</option>
 							</select>
 						</div>
 					</div>
@@ -355,9 +355,9 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								}
 							>
 								if data.OIDCEnabled {
-									Enabled
+									{ t(ctx, "common.enabled") }
 								} else {
-									Disabled
+									{ t(ctx, "common.disabled") }
 								}
 							</span>
 						</div>
@@ -372,7 +372,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						role="switch"
 						aria-checked={ boolAttr(data.OIDCEnabled) }
-						aria-label="Enable OpenID Connect authentication"
+						aria-label={ t(ctx, "settings.auth.enable_oidc") }
 						onclick="toggleAuthProvider(this, 'oidc')"
 					>
 						<span
@@ -385,7 +385,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 					</button>
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-					Single sign-on via Authentik, Keycloak, Authelia, or any OIDC-compliant provider.
+					{ t(ctx, "settings.auth.oidc_desc") }
 				</p>
 				if data.OIDCEnabled {
 					<form
@@ -395,7 +395,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 							<div>
 								<div class="flex items-center gap-1 mb-1">
-									<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Issuer URL</label>
+									<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.issuer_url") }</label>
 									@components.ContextHelp("help-oidc-issuer", "OIDC Issuer URL", "The base URL of your OIDC provider (Authentik, Keycloak, Authelia, etc.). Stillwater uses this to discover endpoints via the .well-known/openid-configuration document.")
 								</div>
 								<input
@@ -405,12 +405,12 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									placeholder="https://auth.example.com"
 									value={ data.OIDCIssuerURL }
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="OIDC issuer URL"
+									aria-label={ t(ctx, "settings.auth.issuer_url") }
 								/>
 							</div>
 							<div>
 								<div class="flex items-center gap-1 mb-1">
-									<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Client ID</label>
+									<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_id") }</label>
 									@components.ContextHelp("help-oidc-client-id", "OIDC Client ID", "The public identifier for Stillwater registered in your identity provider. Used with the issuer URL to start the authorization flow.")
 								</div>
 								<input
@@ -420,39 +420,39 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									placeholder="stillwater"
 									value={ data.OIDCClientID }
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="OIDC client ID"
+									aria-label={ t(ctx, "settings.auth.client_id") }
 								/>
 							</div>
 							<div>
 								<div class="flex items-center gap-1 mb-1">
-									<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Client Secret</label>
+									<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_secret") }</label>
 									@components.ContextHelp("help-oidc-client-secret", "OIDC Client Secret", "Confidential credential from your identity provider. Leave blank when editing to keep the currently stored secret unchanged.")
 								</div>
 								<input
 									id="oidc-client-secret"
 									name="oidc_client_secret"
 									type="password"
-									placeholder="Leave blank to keep existing"
+									placeholder={ t(ctx, "settings.auth.secret_placeholder") }
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="OIDC client secret"
+									aria-label={ t(ctx, "settings.auth.client_secret") }
 									autocomplete="new-password"
 								/>
 							</div>
 							<div>
-								<label for="oidc-default-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Default Role</label>
+								<label for="oidc-default-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.auth.default_role") }</label>
 								<select
 									id="oidc-default-role"
 									name="oidc_default_role"
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="Default role for OIDC users not in an admin group"
+									aria-label={ t(ctx, "settings.auth.default_role_oidc") }
 								>
-									<option value="operator" selected?={ data.OIDCDefaultRole == "operator" || data.OIDCDefaultRole == "" }>Operator</option>
-									<option value="administrator" selected?={ data.OIDCDefaultRole == "administrator" }>Administrator</option>
+									<option value="operator" selected?={ data.OIDCDefaultRole == "operator" || data.OIDCDefaultRole == "" }>{ t(ctx, "common.operator") }</option>
+									<option value="administrator" selected?={ data.OIDCDefaultRole == "administrator" }>{ t(ctx, "common.administrator") }</option>
 								</select>
 							</div>
 							<div>
 								<div class="flex items-center gap-1 mb-1">
-									<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Administrator Groups</label>
+									<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.admin_groups") }</label>
 									@components.ContextHelp("help-oidc-admin-groups", "OIDC Admin Groups", "Comma-separated list of OIDC group claim values. Users in any of these groups are granted the Administrator role. The claim is read from the 'groups' field in the ID token.")
 								</div>
 								<input
@@ -462,30 +462,30 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									placeholder="stillwater-admins"
 									value={ data.OIDCAdminGroups }
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="OIDC group claims that grant Administrator role (comma-separated)"
+									aria-label={ t(ctx, "settings.auth.admin_groups_aria") }
 								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">OIDC group claims that grant Administrator role (comma-separated)</p>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.admin_groups_hint") }</p>
 							</div>
 							<div>
 								<div class="flex items-center gap-1 mb-1">
-									<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Allowed Groups</label>
+									<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.allowed_groups") }</label>
 									@components.ContextHelp("help-oidc-user-groups", "OIDC Allowed Groups", "Comma-separated list of groups allowed to log in. Leave empty to allow all authenticated users from this provider. Users not in any listed group will be denied access.")
 								</div>
 								<input
 									id="oidc-user-groups"
 									name="oidc_user_groups"
 									type="text"
-									placeholder="Leave empty to allow all users"
+									placeholder={ t(ctx, "settings.auth.groups_placeholder") }
 									value={ data.OIDCUserGroups }
 									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									aria-label="Restrict OIDC login to these groups (comma-separated, empty allows all)"
+									aria-label={ t(ctx, "settings.auth.allowed_groups_aria") }
 								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Restrict login to these groups. Leave empty to allow all authenticated users.</p>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.allowed_groups_hint") }</p>
 							</div>
 						</div>
 						<div class="flex items-center justify-between pt-1">
 							<div class="flex items-center gap-3">
-								<span class="text-sm font-medium">Auto-Provision</span>
+								<span class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision") }</span>
 								<button
 									type="button"
 									id="oidc-autoprovision-toggle"
@@ -496,7 +496,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									}
 									role="switch"
 									aria-checked={ boolAttr(data.OIDCAutoProvision) }
-									aria-label="Enable auto-provisioning for OIDC users"
+									aria-label={ t(ctx, "settings.auth.enable_auto_provision_oidc") }
 									onclick="toggleProviderSetting(this, 'auth.providers.oidc.auto_provision')"
 								>
 									<span
@@ -507,7 +507,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 										}
 									></span>
 								</button>
-								<span class="text-xs text-gray-500 dark:text-gray-400">Create accounts for authenticated OIDC users</span>
+								<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_oidc_desc") }</span>
 									@components.ContextHelp("help-oidc-autoprovision", "OIDC Auto-Provision", "When enabled, a Stillwater account is automatically created the first time an OIDC user logs in. When disabled, an administrator must create the account manually before the user can log in.")
 							</div>
 							<div class="flex gap-2">

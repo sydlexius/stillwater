@@ -44,7 +44,7 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 			id="shared-fs-warning"
 			class="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700"
 			role="alert"
-			aria-label="Shared filesystem warning"
+			aria-label={ t(ctx, "filesystem.warning_label") }
 		>
 			<div class="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
 				<div class="flex items-start gap-3 sm:items-center sm:justify-between">
@@ -53,7 +53,7 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path>
 						</svg>
 						<div class="text-sm text-amber-800 dark:text-amber-200">
-							<span class="font-medium">Shared filesystem detected:</span>
+							<span class="font-medium">{ t(ctx, "filesystem.shared_detected") }</span>
 							<span class="ml-1">
 								for i, lib := range data.Libraries {
 									if i > 0 {
@@ -66,27 +66,27 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 								}
 							</span>
 							<span class="ml-1">
-								A platform connection may write to the same directories Stillwater manages.
+								{ t(ctx, "filesystem.platform_write_warning") }
 								<a
 									href="https://github.com/sydlexius/stillwater/wiki/Shared-Filesystem"
 									target="_blank"
 									rel="noopener noreferrer"
 									class="underline font-medium hover:text-amber-900 dark:hover:text-amber-100"
 								>
-									Learn more
+									{ t(ctx, "common.learn_more") }
 								</a>
 							</span>
 							if len(data.ImageFetcherWarnings) > 0 {
-								<div class="mt-2 space-y-1" role="list" aria-label="Image fetcher warnings">
+								<div class="mt-2 space-y-1" role="list" aria-label={ t(ctx, "filesystem.image_fetcher_warnings") }>
 									for _, w := range data.ImageFetcherWarnings {
 										if w.RiskLevel == "critical" {
 											<div class="text-xs text-red-700 dark:text-red-300" role="listitem">
-												<span class="font-semibold">Action needed:</span>
+												<span class="font-semibold">{ t(ctx, "filesystem.action_needed") }</span>
 												<span class="ml-1">{ w.Message }</span>
 											</div>
 										} else {
 											<div class="text-xs text-amber-700 dark:text-amber-300" role="listitem">
-												<span class="font-semibold">Note:</span>
+												<span class="font-semibold">{ t(ctx, "filesystem.note") }</span>
 												<span class="ml-1">{ w.Message }</span>
 											</div>
 										}
@@ -102,15 +102,15 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 							hx-post="/api/v1/shared-filesystem/dismiss"
 							hx-swap="outerHTML"
 							hx-target="#shared-fs-warning"
-							aria-label="Dismiss warning permanently"
+							aria-label={ t(ctx, "filesystem.dismiss_permanently") }
 						>
-							Don't show again
+							{ t(ctx, "filesystem.dont_show_again") }
 						</button>
 						<button
 							type="button"
 							class="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200"
 							onclick="this.closest('#shared-fs-warning').remove(); sessionStorage.setItem('shared_fs_dismissed', 'true')"
-							aria-label="Dismiss warning for this session"
+							aria-label={ t(ctx, "filesystem.dismiss_session") }
 						>
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>

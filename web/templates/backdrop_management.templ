@@ -10,13 +10,13 @@ import (
 templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 	<div id="fanart-management-gallery" class="space-y-4" data-artist-id={ artistID }>
 		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } fanart images</h3>
+			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
 			<button
 				type="button"
 				id="fanart-delete-selected"
 				class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
 			>
-				Delete selected
+				{ t(ctx, "image.delete_selected") }
 			</button>
 		</div>
 		if len(items) > 0 {
@@ -53,7 +53,8 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 									<button
 										type="button"
 										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-										title="Move up"
+										title={ t(ctx, "image.move_up") }
+										aria-label={ t(ctx, "image.move_up") }
 										data-artist-id={ artistID }
 										data-index={ strconv.Itoa(item.Index) }
 										data-direction="up"
@@ -65,7 +66,8 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 									<button
 										type="button"
 										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-										title="Move down"
+										title={ t(ctx, "image.move_down") }
+										aria-label={ t(ctx, "image.move_down") }
 										data-artist-id={ artistID }
 										data-index={ strconv.Itoa(item.Index) }
 										data-direction="down"
@@ -76,9 +78,10 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 								<button
 									type="button"
 									class="text-xs p-1 text-red-400 hover:text-red-600"
-									title="Delete this fanart"
+									title={ t(ctx, "image.delete_this_fanart") }
+									aria-label={ t(ctx, "image.delete_this_fanart") }
 									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
-									hx-confirm="Delete this fanart image?"
+									hx-confirm={ t(ctx, "image.confirm_delete_fanart") }
 									hx-swap="none"
 								>
 									&#10005;
@@ -89,7 +92,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 				}
 			</div>
 		} else {
-			<p class="text-sm text-gray-400 italic">No fanart images.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "image.no_fanart_images") }</p>
 		}
 		<script>
 			(function() {
@@ -176,7 +179,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConnectionData) {
 	<div id="platform-backdrops-panel">
 		if len(connections) == 0 {
-			<p class="text-sm text-gray-400 italic">No platform connections have backdrops for this artist.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "image.no_platform_backdrops") }</p>
 		} else {
 			for _, conn := range connections {
 				<div class="mb-4">
@@ -190,13 +193,13 @@ templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConn
 								<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
 									<img
 										src={ bd.ThumbnailURL }
-										alt={ fmt.Sprintf("Backdrop %d", bd.Index) }
+										alt={ tf(ctx, "image.backdrop_index", strconv.Itoa(bd.Index)) }
 										class="max-w-full max-h-full object-cover"
 										loading="lazy"
 									/>
 								</div>
 								<div class="p-1 text-center">
-									<span class="text-xs text-gray-500 dark:text-gray-400">Backdrop { strconv.Itoa(bd.Index) }</span>
+									<span class="text-xs text-gray-500 dark:text-gray-400">{ tf(ctx, "image.backdrop_index", strconv.Itoa(bd.Index)) }</span>
 								</div>
 								<button
 									type="button"
@@ -206,10 +209,10 @@ templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConn
 									"connection_id":  conn.ConnectionID,
 									"platform_index": bd.Index,
 								}) }
-									hx-confirm="Assign this backdrop as the next fanart?"
+									hx-confirm={ t(ctx, "image.confirm_assign_backdrop") }
 									hx-swap="none"
 								>
-									Assign
+									{ t(ctx, "image.assign") }
 								</button>
 							</div>
 						}

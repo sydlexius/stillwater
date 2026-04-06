@@ -13,7 +13,8 @@ func TestHandleGuidePage_Authenticated(t *testing.T) {
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
-	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx := testI18nCtx(t, req.Context())
+	ctx = middleware.WithTestUserID(ctx, "test-user-id")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -33,6 +34,7 @@ func TestHandleGuidePage_Unauthenticated(t *testing.T) {
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
 	w := httptest.NewRecorder()
 
 	r.handleGuidePage(w, req)
@@ -64,7 +66,8 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 	r := testRouterWithBasePath(t, bp)
 
 	req := httptest.NewRequest(http.MethodGet, bp+"/guide", nil)
-	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx := testI18nCtx(t, req.Context())
+	ctx = middleware.WithTestUserID(ctx, "test-user-id")
 	ctx = middleware.WithTestRole(ctx, "administrator")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -126,7 +129,8 @@ func TestLayout_NavLinksNoBasePath(t *testing.T) {
 	r := testRouterWithBasePath(t, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
-	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx := testI18nCtx(t, req.Context())
+	ctx = middleware.WithTestUserID(ctx, "test-user-id")
 	ctx = middleware.WithTestRole(ctx, "administrator")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()

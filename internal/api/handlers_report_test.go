@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -60,6 +61,11 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		Logger:             logger,
 	})
 
+	i18nBundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
@@ -68,6 +74,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		RuleEngine:         ruleEngine,
 		NFOSnapshotService: nfoSnapSvc,
 		ProviderSettings:   providerSettings,
+		I18nBundle:         i18nBundle,
 		DB:                 db,
 		Logger:             logger,
 		StaticDir:          "../../web/static",

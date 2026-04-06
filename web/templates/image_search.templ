@@ -20,12 +20,12 @@ type ImageSearchData struct {
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
-	@Layout(data.Artist.Name+" - Images", assets) {
+	@Layout(data.Artist.Name+" - "+t(ctx, "common.images"), assets) {
 		<div class="space-y-6">
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<div class="flex items-center gap-2">
 					<a href="/artists" class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-						Artists
+						{ t(ctx, "common.artists") }
 					</a>
 					<span class="text-gray-400">/</span>
 					<a href={ templ.SafeURL("/artists/" + data.Artist.ID) } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
@@ -36,7 +36,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				if data.SelectedType != "" {
 					<h1 class="mt-2 text-2xl font-bold">{ img.ImageTermFor(data.SelectedType, data.ProfileName) }</h1>
 				} else {
-					<h1 class="mt-2 text-2xl font-bold">Image Management</h1>
+					<h1 class="mt-2 text-2xl font-bold">{ t(ctx, "image.management_title") }</h1>
 				}
 			</div>
 			if data.SelectedType != "" {
@@ -122,7 +122,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-lg font-semibold">Current { img.ImageTermFor(data.SelectedType, data.ProfileName) }</h2>
+				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
 				<span class="inline-flex items-center gap-1">
 					@components.ContextMenu("img-actions-"+data.Artist.ID, false) {
 						if data.Artist.MusicBrainzID != "" {
@@ -135,7 +135,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 								hx-swap="innerHTML"
 								hx-indicator="#search-spinner"
 							>
-								Fetch
+								{ t(ctx, "image.fetch") }
 							</button>
 						}
 						if data.WebSearchEnabled {
@@ -148,7 +148,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 								hx-swap="innerHTML"
 								hx-indicator="#search-spinner"
 							>
-								Web Search
+								{ t(ctx, "image.web_search") }
 							</button>
 						}
 						if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
@@ -160,7 +160,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
 						>
-							Browse...
+							{ t(ctx, "image.browse") }
 						</button>
 						<button
 							type="button"
@@ -168,7 +168,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
 						>
-							Fetch from URL
+							{ t(ctx, "image.fetch_from_url") }
 						</button>
 						if imageExistsForType(data.Artist, data.SelectedType) {
 							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
@@ -178,19 +178,19 @@ templ imageSearchContextualized(data ImageSearchData) {
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
 							>
-								Crop
+								{ t(ctx, "common.crop") }
 							</button>
 							<button
 								type="button"
 								role="menuitem"
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
 								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
-								hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType, data.ProfileName) + " image?" }
+								hx-confirm={ tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)) }
 								data-confirm-key="image-delete"
 								hx-swap="none"
 								hx-on::after-request="if(event.detail.successful) window.location.reload()"
 							>
-								Delete
+								{ t(ctx, "common.delete") }
 							</button>
 						}
 					}
@@ -221,14 +221,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 				} else {
 					<div class="text-center text-gray-400">
 						@components.IconPlusCircle("mx-auto h-12 w-12")
-						<p class="mt-2 text-sm">No { img.ImageTermFor(data.SelectedType, data.ProfileName) } image yet</p>
+						<p class="mt-2 text-sm">{ tf(ctx, "image.no_image_yet", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</p>
 					</div>
 				}
 				<div id="drop-hint" class="hidden absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center">
-					<p class="text-sm font-medium text-blue-500">Drop image here</p>
+					<p class="text-sm font-medium text-blue-500">{ t(ctx, "image.drop_image_here") }</p>
 				</div>
 			</div>
-			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500 text-center">Drag and drop an image to replace</p>
+			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
 			if imageExistsForType(data.Artist, data.SelectedType) {
 				<div
 					class="mt-1 text-center"
@@ -244,14 +244,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 		if data.SelectedType == "fanart" && data.Artist.FanartCount >= 1 {
 			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow" data-artist-id={ data.Artist.ID }>
 				<div class="flex items-center justify-between mb-4">
-					<h2 class="text-lg font-semibold">Fanart Gallery</h2>
+					<h2 class="text-lg font-semibold">{ t(ctx, "image.fanart_gallery") }</h2>
 				</div>
 				<div
 					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list?management=true", data.Artist.ID) }
 					hx-trigger="load"
 					hx-swap="innerHTML"
 				>
-					<span class="text-sm text-gray-400">Loading gallery...</span>
+					<span class="text-sm text-gray-400">{ t(ctx, "image.loading_gallery") }</span>
 				</div>
 				// Lazy-load sync state badges via OOB swap after gallery renders
 				<div
@@ -278,18 +278,18 @@ templ imageSearchContextualized(data ImageSearchData) {
 		if imageExistsForType(data.Artist, data.SelectedType) {
 			<section id="compare-section" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
 				<div class="flex items-center justify-between mb-4">
-					<h2 class="text-lg font-semibold">Compare</h2>
+					<h2 class="text-lg font-semibold">{ t(ctx, "image.compare") }</h2>
 					<button
 						type="button"
 						class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 						onclick="document.getElementById('compare-section').classList.add('hidden')"
 					>
-						Close
+						{ t(ctx, "common.close") }
 					</button>
 				</div>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Current</h3>
+						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">{ t(ctx, "image.current") }</h3>
 						<div
 							class={
 								"flex items-center justify-center overflow-hidden rounded max-h-64",
@@ -299,7 +299,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						>
 							<img
 								src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
-								alt="Current image"
+								alt={ t(ctx, "image.current_image") }
 								class="max-w-full max-h-64 object-contain"
 							/>
 						</div>
@@ -311,9 +311,9 @@ templ imageSearchContextualized(data ImageSearchData) {
 						></div>
 					</div>
 					<div id="compare-right-panel" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Selected</h3>
+						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">{ t(ctx, "image.selected") }</h3>
 						<div id="compare-right-image" class="flex items-center justify-center overflow-hidden bg-gray-100 dark:bg-gray-900 rounded max-h-64 min-h-32">
-							<p class="text-xs text-gray-400 py-8">Click "Compare" on a search result</p>
+							<p class="text-xs text-gray-400 py-8">{ t(ctx, "image.click_compare_hint") }</p>
 						</div>
 						<div id="compare-right-meta" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
 						<button
@@ -322,10 +322,10 @@ templ imageSearchContextualized(data ImageSearchData) {
 							class="hidden w-full mt-2 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", data.Artist.ID) }
 							hx-swap="none"
-							hx-confirm="Save this image?"
+							hx-confirm={ t(ctx, "image.confirm_save") }
 							data-confirm-key="image-save"
 						>
-							Use this one
+							{ t(ctx, "image.use_this_one") }
 						</button>
 					</div>
 				</div>
@@ -341,7 +341,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 		// -- Fetch from URL modal --
 		<div id="fetch-url-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
 			<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow-xl w-full max-w-md mx-4">
-				<h3 class="text-lg font-semibold mb-4">Fetch from URL</h3>
+				<h3 class="text-lg font-semibold mb-4">{ t(ctx, "image.fetch_from_url") }</h3>
 				<input
 					type="url"
 					id="fetch-url-input"
@@ -354,14 +354,14 @@ templ imageSearchContextualized(data ImageSearchData) {
 						class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 						onclick="document.getElementById('fetch-url-modal').classList.add('hidden')"
 					>
-						Cancel
+						{ t(ctx, "common.cancel") }
 					</button>
 					<button
 						type="button"
 						id="fetch-url-submit"
 						class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 					>
-						Fetch
+						{ t(ctx, "image.fetch") }
 					</button>
 				</div>
 			</div>
@@ -521,7 +521,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 			@components.ImageUpload(data.Artist.ID, "")
 			if data.Artist.MusicBrainzID != "" {
 				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-					<h2 class="text-lg font-semibold mb-4">Search Providers</h2>
+					<h2 class="text-lg font-semibold mb-4">{ t(ctx, "image.search_providers") }</h2>
 					<div class="flex flex-wrap gap-2 mb-4" id="image-type-tabs">
 						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
 							<button
@@ -543,27 +543,26 @@ templ imageSearchGeneric(data ImageSearchData) {
 							hx-swap="innerHTML"
 							hx-indicator="#search-spinner"
 						>
-							all
+							{ t(ctx, "common.all") }
 						</button>
 					</div>
 					<div id="search-spinner" class="htmx-indicator text-center py-4">
-						<span class="text-sm text-gray-500 dark:text-gray-400">Searching providers...</span>
+						<span class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "image.searching_providers") }</span>
 					</div>
 					<div id="search-results"></div>
 				</section>
 			} else if !data.WebSearchEnabled {
 				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 					<p class="text-sm text-gray-500 dark:text-gray-400">
-						This artist has no MusicBrainz ID. Provider image search requires an MBID.
-						Use the upload form above to add images manually.
+						{ t(ctx, "image.no_mbid_message") }
 					</p>
 				</section>
 			}
 			if data.WebSearchEnabled {
 				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 					<div class="flex items-center justify-between mb-3">
-						<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Web Search Results</h3>
-						<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
+						<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">{ t(ctx, "image.web_search_results") }</h3>
+						<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "common.searching") }</span>
 					</div>
 					<div class="flex flex-wrap gap-2 mb-4">
 						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
@@ -575,7 +574,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 								hx-swap="innerHTML"
 								hx-indicator="#web-search-spinner"
 							>
-								Extend: { t }
+								{ tf(ctx, "image.extend_type", imageTypeLabel(t, data.ProfileName)) }
 							</button>
 						}
 					</div>
@@ -585,7 +584,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 		</div>
 		<div class="space-y-6">
 			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-				<h2 class="text-lg font-semibold mb-3">Current Images</h2>
+				<h2 class="text-lg font-semibold mb-3">{ t(ctx, "image.current_images") }</h2>
 				<div class="space-y-2">
 					@components.StatusBadge(data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName))
 					@components.StatusBadge(data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName))
@@ -594,7 +593,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 				</div>
 			</section>
 			<section id="compare-panel" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
-				<h2 class="text-lg font-semibold mb-3">Compare</h2>
+				<h2 class="text-lg font-semibold mb-3">{ t(ctx, "image.compare") }</h2>
 				@components.ImageCompare(data.Artist.ID)
 			</section>
 		</div>
@@ -605,7 +604,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 // This is used as an HTMX partial response.
 templ ImageSearchResults(artistID string, images []provider.ImageResult) {
 	if len(images) == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">No images found from providers.</p>
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
 	} else {
 		<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
@@ -619,7 +618,7 @@ templ ImageSearchResults(artistID string, images []provider.ImageResult) {
 // for multi-select and a floating "Save All" bar for bulk download.
 templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 	if len(images) == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">No fanart images found from providers.</p>
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
 	} else {
 		<div id="fanart-search-results" data-artist-id={ artistID }>
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -660,7 +659,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 									<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
 								}
 								if img.Likes > 0 {
-									<span class="ml-1">{ strconv.Itoa(img.Likes) } likes</span>
+									<span class="ml-1">{ tn(ctx, "image.likes_count", img.Likes) }</span>
 								}
 							</div>
 							<button
@@ -669,10 +668,10 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 								hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
 								hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": "fanart"}) }
 								hx-swap="none"
-								hx-confirm="Save this fanart?"
+								hx-confirm={ t(ctx, "image.confirm_save_fanart") }
 								data-confirm-key="image-save"
 							>
-								Save
+								{ t(ctx, "common.save") }
 							</button>
 						</div>
 					</div>
@@ -681,7 +680,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 			<div id="fanart-bulk-bar" class="hidden sticky bottom-4 mt-4 rounded-lg bg-gray-900/90 backdrop-blur text-white px-4 py-3 flex items-center justify-between shadow-lg">
 				<span id="fanart-bulk-count">0 selected</span>
 				<button type="button" id="fanart-bulk-save" class="px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium">
-					Save All
+					{ t(ctx, "image.save_all") }
 				</button>
 			</div>
 			<script>
@@ -735,10 +734,10 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 // This is used as an HTMX partial response for the "Extend Search" flow.
 templ WebImageSearchResults(artistID string, images []provider.ImageResult) {
 	if len(images) == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">No images found from web search.</p>
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_web_search") }</p>
 	} else {
 		<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">
-			Web search results are unverified. Dimensions may be inaccurate. Check logo images for transparency before saving.
+			{ t(ctx, "image.web_search_warning") }
 		</p>
 		<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {

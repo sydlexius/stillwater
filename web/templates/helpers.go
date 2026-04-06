@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -64,52 +65,24 @@ func providerDisplayName(key string) string {
 	}
 }
 
-// fieldLabel returns a human-readable label for a field name.
-func fieldLabel(field string) string {
-	switch field {
-	case "biography":
-		return "Biography"
-	case "genres":
-		return "Genres"
-	case "styles":
-		return "Styles"
-	case "moods":
-		return "Moods"
-	case "formed":
-		return "Formed"
-	case "born":
-		return "Born"
-	case "disbanded":
-		return "Disbanded"
-	case "died":
-		return "Died"
-	case "years_active":
-		return "Years Active"
-	case "type":
-		return "Type"
-	case "gender":
-		return "Gender"
-	case "members":
-		return "Members"
-	case "name":
-		return "Name"
-	case "sort_name":
-		return "Sort Name"
-	case "disambiguation":
-		return "Disambiguation"
-	case "musicbrainz_id":
-		return "MusicBrainz ID"
-	case "audiodb_id":
-		return "AudioDB ID"
-	case "discogs_id":
-		return "Discogs ID"
-	case "wikidata_id":
-		return "Wikidata ID"
-	case "deezer_id":
-		return "Deezer ID"
-	default:
-		return field
+// fieldLabel returns a human-readable label for a field name via i18n lookup.
+// Keys use the pattern "field.<name>" (e.g. "field.biography" -> "Biography").
+// Unknown fields fall back to converting snake_case to Title Case so raw
+// database column names are never shown to the user.
+func fieldLabel(ctx context.Context, field string) string {
+	result := t(ctx, "field."+field)
+	// If the key was not found, t() returns the key itself. In that case
+	// humanize the raw field name (e.g. "spotify_artist_id" -> "Spotify Artist Id").
+	if result == "field."+field {
+		parts := strings.Split(field, "_")
+		for i, p := range parts {
+			if len(p) > 0 {
+				parts[i] = strings.ToUpper(p[:1]) + p[1:]
+			}
+		}
+		return strings.Join(parts, " ")
 	}
+	return result
 }
 
 // providerIDURL returns the canonical external URL for a provider ID field.
@@ -235,48 +208,19 @@ func tierBadgeClasses(tier provider.AccessTier) string {
 	}
 }
 
-// tierBadgeLabel returns the display label for an access tier.
-func tierBadgeLabel(tier provider.AccessTier) string {
-	switch tier {
-	case provider.TierFree:
-		return "Free"
-	case provider.TierFreeKey:
-		return "Free Key"
-	case provider.TierFreemium:
-		return "Freemium"
-	case provider.TierPaid:
-		return "Paid"
-	default:
-		return string(tier)
-	}
+// tierBadgeLabel returns the display label for an access tier via i18n.
+func tierBadgeLabel(ctx context.Context, tier provider.AccessTier) string {
+	return t(ctx, "tier."+string(tier))
 }
 
-// tierTooltip returns a tooltip description for an access tier.
-func tierTooltip(tier provider.AccessTier) string {
-	switch tier {
-	case provider.TierFree:
-		return "No account or API key required"
-	case provider.TierFreeKey:
-		return "Free account required to obtain an API key"
-	case provider.TierFreemium:
-		return "Free tier available with limits; paid tier unlocks more"
-	case provider.TierPaid:
-		return "Paid access required (no free tier)"
-	default:
-		return ""
-	}
+// tierTooltip returns a tooltip description for an access tier via i18n.
+func tierTooltip(ctx context.Context, tier provider.AccessTier) string {
+	return t(ctx, "tier_tooltip."+string(tier))
 }
 
-// getKeyLinkText returns the link label for obtaining a provider API key.
-func getKeyLinkText(tier provider.AccessTier) string {
-	switch tier {
-	case provider.TierPaid:
-		return "Purchase access"
-	case provider.TierFreemium:
-		return "Get premium key"
-	default:
-		return "Get free key"
-	}
+// getKeyLinkText returns the link label for obtaining a provider API key via i18n.
+func getKeyLinkText(ctx context.Context, tier provider.AccessTier) string {
+	return t(ctx, "tier_link."+string(tier))
 }
 
 // rateLimitText formats a RateLimitInfo into a short human-readable string.
@@ -320,15 +264,12 @@ func mirrorServerType(m *provider.MirrorConfig) string {
 
 // mirrorStatusLabel returns a short label for the active server config,
 // shown as a badge on the provider card header.
-func mirrorStatusLabel(m *provider.MirrorConfig) string {
-	switch mirrorServerType(m) {
-	case "beta":
-		return "Beta server"
-	case "custom":
-		return "Custom mirror"
-	default:
+func mirrorStatusLabel(ctx context.Context, m *provider.MirrorConfig) string {
+	serverType := mirrorServerType(m)
+	if serverType == "official" {
 		return ""
 	}
+	return t(ctx, "mirror."+serverType)
 }
 
 // albumMatchClasses returns Tailwind CSS classes for the album match badge

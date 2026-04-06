@@ -1,9 +1,9 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -107,7 +107,7 @@ templ DashboardActionQueue(data ActionQueueData) {
 					id="select-all-toggle"
 					class="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
 				/>
-				Select all
+				{ t(ctx, "dashboard.select_all") }
 			</label>
 		</div>
 		<div id="action-queue-entries" class="space-y-1.5">
@@ -149,14 +149,14 @@ templ dashboardLoadMoreButton(data ActionQueueData) {
 			class="group inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 [&.htmx-request]:pointer-events-none"
 		>
 			<span class="[.htmx-request>&]:hidden">
-				Load { fmt.Sprint(min(data.Limit, data.Total-data.Offset-len(data.Violations))) } more of { fmt.Sprint(data.Total - data.Offset - len(data.Violations)) }
+				{ tf(ctx, "dashboard.load_more", min(data.Limit, data.Total-data.Offset-len(data.Violations)), data.Total-data.Offset-len(data.Violations)) }
 			</span>
 			<span class="hidden [.htmx-request>&]:inline-flex items-center gap-2">
 				<svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24" aria-hidden="true">
 					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 				</svg>
-				Loading...
+				{ t(ctx, "common.loading") }
 			</span>
 		</button>
 	</div>
@@ -177,15 +177,15 @@ templ DashboardActionHeader(data ActionQueueData) {
 	<div class="sw-card rounded-lg px-5 py-4 shadow-sm">
 		<div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-3">
-				<h1 class="text-xl font-bold">Dashboard</h1>
+				<h1 class="text-xl font-bold">{ t(ctx, "dashboard.title") }</h1>
 				if data.Total > 0 {
 					<span class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-sm font-semibold text-red-700 dark:text-red-300">
-						{ fmt.Sprint(data.Total) } actions needed
+						{ tn(ctx, "dashboard.actions_needed", data.Total) }
 					</span>
 				}
 			</div>
 			<div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-				<span>{ fmt.Sprint(data.TotalArtists) } artists</span>
+				<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
 				<span class="text-gray-300 dark:text-gray-600">|</span>
 				<span
 					class={
@@ -194,10 +194,10 @@ templ DashboardActionHeader(data ActionQueueData) {
 						templ.KV("text-red-600 dark:text-red-400", data.HealthScore < 50),
 					}
 				>
-					{ fmt.Sprintf("%.0f%%", data.HealthScore) } compliant
+					{ tf(ctx, "dashboard.health_compliant", data.HealthScore) }
 				</span>
 				<span class="text-gray-300 dark:text-gray-600">|</span>
-				<span id="last-evaluated-text" class="text-xs text-gray-400 dark:text-gray-500">Loading...</span>
+				<span id="last-evaluated-text" class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "common.loading") }</span>
 			</div>
 		</div>
 	</div>
@@ -212,7 +212,7 @@ templ DashboardFilterChips(counts map[string]int, activeCategory string, basePat
 			hx-swap="innerHTML"
 			class={ categoryChipClass("", activeCategory == "") }
 		>
-			All
+			{ t(ctx, "common.all") }
 			<span class="ml-1 font-semibold">{ fmt.Sprint(totalActiveActions(counts)) }</span>
 		</button>
 		for _, cat := range []string{"metadata", "image", "nfo"} {
@@ -223,7 +223,7 @@ templ DashboardFilterChips(counts map[string]int, activeCategory string, basePat
 					hx-swap="innerHTML"
 					class={ categoryChipClass(cat, activeCategory == cat) }
 				>
-					{ dashboardCategoryLabel(cat) }
+					{ dashboardCategoryLabel(ctx, cat) }
 					<span class="ml-1 font-semibold">{ fmt.Sprint(counts[cat]) }</span>
 				</button>
 			}
@@ -271,7 +271,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 				</div>
 				<p
 					class="text-xs text-gray-500 dark:text-gray-400 truncate cursor-pointer"
-					title="Click to expand"
+					title={ t(ctx, "dashboard.click_to_expand") }
 					onclick="this.classList.toggle('truncate');this.classList.toggle('whitespace-normal')"
 				>
 					{ v.Message }
@@ -286,7 +286,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 						hx-swap="outerHTML"
 						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors"
 					>
-						{ dashboardFixLabel(v.RuleID) }
+						{ dashboardFixLabel(ctx, v.RuleID) }
 					</button>
 				} else if strings.HasPrefix(v.RuleID, "nfo_has_mbid") {
 					// MBID violations are fixable but may not be marked as such;
@@ -295,7 +295,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 						href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
 						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-sm transition-colors"
 					>
-						Re-identify
+						{ t(ctx, "dashboard.re_identify") }
 					</a>
 				}
 				<button
@@ -305,12 +305,12 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 					hx-swap="outerHTML"
 					class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 				>
-					Dismiss
+					{ t(ctx, "dashboard.dismiss") }
 				</button>
 				<a
 					href={ templ.SafeURL(basePath + "/artists/" + v.ArtistID) }
 					class="inline-flex items-center rounded-md px-1.5 py-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-					title="View artist"
+					title={ t(ctx, "dashboard.view_artist") }
 				>
 					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
@@ -324,13 +324,13 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 // DashboardActivityFeed renders the recent activity sidebar section.
 templ DashboardActivityFeed(data ActivityFeedData) {
 	<div>
-		<h2 class="text-base font-semibold mb-3">Recent Activity</h2>
+		<h2 class="text-base font-semibold mb-3">{ t(ctx, "dashboard.recent_activity") }</h2>
 		if len(data.Changes) == 0 {
 			<div class="flex flex-col items-center py-8 text-center">
 				<svg class="h-8 w-8 text-gray-300 dark:text-gray-600 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 				</svg>
-				<p class="text-sm text-gray-400 dark:text-gray-500">No recent activity</p>
+				<p class="text-sm text-gray-400 dark:text-gray-500">{ t(ctx, "dashboard.no_recent_activity") }</p>
 			</div>
 		} else {
 			<div class="space-y-0.5">
@@ -343,7 +343,7 @@ templ DashboardActivityFeed(data ActivityFeedData) {
 					href={ templ.SafeURL(data.BasePath + "/activity") }
 					class="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
 				>
-					View all activity
+					{ t(ctx, "dashboard.view_all_activity") }
 					<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
 					</svg>
@@ -365,27 +365,27 @@ templ DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					{ c.ArtistName }
 				</a>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-					<span class="font-medium">{ historyFieldLabel(c.Field) }</span>
+					<span class="font-medium">{ historyFieldLabel(ctx, c.Field) }</span>
 					<span class="mx-0.5">--</span>
 					if c.OldValue == "" && c.NewValue != "" {
-						<span class="text-green-600 dark:text-green-400">Set</span>
+						<span class="text-green-600 dark:text-green-400">{ t(ctx, "dashboard.activity_set") }</span>
 					} else if c.OldValue != "" && c.NewValue == "" {
-						<span class="text-red-500 dark:text-red-400">Cleared</span>
+						<span class="text-red-500 dark:text-red-400">{ t(ctx, "dashboard.activity_cleared") }</span>
 					} else if c.OldValue != "" && c.NewValue != "" {
-						<span class="text-blue-600 dark:text-blue-400">Changed</span>
+						<span class="text-blue-600 dark:text-blue-400">{ t(ctx, "dashboard.activity_changed") }</span>
 					}
 				</p>
 			</div>
 			<div class="flex items-center gap-1.5 shrink-0">
 				<span class={ "inline-block px-1.5 py-0.5 rounded text-[10px] font-medium leading-tight", dashboardSourceBadgeClass(c.Source) }>
-					{ historySourceLabel(c.Source) }
+					{ historySourceLabel(ctx, c.Source) }
 				</span>
 				<time
 					datetime={ c.CreatedAt.Format(time.RFC3339) }
 					title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
 					class="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums"
 				>
-					{ dashboardTimeAgo(c.CreatedAt) }
+					{ dashboardTimeAgo(ctx, c.CreatedAt) }
 				</time>
 			</div>
 		</div>
@@ -400,7 +400,7 @@ templ DashboardEmptyState(score float64) {
 				<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
 			</svg>
 		</div>
-		<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">All clear -- no actions needed</h3>
+		<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "dashboard.all_clear") }</h3>
 		<p
 			class={
 				"mt-2 text-3xl font-bold",
@@ -409,38 +409,36 @@ templ DashboardEmptyState(score float64) {
 				templ.KV("text-red-600 dark:text-red-400", score < 50),
 			}
 		>
-			{ fmt.Sprintf("%.1f%%", score) } compliant
+			{ tf(ctx, "dashboard.health_compliant_score", score) }
 		</p>
 	</div>
 }
 
 // dashboardFixLabel maps a rule ID to a human-readable action label for the dashboard.
-func dashboardFixLabel(ruleID string) string {
+func dashboardFixLabel(ctx context.Context, ruleID string) string {
 	// Check exact matches first (longer prefixes before shorter ones).
 	if strings.HasPrefix(ruleID, "nfo_has_mbid") {
-		return "Search MBID"
+		return t(ctx, "dashboard.fix.search_mbid")
 	}
 	if strings.HasPrefix(ruleID, "nfo_exists") {
-		return "Generate NFO"
+		return t(ctx, "dashboard.fix.generate_nfo")
 	}
 	if strings.HasPrefix(ruleID, "extraneous") {
-		return "Review"
+		return t(ctx, "dashboard.fix.review")
 	}
-	prefixes := map[string]string{
-		"thumb":    "Fetch Image",
-		"fanart":   "Fetch Image",
-		"logo":     "Fetch Image",
-		"banner":   "Fetch Image",
-		"backdrop": "Fetch Image",
-		"bio":      "Fetch Metadata",
-		"artist":   "Fetch Metadata",
-	}
-	for prefix, label := range prefixes {
+	imagePrefixes := []string{"thumb", "fanart", "logo", "banner", "backdrop"}
+	for _, prefix := range imagePrefixes {
 		if strings.HasPrefix(ruleID, prefix) {
-			return label
+			return t(ctx, "dashboard.fix.fetch_image")
 		}
 	}
-	return "Fix"
+	metaPrefixes := []string{"bio", "artist"}
+	for _, prefix := range metaPrefixes {
+		if strings.HasPrefix(ruleID, prefix) {
+			return t(ctx, "dashboard.fix.fetch_metadata")
+		}
+	}
+	return t(ctx, "dashboard.fix.fix")
 }
 
 // severityBadgeClass returns Tailwind classes for a severity badge.
@@ -456,31 +454,22 @@ func severityBadgeClass(severity string) string {
 }
 
 // dashboardTimeAgo returns a human-readable relative timestamp.
-func dashboardTimeAgo(t time.Time) string {
-	dur := time.Since(t)
+func dashboardTimeAgo(ctx context.Context, ts time.Time) string {
+	dur := time.Since(ts)
 	switch {
 	case dur < time.Minute:
-		return "just now"
+		return t(ctx, "time.just_now")
 	case dur < time.Hour:
 		m := int(dur.Minutes())
-		if m == 1 {
-			return "1m ago"
-		}
-		return strconv.Itoa(m) + "m ago"
+		return tf(ctx, "time.minutes_ago", m)
 	case dur < 24*time.Hour:
 		h := int(dur.Hours())
-		if h == 1 {
-			return "1h ago"
-		}
-		return strconv.Itoa(h) + "h ago"
+		return tf(ctx, "time.hours_ago", h)
 	case dur < 7*24*time.Hour:
 		d := int(dur.Hours() / 24)
-		if d == 1 {
-			return "1d ago"
-		}
-		return strconv.Itoa(d) + "d ago"
+		return tf(ctx, "time.days_ago", d)
 	default:
-		return t.Format("Jan 2")
+		return ts.Format("Jan 2")
 	}
 }
 
@@ -531,15 +520,6 @@ func categoryChipClass(category string, active bool) string {
 }
 
 // dashboardCategoryLabel returns the display name for a violation category on the dashboard.
-func dashboardCategoryLabel(category string) string {
-	switch category {
-	case "metadata":
-		return "Metadata"
-	case "image":
-		return "Images"
-	case "nfo":
-		return "NFO / MBID"
-	default:
-		return "Other"
-	}
+func dashboardCategoryLabel(ctx context.Context, category string) string {
+	return t(ctx, "dashboard.category."+category)
 }

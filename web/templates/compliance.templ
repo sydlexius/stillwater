@@ -104,14 +104,14 @@ func complianceExportURL(data ComplianceData) string {
 }
 
 templ CompliancePage(assets AssetPaths, data ComplianceData) {
-	@Layout("Compliance Report", assets) {
+	@Layout(t(ctx, "report.title"), assets) {
 		<script src={ assets.ChartJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<h1 class="text-2xl font-bold">Compliance Report</h1>
+					<h1 class="text-2xl font-bold">{ t(ctx, "report.title") }</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Per-artist rule compliance with actionable details.
+						{ t(ctx, "report.subtitle") }
 					</p>
 				</div>
 				<button
@@ -128,7 +128,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 						</svg>
 					</span>
-					<span id="run-rules-label">Run Rules</span>
+					<span id="run-rules-label">{ t(ctx, "report.run_rules") }</span>
 				</button>
 			</div>
 			<!-- Library summary section (lazy-loaded) -->
@@ -152,7 +152,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						type="search"
 						name="search"
 						value={ data.Search }
-						placeholder="Search artists..."
+						placeholder={ t(ctx, "common.search_artists") }
 						hx-get="/reports/compliance"
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#compliance-table"
@@ -172,7 +172,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 							hx-include="[name='search'],[name='status'],[name='filter'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						>
-							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
+							<option value="" selected?={ data.LibraryID == "" }>{ t(ctx, "common.all_libraries") }</option>
 							for _, lib := range data.Libraries {
 								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
 							}
@@ -187,9 +187,9 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
-						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
-						<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
-						<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
+						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>{ t(ctx, "report.all_artists") }</option>
+						<option value="compliant" selected?={ data.Status == "compliant" }>{ t(ctx, "report.compliant") }</option>
+						<option value="non_compliant" selected?={ data.Status == "non_compliant" }>{ t(ctx, "report.non_compliant") }</option>
 					</select>
 					<select
 						name="filter"
@@ -200,13 +200,13 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						hx-include="[name='search'],[name='status'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
-						<option value="" selected?={ data.Filter == "" }>No Filter</option>
-						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
-						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+						<option value="" selected?={ data.Filter == "" }>{ t(ctx, "report.no_filter") }</option>
+						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>{ t(ctx, "report.missing_metadata") }</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("thumb", data.ProfileName)) }</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("fanart", data.ProfileName)) }</option>
+						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("logo", data.ProfileName)) }</option>
+						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("banner", data.ProfileName)) }</option>
+						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>{ t(ctx, "report.missing_mbid") }</option>
 					</select>
 					<!-- Health score range -->
 					<div class="flex items-center gap-1">
@@ -215,7 +215,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 							name="health_min"
 							min="0"
 							max="100"
-							placeholder="Min %"
+							placeholder={ t(ctx, "report.min_pct") }
 							value={ intOrEmpty(data.HealthScoreMin) }
 							hx-get="/reports/compliance"
 							hx-trigger="change"
@@ -230,7 +230,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 							name="health_max"
 							min="0"
 							max="100"
-							placeholder="Max %"
+							placeholder={ t(ctx, "report.max_pct") }
 							value={ intOrEmpty(data.HealthScoreMax) }
 							hx-get="/reports/compliance"
 							hx-trigger="change"
@@ -257,7 +257,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
 						</svg>
-						Export CSV
+						{ t(ctx, "common.export_csv") }
 					</a>
 				</div>
 			</div>
@@ -272,28 +272,34 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 			class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
 		>
 			<div class="max-w-7xl mx-auto flex items-center justify-between">
-				<span id="bulk-count" class="text-sm text-white">0 selected</span>
+				<span
+					id="bulk-count"
+					class="text-sm text-white"
+					data-zero-text={ t(ctx, "report.zero_selected") }
+					data-one-text={ t(ctx, "report.one_selected") }
+					data-many-template={ t(ctx, "report.n_selected") }
+				>{ t(ctx, "report.zero_selected") }</span>
 				<div class="flex items-center gap-3">
 					<button
 						type="button"
 						onclick="bulkAction('fetch-metadata')"
 						class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
 					>
-						Fetch Metadata
+						{ t(ctx, "report.fetch_metadata") }
 					</button>
 					<button
 						type="button"
 						onclick="bulkAction('fetch-images')"
 						class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
 					>
-						Fetch Images
+						{ t(ctx, "report.fetch_images") }
 					</button>
 					<button
 						type="button"
 						onclick="clearBulkSelection()"
 						class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600"
 					>
-						Cancel
+						{ t(ctx, "common.cancel") }
 					</button>
 				</div>
 			</div>
@@ -372,7 +378,7 @@ templ ComplianceTable(data ComplianceData) {
 							onclick="sortBy('name')"
 						onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
 						>
-							Artist{ sortIcon(data.Sort, "name", data.Order) }
+							{ t(ctx, "common.artist") }{ sortIcon(data.Sort, "name", data.Order) }
 						</th>
 						<th
 							scope="col"
@@ -383,10 +389,10 @@ templ ComplianceTable(data ComplianceData) {
 							onclick="sortBy('health_score')"
 							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('health_score')}"
 						>
-							Score{ sortIcon(data.Sort, "health_score", data.Order) }
+							{ t(ctx, "report.score") }{ sortIcon(data.Sort, "health_score", data.Order) }
 						</th>
 						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Metadata
+							{ t(ctx, "common.metadata") }
 						</th>
 						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							{ img.ImageTermFor("thumb", data.ProfileName) }
@@ -401,7 +407,7 @@ templ ComplianceTable(data ComplianceData) {
 							MBID
 						</th>
 						<th scope="col" data-col="actions" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Actions
+							{ t(ctx, "common.actions") }
 						</th>
 					</tr>
 				</thead>
@@ -409,7 +415,7 @@ templ ComplianceTable(data ComplianceData) {
 					if len(data.Rows) == 0 {
 						<tr>
 							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-								No artists found. Run a library scan to discover artists.
+								{ t(ctx, "report.no_artists") }
 							</td>
 						</tr>
 					}
@@ -468,7 +474,7 @@ templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 						href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID + "/nfo") }
 						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
-						Changes
+						{ t(ctx, "report.changes") }
 					</a>
 				}
 			</div>
@@ -481,12 +487,12 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 		<!-- Overall card -->
 		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow">
-			<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Overall</p>
+			<p class="text-sm font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "report.overall") }</p>
 			<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-600 dark:text-green-400", data.Overall.Score >= 80), templ.KV("text-yellow-600 dark:text-yellow-400", data.Overall.Score >= 50 && data.Overall.Score < 80), templ.KV("text-red-600 dark:text-red-400", data.Overall.Score < 50) }>
 				{ fmt.Sprintf("%.1f%%", data.Overall.Score) }
 			</p>
 			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-				{ fmt.Sprint(data.Overall.CompliantArtists) } of { fmt.Sprint(data.Overall.TotalArtists) } compliant
+				{ tf(ctx, "report.x_of_y_compliant", data.Overall.CompliantArtists, data.Overall.TotalArtists) }
 			</p>
 		</div>
 		<!-- Per-library cards -->
@@ -497,7 +503,7 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 					{ fmt.Sprintf("%.1f%%", lib.Score) }
 				</p>
 				<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-					{ fmt.Sprint(lib.CompliantArtists) } of { fmt.Sprint(lib.TotalArtists) } compliant
+					{ tf(ctx, "report.x_of_y_compliant", lib.CompliantArtists, lib.TotalArtists) }
 				</p>
 			</div>
 		}
@@ -755,9 +761,17 @@ templ complianceScript() {
 
 			if (selected.length > 0) {
 				bar.classList.remove('hidden');
-				count.textContent = selected.length + ' selected';
+				if (count) {
+					if (selected.length === 1) {
+						count.textContent = count.dataset.oneText || '1 selected';
+					} else {
+						var tpl = count.dataset.manyTemplate || '{count} selected';
+						count.textContent = tpl.replace('{count}', String(selected.length));
+					}
+				}
 			} else {
 				bar.classList.add('hidden');
+				if (count) count.textContent = count.dataset.zeroText || '';
 			}
 		}
 

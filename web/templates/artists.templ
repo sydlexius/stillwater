@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -59,14 +60,14 @@ func complianceDotClass(status artist.ComplianceStatus) string {
 }
 
 // complianceDotTitle returns a tooltip string for the compliance indicator.
-func complianceDotTitle(status artist.ComplianceStatus) string {
+func complianceDotTitle(ctx context.Context, status artist.ComplianceStatus) string {
 	switch status {
 	case artist.ComplianceError:
-		return "Has error violations"
+		return t(ctx, "artists.compliance.error")
 	case artist.ComplianceWarning:
-		return "Has warning or info violations"
+		return t(ctx, "artists.compliance.warning")
 	default:
-		return "Compliant"
+		return t(ctx, "artists.compliance.compliant")
 	}
 }
 
@@ -103,27 +104,27 @@ func artistHasFilesystem(a artist.Artist) bool {
 
 // lidarrTooltip returns the tooltip text for a Lidarr platform badge.
 // Uses the connection name from src if available.
-func lidarrTooltip(src LibrarySourceInfo) string {
+func lidarrTooltip(ctx context.Context, src LibrarySourceInfo) string {
 	if src.Source == "lidarr" && src.ConnectionName != "" {
-		return "Managed by " + src.ConnectionName
+		return tf(ctx, "artists.badge.managed_by", src.ConnectionName)
 	}
-	return "Managed by Lidarr"
+	return tf(ctx, "artists.badge.managed_by", "Lidarr")
 }
 
 // embyTooltip returns the tooltip text for an Emby platform badge.
-func embyTooltip(src LibrarySourceInfo) string {
+func embyTooltip(ctx context.Context, src LibrarySourceInfo) string {
 	if src.Source == "emby" && src.ConnectionName != "" {
-		return "Present in " + src.ConnectionName
+		return tf(ctx, "artists.badge.present_in", src.ConnectionName)
 	}
-	return "Present in Emby"
+	return tf(ctx, "artists.badge.present_in", "Emby")
 }
 
 // jellyfinTooltip returns the tooltip text for a Jellyfin platform badge.
-func jellyfinTooltip(src LibrarySourceInfo) string {
+func jellyfinTooltip(ctx context.Context, src LibrarySourceInfo) string {
 	if src.Source == "jellyfin" && src.ConnectionName != "" {
-		return "Present in " + src.ConnectionName
+		return tf(ctx, "artists.badge.present_in", src.ConnectionName)
 	}
-	return "Present in Jellyfin"
+	return tf(ctx, "artists.badge.present_in", "Jellyfin")
 }
 
 // artistBadge holds the platform name and tooltip for a single badge.
@@ -134,21 +135,21 @@ type artistBadge struct {
 
 // computeArtistBadges returns the ordered list of platform badges for an artist.
 // Badge order: Filesystem, Lidarr, Emby, Jellyfin (discovery source first, then platforms).
-func computeArtistBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) []artistBadge {
+func computeArtistBadges(ctx context.Context, a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) []artistBadge {
 	src := artistSourceInfo(a, sources)
 	pp := artistPlatformPresence(a.ID, platforms)
 	var badges []artistBadge
 	if artistHasFilesystem(a) {
-		badges = append(badges, artistBadge{"filesystem", "Found in " + a.Path})
+		badges = append(badges, artistBadge{"filesystem", tf(ctx, "artists.badge.found_in", a.Path)})
 	}
 	if pp.HasLidarr || src.Source == "lidarr" {
-		badges = append(badges, artistBadge{"lidarr", lidarrTooltip(src)})
+		badges = append(badges, artistBadge{"lidarr", lidarrTooltip(ctx, src)})
 	}
 	if pp.HasEmby || src.Source == "emby" {
-		badges = append(badges, artistBadge{"emby", embyTooltip(src)})
+		badges = append(badges, artistBadge{"emby", embyTooltip(ctx, src)})
 	}
 	if pp.HasJellyfin || src.Source == "jellyfin" {
-		badges = append(badges, artistBadge{"jellyfin", jellyfinTooltip(src)})
+		badges = append(badges, artistBadge{"jellyfin", jellyfinTooltip(ctx, src)})
 	}
 	return badges
 }
@@ -176,27 +177,27 @@ func libraryDropdownLabel(lib library.Library, sources map[string]LibrarySourceI
 }
 
 // sortLabel returns a short display label for the sort field.
-func sortLabel(sort string) string {
+func sortLabel(ctx context.Context, sort string) string {
 	switch sort {
 	case "sort_name":
-		return "Sort Name"
+		return t(ctx, "artists.sort.sort_name")
 	case "health_score":
-		return "Health"
+		return t(ctx, "artists.sort.health")
 	case "updated_at":
-		return "Updated"
+		return t(ctx, "artists.sort.updated")
 	case "created_at":
-		return "Added"
+		return t(ctx, "artists.sort.added")
 	default:
-		return "Name"
+		return t(ctx, "artists.sort.name")
 	}
 }
 
 // orderLabel returns a short label for the sort order.
-func orderLabel(order string) string {
+func orderLabel(ctx context.Context, order string) string {
 	if order == "desc" {
-		return "desc"
+		return t(ctx, "artists.order.desc")
 	}
-	return "asc"
+	return t(ctx, "artists.order.asc")
 }
 
 // filterState returns the flyout state string for a given filter key.
@@ -223,34 +224,34 @@ func activeFilterCount(filters map[string]string) int {
 }
 
 // filterChipLabel returns the display label for an active filter chip.
-func filterChipLabel(key, state string) string {
+func filterChipLabel(ctx context.Context, key, state string) string {
 	var name string
 	switch key {
 	case "missing_meta":
-		name = "Missing Metadata"
+		name = t(ctx, "artists.filter.missing_metadata")
 	case "missing_images":
-		name = "Missing Images"
+		name = t(ctx, "artists.filter.missing_images")
 	case "missing_mbid":
-		name = "Missing MBID"
+		name = t(ctx, "artists.filter.missing_mbid")
 	case "excluded":
-		name = "Excluded"
+		name = t(ctx, "artists.filter.excluded")
 	case "locked":
-		name = "Locked"
+		name = t(ctx, "artists.filter.locked")
 	case "type_person":
-		name = "Person"
+		name = t(ctx, "artists.filter.person")
 	case "type_group":
-		name = "Group"
+		name = t(ctx, "artists.filter.group")
 	case "type_orchestra":
-		name = "Orchestra"
+		name = t(ctx, "artists.filter.orchestra")
 	default:
 		if strings.HasPrefix(key, "library_") {
-			name = "Library"
+			name = t(ctx, "artists.filter.library")
 		} else {
 			name = key
 		}
 	}
 	if state == "exclude" {
-		return "Not " + name
+		return tf(ctx, "artists.filter.not_prefix", name)
 	}
 	return name
 }
@@ -258,20 +259,20 @@ func filterChipLabel(key, state string) string {
 // filterChipLabelFromData returns the display label for an active filter chip,
 // resolving library names from the provided slice when the key is a library filter.
 // sources is used to append the connection name for imported libraries.
-func filterChipLabelFromData(key, state string, libs []library.Library, sources map[string]LibrarySourceInfo) string {
+func filterChipLabelFromData(ctx context.Context, key, state string, libs []library.Library, sources map[string]LibrarySourceInfo) string {
 	if strings.HasPrefix(key, "library_") {
 		libID := key[len("library_"):]
 		for _, lib := range libs {
 			if lib.ID == libID {
 				label := libraryDropdownLabel(lib, sources)
 				if state == "exclude" {
-					return "Not " + label
+					return tf(ctx, "artists.filter.not_prefix", label)
 				}
 				return label
 			}
 		}
 	}
-	return filterChipLabel(key, state)
+	return filterChipLabel(ctx, key, state)
 }
 
 // filterChipClass returns the CSS classes for an active filter chip based on state.
@@ -303,13 +304,13 @@ func sortDropdownItem(active bool) string {
 }
 
 templ ArtistsPage(assets AssetPaths, data ArtistListData) {
-	@Layout("Artists", assets) {
+	@Layout(t(ctx, "artists.title"), assets) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<h1 class="text-2xl font-bold">Artists</h1>
+					<h1 class="text-2xl font-bold">{ t(ctx, "artists.title") }</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						{ fmt.Sprint(data.Pagination.TotalItems) } artists in library
+						{ tn(ctx, "artists.in_library", data.Pagination.TotalItems) }
 					</p>
 				</div>
 				<button
@@ -324,7 +325,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 						</svg>
 					</span>
-					<span id="scan-label">Scan Library</span>
+					<span id="scan-label">{ t(ctx, "artists.scan_library") }</span>
 				</button>
 			</div>
 			<input type="hidden" name="view" id="artist-view-input" value={ data.View }/>
@@ -336,7 +337,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						type="search"
 						name="search"
 						value={ data.Search }
-						placeholder="Search artists..."
+						placeholder={ t(ctx, "artists.search_placeholder") }
+						aria-label={ t(ctx, "artists.search_placeholder") }
 						hx-get="/artists"
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
@@ -355,9 +357,9 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-swap="outerHTML"
 							hx-include="[name='search'],[name='view'],[name='sort'],[name='order']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							aria-label="Filter by library"
+							aria-label={ t(ctx, "artists.filter_by_library") }
 						>
-							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
+							<option value="" selected?={ data.LibraryID == "" }>{ t(ctx, "artists.all_libraries") }</option>
 							for _, lib := range data.Libraries {
 								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ libraryDropdownLabel(lib, data.LibrarySources) }</option>
 							}
@@ -371,7 +373,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						data-active-classes={ filterTriggerActive }
 						data-neutral-classes={ filterTriggerNeutral }
 						data-badge-classes={ filterTriggerBadge }
-						aria-label="Open filter panel"
+						aria-label={ t(ctx, "common.open_filter_panel") }
 						aria-expanded="false"
 						aria-controls="artist-filters-flyout"
 						onclick={ components.OpenFilterFlyout("artist-filters-flyout") }
@@ -380,48 +382,49 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
 							<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
 						</svg>
-						<span>Filters</span>
+						<span>{ t(ctx, "common.filters") }</span>
 						if activeFilterCount(data.Filters) > 0 {
-							<span class={ filterTriggerBadge } aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+							<span class={ filterTriggerBadge } aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return t(ctx, "common.active_filter_one") }; return tf(ctx, "common.active_filter_other", n) }() }>
 								{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
 							</span>
 						}
 					</button>
 					<details id="sort-dropdown" class="relative">
-						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title="Sort">
+						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
 							</svg>
-							<span id="sort-field-label" class="hidden sm:inline">{ sortLabel(data.Sort) }</span>
-							<span id="sort-order-label" class="hidden sm:inline text-gray-400">{ orderLabel(data.Order) }</span>
+							<span id="sort-field-label" class="hidden sm:inline">{ sortLabel(ctx, data.Sort) }</span>
+							<span id="sort-order-label" class="hidden sm:inline text-gray-400">{ orderLabel(ctx, data.Order) }</span>
 						</summary>
 						<div class="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
-							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sort by</div>
-							<button type="button" onclick="setSort('name')" class={ sortDropdownItem(data.Sort == "name") }>Name</button>
-							<button type="button" onclick="setSort('sort_name')" class={ sortDropdownItem(data.Sort == "sort_name") }>Sort Name</button>
-							<button type="button" onclick="setSort('health_score')" class={ sortDropdownItem(data.Sort == "health_score") }>Health Score</button>
-							<button type="button" onclick="setSort('updated_at')" class={ sortDropdownItem(data.Sort == "updated_at") }>Last Updated</button>
-							<button type="button" onclick="setSort('created_at')" class={ sortDropdownItem(data.Sort == "created_at") }>Date Added</button>
+							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.sort_by") }</div>
+							<button type="button" onclick="setSort('name')" class={ sortDropdownItem(data.Sort == "name") }>{ t(ctx, "artists.sort.name") }</button>
+							<button type="button" onclick="setSort('sort_name')" class={ sortDropdownItem(data.Sort == "sort_name") }>{ t(ctx, "artists.sort.sort_name") }</button>
+							<button type="button" onclick="setSort('health_score')" class={ sortDropdownItem(data.Sort == "health_score") }>{ t(ctx, "artists.sort.health_score") }</button>
+							<button type="button" onclick="setSort('updated_at')" class={ sortDropdownItem(data.Sort == "updated_at") }>{ t(ctx, "artists.sort.last_updated") }</button>
+							<button type="button" onclick="setSort('created_at')" class={ sortDropdownItem(data.Sort == "created_at") }>{ t(ctx, "artists.sort.date_added") }</button>
 							<div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
-							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Direction</div>
-							<button type="button" onclick="setOrder('asc')" class={ sortDropdownItem(data.Order == "asc") }>Ascending</button>
-							<button type="button" onclick="setOrder('desc')" class={ sortDropdownItem(data.Order == "desc") }>Descending</button>
+							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.direction") }</div>
+							<button type="button" onclick="setOrder('asc')" class={ sortDropdownItem(data.Order == "asc") }>{ t(ctx, "artists.sort.ascending") }</button>
+							<button type="button" onclick="setOrder('desc')" class={ sortDropdownItem(data.Order == "desc") }>{ t(ctx, "artists.sort.descending") }</button>
 						</div>
 					</details>
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
-						{Key: "name", Label: "Name", Required: true},
-						{Key: "metadata", Label: "Metadata"},
+						{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+						{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
 						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
 						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
 						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-						{Key: "mbid", Label: "MBID"},
+						{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
 					})
 				</div>
 				<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
-							title="Table view"
+							title={ t(ctx, "artists.view.table") }
+							aria-label={ t(ctx, "artists.view.table") }
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
@@ -436,7 +439,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						</button>
 						<button
 							type="button"
-							title="Grid view"
+							title={ t(ctx, "artists.view.grid") }
+							aria-label={ t(ctx, "artists.view.grid") }
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
@@ -453,25 +457,25 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				</div>
 			</div>
 			<!-- FilterFlyout panel for artist filters -->
-			@components.FilterFlyout("artist-filters-flyout", "Artist Filters", "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content") {
-				@components.FilterSection("Metadata") {
-					@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", "Missing Metadata", filterState(data.Filters, "missing_meta"))
-					@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", "Missing MBID", filterState(data.Filters, "missing_mbid"))
+			@components.FilterFlyout("artist-filters-flyout", t(ctx, "artists.filters_title"), "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content") {
+				@components.FilterSection(t(ctx, "artists.filter_section.metadata")) {
+					@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", t(ctx, "artists.filter.missing_metadata"), filterState(data.Filters, "missing_meta"))
+					@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", t(ctx, "artists.filter.missing_mbid"), filterState(data.Filters, "missing_mbid"))
 				}
-				@components.FilterSection("Images") {
-					@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", "Missing Images", filterState(data.Filters, "missing_images"))
+				@components.FilterSection(t(ctx, "artists.filter_section.images")) {
+					@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", t(ctx, "artists.filter.missing_images"), filterState(data.Filters, "missing_images"))
 				}
-				@components.FilterSection("Status") {
-					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", "Excluded", filterState(data.Filters, "excluded"))
-					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", "Locked", filterState(data.Filters, "locked"))
+				@components.FilterSection(t(ctx, "artists.filter_section.status")) {
+					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", t(ctx, "artists.filter.excluded"), filterState(data.Filters, "excluded"))
+					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", t(ctx, "artists.filter.locked"), filterState(data.Filters, "locked"))
 				}
-				@components.FilterSection("Artist Type") {
-					@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", "Person", filterState(data.Filters, "type_person"))
-					@components.FilterItem("artist-filters-flyout", "filter_type_group", "y", "Group", filterState(data.Filters, "type_group"))
-					@components.FilterItem("artist-filters-flyout", "filter_type_orchestra", "y", "Orchestra", filterState(data.Filters, "type_orchestra"))
+				@components.FilterSection(t(ctx, "artists.filter_section.artist_type")) {
+					@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", t(ctx, "artists.filter.person"), filterState(data.Filters, "type_person"))
+					@components.FilterItem("artist-filters-flyout", "filter_type_group", "y", t(ctx, "artists.filter.group"), filterState(data.Filters, "type_group"))
+					@components.FilterItem("artist-filters-flyout", "filter_type_orchestra", "y", t(ctx, "artists.filter.orchestra"), filterState(data.Filters, "type_orchestra"))
 				}
 				if len(data.Libraries) > 1 {
-					@components.FilterSection("Library") {
+					@components.FilterSection(t(ctx, "artists.filter_section.library")) {
 						for _, lib := range data.Libraries {
 							@components.FilterItem("artist-filters-flyout", "filter_library_"+lib.ID, "y", libraryDropdownLabel(lib, data.LibrarySources), filterState(data.Filters, "library_"+lib.ID))
 						}
@@ -733,15 +737,15 @@ templ ArtistTable(data ArtistListData) {
 	<div id="artist-content">
 		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
 		if activeFilterCount(data.Filters) > 0 {
-			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label="Active filters">
+			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label={ t(ctx, "common.active_filters") }>
 				for _, key := range sortedFilterKeys(data.Filters) {
 					if data.Filters[key] == "include" || data.Filters[key] == "exclude" {
 						<span class={ filterChipClass(data.Filters[key]) }>
-							{ filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) }
+							{ filterChipLabelFromData(ctx, key, data.Filters[key], data.Libraries, data.LibrarySources) }
 							<button
 								type="button"
 								class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
-								aria-label={ "Remove " + filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) + " filter" }
+								aria-label={ tf(ctx, "common.remove_filter", filterChipLabelFromData(ctx, key, data.Filters[key], data.Libraries, data.LibrarySources)) }
 								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 							>
 								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -762,9 +766,9 @@ templ ArtistTable(data ArtistListData) {
 								type="button"
 								onclick="setSort('name')"
 								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
-								title="Sort by Name"
+								title={ t(ctx, "artists.sort_by_name") }
 							>
-								Name
+								{ t(ctx, "artists.col.name") }
 								if data.Sort == "name" {
 									if data.Order == "asc" {
 										<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
@@ -775,7 +779,7 @@ templ ArtistTable(data ArtistListData) {
 							</button>
 						</th>
 						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Metadata
+							{ t(ctx, "artists.col.metadata") }
 						</th>
 						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							{ img.ImageTermFor("thumb", data.ProfileName) }
@@ -787,7 +791,7 @@ templ ArtistTable(data ArtistListData) {
 							{ img.ImageTermFor("logo", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							MBID
+							{ t(ctx, "artists.col.mbid") }
 						</th>
 					</tr>
 				</thead>
@@ -795,7 +799,7 @@ templ ArtistTable(data ArtistListData) {
 					if len(data.Artists) == 0 {
 						<tr>
 							<td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-								No artists found. Run a library scan to discover artists.
+								{ t(ctx, "artists.empty_state") }
 							</td>
 						</tr>
 					}
@@ -816,8 +820,8 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 				if complianceAvailable(compliance) {
 					<span
 						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
-						title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-						aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
 						role="img"
 					></span>
 				}
@@ -832,12 +836,12 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 					<span class="ml-1 text-xs text-gray-400">({ a.SortName })</span>
 				}
 				if a.IsExcluded {
-					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">Excluded</span>
+					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
 				}
 			</div>
 		</td>
 		<td data-col="metadata" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.NFOExists, "Metadata")
+			@components.StatusBadge(a.NFOExists, t(ctx, "common.metadata"))
 		</td>
 		<td data-col="thumb" class="px-4 py-3 text-center">
 			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName))
@@ -849,7 +853,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName))
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
+			@components.StatusBadge(a.MusicBrainzID != "", t(ctx, "artists.col.mbid"))
 		</td>
 	</tr>
 }
@@ -859,15 +863,15 @@ templ ArtistGrid(data ArtistListData) {
 	<div id="artist-content">
 		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
 		if activeFilterCount(data.Filters) > 0 {
-			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label="Active filters">
+			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label={ t(ctx, "common.active_filters") }>
 				for _, key := range sortedFilterKeys(data.Filters) {
 					if data.Filters[key] == "include" || data.Filters[key] == "exclude" {
 						<span class={ filterChipClass(data.Filters[key]) }>
-							{ filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) }
+							{ filterChipLabelFromData(ctx, key, data.Filters[key], data.Libraries, data.LibrarySources) }
 							<button
 								type="button"
 								class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
-								aria-label={ "Remove " + filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) + " filter" }
+								aria-label={ tf(ctx, "common.remove_filter", filterChipLabelFromData(ctx, key, data.Filters[key], data.Libraries, data.LibrarySources)) }
 								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 							>
 								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -881,7 +885,7 @@ templ ArtistGrid(data ArtistListData) {
 		}
 		if len(data.Artists) == 0 {
 			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-				No artists found. Run a library scan to discover artists.
+				{ t(ctx, "artists.empty_state") }
 			</div>
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -922,8 +926,8 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 			if complianceAvailable(compliance) {
 				<span
 					class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
-					title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-					aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+					title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+					aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
 					role="img"
 				></span>
 			}
@@ -942,7 +946,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 
 // artistPlatformBadges renders inline platform badges for the table view name column.
 templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if badges := computeArtistBadges(a, sources, platforms); len(badges) > 0 {
+	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
 		<span class="inline-flex items-center gap-0.5 shrink-0">
 			for _, b := range badges {
 				@components.PlatformBadge(b.Platform, b.Tooltip)
@@ -954,7 +958,7 @@ templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo
 // artistCardPlatformBadges renders overlay platform badges for the grid card view.
 // Badges are positioned in the bottom-right corner of the card image area.
 templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if badges := computeArtistBadges(a, sources, platforms); len(badges) > 0 {
+	if badges := computeArtistBadges(ctx, a, sources, platforms); len(badges) > 0 {
 		<div class="absolute bottom-1 right-1 flex items-center gap-0.5">
 			for _, b := range badges {
 				<span class="rounded-full bg-black/60 p-0.5">
