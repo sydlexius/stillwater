@@ -60,17 +60,22 @@ func (r *Router) handleAddAlias(w http.ResponseWriter, req *http.Request) {
 		sourceVal = req.FormValue("source")
 	}
 
+	aliasVal = strings.TrimSpace(aliasVal)
+	if aliasVal == "" {
+		r.logger.Warn("add alias: empty alias", "artist_id", artistID)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alias is required"})
+		return
+	}
+
 	alias, err := r.artistService.AddAlias(req.Context(), artistID, aliasVal, sourceVal)
 	if err != nil {
-		switch {
-		case errors.Is(err, artist.ErrNotFound):
+		if errors.Is(err, artist.ErrNotFound) {
+			r.logger.Warn("add alias: artist not found", "artist_id", artistID)
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
-		case aliasVal == "":
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "alias is required"})
-		default:
-			r.logger.Error("adding alias", "artist_id", artistID, "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
 		}
+		r.logger.Error("adding alias", "artist_id", artistID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 	writeJSON(w, http.StatusCreated, alias)
@@ -86,6 +91,7 @@ func (r *Router) handleRemoveAlias(w http.ResponseWriter, req *http.Request) {
 
 	if err := r.artistService.RemoveAlias(req.Context(), aliasID); err != nil {
 		if errors.Is(err, artist.ErrAliasNotFound) {
+			r.logger.Warn("remove alias: not found", "alias_id", aliasID)
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "alias not found"})
 			return
 		}

@@ -121,11 +121,19 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		case "true", "1":
 			body["auth.providers.local.enabled"] = "true"
 		case "false", "0", "":
+			r.logger.Warn("rejecting settings update",
+				"key", "auth.providers.local.enabled",
+				"value", normalized,
+			)
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "local authentication cannot be disabled; it provides break-glass access if all other providers are misconfigured",
 			})
 			return
 		default:
+			r.logger.Warn("rejecting settings update",
+				"key", "auth.providers.local.enabled",
+				"value", normalized,
+			)
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "auth.providers.local.enabled must be \"true\"",
 			})

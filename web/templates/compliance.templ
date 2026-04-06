@@ -543,9 +543,34 @@ templ coverageChartData(data ComplianceSummaryData) {
 	<script>
 		(function() {
 			var el = document.getElementById('coverage-chart-data');
-			if (!el || typeof Chart === 'undefined') return;
+			if (!el) return;
 			var d;
 			try { d = JSON.parse(el.getAttribute('data-chart')); } catch(e) { return; }
+
+			// Populate the screen-reader summary before the visual chart so it
+			// is available even when Chart.js is not loaded (CSP, slow network).
+			(function() {
+				var sr = document.getElementById('coverage-chart-sr');
+				if (!sr || !d.labels || !d.labels.length) return;
+				var thumbLabel = d.thumb_label || 'Thumb';
+				var fanartLabel = d.fanart_label || 'Fanart';
+				var lines = ['Coverage by library:'];
+				for (var i = 0; i < d.labels.length; i++) {
+					var total = d.total[i] || 0;
+					if (total === 0) continue;
+					var pct = function(n) { return Math.round((n || 0) / total * 100) + '%'; };
+					lines.push(
+						d.labels[i] + ': Metadata ' + pct(d.metadata[i]) +
+						', ' + thumbLabel + ' ' + pct(d.thumb[i]) +
+						', ' + fanartLabel + ' ' + pct(d.fanart[i]) +
+						', MBID ' + pct(d.mbid[i]) +
+						' (' + total + ' artists).'
+					);
+				}
+				sr.textContent = lines.join(' ');
+			})();
+
+			if (typeof Chart === 'undefined') return;
 			var ctx = document.getElementById('coverage-chart');
 			if (!ctx) return;
 
@@ -584,28 +609,6 @@ templ coverageChartData(data ComplianceSummaryData) {
 					}
 				}
 			});
-
-			// Populate the screen-reader summary for the coverage chart.
-			(function() {
-				var sr = document.getElementById('coverage-chart-sr');
-				if (!sr || !d.labels || !d.labels.length) return;
-				var thumbLabel = d.thumb_label || 'Thumb';
-				var fanartLabel = d.fanart_label || 'Fanart';
-				var lines = ['Coverage by library:'];
-				for (var i = 0; i < d.labels.length; i++) {
-					var total = d.total[i] || 0;
-					if (total === 0) continue;
-					var pct = function(n) { return Math.round(n / total * 100) + '%'; };
-					lines.push(
-						d.labels[i] + ': Metadata ' + pct(d.metadata[i]) +
-						', ' + thumbLabel + ' ' + pct(d.thumb[i]) +
-						', ' + fanartLabel + ' ' + pct(d.fanart[i]) +
-						', MBID ' + pct(d.mbid[i]) +
-						' (' + total + ' artists).'
-					);
-				}
-				sr.textContent = lines.join(' ');
-			})();
 		})();
 	</script>
 }

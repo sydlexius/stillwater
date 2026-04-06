@@ -408,7 +408,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 													class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 													hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
 													hx-swap="none"
-													hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Remove failed: ' + event.detail.xhr.responseText);"
+													hx-on::after-request="if(event.detail.successful) window.location.reload(); else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Remove failed: ' + (msg || event.detail.xhr.responseText)); }"
 												>
 													@components.IconTrash("h-3.5 w-3.5")
 													{ t(ctx, "common.remove") }
@@ -424,7 +424,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								class="flex items-center gap-2"
 								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
 								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { alert('Add alias failed: ' + event.detail.xhr.responseText); }"
+								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Add alias failed: ' + (msg || event.detail.xhr.responseText)); }"
 							>
 								<input
 									name="alias"

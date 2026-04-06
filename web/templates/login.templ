@@ -284,13 +284,15 @@ templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
 	}
 }
 
-// oidcButtonLabel returns the display name for the OIDC sign-in button.
-// Falls back to the i18n default when the configured display name is empty.
+// oidcButtonLabel returns the localised CTA for the OIDC sign-in button.
+// When a display name is configured it returns "Sign in with <name>"; otherwise
+// it falls back to "Sign in with OIDC".
 func oidcButtonLabel(ctx context.Context, displayName string) string {
-	if name := strings.TrimSpace(displayName); name != "" {
-		return name
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = "OIDC"
 	}
-	return t(ctx, "login.sign_in_with_sso")
+	return tf(ctx, "login.sign_in_with_provider", name)
 }
 
 // hasFederatedProvider reports whether any non-local provider is in the list.

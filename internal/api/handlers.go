@@ -564,7 +564,9 @@ func (r *Router) enabledAuthProviders(ctx context.Context) []auth.Authenticator 
 	if r.getBoolSetting(ctx, "auth.providers.jellyfin.enabled", false) {
 		providers = append(providers, syntheticProvider{providerType: "jellyfin"})
 	}
-	if r.getBoolSetting(ctx, "auth.providers.oidc.enabled", false) {
+	if r.getBoolSetting(ctx, "auth.providers.oidc.enabled", false) &&
+		r.getStringSetting(ctx, "auth.providers.oidc.issuer_url", "") != "" &&
+		r.getStringSetting(ctx, "auth.providers.oidc.client_id", "") != "" {
 		providers = append(providers, syntheticProvider{providerType: "oidc"})
 	}
 
