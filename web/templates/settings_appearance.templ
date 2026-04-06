@@ -39,7 +39,7 @@ type AppearancePrefsData struct {
 	LetterSpacing  string // "normal" | "wide" | "extra-wide"
 	FontSize       string // "small" | "medium" | "large"
 	LiteMode       string // "off" | "on" | "auto"
-	PageSize       int    // 10-500; 0 means use default (50)
+	PageSize       int    // Validated page size in the range 10-500; defaults to 50.
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -331,7 +331,7 @@ templ appearanceScript() {
 			};
 
 			// Save the page_size preference. Unlike segmented controls this is a
-			// plain select element so it gets its own save helper.
+			// standalone numeric input, so it gets its own save helper.
 			window.swSavePageSizePref = function (value) {
 				swSaveAppearancePref('page_size', value);
 			};

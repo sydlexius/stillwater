@@ -118,7 +118,7 @@ func (h *HistoryService) GetByID(ctx context.Context, id string) (*MetadataChang
 
 // List returns paginated metadata changes for the given artist, ordered by
 // most recent first. The total count is returned alongside the records.
-// Limit must be between 1 and 200; offset must be non-negative.
+// Limit must be between 1 and 500; offset must be non-negative.
 func (h *HistoryService) List(ctx context.Context, artistID string, limit, offset int) ([]MetadataChange, int, error) {
 	if artistID == "" {
 		return nil, 0, fmt.Errorf("artist_id is required")

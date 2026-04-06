@@ -54,14 +54,12 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				// Marker element read by the setup script below to auto-open the crop
 				// modal once Cropper.js is ready. The src/type are passed via data
 				// attributes to avoid inline Go string interpolation inside <script>.
-				if data.SelectedType == "fanart" && data.SelectedIndex >= 0 {
-					<div
-						id="auto-crop-trigger"
-						class="hidden"
-						data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", assets.BasePath, data.Artist.ID, data.SelectedIndex) }
-						data-type={ data.SelectedType }
-					></div>
-				} else {
+				//
+				// Indexed fanart is intentionally excluded: the crop save endpoint only
+				// carries the image type (no slot index), so auto-opening crop for
+				// /fanart/{index}/file would save the result to the primary fanart
+				// instead of the selected slot.
+				if data.SelectedType != "fanart" || data.SelectedIndex < 0 {
 					<div
 						id="auto-crop-trigger"
 						class="hidden"

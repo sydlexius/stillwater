@@ -19,7 +19,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			img.ImageTermFor("thumb", profileName),
 			t(ctx, "image.format_square"),
 			boolToCount(a.ThumbExists),
-			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=thumb&fetch=1", artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=thumb&fetch=1", basePath, artistID)),
 		) {
 			if a.ThumbExists {
 				<div class="flex flex-col sm:flex-row gap-6">
@@ -43,7 +43,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 					</div>
 				</div>
 			} else {
-				@emptyState(artistID, "thumb", img.ImageTermFor("thumb", profileName))
+				@emptyState(basePath, artistID, "thumb", img.ImageTermFor("thumb", profileName))
 			}
 		}
 
@@ -52,7 +52,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			img.ImageTermFor("fanart", profileName),
 			t(ctx, "image.format_widescreen"),
 			a.FanartCount,
-			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=fanart&fetch=1", artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=fanart&fetch=1", basePath, artistID)),
 		) {
 			if a.FanartCount > 0 {
 				<div
@@ -63,7 +63,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 					<p class="text-sm text-gray-400 italic">{ t(ctx, "image.loading_gallery") }</p>
 				</div>
 			} else {
-				@emptyState(artistID, "fanart", img.ImageTermFor("fanart", profileName))
+				@emptyState(basePath, artistID, "fanart", img.ImageTermFor("fanart", profileName))
 			}
 		}
 
@@ -72,7 +72,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			img.ImageTermFor("logo", profileName),
 			t(ctx, "image.format_transparent_png"),
 			boolToCount(a.LogoExists),
-			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=logo&fetch=1", artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=logo&fetch=1", basePath, artistID)),
 		) {
 			if a.LogoExists {
 				<div class="flex flex-col sm:flex-row gap-4">
@@ -92,7 +92,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 					></div>
 				</div>
 			} else {
-				@emptyState(artistID, "logo", img.ImageTermFor("logo", profileName))
+				@emptyState(basePath, artistID, "logo", img.ImageTermFor("logo", profileName))
 			}
 		}
 
@@ -101,7 +101,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			img.ImageTermFor("banner", profileName),
 			t(ctx, "image.format_wide"),
 			boolToCount(a.BannerExists),
-			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=banner&fetch=1", artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=banner&fetch=1", basePath, artistID)),
 		) {
 			if a.BannerExists {
 				<div class="space-y-2">
@@ -121,7 +121,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 					></div>
 				</div>
 			} else {
-				@emptyState(artistID, "banner", img.ImageTermFor("banner", profileName))
+				@emptyState(basePath, artistID, "banner", img.ImageTermFor("banner", profileName))
 			}
 		}
 		// Lightbox overlay for full-size image viewing.
@@ -295,28 +295,19 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 		>
 			@components.IconArrowUpTray("w-5 h-5")
 		</a>
-		// Crop (navigates to image management page with crop modal auto-opened)
-		// For indexed types (fanart index >= 0), pass the index so the target page
-		// opens the correct image rather than the primary.
-		if index >= 0 {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1&index=%d", basePath, artistID, imageType, index)) }
-				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-				title={ t(ctx, "common.crop") }
-				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
-			>
-				@components.IconScissors("w-5 h-5")
-			</a>
-		} else {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)) }
-				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-				title={ t(ctx, "common.crop") }
-				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
-			>
-				@components.IconScissors("w-5 h-5")
-			</a>
-		}
+		// Crop (navigates to image management page with crop modal auto-opened).
+		// Always targets the primary image for the selected type because the crop
+		// save endpoint is slot-unaware -- it only accepts {type, image_data, coords}
+		// with no index field. Passing an index here would open an indexed fanart in
+		// the editor but silently save the result to the primary slot.
+		<a
+			href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)) }
+			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+			title={ t(ctx, "common.crop") }
+			aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
+		>
+			@components.IconScissors("w-5 h-5")
+		</a>
 		// Trim (logo only -- removes transparent edges)
 		if imageType == "logo" {
 			<button
@@ -365,10 +356,10 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 
 // emptyState renders a dashed-border placeholder prompting the user to upload
 // or fetch an image of the given type.
-templ emptyState(artistID string, imageType string, typeName string) {
+templ emptyState(basePath string, artistID string, imageType string, typeName string) {
 	<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg flex items-center justify-center p-8">
 		<a
-			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+			href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath, artistID, imageType)) }
 			class="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
 		>
 			@components.IconPhoto("w-8 h-8")

@@ -50,9 +50,9 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefPageSize, "50", got)
 	}
 
-	// Verify no extra keys beyond defaults + page_size.
-	if len(prefs) != len(preferenceDefaults)+1 {
-		t.Errorf("expected %d keys, got %d", len(preferenceDefaults)+1, len(prefs))
+	// Verify the wire contract returns exactly 13 keys.
+	if len(prefs) != 13 {
+		t.Errorf("expected 13 keys, got %d", len(prefs))
 	}
 }
 

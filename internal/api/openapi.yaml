@@ -4296,6 +4296,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   theme:
                     type: string
@@ -4347,6 +4348,7 @@ paths:
                     description: Whether browser notifications are enabled.
                   page_size:
                     type: string
+                    pattern: "^(?:[1-9][0-9]|[1-4][0-9]{2}|500)$"
                     description: Number of items per page (integer 10-500 as a string).
                     example: "50"
                 required:
@@ -4408,6 +4410,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
@@ -4475,6 +4478,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:
