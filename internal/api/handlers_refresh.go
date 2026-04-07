@@ -408,6 +408,9 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
 			return
 		}
+
+		// Clearing provider IDs affects health scores (e.g. missing-MBID rules).
+		r.InvalidateHealthCache()
 	}
 
 	if isHTMXRequest(req) {
