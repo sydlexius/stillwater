@@ -278,6 +278,74 @@ templ GuidePage(assets AssetPaths) {
 					<li>{ t(ctx, "guide.nfo_item4") }</li>
 				</ul>
 			}
+			@guideSection("settings", t(ctx, "guide.section_settings")) {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					{ t(ctx, "guide.settings_desc") }
+				</p>
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_general_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_general_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_providers_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_providers_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_connections_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_connections_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_libraries_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_libraries_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_automation_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_automation_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_rules_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_rules_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_users_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_users_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_auth_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_auth_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_maintenance_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_maintenance_desc") }</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "guide.settings_logs_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "guide.settings_logs_desc") }</p>
+					</div>
+				</div>
+			}
+			@guideSection("automation", t(ctx, "guide.section_automation")) {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					{ t(ctx, "guide.automation_desc") }
+				</p>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>{ t(ctx, "guide.automation_item1") }</li>
+					<li>{ t(ctx, "guide.automation_item2") }</li>
+					<li>{ t(ctx, "guide.automation_item3") }</li>
+					<li>{ t(ctx, "guide.automation_item4") }</li>
+				</ul>
+			}
+			@guideSection("api-keys", t(ctx, "guide.section_api_keys")) {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					{ t(ctx, "guide.apikeys_desc") }
+				</p>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>{ t(ctx, "guide.apikeys_item1") }</li>
+					<li>{ t(ctx, "guide.apikeys_item2") }</li>
+					<li>{ t(ctx, "guide.apikeys_item3") }</li>
+				</ul>
+			}
 		</div>
 	}
 }
