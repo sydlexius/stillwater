@@ -336,6 +336,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div class="relative flex-1 max-w-sm">
 					<input
+						id="artist-search"
 						type="search"
 						name="search"
 						value={ data.Search }
@@ -422,7 +423,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
 					})
 				</div>
-				<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+				<div id="view-toggle" class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
 							title={ t(ctx, "artists.view.table") }
