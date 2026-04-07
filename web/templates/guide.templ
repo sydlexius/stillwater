@@ -238,6 +238,34 @@ templ GuidePage(assets AssetPaths) {
 					<li>{ t(ctx, "guide.rules_item4") }</li>
 					<li>{ t(ctx, "guide.rules_item5") }</li>
 				</ul>
+				<!-- Rule engine details -->
+				<div class="space-y-3 mt-4">
+					<!-- Rule Types sub-section -->
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "guide.rules_types_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">{ t(ctx, "guide.rules_types_desc") }</p>
+						<ul class="list-disc list-inside text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+							<li>{ t(ctx, "guide.rules_type_nfo") }</li>
+							<li>{ t(ctx, "guide.rules_type_image") }</li>
+							<li>{ t(ctx, "guide.rules_type_metadata") }</li>
+						</ul>
+					</div>
+					<!-- Fix Actions sub-section -->
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "guide.rules_fixes_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">{ t(ctx, "guide.rules_fixes_desc") }</p>
+						<ul class="list-disc list-inside text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+							<li>{ t(ctx, "guide.rules_fix_nfo") }</li>
+							<li>{ t(ctx, "guide.rules_fix_image") }</li>
+							<li>{ t(ctx, "guide.rules_fix_metadata") }</li>
+						</ul>
+					</div>
+					<!-- Notifications sub-section -->
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "guide.rules_notifications_title") }</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "guide.rules_notifications_desc") }</p>
+					</div>
+				</div>
 			}
 			@guideSection("nfo-files", t(ctx, "guide.section_nfo_files")) {
 				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
