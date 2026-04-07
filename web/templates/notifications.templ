@@ -196,7 +196,7 @@ templ notificationsTableContent(data NotificationsData) {
 			{ t(ctx, "notifications.edit_rules") }
 		</a>
 		<a
-			href={ templ.SafeURL(notifExportURL(data)) }
+			href={ templ.SafeURL(basePath() + notifExportURL(data)) }
 			aria-label={ t(ctx, "notifications.export_csv_aria") }
 			class="inline-flex items-center gap-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 		>
@@ -330,7 +330,7 @@ templ notificationsGroupedContent(data NotificationsData) {
 			{ t(ctx, "notifications.edit_rules") }
 		</a>
 		<a
-			href={ templ.SafeURL(notifExportURL(data)) }
+			href={ templ.SafeURL(basePath() + notifExportURL(data)) }
 			aria-label={ t(ctx, "notifications.export_csv_aria") }
 			class="inline-flex items-center gap-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 		>
@@ -767,7 +767,7 @@ templ candidateScript() {
 	// ---- Plural helper ----
 	function pluralize(count, one, other) {
 		var tpl = count === 1 ? one : other;
-		return tpl.replace('{count}', count);
+		return tpl.replaceAll('{count}', String(count));
 	}
 
 	// ---- Bulk selection ----

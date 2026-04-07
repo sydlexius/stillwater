@@ -115,7 +115,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 				function pluralize(count, one, other) {
 					var tpl = count === 1 ? one : other;
-					return tpl.replace('{count}', count);
+					return tpl.replaceAll('{count}', String(count));
 				}
 
 				// Batch select/delete

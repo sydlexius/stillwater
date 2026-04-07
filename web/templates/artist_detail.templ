@@ -852,7 +852,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 				function pluralize(count, one, other) {
 					var tpl = count === 1 ? one : other;
-					return tpl.replace('{count}', count);
+					return tpl.replaceAll('{count}', String(count));
 				}
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
