@@ -266,20 +266,25 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									@components.IconArrowPath("h-4 w-4 text-gray-400")
 									{ t(ctx, "artist.refresh_metadata") }
 								</button>
-								if data.Artist.MusicBrainzID != "" {
-									<button
-										type="button"
-										role="menuitem"
-										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
-										hx-target="#refresh-panel"
-										hx-swap="innerHTML"
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
+									hx-target="#refresh-panel"
+									hx-swap="innerHTML"
+									if data.Artist.MusicBrainzID != "" {
 										hx-confirm={ t(ctx, "artist.reidentify_confirm") }
-									>
-										@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
+									}
+									hx-indicator="#reidentify-spinner"
+								>
+									@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
+									if data.Artist.MusicBrainzID != "" {
 										{ t(ctx, "artist.reidentify") }
-									</button>
-								}
+									} else {
+										{ t(ctx, "artist.identify") }
+									}
+								</button>
 								<a
 									href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?fetch=1", assets.BasePath, data.Artist.ID)) }
 									role="menuitem"
@@ -344,6 +349,14 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				>{ t(ctx, "artist.running_rules") }</span>
 				<span
 					id="refresh-spinner"
+					class={
+						"htmx-indicator text-sm",
+						templ.KV("text-gray-500", !data.Artist.FanartExists),
+						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+					}
+				>{ t(ctx, "artist.fetching_metadata") }</span>
+				<span
+					id="reidentify-spinner"
 					class={
 						"htmx-indicator text-sm",
 						templ.KV("text-gray-500", !data.Artist.FanartExists),

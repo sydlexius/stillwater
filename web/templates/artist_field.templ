@@ -53,7 +53,7 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 	if len(providers) > 0 {
 		<button
 			type="button"
-			class="inline-flex items-center gap-1 p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
+			class="inline-flex items-center gap-1 p-0.5 text-gray-700 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
 			title={ t(ctx, "artist.fetch_from_providers") }
 			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/providers" }
 			hx-target="#field-provider-modal-body"
@@ -100,7 +100,7 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 		// Direct edit button (pencil icon)
 		<button
 			type="button"
-			class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+			class="inline-flex items-center justify-center rounded p-0.5 text-gray-700 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
 			title={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
 			aria-label={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
 			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
@@ -166,7 +166,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 		if a.Biography != "" {
 			<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ a.Biography }</p>
 		} else {
-			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_biography") }</p>
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "artist.no_biography") }</p>
 		}
 	</div>
 }
@@ -195,7 +195,7 @@ templ biographyEdit(a *artist.Artist) {
 
 templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colorClass string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
-		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+		<h3 class="text-xs font-medium uppercase text-gray-700 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
 			@fieldActions(a.ID, field, len(tags) > 0, providers)
 		</h3>
@@ -208,7 +208,7 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 				}
 			</div>
 		} else {
-			<p class="text-sm text-gray-400 italic">{ t(ctx, "common.none_set") }</p>
+			<p class="text-sm text-gray-600 dark:text-gray-400 italic">{ t(ctx, "common.none_set") }</p>
 		}
 	</div>
 }
@@ -239,14 +239,14 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
 
 templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
-		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
 			{ label }
 			@fieldActions(a.ID, field, value != "", providers)
 		</dt>
 		if value != "" {
 			<dd class="font-medium">{ value }</dd>
 		} else {
-			<dd class="text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
+			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
 		}
 	</div>
 }
@@ -294,7 +294,7 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 // The edit/clear/fetch actions are the same as for other detail fields.
 templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
-		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
 			{ label }
 			@fieldActions(a.ID, field, value != "", providers)
 		</dt>
@@ -312,7 +312,7 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 				<dd class="font-medium font-mono text-xs break-all">{ value }</dd>
 			}
 		} else {
-			<dd class="text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
+			<dd class="text-gray-500 dark:text-gray-400 italic text-xs">{ t(ctx, "common.not_set") }</dd>
 		}
 	</div>
 }

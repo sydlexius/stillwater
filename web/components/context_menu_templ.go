@@ -89,7 +89,7 @@ func ContextMenu(id string, compact bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 = []any{"inline-flex items-center justify-center rounded transition-colors",
-			"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200",
+			"text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100",
 			"hover:bg-gray-100 dark:hover:bg-gray-700",
 			templ.KV("p-0.5", compact),
 			templ.KV("p-1", !compact),
