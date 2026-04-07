@@ -600,6 +600,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						body: JSON.stringify({"onboarding.completed": "true"})
 					}).then(function(resp) {
 						if (!resp.ok) throw new Error('HTTP ' + resp.status);
+						localStorage.setItem('tour.pending', 'true');
 						window.location.href = basePath + '/';
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');

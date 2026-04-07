@@ -19,6 +19,7 @@ type AssetPaths struct {
 	FilterFlyoutJS string
 	DriverJS       string
 	DriverCSS      string
+	TourJS         string
 	SSEJS          string
 	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
@@ -132,6 +133,7 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.FilterFlyoutJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<script src={ assets.DriverJS }></script>
+			<script src={ assets.TourJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
 				// -- Toast Manager -----------------------------------------------
