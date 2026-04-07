@@ -221,8 +221,5 @@ func (c *Config) validate() error {
 		}
 	}
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
-	if c.Server.BasePath == "" {
-		c.Server.BasePath = ""
-	}
 	return nil
 }
