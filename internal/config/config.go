@@ -314,7 +314,7 @@ func (c *Config) validateACME() error {
 
 		// Let's Encrypt does not issue IP certificates; a capable CA is required.
 		if c.ACME.CA == "letsencrypt" || c.ACME.CA == "" {
-			return fmt.Errorf("IP certificates require SW_ACME_CA=zerossl (or a custom CA URL); Let's Encrypt does not issue IP address certificates")
+			return fmt.Errorf("IP certificates require SW_ACME_CA=zerossl (or a custom CA URL). Let's Encrypt does not issue IP address certificates")
 		}
 	}
 

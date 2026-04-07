@@ -562,10 +562,11 @@ func run() error {
 	}()
 
 	// Start ACME certificate management and port-80 challenge server when active.
+	var acmeHTTPSrv *http.Server
 	if acmeMgr != nil {
 		acmeMgr.Start(ctx)
 
-		httpSrv := &http.Server{
+		acmeHTTPSrv = &http.Server{
 			Addr:         ":80",
 			Handler:      acmeMgr.ChallengeHandler(),
 			ReadTimeout:  15 * time.Second,
@@ -574,14 +575,9 @@ func run() error {
 		}
 		go func() {
 			logger.Info("acme: starting HTTP challenge listener", slog.String("addr", ":80"))
-			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := acmeHTTPSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Warn("acme: HTTP challenge listener stopped", slog.Any("error", err))
 			}
-		}()
-		defer func() {
-			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutCancel()
-			_ = httpSrv.Shutdown(shutCtx)
 		}()
 	}
 
@@ -595,6 +591,15 @@ func run() error {
 	defer cancel()
 
 	srvErr := srv.Shutdown(shutdownCtx)
+
+	// Shut down the ACME HTTP challenge server if it was started.
+	if acmeHTTPSrv != nil {
+		acmeCtx, acmeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer acmeCancel()
+		if err := acmeHTTPSrv.Shutdown(acmeCtx); err != nil {
+			logger.Warn("acme: HTTP challenge listener shutdown error", slog.Any("error", err))
+		}
+	}
 
 	// Now stop the scanner -- no new Run() calls can arrive.
 	scannerService.Shutdown()

@@ -552,7 +552,10 @@ func (m *Manager) decryptAccountKey(data []byte) (*ecdsa.PrivateKey, error) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// directoryURL maps the CA name to an ACME directory URL.
+// directoryURL returns the ACME directory URL for the configured CA.
+// Both "letsencrypt" and the empty string default to Let's Encrypt's directory.
+// "zerossl" returns ZeroSSL's directory. Any other non-empty value is returned
+// as-is and treated as a custom ACME directory URL.
 func (m *Manager) directoryURL() string {
 	switch m.cfg.CA {
 	case "zerossl":
@@ -634,7 +637,12 @@ func (s *challengeStore) handler(next http.Handler) http.Handler {
 			s.mu.RUnlock()
 			if ok {
 				w.Header().Set("Content-Type", "text/plain")
-				_, _ = w.Write([]byte(keyAuth))
+				w.WriteHeader(http.StatusOK)
+				if _, err := w.Write([]byte(keyAuth)); err != nil {
+					// The connection was lost after headers were sent; the ACME
+					// verifier will retry. Nothing further can be sent.
+					return
+				}
 				return
 			}
 		}

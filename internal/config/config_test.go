@@ -390,9 +390,3 @@ func TestIsPrivateIP(t *testing.T) {
 		}
 	}
 }
-
-func parseTestIP(addr string) interface{ String() string } {
-	// Return the net.IP directly -- this helper just avoids importing "net"
-	// in the test at package level when it's already in the config package.
-	return nil
-}
