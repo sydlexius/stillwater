@@ -134,6 +134,7 @@ templ Sidebar(data SidebarData) {
 								templ.KV("hidden", !data.ShowViolations),
 							}
 							data-path="/reports/compliance"
+							data-query="status=non_compliant"
 							aria-label={ t(ctx, "nav.open_violations") }
 						>
 							<!-- Exclamation triangle icon -->

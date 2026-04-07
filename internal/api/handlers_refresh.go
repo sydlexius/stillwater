@@ -148,6 +148,10 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.artistService.Update(req.Context(), a); err != nil {
+		r.logger.Warn("failed to store provider ID",
+			"artist_id", a.ID,
+			"error", err,
+		)
 		writeError(w, req, http.StatusInternalServerError, "failed to store provider ID")
 		return
 	}
@@ -397,6 +401,10 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 		a.LastFMFetchedAt = nil
 
 		if err := r.artistService.Update(req.Context(), a); err != nil {
+			r.logger.Warn("failed to clear provider IDs",
+				"artist_id", a.ID,
+				"error", err,
+			)
 			writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
 			return
 		}
