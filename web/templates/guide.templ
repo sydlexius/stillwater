@@ -88,6 +88,8 @@ templ GuidePage(assets AssetPaths) {
 					<li>{ t(ctx, "guide.scanner_exclusions_item1") }</li>
 					<li>{ t(ctx, "guide.scanner_exclusions_item2") }</li>
 					<li>{ t(ctx, "guide.scanner_exclusions_item3") }</li>
+					<li>{ t(ctx, "guide.scanner_item_fs_scan") }</li>
+					<li>{ t(ctx, "guide.scanner_item_conn_import") }</li>
 				</ul>
 			}
 			@guideSection("platform-profiles", t(ctx, "guide.section_platform_profiles")) {
@@ -146,6 +148,10 @@ templ GuidePage(assets AssetPaths) {
 					@guideProviderRow("Discogs", t(ctx, "guide.provider_key_required"), t(ctx, "guide.provider_discogs_desc"))
 					@guideProviderRow("Wikidata", t(ctx, "guide.provider_no_key"), t(ctx, "guide.provider_wikidata_desc"))
 					@guideProviderRow("Deezer", t(ctx, "guide.provider_no_key"), t(ctx, "guide.provider_deezer_desc"))
+					@guideProviderRow("Wikipedia", t(ctx, "guide.provider_no_key"), t(ctx, "guide.provider_wikipedia_desc"))
+					@guideProviderRow("Genius", t(ctx, "guide.provider_key_required"), t(ctx, "guide.provider_genius_desc"))
+					@guideProviderRow("Spotify", t(ctx, "guide.provider_key_required"), t(ctx, "guide.provider_spotify_desc"))
+					@guideProviderRow("DuckDuckGo", t(ctx, "guide.provider_no_key"), t(ctx, "guide.provider_duckduckgo_desc"))
 				</div>
 			}
 			@guideSection("images", t(ctx, "guide.section_images")) {
