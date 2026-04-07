@@ -572,20 +572,26 @@ func run() error {
 		go watcherService.Start(ctx)
 	}
 
+	// If ACME mode is active, start the HTTP-01 challenge listener on :80 as an
+	// independent goroutine at the same level as the main server. Errors here
+	// are fatal because without port 80 ACME certificate provisioning cannot work.
+	if acmeHTTPSrv != nil {
+		go func() {
+			if serveErr := acmeHTTPSrv.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
+				logger.Error("ACME HTTP server error", "error", serveErr)
+				os.Exit(1)
+			}
+		}()
+	}
+
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
 		var err error
 		switch {
 		case acmeHTTPSrv != nil:
-			// Start the HTTP-01 challenge listener on :80. If it fails to bind
-			// (e.g., port 80 already in use), ACME certificate provisioning
-			// will not work, so treat this as fatal.
-			go func() {
-				if serveErr := acmeHTTPSrv.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
-					logger.Error("ACME HTTP server error", "error", serveErr)
-					os.Exit(1)
-				}
-			}()
+			// srv.TLSConfig is already set to acmeMgr.TLSConfig(); empty cert/key
+			// strings tell ListenAndServeTLS to use the TLSConfig on the server
+			// rather than loading certificate files from disk.
 			err = srv.ListenAndServeTLS("", "")
 		case cfg.TLS.CertFile != "":
 			err = srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
@@ -601,19 +607,21 @@ func run() error {
 	<-ctx.Done()
 	logger.Info("shutting down")
 
-	// Shut down the HTTP server first to stop accepting new requests and
-	// drain in-flight ones. This prevents new scan requests from racing
-	// with the scanner's WaitGroup during shutdown.
+	// Shut down the main HTTPS server first to stop accepting new requests and
+	// drain in-flight ones. This prevents new scan requests from racing with
+	// the scanner's WaitGroup during shutdown.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	srvErr := srv.Shutdown(shutdownCtx)
+
+	// Shut down the ACME HTTP-01 challenge server after the main server so that
+	// any in-progress ACME challenges can complete before port 80 closes.
 	if acmeHTTPSrv != nil {
 		if err := acmeHTTPSrv.Shutdown(shutdownCtx); err != nil {
 			logger.Error("ACME HTTP server shutdown error", "error", err)
 		}
 	}
-
-	srvErr := srv.Shutdown(shutdownCtx)
 
 	// Now stop the scanner -- no new Run() calls can arrive.
 	scannerService.Shutdown()
