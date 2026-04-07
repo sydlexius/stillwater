@@ -118,7 +118,7 @@
       // present. This distinguishes "Reports" from "Open Violations" on the
       // same path prefix.
       if (isActive && linkQuery) {
-        isActive = search.indexOf(linkQuery) !== -1;
+        isActive = ('&' + search.substring(1) + '&').indexOf('&' + linkQuery + '&') !== -1;
       }
 
       if (isActive) {
