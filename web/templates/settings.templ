@@ -2402,12 +2402,14 @@ templ logViewerScript() {
 
 templ maintenanceScript() {
 	<script>
+		var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function updateMaintSchedule(sel) {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
 			var status = document.getElementById('maint-schedule-status');
-			fetch('/api/v1/settings/maintenance/schedule', {
+			fetch(bp + '/api/v1/settings/maintenance/schedule', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2432,7 +2434,7 @@ templ maintenanceScript() {
 		// Initialize dropdown from current DB value after maintenance status loads.
 		document.addEventListener('htmx:afterSettle', function(evt) {
 			if (evt.detail && evt.detail.target && evt.detail.target.id === 'maintenance-status') {
-				fetch('/api/v1/settings/maintenance/status', {
+				fetch(bp + '/api/v1/settings/maintenance/status', {
 					headers: { 'Accept': 'application/json' }
 				}).then(function(r) { return r.json(); })
 				  .then(function(data) {
@@ -2465,7 +2467,7 @@ templ maintenanceScript() {
 			settings['backup_retention_count'] = retention.toString();
 			settings['backup_max_age_days'] = maxAge.toString();
 
-			fetch('/api/v1/settings', {
+			fetch(bp + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2499,11 +2501,12 @@ templ settingsExportScript() {
 			if (btn) btn.disabled = true;
 			if (spinner) spinner.classList.remove('hidden');
 
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
 
-			fetch('/api/v1/settings/export', {
+			fetch(bp + '/api/v1/settings/export', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',
@@ -2541,10 +2544,11 @@ templ autoFetchToggleScript() {
 		function toggleAutoFetch(btn) {
 			var isOn = btn.getAttribute('aria-checked') === 'true';
 			var newVal = !isOn;
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings', {
+			fetch(bp + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2587,10 +2591,11 @@ templ symlinkToggleScript() {
 			var isOn = btn.getAttribute('aria-checked') === 'true';
 			var newVal = !isOn;
 			var profileId = btn.getAttribute('data-profile-id');
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/platforms/' + profileId, {
+			fetch(bp + '/api/v1/platforms/' + profileId, {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2695,13 +2700,14 @@ templ profileNamingEditorScript() {
 				payload[types[i]] = names;
 			}
 
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
 			var status = document.getElementById('naming-save-status');
 			status.textContent = 'Saving...';
 
-			fetch('/api/v1/platforms/' + profileId, {
+			fetch(bp + '/api/v1/platforms/' + profileId, {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2953,11 +2959,13 @@ templ settingsLibraryScript() {
 			refreshSettingsLibraryList();
 		}
 
+		var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function refreshSettingsLibraryList() {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			var sourceLogos = {emby: "/static/img/logos/emby-128.png", jellyfin: "/static/img/logos/jellyfin.svg", lidarr: "/static/img/logos/lidarr.svg"};
+			var sourceLogos = {emby: bp + "/static/img/logos/emby-128.png", jellyfin: bp + "/static/img/logos/jellyfin.svg", lidarr: bp + "/static/img/logos/lidarr.svg"};
 			var sourceNames = {emby: "Emby", jellyfin: "Jellyfin", lidarr: "Lidarr"};
-			fetch("/api/v1/libraries", {
+			fetch(bp + "/api/v1/libraries", {
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) { return res.json(); })
 			.then(function(libs) {
@@ -3051,7 +3059,7 @@ templ settingsLibraryScript() {
 			var btn = document.getElementById(operation + '-btn-' + libID);
 			var spinner = document.getElementById(operation + '-spinner-' + libID);
 			var label = document.getElementById(operation + '-label-' + libID);
-			var endpoint = "/api/v1/connections/" + connID + "/libraries/" + libID + "/" + operation;
+			var endpoint = bp + "/api/v1/connections/" + connID + "/libraries/" + libID + "/" + operation;
 
 			fetch(endpoint, {
 				method: "POST",
@@ -3104,7 +3112,7 @@ templ settingsLibraryScript() {
 				if (spinner) spinner.classList.add('hidden');
 				if (label) label.textContent = operation === 'populate' ? 'Re-sync Artists' : 'Scan Library';
 			}
-			pollAsyncStatus("/api/v1/libraries/" + libID + "/operation/status", {
+			pollAsyncStatus(bp + "/api/v1/libraries/" + libID + "/operation/status", {
 				onData: function(data) {
 					if (data.status === 'completed') {
 						resetUI();
@@ -3139,7 +3147,7 @@ templ settingsLibraryScript() {
 
 		function updateLibraryFSMode(id, mode) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			fetch("/api/v1/libraries/" + id, {
+			fetch(bp + "/api/v1/libraries/" + id, {
 				method: "PUT",
 				headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 				body: JSON.stringify({fs_watch: mode})
@@ -3158,7 +3166,7 @@ templ settingsLibraryScript() {
 
 		function updateLibraryPollInterval(id, interval) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			fetch("/api/v1/libraries/" + id, {
+			fetch(bp + "/api/v1/libraries/" + id, {
 				method: "PUT",
 				headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 				body: JSON.stringify({fs_poll_interval: interval})
@@ -3176,7 +3184,7 @@ templ settingsLibraryScript() {
 		function settingsDeleteLibrary_click(id) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 			function doDelete(deleteArtists) {
-				var url = "/api/v1/libraries/" + id;
+				var url = bp + "/api/v1/libraries/" + id;
 				if (deleteArtists) { url += "?deleteArtists=true"; }
 				fetch(url, {
 					method: "DELETE",
@@ -3192,7 +3200,7 @@ templ settingsLibraryScript() {
 				});
 			}
 
-			fetch("/api/v1/libraries/" + id, {
+			fetch(bp + "/api/v1/libraries/" + id, {
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) {
 				if (!res.ok) {
@@ -3230,11 +3238,13 @@ templ settingsLibraryScript() {
 
 templ settingsConnectionScript() {
 	<script>
+		var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function settingsDeleteConnection_click(id) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 
 			function doDelete(params) {
-				var url = "/api/v1/connections/" + id;
+				var url = bp + "/api/v1/connections/" + id;
 				if (params) { url += "?" + params; }
 				fetch(url, {
 					method: "DELETE",
@@ -3247,7 +3257,7 @@ templ settingsConnectionScript() {
 				});
 			}
 
-			fetch("/api/v1/connections/" + id, {
+			fetch(bp + "/api/v1/connections/" + id, {
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) {
 				if (!res.ok) {
@@ -3338,10 +3348,11 @@ templ connectionFeatureToggleScript() {
 				knob.classList.add('translate-x-0');
 			}
 
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 			var body = {};
 			body['feature_' + feature] = newVal;
-			fetch('/api/v1/connections/' + connID + '/features', {
+			fetch(bp + '/api/v1/connections/' + connID + '/features', {
 				method: 'PATCH',
 				headers: {
 					'Content-Type': 'application/json',
@@ -4757,12 +4768,13 @@ script toggleRuleConfig(ruleID string) {
 templ badgeSettingScript() {
 	<script>
 		function updateSetting(key, checked) {
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
 			var body = {};
 			body[key] = checked ? "true" : "false";
-			fetch('/api/v1/settings', {
+			fetch(bp + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -4799,10 +4811,11 @@ templ badgeSettingScript() {
 templ ruleScheduleScript() {
 	<script>
 		function updateRuleSchedule(value) {
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings', {
+			fetch(bp + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -4816,11 +4829,13 @@ templ ruleScheduleScript() {
 
 templ ruleToggleScript() {
 	<script>
+		var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function patchRule(ruleID, changes) {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/rules/' + ruleID, {
+			fetch(bp + '/api/v1/rules/' + ruleID, {
 				method: 'PUT',
 				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 				body: JSON.stringify(changes),
@@ -4873,7 +4888,7 @@ templ ruleToggleScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/rules/' + ruleID + '/run', {
+			fetch(bp + '/api/v1/rules/' + ruleID + '/run', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 				credentials: 'same-origin'
@@ -4892,7 +4907,7 @@ templ ruleToggleScript() {
 		}
 
 		function pollRuleStatus(btn, origText) {
-			pollAsyncStatus('/api/v1/rules/run-all/status', {
+			pollAsyncStatus(bp + '/api/v1/rules/run-all/status', {
 				onData: function(s) {
 					if (s.status === 'running') return false;
 					if (s.status === 'completed') {
@@ -5013,10 +5028,11 @@ templ apiTokenScript() {
 				alert('Select at least one scope');
 				return;
 			}
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/auth/tokens', {
+			fetch(bp + '/api/v1/auth/tokens', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',

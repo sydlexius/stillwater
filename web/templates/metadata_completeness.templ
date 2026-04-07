@@ -36,7 +36,7 @@ templ MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) {
 							<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700">
 								<td class="py-1 pr-4">
 									<a
-										href={ templ.SafeURL("/artists/" + a.ID) }
+										href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
 										class="text-blue-600 dark:text-blue-400 hover:underline truncate block max-w-xs"
 									>{ a.Name }</a>
 								</td>

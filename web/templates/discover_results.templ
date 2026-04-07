@@ -117,7 +117,7 @@ script importSelectedLibraries(connID string) {
 			return res.json().then(function(data) {
 				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP {status})").replace("{status}", res.status));
 			});
 		}
 	}).catch(function() {
@@ -170,7 +170,7 @@ script importSelectedLibrariesOOBE(connID string) {
 			return res.json().then(function(data) {
 				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP {status})").replace("{status}", res.status));
 			});
 		}
 	}).catch(function() {

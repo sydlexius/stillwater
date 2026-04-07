@@ -375,8 +375,8 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 
 func importSelectedLibraries(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibraries_174f`,
-		Function: `function __templ_importSelectedLibraries_174f(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibraries_ba3e`,
+		Function: `function __templ_importSelectedLibraries_ba3e(connID){var form = document.getElementById("import-form-" + connID);
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
 	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
@@ -414,22 +414,22 @@ func importSelectedLibraries(connID string) templ.ComponentScript {
 			return res.json().then(function(data) {
 				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP {status})").replace("{status}", res.status));
 			});
 		}
 	}).catch(function() {
 		alert(form.dataset.alertNetwork || "Network error. Check your connection and try again.");
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibraries_174f`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_174f`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibraries_ba3e`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_ba3e`, connID),
 	}
 }
 
 func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibrariesOOBE_3588`,
-		Function: `function __templ_importSelectedLibrariesOOBE_3588(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibrariesOOBE_5c8c`,
+		Function: `function __templ_importSelectedLibrariesOOBE_5c8c(connID){var form = document.getElementById("import-form-" + connID);
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
 	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
@@ -473,7 +473,7 @@ func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 			return res.json().then(function(data) {
 				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP {status})").replace("{status}", res.status));
 			});
 		}
 	}).catch(function() {
@@ -483,8 +483,8 @@ func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 		form.replaceChildren(p);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_3588`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_3588`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_5c8c`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_5c8c`, connID),
 	}
 }
 

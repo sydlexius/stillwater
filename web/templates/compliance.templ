@@ -271,7 +271,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{Key: "actions", Label: "Actions"},
 					})
 					<a
-						href={ templ.SafeURL(complianceExportURL(data)) }
+						href={ templ.SafeURL(basePath() + complianceExportURL(data)) }
 						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>
 						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -755,7 +755,7 @@ templ runRulesScript() {
 					return false;
 				},
 				onHTTPError: function(status) {
-					showToast(((btn && btn.dataset.toastStatusHttpError) || 'Status check failed (HTTP %d)').replace('%d', status));
+					showToast(((btn && btn.dataset.toastStatusHttpError) || 'Status check failed (HTTP {status})').replace('{status}', status));
 					resetRuleButton();
 				},
 				onNetworkError: function() {
