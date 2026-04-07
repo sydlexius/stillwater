@@ -578,13 +578,13 @@ func run() error {
 				// quic-go has no ErrServerClosed equivalent, so we use ctx.Err()
 				// to distinguish graceful shutdown from unexpected startup failures.
 				if ctx.Err() == nil {
-					logger.Error("HTTP/3 server error", "error", err)
+					logger.Error("HTTP/3 server failed to start", "error", err)
 					os.Exit(1)
 				}
 			}
 		}()
 	} else if cfg.Server.HTTP3Enabled && !tlsEnabled {
-		logger.Warn("HTTP/3 is enabled but TLS cert/key are not configured; HTTP/3 will not start")
+		logger.Warn("HTTP/3 is enabled but TLS cert/key are not configured; set SW_TLS_CERT and SW_TLS_KEY to enable HTTP/3")
 	}
 
 	<-ctx.Done()
