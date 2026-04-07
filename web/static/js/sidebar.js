@@ -97,23 +97,56 @@
       pathname = '/';
     }
 
+    var search = window.location.search;
+    // Two-pass approach: first determine matches, then keep only the most
+    // specific one so parent prefix links don't highlight alongside children.
+    var matches = [];
+
     for (var i = 0; i < links.length; i++) {
       var link = links[i];
       var linkPath = link.getAttribute('data-path');
+      var linkQuery = link.getAttribute('data-query');
       var isActive = false;
 
       if (linkPath === '/') {
-        // Dashboard: exact match only (root).
         isActive = pathname === '/';
       } else {
-        // Other links: prefix match (e.g. /artists matches /artists/123).
         isActive = pathname === linkPath || pathname.indexOf(linkPath + '/') === 0;
       }
 
+      // When a link specifies data-query, require the query parameter is
+      // present. This distinguishes "Reports" from "Open Violations" on the
+      // same path prefix.
+      if (isActive && linkQuery) {
+        isActive = ('&' + search.substring(1) + '&').indexOf('&' + linkQuery + '&') !== -1;
+      }
+
       if (isActive) {
-        link.classList.add('sw-sidebar-link-active');
+        matches.push({ link: link, path: linkPath, query: linkQuery });
+      }
+    }
+
+    // When multiple links matched, keep only the most specific: prefer the
+    // longest data-path, and among equal paths prefer one with data-query.
+    var winner = null;
+    if (matches.length > 1) {
+      for (var j = 0; j < matches.length; j++) {
+        var m = matches[j];
+        if (!winner ||
+            m.path.length > winner.path.length ||
+            (m.path.length === winner.path.length && m.query)) {
+          winner = m;
+        }
+      }
+    } else if (matches.length === 1) {
+      winner = matches[0];
+    }
+
+    for (var k = 0; k < links.length; k++) {
+      if (winner && links[k] === winner.link) {
+        links[k].classList.add('sw-sidebar-link-active');
       } else {
-        link.classList.remove('sw-sidebar-link-active');
+        links[k].classList.remove('sw-sidebar-link-active');
       }
     }
   }

@@ -1,12 +1,12 @@
 meta {
-  name: Identify Artist (non-destructive)
+  name: Re-identify Artist (clear IDs)
   type: http
-  seq: 4
+  seq: 5
 }
 
 post {
   url: {{apiBase}}/artists/{{artistId}}/reidentify
-  body: none
+  body: formUrlEncoded
   auth: none
 }
 
@@ -14,13 +14,17 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+body:form-urlencoded {
+  clear_ids: true
+}
+
 tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
   });
 
-  test("should not mention clearing IDs", function() {
+  test("should confirm IDs were cleared", function() {
     var body = res.json();
-    expect(body.message).to.not.include("cleared");
+    expect(body.message).to.include("cleared");
   });
 }

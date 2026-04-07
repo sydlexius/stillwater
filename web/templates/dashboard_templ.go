@@ -1044,7 +1044,7 @@ func DashboardActivityRow(c artist.MetadataChangeWithArtist, basePath string) te
 			templ_7745c5c3_Var55 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<div class=\"group rounded-md px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors\"><div class=\"flex items-start justify-between gap-2\"><div class=\"flex-1 min-w-0\"><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<div class=\"group rounded-md px-2.5 py-2 bg-gray-50 dark:bg-gray-800/80 hover:bg-gray-100 dark:hover:bg-gray-700/90 transition-colors\"><div class=\"flex items-start justify-between gap-2\"><div class=\"flex-1 min-w-0\"><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1371,7 +1371,7 @@ func dashboardSourceBadgeClass(source string) string {
 	if source == "revert" {
 		return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
 	}
-	return "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+	return "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
 }
 
 // categoryChipClass returns Tailwind classes for a category filter chip.

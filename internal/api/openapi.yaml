@@ -7725,7 +7725,12 @@ paths:
   /artists/{id}/reidentify:
     post:
       tags: [Artists]
-      summary: Clear provider IDs and prompt re-identification
+      summary: Identify or re-identify an artist via MusicBrainz
+      description: >
+        Returns the disambiguation form so the user can link (or re-link)
+        a MusicBrainz entry. When clear_ids is true, all provider IDs are
+        wiped first (destructive "Re-identify" flow). Without it, existing
+        IDs are preserved (non-destructive "Identify" flow).
       operationId: reidentifyArtist
       parameters:
         - name: id
@@ -7733,9 +7738,23 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                clear_ids:
+                  type: string
+                  enum: ["true"]
+                  description: >
+                    When set to "true", clears all provider IDs and fetch
+                    timestamps before returning the disambiguation form.
+                    Omit for the non-destructive identify flow.
       responses:
         "200":
-          description: Provider IDs cleared, disambiguation required (returns HTML disambiguation form when HX-Request header is set)
+          description: Disambiguation form returned (provider IDs cleared only when clear_ids=true; returns HTML disambiguation form when HX-Request header is set)
           content:
             application/json:
               schema:

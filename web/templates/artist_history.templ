@@ -47,7 +47,7 @@ templ ArtistHistoryTab(data HistoryTabData) {
 				</div>
 			}
 			if data.Total > 0 {
-				<p id="history-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right">
+				<p id="history-showing-counter" class="text-xs text-gray-600 dark:text-gray-500 text-right">
 					{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 				</p>
 			}
@@ -82,7 +82,7 @@ templ ArtistHistoryMoreRows(data HistoryTabData) {
 		}
 	</div>
 	if data.Total > 0 {
-		<p id="history-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right">
+		<p id="history-showing-counter" hx-swap-oob="true" class="text-xs text-gray-600 dark:text-gray-500 text-right">
 			{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 		</p>
 	}
@@ -97,9 +97,9 @@ templ HistoryChangeRowFragment(c artist.MetadataChange) {
 
 // historyChangeRow renders a single metadata change entry in the timeline.
 templ historyChangeRow(c artist.MetadataChange) {
-	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-2">
+	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg bg-gray-50 dark:bg-gray-800/80">
 		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+			<div class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
 				<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
 					{ historyTimeAgo(ctx, c.CreatedAt) }
 				</time>
@@ -114,7 +114,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 					hx-target={ "#history-change-" + c.ID }
 					hx-swap="outerHTML"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
-					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>
 					{ t(ctx, "history.undo") }
@@ -123,7 +123,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 		</div>
 		<div class="mt-1 text-sm">
 			<span class="font-medium text-gray-800 dark:text-gray-200">{ historyFieldLabel(ctx, c.Field) }</span>
-			<span class="mx-1 text-gray-400">--</span>
+			<span class="mx-1 text-gray-600 dark:text-gray-400">--</span>
 			if c.OldValue == "" && c.NewValue != "" {
 				<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 120)) }</span>
 			} else if c.OldValue != "" && c.NewValue == "" {
@@ -132,7 +132,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 				<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
 				<span class="text-green-600 dark:text-green-400">{ historyTruncate(c.NewValue, 60) }</span>
 			} else {
-				<span class="text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
+				<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
 			}
 		</div>
 	</div>

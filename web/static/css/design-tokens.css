@@ -6,6 +6,59 @@
  * etc.) override tokens via data-* attributes on <html>.
  */
 
+/* -- Self-hosted fonts ---------------------------------------------------- */
+/* Inter: variable font covering all weights (100-900) and styles.           */
+/* Source: https://github.com/rsms/inter (SIL Open Font License 1.1)        */
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/InterVariable-Italic.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Atkinson Hyperlegible: four static files (regular, bold, italic, bold-italic). */
+/* Source: https://github.com/googlefonts/atkinson-hyperlegible (SIL OFL 1.1) */
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('../fonts/AtkinsonHyperlegible-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('../fonts/AtkinsonHyperlegible-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('../fonts/AtkinsonHyperlegible-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('../fonts/AtkinsonHyperlegible-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   /* -- Sidebar ------------------------------------------------------------ */
   --sw-sidebar-bg: #0f172a;
@@ -111,9 +164,11 @@
 [data-letter-spacing="extra-wide"] { letter-spacing: 0.05em; }
 
 /* -- Font family (set via data-font-family on <html>) --------------------- */
+/* The data attribute updates --sw-font-family; body picks it up.           */
 [data-font-family="system"] { --sw-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 [data-font-family="inter"] { --sw-font-family: 'Inter', -apple-system, sans-serif; }
 [data-font-family="atkinson"] { --sw-font-family: 'Atkinson Hyperlegible', -apple-system, sans-serif; }
+body { font-family: var(--sw-font-family); }
 
 /* -- Thumbnail sizes (set via data-thumbnail-size on <html>) -------------- */
 [data-thumbnail-size="small"] { --sw-thumb-size: 32px; --sw-thumb-grid-min: 140px; }
