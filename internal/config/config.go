@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ type Config struct {
 	Scanner    ScannerConfig    `yaml:"scanner"`
 	Backup     BackupConfig     `yaml:"backup"`
 	Logging    LoggingConfig    `yaml:"logging"`
+	TLS        TLSConfig        `yaml:"tls"`
+	ACME       ACMEConfig       `yaml:"acme"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -67,6 +70,34 @@ type LoggingConfig struct {
 	Format string `yaml:"format"` // SW_LOG_FORMAT
 }
 
+// TLSConfig holds manual TLS certificate settings.
+// When SW_TLS_CERT_FILE and SW_TLS_KEY_FILE are set, the server uses those
+// files for TLS. These are ignored when ACME is active.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file"` // SW_TLS_CERT_FILE
+	KeyFile  string `yaml:"key_file"`  // SW_TLS_KEY_FILE
+}
+
+// ACMEConfig holds ACME automatic certificate management settings.
+//
+// Supported CAs:
+//   - "letsencrypt" (default): https://acme-v02.api.letsencrypt.org/directory
+//   - "zerossl": https://acme.zerossl.com/v2/DV90  (requires EAB credentials)
+//   - any other value: treated as a custom ACME directory URL
+//
+// Domain-based certs (SW_ACME_DOMAIN) use the autocert package and HTTP-01
+// challenge. IP-based certs (SW_ACME_IP) use the raw ACME client with an
+// IP SAN; only ZeroSSL issues IP address certificates.
+type ACMEConfig struct {
+	CA        string `yaml:"ca"`          // SW_ACME_CA: "letsencrypt" | "zerossl" | custom URL
+	Domain    string `yaml:"domain"`      // SW_ACME_DOMAIN
+	Email     string `yaml:"email"`       // SW_ACME_EMAIL
+	CacheDir  string `yaml:"cache_dir"`   // SW_ACME_CACHE_DIR (default /data/acme-cache)
+	EABKeyID  string `yaml:"eab_key_id"`  // SW_ACME_EAB_KEY_ID  (ZeroSSL EAB key identifier)
+	EABMACKey string `yaml:"eab_mac_key"` // SW_ACME_EAB_MAC_KEY (ZeroSSL EAB MAC key, Base64URL)
+	IP        string `yaml:"ip"`          // SW_ACME_IP (public IP address for IP SAN cert)
+}
+
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
@@ -97,6 +128,10 @@ func Default() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		ACME: ACMEConfig{
+			CA:       "letsencrypt",
+			CacheDir: "/data/acme-cache",
 		},
 	}
 }
@@ -181,6 +216,33 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
 	}
+	if v := os.Getenv("SW_TLS_CERT_FILE"); v != "" {
+		c.TLS.CertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY_FILE"); v != "" {
+		c.TLS.KeyFile = v
+	}
+	if v := os.Getenv("SW_ACME_CA"); v != "" {
+		c.ACME.CA = v
+	}
+	if v := os.Getenv("SW_ACME_DOMAIN"); v != "" {
+		c.ACME.Domain = v
+	}
+	if v := os.Getenv("SW_ACME_EMAIL"); v != "" {
+		c.ACME.Email = v
+	}
+	if v := os.Getenv("SW_ACME_CACHE_DIR"); v != "" {
+		c.ACME.CacheDir = v
+	}
+	if v := os.Getenv("SW_ACME_EAB_KEY_ID"); v != "" {
+		c.ACME.EABKeyID = v
+	}
+	if v := os.Getenv("SW_ACME_EAB_MAC_KEY"); v != "" {
+		c.ACME.EABMACKey = v
+	}
+	if v := os.Getenv("SW_ACME_IP"); v != "" {
+		c.ACME.IP = v
+	}
 }
 
 func (c *Config) validate() error {
@@ -194,5 +256,74 @@ func (c *Config) validate() error {
 	if c.Server.BasePath == "" {
 		c.Server.BasePath = ""
 	}
+	if err := c.validateACME(); err != nil {
+		return fmt.Errorf("ACME config: %w", err)
+	}
+	return nil
+}
+
+// privateIPNets contains RFC1918 and other non-routable IPv4/IPv6 ranges that
+// must not be used as a public ACME IP target.
+var privateIPNets = func() []*net.IPNet {
+	cidrs := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",    // loopback
+		"169.254.0.0/16", // link-local
+		"::1/128",        // IPv6 loopback
+		"fc00::/7",       // IPv6 ULA (fd00::/8 is a subset)
+		"fe80::/10",      // IPv6 link-local
+	}
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			panic("config: invalid private CIDR " + c + ": " + err.Error())
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}()
+
+// IsPrivateIP reports whether ip falls within a non-routable address range
+// (RFC1918, loopback, link-local, or IPv6 ULA).
+func IsPrivateIP(ip net.IP) bool {
+	for _, n := range privateIPNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) validateACME() error {
+	// Nothing to validate if ACME is not in use.
+	if c.ACME.Domain == "" && c.ACME.IP == "" {
+		return nil
+	}
+
+	if c.ACME.IP != "" {
+		ip := net.ParseIP(c.ACME.IP)
+		if ip == nil {
+			return fmt.Errorf("SW_ACME_IP %q is not a valid IP address", c.ACME.IP)
+		}
+		if IsPrivateIP(ip) {
+			return fmt.Errorf("SW_ACME_IP %q is a private/reserved address; a publicly reachable IP is required", c.ACME.IP)
+		}
+
+		// Let's Encrypt does not issue IP certificates; a capable CA is required.
+		if c.ACME.CA == "letsencrypt" || c.ACME.CA == "" {
+			return fmt.Errorf("IP certificates require SW_ACME_CA=zerossl (or a custom CA URL); Let's Encrypt does not issue IP address certificates")
+		}
+	}
+
+	// ZeroSSL requires EAB credentials.
+	if c.ACME.CA == "zerossl" {
+		if c.ACME.EABKeyID == "" || c.ACME.EABMACKey == "" {
+			return fmt.Errorf("SW_ACME_CA=zerossl requires both SW_ACME_EAB_KEY_ID and SW_ACME_EAB_MAC_KEY")
+		}
+	}
+
 	return nil
 }

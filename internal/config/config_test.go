@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,6 +39,9 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_TLS_CERT_FILE", "SW_TLS_KEY_FILE",
+		"SW_ACME_CA", "SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CACHE_DIR",
+		"SW_ACME_EAB_KEY_ID", "SW_ACME_EAB_MAC_KEY", "SW_ACME_IP",
 	} {
 		t.Setenv(key, "")
 	}
@@ -213,4 +217,182 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	if cfg.Scanner.Exclusions[1] != "Soundtrack" {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
 	}
+}
+
+func TestDefault_ACMEDefaults(t *testing.T) {
+	cfg := Default()
+
+	if cfg.ACME.CA != "letsencrypt" {
+		t.Errorf("ACME.CA = %q, want letsencrypt", cfg.ACME.CA)
+	}
+	if cfg.ACME.CacheDir != "/data/acme-cache" {
+		t.Errorf("ACME.CacheDir = %q, want /data/acme-cache", cfg.ACME.CacheDir)
+	}
+}
+
+func TestLoadFromEnv_ACMEConfig(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_CA", "zerossl")
+	t.Setenv("SW_ACME_DOMAIN", "example.com")
+	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
+	t.Setenv("SW_ACME_CACHE_DIR", "/tmp/acme")
+	t.Setenv("SW_ACME_EAB_KEY_ID", "kid123")
+	t.Setenv("SW_ACME_EAB_MAC_KEY", "bWFja2V5")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.ACME.CA != "zerossl" {
+		t.Errorf("ACME.CA = %q, want zerossl", cfg.ACME.CA)
+	}
+	if cfg.ACME.Domain != "example.com" {
+		t.Errorf("ACME.Domain = %q, want example.com", cfg.ACME.Domain)
+	}
+	if cfg.ACME.Email != "admin@example.com" {
+		t.Errorf("ACME.Email = %q, want admin@example.com", cfg.ACME.Email)
+	}
+	if cfg.ACME.CacheDir != "/tmp/acme" {
+		t.Errorf("ACME.CacheDir = %q, want /tmp/acme", cfg.ACME.CacheDir)
+	}
+	if cfg.ACME.EABKeyID != "kid123" {
+		t.Errorf("ACME.EABKeyID = %q, want kid123", cfg.ACME.EABKeyID)
+	}
+	if cfg.ACME.EABMACKey != "bWFja2V5" {
+		t.Errorf("ACME.EABMACKey = %q, want bWFja2V5", cfg.ACME.EABMACKey)
+	}
+}
+
+func TestLoadFromEnv_TLSConfig(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/data/tls.crt")
+	t.Setenv("SW_TLS_KEY_FILE", "/data/tls.key")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.TLS.CertFile != "/data/tls.crt" {
+		t.Errorf("TLS.CertFile = %q, want /data/tls.crt", cfg.TLS.CertFile)
+	}
+	if cfg.TLS.KeyFile != "/data/tls.key" {
+		t.Errorf("TLS.KeyFile = %q, want /data/tls.key", cfg.TLS.KeyFile)
+	}
+}
+
+func TestValidate_ACMEIPPrivate(t *testing.T) {
+	tests := []struct {
+		name string
+		ip   string
+	}{
+		{"RFC1918 10.x", "10.0.0.1"},
+		{"RFC1918 172.16.x", "172.16.0.1"},
+		{"RFC1918 192.168.x", "192.168.1.1"},
+		{"loopback", "127.0.0.1"},
+		{"link-local", "169.254.0.1"},
+		{"IPv6 loopback", "::1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearSWEnv(t)
+			t.Setenv("SW_ACME_CA", "zerossl")
+			t.Setenv("SW_ACME_IP", tt.ip)
+			t.Setenv("SW_ACME_EAB_KEY_ID", "kid")
+			t.Setenv("SW_ACME_EAB_MAC_KEY", "bWFja2V5")
+
+			_, err := Load("")
+			if err == nil {
+				t.Errorf("Load() with private IP %s: expected error, got nil", tt.ip)
+			}
+		})
+	}
+}
+
+func TestValidate_ACMEIPPublic(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_CA", "zerossl")
+	t.Setenv("SW_ACME_IP", "203.0.113.1") // TEST-NET-3 (RFC5737) -- publicly routable
+	t.Setenv("SW_ACME_EAB_KEY_ID", "kid")
+	t.Setenv("SW_ACME_EAB_MAC_KEY", "bWFja2V5")
+
+	_, err := Load("")
+	if err != nil {
+		t.Errorf("Load() with public IP: unexpected error: %v", err)
+	}
+}
+
+func TestValidate_ACMEIPRequiresZeroSSL(t *testing.T) {
+	clearSWEnv(t)
+	// Trying to get an IP cert with Let's Encrypt should fail.
+	t.Setenv("SW_ACME_CA", "letsencrypt")
+	t.Setenv("SW_ACME_IP", "203.0.113.1")
+
+	_, err := Load("")
+	if err == nil {
+		t.Error("Load() with IP cert + letsencrypt CA: expected error, got nil")
+	}
+}
+
+func TestValidate_ACMEZeroSSLRequiresEAB(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_CA", "zerossl")
+	t.Setenv("SW_ACME_DOMAIN", "example.com")
+	// No EAB credentials.
+
+	_, err := Load("")
+	if err == nil {
+		t.Error("Load() with zerossl and no EAB: expected error, got nil")
+	}
+}
+
+func TestValidate_ACMEInvalidIP(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_CA", "zerossl")
+	t.Setenv("SW_ACME_IP", "not.an.ip")
+	t.Setenv("SW_ACME_EAB_KEY_ID", "kid")
+	t.Setenv("SW_ACME_EAB_MAC_KEY", "bWFja2V5")
+
+	_, err := Load("")
+	if err == nil {
+		t.Error("Load() with invalid IP: expected error, got nil")
+	}
+}
+
+func TestIsPrivateIP(t *testing.T) {
+	tests := []struct {
+		addr    string
+		private bool
+	}{
+		{"10.0.0.1", true},
+		{"172.16.5.5", true},
+		{"172.31.255.255", true},
+		{"172.32.0.1", false}, // just outside 172.16/12
+		{"192.168.1.1", true},
+		{"127.0.0.1", true},
+		{"169.254.0.1", true},
+		{"::1", true},
+		{"8.8.8.8", false},
+		{"203.0.113.1", false},
+		{"1.1.1.1", false},
+	}
+
+	for _, tt := range tests {
+		ip := net.ParseIP(tt.addr)
+		if ip == nil {
+			t.Fatalf("test setup: invalid IP %q", tt.addr)
+		}
+		got := IsPrivateIP(ip)
+		if got != tt.private {
+			t.Errorf("IsPrivateIP(%q) = %v, want %v", tt.addr, got, tt.private)
+		}
+	}
+}
+
+func parseTestIP(addr string) interface{ String() string } {
+	// Return the net.IP directly -- this helper just avoids importing "net"
+	// in the test at package level when it's already in the config package.
+	return nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"flag"
@@ -17,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/acme"
 	"github.com/sydlexius/stillwater/internal/api"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
@@ -489,6 +491,13 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Set up TLS when ACME or manual cert files are configured.
+	acmeMgr, tlsCfg, err := setupTLS(cfg, encryptor, logger)
+	if err != nil {
+		return fmt.Errorf("setting up TLS: %w", err)
+	}
+	srv.TLSConfig = tlsCfg
+
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
@@ -539,11 +548,42 @@ func run() error {
 
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
-			os.Exit(1)
+		if srv.TLSConfig != nil {
+			if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
 		}
 	}()
+
+	// Start ACME certificate management and port-80 challenge server when active.
+	if acmeMgr != nil {
+		acmeMgr.Start(ctx)
+
+		httpSrv := &http.Server{
+			Addr:         ":80",
+			Handler:      acmeMgr.ChallengeHandler(),
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+		go func() {
+			logger.Info("acme: starting HTTP challenge listener", slog.String("addr", ":80"))
+			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Warn("acme: HTTP challenge listener stopped", slog.Any("error", err))
+			}
+		}()
+		defer func() {
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutCancel()
+			_ = httpSrv.Shutdown(shutCtx)
+		}()
+	}
 
 	<-ctx.Done()
 	logger.Info("shutting down")
@@ -560,6 +600,57 @@ func run() error {
 	scannerService.Shutdown()
 
 	return srvErr
+}
+
+// setupTLS configures TLS for the server. It returns a non-nil *acme.Manager
+// when ACME certificate management is active, a non-nil *tls.Config when TLS
+// is enabled (either via ACME or manual cert files), and nil for both when TLS
+// is not configured.
+func setupTLS(cfg *config.Config, enc *encryption.Encryptor, logger *slog.Logger) (*acme.Manager, *tls.Config, error) {
+	acmeCfg := cfg.ACME
+
+	// ACME takes precedence over manual cert files.
+	if acmeCfg.Domain != "" || acmeCfg.IP != "" {
+		mgr, err := acme.NewManager(acme.Config{
+			CA:        acmeCfg.CA,
+			Domain:    acmeCfg.Domain,
+			Email:     acmeCfg.Email,
+			CacheDir:  acmeCfg.CacheDir,
+			EABKeyID:  acmeCfg.EABKeyID,
+			EABMACKey: acmeCfg.EABMACKey,
+			IP:        acmeCfg.IP,
+		}, enc, logger)
+		if err != nil {
+			return nil, nil, fmt.Errorf("creating ACME manager: %w", err)
+		}
+
+		logger.Info("acme: TLS certificate management active",
+			slog.String("ca", acmeCfg.CA),
+			slog.String("domain", acmeCfg.Domain),
+			slog.String("ip", acmeCfg.IP),
+		)
+
+		return mgr, mgr.TLSConfig(), nil
+	}
+
+	// Manual TLS cert files.
+	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("loading TLS cert/key: %w", err)
+		}
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		logger.Info("tls: using manual certificate files",
+			slog.String("cert", cfg.TLS.CertFile),
+			slog.String("key", cfg.TLS.KeyFile),
+		)
+		return nil, tlsCfg, nil
+	}
+
+	return nil, nil, nil
 }
 
 // resolveEncryptionKey determines the encryption key to use.
