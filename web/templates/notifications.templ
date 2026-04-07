@@ -766,7 +766,8 @@ templ candidateScript() {
 
 	// ---- Plural helper ----
 	function pluralize(count, one, other) {
-		return count === 1 ? one : other.replace('{count}', count);
+		var tpl = count === 1 ? one : other;
+		return tpl.replace('{count}', count);
 	}
 
 	// ---- Bulk selection ----

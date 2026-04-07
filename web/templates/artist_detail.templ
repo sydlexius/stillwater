@@ -851,7 +851,8 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 				function pluralize(count, one, other) {
-					return count === 1 ? one : other.replace('{count}', count);
+					var tpl = count === 1 ? one : other;
+					return tpl.replace('{count}', count);
 				}
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');

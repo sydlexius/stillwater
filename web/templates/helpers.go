@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -14,39 +15,54 @@ import (
 // staticBasePath is the URL prefix for all static assets (e.g. "/app").
 // Set once via SetBasePath at server startup so that logoSrc and logoSrcSet
 // produce correct URLs in sub-path deployments.
-var staticBasePath string
+// Protected by staticBasePathMu because net/http serves requests concurrently.
+var (
+	staticBasePathMu sync.RWMutex
+	staticBasePath   string
+)
 
 // SetBasePath configures the URL prefix used by logoSrc / logoSrcSet
 // and basePath(). Call once during server initialization.
 // This value must match AssetPaths.BasePath passed to full-page templates.
-func SetBasePath(bp string) { staticBasePath = strings.TrimRight(bp, "/") }
+func SetBasePath(bp string) {
+	staticBasePathMu.Lock()
+	staticBasePath = strings.TrimRight(bp, "/")
+	staticBasePathMu.Unlock()
+}
 
 // basePath returns the configured URL prefix (e.g. "/app") for use in
 // templates that build href/src attributes outside of HTMX (which has
 // its own configRequest hook).
-func basePath() string { return staticBasePath }
+func basePath() string {
+	staticBasePathMu.RLock()
+	bp := staticBasePath
+	staticBasePathMu.RUnlock()
+	return bp
+}
 
 // logoSrc returns the static path to a logo file for the given key.
 // Most logos are SVG; audiodb and emby use PNG (128px variant).
 func logoSrc(key string) string {
+	bp := basePath()
 	switch key {
 	case "audiodb", "emby":
-		return staticBasePath + "/static/img/logos/" + key + "-128.png"
+		return bp + "/static/img/logos/" + key + "-128.png"
 	case "custom":
-		return staticBasePath + "/static/img/favicon.svg"
+		return bp + "/static/img/favicon.svg"
 	default:
-		return staticBasePath + "/static/img/logos/" + key + ".svg"
+		return bp + "/static/img/logos/" + key + ".svg"
 	}
 }
 
 // logoSrcSet returns an srcset attribute value for PNG logos with multi-DPI
 // variants. Returns an empty string for SVG logos (they scale natively).
 func logoSrcSet(key string) string {
+	bp := basePath()
 	switch key {
 	case "audiodb", "emby":
-		return staticBasePath + "/static/img/logos/" + key + "-32.png 1x, " +
-			staticBasePath + "/static/img/logos/" + key + "-64.png 2x, " +
-			staticBasePath + "/static/img/logos/" + key + "-128.png 4x"
+		return bp + "/static/img/logos/" + key + "-32.png 1x, " +
+			bp + "/static/img/logos/" + key + "-64.png 2x, " +
+			bp + "/static/img/logos/" + key + "-128.png 4x"
 	default:
 		return ""
 	}
