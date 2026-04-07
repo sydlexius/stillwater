@@ -619,7 +619,7 @@ func run() error {
 	// any in-progress ACME challenges can complete before port 80 closes.
 	if acmeHTTPSrv != nil {
 		if err := acmeHTTPSrv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("ACME HTTP server shutdown error", "error", err)
+			logger.Error("ACME HTTP server shutdown error; in-progress certificate challenges may have been interrupted", "error", err)
 		}
 	}
 

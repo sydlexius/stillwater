@@ -222,6 +222,12 @@ func TestDefault_ACMECacheDir(t *testing.T) {
 	if cfg.ACME.CacheDir != "/data/acme-cache" {
 		t.Errorf("ACME.CacheDir = %q, want /data/acme-cache", cfg.ACME.CacheDir)
 	}
+	if cfg.ACME.Domain != "" {
+		t.Errorf("ACME.Domain = %q, want empty string (disabled by default)", cfg.ACME.Domain)
+	}
+	if cfg.ACME.Email != "" {
+		t.Errorf("ACME.Email = %q, want empty string (disabled by default)", cfg.ACME.Email)
+	}
 }
 
 func TestLoadFromEnv_ACME(t *testing.T) {
