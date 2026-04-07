@@ -38,6 +38,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_TLS_CERT_FILE", "SW_TLS_KEY_FILE", "SW_TLS_PORT",
 	} {
 		t.Setenv(key, "")
 	}
@@ -212,5 +213,112 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	}
 	if cfg.Scanner.Exclusions[1] != "Soundtrack" {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
+	}
+}
+
+func TestTLS_DefaultPortMatchesServerPort(t *testing.T) {
+	clearSWEnv(t)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLS.Port != cfg.Server.Port {
+		t.Errorf("TLS.Port = %d, want %d (same as Server.Port)", cfg.Server.TLS.Port, cfg.Server.Port)
+	}
+	if cfg.TLSEnabled() {
+		t.Error("TLSEnabled() = true, want false when no cert/key configured")
+	}
+}
+
+func TestTLS_EnvVarsLoaded(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/certs/fullchain.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/certs/privkey.pem")
+	t.Setenv("SW_TLS_PORT", "443")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLS.CertFile != "/certs/fullchain.pem" {
+		t.Errorf("TLS.CertFile = %q, want /certs/fullchain.pem", cfg.Server.TLS.CertFile)
+	}
+	if cfg.Server.TLS.KeyFile != "/certs/privkey.pem" {
+		t.Errorf("TLS.KeyFile = %q, want /certs/privkey.pem", cfg.Server.TLS.KeyFile)
+	}
+	if cfg.Server.TLS.Port != 443 {
+		t.Errorf("TLS.Port = %d, want 443", cfg.Server.TLS.Port)
+	}
+	if !cfg.TLSEnabled() {
+		t.Error("TLSEnabled() = false, want true when cert and key are set")
+	}
+}
+
+func TestTLS_YAMLLoaded(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(yamlPath, []byte(`
+server:
+  port: 1973
+  tls:
+    cert_file: /certs/cert.pem
+    key_file: /certs/key.pem
+    port: 443
+database:
+  path: /tmp/test.db
+`), 0o644)
+	if err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	cfg, err := Load(yamlPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLS.CertFile != "/certs/cert.pem" {
+		t.Errorf("TLS.CertFile = %q, want /certs/cert.pem", cfg.Server.TLS.CertFile)
+	}
+	if cfg.Server.TLS.KeyFile != "/certs/key.pem" {
+		t.Errorf("TLS.KeyFile = %q, want /certs/key.pem", cfg.Server.TLS.KeyFile)
+	}
+	if cfg.Server.TLS.Port != 443 {
+		t.Errorf("TLS.Port = %d, want 443", cfg.Server.TLS.Port)
+	}
+	if !cfg.TLSEnabled() {
+		t.Error("TLSEnabled() = false, want true")
+	}
+}
+
+func TestTLS_OnlyCertSetReturnsError(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/certs/fullchain.pem")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error when only cert is set without key")
+	}
+}
+
+func TestTLS_OnlyKeySetReturnsError(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_KEY_FILE", "/certs/privkey.pem")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error when only key is set without cert")
+	}
+}
+
+func TestTLS_CustomPortWithoutTLSDefaultsToServerPort(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_PORT", "8080")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLS.Port != 8080 {
+		t.Errorf("TLS.Port = %d, want 8080 (same as Server.Port)", cfg.Server.TLS.Port)
 	}
 }

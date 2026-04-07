@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"flag"
@@ -480,13 +481,27 @@ func run() error {
 	}()
 
 	// Create HTTP server
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	handler := router.Handler(ctx)
+	if cfg.TLSEnabled() {
+		handler = hstsMiddleware(handler)
+	}
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      router.Handler(ctx),
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
+	}
+	if cfg.TLSEnabled() {
+		srv.Addr = fmt.Sprintf(":%d", cfg.Server.TLS.Port)
+		srv.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			CurvePreferences: []tls.CurveID{
+				tls.X25519,
+				tls.CurveP256,
+			},
+		}
+	} else {
+		srv.Addr = fmt.Sprintf(":%d", cfg.Server.Port)
 	}
 
 	// Start backup scheduler
@@ -538,10 +553,18 @@ func run() error {
 	}
 
 	go func() {
-		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
-			os.Exit(1)
+		if cfg.TLSEnabled() {
+			logger.Info("server starting (TLS)", slog.String("addr", srv.Addr), slog.String("base_path", cfg.Server.BasePath))
+			if err := srv.ListenAndServeTLS(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			logger.Info("server starting", slog.String("addr", srv.Addr), slog.String("base_path", cfg.Server.BasePath))
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
 		}
 	}()
 
@@ -560,6 +583,15 @@ func run() error {
 	scannerService.Shutdown()
 
 	return srvErr
+}
+
+// hstsMiddleware adds a Strict-Transport-Security header to every response,
+// instructing browsers to only access this server via HTTPS for 1 year.
+func hstsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // resolveEncryptionKey determines the encryption key to use.

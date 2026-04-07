@@ -7,6 +7,8 @@ services:
     container_name: stillwater
     ports:
       - "1973:1973"
+      # Uncomment to expose TLS on port 443 (requires SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)
+      # - "443:443"
     environment:
       - PUID=99
       - PGID=100
@@ -14,9 +16,17 @@ services:
       - SW_LOG_FORMAT=json
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
+      # --- Native TLS (BYO certificate) ---
+      # Uncomment and set paths to enable HTTPS without a reverse proxy.
+      # The certificate files must be accessible inside the container.
+      # SW_TLS_CERT_FILE=/certs/fullchain.pem
+      # SW_TLS_KEY_FILE=/certs/privkey.pem
+      # SW_TLS_PORT=443  # Defaults to SW_PORT (1973) when not set
     volumes:
       - stillwater-data:/data
       - /path/to/your/music:/music:rw
+      # Uncomment to mount TLS certificates (required when native TLS is enabled)
+      # - /path/to/certs:/certs:ro
     restart: unless-stopped
 
 volumes:

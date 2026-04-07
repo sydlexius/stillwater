@@ -1,6 +1,11 @@
 ## Version 2026/02/20
 # Make sure that your stillwater container is named stillwater
 # Make sure that the SW_BASE_PATH environment variable is set to /stillwater on the stillwater container
+#
+# TLS mode note: Stillwater can serve HTTPS directly (set SW_TLS_CERT_FILE and
+# SW_TLS_KEY_FILE) or via a reverse proxy such as SWAG (this config). When using
+# a reverse proxy, leave Stillwater on plain HTTP (the default) and let SWAG
+# handle TLS termination. Using both at the same time is not recommended.
 
 location /stillwater {
     return 301 $scheme://$host/stillwater/;

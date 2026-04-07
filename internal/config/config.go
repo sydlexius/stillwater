@@ -21,10 +21,18 @@ type Config struct {
 	Logging    LoggingConfig    `yaml:"logging"`
 }
 
+// TLSConfig holds TLS/HTTPS settings.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file"` // SW_TLS_CERT_FILE
+	KeyFile  string `yaml:"key_file"`  // SW_TLS_KEY_FILE
+	Port     int    `yaml:"port"`      // SW_TLS_PORT (default: same as Server.Port)
+}
+
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port     int    `yaml:"port"`      // SW_PORT
-	BasePath string `yaml:"base_path"` // SW_BASE_PATH
+	Port     int       `yaml:"port"`      // SW_PORT
+	BasePath string    `yaml:"base_path"` // SW_BASE_PATH
+	TLS      TLSConfig `yaml:"tls"`
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -181,6 +189,17 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
 	}
+	if v := os.Getenv("SW_TLS_CERT_FILE"); v != "" {
+		c.Server.TLS.CertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY_FILE"); v != "" {
+		c.Server.TLS.KeyFile = v
+	}
+	if v := os.Getenv("SW_TLS_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Server.TLS.Port = port
+		}
+	}
 }
 
 func (c *Config) validate() error {
@@ -194,5 +213,27 @@ func (c *Config) validate() error {
 	if c.Server.BasePath == "" {
 		c.Server.BasePath = ""
 	}
+
+	// TLS validation: cert and key must both be set or neither.
+	certSet := c.Server.TLS.CertFile != ""
+	keySet := c.Server.TLS.KeyFile != ""
+	if certSet != keySet {
+		return fmt.Errorf("server.tls.cert_file and server.tls.key_file must both be set or both be empty")
+	}
+
+	// Default TLS port to the plain HTTP port when not explicitly set.
+	// Only validate the TLS port range when TLS is actually enabled.
+	if c.Server.TLS.Port == 0 {
+		c.Server.TLS.Port = c.Server.Port
+	}
+	if certSet && keySet && (c.Server.TLS.Port < 1 || c.Server.TLS.Port > 65535) {
+		return fmt.Errorf("invalid TLS port: %d", c.Server.TLS.Port)
+	}
+
 	return nil
+}
+
+// TLSEnabled reports whether TLS is configured (both cert and key are set).
+func (c *Config) TLSEnabled() bool {
+	return c.Server.TLS.CertFile != "" && c.Server.TLS.KeyFile != ""
 }

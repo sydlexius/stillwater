@@ -51,9 +51,15 @@ RUN chmod +x /entrypoint.sh
 WORKDIR /app
 
 EXPOSE 1973
+# Also expose TLS port; set SW_TLS_PORT if different from SW_PORT (default 1973)
+EXPOSE 443
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'curl -f "http://localhost:1973${SW_BASE_PATH:-}/api/v1/health" || exit 1'
+  CMD sh -c 'if [ -n "${SW_TLS_CERT_FILE}" ]; then \
+    curl -fk "https://localhost:${SW_TLS_PORT:-${SW_PORT:-1973}}${SW_BASE_PATH:-}/api/v1/health"; \
+  else \
+    curl -f "http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health"; \
+  fi || exit 1'
 
 VOLUME ["/data", "/music"]
 
