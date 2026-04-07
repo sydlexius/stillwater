@@ -128,7 +128,7 @@ templ Sidebar(data SidebarData) {
 				<li>
 						<a
 							id="sidebar-violations-link"
-							href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
+							href={ templ.SafeURL(data.BasePath + "/reports/compliance?status=non_compliant") }
 							class={
 								"sw-sidebar-link",
 								templ.KV("hidden", !data.ShowViolations),
