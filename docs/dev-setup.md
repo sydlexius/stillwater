@@ -6,7 +6,7 @@ Prerequisites and instructions for building Stillwater from source.
 
 | Tool | Version | Purpose | Install |
 |------|---------|---------|---------|
-| Go | 1.26+ | Compiler and runtime | https://go.dev/dl/ |
+| Go | 1.26.1+ | Compiler and runtime | https://go.dev/dl/ |
 | templ | latest | HTML template code generation | `go install github.com/a-h/templ/cmd/templ@latest` |
 | Tailwind CSS | v4.2.0 | CSS build (standalone CLI) | See below |
 | Git | any | Version control | https://git-scm.com/ |
@@ -76,6 +76,9 @@ make test           # run all tests with race detector
 make lint           # run golangci-lint
 make fmt            # format Go and Templ code
 make clean          # remove build artifacts
+make dev            # hot reload with air
+make hooks          # install git pre-commit hook
+make check-openapi  # validate OpenAPI spec
 ```
 
 Equivalent Docker commands:
@@ -141,16 +144,15 @@ The app restarts at `http://localhost:1973` after each rebuild.
 
 ### Making Database Schema Changes
 
-1. Create a new migration file in `internal/database/migrations/`:
+Stillwater uses a single migration file. To change the schema:
 
-   ```bash
-   # Migration files are SQL-based, named YYYYMMDDHHMMSS_description.sql
-   # Example: 20260223100000_add_user_settings.sql
-   ```
+1. Edit `internal/database/migrations/001_initial_schema.sql` directly
+2. Add or modify tables/columns in the appropriate `-- +goose Up` section
+3. Update the corresponding `-- +goose Down` section
+4. Test locally: `go test ./internal/database/...`
+5. Migrations run automatically on application startup via goose
 
-2. Add `-- +goose Up` and `-- +goose Down` sections (see existing migrations)
-3. Test locally: `go test ./internal/database/...`
-4. Migrations run automatically on application startup via goose
+**Important:** Do not create new migration files. All schema changes go into `001_initial_schema.sql`.
 
 ### Code Quality
 
@@ -167,7 +169,7 @@ make lint         # or: golangci-lint run ./...
 make test         # or: go test -race -count=1 ./...
 ```
 
-Pre-commit hooks (if configured in `.git/hooks/`) enforce formatting and linting automatically. Check `.pre-commit-config.yaml` if present.
+Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook from `.githooks/pre-commit`. This runs typos, gofmt, templ freshness check, OpenAPI validation, go build, golangci-lint, govulncheck, and hadolint.
 
 ### API Testing
 
@@ -198,9 +200,16 @@ go test -v -count=1 ./internal/image/...
 | `SW_DB_PATH` | `data/stillwater.db` | SQLite database file path |
 | `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `SW_LOG_FORMAT` | `json` | Log format: json, text |
-| `SW_LISTEN_ADDR` | `:1973` | HTTP listen address |
+| `SW_PORT` | `1973` | HTTP port |
 | `SW_BASE_PATH` | (empty) | URL prefix for reverse proxy (e.g., `/stillwater`) |
+| `SW_MUSIC_PATH` | `/music` | Music library root directory |
+| `SW_SESSION_SECRET` | (auto-generated) | Session cookie signing secret |
 | `SW_ENCRYPTION_KEY` | (auto-generated) | Base64-encoded AES-256 key for encrypting API keys at rest |
+| `SW_BACKUP_PATH` | (empty) | Database backup directory |
+| `SW_BACKUP_ENABLED` | `true` | Enable automatic database backups |
+| `SW_BACKUP_INTERVAL` | `24` | Hours between backups |
+| `SW_BACKUP_RETENTION` | `7` | Number of backups to keep |
+| `SW_SCANNER_EXCLUSIONS` | (empty) | Comma-separated artist names to skip during scan |
 | `PUID` / `PGID` | `99` / `100` | User/group ID for Docker container file ownership |
 
 ## Project Structure
@@ -212,12 +221,15 @@ See `CLAUDE.md` for the full architecture overview and coding conventions.
 ```
 make build          Build binary (runs templ generate + tailwind first)
 make run            Build and run locally with debug logging
+make dev            Hot reload with air
 make test           Run all tests with race detector
 make lint           Run golangci-lint
 make fmt            Format Go + Templ files
+make hooks          Install git pre-commit hook
+make check-openapi  Validate OpenAPI spec
+make clean          Remove build artifacts
 make docker-build   Build Docker image
 make docker-run     Start via docker compose
-make clean          Remove build artifacts
 ```
 
 When `make` is not available, run the equivalent commands directly as shown in the sections above.
