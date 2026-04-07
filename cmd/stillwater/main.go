@@ -574,7 +574,13 @@ func run() error {
 		go func() {
 			logger.Info("HTTP/3 server starting", slog.String("addr", addr))
 			if err := http3Srv.ListenAndServeTLS(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile); err != nil {
-				logger.Error("HTTP/3 server error", "error", err)
+				// A non-nil error after the context is done is a normal shutdown;
+				// quic-go has no ErrServerClosed equivalent, so we use ctx.Err()
+				// to distinguish graceful shutdown from unexpected startup failures.
+				if ctx.Err() == nil {
+					logger.Error("HTTP/3 server error", "error", err)
+					os.Exit(1)
+				}
 			}
 		}()
 	} else if cfg.Server.HTTP3Enabled && !tlsEnabled {
@@ -594,8 +600,9 @@ func run() error {
 
 	// Shut down the HTTP/3 server if it was started.
 	if http3Srv != nil {
-		if err := http3Srv.Close(); err != nil {
-			logger.Error("HTTP/3 shutdown error", "error", err)
+		if h3Err := http3Srv.Close(); h3Err != nil {
+			logger.Error("HTTP/3 shutdown error", "error", h3Err)
+			srvErr = errors.Join(srvErr, h3Err)
 		}
 	}
 
