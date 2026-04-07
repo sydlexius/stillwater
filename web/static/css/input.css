@@ -1449,10 +1449,10 @@ input:-webkit-autofill:focus {
 
 /* -- Guided Tour (Driver.js overrides) ------------------------------------ */
 .sw-tour-popover {
-  background: var(--sw-glass-bg) !important;
-  backdrop-filter: var(--sw-glass-blur) !important;
-  -webkit-backdrop-filter: var(--sw-glass-blur) !important;
-  border: 1px solid var(--sw-glass-border) !important;
+  background: rgb(255, 255, 255) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
   border-radius: var(--sw-radius-md) !important;
   color: var(--sw-content-text) !important;
   padding: 16px !important;
@@ -1515,4 +1515,9 @@ input:-webkit-autofill:focus {
 
 .sw-tour-popover .driver-popover-close-btn:hover {
   color: var(--sw-content-text) !important;
+}
+
+.dark .sw-tour-popover {
+  background: rgb(30, 41, 59) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }

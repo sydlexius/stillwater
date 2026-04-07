@@ -47,7 +47,7 @@
                     element: '#sw-sidebar',
                     popover: {
                         title: 'Navigation',
-                        description: 'Use the sidebar to switch between Dashboard, Artists, Reports, and Settings. Collapse it with the arrow at the bottom for more space.',
+                        description: 'Use the sidebar to switch between Dashboard, Artists, Reports, and Settings. Collapse it with the arrow at the top for more space.',
                         side: 'right',
                         align: 'start'
                     }
@@ -102,15 +102,9 @@
                 }
             ],
             onDestroyStarted: function() {
-                // Called when user clicks X or overlay. Mark complete and destroy.
+                // Called when user clicks X, overlay, or Done on last step.
                 markComplete();
-                if (!this.hasNextStep()) {
-                    this.destroy();
-                }
                 this.destroy();
-            },
-            onDestroyed: function() {
-                markComplete();
             }
         });
     }
