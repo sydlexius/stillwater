@@ -23,8 +23,16 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port     int    `yaml:"port"`      // SW_PORT
-	BasePath string `yaml:"base_path"` // SW_BASE_PATH
+	Port         int       `yaml:"port"`          // SW_PORT
+	BasePath     string    `yaml:"base_path"`     // SW_BASE_PATH
+	TLS          TLSConfig `yaml:"tls"`
+	HTTP3Enabled bool      `yaml:"http3_enabled"` // SW_HTTP3_ENABLED
+}
+
+// TLSConfig holds TLS certificate settings.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file"` // SW_TLS_CERT
+	KeyFile  string `yaml:"key_file"`  // SW_TLS_KEY
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -180,6 +188,15 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
+	}
+	if v := os.Getenv("SW_TLS_CERT"); v != "" {
+		c.Server.TLS.CertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY"); v != "" {
+		c.Server.TLS.KeyFile = v
+	}
+	if v := os.Getenv("SW_HTTP3_ENABLED"); v != "" {
+		c.Server.HTTP3Enabled = v == "true" || v == "1"
 	}
 }
 

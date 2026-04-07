@@ -38,6 +38,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_TLS_CERT", "SW_TLS_KEY", "SW_HTTP3_ENABLED",
 	} {
 		t.Setenv(key, "")
 	}
@@ -214,3 +215,65 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
 	}
 }
+
+func TestDefault_HTTP3Disabled(t *testing.T) {
+	cfg := Default()
+	if cfg.Server.HTTP3Enabled {
+		t.Error("HTTP3Enabled default = true, want false")
+	}
+	if cfg.Server.TLS.CertFile != "" {
+		t.Errorf("TLS.CertFile default = %q, want empty", cfg.Server.TLS.CertFile)
+	}
+	if cfg.Server.TLS.KeyFile != "" {
+		t.Errorf("TLS.KeyFile default = %q, want empty", cfg.Server.TLS.KeyFile)
+	}
+}
+
+func TestLoadFromEnv_TLSAndHTTP3(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT", "/data/tls/cert.pem")
+	t.Setenv("SW_TLS_KEY", "/data/tls/key.pem")
+	t.Setenv("SW_HTTP3_ENABLED", "true")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Server.TLS.CertFile != "/data/tls/cert.pem" {
+		t.Errorf("TLS.CertFile = %q, want /data/tls/cert.pem", cfg.Server.TLS.CertFile)
+	}
+	if cfg.Server.TLS.KeyFile != "/data/tls/key.pem" {
+		t.Errorf("TLS.KeyFile = %q, want /data/tls/key.pem", cfg.Server.TLS.KeyFile)
+	}
+	if !cfg.Server.HTTP3Enabled {
+		t.Error("HTTP3Enabled = false, want true")
+	}
+}
+
+func TestLoadFromEnv_HTTP3EnabledFlagVariants(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"true", true},
+		{"1", true},
+		{"false", false},
+		{"0", false},
+		{"yes", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			clearSWEnv(t)
+			t.Setenv("SW_HTTP3_ENABLED", tt.value)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Server.HTTP3Enabled != tt.want {
+				t.Errorf("HTTP3Enabled = %v, want %v (SW_HTTP3_ENABLED=%q)", cfg.Server.HTTP3Enabled, tt.want, tt.value)
+			}
+		})
+	}
+}
+

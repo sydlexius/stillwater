@@ -17,7 +17,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"github.com/sydlexius/stillwater/internal/api"
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
@@ -481,9 +483,18 @@ func run() error {
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	httpHandler := router.Handler(ctx)
+
+	// When HTTP/3 is enabled, advertise it via the Alt-Svc response header.
+	tlsEnabled := cfg.Server.TLS.CertFile != "" && cfg.Server.TLS.KeyFile != ""
+	http3Active := tlsEnabled && cfg.Server.HTTP3Enabled
+	if http3Active {
+		httpHandler = middleware.AltSvc(cfg.Server.Port)(httpHandler)
+	}
+
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      router.Handler(ctx),
+		Handler:      httpHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -539,11 +550,36 @@ func run() error {
 
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
+		var listenErr error
+		if tlsEnabled {
+			logger.Info("TLS enabled", slog.String("cert", cfg.Server.TLS.CertFile))
+			listenErr = srv.ListenAndServeTLS(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
+		} else {
+			listenErr = srv.ListenAndServe()
+		}
+		if listenErr != nil && listenErr != http.ErrServerClosed {
+			logger.Error("server error", "error", listenErr)
 			os.Exit(1)
 		}
 	}()
+
+	// Start HTTP/3 (QUIC) server alongside the TCP listener when enabled.
+	// HTTP/3 requires TLS; both cert and key must be configured.
+	var http3Srv *http3.Server
+	if http3Active {
+		http3Srv = &http3.Server{
+			Addr:    addr,
+			Handler: httpHandler,
+		}
+		go func() {
+			logger.Info("HTTP/3 server starting", slog.String("addr", addr))
+			if err := http3Srv.ListenAndServeTLS(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile); err != nil {
+				logger.Error("HTTP/3 server error", "error", err)
+			}
+		}()
+	} else if cfg.Server.HTTP3Enabled && !tlsEnabled {
+		logger.Warn("HTTP/3 is enabled but TLS cert/key are not configured; HTTP/3 will not start")
+	}
 
 	<-ctx.Done()
 	logger.Info("shutting down")
@@ -555,6 +591,13 @@ func run() error {
 	defer cancel()
 
 	srvErr := srv.Shutdown(shutdownCtx)
+
+	// Shut down the HTTP/3 server if it was started.
+	if http3Srv != nil {
+		if err := http3Srv.Close(); err != nil {
+			logger.Error("HTTP/3 shutdown error", "error", err)
+		}
+	}
 
 	// Now stop the scanner -- no new Run() calls can arrive.
 	scannerService.Shutdown()
