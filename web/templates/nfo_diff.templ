@@ -16,12 +16,12 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 	@Layout(data.Artist.Name+" - "+t(ctx, "nfo.diff_title"), assets) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
-				<div class="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2">
-					<a href={ templ.SafeURL(assets.BasePath + "/artists") } class="hover:text-gray-700 dark:hover:text-gray-200">{ t(ctx, "common.artists") }</a>
+				<div class="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
+					<a href={ templ.SafeURL(assets.BasePath + "/artists") } class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">{ t(ctx, "common.artists") }</a>
 					<span>/</span>
 					<a
 						href={ templ.SafeURL(assets.BasePath + "/artists/" + data.Artist.ID) }
-						class="hover:text-gray-700 dark:hover:text-gray-200"
+						class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
 					>
 						{ data.Artist.Name }
 					</a>

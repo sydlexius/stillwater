@@ -356,7 +356,7 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 				title={ t(ctx, "common.crop") }
 				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
 			>
-				@components.IconScissors("w-5 h-5")
+				@components.IconCrop("w-5 h-5")
 			</a>
 		}
 		// Trim (logo only -- removes transparent edges)

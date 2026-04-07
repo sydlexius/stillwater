@@ -15,11 +15,23 @@ pkill -x stillwater 2>/dev/null || true
 sleep 1
 
 echo "==> Loading .env..."
-if [ -f .env ]; then
+env_file=".env"
+if [ ! -f "$env_file" ]; then
+  if main_worktree=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{print $2}'); then
+    if [ -n "$main_worktree" ] && [ -f "$main_worktree/.env" ]; then
+      env_file="$main_worktree/.env"
+      echo "    (using $env_file from main worktree)"
+    fi
+  fi
+fi
+if [ -f "$env_file" ]; then
   set -a
   # shellcheck disable=SC1091
-  . .env
+  . "$env_file"
   set +a
+else
+  echo "    WARNING: no .env found (checked local and main worktree)"
+  echo "    Stillwater will start with environment defaults only."
 fi
 
 echo "==> Launching Stillwater..."
