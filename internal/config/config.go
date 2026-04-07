@@ -12,6 +12,8 @@ import (
 // Config holds all application configuration.
 type Config struct {
 	Server     ServerConfig     `yaml:"server"`
+	TLS        TLSConfig        `yaml:"tls"`
+	ACME       ACMEConfig       `yaml:"acme"`
 	Database   DatabaseConfig   `yaml:"database"`
 	Auth       AuthConfig       `yaml:"auth"`
 	Encryption EncryptionConfig `yaml:"encryption"`
@@ -25,6 +27,19 @@ type Config struct {
 type ServerConfig struct {
 	Port     int    `yaml:"port"`      // SW_PORT
 	BasePath string `yaml:"base_path"` // SW_BASE_PATH
+}
+
+// TLSConfig holds manual TLS certificate settings.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file"` // SW_TLS_CERT_FILE
+	KeyFile  string `yaml:"key_file"`  // SW_TLS_KEY_FILE
+}
+
+// ACMEConfig holds ACME autocert settings for automatic certificate provisioning.
+type ACMEConfig struct {
+	Domain   string `yaml:"domain"`    // SW_ACME_DOMAIN (required to enable autocert)
+	Email    string `yaml:"email"`     // SW_ACME_EMAIL
+	CacheDir string `yaml:"cache_dir"` // SW_ACME_CACHE_DIR (default /data/acme-cache)
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -73,6 +88,9 @@ func Default() *Config {
 		Server: ServerConfig{
 			Port:     1973,
 			BasePath: "/",
+		},
+		ACME: ACMEConfig{
+			CacheDir: "/data/acme-cache",
 		},
 		Database: DatabaseConfig{
 			Path: "/data/stillwater.db",
@@ -181,6 +199,21 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
 	}
+	if v := os.Getenv("SW_TLS_CERT_FILE"); v != "" {
+		c.TLS.CertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY_FILE"); v != "" {
+		c.TLS.KeyFile = v
+	}
+	if v := os.Getenv("SW_ACME_DOMAIN"); v != "" {
+		c.ACME.Domain = v
+	}
+	if v := os.Getenv("SW_ACME_EMAIL"); v != "" {
+		c.ACME.Email = v
+	}
+	if v := os.Getenv("SW_ACME_CACHE_DIR"); v != "" {
+		c.ACME.CacheDir = v
+	}
 }
 
 func (c *Config) validate() error {
@@ -193,6 +226,10 @@ func (c *Config) validate() error {
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 	if c.Server.BasePath == "" {
 		c.Server.BasePath = ""
+	}
+	// TLS cert and key must be specified together.
+	if (c.TLS.CertFile == "") != (c.TLS.KeyFile == "") {
+		return fmt.Errorf("SW_TLS_CERT_FILE and SW_TLS_KEY_FILE must both be set")
 	}
 	return nil
 }

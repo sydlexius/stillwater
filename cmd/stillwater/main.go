@@ -55,6 +55,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 
+	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 	"golang.org/x/time/rate"
@@ -489,6 +490,30 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Configure TLS when ACME autocert or manual cert/key are provided.
+	var acmeMgr *autocert.Manager
+	if cfg.ACME.Domain != "" {
+		// ACME autocert mode: obtain and renew certificates automatically via
+		// Let's Encrypt. Requires domain to resolve to this server and port 80
+		// to be reachable from the internet (HTTP-01 challenge).
+		acmeMgr = &autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(cfg.ACME.Domain),
+			Cache:      autocert.DirCache(cfg.ACME.CacheDir),
+			Email:      cfg.ACME.Email,
+		}
+		srv.TLSConfig = acmeMgr.TLSConfig()
+		logger.Info("ACME autocert enabled",
+			slog.String("domain", cfg.ACME.Domain),
+			slog.String("cache_dir", cfg.ACME.CacheDir),
+		)
+	} else if cfg.TLS.CertFile != "" {
+		logger.Info("TLS enabled",
+			slog.String("cert_file", cfg.TLS.CertFile),
+			slog.String("key_file", cfg.TLS.KeyFile),
+		)
+	}
+
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
@@ -539,7 +564,30 @@ func run() error {
 
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		switch {
+		case acmeMgr != nil:
+			// Start the HTTP-01 challenge listener on :80 for ACME certificate
+			// provisioning. This listener also handles redirecting plain-HTTP
+			// requests to HTTPS. Requires port 80 to be reachable from the internet.
+			httpSrv := &http.Server{
+				Addr:        ":80",
+				Handler:     acmeMgr.HTTPHandler(nil),
+				ReadTimeout: 15 * time.Second,
+				IdleTimeout: 60 * time.Second,
+			}
+			go func() {
+				if serveErr := httpSrv.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
+					logger.Error("ACME HTTP server error", "error", serveErr)
+				}
+			}()
+			err = srv.ListenAndServeTLS("", "")
+		case cfg.TLS.CertFile != "":
+			err = srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		default:
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "error", err)
 			os.Exit(1)
 		}

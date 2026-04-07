@@ -38,6 +38,8 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_TLS_CERT_FILE", "SW_TLS_KEY_FILE",
+		"SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CACHE_DIR",
 	} {
 		t.Setenv(key, "")
 	}
@@ -212,5 +214,96 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	}
 	if cfg.Scanner.Exclusions[1] != "Soundtrack" {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
+	}
+}
+
+func TestDefault_ACMECacheDir(t *testing.T) {
+	cfg := Default()
+	if cfg.ACME.CacheDir != "/data/acme-cache" {
+		t.Errorf("ACME.CacheDir = %q, want /data/acme-cache", cfg.ACME.CacheDir)
+	}
+}
+
+func TestLoadFromEnv_ACME(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "example.com")
+	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
+	t.Setenv("SW_ACME_CACHE_DIR", "/custom/acme-cache")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.ACME.Domain != "example.com" {
+		t.Errorf("ACME.Domain = %q, want example.com", cfg.ACME.Domain)
+	}
+	if cfg.ACME.Email != "admin@example.com" {
+		t.Errorf("ACME.Email = %q, want admin@example.com", cfg.ACME.Email)
+	}
+	if cfg.ACME.CacheDir != "/custom/acme-cache" {
+		t.Errorf("ACME.CacheDir = %q, want /custom/acme-cache", cfg.ACME.CacheDir)
+	}
+}
+
+func TestLoadFromEnv_TLS(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/certs/server.crt")
+	t.Setenv("SW_TLS_KEY_FILE", "/certs/server.key")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.TLS.CertFile != "/certs/server.crt" {
+		t.Errorf("TLS.CertFile = %q, want /certs/server.crt", cfg.TLS.CertFile)
+	}
+	if cfg.TLS.KeyFile != "/certs/server.key" {
+		t.Errorf("TLS.KeyFile = %q, want /certs/server.key", cfg.TLS.KeyFile)
+	}
+}
+
+func TestValidate_TLSMismatch(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/certs/server.crt")
+	// SW_TLS_KEY_FILE intentionally not set
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error when only SW_TLS_CERT_FILE is set without SW_TLS_KEY_FILE")
+	}
+}
+
+func TestLoad_ACMEFromYAML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(yamlPath, []byte(`
+server:
+  port: 1973
+database:
+  path: /tmp/test.db
+acme:
+  domain: myserver.example.com
+  email: ops@example.com
+  cache_dir: /var/acme
+`), 0o644)
+	if err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	cfg, err := Load(yamlPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ACME.Domain != "myserver.example.com" {
+		t.Errorf("ACME.Domain = %q, want myserver.example.com", cfg.ACME.Domain)
+	}
+	if cfg.ACME.Email != "ops@example.com" {
+		t.Errorf("ACME.Email = %q, want ops@example.com", cfg.ACME.Email)
+	}
+	if cfg.ACME.CacheDir != "/var/acme" {
+		t.Errorf("ACME.CacheDir = %q, want /var/acme", cfg.ACME.CacheDir)
 	}
 }

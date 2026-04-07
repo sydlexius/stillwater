@@ -72,6 +72,11 @@ Once running, open your browser and go to `http://your-server-ip:1973`.
 | `SW_LOG_FORMAT` | Log format: `json` or `text` | `json` |
 | `SW_ENCRYPTION_KEY` | Key used to encrypt stored secrets. Auto-generated on first run if not set. Set this explicitly to ensure the same key persists across container recreations. | auto-generated |
 | `SW_BASE_PATH` | Base path prefix for subfolder reverse proxy deployments, for example `/stillwater` | (none) |
+| `SW_TLS_CERT_FILE` | Path to a PEM-encoded TLS certificate file for manual HTTPS. Must be set together with `SW_TLS_KEY_FILE`. | (none) |
+| `SW_TLS_KEY_FILE` | Path to a PEM-encoded TLS private key file for manual HTTPS. Must be set together with `SW_TLS_CERT_FILE`. | (none) |
+| `SW_ACME_DOMAIN` | Domain name for automatic TLS via Let's Encrypt (ACME). When set, `SW_TLS_CERT_FILE`/`SW_TLS_KEY_FILE` are not required. Requires your domain to resolve to this server and port 80 to be reachable from the internet. | (none) |
+| `SW_ACME_EMAIL` | Email address for ACME certificate registration and expiry notifications. Recommended when `SW_ACME_DOMAIN` is set. | (none) |
+| `SW_ACME_CACHE_DIR` | Directory used to cache ACME certificates between restarts. | `/data/acme-cache` |
 
 ## Reverse Proxy
 
