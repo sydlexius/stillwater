@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -118,4 +120,53 @@ func TestResetPasswordNonAdminUser(t *testing.T) {
 	}
 	assertPassword(t, ctx, db, "viewer", "newpass")
 	assertPasswordWrong(t, ctx, db, "viewer", "oldpass")
+}
+
+func TestBuildRedirectHandler(t *testing.T) {
+	tests := []struct {
+		name        string
+		tlsPort     int
+		host        string
+		requestURI  string
+		wantTarget  string
+	}{
+		{
+			name:       "non-standard TLS port",
+			tlsPort:    1973,
+			host:       "example.com",
+			requestURI: "/foo/bar?q=1",
+			wantTarget: "https://example.com:1973/foo/bar?q=1",
+		},
+		{
+			name:       "standard TLS port 443 omitted",
+			tlsPort:    443,
+			host:       "example.com",
+			requestURI: "/path",
+			wantTarget: "https://example.com/path",
+		},
+		{
+			name:       "host with existing port stripped",
+			tlsPort:    1973,
+			host:       "example.com:80",
+			requestURI: "/",
+			wantTarget: "https://example.com:1973/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := buildRedirectHandler(tt.tlsPort)
+			req := httptest.NewRequest(http.MethodGet, tt.requestURI, nil)
+			req.Host = tt.host
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusMovedPermanently {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusMovedPermanently)
+			}
+			got := rec.Header().Get("Location")
+			if got != tt.wantTarget {
+				t.Errorf("Location = %q, want %q", got, tt.wantTarget)
+			}
+		})
+	}
 }

@@ -38,6 +38,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+		"SW_TLS_CERT", "SW_TLS_KEY", "SW_HTTP_REDIRECT_PORT",
 	} {
 		t.Setenv(key, "")
 	}
@@ -212,5 +213,116 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	}
 	if cfg.Scanner.Exclusions[1] != "Soundtrack" {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
+	}
+}
+
+func TestTLSEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		cert string
+		key  string
+		want bool
+	}{
+		{"both set", "/certs/cert.pem", "/certs/key.pem", true},
+		{"cert only", "/certs/cert.pem", "", false},
+		{"key only", "", "/certs/key.pem", false},
+		{"neither set", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := ServerConfig{TLSCertFile: tt.cert, TLSKeyFile: tt.key}
+			if got := s.TLSEnabled(); got != tt.want {
+				t.Errorf("TLSEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadFromEnv_TLS(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT", "/data/certs/cert.pem")
+	t.Setenv("SW_TLS_KEY", "/data/certs/key.pem")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLSCertFile != "/data/certs/cert.pem" {
+		t.Errorf("TLSCertFile = %q, want /data/certs/cert.pem", cfg.Server.TLSCertFile)
+	}
+	if cfg.Server.TLSKeyFile != "/data/certs/key.pem" {
+		t.Errorf("TLSKeyFile = %q, want /data/certs/key.pem", cfg.Server.TLSKeyFile)
+	}
+	if !cfg.Server.TLSEnabled() {
+		t.Error("TLSEnabled() = false, want true")
+	}
+}
+
+func TestLoadFromEnv_HTTPRedirectPort(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT", "/data/certs/cert.pem")
+	t.Setenv("SW_TLS_KEY", "/data/certs/key.pem")
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "80")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.HTTPRedirectPort != 80 {
+		t.Errorf("HTTPRedirectPort = %d, want 80", cfg.Server.HTTPRedirectPort)
+	}
+}
+
+func TestValidate_HTTPRedirectPortWithoutTLS(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "80")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error when http_redirect_port is set without TLS, got nil")
+	}
+}
+
+func TestValidate_HTTPRedirectPortSameAsMainPort(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT", "/data/certs/cert.pem")
+	t.Setenv("SW_TLS_KEY", "/data/certs/key.pem")
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "1973") // same as default SW_PORT
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected error when http_redirect_port equals main port, got nil")
+	}
+}
+
+func TestLoad_TLSFromYAML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(yamlPath, []byte(`
+server:
+  port: 1973
+  tls_cert: /data/certs/cert.pem
+  tls_key: /data/certs/key.pem
+  http_redirect_port: 80
+database:
+  path: /tmp/test.db
+`), 0o644)
+	if err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	cfg, err := Load(yamlPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.TLSCertFile != "/data/certs/cert.pem" {
+		t.Errorf("TLSCertFile = %q, want /data/certs/cert.pem", cfg.Server.TLSCertFile)
+	}
+	if cfg.Server.TLSKeyFile != "/data/certs/key.pem" {
+		t.Errorf("TLSKeyFile = %q, want /data/certs/key.pem", cfg.Server.TLSKeyFile)
+	}
+	if cfg.Server.HTTPRedirectPort != 80 {
+		t.Errorf("HTTPRedirectPort = %d, want 80", cfg.Server.HTTPRedirectPort)
 	}
 }

@@ -7,6 +7,9 @@ services:
     container_name: stillwater
     ports:
       - "1973:1973"
+      # Uncomment the line below (and set SW_HTTP_REDIRECT_PORT + TLS vars) to
+      # enable plain-HTTP -> HTTPS redirect on port 80:
+      # - "80:80"
     environment:
       - PUID=99
       - PGID=100
@@ -14,6 +17,11 @@ services:
       - SW_LOG_FORMAT=json
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
+      # --- TLS (native HTTPS) ---
+      # SW_TLS_CERT=/data/certs/fullchain.pem
+      # SW_TLS_KEY=/data/certs/privkey.pem
+      # --- HTTP-to-HTTPS redirect (requires TLS above) ---
+      # SW_HTTP_REDIRECT_PORT=80
     volumes:
       - stillwater-data:/data
       - /path/to/your/music:/music:rw

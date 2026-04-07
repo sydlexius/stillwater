@@ -23,8 +23,16 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port     int    `yaml:"port"`      // SW_PORT
-	BasePath string `yaml:"base_path"` // SW_BASE_PATH
+	Port             int    `yaml:"port"`               // SW_PORT
+	BasePath         string `yaml:"base_path"`          // SW_BASE_PATH
+	TLSCertFile      string `yaml:"tls_cert"`           // SW_TLS_CERT
+	TLSKeyFile       string `yaml:"tls_key"`            // SW_TLS_KEY
+	HTTPRedirectPort int    `yaml:"http_redirect_port"` // SW_HTTP_REDIRECT_PORT
+}
+
+// TLSEnabled reports whether TLS is configured (both cert and key are set).
+func (s *ServerConfig) TLSEnabled() bool {
+	return s.TLSCertFile != "" && s.TLSKeyFile != ""
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -141,6 +149,17 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_BASE_PATH"); v != "" {
 		c.Server.BasePath = v
 	}
+	if v := os.Getenv("SW_TLS_CERT"); v != "" {
+		c.Server.TLSCertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY"); v != "" {
+		c.Server.TLSKeyFile = v
+	}
+	if v := os.Getenv("SW_HTTP_REDIRECT_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Server.HTTPRedirectPort = port
+		}
+	}
 	if v := os.Getenv("SW_DB_PATH"); v != "" {
 		c.Database.Path = v
 	}
@@ -189,6 +208,17 @@ func (c *Config) validate() error {
 	}
 	if c.Database.Path == "" {
 		return fmt.Errorf("database path is required")
+	}
+	if c.Server.HTTPRedirectPort != 0 {
+		if !c.Server.TLSEnabled() {
+			return fmt.Errorf("http_redirect_port requires tls_cert and tls_key to be set")
+		}
+		if c.Server.HTTPRedirectPort < 1 || c.Server.HTTPRedirectPort > 65535 {
+			return fmt.Errorf("invalid http_redirect_port: %d", c.Server.HTTPRedirectPort)
+		}
+		if c.Server.HTTPRedirectPort == c.Server.Port {
+			return fmt.Errorf("http_redirect_port must differ from port (%d)", c.Server.Port)
+		}
 	}
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 	if c.Server.BasePath == "" {

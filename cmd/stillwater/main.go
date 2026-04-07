@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -489,6 +490,19 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Create optional HTTP-to-HTTPS redirect server
+	var redirectSrv *http.Server
+	if cfg.Server.HTTPRedirectPort > 0 {
+		redirectAddr := fmt.Sprintf(":%d", cfg.Server.HTTPRedirectPort)
+		redirectSrv = &http.Server{
+			Addr:         redirectAddr,
+			Handler:      buildRedirectHandler(cfg.Server.Port),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  30 * time.Second,
+		}
+	}
+
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
@@ -537,11 +551,28 @@ func run() error {
 		go watcherService.Start(ctx)
 	}
 
+	// Start redirect server if configured
+	if redirectSrv != nil {
+		go func() {
+			logger.Info("HTTP redirect listener starting", slog.String("addr", redirectSrv.Addr))
+			if err := redirectSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("redirect server error", "error", err)
+			}
+		}()
+	}
+
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
-			os.Exit(1)
+		if cfg.Server.TLSEnabled() {
+			if err := srv.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+				os.Exit(1)
+			}
 		}
 	}()
 
@@ -554,12 +585,38 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	if redirectSrv != nil {
+		if err := redirectSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Warn("redirect server shutdown error", "error", err)
+		}
+	}
+
 	srvErr := srv.Shutdown(shutdownCtx)
 
 	// Now stop the scanner -- no new Run() calls can arrive.
 	scannerService.Shutdown()
 
 	return srvErr
+}
+
+// buildRedirectHandler returns an http.Handler that 301-redirects all requests
+// to the same path on HTTPS using the given TLS port. If tlsPort is 443, the
+// port is omitted from the redirect URL.
+func buildRedirectHandler(tlsPort int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		// Strip any existing port from the Host header.
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		var target string
+		if tlsPort == 443 {
+			target = "https://" + host + r.RequestURI
+		} else {
+			target = fmt.Sprintf("https://%s:%d%s", host, tlsPort, r.RequestURI)
+		}
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
 }
 
 // resolveEncryptionKey determines the encryption key to use.
