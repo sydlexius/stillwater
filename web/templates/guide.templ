@@ -13,7 +13,8 @@ templ GuidePage(assets AssetPaths) {
 			<!-- Table of contents -->
 			<nav class="rounded-lg bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow p-4">
 				<h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "guide.contents") }</h2>
-				<ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+				<ul class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-sm">
+					<li><a href="#oobe" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_oobe") }</a></li>
 					<li><a href="#library-structure" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_library_structure") }</a></li>
 					<li><a href="#scanner-exclusions" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_scanner_exclusions") }</a></li>
 					<li><a href="#platform-profiles" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_platform_profiles") }</a></li>
@@ -22,9 +23,31 @@ templ GuidePage(assets AssetPaths) {
 					<li><a href="#connections" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_connections") }</a></li>
 					<li><a href="#rules" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_rules") }</a></li>
 					<li><a href="#nfo-files" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_nfo_files") }</a></li>
+					<li><a href="#settings" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_settings") }</a></li>
+					<li><a href="#automation" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_automation") }</a></li>
+					<li><a href="#api-keys" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_api_keys") }</a></li>
 				</ul>
 			</nav>
 			<!-- Sections -->
+			@guideSection("oobe", t(ctx, "guide.section_oobe")) {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					{ t(ctx, "guide.oobe_desc") }
+				</p>
+				<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{ t(ctx, "guide.oobe_auth_title") }</h4>
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					{ t(ctx, "guide.oobe_auth_desc") }
+				</p>
+				<ol class="list-decimal list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>{ t(ctx, "guide.oobe_step1") }</li>
+					<li>{ t(ctx, "guide.oobe_step2") }</li>
+					<li>{ t(ctx, "guide.oobe_step3") }</li>
+					<li>{ t(ctx, "guide.oobe_step4") }</li>
+					<li>{ t(ctx, "guide.oobe_step5") }</li>
+				</ol>
+				<p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+					{ t(ctx, "guide.oobe_complete") }
+				</p>
+			}
 			@guideSection("library-structure", t(ctx, "guide.section_library_structure")) {
 				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
 					{ t(ctx, "guide.library_structure_desc") }
