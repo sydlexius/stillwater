@@ -17,10 +17,11 @@ sleep 1
 echo "==> Loading .env..."
 env_file=".env"
 if [ ! -f "$env_file" ]; then
-  main_worktree=$(git worktree list --porcelain | awk 'NR==1{print $2}')
-  if [ -f "$main_worktree/.env" ]; then
-    env_file="$main_worktree/.env"
-    echo "    (using $env_file from main worktree)"
+  if main_worktree=$(git worktree list --porcelain 2>/dev/null | awk 'NR==1{print $2}'); then
+    if [ -n "$main_worktree" ] && [ -f "$main_worktree/.env" ]; then
+      env_file="$main_worktree/.env"
+      echo "    (using $env_file from main worktree)"
+    fi
   fi
 fi
 if [ -f "$env_file" ]; then
