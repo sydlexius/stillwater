@@ -219,49 +219,62 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Accumulate sanitized warnings for non-fatal data load failures so the
+	// settings page can display a banner when sections are incomplete.
+	var warnings []string
+
 	active, err := r.platformService.GetActive(req.Context())
 	if err != nil {
 		r.logger.Error("getting active platform for settings page", "error", err)
+		warnings = append(warnings, "Unable to load active platform profile.")
 	}
 
 	providerKeys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
 	if err != nil {
 		r.logger.Error("listing provider key statuses for settings page", "error", err)
+		warnings = append(warnings, "Unable to load provider API key statuses.")
 	}
 
 	priorities, err := r.providerSettings.GetPriorities(req.Context())
 	if err != nil {
 		r.logger.Error("getting provider priorities for settings page", "error", err)
+		warnings = append(warnings, "Unable to load provider priorities.")
 	}
 
 	scraperCfg, err := r.scraperService.GetConfig(req.Context(), scraper.ScopeGlobal)
 	if err != nil {
 		r.logger.Error("getting scraper config for settings page", "error", err)
+		warnings = append(warnings, "Unable to load scraper settings; some controls may be unavailable.")
 	}
 
 	conns, err := r.connectionService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing connections for settings page", "error", err)
+		warnings = append(warnings, "Unable to load connections.")
 	}
 
 	webhooks, err := r.webhookService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing webhooks for settings page", "error", err)
+		warnings = append(warnings, "Unable to load webhooks.")
 	}
 
 	webSearchProviders, err := r.providerSettings.ListWebSearchStatuses(req.Context())
 	if err != nil {
 		r.logger.Error("listing web search statuses for settings page", "error", err)
+		warnings = append(warnings, "Unable to load web search provider statuses.")
 	}
 
 	rules, err := r.ruleService.List(req.Context())
 	if err != nil {
 		r.logger.Warn("fetching rules for settings page", "error", err)
+		warnings = append(warnings, "Unable to load rules.")
 	}
 
 	apiTokens, err := r.authService.ListAPITokens(req.Context(), userID)
 	if err != nil {
 		r.logger.Warn("listing api tokens for settings page", "error", err)
+		warnings = append(warnings, "Unable to load API tokens.")
 	}
 
 	var libs []library.Library
@@ -269,6 +282,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		libs, err = r.libraryService.List(req.Context())
 		if err != nil {
 			r.logger.Error("listing libraries for settings page", "error", err)
+			warnings = append(warnings, "Unable to load libraries.")
 		}
 		r.populateFSNotifySupported(libs)
 	}
@@ -365,6 +379,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
+		Warnings:                warnings,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }

@@ -61,6 +61,7 @@ type SettingsData struct {
 	NameSimilarityThreshold int
 	Users                UsersTabData
 	AuthProviders        AuthProvidersData
+	Warnings             []string // Sanitized messages for non-fatal data load failures
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -488,6 +489,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					{ t(ctx, "settings.description") }
 				</p>
 			</div>
+			if len(data.Warnings) > 0 {
+				<div class="rounded-lg border border-amber-300/60 dark:border-amber-700/60 bg-amber-50/80 dark:bg-amber-900/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-300" role="alert">
+					<p class="font-medium">{ t(ctx, "settings.warnings_heading") }</p>
+					<ul class="mt-1 list-disc list-inside">
+						for _, w := range data.Warnings {
+							<li>{ w }</li>
+						}
+					</ul>
+				</div>
+			}
 			@settingsTabBar(data.ActiveTab, assets.BasePath)
 			<!-- General tab -->
 			<div
@@ -4102,9 +4113,24 @@ templ FieldOptionsCard(cfg *scraper.ScraperConfig) {
 
 script updateVerbosity(field string) {
 	var sel = document.getElementById('verbosity-' + field);
-	htmx.ajax('PUT', '/api/v1/scraper/config/fields/' + field + '/verbosity', {
-		values: {verbosity: sel.value},
-		swap: 'none'
+	var csrfToken = document.cookie.replace(
+		/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+	);
+	fetch('/api/v1/scraper/config/fields/' + field + '/verbosity', {
+		method: 'PUT',
+		headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+		body: JSON.stringify({verbosity: sel.value})
+	}).then(function(resp) {
+		if (!resp.ok) {
+			return resp.json()
+				.catch(function() { throw new Error('Server error (' + resp.status + ')'); })
+				.then(function(r) { throw new Error(r.error || 'Failed to update verbosity'); });
+		}
+		if (typeof showSuccessToast === 'function') { showSuccessToast('Verbosity updated'); }
+	}).catch(function(e) {
+		var msg = e.message || 'Failed to update verbosity setting.';
+		if (typeof showToast === 'function') { showToast(msg); }
+		else { console.error('updateVerbosity failed:', msg); }
 	});
 }
 

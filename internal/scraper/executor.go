@@ -66,7 +66,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 
 	// Cache provider results to avoid duplicate API calls
 	var mu sync.Mutex
-	cache := make(map[provider.ProviderName]*providerResult)
+	cache := make(map[providerCacheKey]*providerResult)
 	selectedProviders := make(map[provider.ProviderName]bool)
 
 	for _, field := range cfg.Fields {
@@ -114,15 +114,15 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 	// providers are excluded to avoid hiding outages behind misleading
 	// "attempted" markers.
 	mu.Lock()
-	for provName, pr := range cache {
+	for key, pr := range cache {
 		if pr.err != nil {
 			continue
 		}
-		result.AttemptedProviders = append(result.AttemptedProviders, provName)
-		if !selectedProviders[provName] || pr.meta == nil {
+		result.AttemptedProviders = append(result.AttemptedProviders, key.name)
+		if !selectedProviders[key.name] || pr.meta == nil {
 			continue
 		}
-		applyMergeableFields(result, pr.meta, provName)
+		applyMergeableFields(result, pr.meta, key.name)
 	}
 	mu.Unlock()
 
@@ -144,7 +144,7 @@ func (e *Executor) scrapeField(
 	chain FallbackChain,
 	available map[provider.ProviderName]bool,
 	providerIDs map[provider.ProviderName]string,
-	cache map[provider.ProviderName]*providerResult,
+	cache map[providerCacheKey]*providerResult,
 	mu *sync.Mutex,
 	result *provider.FetchResult,
 ) FieldResult {
@@ -242,6 +242,14 @@ func (e *Executor) scrapeField(
 	return FieldResult{Field: field.Field, Queried: queried}
 }
 
+// providerCacheKey identifies a unique provider invocation. The same provider
+// may return different results depending on context (e.g. biography verbosity),
+// so the key includes any context that affects output.
+type providerCacheKey struct {
+	name      provider.ProviderName
+	verbosity string // biography verbosity from context; empty when not set
+}
+
 // providerResult caches a single provider's API response.
 type providerResult struct {
 	meta            *provider.ArtistMetadata
@@ -252,16 +260,23 @@ type providerResult struct {
 }
 
 // getProviderResult fetches and caches results from a single provider.
+// The cache key includes both the provider name and the biography verbosity
+// from the context, since the same provider may return different results
+// depending on verbosity settings.
 func (e *Executor) getProviderResult(
 	ctx context.Context,
 	name provider.ProviderName,
 	mbid, artistName string,
 	providerIDs map[provider.ProviderName]string,
-	cache map[provider.ProviderName]*providerResult,
+	cache map[providerCacheKey]*providerResult,
 	mu *sync.Mutex,
 ) *providerResult {
+	key := providerCacheKey{
+		name:      name,
+		verbosity: provider.BiographyVerbosityFromContext(ctx),
+	}
 	mu.Lock()
-	if pr, ok := cache[name]; ok {
+	if pr, ok := cache[key]; ok {
 		mu.Unlock()
 		return pr
 	}
@@ -271,7 +286,7 @@ func (e *Executor) getProviderResult(
 	if p == nil {
 		pr := &providerResult{err: fmt.Errorf("provider %s not registered", name)}
 		mu.Lock()
-		cache[name] = pr
+		cache[key] = pr
 		mu.Unlock()
 		return pr
 	}
@@ -366,7 +381,7 @@ func (e *Executor) getProviderResult(
 	}
 
 	mu.Lock()
-	cache[name] = pr
+	cache[key] = pr
 	mu.Unlock()
 	return pr
 }

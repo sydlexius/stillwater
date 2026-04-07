@@ -151,12 +151,17 @@ func (r *Router) handleUpdateFieldVerbosity(w http.ResponseWriter, req *http.Req
 	}
 
 	var body struct {
-		Verbosity string `json:"verbosity"`
+		Verbosity *string `json:"verbosity"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeError(w, req, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if body.Verbosity == nil {
+		writeError(w, req, http.StatusBadRequest, "verbosity is required")
+		return
+	}
+	verbosity := *body.Verbosity
 
 	cfg, err := r.scraperService.GetConfig(req.Context(), scraper.ScopeGlobal)
 	if err != nil {
@@ -171,7 +176,7 @@ func (r *Router) handleUpdateFieldVerbosity(w http.ResponseWriter, req *http.Req
 			continue
 		}
 		// Validate the verbosity value against the configured primary provider.
-		if body.Verbosity != "" {
+		if verbosity != "" {
 			opts := scraper.VerbosityOptionsFor(fieldName, cfg.Fields[i].Primary)
 			if len(opts) == 0 {
 				writeError(w, req, http.StatusBadRequest, "verbosity is not configurable for this field and provider combination")
@@ -179,7 +184,7 @@ func (r *Router) handleUpdateFieldVerbosity(w http.ResponseWriter, req *http.Req
 			}
 			valid := false
 			for _, o := range opts {
-				if o.Value == body.Verbosity {
+				if o.Value == verbosity {
 					valid = true
 					break
 				}
@@ -189,7 +194,7 @@ func (r *Router) handleUpdateFieldVerbosity(w http.ResponseWriter, req *http.Req
 				return
 			}
 		}
-		cfg.Fields[i].Verbosity = body.Verbosity
+		cfg.Fields[i].Verbosity = verbosity
 		updated = true
 		break
 	}

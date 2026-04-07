@@ -5605,12 +5605,13 @@ paths:
   /scraper/config/fields/{field}/verbosity:
     put:
       tags: [Scraper]
-      summary: Update biography verbosity for a field
+      summary: Update verbosity for a field
       description: >
         Updates the verbosity setting for a single field in the global scraper
         configuration. Only applicable for provider-field combinations that
-        support multiple verbosity levels (e.g. Wikipedia biography: intro vs
-        full article). Passing an empty string resets to the default (intro-only).
+        support multiple verbosity levels (currently Wikipedia biography: intro
+        vs full article). Passing an empty string resets to the default
+        (intro-only).
       operationId: updateFieldVerbosity
       parameters:
         - name: field

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -763,10 +764,13 @@ func isErrUnavailable(err error, target **provider.ErrProviderUnavailable) bool 
 // TestGetArtist_VerbosityIntro checks that GetArtist sends exintro=true when
 // no verbosity is set on the context (default conservative behavior).
 func TestGetArtist_VerbosityIntro(t *testing.T) {
+	var mu sync.Mutex
 	var receivedExintro string
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("action") == "query" {
+			mu.Lock()
 			receivedExintro = r.URL.Query().Get("exintro")
+			mu.Unlock()
 		}
 		resp := extractResponse{}
 		resp.Query.Pages = map[string]extractPage{
@@ -781,18 +785,24 @@ func TestGetArtist_VerbosityIntro(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if receivedExintro != "true" {
-		t.Errorf("exintro query param = %q, want %q (default should be intro-only)", receivedExintro, "true")
+	mu.Lock()
+	got := receivedExintro
+	mu.Unlock()
+	if got != "true" {
+		t.Errorf("exintro query param = %q, want %q (default should be intro-only)", got, "true")
 	}
 }
 
 // TestGetArtist_VerbosityFull checks that GetArtist omits exintro when the
 // context carries a "full" biography verbosity, fetching the whole article.
 func TestGetArtist_VerbosityFull(t *testing.T) {
+	var mu sync.Mutex
 	var receivedExintro string
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("action") == "query" {
+			mu.Lock()
 			receivedExintro = r.URL.Query().Get("exintro")
+			mu.Unlock()
 		}
 		resp := extractResponse{}
 		resp.Query.Pages = map[string]extractPage{
@@ -808,7 +818,10 @@ func TestGetArtist_VerbosityFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if receivedExintro != "" {
-		t.Errorf("exintro query param = %q, want empty (full article mode must omit exintro)", receivedExintro)
+	mu.Lock()
+	got := receivedExintro
+	mu.Unlock()
+	if got != "" {
+		t.Errorf("exintro query param = %q, want empty (full article mode must omit exintro)", got)
 	}
 }

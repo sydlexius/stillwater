@@ -210,6 +210,7 @@ func TestValidateConfig_InvalidVerbosity(t *testing.T) {
 	// Set an invalid verbosity on the biography field (value not in allowed list).
 	for i := range cfg.Fields {
 		if cfg.Fields[i].Field == FieldBiography {
+			cfg.Fields[i].Primary = provider.NameWikipedia
 			cfg.Fields[i].Verbosity = "invalid"
 		}
 	}

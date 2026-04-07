@@ -74,8 +74,12 @@ func ValidateConfig(cfg *ScraperConfig) error {
 				}
 			}
 			if !valid {
-				return fmt.Errorf("invalid verbosity %q for field %q; valid values are defined by VerbosityOptionsFor",
-					f.Verbosity, f.Field)
+				var allowed []string
+				for _, o := range opts {
+					allowed = append(allowed, o.Value)
+				}
+				return fmt.Errorf("invalid verbosity %q for field %q; valid values: %v",
+					f.Verbosity, f.Field, allowed)
 			}
 		}
 	}

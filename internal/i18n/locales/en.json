@@ -1197,6 +1197,7 @@
   "settings.users.title": "Users",
   "settings.users.user": "User",
   "settings.users.user_accounts": "User accounts",
+  "settings.warnings_heading": "Some settings could not be loaded",
   "settings.web_search.description": "Enable web search providers to find additional artist images beyond authoritative sources. No API key required.",
   "settings.web_search.title": "Web Image Search",
   "settings.webhooks.add": "Add Webhook",
