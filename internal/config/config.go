@@ -224,9 +224,6 @@ func (c *Config) validate() error {
 		return fmt.Errorf("database path is required")
 	}
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
-	if c.Server.BasePath == "" {
-		c.Server.BasePath = ""
-	}
 	// TLS cert and key must be specified together.
 	if (c.TLS.CertFile == "") != (c.TLS.KeyFile == "") {
 		return fmt.Errorf("SW_TLS_CERT_FILE and SW_TLS_KEY_FILE must both be set")

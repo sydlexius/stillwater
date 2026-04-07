@@ -492,6 +492,7 @@ func run() error {
 
 	// Configure TLS when ACME autocert or manual cert/key are provided.
 	var acmeMgr *autocert.Manager
+	var acmeHTTPSrv *http.Server
 	if cfg.ACME.Domain != "" {
 		// ACME autocert mode: obtain and renew certificates automatically via
 		// Let's Encrypt. Requires domain to resolve to this server and port 80
@@ -503,6 +504,15 @@ func run() error {
 			Email:      cfg.ACME.Email,
 		}
 		srv.TLSConfig = acmeMgr.TLSConfig()
+		// The HTTP-01 challenge server listens on :80 to serve ACME challenges
+		// and redirect all other plain-HTTP requests to HTTPS.
+		acmeHTTPSrv = &http.Server{
+			Addr:         ":80",
+			Handler:      acmeMgr.HTTPHandler(nil),
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
 		logger.Info("ACME autocert enabled",
 			slog.String("domain", cfg.ACME.Domain),
 			slog.String("cache_dir", cfg.ACME.CacheDir),
@@ -566,19 +576,14 @@ func run() error {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
 		var err error
 		switch {
-		case acmeMgr != nil:
-			// Start the HTTP-01 challenge listener on :80 for ACME certificate
-			// provisioning. This listener also handles redirecting plain-HTTP
-			// requests to HTTPS. Requires port 80 to be reachable from the internet.
-			httpSrv := &http.Server{
-				Addr:        ":80",
-				Handler:     acmeMgr.HTTPHandler(nil),
-				ReadTimeout: 15 * time.Second,
-				IdleTimeout: 60 * time.Second,
-			}
+		case acmeHTTPSrv != nil:
+			// Start the HTTP-01 challenge listener on :80. If it fails to bind
+			// (e.g., port 80 already in use), ACME certificate provisioning
+			// will not work, so treat this as fatal.
 			go func() {
-				if serveErr := httpSrv.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
+				if serveErr := acmeHTTPSrv.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
 					logger.Error("ACME HTTP server error", "error", serveErr)
+					os.Exit(1)
 				}
 			}()
 			err = srv.ListenAndServeTLS("", "")
@@ -601,6 +606,12 @@ func run() error {
 	// with the scanner's WaitGroup during shutdown.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if acmeHTTPSrv != nil {
+		if err := acmeHTTPSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("ACME HTTP server shutdown error", "error", err)
+		}
+	}
 
 	srvErr := srv.Shutdown(shutdownCtx)
 
