@@ -308,6 +308,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	authProvidersData := templates.AuthProvidersData{
+		BasePath:              r.basePath,
 		LocalEnabled:          r.getBoolSetting(req.Context(), "auth.providers.local.enabled", true),
 		EmbyEnabled:           r.getBoolSetting(req.Context(), "auth.providers.emby.enabled", false),
 		EmbyAutoProvision:     r.getBoolSetting(req.Context(), "auth.providers.emby.auto_provision", false),

@@ -30,6 +30,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // RouterDeps bundles all dependencies needed by the HTTP router.
@@ -191,6 +192,10 @@ func NewRouter(deps RouterDeps) *Router {
 	if deps.EventBus != nil {
 		r.sseHub.SubscribeToEventBus(deps.EventBus)
 	}
+
+	// Configure the static asset base path used by template helpers (logoSrc, etc.)
+	// so that sub-path deployments produce correct URLs.
+	templates.SetBasePath(deps.BasePath)
 
 	return r
 }

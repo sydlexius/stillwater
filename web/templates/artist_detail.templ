@@ -41,7 +41,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				<div id="fanart-slideshow" class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true" data-fanart-count={ strconv.Itoa(data.Artist.FanartCount) } data-artist-id={ data.Artist.ID }>
 					<img
 						id="fanart-a"
-						src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/0/file", data.Artist.ID) }
+						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/0/file", assets.BasePath, data.Artist.ID) }
 						alt=""
 						class="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[2000ms]"
 					/>
@@ -66,10 +66,12 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						var showingA = true;
 						var intervalMs = 8000;
 						var timer = null;
+						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+						var bp = bpEl ? bpEl.content : '';
 
 						function cycle() {
 							current = (current + 1) % count;
-							var url = '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
+							var url = bp + '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
 							if (showingA) {
 								imgB.onload = function() {
 									imgA.style.opacity = '0';
@@ -101,7 +103,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			} else if data.Artist.FanartExists {
 				<div class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true">
 					<img
-						src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/file", data.Artist.ID) }
+						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/file", assets.BasePath, data.Artist.ID) }
 						alt=""
 						class="h-full w-full object-cover object-center"
 					/>
@@ -150,7 +152,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							if data.Artist.LogoExists {
 								<h1 class="sr-only">{ data.Artist.Name }</h1>
 								<img
-									src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", data.Artist.ID) }
+									src={ fmt.Sprintf("%s/api/v1/artists/%s/images/logo/file", assets.BasePath, data.Artist.ID) }
 									alt={ data.Artist.Name }
 									class={
 										"max-h-20 max-w-[300px] object-contain object-left",
@@ -279,7 +281,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									</button>
 								}
 								<a
-									href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?fetch=1", data.Artist.ID)) }
+									href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?fetch=1", assets.BasePath, data.Artist.ID)) }
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								>
@@ -638,7 +640,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 					}
 				>
 					<img
-						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType) }
+						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", basePath(), artistID, imageType) }
 						alt={ label }
 						class="max-w-full max-h-full object-contain"
 						loading="lazy"
@@ -651,7 +653,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 				}
 				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 					<a
-						href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+						href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)) }
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
 						title={ t(ctx, "artist.edit_image") }
 						aria-label={ tf(ctx, "artist.edit_image_type", label) }
@@ -696,7 +698,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 			</div>
 		} else {
 			<a
-				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
+				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath(), artistID, imageType)) }
 				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
 				title={ tf(ctx, "artist.add_image_type", label) }
 			>
@@ -736,8 +738,10 @@ type FanartGalleryItem struct {
 // profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
 templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
 	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }
-		data-label-delete-n={ t(ctx, "artist.delete_n_selected") }
-		data-confirm-delete-n={ t(ctx, "artist.delete_n_fanart_confirm") }
+		data-label-delete-n-one={ t(ctx, "artist.delete_n_selected.one") }
+		data-label-delete-n-other={ t(ctx, "artist.delete_n_selected.other") }
+		data-confirm-delete-n-one={ t(ctx, "artist.delete_n_fanart_confirm.one") }
+		data-confirm-delete-n-other={ t(ctx, "artist.delete_n_fanart_confirm.other") }
 		data-session-expired={ t(ctx, "common.session_expired") }
 		data-toast-delete-failed={ t(ctx, "artist.delete_selected_failed") }
 		data-toast-delete-network={ t(ctx, "artist.delete_selected_network") }
@@ -772,7 +776,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 						}
 						<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
 							<img
-								src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+								src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
 								alt={ item.Filename }
 								class="max-w-full max-h-full object-cover"
 								loading="lazy"
@@ -787,7 +791,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 								title={ t(ctx, "artist.view_full_size") }
 								aria-label={ tf(ctx, "artist.view_full_size_name", item.Filename) }
-								data-lightbox-src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+								data-lightbox-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
 								data-lightbox-alt={ item.Filename }
 								onclick="openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 							>
@@ -846,11 +850,14 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				if (!gallery) return;
 				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
+				function pluralize(count, one, other) {
+					return count === 1 ? one : other.replace('{count}', count);
+				}
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length > 0) {
 						deleteBtn.classList.remove('hidden');
-						deleteBtn.textContent = (gallery.dataset.labelDeleteN || 'Delete %d selected').replace('%d', checked.length);
+						deleteBtn.textContent = pluralize(checked.length, gallery.dataset.labelDeleteNOne || 'Delete 1 selected', gallery.dataset.labelDeleteNOther || 'Delete {count} selected');
 					} else {
 						deleteBtn.classList.add('hidden');
 					}
@@ -858,7 +865,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				deleteBtn.addEventListener('click', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
-					if (!confirm((gallery.dataset.confirmDeleteN || 'Delete %d fanart image(s)?').replace('%d', checked.length))) return;
+					if (!confirm(pluralize(checked.length, gallery.dataset.confirmDeleteNOne || 'Delete 1 fanart image?', gallery.dataset.confirmDeleteNOther || 'Delete {count} fanart images?'))) return;
 					var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 					if (!token) {
 						alert(gallery.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');
@@ -922,9 +929,9 @@ func formatFileSizeTempl(bytes int64) string {
 // When a library filter is active, it preserves the filter in the back-nav.
 func artistsBackURL(libraryID string) string {
 	if libraryID != "" {
-		return "/artists?library_id=" + url.QueryEscape(libraryID)
+		return basePath() + "/artists?library_id=" + url.QueryEscape(libraryID)
 	}
-	return "/artists"
+	return basePath() + "/artists"
 }
 
 // MembersSection renders the band members card with a contextual menu for

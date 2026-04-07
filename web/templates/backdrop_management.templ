@@ -12,8 +12,10 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 		id="fanart-management-gallery"
 		class="space-y-4"
 		data-artist-id={ artistID }
-		data-label-delete-n={ t(ctx, "image.delete_n_selected") }
-		data-confirm-delete-n={ t(ctx, "artist.delete_n_fanart_confirm") }
+		data-label-delete-n-one={ t(ctx, "image.delete_n_selected.one") }
+		data-label-delete-n-other={ t(ctx, "image.delete_n_selected.other") }
+		data-confirm-delete-n-one={ t(ctx, "artist.delete_n_fanart_confirm.one") }
+		data-confirm-delete-n-other={ t(ctx, "artist.delete_n_fanart_confirm.other") }
 		data-toast-delete-failed={ t(ctx, "image.delete_failed") }
 		data-toast-delete-http-failed={ t(ctx, "image.delete_failed_http") }
 		data-toast-network-error={ t(ctx, "common.network_error") }
@@ -44,7 +46,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 							/>
 							<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
 								<img
-									src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+									src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index) }
 									alt={ item.Filename }
 									class="max-w-full max-h-full object-cover"
 									loading="lazy"
@@ -111,13 +113,16 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 				if (!gallery) return;
 				var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
+				function pluralize(count, one, other) {
+					return count === 1 ? one : other.replace('{count}', count);
+				}
 
 				// Batch select/delete
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length > 0) {
 						deleteBtn.classList.remove('hidden');
-						deleteBtn.textContent = (gallery.dataset.labelDeleteN || 'Delete %d selected').replace('%d', checked.length);
+						deleteBtn.textContent = pluralize(checked.length, gallery.dataset.labelDeleteNOne || 'Delete 1 selected', gallery.dataset.labelDeleteNOther || 'Delete {count} selected');
 					} else {
 						deleteBtn.classList.add('hidden');
 					}
@@ -125,7 +130,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 				deleteBtn.addEventListener('click', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
-					if (!confirm((gallery.dataset.confirmDeleteN || 'Delete %d fanart image(s)?').replace('%d', checked.length))) return;
+					if (!confirm(pluralize(checked.length, gallery.dataset.confirmDeleteNOne || 'Delete 1 fanart image?', gallery.dataset.confirmDeleteNOther || 'Delete {count} fanart images?'))) return;
 					var indices = [];
 					for (var i = 0; i < checked.length; i++) {
 						indices.push(parseInt(checked[i].value, 10));

@@ -835,7 +835,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 				}
 				@artistPlatformBadges(a, sources, platforms)
 				<a
-					href={ templ.SafeURL("/artists/" + a.ID) }
+					href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
 					class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
 				>
 					{ a.Name }
@@ -908,7 +908,7 @@ templ ArtistGrid(data ArtistListData) {
 
 templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence) {
 	<a
-		href={ templ.SafeURL("/artists/" + a.ID) }
+		href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
 		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
 	>
 		<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
@@ -917,7 +917,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 					<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
 				}
 				<img
-					src={ "/api/v1/artists/" + a.ID + "/images/thumb/file" }
+					src={ basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
 					alt={ a.Name }
 					loading="lazy"
 					class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"

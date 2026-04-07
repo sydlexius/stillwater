@@ -4,6 +4,9 @@ import "github.com/sydlexius/stillwater/web/components"
 
 // AuthProvidersData holds settings for all authentication providers.
 type AuthProvidersData struct {
+	// BasePath is the URL prefix for static assets (e.g. "/app").
+	BasePath string
+
 	// Local provider
 	LocalEnabled bool
 
@@ -93,7 +96,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 				<div class="flex items-center justify-between mb-3">
 					<div class="flex items-center gap-3">
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
-							<img src="/static/img/logos/emby-32.png" alt="" class="h-6 w-6"/>
+							<img src={ data.BasePath + "/static/img/logos/emby-32.png" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
 							<span class="font-medium text-sm">Emby</span>
@@ -211,7 +214,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 				<div class="flex items-center justify-between mb-3">
 					<div class="flex items-center gap-3">
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
-							<img src="/static/img/logos/jellyfin.svg" alt="" class="h-6 w-6"/>
+							<img src={ data.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
 							<span class="font-medium text-sm">Jellyfin</span>
@@ -329,7 +332,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 				<div class="flex items-center justify-between mb-3">
 					<div class="flex items-center gap-3">
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
-							<img src="/static/img/logos/openid.svg" alt="" class="h-6 w-6"/>
+							<img src={ data.BasePath + "/static/img/logos/openid.svg" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
 							<span class="font-medium text-sm">OpenID Connect (OIDC)</span>
