@@ -846,6 +846,7 @@
   "settings.appearance.extra_wide": "Extra Wide",
   "settings.appearance.font_family": "Font Family",
   "settings.appearance.font_family_desc": "Choose the typeface used for all body text and UI labels.",
+  "settings.appearance.font_license": "Inter and Atkinson Hyperlegible are bundled under the SIL Open Font License 1.1.",
   "settings.appearance.font_size": "Font Size",
   "settings.appearance.font_size_desc": "Base size for all body text in the interface.",
   "settings.appearance.glass_intensity": "Glass Intensity",

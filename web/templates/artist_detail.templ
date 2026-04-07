@@ -275,6 +275,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									hx-swap="innerHTML"
 									if data.Artist.MusicBrainzID != "" {
 										hx-confirm={ t(ctx, "artist.reidentify_confirm") }
+										hx-vals='{"clear_ids": "true"}'
 									}
 									hx-indicator="#reidentify-spinner"
 								>

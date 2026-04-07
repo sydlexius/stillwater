@@ -359,8 +359,10 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	}
 }
 
-// handleReidentify clears all provider IDs for an artist and returns the
-// disambiguation form so the user can re-link the correct entry.
+// handleReidentify returns the disambiguation form so the user can link (or
+// re-link) a MusicBrainz entry. When clear_ids=true is passed, all provider
+// IDs are wiped first (the destructive "Re-identify" flow). Without that
+// parameter the existing IDs are preserved (the non-destructive "Identify" flow).
 // POST /api/v1/artists/{id}/reidentify
 func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
@@ -371,40 +373,48 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Log previous MBID for audit trail before clearing.
+	// Log the action for the audit trail.
 	r.logger.Info("re-identifying artist",
 		slog.String("artist_id", a.ID),
 		slog.String("artist_name", a.Name),
 		slog.String("previous_mbid", a.MusicBrainzID),
+		slog.Bool("clear_ids", req.FormValue("clear_ids") == "true"),
 	)
 
-	// Clear all provider IDs and their fetch timestamps so the UI shows
-	// "Not set" instead of the misleading "Not found" for providers that
-	// have not been re-queried yet.
-	a.MusicBrainzID = ""
-	a.AudioDBID = ""
-	a.DiscogsID = ""
-	a.WikidataID = ""
-	a.DeezerID = ""
-	a.SpotifyID = ""
-	a.AudioDBIDFetchedAt = nil
-	a.DiscogsIDFetchedAt = nil
-	a.WikidataIDFetchedAt = nil
-	a.LastFMFetchedAt = nil
+	// Only clear provider IDs when explicitly requested (the "Re-identify"
+	// flow). The "Identify" flow skips this so existing Discogs/Spotify/etc
+	// IDs are preserved while the user links a MusicBrainz entry.
+	if req.FormValue("clear_ids") == "true" {
+		a.MusicBrainzID = ""
+		a.AudioDBID = ""
+		a.DiscogsID = ""
+		a.WikidataID = ""
+		a.DeezerID = ""
+		a.SpotifyID = ""
+		a.AudioDBIDFetchedAt = nil
+		a.DiscogsIDFetchedAt = nil
+		a.WikidataIDFetchedAt = nil
+		a.LastFMFetchedAt = nil
 
-	if err := r.artistService.Update(req.Context(), a); err != nil {
-		writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
-		return
+		if err := r.artistService.Update(req.Context(), a); err != nil {
+			writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
+			return
+		}
 	}
 
 	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name))
 		return
 	}
+
+	msg := "Search to find and link the correct artist."
+	if req.FormValue("clear_ids") == "true" {
+		msg = "Provider IDs cleared. " + msg
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "disambiguation_required",
 		"artist":  a.Name,
-		"message": "Provider IDs cleared. Search to find and link the correct artist.",
+		"message": msg,
 	})
 }
 
