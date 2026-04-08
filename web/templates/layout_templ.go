@@ -5,11 +5,10 @@ package templates
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import (
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
-	"github.com/sydlexius/stillwater/web/components"
-)
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
+
+import "github.com/sydlexius/stillwater/web/components"
 
 // AssetPaths holds cache-busted URLs for static assets and server configuration
 // used by templates to construct correct URLs for sub-path deployments.

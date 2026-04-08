@@ -1521,3 +1521,23 @@ input:-webkit-autofill:focus {
   background: rgb(30, 41, 59) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
+
+.dark .sw-tour-popover .driver-popover-arrow {
+  border: 5px solid transparent !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-bottom {
+  border-bottom-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-left {
+  border-left-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-right {
+  border-right-color: rgb(30, 41, 59) !important;
+}

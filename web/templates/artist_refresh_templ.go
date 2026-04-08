@@ -5,13 +5,13 @@ package templates
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
+
 import (
 	"strconv"
 
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
 	"github.com/sydlexius/stillwater/internal/artist"
-
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/components"
@@ -286,7 +286,7 @@ func DisambiguationResults(artistID string, candidates []DisambiguationCandidate
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.from_country", c.Result.Country))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_refresh.templ`, Line: 94, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_refresh.templ`, Line: 94, Col: 64}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func DisambiguationResults(artistID string, candidates []DisambiguationCandidate
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(c.Result.Disambiguation)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_refresh.templ`, Line: 97, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_refresh.templ`, Line: 97, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {

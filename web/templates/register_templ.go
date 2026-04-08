@@ -5,11 +5,10 @@ package templates
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import (
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
-	"github.com/sydlexius/stillwater/internal/auth"
-)
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
+
+import "github.com/sydlexius/stillwater/internal/auth"
 
 // RegisterPageData holds the data needed to render the invite redemption page.
 type RegisterPageData struct {

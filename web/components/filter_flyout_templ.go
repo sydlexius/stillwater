@@ -5,12 +5,10 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import (
-	"strconv"
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
 
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
-)
+import "strconv"
 
 // FilterFlyout renders a slide-in filter panel from the right edge of the
 // screen. It wraps arbitrary filter content passed as templ children and

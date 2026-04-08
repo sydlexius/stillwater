@@ -5,11 +5,12 @@ package templates
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
+
 import (
 	"fmt"
 
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
@@ -182,7 +183,7 @@ func MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) tem
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", a.HealthScore))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 50, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/metadata_completeness.templ`, Line: 52, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
