@@ -386,13 +386,13 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	}
 
 	data := templates.ArtistDetailData{
-		Artist:         *a,
-		Members:        members,
-		Aliases:        aliases,
-		FieldProviders: fieldProviders,
-		LibraryName:    libraryName,
-		LibrarySource:  librarySource,
-		ProfileName:    r.getActiveProfileName(req.Context()),
+		Artist:            *a,
+		Members:           members,
+		Aliases:           aliases,
+		FieldProviders:    fieldProviders,
+		LibraryName:       libraryName,
+		LibrarySource:     librarySource,
+		ProfileName:       r.getActiveProfileName(req.Context()),
 		ActiveTab:         activeTab,
 		Connections:       connections,
 		ShowPlatformDebug: r.getBoolSetting(req.Context(), "show_platform_debug", false),

@@ -635,9 +635,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
 						<div class="flex items-center justify-between">
 							<div>
-								<div class="font-medium text-sm">Show platform debug info on artist pages</div>
+								<div class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-									When enabled, a Debug tab appears on artist detail pages for platform-connected artists
+									{ t(ctx, "settings.platform_debug.description") }
 								</div>
 							</div>
 							<button
@@ -650,7 +650,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								}
 								role="switch"
 								aria-checked={ boolAttr(data.ShowPlatformDebug) }
-								aria-label="Show platform debug info on artist pages"
+								aria-label={ t(ctx, "settings.platform_debug.title") }
 								onclick="togglePlatformDebug(this)"
 							>
 								<span

@@ -152,7 +152,7 @@ Stillwater uses a single migration file. To change the schema:
 4. Test locally: `go test ./internal/database/...`
 5. Migrations run automatically on application startup via goose
 
-**Important:** Do not create new migration files. All schema changes go into `001_initial_schema.sql`.
+**Important (pre-GA only):** Do not create new migration files. All schema changes go into `001_initial_schema.sql`. After GA, standard goose versioned migrations (002, 003, ...) will be used for incremental schema changes against existing databases.
 
 ### Code Quality
 

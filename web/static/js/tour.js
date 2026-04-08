@@ -101,10 +101,13 @@
                     }
                 }
             ],
-            onDestroyStarted: function() {
+            onDestroyStarted: function(_, __, opts) {
                 // Called when user clicks X, overlay, or Done on last step.
+                // Driver.js does not bind `this`, so use opts.driver.
                 markComplete();
-                this.destroy();
+                if (opts && opts.driver && typeof opts.driver.destroy === 'function') {
+                    opts.driver.destroy();
+                }
             }
         });
     }

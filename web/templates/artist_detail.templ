@@ -583,7 +583,7 @@ templ artistDetailTabBar(activeTab string, showDebug bool) {
 		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
 		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
 		if showDebug {
-			@artistDetailTab("debug", "Debug", activeTab)
+			@artistDetailTab("debug", t(ctx, "artist.tab_debug"), activeTab)
 		}
 	</nav>
 }
@@ -1241,31 +1241,31 @@ templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, s
 						state.MusicBrainzID,
 						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
 						a.MusicBrainzID == "" && state.MusicBrainzID == "")
-					@platformStateRow("Sort Name",
+					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
 						a.SortName,
 						state.SortName,
 						fieldMatch(a.SortName, state.SortName),
 						a.SortName == "" && state.SortName == "")
-					@platformStateRow("Tags",
+					@platformStateRow(t(ctx, "artist.platform_state.tags"),
 						"--",
 						strings.Join(state.Tags, ", "),
 						false,
-						len(state.Tags) == 0)
-					@platformStateRow("Backdrop Count",
+						true)
+					@platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
 						"--",
 						strconv.Itoa(state.BackdropCount),
 						false,
-						state.BackdropCount == 0)
-					@platformStateRow("Locked",
+						true)
+					@platformStateRow(t(ctx, "artist.platform_state.locked"),
 						"--",
-						boolDisplay(state.IsLocked),
+						t(ctx, boolDisplay(state.IsLocked)),
 						false,
-						false)
-					@platformStateRow("Locked Fields",
+						true)
+					@platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
 						"--",
 						strings.Join(state.LockedFields, ", "),
 						false,
-						len(state.LockedFields) == 0)
+						true)
 					<tr>
 						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
 						<td class="px-4 py-2">
@@ -1389,12 +1389,13 @@ func sortStrings(s []string) {
 	sort.Strings(s)
 }
 
-// boolDisplay returns "Yes" or "No" for a boolean value.
+// boolDisplay returns the i18n key for a boolean value.
+// Render the returned key with t(ctx, ...) in template markup.
 func boolDisplay(v bool) string {
 	if v {
-		return "Yes"
+		return "common.yes"
 	}
-	return "No"
+	return "common.no"
 }
 
 // sortedKeys returns the keys of a map sorted alphabetically.
@@ -1412,14 +1413,14 @@ templ fieldProvenanceSection(providers map[string][]string) {
 	if len(providers) > 0 {
 		<div class="mt-4 sw-card bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
 			<div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-				<h3 class="text-sm font-medium">Field Provenance</h3>
+				<h3 class="text-sm font-medium">{ t(ctx, "artist.field_provenance") }</h3>
 			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-700">
 							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-40">{ t(ctx, "common.field") }</th>
-							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Providers</th>
+							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "artist.field_provenance.providers") }</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
@@ -1429,7 +1430,7 @@ templ fieldProvenanceSection(providers map[string][]string) {
 								if len(providers[key]) > 0 {
 									<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ strings.Join(providers[key], ", ") }</td>
 								} else {
-									<td class="px-4 py-2 text-gray-400 italic">none</td>
+									<td class="px-4 py-2 text-gray-400 italic">{ t(ctx, "common.none") }</td>
 								}
 							</tr>
 						}
