@@ -59,7 +59,13 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	state, err := getter.GetArtistDetail(req.Context(), platformArtistID)
 	if err != nil {
 		r.logger.Error("fetching platform state", "artist", a.Name, "connection", conn.Name, "error", err)
-		renderTempl(w, req, templates.PlatformStateError(conn, "Failed to fetch platform state. Check the connection and try again."))
+		msg := "check the connection and try again"
+		if isHTMXRequest(req) {
+			w.WriteHeader(http.StatusInternalServerError)
+			renderTempl(w, req, templates.PlatformStateError(conn, msg))
+		} else {
+			writeError(w, req, http.StatusInternalServerError, msg)
+		}
 		return
 	}
 

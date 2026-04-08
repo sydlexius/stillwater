@@ -2065,8 +2065,8 @@ func FieldProviderNoChanges(field string) templ.Component {
 // swaps the members section, and closes the modal.
 func saveMembers(url string, targetSelector string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveMembers_dc89`,
-		Function: `function __templ_saveMembers_dc89(url, targetSelector){var btn = this;
+		Name: `__templ_saveMembers_adb8`,
+		Function: `function __templ_saveMembers_adb8(url, targetSelector){var btn = this;
 	var members = btn.getAttribute('data-members');
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
@@ -2093,13 +2093,13 @@ func saveMembers(url string, targetSelector string) templ.ComponentScript {
 				hideFieldProviderModal();
 			});
 		}
-		window.showToast && window.showToast('Failed to save members (' + r.status + ')', 'error');
+		window.showToast && window.showToast('Failed to save members (' + r.status + ')');
 	}).catch(function() {
-		window.showToast && window.showToast('Network error saving members', 'error');
+		window.showToast && window.showToast('Network error saving members');
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveMembers_dc89`, url, targetSelector),
-		CallInline: templ.SafeScriptInline(`__templ_saveMembers_dc89`, url, targetSelector),
+		Call:       templ.SafeScript(`__templ_saveMembers_adb8`, url, targetSelector),
+		CallInline: templ.SafeScriptInline(`__templ_saveMembers_adb8`, url, targetSelector),
 	}
 }
 

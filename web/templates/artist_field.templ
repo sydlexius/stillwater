@@ -472,9 +472,9 @@ script saveMembers(url string, targetSelector string) {
 				hideFieldProviderModal();
 			});
 		}
-		window.showToast && window.showToast('Failed to save members (' + r.status + ')', 'error');
+		window.showToast && window.showToast('Failed to save members (' + r.status + ')');
 	}).catch(function() {
-		window.showToast && window.showToast('Network error saving members', 'error');
+		window.showToast && window.showToast('Network error saving members');
 	});
 }
 
