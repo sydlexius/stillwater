@@ -5,18 +5,21 @@ import "github.com/sydlexius/stillwater/web/components"
 // AssetPaths holds cache-busted URLs for static assets and server configuration
 // used by templates to construct correct URLs for sub-path deployments.
 type AssetPaths struct {
-	CSS        string
-	HTMX       string
-	CropperJS  string
-	CropperCSS string
-	ChartJS    string
-	SortableJS string
-	HelpJS     string
-	PollingJS  string
+	CSS            string
+	HTMX           string
+	CropperJS      string
+	CropperCSS     string
+	ChartJS        string
+	SortableJS     string
+	HelpJS         string
+	PollingJS      string
 	SessionJS      string
 	PreferencesJS  string
 	SidebarJS      string
 	FilterFlyoutJS string
+	DriverJS       string
+	DriverCSS      string
+	TourJS         string
 	SSEJS          string
 	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
@@ -53,6 +56,9 @@ templ Layout(title string, assets AssetPaths) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ tf(ctx, "layout.page_title", title) }</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
+			if assets.DriverCSS != "" {
+				<link rel="stylesheet" href={ assets.DriverCSS }/>
+			}
 			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
 			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
 			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
@@ -128,6 +134,14 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.FilterFlyoutJS }></script>
 			<script src={ assets.HelpJS }></script>
+			if assets.DriverJS != "" {
+				<script src={ assets.DriverJS }></script>
+			}
+			if assets.TourJS != "" {
+				<script src={ assets.TourJS }></script>
+				<!-- Translated tour step strings consumed by tour.js -->
+				@tourI18nJSON()
+			}
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
 				// -- Toast Manager -----------------------------------------------
@@ -784,6 +798,12 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.SSEJS }></script>
 		</body>
 	</html>
+}
+
+// tourI18nJSON renders a hidden element with translated tour step strings.
+// tour.js reads the data-i18n attribute to display localized popover text.
+templ tourI18nJSON() {
+	<div id="tour-i18n" hidden data-i18n={ tourStepsJSON(ctx) }></div>
 }
 
 // themeInitScript applies the dark class before first paint to prevent FOUC.

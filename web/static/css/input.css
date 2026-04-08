@@ -1446,3 +1446,98 @@ input:-webkit-autofill:focus {
 .sw-filter-item[data-filter-state="neutral"] .sw-filter-item-icon {
   visibility: hidden;
 }
+
+/* -- Guided Tour (Driver.js overrides) ------------------------------------ */
+.sw-tour-popover {
+  background: rgb(255, 255, 255) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  border-radius: var(--sw-radius-md) !important;
+  color: var(--sw-content-text) !important;
+  padding: 16px !important;
+  font-family: var(--sw-font-family) !important;
+  max-width: 360px !important;
+}
+
+.sw-tour-popover .driver-popover-title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  color: var(--sw-content-text) !important;
+  margin-bottom: 8px !important;
+}
+
+.sw-tour-popover .driver-popover-description {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  color: var(--sw-content-text-secondary) !important;
+}
+
+.sw-tour-popover .driver-popover-progress-text {
+  font-size: 12px !important;
+  color: var(--sw-content-text-secondary) !important;
+}
+
+.sw-tour-popover button.driver-popover-next-btn {
+  background: var(--sw-accent-primary) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: var(--sw-radius-sm) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  cursor: pointer !important;
+}
+
+.sw-tour-popover button.driver-popover-next-btn:hover {
+  opacity: 0.9 !important;
+}
+
+.sw-tour-popover button.driver-popover-prev-btn {
+  background: transparent !important;
+  color: var(--sw-content-text-secondary) !important;
+  border: none !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  cursor: pointer !important;
+}
+
+.sw-tour-popover button.driver-popover-prev-btn:hover {
+  color: var(--sw-content-text) !important;
+}
+
+.sw-tour-popover .driver-popover-close-btn {
+  color: var(--sw-content-text-secondary) !important;
+}
+
+.sw-tour-popover .driver-popover-close-btn:hover {
+  color: var(--sw-content-text) !important;
+}
+
+.dark .sw-tour-popover {
+  background: rgb(30, 41, 59) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow {
+  border: 5px solid transparent !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-bottom {
+  border-bottom-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-left {
+  border-left-color: rgb(30, 41, 59) !important;
+}
+
+.dark .sw-tour-popover .driver-popover-arrow-side-right {
+  border-right-color: rgb(30, 41, 59) !important;
+}

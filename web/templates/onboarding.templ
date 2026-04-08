@@ -600,7 +600,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						body: JSON.stringify({"onboarding.completed": "true"})
 					}).then(function(resp) {
 						if (!resp.ok) throw new Error('HTTP ' + resp.status);
-						window.location.href = basePath + '/';
+						if (typeof window.markTourPending === 'function') {
+							window.markTourPending();
+						}
+						window.location.href = basePath + '/artists';
 					}).catch(function() {
 						alert('Failed to complete setup. Please try again.');
 					});

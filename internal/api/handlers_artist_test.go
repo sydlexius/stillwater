@@ -10,6 +10,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 func TestHandleArtistsBadge_ZeroCount(t *testing.T) {
@@ -99,4 +100,85 @@ func TestArtistsPageSortParams(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestArtistDetailPage_TabDebugFallback verifies that tab=debug falls back to
+// overview when the setting is disabled, when no connections exist, or when
+// only non-debug-capable (Lidarr) connections exist.
+func TestArtistDetailPage_TabDebugFallback(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "Debug Tab Artist")
+
+	// Helper to enable the show_platform_debug setting.
+	enableDebug := func() {
+		_, err := r.db.ExecContext(context.Background(),
+			`INSERT OR REPLACE INTO settings (key, value) VALUES ('show_platform_debug', 'true')`)
+		if err != nil {
+			t.Fatalf("setting show_platform_debug: %v", err)
+		}
+	}
+
+	// Helper to add a connection and link it to the artist.
+	addConn := func(id, connType string) {
+		c := &connection.Connection{
+			ID:      id,
+			Name:    id,
+			Type:    connType,
+			URL:     "http://localhost:8096",
+			APIKey:  "test-key",
+			Enabled: true,
+			Status:  "ok",
+		}
+		if err := r.connectionService.Create(context.Background(), c); err != nil {
+			t.Fatalf("creating connection %s: %v", id, err)
+		}
+		if err := artistSvc.SetPlatformID(context.Background(), a.ID, id, "platform-"+id); err != nil {
+			t.Fatalf("setting platform ID for %s: %v", id, err)
+		}
+	}
+
+	// Helper to make a request with tab=debug and return the response body.
+	doRequest := func() string {
+		ctx := middleware.WithTestUserID(context.Background(), "test-user")
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+			"/artists/"+a.ID+"?tab=debug", nil)
+		req.SetPathValue("id", a.ID)
+		w := httptest.NewRecorder()
+		r.handleArtistDetailPage(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		return w.Body.String()
+	}
+
+	// Case 1: setting disabled, no connections -- debug panel should be hidden.
+	t.Run("setting_disabled", func(t *testing.T) {
+		body := doRequest()
+		if strings.Contains(body, `id="tab-debug"`) {
+			t.Error("debug tab should not appear when setting is disabled")
+		}
+	})
+
+	// Case 2: setting enabled but only Lidarr connection -- no debug-capable connection.
+	t.Run("lidarr_only", func(t *testing.T) {
+		enableDebug()
+		addConn("conn-lidarr", connection.TypeLidarr)
+		body := doRequest()
+		if strings.Contains(body, `id="tab-debug"`) {
+			t.Error("debug tab should not appear with only Lidarr connections")
+		}
+	})
+
+	// Case 3: setting enabled with Emby connection -- debug tab should appear.
+	t.Run("emby_connection", func(t *testing.T) {
+		addConn("conn-emby", connection.TypeEmby)
+		body := doRequest()
+		if !strings.Contains(body, `id="tab-debug"`) {
+			t.Error("debug tab should appear when setting is enabled and Emby connection exists")
+		}
+		// The debug panel should be present since tab=debug is active with a valid connection.
+		if !strings.Contains(body, `data-tab-panel="debug"`) {
+			t.Error("debug panel should be rendered when tab=debug is active with Emby connection")
+		}
+	})
 }

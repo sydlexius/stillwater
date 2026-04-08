@@ -135,6 +135,7 @@ templ bottomSheetItem(item BottomSheetItemData) {
 
 // OpenBottomSheet returns a JS expression that opens the standalone BottomSheet
 // with the given id and stores the trigger element for focus restoration.
+
 script OpenBottomSheet(id string) {
 	var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
@@ -158,6 +159,7 @@ script OpenBottomSheet(id string) {
 
 // CloseBottomSheet returns a JS expression that closes the standalone BottomSheet
 // with the given id and restores focus to the trigger element.
+
 script CloseBottomSheet(id string) {
 	var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;

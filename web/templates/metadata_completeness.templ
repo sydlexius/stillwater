@@ -41,12 +41,14 @@ templ MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) {
 									>{ a.Name }</a>
 								</td>
 								<td class="py-1 text-right">
-									<span class={
-										"font-medium",
-										templ.KV("text-green-600 dark:text-green-400", a.HealthScore >= 80),
-										templ.KV("text-yellow-600 dark:text-yellow-400", a.HealthScore >= 50 && a.HealthScore < 80),
-										templ.KV("text-red-600 dark:text-red-400", a.HealthScore < 50),
-									}>
+									<span
+										class={
+											"font-medium",
+											templ.KV("text-green-600 dark:text-green-400", a.HealthScore >= 80),
+											templ.KV("text-yellow-600 dark:text-yellow-400", a.HealthScore >= 50 && a.HealthScore < 80),
+											templ.KV("text-red-600 dark:text-red-400", a.HealthScore < 50),
+										}
+									>
 										{ fmt.Sprintf("%.0f%%", a.HealthScore) }
 									</span>
 								</td>

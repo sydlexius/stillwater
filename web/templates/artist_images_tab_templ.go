@@ -182,7 +182,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fanart/list", artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 59, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 58, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -195,7 +195,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.loading_gallery"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 63, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 62, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -242,7 +242,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/logo/file", basePath, artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 81, Col: 85}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 79, Col: 85}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -255,7 +255,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "logo")))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 82, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 80, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -276,7 +276,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/logo/info", artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 89, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 87, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -323,7 +323,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/banner/file", basePath, artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 110, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 107, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "banner")))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 111, Col: 88}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 108, Col: 88}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -357,7 +357,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/banner/info", artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 118, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 115, Col: 77}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -391,7 +391,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 134, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 131, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -404,7 +404,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.close"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 142, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 139, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -456,7 +456,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(typeName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 278, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 275, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -469,7 +469,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 279, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 276, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -490,7 +490,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var24 templ.SafeURL
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(addURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 282, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 279, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -512,7 +512,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.replace_type", typeName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 287, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 284, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -530,7 +530,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.add_type", typeName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 290, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 287, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -584,7 +584,7 @@ func countBadge(count int) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 303, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 300, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -653,7 +653,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 323, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 320, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -666,7 +666,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 324, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 321, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -705,7 +705,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 333, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 330, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -718,7 +718,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 334, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 331, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -744,7 +744,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var36 templ.SafeURL
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath, artistID, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 341, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 338, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -757,7 +757,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.replace"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 343, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 340, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -770,7 +770,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.replace_type", localizedImageType(ctx, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 344, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 341, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -796,7 +796,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var39 templ.SafeURL
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 354, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 351, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -809,7 +809,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.crop"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 356, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 353, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -822,7 +822,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 357, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 354, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -849,7 +849,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 365, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 362, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -862,7 +862,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.confirm_trim_logo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 366, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 363, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -875,7 +875,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 368, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 365, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -888,7 +888,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_transparent_edges"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 371, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 368, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -901,7 +901,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_transparent_edges"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 372, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 369, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -928,7 +928,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 380, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 377, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -941,7 +941,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 381, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 378, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -954,7 +954,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.delete_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 383, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 380, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -967,7 +967,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 386, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 383, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -980,7 +980,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 387, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 384, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1006,7 +1006,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 393, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 390, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1019,7 +1019,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 394, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 391, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1032,7 +1032,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.delete_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 396, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 393, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1045,7 +1045,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 399, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 396, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1058,7 +1058,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 400, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 397, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1115,7 +1115,7 @@ func emptyState(basePath string, artistID string, imageType string, typeName str
 		var templ_7745c5c3_Var58 templ.SafeURL
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath, artistID, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 413, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 410, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1136,7 +1136,7 @@ func emptyState(basePath string, artistID string, imageType string, typeName str
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.upload_or_fetch", typeName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 417, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 414, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {

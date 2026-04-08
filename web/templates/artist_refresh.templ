@@ -91,10 +91,10 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 									<span>{ c.Result.Type }</span>
 								}
 								if c.Result.Country != "" {
-									<span> { tf(ctx, "image.from_country", c.Result.Country) }</span>
+									<span>{ tf(ctx, "image.from_country", c.Result.Country) }</span>
 								}
 								if c.Result.Disambiguation != "" {
-									<span class="italic"> ({ c.Result.Disambiguation })</span>
+									<span class="italic">({ c.Result.Disambiguation })</span>
 								}
 							</div>
 							if c.Result.MusicBrainzID != "" {

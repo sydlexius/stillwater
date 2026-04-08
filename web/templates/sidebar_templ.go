@@ -290,7 +290,7 @@ func Sidebar(data SidebarData) templ.Component {
 		var templ_7745c5c3_Var19 templ.SafeURL
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.BasePath + "/reports/compliance?status=non_compliant"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 131, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 131, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -316,7 +316,7 @@ func Sidebar(data SidebarData) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.open_violations"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 138, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 138, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -329,7 +329,7 @@ func Sidebar(data SidebarData) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "nav.open_violations"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 144, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/sidebar.templ`, Line: 144, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {

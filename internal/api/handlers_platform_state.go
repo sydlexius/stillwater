@@ -51,14 +51,25 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 
 	getter, err := r.newStateGetter(conn)
 	if err != nil {
-		writeError(w, req, http.StatusBadRequest, err.Error())
+		r.logger.Error("creating state getter", "connection", conn.Name, "type", conn.Type, "error", err)
+		msg := "connection type does not support platform state"
+		if isHTMXRequest(req) {
+			renderTempl(w, req, templates.PlatformStateError(conn, msg))
+		} else {
+			writeError(w, req, http.StatusBadRequest, msg)
+		}
 		return
 	}
 
 	state, err := getter.GetArtistDetail(req.Context(), platformArtistID)
 	if err != nil {
 		r.logger.Error("fetching platform state", "artist", a.Name, "connection", conn.Name, "error", err)
-		renderTempl(w, req, templates.PlatformStateError(conn, err.Error()))
+		msg := "check the connection and try again"
+		if isHTMXRequest(req) {
+			renderTempl(w, req, templates.PlatformStateError(conn, msg))
+		} else {
+			writeError(w, req, http.StatusInternalServerError, msg)
+		}
 		return
 	}
 
@@ -67,7 +78,11 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	state.PremiereDate = dateOnly(state.PremiereDate)
 	state.EndDate = dateOnly(state.EndDate)
 
-	renderTempl(w, req, templates.PlatformStateCard(a, conn, state, r.getActiveProfileName(req.Context())))
+	if req.URL.Query().Get("readonly") == "true" {
+		renderTempl(w, req, templates.PlatformStateCardReadOnly(a, conn, state, r.getActiveProfileName(req.Context())))
+	} else {
+		renderTempl(w, req, templates.PlatformStateCard(a, conn, state, r.getActiveProfileName(req.Context())))
+	}
 }
 
 // handlePullMetadata pulls metadata from a platform connection and overwrites

@@ -152,7 +152,7 @@ Stillwater uses a single migration file. To change the schema:
 4. Test locally: `go test ./internal/database/...`
 5. Migrations run automatically on application startup via goose
 
-**Important:** Do not create new migration files. All schema changes go into `001_initial_schema.sql`.
+**Important (pre-GA only):** Do not create new migration files. All schema changes go into `001_initial_schema.sql`. After GA, standard goose versioned migrations (002, 003, ...) will be used for incremental schema changes against existing databases.
 
 ### Code Quality
 
@@ -169,7 +169,7 @@ make lint         # or: golangci-lint run ./...
 make test         # or: go test -race -count=1 ./...
 ```
 
-Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook from `.githooks/pre-commit`. This runs typos, gofmt, templ freshness check, OpenAPI validation, go build, golangci-lint, govulncheck, and hadolint.
+Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook; see `.githooks/pre-commit` for the full list of checks.
 
 ### API Testing
 
@@ -197,13 +197,13 @@ go test -v -count=1 ./internal/image/...
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SW_DB_PATH` | `data/stillwater.db` | SQLite database file path |
+| `SW_DB_PATH` | `/data/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
 | `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `SW_LOG_FORMAT` | `json` | Log format: json, text |
 | `SW_PORT` | `1973` | HTTP port |
 | `SW_BASE_PATH` | (empty) | URL prefix for reverse proxy (e.g., `/stillwater`) |
 | `SW_MUSIC_PATH` | `/music` | Music library root directory |
-| `SW_SESSION_SECRET` | (auto-generated) | Session cookie signing secret |
+| `SW_SESSION_SECRET` | (unused) | Reserved for future session cookie signing support; current sessions use a random server-stored token |
 | `SW_ENCRYPTION_KEY` | (auto-generated) | Base64-encoded AES-256 key for encrypting API keys at rest |
 | `SW_BACKUP_PATH` | (empty) | Database backup directory |
 | `SW_BACKUP_ENABLED` | `true` | Enable automatic database backups |

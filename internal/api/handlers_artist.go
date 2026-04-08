@@ -353,10 +353,12 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	showPlatformDebug := r.getBoolSetting(req.Context(), "show_platform_debug", false)
+
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
 	switch activeTab {
-	case "overview", "images", "providers", "history":
+	case "overview", "images", "providers", "history", "debug":
 		// valid tab, keep it
 	default:
 		activeTab = "overview"
@@ -364,6 +366,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 
 	// Build platform connection list for "View on Platform" links.
 	var connections []templates.ArtistDetailConnection
+	hasDebugConnection := false
 	if r.connectionService != nil {
 		pids, pidErr := r.artistService.GetPlatformIDs(req.Context(), id)
 		if pidErr != nil {
@@ -375,6 +378,9 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 				r.logger.Warn("fetching connection for detail page", "connection_id", pid.ConnectionID, "error", connErr)
 				continue
 			}
+			if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
+				hasDebugConnection = true
+			}
 			extURL := buildPlatformArtistURL(conn, pid.PlatformArtistID)
 			connections = append(connections, templates.ArtistDetailConnection{
 				ID:   conn.ID,
@@ -385,16 +391,23 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Reject tab=debug when the feature is disabled or no debug-capable connections exist.
+	if activeTab == "debug" && (!showPlatformDebug || !hasDebugConnection) {
+		activeTab = "overview"
+	}
+
 	data := templates.ArtistDetailData{
-		Artist:         *a,
-		Members:        members,
-		Aliases:        aliases,
-		FieldProviders: fieldProviders,
-		LibraryName:    libraryName,
-		LibrarySource:  librarySource,
-		ProfileName:    r.getActiveProfileName(req.Context()),
-		ActiveTab:      activeTab,
-		Connections:    connections,
+		Artist:             *a,
+		Members:            members,
+		Aliases:            aliases,
+		FieldProviders:     fieldProviders,
+		LibraryName:        libraryName,
+		LibrarySource:      librarySource,
+		ProfileName:        r.getActiveProfileName(req.Context()),
+		ActiveTab:          activeTab,
+		Connections:        connections,
+		ShowPlatformDebug:  showPlatformDebug,
+		HasDebugConnection: hasDebugConnection,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }

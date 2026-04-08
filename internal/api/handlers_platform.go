@@ -342,6 +342,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		Webhooks:                webhooks,
 		WebSearchProviders:      webSearchProviders,
 		AutoFetchImages:         r.getBoolSetting(req.Context(), "auto_fetch_images", false),
+		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,
