@@ -43,6 +43,7 @@ type SettingsData struct {
 	Webhooks             []webhook.Webhook
 	WebSearchProviders   []provider.WebSearchProviderStatus
 	AutoFetchImages      bool
+	ShowPlatformDebug    bool
 	Rules                []rule.Rule
 	HasLocalLibrary      bool
 	BadgeEnabled         bool
@@ -462,6 +463,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@resetConfirmPrefsScript()
 		@settingsTabScript()
 		@autoFetchToggleScript()
+		@platformDebugToggleScript()
 		@symlinkToggleScript()
 		@settingsLibraryScript()
 		@settingsConnectionScript()
@@ -625,6 +627,37 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
 										templ.KV("translate-x-5", data.AutoFetchImages),
 										templ.KV("translate-x-0", !data.AutoFetchImages),
+									}
+								></span>
+							</button>
+						</div>
+					</div>
+					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+						<div class="flex items-center justify-between">
+							<div>
+								<div class="font-medium text-sm">Show platform debug info on artist pages</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+									When enabled, a Debug tab appears on artist detail pages for platform-connected artists
+								</div>
+							</div>
+							<button
+								type="button"
+								id="platform-debug-toggle"
+								class={
+									"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+									templ.KV("bg-blue-600", data.ShowPlatformDebug),
+									templ.KV("bg-gray-200 dark:bg-gray-600", !data.ShowPlatformDebug),
+								}
+								role="switch"
+								aria-checked={ boolAttr(data.ShowPlatformDebug) }
+								aria-label="Show platform debug info on artist pages"
+								onclick="togglePlatformDebug(this)"
+							>
+								<span
+									class={
+										"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+										templ.KV("translate-x-5", data.ShowPlatformDebug),
+										templ.KV("translate-x-0", !data.ShowPlatformDebug),
 									}
 								></span>
 							</button>
@@ -2574,6 +2607,52 @@ templ autoFetchToggleScript() {
 				} else {
 					if (typeof showToast === 'function') {
 						showToast('Failed to update auto-fetch setting.');
+					}
+				}
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Network error while updating setting.');
+				}
+			});
+		}
+	</script>
+}
+
+templ platformDebugToggleScript() {
+	<script>
+		function togglePlatformDebug(btn) {
+			var isOn = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !isOn;
+			var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch(bp + '/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({'show_platform_debug': String(newVal)}),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (r.ok) {
+					btn.setAttribute('aria-checked', String(newVal));
+					var knob = btn.querySelector('span');
+					if (newVal) {
+						btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+						btn.classList.add('bg-blue-600');
+						knob.classList.remove('translate-x-0');
+						knob.classList.add('translate-x-5');
+					} else {
+						btn.classList.remove('bg-blue-600');
+						btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+						knob.classList.remove('translate-x-5');
+						knob.classList.add('translate-x-0');
+					}
+				} else {
+					if (typeof showToast === 'function') {
+						showToast('Failed to update platform debug setting.');
 					}
 				}
 			}).catch(function() {
