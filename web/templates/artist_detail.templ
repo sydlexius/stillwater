@@ -23,7 +23,8 @@ type ArtistDetailData struct {
 	ProfileName       string                   // Active platform profile name for image terminology
 	ActiveTab         string                   // "overview", "images", "providers", "history" (default: "overview")
 	Connections       []ArtistDetailConnection // Platform connections with external URLs
-	ShowPlatformDebug bool                     // Whether to show the Debug tab (from settings)
+	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
+	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
 }
 
 // ArtistDetailConnection holds connection info for the "View on Platform" links
@@ -374,7 +375,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			}
 			// Tab bar
-			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && len(data.Connections) > 0)
+			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && data.HasDebugConnection)
 			// Tab panels
 			// -- Overview --
 			<div
@@ -534,7 +535,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			</div>
 			// -- Debug --
-			if data.ShowPlatformDebug && len(data.Connections) > 0 {
+			if data.ShowPlatformDebug && data.HasDebugConnection {
 				<div
 					id="panel-debug"
 					role="tabpanel"

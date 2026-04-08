@@ -2065,11 +2065,12 @@ func FieldProviderNoChanges(field string) templ.Component {
 // swaps the members section, and closes the modal.
 func saveMembers(url string, targetSelector string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveMembers_b3a8`,
-		Function: `function __templ_saveMembers_b3a8(url, targetSelector){var btn = this;
+		Name: `__templ_saveMembers_dc89`,
+		Function: `function __templ_saveMembers_dc89(url, targetSelector){var btn = this;
 	var members = btn.getAttribute('data-members');
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
-	fetch(url, {
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+	fetch(bp + url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -2092,10 +2093,13 @@ func saveMembers(url string, targetSelector string) templ.ComponentScript {
 				hideFieldProviderModal();
 			});
 		}
+		window.showToast && window.showToast('Failed to save members (' + r.status + ')', 'error');
+	}).catch(function() {
+		window.showToast && window.showToast('Network error saving members', 'error');
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveMembers_b3a8`, url, targetSelector),
-		CallInline: templ.SafeScriptInline(`__templ_saveMembers_b3a8`, url, targetSelector),
+		Call:       templ.SafeScript(`__templ_saveMembers_dc89`, url, targetSelector),
+		CallInline: templ.SafeScriptInline(`__templ_saveMembers_dc89`, url, targetSelector),
 	}
 }
 
@@ -2132,7 +2136,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var112 string
 		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 485, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 489, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 		if templ_7745c5c3_Err != nil {
@@ -2145,7 +2149,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/fields/" + field + "/display")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 490, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 494, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 		if templ_7745c5c3_Err != nil {
@@ -2158,7 +2162,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var114 string
 		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs("#field-" + field + "-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 491, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 495, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
 		if templ_7745c5c3_Err != nil {
@@ -2175,7 +2179,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var115 string
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 495, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 499, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 		if templ_7745c5c3_Err != nil {

@@ -51,14 +51,15 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 
 	getter, err := r.newStateGetter(conn)
 	if err != nil {
-		writeError(w, req, http.StatusBadRequest, err.Error())
+		r.logger.Error("creating state getter", "connection", conn.Name, "type", conn.Type, "error", err)
+		writeError(w, req, http.StatusBadRequest, "connection type does not support platform state")
 		return
 	}
 
 	state, err := getter.GetArtistDetail(req.Context(), platformArtistID)
 	if err != nil {
 		r.logger.Error("fetching platform state", "artist", a.Name, "connection", conn.Name, "error", err)
-		renderTempl(w, req, templates.PlatformStateError(conn, err.Error()))
+		renderTempl(w, req, templates.PlatformStateError(conn, "Failed to fetch platform state. Check the connection and try again."))
 		return
 	}
 

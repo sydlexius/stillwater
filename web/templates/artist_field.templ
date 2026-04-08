@@ -448,7 +448,8 @@ script saveMembers(url string, targetSelector string) {
 	var btn = this;
 	var members = btn.getAttribute('data-members');
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
-	fetch(url, {
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+	fetch(bp + url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -471,6 +472,9 @@ script saveMembers(url string, targetSelector string) {
 				hideFieldProviderModal();
 			});
 		}
+		window.showToast && window.showToast('Failed to save members (' + r.status + ')', 'error');
+	}).catch(function() {
+		window.showToast && window.showToast('Network error saving members', 'error');
 	});
 }
 

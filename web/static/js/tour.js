@@ -174,11 +174,14 @@
         tour.drive();
     };
 
-    // Auto-start: wait for tour target elements to appear before driving.
+    // Auto-start: wait for tour target elements to appear, then allow a brief
+    // grace period for HTMX to hydrate/bind event handlers before driving.
     if (shouldAutoStart()) {
         waitForTourTargets(3000).then(function() {
-            var tour = createTour();
-            tour.drive();
+            setTimeout(function() {
+                var tour = createTour();
+                tour.drive();
+            }, 500);
         });
     }
 })();
