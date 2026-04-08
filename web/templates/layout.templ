@@ -139,6 +139,8 @@ templ Layout(title string, assets AssetPaths) {
 			}
 			if assets.TourJS != "" {
 				<script src={ assets.TourJS }></script>
+				<!-- Translated tour step strings consumed by tour.js -->
+				@tourI18nJSON()
 			}
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
@@ -796,6 +798,12 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.SSEJS }></script>
 		</body>
 	</html>
+}
+
+// tourI18nJSON renders a hidden element with translated tour step strings.
+// tour.js reads the data-i18n attribute to display localized popover text.
+templ tourI18nJSON() {
+	<div id="tour-i18n" hidden data-i18n={ tourStepsJSON(ctx) }></div>
 }
 
 // themeInitScript applies the dark class before first paint to prevent FOUC.

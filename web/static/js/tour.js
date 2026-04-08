@@ -7,6 +7,15 @@
     var TOUR_COMPLETED_KEY = 'tour.completed';
     var TOUR_PENDING_KEY = 'tour.pending';
 
+    // Read translated tour strings from the JSON data island rendered by
+    // layout.templ. Falls back to an empty object when the element is absent
+    // (e.g. on cached pages), so each step provides its own English default.
+    var i18n = {};
+    try {
+        var el = document.getElementById('tour-i18n');
+        if (el && el.dataset.i18n) { i18n = JSON.parse(el.dataset.i18n); }
+    } catch (e) { console.warn('tour: failed to parse i18n data', e); }
+
     // Resolve the base path from the meta tag set by layout.templ.
     function basePath() {
         var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -46,8 +55,8 @@
                 {
                     element: '#sw-sidebar',
                     popover: {
-                        title: 'Navigation',
-                        description: 'Use the sidebar to switch between Dashboard, Artists, Reports, and Settings. Collapse it with the arrow at the top for more space.',
+                        title: i18n.nav_title || 'Navigation',
+                        description: i18n.nav_desc || 'Use the sidebar to switch between Dashboard, Artists, Reports, and Settings. Collapse it with the arrow at the top for more space.',
                         side: 'right',
                         align: 'start'
                     }
@@ -55,48 +64,48 @@
                 {
                     element: '#scan-btn',
                     popover: {
-                        title: 'Scan Your Library',
-                        description: 'Click here to scan your music folders. Stillwater will discover artists and fetch their metadata automatically.',
+                        title: i18n.scan_title || 'Scan Your Library',
+                        description: i18n.scan_desc || 'Click here to scan your music folders. Stillwater will discover artists and fetch their metadata automatically.',
                         side: 'bottom'
                     }
                 },
                 {
                     element: '#artist-search',
                     popover: {
-                        title: 'Search Artists',
-                        description: 'Type a name to instantly filter your artist list.',
+                        title: i18n.search_title || 'Search Artists',
+                        description: i18n.search_desc || 'Type a name to instantly filter your artist list.',
                         side: 'bottom'
                     }
                 },
                 {
                     element: '#artist-filter-trigger',
                     popover: {
-                        title: 'Filter Artists',
-                        description: 'Narrow results by metadata status, image presence, artist type, or library.',
+                        title: i18n.filter_title || 'Filter Artists',
+                        description: i18n.filter_desc || 'Narrow results by metadata status, image presence, artist type, or library.',
                         side: 'bottom'
                     }
                 },
                 {
                     element: '#sort-dropdown',
                     popover: {
-                        title: 'Sort Artists',
-                        description: 'Reorder by name, health score, date added, or last updated.',
+                        title: i18n.sort_title || 'Sort Artists',
+                        description: i18n.sort_desc || 'Reorder by name, health score, date added, or last updated.',
                         side: 'bottom'
                     }
                 },
                 {
                     element: '#view-toggle',
                     popover: {
-                        title: 'Switch Views',
-                        description: 'Toggle between a detailed table view and a visual grid view.',
+                        title: i18n.view_title || 'Switch Views',
+                        description: i18n.view_desc || 'Toggle between a detailed table view and a visual grid view.',
                         side: 'bottom'
                     }
                 },
                 {
                     element: '#artist-content',
                     popover: {
-                        title: 'Your Artist List',
-                        description: 'Your artists appear here after scanning. Click any artist to view and edit their metadata, images, and platform connections.',
+                        title: i18n.artist_list_title || 'Your Artist List',
+                        description: i18n.artist_list_desc || 'Your artists appear here after scanning. Click any artist to view and edit their metadata, images, and platform connections.',
                         side: 'top'
                     }
                 }

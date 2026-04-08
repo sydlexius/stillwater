@@ -547,7 +547,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					// Lidarr connections are skipped to avoid broken placeholders.
 					<div class="space-y-4">
 						for _, conn := range data.Connections {
-							if conn.Type == "emby" || conn.Type == "jellyfin" {
+							if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
 								<div
 									id={ "debug-platform-state-" + conn.ID }
 									hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID) }

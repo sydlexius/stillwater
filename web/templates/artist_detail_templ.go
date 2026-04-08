@@ -1691,7 +1691,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 					return templ_7745c5c3_Err
 				}
 				for _, conn := range data.Connections {
-					if conn.Type == "emby" || conn.Type == "jellyfin" {
+					if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
 						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<div id=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err

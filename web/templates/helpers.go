@@ -203,6 +203,33 @@ func membersJSON(members []provider.MemberInfo) string {
 	return string(b)
 }
 
+// tourStepsJSON builds a JSON object of translated tour step titles and
+// descriptions. Called by tourI18nJSON in layout.templ so tour.js can
+// display localized popover text.
+func tourStepsJSON(ctx context.Context) string {
+	m := map[string]string{
+		"nav_title":         t(ctx, "guide.tour_step_nav_title"),
+		"nav_desc":          t(ctx, "guide.tour_step_nav_desc"),
+		"scan_title":        t(ctx, "guide.tour_step_scan_title"),
+		"scan_desc":         t(ctx, "guide.tour_step_scan_desc"),
+		"search_title":      t(ctx, "guide.tour_step_search_title"),
+		"search_desc":       t(ctx, "guide.tour_step_search_desc"),
+		"filter_title":      t(ctx, "guide.tour_step_filter_title"),
+		"filter_desc":       t(ctx, "guide.tour_step_filter_desc"),
+		"sort_title":        t(ctx, "guide.tour_step_sort_title"),
+		"sort_desc":         t(ctx, "guide.tour_step_sort_desc"),
+		"view_title":        t(ctx, "guide.tour_step_view_title"),
+		"view_desc":         t(ctx, "guide.tour_step_view_desc"),
+		"artist_list_title": t(ctx, "guide.tour_step_artist_list_title"),
+		"artist_list_desc":  t(ctx, "guide.tour_step_artist_list_desc"),
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
 // boolAttr returns "true" or "false" for use in HTML attributes like aria-checked.
 func boolAttr(b bool) string {
 	if b {

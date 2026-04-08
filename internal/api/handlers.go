@@ -105,7 +105,8 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 	switch {
 	case path == "/artists" || path == "/artists/",
 		strings.HasPrefix(path, "/guide"),
-		strings.HasPrefix(path, "/onboarding"):
+		strings.HasPrefix(path, "/onboarding"),
+		strings.HasPrefix(path, "/setup/wizard"):
 		a.DriverJS = r.basePath + r.staticAssets.Path("/js/driver.min.js")
 		a.DriverCSS = r.basePath + r.staticAssets.Path("/css/driver.min.css")
 		a.TourJS = r.basePath + r.staticAssets.Path("/js/tour.js")
