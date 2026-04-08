@@ -356,7 +356,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
 	switch activeTab {
-	case "overview", "images", "providers", "history":
+	case "overview", "images", "providers", "history", "debug":
 		// valid tab, keep it
 	default:
 		activeTab = "overview"
@@ -393,8 +393,9 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		LibraryName:    libraryName,
 		LibrarySource:  librarySource,
 		ProfileName:    r.getActiveProfileName(req.Context()),
-		ActiveTab:      activeTab,
-		Connections:    connections,
+		ActiveTab:         activeTab,
+		Connections:       connections,
+		ShowPlatformDebug: r.getBoolSetting(req.Context(), "show_platform_debug", false),
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }

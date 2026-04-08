@@ -23,6 +23,7 @@ type ArtistDetailData struct {
 	ProfileName         string                    // Active platform profile name for image terminology
 	ActiveTab           string                    // "overview", "images", "providers", "history" (default: "overview")
 	Connections         []ArtistDetailConnection  // Platform connections with external URLs
+	ShowPlatformDebug   bool                      // Whether to show the Debug tab (from settings)
 }
 
 // ArtistDetailConnection holds connection info for the "View on Platform" links
@@ -373,7 +374,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			}
 			// Tab bar
-			@artistDetailTabBar(normalizeTab(data.ActiveTab))
+			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && len(data.Connections) > 0)
 			// Tab panels
 			// -- Overview --
 			<div
@@ -536,18 +537,54 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "artist.loading_history") }</p>
 				</div>
 			</div>
+			// -- Debug --
+			if data.ShowPlatformDebug && len(data.Connections) > 0 {
+				<div
+					id="panel-debug"
+					role="tabpanel"
+					aria-labelledby="tab-debug"
+					data-tab-panel="debug"
+					class={
+						templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug"),
+					}
+				>
+					// Platform state cards (lazy loaded, read-only)
+					<div class="space-y-4">
+						for _, conn := range data.Connections {
+							<div
+								id={ "debug-platform-state-" + conn.ID }
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID) }
+								hx-trigger="revealed"
+								hx-swap="outerHTML"
+							>
+								<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+									<div class="flex items-center gap-2">
+										<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+										<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+									</div>
+								</div>
+							</div>
+						}
+					</div>
+					// Field Provenance section (server-rendered, not lazy)
+					@fieldProvenanceSection(data.FieldProviders)
+				</div>
+			}
 			@artistDetailTabScript()
 		</div>
 	}
 }
 
 // artistDetailTabBar renders the horizontal tab bar for the artist detail page.
-templ artistDetailTabBar(activeTab string) {
+templ artistDetailTabBar(activeTab string, showDebug bool) {
 	<nav class="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1" role="tablist">
 		@artistDetailTab("overview", t(ctx, "artist.tab_overview"), activeTab)
 		@artistDetailTab("images", t(ctx, "artist.tab_images"), activeTab)
 		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
 		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
+		if showDebug {
+			@artistDetailTab("debug", "Debug", activeTab)
+		}
 	</nav>
 }
 
@@ -919,7 +956,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 // normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
 func normalizeTab(tab string) string {
 	switch tab {
-	case "overview", "images", "providers", "history":
+	case "overview", "images", "providers", "history", "debug":
 		return tab
 	default:
 		return "overview"
@@ -1149,6 +1186,110 @@ templ PlatformStateError(conn *connection.Connection, errMsg string) {
 	</div>
 }
 
+// PlatformStateCardReadOnly renders a read-only platform state comparison card
+// for the Debug tab. No action buttons or hx-post attributes are present.
+templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+		// Header: connection name + type badge + lock badge. No action buttons.
+		<div class="flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+			<div class="flex items-center gap-2">
+				<span class="font-medium text-sm">{ conn.Name }</span>
+				<span class={
+					"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+					templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
+					templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+				}>{ conn.Type }</span>
+				if state.IsLocked {
+					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
+				}
+			</div>
+		</div>
+		// Comparison table with all fields including Sort Name, Tags, Backdrop Count, Locked, Locked Fields
+		<div class="overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead>
+					<tr class="border-b border-gray-200 dark:border-gray-700">
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ conn.Name }</th>
+						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+					@platformStateRow(t(ctx, "artist.biography"),
+						truncate(a.Biography, 80),
+						truncate(state.Biography, 80),
+						fieldMatch(a.Biography, state.Biography),
+						a.Biography == "" && state.Biography == "")
+					@platformStateRow(t(ctx, "artist.genres"),
+						strings.Join(a.Genres, ", "),
+						strings.Join(state.Genres, ", "),
+						sliceMatch(a.Genres, state.Genres),
+						len(a.Genres) == 0 && len(state.Genres) == 0)
+					@platformStateRow(t(ctx, "artist.formed_premiere_date"),
+						firstNonEmpty(a.Formed, a.Born),
+						state.PremiereDate,
+						fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+						firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
+					@platformStateRow(t(ctx, "artist.disbanded_end_date"),
+						firstNonEmpty(a.Disbanded, a.Died),
+						state.EndDate,
+						fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+						firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
+					@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
+						a.MusicBrainzID,
+						state.MusicBrainzID,
+						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+						a.MusicBrainzID == "" && state.MusicBrainzID == "")
+					@platformStateRow("Sort Name",
+						a.SortName,
+						state.SortName,
+						fieldMatch(a.SortName, state.SortName),
+						a.SortName == "" && state.SortName == "")
+					@platformStateRow("Tags",
+						"--",
+						strings.Join(state.Tags, ", "),
+						false,
+						len(state.Tags) == 0)
+					@platformStateRow("Backdrop Count",
+						"--",
+						strconv.Itoa(state.BackdropCount),
+						false,
+						state.BackdropCount == 0)
+					@platformStateRow("Locked",
+						"--",
+						boolDisplay(state.IsLocked),
+						false,
+						false)
+					@platformStateRow("Locked Fields",
+						"--",
+						strings.Join(state.LockedFields, ", "),
+						false,
+						len(state.LockedFields) == 0)
+					<tr>
+						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
+						<td class="px-4 py-2">
+							@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
+							@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
+							@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
+							@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
+						</td>
+						<td class="px-4 py-2">
+							@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
+							@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
+							@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
+							@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
+						</td>
+						<td class="px-4 py-2 text-center">
+							<span class="text-gray-300 dark:text-gray-600">--</span>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
 templ platformStateRow(field, swValue, platValue string, match, bothEmpty bool) {
 	<tr>
 		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ field }</td>
@@ -1246,4 +1387,55 @@ func sliceMatch(a, b []string) bool {
 // sortStrings sorts a slice of strings in place.
 func sortStrings(s []string) {
 	sort.Strings(s)
+}
+
+// boolDisplay returns "Yes" or "No" for a boolean value.
+func boolDisplay(v bool) string {
+	if v {
+		return "Yes"
+	}
+	return "No"
+}
+
+// sortedKeys returns the keys of a map sorted alphabetically.
+func sortedKeys(m map[string][]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// fieldProvenanceSection renders a table of field-to-provider mappings for the Debug tab.
+templ fieldProvenanceSection(providers map[string][]string) {
+	if len(providers) > 0 {
+		<div class="mt-4 sw-card bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+			<div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+				<h3 class="text-sm font-medium">Field Provenance</h3>
+			</div>
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="border-b border-gray-200 dark:border-gray-700">
+							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-40">{ t(ctx, "common.field") }</th>
+							<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Providers</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+						for _, key := range sortedKeys(providers) {
+							<tr>
+								<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium">{ key }</td>
+								if len(providers[key]) > 0 {
+									<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ strings.Join(providers[key], ", ") }</td>
+								} else {
+									<td class="px-4 py-2 text-gray-400 italic">none</td>
+								}
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
 }
