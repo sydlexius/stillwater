@@ -5,8 +5,10 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import "github.com/a-h/templ"
-import templruntime "github.com/a-h/templ/runtime"
+import (
+	"github.com/a-h/templ"
+	templruntime "github.com/a-h/templ/runtime"
+)
 
 // ContextHelp renders a small "?" help icon that reveals a tooltip popover on
 // click. It is keyboard-accessible: Tab to focus, Space/Enter to activate,

@@ -5,8 +5,10 @@ package templates
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import "github.com/a-h/templ"
-import templruntime "github.com/a-h/templ/runtime"
+import (
+	"github.com/a-h/templ"
+	templruntime "github.com/a-h/templ/runtime"
+)
 
 // HelpOverlay renders a searchable help overlay modal with guide section data
 // embedded as JSON. Opened via the ? key or the navbar help button.

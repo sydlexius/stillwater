@@ -46,7 +46,6 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				@emptyState(basePath, artistID, "thumb", img.ImageTermFor("thumb", profileName))
 			}
 		}
-
 		// -- Fanart / Backdrop section (16:9) --
 		@imageSectionWithAction(
 			img.ImageTermFor("fanart", profileName),
@@ -66,7 +65,6 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				@emptyState(basePath, artistID, "fanart", img.ImageTermFor("fanart", profileName))
 			}
 		}
-
 		// -- Logo section --
 		@imageSectionWithAction(
 			img.ImageTermFor("logo", profileName),
@@ -95,7 +93,6 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				@emptyState(basePath, artistID, "logo", img.ImageTermFor("logo", profileName))
 			}
 		}
-
 		// -- Banner section (~4:1) --
 		@imageSectionWithAction(
 			img.ImageTermFor("banner", profileName),
@@ -430,6 +427,7 @@ func boolToCount(exists bool) int {
 // openImageLightbox is a templ script that calls the page-level openLightbox
 // function with the image URL and accessible label. Using a script function
 // lets Go values be safely embedded in the onclick attribute.
+
 script openImageLightbox(src string, alt string) {
 	openLightbox(src, alt);
 }

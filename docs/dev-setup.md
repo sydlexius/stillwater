@@ -169,7 +169,7 @@ make lint         # or: golangci-lint run ./...
 make test         # or: go test -race -count=1 ./...
 ```
 
-Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook from `.githooks/pre-commit`. This runs typos, gofmt, templ freshness check, an OpenAPI staging reminder when handler files change, go build, golangci-lint, govulncheck, and hadolint.
+Pre-commit hooks enforce formatting and linting automatically. Run `make hooks` to install the project hook; see `.githooks/pre-commit` for the full list of checks.
 
 ### API Testing
 

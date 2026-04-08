@@ -30,9 +30,9 @@ type LibrarySourceInfo struct {
 type ArtistListData struct {
 	Artists          []artist.Artist
 	Libraries        []library.Library
-	LibrarySources   map[string]LibrarySourceInfo          // library ID -> source info (only for non-manual)
-	ComplianceMap    map[string]artist.ComplianceStatus     // artist ID -> compliance status
-	PlatformPresence map[string]artist.PlatformPresence     // artist ID -> platform badges
+	LibrarySources   map[string]LibrarySourceInfo       // library ID -> source info (only for non-manual)
+	ComplianceMap    map[string]artist.ComplianceStatus // artist ID -> compliance status
+	PlatformPresence map[string]artist.PlatformPresence // artist ID -> platform badges
 	Pagination       components.PaginationData
 	Search           string
 	Sort             string
@@ -41,10 +41,10 @@ type ArtistListData struct {
 	// Filters holds the flyout multi-filter state (key -> "include" or "exclude").
 	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked,
 	// type_person, type_group, type_orchestra, library_{id}.
-	Filters          map[string]string
-	LibraryID        string
-	View             string // "table" or "grid"
-	ProfileName      string // Active platform profile name for image terminology
+	Filters     map[string]string
+	LibraryID   string
+	View        string // "table" or "grid"
+	ProfileName string // Active platform profile name for image terminology
 }
 
 // complianceDotClass returns the Tailwind background class for a compliance indicator dot.
@@ -414,16 +414,16 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						</div>
 					</details>
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
-					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
-						{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
-						{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
-						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
-						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
-						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-						{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
-					})
-				</div>
-				<div id="view-toggle" class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+						@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+							{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+							{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
+							{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
+							{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
+							{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
+							{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
+						})
+					</div>
+					<div id="view-toggle" class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
 							title={ t(ctx, "artists.view.table") }
@@ -758,7 +758,7 @@ templ ArtistTable(data ArtistListData) {
 								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 							>
 								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
 								</svg>
 							</button>
 						</span>
@@ -884,7 +884,7 @@ templ ArtistGrid(data ArtistListData) {
 								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 							>
 								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
 								</svg>
 							</button>
 						</span>

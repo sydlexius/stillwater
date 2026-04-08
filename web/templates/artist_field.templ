@@ -1,8 +1,8 @@
 package templates
 
 import (
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -156,7 +156,6 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 }
 
 // --- Biography ---
-
 templ biographyDisplay(a *artist.Artist, providers []string) {
 	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
@@ -192,7 +191,6 @@ templ biographyEdit(a *artist.Artist) {
 }
 
 // --- Tag fields (Genres, Styles, Moods) ---
-
 templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colorClass string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
 		<h3 class="text-xs font-medium uppercase text-gray-700 dark:text-gray-400 mb-1 flex items-center gap-1">
@@ -236,7 +234,6 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
 }
 
 // --- Detail sidebar fields ---
-
 templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
@@ -377,7 +374,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										type="button"
 										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 										data-members={ membersJSON(r.Members) }
-										onclick={ saveMembers("/api/v1/artists/" + a.ID + "/members/from-provider", "#members-section-" + a.ID) }
+										onclick={ saveMembers("/api/v1/artists/"+a.ID+"/members/from-provider", "#members-section-"+a.ID) }
 									>
 										{ t(ctx, "artist.use_this") }
 									</button>
@@ -446,6 +443,7 @@ templ FieldProviderNoChanges(field string) {
 
 // saveMembers posts member data from a provider result to the save endpoint,
 // swaps the members section, and closes the modal.
+
 script saveMembers(url string, targetSelector string) {
 	var btn = this;
 	var members = btn.getAttribute('data-members');
@@ -477,7 +475,6 @@ script saveMembers(url string, targetSelector string) {
 }
 
 // --- Shared edit form buttons ---
-
 templ editFormButtons(artistID, field string) {
 	<div class="mt-2 flex gap-2">
 		<button

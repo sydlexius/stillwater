@@ -26,7 +26,8 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 			<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
 				{ tn(ctx, "discover.found_libraries", len(libs)) }
 			</p>
-			<form id={ "import-form-" + connID }
+			<form
+				id={ "import-form-" + connID }
 				data-alert-select-one={ t(ctx, "discover.import_select_at_least_one") }
 				data-alert-import-failed={ t(ctx, "discover.import_failed") }
 				data-alert-import-failed-http={ t(ctx, "discover.import_failed_http") }

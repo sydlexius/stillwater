@@ -353,6 +353,8 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	showPlatformDebug := r.getBoolSetting(req.Context(), "show_platform_debug", false)
+
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
 	switch activeTab {
@@ -385,6 +387,11 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Reject tab=debug when the feature is disabled or no connections exist.
+	if activeTab == "debug" && (!showPlatformDebug || len(connections) == 0) {
+		activeTab = "overview"
+	}
+
 	data := templates.ArtistDetailData{
 		Artist:            *a,
 		Members:           members,
@@ -395,7 +402,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		ProfileName:       r.getActiveProfileName(req.Context()),
 		ActiveTab:         activeTab,
 		Connections:       connections,
-		ShowPlatformDebug: r.getBoolSetting(req.Context(), "show_platform_debug", false),
+		ShowPlatformDebug: showPlatformDebug,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }

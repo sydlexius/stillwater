@@ -2,28 +2,28 @@ package templates
 
 import (
 	"fmt"
-	"net/url"
-	"sort"
-	"strconv"
-	"strings"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/web/components"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // ArtistDetailData holds the data for the artist detail page.
 type ArtistDetailData struct {
-	Artist              artist.Artist
-	Members             []artist.BandMember
-	Aliases        []artist.Alias
-	FieldProviders map[string][]string
-	LibraryName         string
-	LibrarySource       string
-	ProfileName         string                    // Active platform profile name for image terminology
-	ActiveTab           string                    // "overview", "images", "providers", "history" (default: "overview")
-	Connections         []ArtistDetailConnection  // Platform connections with external URLs
-	ShowPlatformDebug   bool                      // Whether to show the Debug tab (from settings)
+	Artist            artist.Artist
+	Members           []artist.BandMember
+	Aliases           []artist.Alias
+	FieldProviders    map[string][]string
+	LibraryName       string
+	LibrarySource     string
+	ProfileName       string                   // Active platform profile name for image terminology
+	ActiveTab         string                   // "overview", "images", "providers", "history" (default: "overview")
+	Connections       []ArtistDetailConnection // Platform connections with external URLs
+	ShowPlatformDebug bool                     // Whether to show the Debug tab (from settings)
 }
 
 // ArtistDetailConnection holds connection info for the "View on Platform" links
@@ -469,9 +469,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				role="tabpanel"
 				aria-labelledby="tab-images"
 				data-tab-panel="images"
-				class={
-					templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"),
-				}
+				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"), }
 			>
 				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName, assets.BasePath)
 			</div>
@@ -524,9 +522,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				role="tabpanel"
 				aria-labelledby="tab-history"
 				data-tab-panel="history"
-				class={
-					templ.KV("hidden", normalizeTab(data.ActiveTab) != "history"),
-				}
+				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "history"), }
 			>
 				<div
 					id={ "artist-history-tab-" + data.Artist.ID }
@@ -544,26 +540,28 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					role="tabpanel"
 					aria-labelledby="tab-debug"
 					data-tab-panel="debug"
-					class={
-						templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug"),
-					}
+					class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug"), }
 				>
-					// Platform state cards (lazy loaded, read-only)
+					// Platform state cards (lazy loaded, read-only).
+					// Only Emby and Jellyfin connections support platform-state;
+					// Lidarr connections are skipped to avoid broken placeholders.
 					<div class="space-y-4">
 						for _, conn := range data.Connections {
-							<div
-								id={ "debug-platform-state-" + conn.ID }
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID) }
-								hx-trigger="revealed"
-								hx-swap="outerHTML"
-							>
-								<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-									<div class="flex items-center gap-2">
-										<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-										<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+							if conn.Type == "emby" || conn.Type == "jellyfin" {
+								<div
+									id={ "debug-platform-state-" + conn.ID }
+									hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID) }
+									hx-trigger="revealed"
+									hx-swap="outerHTML"
+								>
+									<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+										<div class="flex items-center gap-2">
+											<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+											<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+										</div>
 									</div>
 								</div>
-							</div>
+							}
 						}
 					</div>
 					// Field Provenance section (server-rendered, not lazy)
@@ -788,7 +786,10 @@ type FanartGalleryItem struct {
 // FanartGallery renders the fanart gallery management panel as an HTMX partial.
 // profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
 templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
-	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }
+	<div
+		id="fanart-gallery"
+		class="space-y-4"
+		data-artist-id={ artistID }
 		data-label-delete-n-one={ t(ctx, "artist.delete_n_selected.one") }
 		data-label-delete-n-other={ t(ctx, "artist.delete_n_selected.other") }
 		data-confirm-delete-n-one={ t(ctx, "artist.delete_n_fanart_confirm.one") }
@@ -1085,11 +1086,13 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 		<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
 			<div class="flex items-center gap-2">
 				<span class="font-medium text-sm">{ conn.Name }</span>
-				<span class={
-					"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-					templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
-					templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
-				}>{ conn.Type }</span>
+				<span
+					class={
+						"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+						templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
+						templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+					}
+				>{ conn.Type }</span>
 				if state.IsLocked {
 					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
 				}
@@ -1194,11 +1197,13 @@ templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, s
 		<div class="flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
 			<div class="flex items-center gap-2">
 				<span class="font-medium text-sm">{ conn.Name }</span>
-				<span class={
-					"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-					templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
-					templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
-				}>{ conn.Type }</span>
+				<span
+					class={
+						"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+						templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
+						templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+					}
+				>{ conn.Type }</span>
 				if state.IsLocked {
 					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
 				}
@@ -1328,11 +1333,13 @@ templ platformStateRow(field, swValue, platValue string, match, bothEmpty bool) 
 }
 
 templ platformImageBadge(label string, present bool) {
-	<span class={
-		"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
-		templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
-		templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
-	}>{ label }</span>
+	<span
+		class={
+			"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
+			templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
+			templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
+		}
+	>{ label }</span>
 }
 
 // truncate shortens a string to at most n runes, appending "..." if truncated.

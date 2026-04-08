@@ -5,10 +5,12 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import "github.com/a-h/templ"
-import templruntime "github.com/a-h/templ/runtime"
+import (
+	"strconv"
 
-import "strconv"
+	"github.com/a-h/templ"
+	templruntime "github.com/a-h/templ/runtime"
+)
 
 // Toggle renders an iOS-style toggle switch backed by a hidden checkbox.
 // The hidden <input type="checkbox"> carries the form value so the toggle

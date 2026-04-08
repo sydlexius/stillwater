@@ -33,33 +33,33 @@ func profileEditable(p *platform.Profile) bool {
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
-	ActiveTab            string
-	Libraries            []library.Library
-	Profiles             []platform.Profile
-	ActiveProfile        *platform.Profile
-	ProviderKeys         []provider.ProviderKeyStatus
-	Priorities           []provider.FieldPriority
-	Connections          []connection.Connection
-	Webhooks             []webhook.Webhook
-	WebSearchProviders   []provider.WebSearchProviderStatus
-	AutoFetchImages      bool
-	ShowPlatformDebug    bool
-	Rules                []rule.Rule
-	HasLocalLibrary      bool
-	BadgeEnabled         bool
-	BadgeSeverityError   bool
-	BadgeSeverityWarning bool
+	ActiveTab               string
+	Libraries               []library.Library
+	Profiles                []platform.Profile
+	ActiveProfile           *platform.Profile
+	ProviderKeys            []provider.ProviderKeyStatus
+	Priorities              []provider.FieldPriority
+	Connections             []connection.Connection
+	Webhooks                []webhook.Webhook
+	WebSearchProviders      []provider.WebSearchProviderStatus
+	AutoFetchImages         bool
+	ShowPlatformDebug       bool
+	Rules                   []rule.Rule
+	HasLocalLibrary         bool
+	BadgeEnabled            bool
+	BadgeSeverityError      bool
+	BadgeSeverityWarning    bool
 	BadgeSeverityInfo       bool
-	SidebarShowViolations  bool
-	RuleScheduleMinutes    int
-	APITokens            []auth.APIToken
-	BackupRetention      int
-	BackupMaxAgeDays     int
+	SidebarShowViolations   bool
+	RuleScheduleMinutes     int
+	APITokens               []auth.APIToken
+	BackupRetention         int
+	BackupMaxAgeDays        int
 	SymlinkSupported        bool
 	CacheMaxSizeMB          string
 	NameSimilarityThreshold int
-	Users                UsersTabData
-	AuthProviders        AuthProvidersData
+	Users                   UsersTabData
+	AuthProviders           AuthProvidersData
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -417,7 +417,6 @@ func providerIsDisabled(name provider.ProviderName, disabled []provider.Provider
 	}
 	return false
 }
-
 
 // connectionsForType filters connections by type.
 func connectionsForType(conns []connection.Connection, connType string) []connection.Connection {
@@ -923,7 +922,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
-
 			<!-- Automation tab -->
 			<div
 				data-tab-panel="automation"
@@ -1094,7 +1092,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
 										hx-swap="none"
 										hx-confirm={ t(ctx, "settings.api_tokens.confirm_revoke") }
-										hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "revoke") }
+										hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "revoke") }
 										aria-label={ "Revoke token " + tok.Name }
 									>
 										Revoke
@@ -1141,7 +1139,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
 													hx-swap="none"
 													hx-confirm={ t(ctx, "settings.api_tokens.confirm_delete") }
-													hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "delete") }
+													hx-on--after-request={ tokenAfterRequest("token-row-"+tok.ID, "delete") }
 													aria-label={ "Delete token " + tok.Name }
 												>
 													Delete
@@ -1347,9 +1345,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
-						@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.")
-					</div>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
+							@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.rule_schedule.description") }
 						</p>
@@ -1415,7 +1413,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4">
 						<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
 							{ t(ctx, "settings.confirm_dialogs.reset_info") }
-
 						</p>
 						<button
 							type="button"
@@ -1712,9 +1709,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 							<!-- Ephemeral level: when checked, level change is not persisted to DB -->
 							<div id="ephemeral-level-row" class="hidden flex items-center gap-2">
-								<input type="checkbox" id="ephemeral-level" name="ephemeral" value="true"
+								<input
+									type="checkbox"
+									id="ephemeral-level"
+									name="ephemeral"
+									value="true"
 									class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
-									aria-label={ t(ctx, "settings.log_settings.revert_on_restart") }/>
+									aria-label={ t(ctx, "settings.log_settings.revert_on_restart") }
+								/>
 								<label for="ephemeral-level" class="text-sm text-gray-600 dark:text-gray-400">
 									{ t(ctx, "settings.log_settings.revert_to") } <span id="ephemeral-revert-level" class="font-medium">info</span> { t(ctx, "settings.log_settings.on_restart") }
 								</label>
@@ -1799,29 +1801,49 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<!-- Filter bar -->
 						<div class="flex flex-wrap items-center gap-2">
 							<div class="flex items-center gap-1" role="group" aria-label={ t(ctx, "settings.log_viewer.level_filter") }>
-								<button type="button" data-log-level="trace" onclick="toggleLogLevel(this)"
+								<button
+									type="button"
+									data-log-level="trace"
+									onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
-									aria-pressed="false">
+									aria-pressed="false"
+								>
 									Trace
 								</button>
-								<button type="button" data-log-level="debug" onclick="toggleLogLevel(this)"
+								<button
+									type="button"
+									data-log-level="debug"
+									onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
-									aria-pressed="false">
+									aria-pressed="false"
+								>
 									Debug
 								</button>
-								<button type="button" data-log-level="info" onclick="toggleLogLevel(this)"
+								<button
+									type="button"
+									data-log-level="info"
+									onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-blue-900/50 text-blue-300 ring-1 ring-blue-500/50 transition-opacity"
-									aria-pressed="true">
+									aria-pressed="true"
+								>
 									Info
 								</button>
-								<button type="button" data-log-level="warn" onclick="toggleLogLevel(this)"
+								<button
+									type="button"
+									data-log-level="warn"
+									onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-amber-900/50 text-amber-300 ring-1 ring-amber-500/50 transition-opacity"
-									aria-pressed="false">
+									aria-pressed="false"
+								>
 									Warn
 								</button>
-								<button type="button" data-log-level="error" onclick="toggleLogLevel(this)"
+								<button
+									type="button"
+									data-log-level="error"
+									onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-red-900/50 text-red-300 ring-1 ring-red-500/50 transition-opacity"
-									aria-pressed="false">
+									aria-pressed="false"
+								>
 									Error
 								</button>
 							</div>
@@ -1834,20 +1856,30 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								aria-label={ t(ctx, "settings.log_viewer.search_placeholder") }
 							/>
 							<div class="flex items-center gap-1">
-								<button type="button" id="log-pause-btn" onclick="toggleLogPause()"
+								<button
+									type="button"
+									id="log-pause-btn"
+									onclick="toggleLogPause()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 									aria-label={ t(ctx, "actions.pause") }
-									aria-pressed="false">
+									aria-pressed="false"
+								>
 									Pause
 								</button>
-								<button type="button" onclick="clearLogs()"
+								<button
+									type="button"
+									onclick="clearLogs()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									aria-label={ t(ctx, "actions.clear") }>
+									aria-label={ t(ctx, "actions.clear") }
+								>
 									Clear
 								</button>
-								<button type="button" onclick="downloadLogs()"
+								<button
+									type="button"
+									onclick="downloadLogs()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									aria-label={ t(ctx, "actions.download") }>
+									aria-label={ t(ctx, "actions.download") }
+								>
 									Download
 								</button>
 							</div>
@@ -4583,7 +4615,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 				>
 					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>{ t(ctx, "settings.rules.auto_fix") }</option>
 					<option value="manual" selected?={ rl.AutomationMode == "manual" }>{ t(ctx, "settings.rules.manual") }</option>
-					</select>
+				</select>
 				<button
 					type="button"
 					class={ ruleToggleBtnClasses(rl.Enabled) }

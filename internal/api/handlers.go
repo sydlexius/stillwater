@@ -52,12 +52,12 @@ func (r *Router) assets() templates.AssetPaths {
 		PreferencesJS:  r.basePath + r.staticAssets.Path("/js/preferences.js"),
 		SidebarJS:      r.basePath + r.staticAssets.Path("/js/sidebar.js"),
 		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
-		DriverJS:       r.basePath + r.staticAssets.Path("/js/driver.min.js"),
-		DriverCSS:      r.basePath + r.staticAssets.Path("/css/driver.min.css"),
-		TourJS:         r.basePath + r.staticAssets.Path("/js/tour.js"),
-		SSEJS:          r.basePath + r.staticAssets.Path("/js/sse.js"),
-		LoginBG:        r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
-		BasePath:       r.basePath,
+		// DriverJS, DriverCSS, and TourJS are intentionally omitted here.
+		// They are conditionally set in assetsFor() based on the request path
+		// so pages that do not use the guided tour avoid the extra JS/CSS.
+		SSEJS:    r.basePath + r.staticAssets.Path("/js/sse.js"),
+		LoginBG:  r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath: r.basePath,
 	}
 }
 
@@ -99,6 +99,18 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 		path = "/"
 	}
 	a.CurrentPath = path
+
+	// Include Driver.js tour assets only on pages where the guided tour
+	// may auto-start, be manually triggered, or set a pending flag.
+	switch {
+	case path == "/artists" || path == "/artists/",
+		strings.HasPrefix(path, "/guide"),
+		strings.HasPrefix(path, "/onboarding"):
+		a.DriverJS = r.basePath + r.staticAssets.Path("/js/driver.min.js")
+		a.DriverCSS = r.basePath + r.staticAssets.Path("/css/driver.min.css")
+		a.TourJS = r.basePath + r.staticAssets.Path("/js/tour.js")
+	}
+
 	return a
 }
 

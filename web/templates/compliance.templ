@@ -334,14 +334,14 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 // profileName controls the dataset labels for thumb/fanart (e.g. "Primary"/"Backdrop" for Emby).
 func coverageChartJSON(libs []LibrarySummaryData, profileName string) string {
 	type chartData struct {
-		Labels     []string `json:"labels"`
-		Metadata   []int    `json:"metadata"`
-		Thumb      []int    `json:"thumb"`
-		Fanart     []int    `json:"fanart"`
-		MBID       []int    `json:"mbid"`
-		Total      []int    `json:"total"`
-		ThumbLabel  string  `json:"thumb_label"`
-		FanartLabel string  `json:"fanart_label"`
+		Labels      []string `json:"labels"`
+		Metadata    []int    `json:"metadata"`
+		Thumb       []int    `json:"thumb"`
+		Fanart      []int    `json:"fanart"`
+		MBID        []int    `json:"mbid"`
+		Total       []int    `json:"total"`
+		ThumbLabel  string   `json:"thumb_label"`
+		FanartLabel string   `json:"fanart_label"`
 	}
 	d := chartData{
 		Labels:      make([]string, len(libs)),
@@ -397,7 +397,7 @@ templ ComplianceTable(data ComplianceData) {
 							tabindex="0"
 							role="button"
 							onclick="sortBy('name')"
-						onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
+							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
 						>
 							{ t(ctx, "common.artist") }{ sortIcon(data.Sort, "name", data.Order) }
 						</th>

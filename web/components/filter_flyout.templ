@@ -155,6 +155,7 @@ templ filterItemIconSVG(state string) {
 
 // OpenFilterFlyout is an exported script for use as an onclick handler in
 // templates outside this package.
+
 script OpenFilterFlyout(id string) {
 	swFilterFlyout.open(id);
 }
@@ -175,6 +176,7 @@ script clearAllFilterFlyout(id string) {
 // HTMX target region. Called by the X button on active filter chips.
 // targetSel is the CSS selector for the HTMX content region to reload
 // (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
+
 script DismissFilterChip(key string, targetSel string) {
 	var url = new URL(window.location.href);
 	url.searchParams.delete(key);

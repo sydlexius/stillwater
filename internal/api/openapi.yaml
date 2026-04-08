@@ -2669,23 +2669,38 @@ paths:
               schema:
                 type: string
         "400":
-          description: Bad request (missing connection_id or connection disabled)
+          description: >-
+            Bad request (missing connection_id or connection disabled).
+            HTMX requests receive an HTML error partial instead of JSON.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
         "404":
-          description: Artist, connection, or platform ID not found
+          description: >-
+            Artist, connection, or platform ID not found.
+            HTMX requests receive an HTML error partial instead of JSON.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
         "500":
-          description: Internal server error
+          description: >-
+            Internal server error. HTMX requests, including platform fetch
+            failures, receive an HTML error partial instead of JSON.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/pull:
     post:

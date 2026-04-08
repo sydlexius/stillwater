@@ -5,14 +5,14 @@ import "github.com/sydlexius/stillwater/web/components"
 // AssetPaths holds cache-busted URLs for static assets and server configuration
 // used by templates to construct correct URLs for sub-path deployments.
 type AssetPaths struct {
-	CSS        string
-	HTMX       string
-	CropperJS  string
-	CropperCSS string
-	ChartJS    string
-	SortableJS string
-	HelpJS     string
-	PollingJS  string
+	CSS            string
+	HTMX           string
+	CropperJS      string
+	CropperCSS     string
+	ChartJS        string
+	SortableJS     string
+	HelpJS         string
+	PollingJS      string
 	SessionJS      string
 	PreferencesJS  string
 	SidebarJS      string
@@ -56,7 +56,9 @@ templ Layout(title string, assets AssetPaths) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ tf(ctx, "layout.page_title", title) }</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
-			<link rel="stylesheet" href={ assets.DriverCSS }/>
+			if assets.DriverCSS != "" {
+				<link rel="stylesheet" href={ assets.DriverCSS }/>
+			}
 			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
 			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
 			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
@@ -132,8 +134,12 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.FilterFlyoutJS }></script>
 			<script src={ assets.HelpJS }></script>
-			<script src={ assets.DriverJS }></script>
-			<script src={ assets.TourJS }></script>
+			if assets.DriverJS != "" {
+				<script src={ assets.DriverJS }></script>
+			}
+			if assets.TourJS != "" {
+				<script src={ assets.TourJS }></script>
+			}
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
 				// -- Toast Manager -----------------------------------------------

@@ -191,6 +191,7 @@ templ contextMenuItem(item ContextMenuItemData) {
 // menu id. It is exported so that custom split-button layouts in other packages
 // can reuse the same toggle behavior.
 // On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
+
 script ToggleContextMenu(id string) {
 	var panel = document.getElementById('ctx-panel-' + id);
 	var sheet = document.getElementById('ctx-sheet-' + id);
@@ -253,6 +254,7 @@ script ToggleContextMenu(id string) {
 
 // CloseContextMenu closes the bottom sheet for the given id and returns focus
 // to the trigger element.
+
 script CloseContextMenu(id string) {
 	var sheet = document.getElementById('ctx-sheet-' + id);
 	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');

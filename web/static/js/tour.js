@@ -112,15 +112,50 @@
         });
     }
 
+    // waitForTourTargets waits for the first tour step's target element to
+    // exist in the DOM before resolving. Uses a MutationObserver with a
+    // fallback timeout so the tour never hangs indefinitely.
+    function waitForTourTargets(timeoutMs) {
+        var TARGET_SELECTOR = '#sw-sidebar';
+        return new Promise(function(resolve) {
+            if (document.querySelector(TARGET_SELECTOR)) {
+                resolve();
+                return;
+            }
+            var resolved = false;
+            var observer = new MutationObserver(function() {
+                if (!resolved && document.querySelector(TARGET_SELECTOR)) {
+                    resolved = true;
+                    observer.disconnect();
+                    resolve();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            setTimeout(function() {
+                if (!resolved) {
+                    resolved = true;
+                    observer.disconnect();
+                    resolve();
+                }
+            }, timeoutMs || 3000);
+        });
+    }
+
+    // Mark the tour as pending so it auto-starts on the next Artists page load.
+    // Centralizes localStorage key management so other templates (e.g. onboarding)
+    // do not need to reference key names directly.
+    window.markTourPending = function() {
+        localStorage.removeItem(TOUR_COMPLETED_KEY);
+        localStorage.setItem(TOUR_PENDING_KEY, 'true');
+    };
+
     // Public API for manual restart from guide page or help overlay.
     window.startGuidedTour = function() {
         var bp = basePath();
         var artistsPath = bp + '/artists';
         // If not on the Artists page, navigate there first.
         if (!isArtistsPage()) {
-            // Set pending so tour auto-starts on arrival.
-            localStorage.removeItem(TOUR_COMPLETED_KEY);
-            localStorage.setItem(TOUR_PENDING_KEY, 'true');
+            window.markTourPending();
             window.location.href = artistsPath;
             return;
         }
@@ -130,13 +165,11 @@
         tour.drive();
     };
 
-    // Auto-start check on page load.
+    // Auto-start: wait for tour target elements to appear before driving.
     if (shouldAutoStart()) {
-        // Delay to let HTMX-loaded content settle (toolbar elements are
-        // server-rendered, but artist list loads via hx-trigger="load").
-        setTimeout(function() {
+        waitForTourTargets(3000).then(function() {
             var tour = createTour();
             tour.drive();
-        }, 500);
+        });
     }
 })();

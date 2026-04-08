@@ -29,11 +29,14 @@ templ IndexPage(assets AssetPaths) {
 							}
 						</div>
 						for i := 0; i < 5; i++ {
-							<div class={ "rounded-lg border-l-4 bg-white dark:bg-gray-800/80 px-3 py-2.5 shadow-sm animate-pulse",
-								templ.KV("border-l-red-400", i%3 == 0),
-								templ.KV("border-l-indigo-400", i%3 == 1),
-								templ.KV("border-l-amber-400", i%3 == 2),
-							}>
+							<div
+								class={
+									"rounded-lg border-l-4 bg-white dark:bg-gray-800/80 px-3 py-2.5 shadow-sm animate-pulse",
+									templ.KV("border-l-red-400", i%3 == 0),
+									templ.KV("border-l-indigo-400", i%3 == 1),
+									templ.KV("border-l-amber-400", i%3 == 2),
+								}
+							>
 								<div class="flex items-center gap-2.5">
 									<div class="h-3.5 w-3.5 bg-gray-200 dark:bg-gray-700 rounded"></div>
 									<div class="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
