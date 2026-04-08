@@ -20,20 +20,34 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 
 ```
 cmd/stillwater/       - Main entry point
-internal/api/         - HTTP handlers and middleware
+internal/api/         - HTTP handlers, middleware, and SSE hub
 internal/artist/      - Artist domain model, service, and repository interfaces
 internal/auth/        - Authentication (session-based)
+internal/backup/      - Database backup service
 internal/config/      - Configuration loading (env + YAML)
+internal/connection/  - External platform connections (Emby, Jellyfin, Lidarr)
 internal/database/    - SQLite database and migrations
 internal/dbutil/      - Shared database helpers (type conversions, nullable handling)
 internal/encryption/  - AES-256-GCM encryption for secrets
+internal/event/       - Channel-based event bus
+internal/filesystem/  - Atomic file writes (tmp/bak/rename pattern)
+internal/i18n/        - Internationalization support
+internal/image/       - Image processing (fetch, crop, compare)
+internal/imagebridge/ - Resolves artist IDs to platform-specific image URLs
+internal/library/     - Music library management
+internal/logging/     - Log manager (levels, rotation, ring buffer)
+internal/maintenance/ - Scheduled maintenance tasks
 internal/nfo/         - NFO file parser and writer
+internal/platform/    - Platform profiles
 internal/provider/    - Metadata source adapters (MusicBrainz, Fanart.tv, etc.)
+internal/publish/     - Publisher for NFO and platform writes
 internal/rule/        - Rule engine (Bliss-inspired)
 internal/scanner/     - Filesystem and API library scanners
-internal/filesystem/  - Atomic file writes (tmp/bak/rename pattern)
-internal/image/       - Image processing (fetch, crop, compare)
-internal/notification/- Webhook dispatcher
+internal/scraper/     - Configurable web scraping
+internal/settingsio/  - Application settings persistence
+internal/version/     - Build version injection via ldflags
+internal/watcher/     - Filesystem watcher for library directories
+internal/webhook/     - Webhook dispatcher
 web/templates/        - Templ templates
 web/static/           - CSS, vendored JS
 api/bruno/            - Bruno API test collections
@@ -47,9 +61,13 @@ build/unraid/         - Unraid CA template
 ```bash
 make build          # Build binary (runs templ generate + tailwind first)
 make run            # Build and run locally with debug logging
+make dev            # Hot reload with air
 make test           # Run all tests with race detector
 make lint           # Run golangci-lint
 make fmt            # Format Go + Templ files
+make hooks          # Install git pre-commit hook
+make check-openapi  # Validate OpenAPI spec
+make clean          # Remove build artifacts
 make docker-build   # Build Docker image
 make docker-run     # Start via docker compose
 ```
