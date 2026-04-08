@@ -52,7 +52,12 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	getter, err := r.newStateGetter(conn)
 	if err != nil {
 		r.logger.Error("creating state getter", "connection", conn.Name, "type", conn.Type, "error", err)
-		writeError(w, req, http.StatusBadRequest, "connection type does not support platform state")
+		msg := "connection type does not support platform state"
+		if isHTMXRequest(req) {
+			renderTempl(w, req, templates.PlatformStateError(conn, msg))
+		} else {
+			writeError(w, req, http.StatusBadRequest, msg)
+		}
 		return
 	}
 
@@ -61,7 +66,6 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 		r.logger.Error("fetching platform state", "artist", a.Name, "connection", conn.Name, "error", err)
 		msg := "check the connection and try again"
 		if isHTMXRequest(req) {
-			w.WriteHeader(http.StatusInternalServerError)
 			renderTempl(w, req, templates.PlatformStateError(conn, msg))
 		} else {
 			writeError(w, req, http.StatusInternalServerError, msg)
