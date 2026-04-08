@@ -1,38 +1,43 @@
 #!/bin/sh
 set -e
 
-PUID=${PUID:-99}
-PGID=${PGID:-100}
+PUID="${PUID:-99}"
+PGID="${PGID:-100}"
 
-# Resolve group: reuse existing group if GID is taken, otherwise create stillwater group
-if [ "$(id -g stillwater 2>/dev/null)" != "$PGID" ]; then
-    # Remove user before group to avoid "group in use" errors
-    deluser stillwater 2>/dev/null || true
-    delgroup stillwater 2>/dev/null || true
-    SW_GROUP=$(getent group "$PGID" | cut -d: -f1)
-    if [ -z "$SW_GROUP" ]; then
-        addgroup -g "$PGID" stillwater
-        SW_GROUP="stillwater"
+# Remap the stillwater user/group to the requested UID/GID, then drop
+# privileges via su-exec so the application never runs as root.
+if [ "$(id -u)" = "0" ]; then
+    CURRENT_GID="$(id -g stillwater 2>/dev/null || echo '')"
+    CURRENT_UID="$(id -u stillwater 2>/dev/null || echo '')"
+
+    if [ "${CURRENT_GID}" != "${PGID}" ]; then
+        delgroup stillwater 2>/dev/null || true
+        addgroup -g "${PGID}" stillwater
     fi
+
+    if [ "${CURRENT_UID}" != "${PUID}" ]; then
+        deluser stillwater 2>/dev/null || true
+        adduser -u "${PUID}" -G stillwater -s /bin/sh -D stillwater
+    fi
+
+    chown -R stillwater:stillwater /data /music 2>/dev/null || true
+
+    case "${1:-}" in
+        reset-credentials)
+            exec su-exec stillwater stillwater "$@"
+            ;;
+        *)
+            exec su-exec stillwater "$@"
+            ;;
+    esac
 else
-    SW_GROUP="stillwater"
+    # Already non-root (e.g. Kubernetes runAsUser override).
+    case "${1:-}" in
+        reset-credentials)
+            exec stillwater "$@"
+            ;;
+        *)
+            exec "$@"
+            ;;
+    esac
 fi
-
-# Resolve user: recreate with desired UID and group membership
-if [ "$(id -u stillwater 2>/dev/null)" != "$PUID" ]; then
-    deluser stillwater 2>/dev/null || true
-    adduser -u "$PUID" -G "$SW_GROUP" -s /bin/sh -D stillwater
-fi
-
-# Ensure data directory ownership using numeric IDs
-chown -R "$PUID:$PGID" /data
-
-# If first argument is a subcommand, prepend the binary path
-case "${1:-}" in
-    reset-credentials)
-        exec su-exec "$PUID:$PGID" stillwater "$@"
-        ;;
-    *)
-        exec su-exec "$PUID:$PGID" "$@"
-        ;;
-esac
