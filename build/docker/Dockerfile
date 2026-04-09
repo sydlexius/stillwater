@@ -14,7 +14,7 @@ RUN case "$(uname -m)" in \
       aarch64) TAILWIND_ARCH=arm64 ;; \
       *)       echo "unsupported arch: $(uname -m)" && exit 1 ;; \
     esac \
-    && curl -sLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}-musl" \
+    && curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}-musl" \
     && chmod +x "tailwindcss-linux-${TAILWIND_ARCH}-musl" \
     && mv "tailwindcss-linux-${TAILWIND_ARCH}-musl" /usr/local/bin/tailwindcss
 
