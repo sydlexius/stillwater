@@ -1,11 +1,12 @@
 # Security scanning pipeline
 #
 # Jobs:
-#   govulncheck  - Go dependency vulnerability scan (push/PR/weekly)
-#   hadolint     - Dockerfile best-practice linting (push/PR)
-#   trivy        - Container image CVE scan (MEDIUM+), SARIF upload (weekly/manual)
-#   sbom         - SBOM generation (Syft) + vulnerability scan (Grype) on releases
-#   dockle       - CIS benchmark check for container images (weekly/manual)
+#   govulncheck       - Go dependency vulnerability scan (push/PR/weekly)
+#   hadolint          - Dockerfile best-practice linting (push/PR)
+#   trivy             - Container image CVE scan (MEDIUM+), SARIF upload (weekly/manual)
+#   sbom              - SBOM generation (Syft) + vulnerability scan (Grype) on releases
+#   dockle            - CIS benchmark check for container images (weekly/manual)
+#   grype-ignore-expiry - Fail when .grype.yaml ignore entries pass their review-by date (push/PR/weekly)
 
 name: Security
 
@@ -141,3 +142,81 @@ jobs:
         # starts as root so the entrypoint can remap PUID/PGID at runtime,
         # then drops privileges via su-exec before executing the application.
         run: dockle --exit-code 1 --exit-level warn --ignore CIS-DI-0001 stillwater:dockle
+
+  grype-ignore-expiry:
+    name: Grype Ignore Expiry Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check for expired ignore entries
+        run: |
+          if [ ! -f .grype.yaml ]; then
+            echo "No .grype.yaml found, nothing to check."
+            exit 0
+          fi
+          today=$(date -u +%Y-%m-%d)
+          errors=0
+          vuln=""
+          review_by=""
+          reason=""
+          while IFS= read -r line; do
+            # Strip leading whitespace, then skip comments and blank lines
+            trimmed=${line#"${line%%[![:space:]]*}"}
+            case "$trimmed" in ''|'#'*) continue ;; esac
+            case "$trimmed" in
+              *"vulnerability:"*)
+                # Check previous entry had valid review-by and reason
+                if [ -n "$vuln" ]; then
+                  if [ -z "$review_by" ]; then
+                    echo "::error::Grype ignore missing review-by: $vuln"
+                    errors=$((errors + 1))
+                  fi
+                  if [ -z "$reason" ]; then
+                    echo "::error::Grype ignore missing reason: $vuln"
+                    errors=$((errors + 1))
+                  fi
+                fi
+                vuln=$(echo "$trimmed" | sed 's/.*vulnerability:[[:space:]]*//; s/"//g')
+                review_by=""
+                reason=""
+                ;;
+              *"review-by:"*)
+                review_by=$(echo "$trimmed" | sed 's/.*review-by:[[:space:]]*//; s/"//g')
+                if ! echo "$review_by" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+                  echo "::error::Invalid review-by format for $vuln: $review_by (expected YYYY-MM-DD)"
+                  errors=$((errors + 1))
+                elif ! date -ud "$review_by" +%s >/dev/null 2>&1; then
+                  echo "::error::Invalid review-by date for $vuln: $review_by"
+                  errors=$((errors + 1))
+                # review-by is the last valid day; entry expires the day after
+                elif [ "$today" '>' "$review_by" ]; then
+                  echo "::error::Grype ignore expired: $vuln (review-by: $review_by)"
+                  errors=$((errors + 1))
+                else
+                  days_left=$(( ( $(date -ud "$review_by" +%s) - $(date -ud "$today" +%s) ) / 86400 ))
+                  echo "OK: $vuln (review-by: $review_by, ${days_left} days remaining)"
+                fi
+                ;;
+              *"reason:"*)
+                reason=$(echo "$trimmed" | sed 's/.*reason:[[:space:]]*//; s/"//g')
+                ;;
+            esac
+          done < .grype.yaml
+          # Check the last entry in the file
+          if [ -n "$vuln" ]; then
+            if [ -z "$review_by" ]; then
+              echo "::error::Grype ignore missing review-by: $vuln"
+              errors=$((errors + 1))
+            fi
+            if [ -z "$reason" ]; then
+              echo "::error::Grype ignore missing reason: $vuln"
+              errors=$((errors + 1))
+            fi
+          fi
+          if [ "$errors" -gt 0 ]; then
+            echo "::error::${errors} Grype ignore policy error(s). Review and fix the entries listed above."
+            exit 1
+          fi
+          echo "All Grype ignore entries are within their review-by window."
