@@ -86,11 +86,26 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 //
 // Returns biography text from the article intro section and structured
 // metadata (members, genres, years active, origin) from infobox parsing.
+// When the user has metadata language preferences set in the context,
+// the adapter tries the preferred language's Wikipedia first, falling back
+// to English if the preferred language article does not exist.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	// Determine the preferred Wikipedia language from context.
+	wikiLang := "en"
+	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 {
+		base := strings.SplitN(strings.ToLower(langPrefs[0]), "-", 2)[0]
+		if len(base) >= 2 {
+			wikiLang = base
+		}
+	}
+
 	title, err := a.resolveToTitle(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+
+	// Build a language-specific action endpoint for the preferred language.
+	actionEP := a.actionEndpointForLang(wikiLang)
 
 	// Fetch the article intro extract for biography text.
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
@@ -99,10 +114,28 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 			Cause:    fmt.Errorf("rate limiter: %w", err),
 		}
 	}
-	name, extract, err := a.fetchExtract(ctx, title)
+	name, extract, err := a.fetchExtractFrom(ctx, actionEP, title)
 	if err != nil {
 		return nil, err
 	}
+
+	// If the preferred language returned an empty extract and it is not English,
+	// fall back to English.
+	if strings.TrimSpace(extract) == "" && wikiLang != "en" {
+		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		wikiLang = "en"
+		actionEP = a.actionEndpointForLang("en")
+		name, extract, err = a.fetchExtractFrom(ctx, actionEP, title)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if strings.TrimSpace(extract) == "" {
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
 	}
@@ -115,7 +148,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		Name:       name,
 		Biography:  strings.TrimSpace(extract),
 		URLs: map[string]string{
-			"wikipedia": "https://en.wikipedia.org/wiki/" + url.PathEscape(title),
+			"wikipedia": "https://" + wikiLang + ".wikipedia.org/wiki/" + url.PathEscape(title),
 		},
 	}
 
@@ -470,9 +503,26 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 	return enwiki.Title, nil
 }
 
-// fetchExtract fetches the article intro section from the MediaWiki Action API.
+// actionEndpointForLang returns a Wikipedia Action API endpoint for the given
+// language code. If the adapter was constructed with a custom (non-default)
+// endpoint (e.g. for testing), the custom endpoint is always returned.
+func (a *Adapter) actionEndpointForLang(lang string) string {
+	// If using the default endpoint, construct a language-specific URL.
+	if a.actionEndpoint == defaultActionEndpoint && lang != "" && lang != "en" {
+		return "https://" + lang + ".wikipedia.org/w/api.php"
+	}
+	return a.actionEndpoint
+}
+
+// fetchExtract fetches the article intro section from the default action endpoint.
 // Returns the article display name and plain-text extract.
 func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, string, error) {
+	return a.fetchExtractFrom(ctx, a.actionEndpoint, title)
+}
+
+// fetchExtractFrom fetches the article intro section from the given endpoint.
+// Returns the article display name and plain-text extract.
+func (a *Adapter) fetchExtractFrom(ctx context.Context, endpoint, title string) (string, string, error) {
 	params := url.Values{
 		"action":      {"query"},
 		"titles":      {title},
@@ -481,7 +531,7 @@ func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, strin
 		"exintro":     {"true"},
 		"format":      {"json"},
 	}
-	reqURL := a.actionEndpoint + "?" + params.Encode()
+	reqURL := endpoint + "?" + params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

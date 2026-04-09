@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -26,6 +28,7 @@ const (
 	PrefReducedMotion       = "reduced_motion"
 	PrefLiteMode            = "lite_mode"
 	PrefLanguage            = "language"
+	PrefMetadataLanguages   = "metadata_languages"
 	PrefNotificationEnabled = "notification_enabled"
 	PrefPageSize            = "page_size"
 
@@ -104,6 +107,85 @@ func normalizePageSize(raw string) string {
 	return strconv.Itoa(n)
 }
 
+// isMetadataLanguagesKey reports whether key is the metadata_languages preference key.
+// metadata_languages is stored as a JSON array of BCP 47 language tags and is
+// not listed in preferenceDefaults because its validation is structural (valid
+// JSON array of language-tag strings) rather than a fixed set.
+func isMetadataLanguagesKey(key string) bool {
+	return key == PrefMetadataLanguages
+}
+
+// MetadataLanguagesDefault is the default value for the metadata_languages
+// preference when no user preference is stored.
+const MetadataLanguagesDefault = `["en"]`
+
+// MetadataLanguagesMaxEntries limits how many language tags a user can store.
+const MetadataLanguagesMaxEntries = 20
+
+// validateMetadataLanguages checks that raw is a valid JSON array of BCP 47
+// language tags and returns the canonical JSON encoding. Returns an error
+// description if the value is invalid.
+func validateMetadataLanguages(raw string) (string, bool) {
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return "", false
+	}
+	if len(tags) == 0 || len(tags) > MetadataLanguagesMaxEntries {
+		return "", false
+	}
+	seen := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		if tag == "" || !isValidLanguageTag(tag) {
+			return "", false
+		}
+		lower := strings.ToLower(tag)
+		if seen[lower] {
+			return "", false
+		}
+		seen[lower] = true
+	}
+	// Re-encode to canonical JSON.
+	canonical, err := json.Marshal(tags)
+	if err != nil {
+		return "", false
+	}
+	return string(canonical), true
+}
+
+// isValidLanguageTag performs a lightweight check that s looks like a BCP 47
+// language tag (e.g. "en", "en-GB", "zh-Hant-TW"). It accepts 2-8 character
+// alphanumeric subtags separated by hyphens.
+func isValidLanguageTag(s string) bool {
+	if len(s) == 0 || len(s) > 35 {
+		return false
+	}
+	parts := strings.Split(s, "-")
+	for _, p := range parts {
+		if len(p) == 0 || len(p) > 8 {
+			return false
+		}
+		for _, c := range p {
+			if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// parseMetadataLanguages parses a stored metadata_languages JSON string into
+// a slice of language tags. Returns nil on parse failure.
+func parseMetadataLanguages(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return nil
+	}
+	return tags
+}
+
 // isSuppressConfirmKey reports whether key is a valid per-action confirm
 // suppression preference (prefix "suppress_confirm_" followed by at least one
 // character that is a lowercase letter, digit, or underscore).
@@ -143,7 +225,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
-	if !known && !suppressKey && !pageSizeKey {
+	metaLangKey := isMetadataLanguagesKey(key)
+	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -163,6 +246,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = "false"
 		case pageSizeKey:
 			value = strconv.Itoa(PageSizeDefault)
+		case metaLangKey:
+			value = MetadataLanguagesDefault
 		default:
 			value = def.defaultValue
 		}
@@ -191,12 +276,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults (fixed keys + page_size).
-	prefs := make(map[string]string, len(preferenceDefaults)+1)
+	// Start with defaults (fixed keys + page_size + metadata_languages).
+	prefs := make(map[string]string, len(preferenceDefaults)+2)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
+	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -216,7 +302,7 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		// page_size is valid but not in preferenceDefaults (range-based, not enum).
+		// page_size and metadata_languages are valid but not in preferenceDefaults.
 		_, known := preferenceDefaults[k]
 		if known {
 			prefs[k] = v
@@ -227,6 +313,8 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
 			prefs[k] = normalized
+		} else if isMetadataLanguagesKey(k) {
+			prefs[k] = v
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -255,7 +343,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
-	if !known && !suppressKey && !pageSizeKey {
+	metaLangKey := isMetadataLanguagesKey(key)
+	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -270,6 +359,7 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	// Validate value against allowed list.
 	// suppress_confirm_* keys only accept "true" or "false".
 	// page_size must be an integer in [PageSizeMin, PageSizeMax].
+	// metadata_languages must be a JSON array of valid language tags.
 	var valid bool
 	switch {
 	case suppressKey:
@@ -280,6 +370,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		if valid {
 			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
 			body.Value = strconv.Itoa(n)
+		}
+	case metaLangKey:
+		canonical, ok := validateMetadataLanguages(body.Value)
+		valid = ok
+		if valid {
+			body.Value = canonical
 		}
 	default:
 		for _, allowed := range def.allowedValues {
@@ -368,19 +464,28 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
+	// Parse metadata_languages as string slice; fall back to default.
+	metadataLanguages := parseMetadataLanguages(MetadataLanguagesDefault)
+	if v, ok := stored[PrefMetadataLanguages]; ok {
+		if parsed := parseMetadataLanguages(v); parsed != nil {
+			metadataLanguages = parsed
+		}
+	}
+
 	prefs := templates.AppearancePrefsData{
-		Theme:          pref(PrefTheme),
-		GlassIntensity: pref(PrefGlassIntensity),
-		ThumbnailSize:  pref(PrefThumbnailSize),
-		SidebarState:   pref(PrefSidebarState),
-		ContentWidth:   pref(PrefContentWidth),
-		ReducedMotion:  pref(PrefReducedMotion),
-		Language:       pref(PrefLanguage),
-		FontFamily:     pref(PrefFontFamily),
-		LetterSpacing:  pref(PrefLetterSpacing),
-		FontSize:       pref(PrefFontSize),
-		LiteMode:       pref(PrefLiteMode),
-		PageSize:       pageSize,
+		Theme:             pref(PrefTheme),
+		GlassIntensity:    pref(PrefGlassIntensity),
+		ThumbnailSize:     pref(PrefThumbnailSize),
+		SidebarState:      pref(PrefSidebarState),
+		ContentWidth:      pref(PrefContentWidth),
+		ReducedMotion:     pref(PrefReducedMotion),
+		Language:          pref(PrefLanguage),
+		FontFamily:        pref(PrefFontFamily),
+		LetterSpacing:     pref(PrefLetterSpacing),
+		FontSize:          pref(PrefFontSize),
+		LiteMode:          pref(PrefLiteMode),
+		PageSize:          pageSize,
+		MetadataLanguages: metadataLanguages,
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))

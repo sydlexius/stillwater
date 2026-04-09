@@ -126,7 +126,7 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
-	return a.mapArtist(&artist), nil
+	return a.mapArtist(ctx, &artist), nil
 }
 
 // GetImages returns nil since MusicBrainz does not host artist images.
@@ -293,7 +293,9 @@ func normalizeHyphens(s string) string {
 }
 
 // mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.
-func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
+// It uses language preferences from the context (if present) to sort aliases
+// so that names in the user's preferred locale appear first.
+func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
@@ -364,11 +366,35 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 		meta.Moods = append(meta.Moods, fallbackMoods...)
 	}
 
-	// Aliases
+	// Aliases: collect all, then sort by user's language preference if set.
+	type scoredAlias struct {
+		name  string
+		score int
+	}
+	langPrefs := provider.MetadataLanguages(ctx)
+	var scored []scoredAlias
 	for _, alias := range mb.Aliases {
 		if alias.Name != "" && alias.Name != mb.Name {
-			meta.Aliases = append(meta.Aliases, alias.Name)
+			score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
+			scored = append(scored, scoredAlias{name: alias.Name, score: score})
 		}
+	}
+	// Sort: matched locales first (lower score wins), unmatched last.
+	if len(langPrefs) > 0 && len(scored) > 1 {
+		sort.SliceStable(scored, func(i, j int) bool {
+			si, sj := scored[i].score, scored[j].score
+			// -1 means unmatched -- push to end
+			if si < 0 && sj >= 0 {
+				return false
+			}
+			if sj < 0 && si >= 0 {
+				return true
+			}
+			return si < sj
+		})
+	}
+	for _, sa := range scored {
+		meta.Aliases = append(meta.Aliases, sa.name)
 	}
 
 	// Relations: extract members and URLs

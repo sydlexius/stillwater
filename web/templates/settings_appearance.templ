@@ -1,7 +1,9 @@
 package templates
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -28,18 +30,38 @@ templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
 // Appearance settings tab. All fields are pre-populated from the user_preferences
 // table (or the compiled defaults) by the settings page handler.
 type AppearancePrefsData struct {
-	Theme          string // "dark" | "light" | "system"
-	GlassIntensity string // "light" | "medium" | "heavy"
-	ThumbnailSize  string // "small" | "medium" | "large"
-	SidebarState   string // "full" | "icon-only" | "hidden"
-	ContentWidth   string // "narrow" | "wide"
-	ReducedMotion  string // "system" | "on" | "off"
-	Language       string // "en" (Phase 1 only)
-	FontFamily     string // "system" | "inter" | "atkinson"
-	LetterSpacing  string // "normal" | "wide" | "extra-wide"
-	FontSize       string // "small" | "medium" | "large"
-	LiteMode       string // "off" | "on" | "auto"
-	PageSize       int    // Validated page size in the range 10-500; defaults to 50.
+	Theme             string   // "dark" | "light" | "system"
+	GlassIntensity    string   // "light" | "medium" | "heavy"
+	ThumbnailSize     string   // "small" | "medium" | "large"
+	SidebarState      string   // "full" | "icon-only" | "hidden"
+	ContentWidth      string   // "narrow" | "wide"
+	ReducedMotion     string   // "system" | "on" | "off"
+	Language          string   // "en" (Phase 1 only)
+	FontFamily        string   // "system" | "inter" | "atkinson"
+	LetterSpacing     string   // "normal" | "wide" | "extra-wide"
+	FontSize          string   // "small" | "medium" | "large"
+	LiteMode          string   // "off" | "on" | "auto"
+	PageSize          int      // Validated page size in the range 10-500; defaults to 50.
+	MetadataLanguages []string // Ordered BCP 47 language tags for metadata resolution; defaults to ["en"].
+}
+
+// metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
+// suitable for embedding in a data attribute or JS variable.
+func (p AppearancePrefsData) metadataLanguagesJSON() string {
+	b, err := json.Marshal(p.MetadataLanguages)
+	if err != nil {
+		return `["en"]`
+	}
+	return string(b)
+}
+
+// metadataLanguagesDisplay returns a comma-separated display string of the
+// current metadata language preference list.
+func (p AppearancePrefsData) metadataLanguagesDisplay() string {
+	if len(p.MetadataLanguages) == 0 {
+		return "en"
+	}
+	return strings.Join(p.MetadataLanguages, ", ")
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -297,6 +319,52 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 			</div>
 		</div>
 	</div>
+	<!-- Metadata Language Preferences -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Metadata Language Preferences</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Set your preferred languages for artist biographies and aliases.
+				Providers will return content in the first available language from your list.
+				Not all providers support all languages.
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="space-y-3">
+				<div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">Language priority</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">
+						Add language tags (e.g. en, en-GB, ja, fr) in order of preference.
+						The first match found will be used. Drag to reorder.
+					</div>
+				</div>
+				<div id="metadata-lang-container" data-languages={ prefs.metadataLanguagesJSON() }>
+					<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
+						<!-- Pills are rendered by JS from data-languages -->
+					</div>
+					<div class="mt-2 flex gap-2">
+						<input
+							type="text"
+							id="metadata-lang-input"
+							placeholder="e.g. en, ja, fr-CA"
+							class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1"
+							maxlength="35"
+						/>
+						<button
+							type="button"
+							id="metadata-lang-add-btn"
+							class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							Add
+						</button>
+					</div>
+				</div>
+				<div class="text-xs text-gray-400 dark:text-gray-500">
+					Current: { prefs.metadataLanguagesDisplay() }
+				</div>
+			</div>
+		</div>
+	</div>
 	@appearanceScript()
 }
 
@@ -384,6 +452,128 @@ templ appearanceScript() {
 				if (!e.detail) return;
 				swSaveAppearancePref(e.detail.name, e.detail.value);
 			});
+
+			// -- Metadata Language Preference pills --
+			(function () {
+				var container = document.getElementById('metadata-lang-container');
+				if (!container) return;
+
+				var pillBox = document.getElementById('metadata-lang-pills');
+				var input = document.getElementById('metadata-lang-input');
+				var addBtn = document.getElementById('metadata-lang-add-btn');
+
+				var langs = [];
+				try { langs = JSON.parse(container.getAttribute('data-languages') || '["en"]'); }
+				catch (e) { langs = ['en']; }
+
+				function renderPills() {
+					pillBox.innerHTML = '';
+					langs.forEach(function (lang, idx) {
+						var pill = document.createElement('span');
+						pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-grab';
+						pill.draggable = true;
+						pill.setAttribute('data-idx', String(idx));
+						pill.textContent = lang;
+
+						var removeBtn = document.createElement('button');
+						removeBtn.type = 'button';
+						removeBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';
+						removeBtn.innerHTML = '&times;';
+						removeBtn.setAttribute('aria-label', 'Remove ' + lang);
+						removeBtn.addEventListener('click', function () {
+							langs.splice(idx, 1);
+							if (langs.length === 0) langs = ['en'];
+							renderPills();
+							saveLangs();
+						});
+						pill.appendChild(removeBtn);
+
+						// Drag-and-drop reorder
+						pill.addEventListener('dragstart', function (e) {
+							e.dataTransfer.setData('text/plain', String(idx));
+							pill.style.opacity = '0.5';
+						});
+						pill.addEventListener('dragend', function () {
+							pill.style.opacity = '1';
+						});
+						pill.addEventListener('dragover', function (e) { e.preventDefault(); });
+						pill.addEventListener('drop', function (e) {
+							e.preventDefault();
+							var fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+							var toIdx = idx;
+							if (fromIdx === toIdx) return;
+							var item = langs.splice(fromIdx, 1)[0];
+							langs.splice(toIdx, 0, item);
+							renderPills();
+							saveLangs();
+						});
+
+						pillBox.appendChild(pill);
+					});
+				}
+
+				function saveLangs() {
+					var val = JSON.stringify(langs);
+					container.setAttribute('data-languages', val);
+					if (window.swPreferences) {
+						window.swPreferences.set('metadata_languages', val).then(function (saved) {
+							if (saved === val) {
+								if (typeof window.showSuccessToast === 'function') {
+									showSuccessToast('Metadata language preferences saved');
+								}
+							} else {
+								if (typeof window.showToast === 'function') {
+									showToast('Failed to save language preferences');
+								}
+							}
+						}).catch(function () {
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save language preferences');
+							}
+						});
+					}
+				}
+
+				function addLang() {
+					var val = (input.value || '').trim();
+					if (!val) return;
+					// Basic tag validation: alphanumeric with hyphens, 1-35 chars.
+					if (!/^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$/.test(val) || val.length > 35) {
+						if (typeof window.showToast === 'function') {
+							showToast('Invalid language tag');
+						}
+						return;
+					}
+					// Check for duplicates (case-insensitive).
+					var lower = val.toLowerCase();
+					for (var i = 0; i < langs.length; i++) {
+						if (langs[i].toLowerCase() === lower) {
+							if (typeof window.showToast === 'function') {
+								showToast('Language already in list');
+							}
+							input.value = '';
+							return;
+						}
+					}
+					if (langs.length >= 20) {
+						if (typeof window.showToast === 'function') {
+							showToast('Maximum of 20 languages allowed');
+						}
+						return;
+					}
+					langs.push(val);
+					input.value = '';
+					renderPills();
+					saveLangs();
+				}
+
+				addBtn.addEventListener('click', addLang);
+				input.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter') { e.preventDefault(); addLang(); }
+				});
+
+				renderPills();
+			})();
 		})();
 	</script>
 }
