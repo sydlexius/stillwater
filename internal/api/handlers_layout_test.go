@@ -18,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 	"golang.org/x/net/html"
 )
@@ -52,7 +53,7 @@ func TestLayoutRenders_ValidHTML(t *testing.T) {
 		DisplayName:    "Test User",
 		AvatarURL:      "/stillwater/static/img/avatar.png",
 		Role:           "administrator",
-		Version:        "0.1.0",
+		Version:        version.Version,
 	}
 
 	// Render the layout template with a sample child content.
