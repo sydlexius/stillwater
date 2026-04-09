@@ -3,6 +3,7 @@ package wikipedia
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -116,7 +117,14 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	}
 	name, extract, err := a.fetchExtractFrom(ctx, actionEP, title)
 	if err != nil {
-		return nil, err
+		// If the preferred language wiki returned not-found, fall back to English
+		// rather than failing outright. The title from resolveToTitle is an enwiki
+		// title and may not exist on the localized wiki.
+		var notFound *provider.ErrNotFound
+		if wikiLang == "en" || !errors.As(err, &notFound) {
+			return nil, err
+		}
+		extract = "" // trigger the fallback below
 	}
 
 	// If the preferred language returned an empty extract and it is not English,
@@ -512,12 +520,6 @@ func (a *Adapter) actionEndpointForLang(lang string) string {
 		return "https://" + lang + ".wikipedia.org/w/api.php"
 	}
 	return a.actionEndpoint
-}
-
-// fetchExtract fetches the article intro section from the default action endpoint.
-// Returns the article display name and plain-text extract.
-func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, string, error) {
-	return a.fetchExtractFrom(ctx, a.actionEndpoint, title)
 }
 
 // fetchExtractFrom fetches the article intro section from the given endpoint.

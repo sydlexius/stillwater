@@ -121,6 +121,9 @@ type AppearancePrefsData struct {
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
 // suitable for embedding in a data attribute or JS variable.
 func (p AppearancePrefsData) metadataLanguagesJSON() string {
+	if len(p.MetadataLanguages) == 0 {
+		return `["en"]`
+	}
 	b, err := json.Marshal(p.MetadataLanguages)
 	if err != nil {
 		return `["en"]`
@@ -170,7 +173,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_and_color"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 73, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 76, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -183,7 +186,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_and_color_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 75, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 78, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -196,7 +199,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 83, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 86, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -209,7 +212,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.theme_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 84, Col: 102}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 87, Col: 102}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -245,7 +248,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.glass_intensity"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 101, Col: 119}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 104, Col: 119}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -258,7 +261,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.glass_intensity_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 102, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 105, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -294,7 +297,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.layout"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 120, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 123, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -307,7 +310,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.layout_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 122, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 125, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -320,7 +323,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.thumbnail_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 129, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 132, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -333,7 +336,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.thumbnail_size_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 130, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 133, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -361,7 +364,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.sidebar_default_state"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 144, Col: 124}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 147, Col: 124}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -374,7 +377,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.sidebar_default_state_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 145, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 148, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -402,7 +405,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.content_width"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 159, Col: 116}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 162, Col: 116}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -415,7 +418,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.content_width_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 160, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 163, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -442,7 +445,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.page_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 173, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 176, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -455,7 +458,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.page_size_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 174, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 177, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -468,7 +471,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.page_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 182, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 185, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -481,7 +484,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(prefs.PageSize))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 184, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 187, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -494,7 +497,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.typography"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 193, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 196, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -507,7 +510,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.typography_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 195, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 198, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -520,7 +523,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_family"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 202, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 205, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -533,7 +536,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_family_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 203, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 206, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -561,7 +564,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_license"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 214, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 217, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -574,7 +577,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.letter_spacing"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 219, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 222, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -587,7 +590,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.letter_spacing_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 220, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 223, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -623,7 +626,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_size"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 236, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 239, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -636,7 +639,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.font_size_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 237, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 240, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -664,7 +667,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.accessibility_and_performance"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 253, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 256, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -677,7 +680,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.accessibility_and_performance_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 255, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 258, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -690,7 +693,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.reduced_motion"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 263, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 266, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -703,7 +706,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.reduced_motion_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 264, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 267, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -739,7 +742,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.lite_mode"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 281, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 284, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -752,7 +755,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.lite_mode_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 282, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 285, Col: 106}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -788,7 +791,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_section"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 300, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 303, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -801,7 +804,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_section_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 302, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 305, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -814,7 +817,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 308, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 311, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -827,7 +830,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 309, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 312, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -840,7 +843,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.language"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 313, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 316, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -856,33 +859,111 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ">English</option></select></div></div></div><!-- Metadata Language Preferences --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">Metadata Language Preferences</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Set your preferred languages for artist biographies and aliases. Providers will return content in the first available language from your list. Not all providers support all languages.</p></div><div class=\"px-6 py-4\"><div class=\"space-y-3\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">Language priority</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Add language tags (e.g. en, en-GB, ja, fr) in order of preference. The first match found will be used. Drag to reorder.</div></div><div id=\"metadata-lang-container\" data-languages=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, ">English</option></select></div></div></div><!-- Metadata Language Preferences --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var44 string
-		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(prefs.metadataLanguagesJSON())
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 341, Col: 84}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 328, Col: 120}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\"><div id=\"metadata-lang-pills\" class=\"flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900\"><!-- Pills are rendered by JS from data-languages --></div><div class=\"mt-2 flex gap-2\"><input type=\"text\" id=\"metadata-lang-input\" placeholder=\"e.g. en, ja, fr-CA\" class=\"text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1\" maxlength=\"35\"> <button type=\"button\" id=\"metadata-lang-add-btn\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500\">Add</button></div></div><div class=\"text-xs text-gray-400 dark:text-gray-500\">Current: ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var45 string
-		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(prefs.metadataLanguagesDisplay())
+		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages_desc"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 363, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 330, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</p></div><div class=\"px-6 py-4\"><div class=\"space-y-3\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var46 string
+		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages_priority"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 336, Col: 130}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var47 string
+		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages_priority_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 338, Col: 70}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</div></div><div id=\"metadata-lang-container\" data-languages=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var48 string
+		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(prefs.metadataLanguagesJSON())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 341, Col: 84}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"><div id=\"metadata-lang-pills\" class=\"flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900\"><!-- Pills are rendered by JS from data-languages --></div><div class=\"mt-2 flex gap-2\"><input type=\"text\" id=\"metadata-lang-input\" aria-label=\"Add language tag\" placeholder=\"e.g. en, ja, fr-CA\" class=\"text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1\" maxlength=\"35\"> <button type=\"button\" id=\"metadata-lang-add-btn\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var49 string
+		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages_add"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 359, Col: 61}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</button></div></div><div class=\"text-xs text-gray-400 dark:text-gray-500\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var50 string
+		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_languages_current"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 364, Col: 63}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, " ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var51 string
+		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(prefs.metadataLanguagesDisplay())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 364, Col: 100}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</div></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -913,12 +994,12 @@ func appearanceScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var46 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var46 == nil {
-			templ_7745c5c3_Var46 = templ.NopComponent
+		templ_7745c5c3_Var52 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var52 == nil {
+			templ_7745c5c3_Var52 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Save the page_size preference. Unlike segmented controls this is a\n\t\t\t// standalone numeric input, so it gets its own save helper.\n\t\t\t// The server canonicalizes page_size (e.g. \"010\" -> \"10\") via\n\t\t\t// strconv.Itoa, so we normalize client-side first to match. This lets\n\t\t\t// swSaveAppearancePref's saved === value check work correctly.\n\t\t\twindow.swSavePageSizePref = function (value) {\n\t\t\t\tvar n = parseInt(value, 10);\n\t\t\t\tvar input = document.getElementById('pref-page-size');\n\t\t\t\tvar cache = window.swPreferences ? window.swPreferences.getCache() : null;\n\t\t\t\tvar cachedPageSize = (cache && cache.page_size) || '50';\n\t\t\t\tif (isNaN(n)) {\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t}\n\t\t\t\t\t// Restore to the last accepted value from the cache.\n\t\t\t\t\tif (input) input.value = cachedPageSize;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar normalized = String(n);\n\t\t\t\tvar previous = cachedPageSize;\n\t\t\t\t// Show the canonical form optimistically.\n\t\t\t\tif (input) input.value = normalized;\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set('page_size', normalized).then(function (saved) {\n\t\t\t\t\t\tif (saved === normalized) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Server rejected -- revert the input to the previous value.\n\t\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\n\t\t\t// -- Metadata Language Preference pills --\n\t\t\t(function () {\n\t\t\t\tvar container = document.getElementById('metadata-lang-container');\n\t\t\t\tif (!container) return;\n\n\t\t\t\tvar pillBox = document.getElementById('metadata-lang-pills');\n\t\t\t\tvar input = document.getElementById('metadata-lang-input');\n\t\t\t\tvar addBtn = document.getElementById('metadata-lang-add-btn');\n\n\t\t\t\tvar langs = [];\n\t\t\t\ttry { langs = JSON.parse(container.getAttribute('data-languages') || '[\"en\"]'); }\n\t\t\t\tcatch (e) { langs = ['en']; }\n\n\t\t\t\tfunction renderPills() {\n\t\t\t\t\tpillBox.innerHTML = '';\n\t\t\t\t\tlangs.forEach(function (lang, idx) {\n\t\t\t\t\t\tvar pill = document.createElement('span');\n\t\t\t\t\t\tpill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-grab';\n\t\t\t\t\t\tpill.draggable = true;\n\t\t\t\t\t\tpill.setAttribute('data-idx', String(idx));\n\t\t\t\t\t\tpill.textContent = lang;\n\n\t\t\t\t\t\tvar removeBtn = document.createElement('button');\n\t\t\t\t\t\tremoveBtn.type = 'button';\n\t\t\t\t\t\tremoveBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';\n\t\t\t\t\t\tremoveBtn.innerHTML = '&times;';\n\t\t\t\t\t\tremoveBtn.setAttribute('aria-label', 'Remove ' + lang);\n\t\t\t\t\t\tremoveBtn.addEventListener('click', function () {\n\t\t\t\t\t\t\tvar removeIdx = langs.indexOf(lang);\n\t\t\t\t\t\t\tif (removeIdx >= 0) langs.splice(removeIdx, 1);\n\t\t\t\t\t\t\tif (langs.length === 0) langs = ['en'];\n\t\t\t\t\t\t\trenderPills();\n\t\t\t\t\t\t\tsaveLangs();\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.appendChild(removeBtn);\n\n\t\t\t\t\t\t// Drag-and-drop reorder\n\t\t\t\t\t\tpill.addEventListener('dragstart', function (e) {\n\t\t\t\t\t\t\te.dataTransfer.setData('text/plain', String(idx));\n\t\t\t\t\t\t\tpill.style.opacity = '0.5';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.addEventListener('dragend', function () {\n\t\t\t\t\t\t\tpill.style.opacity = '1';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.addEventListener('dragover', function (e) { e.preventDefault(); });\n\t\t\t\t\t\tpill.addEventListener('drop', function (e) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tvar fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);\n\t\t\t\t\t\t\tvar toIdx = idx;\n\t\t\t\t\t\t\tif (fromIdx === toIdx) return;\n\t\t\t\t\t\t\tvar item = langs.splice(fromIdx, 1)[0];\n\t\t\t\t\t\t\tlangs.splice(toIdx, 0, item);\n\t\t\t\t\t\t\trenderPills();\n\t\t\t\t\t\t\tsaveLangs();\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tpillBox.appendChild(pill);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction saveLangs() {\n\t\t\t\t\tvar val = JSON.stringify(langs);\n\t\t\t\t\tcontainer.setAttribute('data-languages', val);\n\t\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\t\twindow.swPreferences.set('metadata_languages', val).then(function (saved) {\n\t\t\t\t\t\t\tif (saved === val) {\n\t\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\t\tshowSuccessToast('Metadata language preferences saved');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\t\tshowToast('Failed to save language preferences');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save language preferences');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction addLang() {\n\t\t\t\t\tvar val = (input.value || '').trim();\n\t\t\t\t\tif (!val) return;\n\t\t\t\t\t// BCP 47 validation: primary subtag must be 2-3 letters,\n\t\t\t\t\t// subsequent subtags 1-8 alphanumeric characters, max 35 chars total.\n\t\t\t\t\tif (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{1,8})*$/.test(val) || val.length > 35) {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Invalid language tag');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Check for duplicates (case-insensitive).\n\t\t\t\t\tvar lower = val.toLowerCase();\n\t\t\t\t\tfor (var i = 0; i < langs.length; i++) {\n\t\t\t\t\t\tif (langs[i].toLowerCase() === lower) {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Language already in list');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tinput.value = '';\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tif (langs.length >= 20) {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Maximum of 20 languages allowed');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tlangs.push(val);\n\t\t\t\t\tinput.value = '';\n\t\t\t\t\trenderPills();\n\t\t\t\t\tsaveLangs();\n\t\t\t\t}\n\n\t\t\t\taddBtn.addEventListener('click', addLang);\n\t\t\t\tinput.addEventListener('keydown', function (e) {\n\t\t\t\t\tif (e.key === 'Enter') { e.preventDefault(); addLang(); }\n\t\t\t\t});\n\n\t\t\t\trenderPills();\n\t\t\t})();\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Save the page_size preference. Unlike segmented controls this is a\n\t\t\t// standalone numeric input, so it gets its own save helper.\n\t\t\t// The server canonicalizes page_size (e.g. \"010\" -> \"10\") via\n\t\t\t// strconv.Itoa, so we normalize client-side first to match. This lets\n\t\t\t// swSaveAppearancePref's saved === value check work correctly.\n\t\t\twindow.swSavePageSizePref = function (value) {\n\t\t\t\tvar n = parseInt(value, 10);\n\t\t\t\tvar input = document.getElementById('pref-page-size');\n\t\t\t\tvar cache = window.swPreferences ? window.swPreferences.getCache() : null;\n\t\t\t\tvar cachedPageSize = (cache && cache.page_size) || '50';\n\t\t\t\tif (isNaN(n)) {\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t}\n\t\t\t\t\t// Restore to the last accepted value from the cache.\n\t\t\t\t\tif (input) input.value = cachedPageSize;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar normalized = String(n);\n\t\t\t\tvar previous = cachedPageSize;\n\t\t\t\t// Show the canonical form optimistically.\n\t\t\t\tif (input) input.value = normalized;\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set('page_size', normalized).then(function (saved) {\n\t\t\t\t\t\tif (saved === normalized) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Server rejected -- revert the input to the previous value.\n\t\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\n\t\t\t// -- Metadata Language Preference pills --\n\t\t\t(function () {\n\t\t\t\tvar container = document.getElementById('metadata-lang-container');\n\t\t\t\tif (!container) return;\n\n\t\t\t\tvar pillBox = document.getElementById('metadata-lang-pills');\n\t\t\t\tvar input = document.getElementById('metadata-lang-input');\n\t\t\t\tvar addBtn = document.getElementById('metadata-lang-add-btn');\n\n\t\t\t\tvar langs = [];\n\t\t\t\ttry { langs = JSON.parse(container.getAttribute('data-languages') || '[\"en\"]'); }\n\t\t\t\tcatch (e) { langs = ['en']; }\n\n\t\t\t\tfunction renderPills() {\n\t\t\t\t\tpillBox.innerHTML = '';\n\t\t\t\t\tlangs.forEach(function (lang, idx) {\n\t\t\t\t\t\tvar pill = document.createElement('span');\n\t\t\t\t\t\tpill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 cursor-grab';\n\t\t\t\t\t\tpill.draggable = true;\n\t\t\t\t\t\tpill.setAttribute('data-idx', String(idx));\n\t\t\t\t\t\tpill.textContent = lang;\n\n\t\t\t\t\t\tvar removeBtn = document.createElement('button');\n\t\t\t\t\t\tremoveBtn.type = 'button';\n\t\t\t\t\t\tremoveBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';\n\t\t\t\t\t\tremoveBtn.innerHTML = '&times;';\n\t\t\t\t\t\tremoveBtn.setAttribute('aria-label', 'Remove ' + lang);\n\t\t\t\t\t\tremoveBtn.addEventListener('click', function () {\n\t\t\t\t\t\t\tvar removeIdx = langs.indexOf(lang);\n\t\t\t\t\t\t\tif (removeIdx >= 0) langs.splice(removeIdx, 1);\n\t\t\t\t\t\t\tif (langs.length === 0) langs = ['en'];\n\t\t\t\t\t\t\trenderPills();\n\t\t\t\t\t\t\tsaveLangs();\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.appendChild(removeBtn);\n\n\t\t\t\t\t\t// Drag-and-drop reorder\n\t\t\t\t\t\tpill.addEventListener('dragstart', function (e) {\n\t\t\t\t\t\t\te.dataTransfer.setData('text/plain', String(idx));\n\t\t\t\t\t\t\tpill.style.opacity = '0.5';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.addEventListener('dragend', function () {\n\t\t\t\t\t\t\tpill.style.opacity = '1';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tpill.addEventListener('dragover', function (e) { e.preventDefault(); });\n\t\t\t\t\t\tpill.addEventListener('drop', function (e) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tvar fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);\n\t\t\t\t\t\t\tvar toIdx = idx;\n\t\t\t\t\t\t\tif (fromIdx === toIdx) return;\n\t\t\t\t\t\t\tvar item = langs.splice(fromIdx, 1)[0];\n\t\t\t\t\t\t\tlangs.splice(toIdx, 0, item);\n\t\t\t\t\t\t\trenderPills();\n\t\t\t\t\t\t\tsaveLangs();\n\t\t\t\t\t\t});\n\n\t\t\t\t\t\tpillBox.appendChild(pill);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction saveLangs() {\n\t\t\t\t\tvar val = JSON.stringify(langs);\n\t\t\t\t\tcontainer.setAttribute('data-languages', val);\n\t\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\t\twindow.swPreferences.set('metadata_languages', val).then(function (saved) {\n\t\t\t\t\t\t\tif (saved === val) {\n\t\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\t\tshowSuccessToast('Metadata language preferences saved');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\t\tshowToast('Failed to save language preferences');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save language preferences');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction addLang() {\n\t\t\t\t\tvar val = (input.value || '').trim();\n\t\t\t\t\tif (!val) return;\n\t\t\t\t\t// BCP 47 validation: primary subtag must be 2-3 letters,\n\t\t\t\t\t// subsequent subtags 1-8 alphanumeric characters, max 35 chars total.\n\t\t\t\t\tif (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{1,8})*$/.test(val) || val.length > 35) {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Invalid language tag');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Check for duplicates (case-insensitive).\n\t\t\t\t\tvar lower = val.toLowerCase();\n\t\t\t\t\tfor (var i = 0; i < langs.length; i++) {\n\t\t\t\t\t\tif (langs[i].toLowerCase() === lower) {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Language already in list');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tinput.value = '';\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tif (langs.length >= 20) {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Maximum of 20 languages allowed');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tlangs.push(val);\n\t\t\t\t\tinput.value = '';\n\t\t\t\t\trenderPills();\n\t\t\t\t\tsaveLangs();\n\t\t\t\t}\n\n\t\t\t\taddBtn.addEventListener('click', addLang);\n\t\t\t\tinput.addEventListener('keydown', function (e) {\n\t\t\t\t\tif (e.key === 'Enter') { e.preventDefault(); addLang(); }\n\t\t\t\t});\n\n\t\t\t\trenderPills();\n\t\t\t})();\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

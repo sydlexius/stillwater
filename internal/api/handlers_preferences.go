@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -168,22 +167,30 @@ func isValidLanguageTag(s string) bool {
 		return false
 	}
 	for _, c := range primary {
-		if !unicode.IsLetter(c) {
+		if !isASCIILetter(c) {
 			return false
 		}
 	}
-	// Subsequent subtags: 1-8 alphanumeric characters.
+	// Subsequent subtags: 1-8 ASCII alphanumeric characters.
 	for _, p := range parts[1:] {
 		if len(p) == 0 || len(p) > 8 {
 			return false
 		}
 		for _, c := range p {
-			if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+			if !isASCIILetter(c) && !isASCIIDigit(c) {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+func isASCIILetter(c rune) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isASCIIDigit(c rune) bool {
+	return c >= '0' && c <= '9'
 }
 
 // parseMetadataLanguages parses a stored metadata_languages JSON string into
@@ -214,7 +221,10 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
 		userID, PrefMetadataLanguages).Scan(&raw)
 	if err != nil {
-		// No stored preference or DB error -- use default.
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("querying metadata_languages preference, using default",
+				"user_id", userID, "error", err)
+		}
 		raw = MetadataLanguagesDefault
 	}
 

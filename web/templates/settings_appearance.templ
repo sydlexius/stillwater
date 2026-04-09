@@ -48,6 +48,9 @@ type AppearancePrefsData struct {
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
 // suitable for embedding in a data attribute or JS variable.
 func (p AppearancePrefsData) metadataLanguagesJSON() string {
+	if len(p.MetadataLanguages) == 0 {
+		return `["en"]`
+	}
 	b, err := json.Marshal(p.MetadataLanguages)
 	if err != nil {
 		return `["en"]`
@@ -322,20 +325,17 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 	<!-- Metadata Language Preferences -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Metadata Language Preferences</h2>
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.metadata_languages") }</h2>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-				Set your preferred languages for artist biographies and aliases.
-				Providers will return content in the first available language from your list.
-				Not all providers support all languages.
+				{ t(ctx, "settings.appearance.metadata_languages_desc") }
 			</p>
 		</div>
 		<div class="px-6 py-4">
 			<div class="space-y-3">
 				<div>
-					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">Language priority</div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.metadata_languages_priority") }</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400">
-						Add language tags (e.g. en, en-GB, ja, fr) in order of preference.
-						The first match found will be used. Drag to reorder.
+						{ t(ctx, "settings.appearance.metadata_languages_priority_desc") }
 					</div>
 				</div>
 				<div id="metadata-lang-container" data-languages={ prefs.metadataLanguagesJSON() }>
@@ -346,6 +346,7 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 						<input
 							type="text"
 							id="metadata-lang-input"
+							aria-label="Add language tag"
 							placeholder="e.g. en, ja, fr-CA"
 							class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1"
 							maxlength="35"
@@ -355,12 +356,12 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 							id="metadata-lang-add-btn"
 							class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						>
-							Add
+							{ t(ctx, "settings.appearance.metadata_languages_add") }
 						</button>
 					</div>
 				</div>
 				<div class="text-xs text-gray-400 dark:text-gray-500">
-					Current: { prefs.metadataLanguagesDisplay() }
+					{ t(ctx, "settings.appearance.metadata_languages_current") } { prefs.metadataLanguagesDisplay() }
 				</div>
 			</div>
 		</div>
