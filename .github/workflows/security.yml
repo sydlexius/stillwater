@@ -1,11 +1,12 @@
 # Security scanning pipeline
 #
 # Jobs:
-#   govulncheck  - Go dependency vulnerability scan (push/PR/weekly)
-#   hadolint     - Dockerfile best-practice linting (push/PR)
-#   trivy        - Container image CVE scan (MEDIUM+), SARIF upload (weekly/manual)
-#   sbom         - SBOM generation (Syft) + vulnerability scan (Grype) on releases
-#   dockle       - CIS benchmark check for container images (weekly/manual)
+#   govulncheck       - Go dependency vulnerability scan (push/PR/weekly)
+#   hadolint          - Dockerfile best-practice linting (push/PR)
+#   trivy             - Container image CVE scan (MEDIUM+), SARIF upload (weekly/manual)
+#   sbom              - SBOM generation (Syft) + vulnerability scan (Grype) on releases
+#   dockle            - CIS benchmark check for container images (weekly/manual)
+#   grype-ignore-exp  - Fail when .grype.yaml ignore entries pass their review-by date (weekly)
 
 name: Security
 
@@ -141,3 +142,43 @@ jobs:
         # starts as root so the entrypoint can remap PUID/PGID at runtime,
         # then drops privileges via su-exec before executing the application.
         run: dockle --exit-code 1 --exit-level warn --ignore CIS-DI-0001 stillwater:dockle
+
+  grype-ignore-expiry:
+    name: Grype Ignore Expiry Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check for expired ignore entries
+        run: |
+          if [ ! -f .grype.yaml ]; then
+            echo "No .grype.yaml found, nothing to check."
+            exit 0
+          fi
+          today=$(date -u +%Y-%m-%d)
+          expired=0
+          vuln=""
+          while IFS= read -r line; do
+            case "$line" in
+              *"vulnerability:"*)
+                vuln=$(echo "$line" | sed 's/.*vulnerability:[[:space:]]*//')
+                ;;
+              *"review-by:"*)
+                review_by=$(echo "$line" | sed 's/.*review-by:[[:space:]]*//; s/"//g')
+                if [ "$today" '>' "$review_by" ] || [ "$today" = "$review_by" ]; then
+                  echo "::error::Grype ignore expired: $vuln (review-by: $review_by)"
+                  expired=$((expired + 1))
+                else
+                  days_left=$(( ( $(date -ud "$review_by" +%s) - $(date -ud "$today" +%s) ) / 86400 ))
+                  echo "OK: $vuln (review-by: $review_by, ${days_left} days remaining)"
+                fi
+                ;;
+            esac
+          done < .grype.yaml
+          if [ "$expired" -gt 0 ]; then
+            echo "::error::${expired} expired Grype ignore(s). Review and either remove or extend the review-by date."
+            exit 1
+          fi
+          echo "All Grype ignore entries are within their review-by window."
