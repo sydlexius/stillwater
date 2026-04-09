@@ -808,6 +808,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								data-toast-max={ t(ctx, "settings.metadata_languages.toast_max") }
 								data-aria-list-label={ t(ctx, "settings.metadata_languages.aria_list_label") }
 								data-aria-pill-hint={ t(ctx, "settings.metadata_languages.aria_pill_hint") }
+								data-aria-pill-label={ t(ctx, "settings.metadata_languages.aria_pill_label") }
 							>
 								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
 									<!-- Pills rendered by JS from data-languages -->
@@ -3678,7 +3679,8 @@ templ metadataLanguagesScript() {
 					pill.setAttribute('role', 'listitem');
 					pill.setAttribute('tabindex', '0');
 					var pillHint = container.getAttribute('data-aria-pill-hint') || 'use arrow keys to reorder';
-					pill.setAttribute('aria-label', langName(code) + ' (position ' + (idx + 1) + ' of ' + langs.length + ', ' + pillHint + ')');
+					var pillLabelTpl = container.getAttribute('data-aria-pill-label') || '{name}, position {pos} of {total}, {hint}';
+					pill.setAttribute('aria-label', pillLabelTpl.replace('{name}', langName(code)).replace('{pos}', String(idx + 1)).replace('{total}', String(langs.length)).replace('{hint}', pillHint));
 					pill.textContent = langName(code);
 
 					// Keyboard reorder: ArrowLeft/Right to swap position.
@@ -3854,6 +3856,8 @@ templ metadataLanguagesScript() {
 				if (matches.length === 0) {
 					dropdown.classList.add('hidden');
 					input.setAttribute('aria-expanded', 'false');
+					input.removeAttribute('aria-activedescendant');
+					activeIdx = -1;
 					return;
 				}
 
