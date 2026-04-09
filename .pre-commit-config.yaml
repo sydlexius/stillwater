@@ -26,6 +26,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: templ-generate
+        name: templ-generate
+        language: system
+        entry: bash -c 'go run github.com/a-h/templ/cmd/templ@v0.3.1001 generate && { git diff -z --name-only -- "*_templ.go"; git ls-files -z --others --exclude-standard -- "*_templ.go"; } | xargs -0 git add --' --
+        files: '\.templ$'
+        pass_filenames: false
+
       - id: gofmt
         name: gofmt
         language: system
