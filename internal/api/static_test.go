@@ -177,7 +177,7 @@ func TestStaticAssetsHandlerStripPrefix(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-			sa := NewStaticAssets(dir, logger)
+			sa := NewStaticAssets(os.DirFS(dir), logger)
 			handler := sa.Handler(bp)
 
 			// Build request path: basePath + /static/css/test.css

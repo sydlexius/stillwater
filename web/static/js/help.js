@@ -99,7 +99,7 @@
 
     function isPageMatch(pages) {
         var path = window.location.pathname;
-        if (bp && path.indexOf(bp) === 0) {
+        if (bp && (path === bp || path.indexOf(bp + '/') === 0)) {
             path = path.substring(bp.length) || '/';
         }
         for (var i = 0; i < pages.length; i++) {

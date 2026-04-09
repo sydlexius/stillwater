@@ -34,7 +34,7 @@
     // The server prepends basePath when building the redirect, so sending
     // the full pathname would cause double-prefixing (e.g. /sw/sw/artists).
     var relPath = window.location.pathname;
-    if (bp && relPath.indexOf(bp) === 0) {
+    if (bp && (relPath === bp || relPath.indexOf(bp + '/') === 0)) {
       relPath = relPath.substring(bp.length) || '/';
     }
     var returnURL = relPath + window.location.search + window.location.hash;

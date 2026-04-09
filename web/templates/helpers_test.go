@@ -33,6 +33,8 @@ func TestLogoSrc_BasePath(t *testing.T) {
 		{"sub-path, png logo", "/stillwater", "audiodb", "/stillwater/static/img/logos/audiodb-128.png"},
 		{"root base path, custom logo", "", "custom", "/static/img/favicon.svg"},
 		{"sub-path, custom logo", "/app", "custom", "/app/static/img/favicon.svg"},
+		{"trailing slash normalized", "/stillwater/", "discogs", "/stillwater/static/img/logos/discogs.svg"},
+		{"root slash normalized to empty", "/", "discogs", "/static/img/logos/discogs.svg"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,6 +59,8 @@ func TestLogoSrcSet_BasePath(t *testing.T) {
 		{"root base path, audiodb", "", "audiodb", "/static/img/logos/audiodb-32.png 1x, /static/img/logos/audiodb-64.png 2x, /static/img/logos/audiodb-128.png 4x"},
 		{"sub-path, emby", "/stillwater", "emby", "/stillwater/static/img/logos/emby-32.png 1x, /stillwater/static/img/logos/emby-64.png 2x, /stillwater/static/img/logos/emby-128.png 4x"},
 		{"nested sub-path, audiodb", "/foo/bar", "audiodb", "/foo/bar/static/img/logos/audiodb-32.png 1x, /foo/bar/static/img/logos/audiodb-64.png 2x, /foo/bar/static/img/logos/audiodb-128.png 4x"},
+		{"trailing slash normalized, emby", "/stillwater/", "emby", "/stillwater/static/img/logos/emby-32.png 1x, /stillwater/static/img/logos/emby-64.png 2x, /stillwater/static/img/logos/emby-128.png 4x"},
+		{"root slash normalized to empty", "/", "audiodb", "/static/img/logos/audiodb-32.png 1x, /static/img/logos/audiodb-64.png 2x, /static/img/logos/audiodb-128.png 4x"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

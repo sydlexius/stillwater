@@ -146,7 +146,7 @@
     clearCache();
     // Strip base path prefix so the server does not double-prefix on redirect.
     var relPath = window.location.pathname;
-    if (bp && relPath.indexOf(bp) === 0) {
+    if (bp && (relPath === bp || relPath.indexOf(bp + '/') === 0)) {
       relPath = relPath.substring(bp.length) || '/';
     }
     var returnURL = relPath + window.location.search + window.location.hash;
