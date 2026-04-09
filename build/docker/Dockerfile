@@ -7,11 +7,16 @@ RUN apk add --no-cache curl libstdc++ libgcc
 
 WORKDIR /src
 
-# Download Tailwind CSS standalone CLI
+# Download Tailwind CSS standalone CLI (architecture-aware)
 ARG TAILWIND_VERSION=v4.2.0
-RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64-musl \
-    && chmod +x tailwindcss-linux-x64-musl \
-    && mv tailwindcss-linux-x64-musl /usr/local/bin/tailwindcss
+RUN case "$(uname -m)" in \
+      x86_64)  TAILWIND_ARCH=x64 ;; \
+      aarch64) TAILWIND_ARCH=arm64 ;; \
+      *)       echo "unsupported arch: $(uname -m)" && exit 1 ;; \
+    esac \
+    && curl -sLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}-musl" \
+    && chmod +x "tailwindcss-linux-${TAILWIND_ARCH}-musl" \
+    && mv "tailwindcss-linux-${TAILWIND_ARCH}-musl" /usr/local/bin/tailwindcss
 
 # Cache Go modules
 COPY go.mod go.sum ./

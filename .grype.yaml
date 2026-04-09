@@ -19,3 +19,19 @@ ignore:
       type: apk
     review-by: "2026-05-09"
     reason: "No patched OpenSSL in Alpine 3.23; upstream fix is 3.5.6"
+
+  # curl 8.17.0 -- no fix available in Alpine 3.23 as of 2026-04-09.
+  - vulnerability: CVE-2026-3805
+    package:
+      name: curl
+      type: apk
+    review-by: "2026-05-09"
+    reason: "No patched curl in Alpine 3.23; awaiting upstream backport"
+
+  # nghttp2 1.68.0 -- no fix available in Alpine 3.23 as of 2026-04-09.
+  - vulnerability: CVE-2026-27135
+    package:
+      name: nghttp2-libs
+      type: apk
+    review-by: "2026-05-09"
+    reason: "No patched nghttp2 in Alpine 3.23; awaiting upstream backport"
