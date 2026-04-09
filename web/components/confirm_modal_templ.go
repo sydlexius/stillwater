@@ -53,7 +53,7 @@ func ConfirmModal() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div class=\"flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3\"><button type=\"button\" id=\"confirm-modal-cancel\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-white/10 transition-colors\">Cancel</button> <button type=\"button\" id=\"confirm-modal-accept\" class=\"rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2\">Confirm</button></div></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div class=\"flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3\"><button type=\"button\" id=\"confirm-modal-cancel\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors\">Cancel</button> <button type=\"button\" id=\"confirm-modal-accept\" class=\"rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2\">Confirm</button></div></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

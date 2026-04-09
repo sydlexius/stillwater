@@ -296,13 +296,14 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 				</select>
 			</div>
 			<p class="text-xs text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.appearance.metadata_lang_hint") + " " }
+				{ translationBefore(t(ctx, "settings.appearance.metadata_lang_hint"), "{link}") }
 				<a
 					href={ templ.SafeURL(basePath() + "/settings?tab=providers") }
 					class="text-blue-600 dark:text-blue-400 hover:underline"
 				>
 					{ t(ctx, "settings.tab.providers") }
 				</a>
+				{ translationAfter(t(ctx, "settings.appearance.metadata_lang_hint"), "{link}") }
 			</p>
 		</div>
 	</div>

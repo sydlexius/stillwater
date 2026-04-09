@@ -387,18 +387,26 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 				bestAlias = alias
 			}
 		}
-		if bestScore >= 0 && normalizeHyphens(bestAlias.Name) != canonicalName {
-			a.logger.Debug("promoting localized name",
-				"from", canonicalName,
-				"to", bestAlias.Name,
-				"locale", bestAlias.Locale)
-			meta.Name = normalizeHyphens(bestAlias.Name)
-			if bestAlias.SortName != "" {
-				meta.SortName = normalizeHyphens(bestAlias.SortName)
-			} else {
-				a.logger.Debug("promoted alias has no sort name, retaining canonical",
-					"canonical_sort", meta.SortName,
+		if bestScore >= 0 {
+			promotedName := normalizeHyphens(bestAlias.Name)
+			promotedSort := normalizeHyphens(bestAlias.SortName)
+			nameChanged := promotedName != "" && promotedName != canonicalName
+			sortChanged := promotedSort != "" && promotedSort != meta.SortName
+			if nameChanged || sortChanged {
+				a.logger.Debug("promoting localized name",
+					"from", canonicalName,
+					"to", bestAlias.Name,
 					"locale", bestAlias.Locale)
+				if nameChanged {
+					meta.Name = promotedName
+				}
+				if sortChanged {
+					meta.SortName = promotedSort
+				} else if nameChanged {
+					a.logger.Debug("promoted alias has no sort name, retaining canonical",
+						"canonical_sort", meta.SortName,
+						"locale", bestAlias.Locale)
+				}
 			}
 		}
 	}

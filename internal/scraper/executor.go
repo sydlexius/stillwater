@@ -108,12 +108,25 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		}
 	}
 
+	// MusicBrainz is authoritative for artist names (it owns the MBID), so
+	// apply its Name/SortName unconditionally before the selectedProviders
+	// gate. This ensures language-aware name promotion always takes effect
+	// even when MusicBrainz doesn't win an image field.
+	mu.Lock()
+	if mbResult, ok := cache[provider.NameMusicBrainz]; ok && mbResult.err == nil && mbResult.meta != nil {
+		if mbResult.meta.Name != "" {
+			result.Metadata.Name = mbResult.meta.Name
+		}
+		if mbResult.meta.SortName != "" {
+			result.Metadata.SortName = mbResult.meta.SortName
+		}
+	}
+
 	// Apply mergeable fields only from providers that were actually selected.
 	// Also populate AttemptedProviders for providers that responded without
 	// error, so callers can update per-provider fetch timestamps. Errored
 	// providers are excluded to avoid hiding outages behind misleading
 	// "attempted" markers.
-	mu.Lock()
 	for provName, pr := range cache {
 		if pr.err != nil {
 			continue

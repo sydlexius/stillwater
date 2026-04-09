@@ -293,7 +293,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	data, err := r.fetchImageFromURL(imageURL)
 	if err != nil {
 		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("failed to fetch image: %v", err)})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
 		return
 	}
 

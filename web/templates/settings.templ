@@ -806,6 +806,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								data-toast-saved={ t(ctx, "settings.metadata_languages.toast_saved") }
 								data-toast-failed={ t(ctx, "settings.metadata_languages.toast_failed") }
 								data-toast-max={ t(ctx, "settings.metadata_languages.toast_max") }
+								data-aria-list-label={ t(ctx, "settings.metadata_languages.aria_list_label") }
+								data-aria-pill-hint={ t(ctx, "settings.metadata_languages.aria_pill_hint") }
 							>
 								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
 									<!-- Pills rendered by JS from data-languages -->
@@ -3711,16 +3713,17 @@ templ metadataLanguagesScript() {
 
 			function renderPills() {
 				pillBox.innerHTML = '';
-				pillBox.setAttribute('role', 'listbox');
-				pillBox.setAttribute('aria-label', 'Language priority order');
+				pillBox.setAttribute('role', 'list');
+				pillBox.setAttribute('aria-label', container.getAttribute('data-aria-list-label') || 'Language priority order');
 				langs.forEach(function (code, idx) {
 					var pill = document.createElement('span');
 					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500';
 					pill.setAttribute('data-idx', String(idx));
 					pill.setAttribute('data-lang', code);
-					pill.setAttribute('role', 'option');
+					pill.setAttribute('role', 'listitem');
 					pill.setAttribute('tabindex', '0');
-					pill.setAttribute('aria-label', langName(code) + ' (position ' + (idx + 1) + ' of ' + langs.length + ', use arrow keys to reorder)');
+					var pillHint = container.getAttribute('data-aria-pill-hint') || 'use arrow keys to reorder';
+					pill.setAttribute('aria-label', langName(code) + ' (position ' + (idx + 1) + ' of ' + langs.length + ', ' + pillHint + ')');
 					pill.textContent = langName(code);
 
 					// Keyboard reorder: ArrowLeft/Right to swap position.
@@ -3795,6 +3798,7 @@ templ metadataLanguagesScript() {
 								newOrder.push(el.getAttribute('data-lang'));
 							});
 							langs = newOrder;
+							renderPills();
 							saveLangs(previous);
 						}
 					});
@@ -3811,7 +3815,11 @@ templ metadataLanguagesScript() {
 								showSuccessToast(container.getAttribute('data-toast-saved') || 'Language preferences saved');
 							}
 						} else {
-							try { langs = JSON.parse(saved || '["en"]'); } catch (_) { langs = previous; }
+							if (typeof saved === 'string' && saved !== '') {
+								try { langs = JSON.parse(saved); } catch (_) { langs = previous; }
+							} else {
+								langs = previous;
+							}
 							container.setAttribute('data-languages', JSON.stringify(langs));
 							renderPills();
 							if (typeof window.showToast === 'function') {

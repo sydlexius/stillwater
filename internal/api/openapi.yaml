@@ -7611,6 +7611,9 @@ paths:
                           type: string
                           description: Name of the provider that supplied this field.
                     description: Per-field provider attribution for updated fields.
+                  warning:
+                    type: string
+                    description: Present when metadata was refreshed but name update could not be saved.
             text/html:
               schema:
                 type: string
@@ -7729,6 +7732,9 @@ paths:
                           type: string
                           description: Name of the provider that supplied this field.
                     description: Per-field provider attribution for updated fields.
+                  warning:
+                    type: string
+                    description: Present when metadata was refreshed but name update could not be saved.
             text/html:
               schema:
                 type: string

@@ -716,7 +716,7 @@ func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 	}{
 		{"not json", `not json`},
 		{"empty array", `[]`},
-		{"too many entries", `["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u"]`},
+		{"too many entries", `["en","fr","de","es","it","pt","ja","ko","zh","ru","nl","sv","no","da","fi","pl","tr","ar","he","cs","hu"]`},
 		{"empty string tag", `["en",""]`},
 		{"invalid chars", `["en@GB"]`},
 		{"duplicate tags", `["en","en"]`},

@@ -16,11 +16,18 @@ func TestWithMetadataLanguages(t *testing.T) {
 	// Set languages and retrieve.
 	langs := []string{"en-GB", "en", "ja"}
 	ctx = WithMetadataLanguages(ctx, langs)
+
+	// Mutate the original slice to verify defensive copy.
+	langs[0] = "fr"
 	got := MetadataLanguages(ctx)
+	if got[0] != "en-GB" {
+		t.Fatalf("expected defensive copy to preserve original value, got %q", got[0])
+	}
 	if len(got) != 3 {
 		t.Fatalf("expected 3 languages, got %d", len(got))
 	}
-	for i, want := range langs {
+	expected := []string{"en-GB", "en", "ja"}
+	for i, want := range expected {
 		if got[i] != want {
 			t.Errorf("index %d: expected %q, got %q", i, want, got[i])
 		}

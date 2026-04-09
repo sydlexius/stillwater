@@ -210,12 +210,27 @@ func isASCIIDigit(c rune) bool {
 // normalizeLanguageTag applies BCP 47 canonical casing: lowercase language,
 // title-case script (4 letters), uppercase region (2 letters).
 // e.g. "EN-gb" -> "en-GB", "zh-hant-tw" -> "zh-Hant-TW".
+// Extension subtags (introduced by a singleton letter like "u" or "t") are
+// preserved verbatim because their internal structure follows different rules.
 func normalizeLanguageTag(tag string) string {
 	parts := strings.Split(tag, "-")
 	// Primary language subtag: always lowercase.
 	parts[0] = strings.ToLower(parts[0])
 	for i := 1; i < len(parts); i++ {
 		p := parts[i]
+		// A single-letter subtag (a-w, y) is a BCP 47 singleton that starts
+		// an extension sequence. Stop applying casing rules from here onward
+		// because extension subtag semantics are extension-defined.
+		if len(p) == 1 && isASCIILetter(rune(p[0])) && p[0] != 'x' && p[0] != 'X' {
+			// Lowercase the singleton itself per convention, keep the rest as-is.
+			parts[i] = strings.ToLower(p)
+			break
+		}
+		// Private-use prefix "x" also stops structural casing.
+		if (p[0] == 'x' || p[0] == 'X') && len(p) == 1 {
+			parts[i] = "x"
+			break
+		}
 		switch {
 		case len(p) == 4:
 			// Script subtag: title-case (e.g. "Hant", "Latn").

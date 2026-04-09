@@ -839,9 +839,9 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var44 string
-		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.appearance.metadata_lang_hint") + " ")
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(translationBefore(t(ctx, "settings.appearance.metadata_lang_hint"), "{link}"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 299, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 299, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -873,7 +873,20 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</a></p></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</a> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var47 string
+		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(translationAfter(t(ctx, "settings.appearance.metadata_lang_hint"), "{link}"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_appearance.templ`, Line: 306, Col: 82}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</p></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -904,12 +917,12 @@ func appearanceScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var47 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var47 == nil {
-			templ_7745c5c3_Var47 = templ.NopComponent
+		templ_7745c5c3_Var48 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var48 == nil {
+			templ_7745c5c3_Var48 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Save the page_size preference. Unlike segmented controls this is a\n\t\t\t// standalone numeric input, so it gets its own save helper.\n\t\t\t// The server canonicalizes page_size (e.g. \"010\" -> \"10\") via\n\t\t\t// strconv.Itoa, so we normalize client-side first to match. This lets\n\t\t\t// swSaveAppearancePref's saved === value check work correctly.\n\t\t\twindow.swSavePageSizePref = function (value) {\n\t\t\t\tvar n = parseInt(value, 10);\n\t\t\t\tvar input = document.getElementById('pref-page-size');\n\t\t\t\tvar cache = window.swPreferences ? window.swPreferences.getCache() : null;\n\t\t\t\tvar cachedPageSize = (cache && cache.page_size) || '50';\n\t\t\t\tif (isNaN(n)) {\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t}\n\t\t\t\t\t// Restore to the last accepted value from the cache.\n\t\t\t\t\tif (input) input.value = cachedPageSize;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar normalized = String(n);\n\t\t\t\tvar previous = cachedPageSize;\n\t\t\t\t// Show the canonical form optimistically.\n\t\t\t\tif (input) input.value = normalized;\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set('page_size', normalized).then(function (saved) {\n\t\t\t\t\t\tif (saved === normalized) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Server rejected -- revert the input to the previous value.\n\t\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<script>\n\t\t(function () {\n\t\t\t// Save a single appearance preference via swPreferences.set, which\n\t\t\t// persists to the server and applies to the DOM immediately.\n\t\t\twindow.swSaveAppearancePref = function (key, value) {\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set(key, value).then(function (saved) {\n\t\t\t\t\t\t// swPreferences.set resolves with the previous value when the\n\t\t\t\t\t\t// server rejects a change (it reverts client-side). Only show\n\t\t\t\t\t\t// success if the server actually accepted the new value.\n\t\t\t\t\t\tif (saved === value) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Save the page_size preference. Unlike segmented controls this is a\n\t\t\t// standalone numeric input, so it gets its own save helper.\n\t\t\t// The server canonicalizes page_size (e.g. \"010\" -> \"10\") via\n\t\t\t// strconv.Itoa, so we normalize client-side first to match. This lets\n\t\t\t// swSaveAppearancePref's saved === value check work correctly.\n\t\t\twindow.swSavePageSizePref = function (value) {\n\t\t\t\tvar n = parseInt(value, 10);\n\t\t\t\tvar input = document.getElementById('pref-page-size');\n\t\t\t\tvar cache = window.swPreferences ? window.swPreferences.getCache() : null;\n\t\t\t\tvar cachedPageSize = (cache && cache.page_size) || '50';\n\t\t\t\tif (isNaN(n)) {\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t}\n\t\t\t\t\t// Restore to the last accepted value from the cache.\n\t\t\t\t\tif (input) input.value = cachedPageSize;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar normalized = String(n);\n\t\t\t\tvar previous = cachedPageSize;\n\t\t\t\t// Show the canonical form optimistically.\n\t\t\t\tif (input) input.value = normalized;\n\t\t\t\tif (window.swPreferences) {\n\t\t\t\t\twindow.swPreferences.set('page_size', normalized).then(function (saved) {\n\t\t\t\t\t\tif (saved === normalized) {\n\t\t\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\t\t\tshowSuccessToast('Preference saved');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Server rejected -- revert the input to the previous value.\n\t\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function () {\n\t\t\t\t\t\tif (input) input.value = previous;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast('Failed to save preference');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Wire all segmented controls inside the appearance tab panel.\n\t\t\t// Each segmented control fires \"segmented:changed\" with {name, value}.\n\t\t\tvar panel = document.querySelector('[data-tab-panel=\"appearance\"]');\n\t\t\tif (!panel) return;\n\n\t\t\tpanel.addEventListener('segmented:changed', function (e) {\n\t\t\t\tif (!e.detail) return;\n\t\t\t\tswSaveAppearancePref(e.detail.name, e.detail.value);\n\t\t\t});\n\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
