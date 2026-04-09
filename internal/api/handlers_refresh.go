@@ -54,36 +54,7 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	// user's metadata language preference yields a localized alias, the
 	// provider returns the promoted name. Update the artist record so the
 	// UI reflects it.
-	var nameUpdateFailed bool
-	if result.Metadata != nil {
-		newName := result.Metadata.Name
-		newSort := result.Metadata.SortName
-		nameChanged := (newName != "" && newName != a.Name) ||
-			(newSort != "" && newSort != a.SortName)
-
-		if nameChanged {
-			origName, origSort := a.Name, a.SortName
-			if newName != "" {
-				a.Name = newName
-			}
-			if newSort != "" {
-				a.SortName = newSort
-			}
-			if err := r.artistService.Update(req.Context(), a); err != nil {
-				r.logger.Error("updating artist name after refresh",
-					"artist_id", a.ID,
-					"error", err)
-				a.Name, a.SortName = origName, origSort
-				nameUpdateFailed = true
-			} else {
-				r.logger.Info("artist name updated from provider",
-					"artist_id", a.ID,
-					"old_name", origName,
-					"new_name", a.Name)
-				r.publisher.PublishMetadata(req.Context(), a)
-			}
-		}
-	}
+	nameUpdateFailed := r.applyProviderName(req.Context(), a, result.Metadata)
 
 	if r.eventBus != nil {
 		r.eventBus.Publish(event.Event{
@@ -96,6 +67,9 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
+		if nameUpdateFailed {
+			setSyncWarningTrigger(w, []string{"metadata refreshed but name update could not be saved"})
+		}
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
 	}
@@ -214,34 +188,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	// update the display name and sort name from provider data. The artist
 	// is only mutated after a successful DB update to avoid the UI or NFO
 	// showing a name that was never persisted.
-	if result.Metadata != nil {
-		newName := result.Metadata.Name
-		newSort := result.Metadata.SortName
-		nameChanged := (newName != "" && newName != a.Name) ||
-			(newSort != "" && newSort != a.SortName)
-
-		if nameChanged {
-			origName, origSort := a.Name, a.SortName
-			if newName != "" {
-				a.Name = newName
-			}
-			if newSort != "" {
-				a.SortName = newSort
-			}
-			if err := r.artistService.Update(req.Context(), a); err != nil {
-				r.logger.Error("updating artist name after re-identify",
-					"artist_id", a.ID,
-					"error", err)
-				a.Name, a.SortName = origName, origSort
-			} else {
-				// Re-write the NFO so it reflects the updated name.
-				// The NFO written by executeRefresh still has the old
-				// name because the name update happens after the
-				// refresh completes.
-				r.publisher.PublishMetadata(req.Context(), a)
-			}
-		}
-	}
+	nameUpdateFailed := r.applyProviderName(req.Context(), a, result.Metadata)
 
 	if r.eventBus != nil {
 		r.eventBus.Publish(event.Event{
@@ -254,13 +201,20 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
+		if nameUpdateFailed {
+			setSyncWarningTrigger(w, []string{"re-identify completed but name update could not be saved"})
+		}
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":  "linked_and_refreshed",
 		"sources": result.Sources,
-	})
+	}
+	if nameUpdateFailed {
+		resp["warning"] = "re-identify completed but name update could not be saved"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
@@ -527,6 +481,46 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 	}
 
 	return candidates
+}
+
+// applyProviderName updates the artist's Name and SortName from provider
+// metadata when the provider returned a different (e.g. language-promoted)
+// name. Returns true if the DB write failed and the caller should warn.
+// Uses context.WithoutCancel so the write completes even if the HTTP client
+// disconnects.
+func (r *Router) applyProviderName(ctx context.Context, a *artist.Artist, meta *provider.ArtistMetadata) bool {
+	if meta == nil {
+		return false
+	}
+	newName, newSort := meta.Name, meta.SortName
+	nameChanged := (newName != "" && newName != a.Name) ||
+		(newSort != "" && newSort != a.SortName)
+	if !nameChanged {
+		return false
+	}
+
+	origName, origSort := a.Name, a.SortName
+	if newName != "" {
+		a.Name = newName
+	}
+	if newSort != "" {
+		a.SortName = newSort
+	}
+
+	writeCtx := context.WithoutCancel(ctx)
+	if err := r.artistService.Update(writeCtx, a); err != nil {
+		r.logger.Error("updating artist name from provider",
+			"artist_id", a.ID,
+			"error", err)
+		a.Name, a.SortName = origName, origSort
+		return true
+	}
+	r.logger.Info("artist name updated from provider",
+		"artist_id", a.ID,
+		"old_name", origName,
+		"new_name", a.Name)
+	r.publisher.PublishMetadata(writeCtx, a)
+	return false
 }
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.

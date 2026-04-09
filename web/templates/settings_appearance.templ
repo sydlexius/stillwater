@@ -298,7 +298,7 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 			<p class="text-xs text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.appearance.metadata_lang_hint") + " " }
 				<a
-					href="/settings?tab=providers"
+					href={ templ.SafeURL(basePath() + "/settings?tab=providers") }
 					class="text-blue-600 dark:text-blue-400 hover:underline"
 				>
 					{ t(ctx, "settings.tab.providers") }

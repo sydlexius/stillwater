@@ -387,7 +387,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 				bestAlias = alias
 			}
 		}
-		if bestScore >= 0 && bestAlias.Name != canonicalName {
+		if bestScore >= 0 && normalizeHyphens(bestAlias.Name) != canonicalName {
 			a.logger.Debug("promoting localized name",
 				"from", canonicalName,
 				"to", bestAlias.Name,
@@ -415,11 +415,12 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		scored = append(scored, scoredAlias{name: canonicalName, score: -1})
 	}
 	for _, alias := range mb.Aliases {
-		if alias.Name == "" || alias.Name == meta.Name {
+		normalizedAlias := normalizeHyphens(alias.Name)
+		if normalizedAlias == "" || normalizedAlias == meta.Name || normalizedAlias == canonicalName {
 			continue
 		}
 		score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
-		scored = append(scored, scoredAlias{name: alias.Name, score: score})
+		scored = append(scored, scoredAlias{name: normalizedAlias, score: score})
 	}
 	// Sort: matched locales first (lower score wins), unmatched last.
 	if len(langPrefs) > 0 && len(scored) > 1 {

@@ -803,6 +803,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								id="metadata-lang-container"
 								data-languages={ data.metadataLanguagesJSON() }
 								data-remove-label={ t(ctx, "settings.metadata_languages.remove") }
+								data-toast-saved={ t(ctx, "settings.metadata_languages.toast_saved") }
+								data-toast-failed={ t(ctx, "settings.metadata_languages.toast_failed") }
+								data-toast-max={ t(ctx, "settings.metadata_languages.toast_max") }
 							>
 								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
 									<!-- Pills rendered by JS from data-languages -->
@@ -811,12 +814,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									<input
 										type="text"
 										id="metadata-lang-input"
+										role="combobox"
 										aria-label={ t(ctx, "settings.metadata_languages.input_label") }
+										aria-expanded="false"
+										aria-controls="metadata-lang-dropdown"
+										aria-autocomplete="list"
 										placeholder={ t(ctx, "settings.metadata_languages.input_placeholder") }
 										autocomplete="off"
 										class="w-full text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
 									/>
-									<div id="metadata-lang-dropdown" class="hidden absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg">
+									<div id="metadata-lang-dropdown" role="listbox" class="hidden absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg">
 										<!-- Autocomplete results rendered by JS -->
 									</div>
 								</div>
@@ -3704,15 +3711,63 @@ templ metadataLanguagesScript() {
 
 			function renderPills() {
 				pillBox.innerHTML = '';
+				pillBox.setAttribute('role', 'listbox');
+				pillBox.setAttribute('aria-label', 'Language priority order');
 				langs.forEach(function (code, idx) {
 					var pill = document.createElement('span');
-					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
+					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500';
 					pill.setAttribute('data-idx', String(idx));
 					pill.setAttribute('data-lang', code);
+					pill.setAttribute('role', 'option');
+					pill.setAttribute('tabindex', '0');
+					pill.setAttribute('aria-label', langName(code) + ' (position ' + (idx + 1) + ' of ' + langs.length + ', use arrow keys to reorder)');
 					pill.textContent = langName(code);
+
+					// Keyboard reorder: ArrowLeft/Right to swap position.
+					pill.addEventListener('keydown', function (e) {
+						var pillIdx = Number(pill.getAttribute('data-idx'));
+						if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+							if (pillIdx > 0) {
+								e.preventDefault();
+								var previous = langs.slice();
+								var tmp = langs[pillIdx - 1];
+								langs[pillIdx - 1] = langs[pillIdx];
+								langs[pillIdx] = tmp;
+								renderPills();
+								saveLangs(previous);
+								// Re-focus the moved pill at its new position.
+								var moved = pillBox.querySelector('[data-idx="' + (pillIdx - 1) + '"]');
+								if (moved) moved.focus();
+							}
+						} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+							if (pillIdx < langs.length - 1) {
+								e.preventDefault();
+								var previous = langs.slice();
+								var tmp = langs[pillIdx + 1];
+								langs[pillIdx + 1] = langs[pillIdx];
+								langs[pillIdx] = tmp;
+								renderPills();
+								saveLangs(previous);
+								var moved = pillBox.querySelector('[data-idx="' + (pillIdx + 1) + '"]');
+								if (moved) moved.focus();
+							}
+						} else if (e.key === 'Delete' || e.key === 'Backspace') {
+							e.preventDefault();
+							var previous = langs.slice();
+							langs.splice(pillIdx, 1);
+							if (langs.length === 0) langs = ['en'];
+							renderPills();
+							saveLangs(previous);
+							// Focus the pill at the same index or the last one.
+							var focusIdx = Math.min(pillIdx, langs.length - 1);
+							var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
+							if (next) next.focus();
+						}
+					});
 
 					var removeBtn = document.createElement('button');
 					removeBtn.type = 'button';
+					removeBtn.setAttribute('tabindex', '-1'); // pill itself is focusable
 					removeBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';
 					removeBtn.innerHTML = '&times;';
 					removeBtn.setAttribute('aria-label', (container.getAttribute('data-remove-label') || 'Remove') + ' ' + langName(code));
@@ -3753,14 +3808,14 @@ templ metadataLanguagesScript() {
 					window.swPreferences.set('metadata_languages', val).then(function (saved) {
 						if (saved === val) {
 							if (typeof window.showSuccessToast === 'function') {
-								showSuccessToast('Language preferences saved');
+								showSuccessToast(container.getAttribute('data-toast-saved') || 'Language preferences saved');
 							}
 						} else {
 							try { langs = JSON.parse(saved || '["en"]'); } catch (_) { langs = previous; }
 							container.setAttribute('data-languages', JSON.stringify(langs));
 							renderPills();
 							if (typeof window.showToast === 'function') {
-								showToast('Failed to save language preferences');
+								showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
 							}
 						}
 					}).catch(function () {
@@ -3768,17 +3823,24 @@ templ metadataLanguagesScript() {
 						container.setAttribute('data-languages', JSON.stringify(langs));
 						renderPills();
 						if (typeof window.showToast === 'function') {
-							showToast('Failed to save language preferences');
+							showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
 						}
 					});
 				}
 			}
 
+			var activeIdx = -1; // index of keyboard-highlighted dropdown option
+
 			// Autocomplete: filter LANG_NAMES by input, excluding already-selected.
 			function showDropdown() {
 				var query = (input.value || '').trim().toLowerCase();
 				dropdown.innerHTML = '';
-				if (!query) { dropdown.classList.add('hidden'); return; }
+				activeIdx = -1;
+				if (!query) {
+					dropdown.classList.add('hidden');
+					input.setAttribute('aria-expanded', 'false');
+					return;
+				}
 
 				var matches = [];
 				for (var code in LANG_NAMES) {
@@ -3791,14 +3853,19 @@ templ metadataLanguagesScript() {
 
 				if (matches.length === 0) {
 					dropdown.classList.add('hidden');
+					input.setAttribute('aria-expanded', 'false');
 					return;
 				}
 
 				matches.sort(function (a, b) { return a.name.localeCompare(b.name); });
 
-				matches.forEach(function (m) {
+				matches.forEach(function (m, idx) {
 					var opt = document.createElement('div');
 					opt.className = 'px-3 py-1.5 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100';
+					opt.setAttribute('role', 'option');
+					opt.setAttribute('data-code', m.code);
+					opt.setAttribute('data-idx', String(idx));
+					opt.id = 'metadata-lang-opt-' + idx;
 					opt.textContent = m.name + ' (' + m.code + ')';
 					opt.addEventListener('mousedown', function (e) {
 						e.preventDefault(); // prevent input blur
@@ -3807,13 +3874,32 @@ templ metadataLanguagesScript() {
 					dropdown.appendChild(opt);
 				});
 				dropdown.classList.remove('hidden');
+				input.setAttribute('aria-expanded', 'true');
+			}
+
+			function highlightOption(idx) {
+				var items = dropdown.querySelectorAll('[role="option"]');
+				items.forEach(function (el) {
+					el.classList.remove('bg-blue-50', 'dark:bg-gray-600');
+					el.removeAttribute('aria-selected');
+				});
+				if (idx >= 0 && idx < items.length) {
+					activeIdx = idx;
+					items[idx].classList.add('bg-blue-50', 'dark:bg-gray-600');
+					items[idx].setAttribute('aria-selected', 'true');
+					input.setAttribute('aria-activedescendant', items[idx].id);
+					items[idx].scrollIntoView({ block: 'nearest' });
+				} else {
+					activeIdx = -1;
+					input.removeAttribute('aria-activedescendant');
+				}
 			}
 
 			function addLang(code) {
 				if (langs.indexOf(code) >= 0) return;
 				if (langs.length >= 20) {
 					if (typeof window.showToast === 'function') {
-						showToast('Maximum of 20 languages allowed');
+						showToast(container.getAttribute('data-toast-max') || 'Maximum of 20 languages allowed');
 					}
 					return;
 				}
@@ -3821,6 +3907,8 @@ templ metadataLanguagesScript() {
 				langs.push(code);
 				input.value = '';
 				dropdown.classList.add('hidden');
+				input.setAttribute('aria-expanded', 'false');
+				activeIdx = -1;
 				renderPills();
 				saveLangs(previous);
 			}
@@ -3829,11 +3917,31 @@ templ metadataLanguagesScript() {
 			input.addEventListener('focus', showDropdown);
 			input.addEventListener('blur', function () {
 				// Delay to allow mousedown on dropdown items.
-				setTimeout(function () { dropdown.classList.add('hidden'); }, 150);
+				setTimeout(function () {
+					dropdown.classList.add('hidden');
+					input.setAttribute('aria-expanded', 'false');
+					activeIdx = -1;
+				}, 150);
 			});
 			input.addEventListener('keydown', function (e) {
-				if (e.key === 'Escape') {
+				var items = dropdown.querySelectorAll('[role="option"]');
+				if (e.key === 'ArrowDown') {
+					e.preventDefault();
+					if (dropdown.classList.contains('hidden')) { showDropdown(); return; }
+					highlightOption(activeIdx < items.length - 1 ? activeIdx + 1 : 0);
+				} else if (e.key === 'ArrowUp') {
+					e.preventDefault();
+					if (dropdown.classList.contains('hidden')) return;
+					highlightOption(activeIdx > 0 ? activeIdx - 1 : items.length - 1);
+				} else if (e.key === 'Enter') {
+					e.preventDefault();
+					if (activeIdx >= 0 && activeIdx < items.length) {
+						addLang(items[activeIdx].getAttribute('data-code'));
+					}
+				} else if (e.key === 'Escape') {
 					dropdown.classList.add('hidden');
+					input.setAttribute('aria-expanded', 'false');
+					activeIdx = -1;
 				}
 			});
 

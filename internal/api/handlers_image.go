@@ -771,7 +771,7 @@ func ssrfSafeTransport() *http.Transport {
 			return nil, fmt.Errorf("DNS lookup for %s returned no addresses", host)
 		}
 
-		// Filter out private/reserved IPs; reject if any resolve to a blocked range.
+		// Reject if any resolved IP falls within a blocked range (loopback/private/link-local/unspecified).
 		var safe []net.IPAddr
 		for _, ip := range ips {
 			if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||

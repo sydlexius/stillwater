@@ -145,18 +145,21 @@ func validateMetadataLanguages(raw string) (string, bool) {
 		return "", false
 	}
 	seen := make(map[string]bool, len(tags))
+	normalized := make([]string, 0, len(tags))
 	for _, tag := range tags {
 		if tag == "" || !isValidLanguageTag(tag) {
 			return "", false
 		}
-		lower := strings.ToLower(tag)
+		canon := normalizeLanguageTag(tag)
+		lower := strings.ToLower(canon)
 		if seen[lower] {
 			return "", false
 		}
 		seen[lower] = true
+		normalized = append(normalized, canon)
 	}
-	// Re-encode to canonical JSON.
-	canonical, err := json.Marshal(tags)
+	// Re-encode to canonical JSON with normalized casing.
+	canonical, err := json.Marshal(normalized)
 	if err != nil {
 		return "", false
 	}
@@ -204,6 +207,30 @@ func isASCIIDigit(c rune) bool {
 	return c >= '0' && c <= '9'
 }
 
+// normalizeLanguageTag applies BCP 47 canonical casing: lowercase language,
+// title-case script (4 letters), uppercase region (2 letters).
+// e.g. "EN-gb" -> "en-GB", "zh-hant-tw" -> "zh-Hant-TW".
+func normalizeLanguageTag(tag string) string {
+	parts := strings.Split(tag, "-")
+	// Primary language subtag: always lowercase.
+	parts[0] = strings.ToLower(parts[0])
+	for i := 1; i < len(parts); i++ {
+		p := parts[i]
+		switch {
+		case len(p) == 4:
+			// Script subtag: title-case (e.g. "Hant", "Latn").
+			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+		case len(p) == 2 && isASCIILetter(rune(p[0])):
+			// Region subtag: uppercase (e.g. "GB", "TW").
+			parts[i] = strings.ToUpper(p)
+		default:
+			// Variant or other subtag: lowercase by convention.
+			parts[i] = strings.ToLower(p)
+		}
+	}
+	return strings.Join(parts, "-")
+}
+
 // parseMetadataLanguages parses a stored metadata_languages JSON string into
 // a slice of language tags. Returns nil on parse failure.
 func parseMetadataLanguages(raw string) []string {
@@ -242,6 +269,11 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	langs := parseMetadataLanguages(raw)
 	if len(langs) == 0 {
 		langs = []string{"en"}
+	}
+	// Normalize stored tags so providers always receive canonical casing,
+	// even if the DB row was written before normalization was added.
+	for i, tag := range langs {
+		langs[i] = normalizeLanguageTag(tag)
 	}
 	return provider.WithMetadataLanguages(ctx, langs)
 }
