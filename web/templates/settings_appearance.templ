@@ -361,7 +361,7 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 					</div>
 				</div>
 				<div class="text-xs text-gray-400 dark:text-gray-500">
-					{ t(ctx, "settings.appearance.metadata_languages_current") } { prefs.metadataLanguagesDisplay() }
+					{ t(ctx, "settings.appearance.metadata_languages_current") } <span id="metadata-lang-current">{ prefs.metadataLanguagesDisplay() }</span>
 				</div>
 			</div>
 		</div>
@@ -514,21 +514,39 @@ templ appearanceScript() {
 					});
 				}
 
+				function updateCurrentText() {
+					var el = document.getElementById('metadata-lang-current');
+					if (el) {
+						el.textContent = langs.length ? langs.join(', ') : 'en';
+					}
+				}
+
 				function saveLangs() {
+					var previous = langs.slice();
 					var val = JSON.stringify(langs);
 					container.setAttribute('data-languages', val);
 					if (window.swPreferences) {
 						window.swPreferences.set('metadata_languages', val).then(function (saved) {
 							if (saved === val) {
+								updateCurrentText();
 								if (typeof window.showSuccessToast === 'function') {
 									showSuccessToast('Metadata language preferences saved');
 								}
 							} else {
+								// Server rejected -- revert to previous state.
+								try { langs = JSON.parse(saved || '["en"]'); } catch (_) { langs = previous; }
+								container.setAttribute('data-languages', JSON.stringify(langs));
+								renderPills();
+								updateCurrentText();
 								if (typeof window.showToast === 'function') {
 									showToast('Failed to save language preferences');
 								}
 							}
 						}).catch(function () {
+							langs = previous;
+							container.setAttribute('data-languages', JSON.stringify(langs));
+							renderPills();
+							updateCurrentText();
 							if (typeof window.showToast === 'function') {
 								showToast('Failed to save language preferences');
 							}

@@ -13,7 +13,10 @@ type ctxKeyMetadataLanguages struct{}
 // WithMetadataLanguages returns a child context carrying the user's ordered
 // metadata language preferences.
 func WithMetadataLanguages(ctx context.Context, langs []string) context.Context {
-	return context.WithValue(ctx, ctxKeyMetadataLanguages{}, langs)
+	// Defensive copy so callers cannot mutate the stored value.
+	cp := make([]string, len(langs))
+	copy(cp, langs)
+	return context.WithValue(ctx, ctxKeyMetadataLanguages{}, cp)
 }
 
 // MetadataLanguages retrieves the ordered metadata language preferences from

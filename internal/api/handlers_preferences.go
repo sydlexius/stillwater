@@ -107,6 +107,17 @@ func normalizePageSize(raw string) string {
 	return strconv.Itoa(n)
 }
 
+// normalizeMetadataLanguages validates and re-encodes a stored metadata_languages
+// value. Invalid or empty values fall back to MetadataLanguagesDefault. This is
+// the read-path counterpart to validateMetadataLanguages (used on write).
+func normalizeMetadataLanguages(raw string) string {
+	canonical, ok := validateMetadataLanguages(raw)
+	if !ok {
+		return MetadataLanguagesDefault
+	}
+	return canonical
+}
+
 // isMetadataLanguagesKey reports whether key is the metadata_languages preference key.
 // metadata_languages is stored as a JSON array of BCP 47 language tags and is
 // not listed in preferenceDefaults because its validation is structural (valid
@@ -312,6 +323,16 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Canonicalize metadata_languages so malformed or manually edited DB rows
+	// always return a valid JSON array of BCP 47 tags.
+	if metaLangKey {
+		if normalized := normalizeMetadataLanguages(value); normalized != value {
+			r.logger.Warn("stored metadata_languages normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": value})
 }
 
@@ -363,7 +384,12 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			}
 			prefs[k] = normalized
 		} else if isMetadataLanguagesKey(k) {
-			prefs[k] = v
+			normalized := normalizeMetadataLanguages(v)
+			if normalized != v {
+				r.logger.Warn("stored metadata_languages normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
+			}
+			prefs[k] = normalized
 		}
 	}
 	if err := rows.Err(); err != nil {
