@@ -35,7 +35,7 @@ docker run -d \
   -p 1973:1973 \
   -e PUID=99 \
   -e PGID=100 \
-  -v stillwater-data:/data \
+  -v stillwater-data:/config \
   -v /path/to/your/music:/music:rw \
   --restart unless-stopped \
   ghcr.io/sydlexius/stillwater:latest
@@ -62,7 +62,7 @@ services:
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
     volumes:
-      - stillwater-data:/data
+      - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
 
@@ -137,7 +137,7 @@ If the app does not appear in search results yet, you can install it manually:
 
 ### Persisting the encryption key
 
-When `SW_ENCRYPTION_KEY` is left blank, Stillwater generates a random key on first start and stores it in `/data/encryption.key` inside the container (which maps to your **Config/Database** path on the host). The key is reloaded automatically on restart as long as that path is preserved.
+When `SW_ENCRYPTION_KEY` is left blank, Stillwater generates a random key on first start and stores it in `/config/encryption.key` inside the container (which maps to your **Config/Database** path on the host). The key is reloaded automatically on restart as long as that path is preserved.
 
 If you ever recreate the container with a new appdata path or delete the appdata folder, set `SW_ENCRYPTION_KEY` explicitly in the template to a fixed value so your stored API keys remain decryptable. You can find the auto-generated value in the existing `encryption.key` file before making changes.
 

@@ -35,7 +35,12 @@ if [ "$(id -u)" = "0" ]; then
         adduser -u "${PUID}" -G "${PGID_GROUP:-stillwater}" -s /bin/sh -D stillwater
     fi
 
-    chown -R stillwater:"${PGID_GROUP:-stillwater}" /data /music 2>/dev/null || true
+    # Migrate /data -> /config for existing installs
+    if [ -d /data ] && [ -f /data/stillwater.db ] && [ ! -f /config/stillwater.db ]; then
+        ln -sf /data/* /config/ 2>/dev/null || true
+    fi
+
+    chown -R stillwater:"${PGID_GROUP:-stillwater}" /config /music 2>/dev/null || true
 
     case "${1:-}" in
         reset-credentials)
