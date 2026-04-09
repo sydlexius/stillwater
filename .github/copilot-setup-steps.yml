@@ -24,11 +24,13 @@ steps:
     run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
   - name: Install goimports
-    run: go install golang.org/x/tools/cmd/goimports@latest
+    run: go install golang.org/x/tools/cmd/goimports@v0.43.0
 
   - name: Install Tailwind CSS
     run: |
       curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/tailwindcss-linux-x64
+      curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/sha256sums.txt
+      grep ' tailwindcss-linux-x64$' sha256sums.txt | sha256sum -c -
       chmod +x tailwindcss-linux-x64
       sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
 
