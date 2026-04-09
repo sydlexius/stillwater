@@ -53,7 +53,6 @@ web/static/           - CSS, vendored JS
 api/bruno/            - Bruno API test collections
 build/docker/         - Dockerfile, entrypoint
 build/swag/           - LSIO SWAG reverse proxy configs
-build/unraid/         - Unraid CA template
 ```
 
 ## Common Commands
