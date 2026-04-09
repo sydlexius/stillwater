@@ -117,6 +117,7 @@ jobs:
           sbom: sbom.cdx.json
           fail-build: true
           severity-cutoff: high
+          output-format: table
 
   dockle:
     name: Container Best Practices
