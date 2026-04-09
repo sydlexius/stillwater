@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -184,6 +185,32 @@ func parseMetadataLanguages(raw string) []string {
 		return nil
 	}
 	return tags
+}
+
+// injectMetadataLanguages loads the user's metadata_languages preference from
+// the database and injects it into the context via provider.WithMetadataLanguages.
+// If the user has no stored preference, the default (["en"]) is used.
+// This allows all providers downstream to read language preferences from the context.
+func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return ctx
+	}
+
+	var raw string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
+		userID, PrefMetadataLanguages).Scan(&raw)
+	if err != nil {
+		// No stored preference or DB error -- use default.
+		raw = MetadataLanguagesDefault
+	}
+
+	langs := parseMetadataLanguages(raw)
+	if len(langs) == 0 {
+		langs = []string{"en"}
+	}
+	return provider.WithMetadataLanguages(ctx, langs)
 }
 
 // isSuppressConfirmKey reports whether key is a valid per-action confirm

@@ -232,7 +232,10 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 
 // executeRefreshCtx runs the orchestrator's FetchMetadata and applies results to the artist.
 // It accepts a bare context so it can be called from both HTTP handlers and background goroutines.
+// When a user ID is present in the context, the user's metadata language preferences
+// are loaded and injected into the context for use by individual providers.
 func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*provider.FetchResult, error) {
+	ctx = r.injectMetadataLanguages(ctx)
 	result, err := r.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		r.logger.Error("metadata refresh failed",
