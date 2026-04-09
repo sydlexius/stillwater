@@ -22,6 +22,9 @@ type StaticAssets struct {
 
 // NewStaticAssets creates a StaticAssets manager that scans the given filesystem.
 func NewStaticAssets(fsys fs.FS, logger *slog.Logger) *StaticAssets {
+	if fsys == nil {
+		panic("api.NewStaticAssets: fsys must not be nil")
+	}
 	sa := &StaticAssets{
 		hashes: make(map[string]string),
 		fsys:   fsys,

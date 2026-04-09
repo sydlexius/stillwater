@@ -21,7 +21,7 @@ Stillwater is a self-hosted web application for managing artist and composer met
 
 ## Requirements
 
-Docker or a standalone binary for Linux, macOS, or Windows. Docker Compose is optional but recommended for Docker installs.
+Stillwater can run via Docker or as a standalone binary on Linux, macOS, or Windows. Docker Compose is optional but recommended for Docker installs.
 
 ## Installation
 

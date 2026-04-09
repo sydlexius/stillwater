@@ -90,12 +90,12 @@ func TestStaticAssets_Handler(t *testing.T) {
 	})
 }
 
-func TestStaticAssets_EmbeddedFS(t *testing.T) {
-	// Verify the embedded FS from web/static works with StaticAssets.
-	// Use os.DirFS as a stand-in; in production the embed.FS is used.
+func TestStaticAssets_DirFS(t *testing.T) {
+	// Verify StaticAssets works with an on-disk fs.FS rooted at web/static.
+	// This test uses os.DirFS, not the production embedded filesystem.
 	fsys := os.DirFS("../../web/static")
 
-	// Verify the FS is valid by checking a known file exists.
+	// Verify the on-disk FS is available by checking a known file exists.
 	if _, err := fs.Stat(fsys, "js/htmx.min.js"); err != nil {
 		t.Skipf("static assets not available: %v", err)
 	}
@@ -127,6 +127,16 @@ func TestStaticAssets_EmbeddedFS(t *testing.T) {
 	if w.Body.Len() == 0 {
 		t.Fatal("expected non-empty response body")
 	}
+}
+
+func TestStaticAssets_NilFS(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil fsys")
+		}
+	}()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	NewStaticAssets(nil, logger)
 }
 
 func TestStaticAssets_WithBasePath(t *testing.T) {
