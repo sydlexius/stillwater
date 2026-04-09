@@ -563,7 +563,7 @@ func run() error {
 }
 
 // resolveEncryptionKey determines the encryption key to use.
-// Priority: SW_ENCRYPTION_KEY env var > /config/encryption.key file > generate new.
+// Priority: SW_ENCRYPTION_KEY env var > encryption.key alongside DB > generate new.
 func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, error) {
 	if cfg.Encryption.Key != "" {
 		return cfg.Encryption.Key, nil

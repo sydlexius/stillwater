@@ -37,7 +37,9 @@ if [ "$(id -u)" = "0" ]; then
 
     # Migrate /data -> /config for existing installs
     if [ -d /data ] && [ -f /data/stillwater.db ] && [ ! -f /config/stillwater.db ]; then
-        ln -sf /data/* /config/ 2>/dev/null || true
+        for f in stillwater.db config.yaml encryption.key; do
+            [ -e "/data/$f" ] && ln -sf "/data/$f" "/config/$f"
+        done
     fi
 
     chown -R stillwater:"${PGID_GROUP:-stillwater}" /config /music 2>/dev/null || true
