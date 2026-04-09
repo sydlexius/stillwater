@@ -538,8 +538,9 @@ templ appearanceScript() {
 				function addLang() {
 					var val = (input.value || '').trim();
 					if (!val) return;
-					// Basic tag validation: alphanumeric with hyphens, 1-35 chars.
-					if (!/^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$/.test(val) || val.length > 35) {
+					// BCP 47 validation: primary subtag must be 2-3 letters,
+					// subsequent subtags 1-8 alphanumeric characters, max 35 chars total.
+					if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{1,8})*$/.test(val) || val.length > 35) {
 						if (typeof window.showToast === 'function') {
 							showToast('Invalid language tag');
 						}

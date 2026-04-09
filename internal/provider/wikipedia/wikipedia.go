@@ -94,7 +94,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	wikiLang := "en"
 	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 {
 		base := strings.SplitN(strings.ToLower(langPrefs[0]), "-", 2)[0]
-		if len(base) >= 2 {
+		if len(base) == 2 || len(base) == 3 {
 			wikiLang = base
 		}
 	}

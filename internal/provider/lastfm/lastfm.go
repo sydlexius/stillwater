@@ -135,7 +135,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 {
 		// Use the base language of the first preference (e.g. "en-GB" -> "en").
 		base := strings.SplitN(langPrefs[0], "-", 2)[0]
-		if len(base) >= 2 {
+		if len(base) == 2 || len(base) == 3 {
 			params.Set("lang", strings.ToLower(base))
 		}
 	}
