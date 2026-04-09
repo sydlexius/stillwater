@@ -481,7 +481,8 @@ templ appearanceScript() {
 						removeBtn.innerHTML = '&times;';
 						removeBtn.setAttribute('aria-label', 'Remove ' + lang);
 						removeBtn.addEventListener('click', function () {
-							langs.splice(idx, 1);
+							var removeIdx = langs.indexOf(lang);
+							if (removeIdx >= 0) langs.splice(removeIdx, 1);
 							if (langs.length === 0) langs = ['en'];
 							renderPills();
 							saveLangs();

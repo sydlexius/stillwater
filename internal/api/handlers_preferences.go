@@ -154,14 +154,26 @@ func validateMetadataLanguages(raw string) (string, bool) {
 }
 
 // isValidLanguageTag performs a lightweight check that s looks like a BCP 47
-// language tag (e.g. "en", "en-GB", "zh-Hant-TW"). It accepts 2-8 character
-// alphanumeric subtags separated by hyphens.
+// language tag (e.g. "en", "en-GB", "zh-Hant-TW"). The primary language subtag
+// must be 2-3 ASCII letters (ISO 639). Subsequent subtags are 1-8 alphanumeric
+// characters separated by hyphens.
 func isValidLanguageTag(s string) bool {
 	if len(s) == 0 || len(s) > 35 {
 		return false
 	}
 	parts := strings.Split(s, "-")
-	for _, p := range parts {
+	// Primary language subtag: must be 2-3 letters.
+	primary := parts[0]
+	if len(primary) < 2 || len(primary) > 3 {
+		return false
+	}
+	for _, c := range primary {
+		if !unicode.IsLetter(c) {
+			return false
+		}
+	}
+	// Subsequent subtags: 1-8 alphanumeric characters.
+	for _, p := range parts[1:] {
 		if len(p) == 0 || len(p) > 8 {
 			return false
 		}

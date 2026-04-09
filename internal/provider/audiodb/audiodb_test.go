@@ -180,6 +180,7 @@ func TestMapArtist_GroupExcludesBorn(t *testing.T) {
 	}
 	meta := mapArtist(context.Background(), art)
 	if meta.Formed != "1985" {
+		t.Errorf("Formed = %q, want 1985", meta.Formed)
 	}
 	if meta.Born != "" {
 		t.Errorf("Born = %q, want empty (group should not have Born)", meta.Born)

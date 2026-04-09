@@ -822,8 +822,8 @@ func TestValidateMetadataLanguages(t *testing.T) {
 }
 
 func TestIsValidLanguageTag(t *testing.T) {
-	valid := []string{"en", "en-GB", "zh-Hant-TW", "ja", "fr"}
-	invalid := []string{"", "en@gb", "en gb", "a-", "-en", "toooooolong123456789012345678901234567"}
+	valid := []string{"en", "en-GB", "zh-Hant-TW", "ja", "fr", "eng"}
+	invalid := []string{"", "en@gb", "en gb", "a-", "-en", "toooooolong123456789012345678901234567", "123", "1", "a"}
 
 	for _, s := range valid {
 		if !isValidLanguageTag(s) {
