@@ -75,7 +75,7 @@ func Default() *Config {
 			BasePath: "/",
 		},
 		Database: DatabaseConfig{
-			Path: "/data/stillwater.db",
+			Path: "/config/stillwater.db",
 		},
 		Auth:       AuthConfig{},
 		Encryption: EncryptionConfig{},

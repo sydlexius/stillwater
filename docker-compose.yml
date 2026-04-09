@@ -15,7 +15,7 @@ services:
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
     volumes:
-      - stillwater-data:/data
+      - stillwater-data:/config
       - /path/to/your/music:/music:rw
     restart: unless-stopped
 

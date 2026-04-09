@@ -41,8 +41,8 @@ RUN addgroup stillwater 2>/dev/null || true && \
     adduser -u 99 -G stillwater -s /bin/sh -D stillwater 2>/dev/null || true && \
     id stillwater
 
-# Create data and music directories
-RUN mkdir -p /data /music && chown stillwater:stillwater /data /music
+# Create config and music directories
+RUN mkdir -p /config /music && chown stillwater:stillwater /config /music
 
 COPY --from=builder /bin/stillwater /usr/local/bin/stillwater
 COPY --from=builder /src/web/static /app/web/static
@@ -56,7 +56,7 @@ EXPOSE 1973
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD sh -c 'curl -f "http://localhost:1973${SW_BASE_PATH:-}/api/v1/health" || exit 1'
 
-VOLUME ["/data", "/music"]
+VOLUME ["/config", "/music"]
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["stillwater"]

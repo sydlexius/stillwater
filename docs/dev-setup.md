@@ -114,7 +114,7 @@ docker compose up --build
 
 # Or build the image separately
 docker build -f build/docker/Dockerfile -t stillwater:dev .
-docker run -p 1973:1973 -v stillwater-data:/data -v /path/to/music:/music:rw stillwater:dev
+docker run -p 1973:1973 -v stillwater-data:/config -v /path/to/music:/music:rw stillwater:dev
 ```
 
 The Docker build handles templ generation implicitly (committed `_templ.go` files) and runs Tailwind CSS inside the build stage, so no local tooling beyond Docker is needed for container builds.
@@ -197,7 +197,7 @@ go test -v -count=1 ./internal/image/...
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SW_DB_PATH` | `/data/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
+| `SW_DB_PATH` | `/config/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
 | `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `SW_LOG_FORMAT` | `json` | Log format: json, text |
 | `SW_PORT` | `1973` | HTTP port |

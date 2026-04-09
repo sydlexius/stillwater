@@ -100,7 +100,7 @@ func run() error {
 	// Load configuration
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/data/config.yaml"
+		configPath = "/config/config.yaml"
 	}
 
 	cfg, err := config.Load(configPath)
@@ -563,7 +563,7 @@ func run() error {
 }
 
 // resolveEncryptionKey determines the encryption key to use.
-// Priority: SW_ENCRYPTION_KEY env var > /data/encryption.key file > generate new.
+// Priority: SW_ENCRYPTION_KEY env var > encryption.key alongside DB > generate new.
 func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, error) {
 	if cfg.Encryption.Key != "" {
 		return cfg.Encryption.Key, nil
@@ -612,7 +612,7 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 func resetCredentials() error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/data/config.yaml"
+		configPath = "/config/config.yaml"
 	}
 
 	cfg, err := config.Load(configPath)
@@ -664,7 +664,7 @@ func resetCredentials() error {
 func resetPassword(username, password string) error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/data/config.yaml"
+		configPath = "/config/config.yaml"
 	}
 
 	cfg, err := config.Load(configPath)

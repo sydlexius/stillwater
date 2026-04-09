@@ -1748,7 +1748,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									<input
 										id="log-file-path-display"
 										type="text"
-										placeholder="/data/logs/stillwater.log"
+										placeholder="/config/logs/stillwater.log"
 										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 										oninput="syncLogFilePath(this.value)"
 									/>
@@ -1988,7 +1988,7 @@ templ loggingScript() {
 			if (formatEl) formatEl.value = d.format || 'json';
 			var fp = d.file_path || '';
 			if (pathHidden) pathHidden.value = fp;
-			if (pathDisplay) pathDisplay.value = fp || '/data/logs/stillwater.log';
+			if (pathDisplay) pathDisplay.value = fp || '/config/logs/stillwater.log';
 			if (maxSize) maxSize.value = d.file_max_size_mb || 10;
 			if (maxFiles) maxFiles.value = d.file_max_files || 5;
 			if (maxAge) maxAge.value = d.file_max_age_days || 30;
@@ -2039,7 +2039,7 @@ templ loggingScript() {
 			setFileLoggingToggle(enabled);
 			if (enabled) {
 				var val = pathDisplay ? pathDisplay.value.trim() : '';
-				if (!val) val = '/data/logs/stillwater.log';
+				if (!val) val = '/config/logs/stillwater.log';
 				if (pathDisplay) pathDisplay.value = val;
 				if (pathHidden) pathHidden.value = val;
 			} else {

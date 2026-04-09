@@ -12,8 +12,8 @@ func TestDefault(t *testing.T) {
 	if cfg.Server.Port != 1973 {
 		t.Errorf("Server.Port = %d, want 1973", cfg.Server.Port)
 	}
-	if cfg.Database.Path != "/data/stillwater.db" {
-		t.Errorf("Database.Path = %q, want /data/stillwater.db", cfg.Database.Path)
+	if cfg.Database.Path != "/config/stillwater.db" {
+		t.Errorf("Database.Path = %q, want /config/stillwater.db", cfg.Database.Path)
 	}
 	if cfg.Music.LibraryPath != "/music" {
 		t.Errorf("Music.LibraryPath = %q, want /music", cfg.Music.LibraryPath)
