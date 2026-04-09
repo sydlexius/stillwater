@@ -1,0 +1,44 @@
+# Environment setup for the Copilot Coding Agent.
+#
+# Runs before the agent starts working on an issue. Installs the same
+# toolchain CI uses so the agent can build, test, lint, and use gh.
+
+name: Copilot Setup Steps
+
+on: copilot_setup
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+steps:
+  - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+  - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+    with:
+      go-version-file: go.mod
+
+  - name: Install templ
+    run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
+
+  - name: Generate templ
+    run: templ generate
+
+  - name: Install Tailwind CSS
+    run: |
+      curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64
+      chmod +x tailwindcss-linux-x64
+      sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+
+  - name: Build Tailwind CSS
+    run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
+
+  - name: Install golangci-lint
+    run: |
+      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+        | sh -s -- -b "$(go env GOPATH)/bin" v2.11.4
+
+  - name: Verify build
+    run: make build
