@@ -54,7 +54,7 @@ func testRouterWithBackup(t *testing.T) (*Router, *backup.Service) {
 		BackupService:      backupSvc,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 	})
 
 	return r, backupSvc

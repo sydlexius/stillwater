@@ -13,7 +13,6 @@ RUN mkdir -p /config /music && chown stillwater:stillwater /config /music
 WORKDIR /app
 
 COPY stillwater /usr/local/bin/stillwater
-COPY web/static /app/web/static
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

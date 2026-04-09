@@ -69,7 +69,7 @@ func testRouterWithAuth(t *testing.T) (*Router, *auth.Service, string) {
 		NFOSnapshotService: nfoSnapSvc,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 	})
 
 	return r, authSvc, userID

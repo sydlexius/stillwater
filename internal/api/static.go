@@ -6,8 +6,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -19,14 +17,17 @@ import (
 type StaticAssets struct {
 	mu     sync.RWMutex
 	hashes map[string]string // path -> content hash
-	dir    string
+	fsys   fs.FS
 }
 
-// NewStaticAssets creates a StaticAssets manager that scans the given directory.
-func NewStaticAssets(dir string, logger *slog.Logger) *StaticAssets {
+// NewStaticAssets creates a StaticAssets manager that scans the given filesystem.
+func NewStaticAssets(fsys fs.FS, logger *slog.Logger) *StaticAssets {
+	if fsys == nil {
+		panic("api.NewStaticAssets: fsys must not be nil")
+	}
 	sa := &StaticAssets{
 		hashes: make(map[string]string),
-		dir:    dir,
+		fsys:   fsys,
 	}
 	sa.scan(logger)
 	return sa
@@ -47,7 +48,7 @@ func (sa *StaticAssets) Path(filePath string) string {
 
 // Handler returns an HTTP handler that serves static files with appropriate cache headers.
 func (sa *StaticAssets) Handler(basePath string) http.Handler {
-	fileServer := http.FileServer(http.Dir(sa.dir))
+	fileServer := http.FileServerFS(sa.fsys)
 	stripped := http.StripPrefix(basePath+"/static/", fileServer)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,8 +74,8 @@ func (sa *StaticAssets) Handler(basePath string) http.Handler {
 	})
 }
 
-// Rescan rescans the static directory and updates hashes.
-// Useful if files change at runtime (e.g., during development).
+// Rescan rescans the static filesystem and updates hashes.
+// Useful if files change at runtime (e.g., during development with os.DirFS).
 func (sa *StaticAssets) Rescan(logger *slog.Logger) {
 	sa.scan(logger)
 }
@@ -82,7 +83,7 @@ func (sa *StaticAssets) Rescan(logger *slog.Logger) {
 func (sa *StaticAssets) scan(logger *slog.Logger) {
 	hashes := make(map[string]string)
 
-	if err := filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error { //nolint:gosec // G703: sa.dir is set at startup from trusted config, not user input
+	if err := fs.WalkDir(sa.fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logger.Warn("failed to walk static asset", "path", path, "error", err)
 			return nil //nolint:nilerr // WalkDir callback: log and skip problem entries to continue walking
@@ -91,21 +92,19 @@ func (sa *StaticAssets) scan(logger *slog.Logger) {
 			return nil
 		}
 
-		data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from trusted sa.dir
+		data, err := fs.ReadFile(sa.fsys, path)
 		if err != nil {
 			logger.Warn("failed to hash static file", "path", path, "error", err)
 			return nil
 		}
 
 		h := sha256.Sum256(data)
-		relativePath := "/" + strings.ReplaceAll(strings.TrimPrefix(path, sa.dir), "\\", "/")
-		relativePath = strings.TrimPrefix(relativePath, "/")
-		relativePath = "/" + relativePath
+		relativePath := "/" + strings.ReplaceAll(path, "\\", "/")
 		hashes[relativePath] = hex.EncodeToString(h[:])
 
 		return nil
 	}); err != nil {
-		logger.Warn("failed to scan static directory", "dir", sa.dir, "error", err)
+		logger.Warn("failed to scan static filesystem", "error", err)
 	}
 
 	sa.mu.Lock()

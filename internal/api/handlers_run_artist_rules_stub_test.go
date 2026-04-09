@@ -90,7 +90,7 @@ func testRouterWithStubPipeline(t *testing.T, stub *stubPipeline) (*Router, *art
 		Pipeline:          stub,
 		DB:                db,
 		Logger:            logger,
-		StaticDir:         "../../web/static",
+		StaticFS:          os.DirFS("../../web/static"),
 	})
 
 	return r, artistSvc

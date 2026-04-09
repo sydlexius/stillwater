@@ -84,7 +84,7 @@ func testRouterWithHistory(t *testing.T) (*Router, *artist.Service, *artist.Hist
 		I18nBundle:         i18nBundle,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 	})
 
 	return r, artistSvc, historySvc

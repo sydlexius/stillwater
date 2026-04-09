@@ -21,9 +21,31 @@ Stillwater is a self-hosted web application for managing artist and composer met
 
 ## Requirements
 
-Docker is required. Docker Compose is optional but recommended.
+Stillwater can run via Docker or as a standalone binary on Linux, macOS, or Windows. Docker Compose is optional but recommended for Docker installs.
 
 ## Installation
+
+### Binary
+
+Download the latest release for your platform from the [Releases](https://github.com/sydlexius/stillwater/releases) page:
+
+```bash
+# Linux (amd64)
+curl -Lo stillwater.tar.gz https://github.com/sydlexius/stillwater/releases/latest/download/stillwater_$(curl -s https://api.github.com/repos/sydlexius/stillwater/releases/latest | grep tag_name | cut -d '"' -f4 | tr -d v)_linux_amd64.tar.gz
+tar xzf stillwater.tar.gz
+chmod +x stillwater
+
+# Run
+SW_DB_PATH=./data/stillwater.db SW_MUSIC_PATH=/path/to/music ./stillwater
+```
+
+Or install directly with Go:
+
+```bash
+go install github.com/sydlexius/stillwater/cmd/stillwater@latest
+```
+
+Static assets (CSS, JavaScript, fonts, images) are embedded in the binary. No additional files are required.
 
 ### Docker Run
 

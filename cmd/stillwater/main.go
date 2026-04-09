@@ -54,6 +54,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
+	"github.com/sydlexius/stillwater/web/static"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
@@ -449,7 +450,7 @@ func run() error {
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
-		StaticDir:          "web/static",
+		StaticFS:           static.FS,
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,

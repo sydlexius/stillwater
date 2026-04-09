@@ -459,7 +459,7 @@ func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
 		I18nBundle:        i18nBundle,
 		DB:                db,
 		Logger:            logger,
-		StaticDir:         "../../web/static",
+		StaticFS:          os.DirFS("../../web/static"),
 	})
 
 	// Create a test user and session
