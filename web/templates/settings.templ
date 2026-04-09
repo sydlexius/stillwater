@@ -3661,8 +3661,10 @@ templ metadataLanguagesScript() {
 			var input = document.getElementById('metadata-lang-input');
 			var dropdown = document.getElementById('metadata-lang-dropdown');
 			var langs = [];
+			var persistedLangs = [];
 			try { langs = JSON.parse(container.getAttribute('data-languages') || '["en"]'); }
 			catch (e) { langs = ['en']; }
+			persistedLangs = langs.slice();
 
 			function renderPills() {
 				pillBox.innerHTML = '';
@@ -3766,10 +3768,7 @@ templ metadataLanguagesScript() {
 				container.setAttribute('data-languages', val);
 				if (window.swPreferences) {
 					window.swPreferences.set('metadata_languages', val).then(function (saved) {
-						if (saveSeq !== latestSaveSeq) {
-							console.debug('swPreferences: discarding stale save response (seq ' + saveSeq + ', latest ' + latestSaveSeq + ')');
-							return;
-						}
+						var isLatest = saveSeq === latestSaveSeq;
 						var prevVal = JSON.stringify(previous);
 						// swPreferences.set resolves with previousValue on HTTP error,
 						// so if saved matches previous but differs from what we sent,
@@ -3779,12 +3778,19 @@ templ metadataLanguagesScript() {
 							var parsed;
 							try { parsed = JSON.parse(saved); } catch (_) {
 								console.warn('swPreferences: failed to parse server response for metadata_languages');
-								langs = previous;
+								if (!isLatest) return;
+								langs = persistedLangs.slice();
 								container.setAttribute('data-languages', JSON.stringify(langs));
 								renderPills();
 								if (typeof window.showToast === 'function') {
 									showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
 								}
+								return;
+							}
+							// Always record the server-confirmed state, even for stale responses.
+							persistedLangs = parsed.slice();
+							if (!isLatest) {
+								console.debug('swPreferences: discarding stale save response (seq ' + saveSeq + ', latest ' + latestSaveSeq + ')');
 								return;
 							}
 							langs = parsed;
@@ -3795,20 +3801,23 @@ templ metadataLanguagesScript() {
 							}
 						} else {
 							// Failure: server rejected or empty response.
-							langs = previous;
-							container.setAttribute('data-languages', prevVal);
+							// Roll back to last server-confirmed state, not the optimistic previous.
+							if (!isLatest) return;
+							langs = persistedLangs.slice();
+							container.setAttribute('data-languages', JSON.stringify(langs));
 							renderPills();
 							if (typeof window.showToast === 'function') {
 								showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
 							}
 						}
 					}).catch(function (err) {
-						if (saveSeq !== latestSaveSeq) {
+						var isLatest = saveSeq === latestSaveSeq;
+						if (!isLatest) {
 							console.debug('swPreferences: discarding stale save error', err);
 							return;
 						}
 						console.warn('swPreferences: metadata_languages save failed', err);
-						langs = previous;
+						langs = persistedLangs.slice();
 						container.setAttribute('data-languages', JSON.stringify(langs));
 						renderPills();
 						if (typeof window.showToast === 'function') {
@@ -3828,6 +3837,7 @@ templ metadataLanguagesScript() {
 				if (!query) {
 					dropdown.classList.add('hidden');
 					input.setAttribute('aria-expanded', 'false');
+					input.removeAttribute('aria-activedescendant');
 					return;
 				}
 
@@ -3898,6 +3908,7 @@ templ metadataLanguagesScript() {
 				input.value = '';
 				dropdown.classList.add('hidden');
 				input.setAttribute('aria-expanded', 'false');
+				input.removeAttribute('aria-activedescendant');
 				activeIdx = -1;
 				renderPills();
 				saveLangs(previous);
@@ -3910,6 +3921,7 @@ templ metadataLanguagesScript() {
 				setTimeout(function () {
 					dropdown.classList.add('hidden');
 					input.setAttribute('aria-expanded', 'false');
+					input.removeAttribute('aria-activedescendant');
 					activeIdx = -1;
 				}, 150);
 			});
@@ -3931,6 +3943,7 @@ templ metadataLanguagesScript() {
 				} else if (e.key === 'Escape') {
 					dropdown.classList.add('hidden');
 					input.setAttribute('aria-expanded', 'false');
+					input.removeAttribute('aria-activedescendant');
 					activeIdx = -1;
 				}
 			});

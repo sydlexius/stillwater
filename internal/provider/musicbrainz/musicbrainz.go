@@ -294,9 +294,9 @@ func normalizeHyphens(s string) string {
 
 // mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.
 // When language preferences are set in the context, mapArtist promotes the
-// best-matching primary alias to the Name and SortName fields, demoting the
-// canonical name to the end of the aliases list (after all language-matched
-// aliases). Remaining aliases are sorted by preference score.
+// best-matching primary alias to the Name and SortName fields, placing the
+// canonical name behind all language-matched aliases in the aliases list.
+// Remaining aliases, including the canonical name, are sorted by preference score.
 func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,

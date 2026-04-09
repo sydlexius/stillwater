@@ -284,14 +284,12 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 		raw = MetadataLanguagesDefault
 	}
 
-	langs := parseMetadataLanguages(raw)
+	// Normalize stored tags so providers always receive canonical, deduplicated,
+	// bounded tags -- even if the DB row predates normalization.
+	normalized := normalizeMetadataLanguages(raw)
+	langs := parseMetadataLanguages(normalized)
 	if len(langs) == 0 {
-		langs = []string{"en"}
-	}
-	// Normalize stored tags so providers always receive canonical casing,
-	// even if the DB row was written before normalization was added.
-	for i, tag := range langs {
-		langs[i] = normalizeLanguageTag(tag)
+		langs = parseMetadataLanguages(MetadataLanguagesDefault)
 	}
 	return provider.WithMetadataLanguages(ctx, langs)
 }
