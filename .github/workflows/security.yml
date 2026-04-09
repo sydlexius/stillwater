@@ -160,21 +160,30 @@ jobs:
           expired=0
           vuln=""
           review_by=""
+          reason=""
           while IFS= read -r line; do
-            # Skip comments and blank lines
-            case "$line" in '#'*|'') continue ;; esac
-            case "$line" in
+            # Strip leading whitespace, then skip comments and blank lines
+            trimmed=${line#"${line%%[![:space:]]*}"}
+            case "$trimmed" in ''|'#'*) continue ;; esac
+            case "$trimmed" in
               *"vulnerability:"*)
-                # Check previous entry had a valid review-by before moving on
-                if [ -n "$vuln" ] && [ -z "$review_by" ]; then
-                  echo "::error::Grype ignore missing review-by: $vuln"
-                  expired=$((expired + 1))
+                # Check previous entry had valid review-by and reason
+                if [ -n "$vuln" ]; then
+                  if [ -z "$review_by" ]; then
+                    echo "::error::Grype ignore missing review-by: $vuln"
+                    expired=$((expired + 1))
+                  fi
+                  if [ -z "$reason" ]; then
+                    echo "::error::Grype ignore missing reason: $vuln"
+                    expired=$((expired + 1))
+                  fi
                 fi
-                vuln=$(echo "$line" | sed 's/.*vulnerability:[[:space:]]*//; s/"//g')
+                vuln=$(echo "$trimmed" | sed 's/.*vulnerability:[[:space:]]*//; s/"//g')
                 review_by=""
+                reason=""
                 ;;
               *"review-by:"*)
-                review_by=$(echo "$line" | sed 's/.*review-by:[[:space:]]*//; s/"//g')
+                review_by=$(echo "$trimmed" | sed 's/.*review-by:[[:space:]]*//; s/"//g')
                 if ! echo "$review_by" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
                   echo "::error::Invalid review-by format for $vuln: $review_by (expected YYYY-MM-DD)"
                   expired=$((expired + 1))
@@ -190,12 +199,21 @@ jobs:
                   echo "OK: $vuln (review-by: $review_by, ${days_left} days remaining)"
                 fi
                 ;;
+              *"reason:"*)
+                reason=$(echo "$trimmed" | sed 's/.*reason:[[:space:]]*//; s/"//g')
+                ;;
             esac
           done < .grype.yaml
           # Check the last entry in the file
-          if [ -n "$vuln" ] && [ -z "$review_by" ]; then
-            echo "::error::Grype ignore missing review-by: $vuln"
-            expired=$((expired + 1))
+          if [ -n "$vuln" ]; then
+            if [ -z "$review_by" ]; then
+              echo "::error::Grype ignore missing review-by: $vuln"
+              expired=$((expired + 1))
+            fi
+            if [ -z "$reason" ]; then
+              echo "::error::Grype ignore missing reason: $vuln"
+              expired=$((expired + 1))
+            fi
           fi
           if [ "$expired" -gt 0 ]; then
             echo "::error::${expired} expired Grype ignore(s). Review and either remove or extend the review-by date."
