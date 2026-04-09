@@ -418,15 +418,19 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		score int
 	}
 	var scored []scoredAlias
+	seen := make(map[string]bool)
+	seen[meta.Name] = true
 	// If we promoted a different name, add the original canonical name as an alias.
 	if canonicalName != meta.Name {
 		scored = append(scored, scoredAlias{name: canonicalName, score: -1})
+		seen[canonicalName] = true
 	}
 	for _, alias := range mb.Aliases {
 		normalizedAlias := normalizeHyphens(alias.Name)
-		if normalizedAlias == "" || normalizedAlias == meta.Name || normalizedAlias == canonicalName {
+		if normalizedAlias == "" || seen[normalizedAlias] {
 			continue
 		}
+		seen[normalizedAlias] = true
 		score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
 		scored = append(scored, scoredAlias{name: normalizedAlias, score: score})
 	}

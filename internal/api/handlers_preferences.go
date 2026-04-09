@@ -171,7 +171,10 @@ func validateMetadataLanguages(raw string) (string, bool) {
 // must be 2-3 ASCII letters (ISO 639). Subsequent subtags are 1-8 alphanumeric
 // characters separated by hyphens.
 func isValidLanguageTag(s string) bool {
-	if len(s) == 0 || len(s) > 35 {
+	// 100-byte cap is a generous upper bound for any valid BCP 47 tag
+	// (including extended/private-use subtags) while still bounding input
+	// at the API boundary.
+	if len(s) == 0 || len(s) > 100 {
 		return false
 	}
 	parts := strings.Split(s, "-")

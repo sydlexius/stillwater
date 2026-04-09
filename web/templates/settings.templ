@@ -3626,80 +3626,33 @@ templ sortableInitScript() {
 templ metadataLanguagesScript() {
 	<script>
 		document.addEventListener('DOMContentLoaded', function () {
-			// Human-readable names for common BCP 47 language tags used by
-			// music metadata providers (MusicBrainz, Wikipedia, Last.fm, etc.).
-			var LANG_NAMES = {
-				'en': 'English',
-				'en-GB': 'British English',
-				'en-US': 'American English',
-				'ja': 'Japanese',
-				'de': 'German',
-				'fr': 'French',
-				'es': 'Spanish',
-				'it': 'Italian',
-				'pt': 'Portuguese',
-				'pt-BR': 'Brazilian Portuguese',
-				'zh': 'Chinese',
-				'zh-TW': 'Traditional Chinese',
-				'ko': 'Korean',
-				'ru': 'Russian',
-				'nl': 'Dutch',
-				'sv': 'Swedish',
-				'no': 'Norwegian',
-				'nb': 'Norwegian Bokmal',
-				'nn': 'Norwegian Nynorsk',
-				'fi': 'Finnish',
-				'da': 'Danish',
-				'pl': 'Polish',
-				'cs': 'Czech',
-				'sk': 'Slovak',
-				'hu': 'Hungarian',
-				'ro': 'Romanian',
-				'bg': 'Bulgarian',
-				'hr': 'Croatian',
-				'sr': 'Serbian',
-				'sl': 'Slovenian',
-				'uk': 'Ukrainian',
-				'el': 'Greek',
-				'tr': 'Turkish',
-				'ar': 'Arabic',
-				'he': 'Hebrew',
-				'hi': 'Hindi',
-				'th': 'Thai',
-				'vi': 'Vietnamese',
-				'id': 'Indonesian',
-				'ms': 'Malay',
-				'tl': 'Tagalog',
-				'ca': 'Catalan',
-				'eu': 'Basque',
-				'gl': 'Galician',
-				'cy': 'Welsh',
-				'ga': 'Irish',
-				'et': 'Estonian',
-				'lv': 'Latvian',
-				'lt': 'Lithuanian',
-				'is': 'Icelandic',
-				'sq': 'Albanian',
-				'mk': 'Macedonian',
-				'bs': 'Bosnian',
-				'ka': 'Georgian',
-				'hy': 'Armenian',
-				'fa': 'Persian',
-				'ur': 'Urdu',
-				'bn': 'Bengali',
-				'ta': 'Tamil',
-				'te': 'Telugu',
-				'ml': 'Malayalam',
-				'kn': 'Kannada',
-				'sw': 'Swahili',
-				'af': 'Afrikaans',
-				'la': 'Latin',
-				'eo': 'Esperanto'
-			};
+			// Use Intl.DisplayNames to derive localized display names for any
+			// BCP 47 tag, falling back to the raw code when unavailable.
+			var uiLocales = (Array.isArray(navigator.languages) && navigator.languages.length > 0)
+				? navigator.languages.slice()
+				: [navigator.language || 'en'];
+			var langDisplayNames = (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function')
+				? new Intl.DisplayNames(uiLocales, { type: 'language', fallback: 'code' })
+				: null;
 
 			function langName(code) {
-				return LANG_NAMES[code] || code;
+				if (!langDisplayNames) return code;
+				try { return langDisplayNames.of(code) || code; }
+				catch (_) { return code; }
 			}
+
+			// Common BCP 47 tags used by music metadata providers for autocomplete
+			// suggestions. Display names are derived dynamically via Intl.DisplayNames.
+			var COMMON_TAGS = [
+				'en', 'en-GB', 'en-US', 'ja', 'de', 'fr', 'es', 'it',
+				'pt', 'pt-BR', 'zh', 'zh-TW', 'ko', 'ru', 'nl', 'sv',
+				'no', 'nb', 'nn', 'fi', 'da', 'pl', 'cs', 'sk', 'hu',
+				'ro', 'bg', 'hr', 'sr', 'sl', 'uk', 'el', 'tr', 'ar',
+				'he', 'hi', 'th', 'vi', 'id', 'ms', 'tl', 'ca', 'eu',
+				'gl', 'cy', 'ga', 'et', 'lv', 'lt', 'is', 'sq', 'mk',
+				'bs', 'ka', 'hy', 'fa', 'ur', 'bn', 'ta', 'te', 'ml',
+				'kn', 'sw', 'af', 'la', 'eo'
+			];
 
 			var container = document.getElementById('metadata-lang-container');
 			if (!container) return;
@@ -3810,17 +3763,27 @@ templ metadataLanguagesScript() {
 				container.setAttribute('data-languages', val);
 				if (window.swPreferences) {
 					window.swPreferences.set('metadata_languages', val).then(function (saved) {
-						if (saved === val) {
+						var prevVal = JSON.stringify(previous);
+						// swPreferences.set resolves with previousValue on HTTP error,
+						// so if saved matches previous but differs from what we sent,
+						// the server rejected the change.
+						if (typeof saved === 'string' && saved !== '' && !(saved === prevVal && saved !== val)) {
+							// Success: server accepted (possibly normalized).
+							var parsed;
+							try { parsed = JSON.parse(saved); } catch (_) {
+								console.warn('swPreferences: failed to parse server response for metadata_languages');
+								return;
+							}
+							langs = parsed;
+							container.setAttribute('data-languages', JSON.stringify(langs));
+							renderPills();
 							if (typeof window.showSuccessToast === 'function') {
 								showSuccessToast(container.getAttribute('data-toast-saved') || 'Language preferences saved');
 							}
 						} else {
-							if (typeof saved === 'string' && saved !== '') {
-								try { langs = JSON.parse(saved); } catch (_) { langs = previous; }
-							} else {
-								langs = previous;
-							}
-							container.setAttribute('data-languages', JSON.stringify(langs));
+							// Failure: server rejected or empty response.
+							langs = previous;
+							container.setAttribute('data-languages', prevVal);
 							renderPills();
 							if (typeof window.showToast === 'function') {
 								showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
@@ -3839,7 +3802,7 @@ templ metadataLanguagesScript() {
 
 			var activeIdx = -1; // index of keyboard-highlighted dropdown option
 
-			// Autocomplete: filter LANG_NAMES by input, excluding already-selected.
+			// Autocomplete: filter COMMON_TAGS by input, excluding already-selected.
 			function showDropdown() {
 				var query = (input.value || '').trim().toLowerCase();
 				dropdown.innerHTML = '';
@@ -3851,9 +3814,10 @@ templ metadataLanguagesScript() {
 				}
 
 				var matches = [];
-				for (var code in LANG_NAMES) {
+				for (var i = 0; i < COMMON_TAGS.length; i++) {
+					var code = COMMON_TAGS[i];
 					if (langs.indexOf(code) >= 0) continue;
-					var name = LANG_NAMES[code];
+					var name = langName(code);
 					if (name.toLowerCase().indexOf(query) >= 0 || code.toLowerCase().indexOf(query) >= 0) {
 						matches.push({ code: code, name: name });
 					}
