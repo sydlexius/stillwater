@@ -29,7 +29,7 @@ repos:
       - id: templ-generate
         name: templ-generate
         language: system
-        entry: bash -c 'templ generate && changed=$(git diff --name-only -- "*_templ.go"); [ -z "$changed" ] || echo "$changed" | xargs git add' --
+        entry: bash -c 'go run github.com/a-h/templ/cmd/templ@v0.3.1001 generate && git diff -z --name-only -- "*_templ.go" | xargs -0 git add --' --
         files: '\.templ$'
         pass_filenames: false
 
