@@ -39,7 +39,7 @@ func ConfirmModal() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"confirm-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"alertdialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-message\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"confirm-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"sw-glass glass-noise relative w-full max-w-sm rounded-xl shadow-2xl\"><div class=\"p-6\"><h3 id=\"confirm-modal-title\" class=\"text-base font-semibold text-gray-900 dark:text-gray-100\">Confirm</h3><div id=\"confirm-modal-message\" class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\"></div><div id=\"confirm-modal-remember-wrapper\" class=\"mt-4 hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"confirm-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"alertdialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-message\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"confirm-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"relative w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700\"><div class=\"p-6\"><h3 id=\"confirm-modal-title\" class=\"text-base font-semibold text-gray-900 dark:text-gray-100\">Confirm</h3><div id=\"confirm-modal-message\" class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\"></div><div id=\"confirm-modal-remember-wrapper\" class=\"mt-4 hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -53,7 +53,7 @@ func ConfirmModal() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div class=\"flex justify-end gap-2 border-t border-white/10 px-6 py-3\"><button type=\"button\" id=\"confirm-modal-cancel\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-white/10 transition-colors\">Cancel</button> <button type=\"button\" id=\"confirm-modal-accept\" class=\"rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2\">Confirm</button></div></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div><div class=\"flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3\"><button type=\"button\" id=\"confirm-modal-cancel\" class=\"rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-white/10 transition-colors\">Cancel</button> <button type=\"button\" id=\"confirm-modal-accept\" class=\"rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2\">Confirm</button></div></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

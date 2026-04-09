@@ -138,7 +138,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: id}
 	}
 
-	return mapArtist(&artists[0]), nil
+	return mapArtist(ctx, &artists[0]), nil
 }
 
 // GetImages fetches available images for an artist. Like GetArtist, the id
@@ -269,7 +269,17 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string
 	return artistResp.results(), nil
 }
 
-func mapArtist(art *AudioDBArtist) *provider.ArtistMetadata {
+func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata {
+	// Build a language-to-biography map for preference-based selection.
+	// AudioDB provides strBiography (localized default) and strBiographyEN (English).
+	bioCandidates := map[string]string{
+		"en": art.BiographyEN,
+	}
+	fallbackBio := firstNonEmpty(art.Biography, art.BiographyEN)
+
+	langPrefs := provider.MetadataLanguages(ctx)
+	bio := provider.SelectLocalizedBiography(bioCandidates, langPrefs, fallbackBio)
+
 	meta := &provider.ArtistMetadata{
 		ProviderID:    art.IDArtist,
 		AudioDBID:     art.IDArtist,
@@ -277,7 +287,7 @@ func mapArtist(art *AudioDBArtist) *provider.ArtistMetadata {
 		Name:          art.Artist,
 		Gender:        strings.ToLower(art.Gender),
 		Country:       art.Country,
-		Biography:     firstNonEmpty(art.Biography, art.BiographyEN),
+		Biography:     bio,
 	}
 
 	if art.Genre != "" {

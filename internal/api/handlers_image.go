@@ -745,7 +745,9 @@ func isPrivateURL(ctx context.Context, rawURL string) bool {
 // ssrfSafeTransport returns an http.Transport that validates resolved IPs at
 // connection time, preventing TOCTOU / DNS-rebinding attacks where the hostname
 // resolves to a safe address during the isPrivateURL pre-check but to a
-// private address when the actual connection is made.
+// private address when the actual connection is made. All resolved IPs are
+// validated, and if multiple safe IPs exist, they are tried in order so that
+// round-robin DNS and transient failures on individual IPs do not break the fetch.
 //
 // It clones http.DefaultTransport to preserve TLS timeouts, idle connection
 // settings, proxy support, and HTTP/2 -- only the DialContext is overridden.
@@ -768,14 +770,28 @@ func ssrfSafeTransport() *http.Transport {
 		if len(ips) == 0 {
 			return nil, fmt.Errorf("DNS lookup for %s returned no addresses", host)
 		}
+
+		// Filter out private/reserved IPs; reject if any resolve to a blocked range.
+		var safe []net.IPAddr
 		for _, ip := range ips {
 			if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
 				ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
 				return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
 			}
+			safe = append(safe, ip)
 		}
-		// Connect to the first safe IP directly to avoid re-resolution.
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+
+		// Try each safe IP in order so that round-robin DNS and transient
+		// failures on individual IPs do not break the fetch.
+		var lastErr error
+		for _, ip := range safe {
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+		return nil, fmt.Errorf("all %d IPs failed for %s (last: %w)", len(safe), host, lastErr)
 	}
 	return t
 }

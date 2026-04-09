@@ -50,9 +50,9 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefPageSize, "50", got)
 	}
 
-	// Verify the wire contract returns exactly 13 keys.
-	if len(prefs) != 13 {
-		t.Errorf("expected 13 keys, got %d", len(prefs))
+	// Verify the wire contract returns exactly 14 keys.
+	if len(prefs) != 14 {
+		t.Errorf("expected 14 keys, got %d", len(prefs))
 	}
 }
 
@@ -644,6 +644,195 @@ func TestIsSuppressConfirmKey(t *testing.T) {
 	for _, k := range invalid {
 		if isSuppressConfirmKey(k) {
 			t.Errorf("expected %q to be an invalid suppress_confirm key", k)
+		}
+	}
+}
+
+// -- metadata_languages preference tests --
+
+func TestMetadataLanguagesPref_DefaultReturned(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/metadata_languages", nil)
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != `["en"]` {
+		t.Errorf("expected default [\"en\"], got %q", resp["value"])
+	}
+}
+
+func TestMetadataLanguagesPref_StoreAndRetrieve(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	body := `{"value":"[\"en-GB\",\"en\",\"ja\"]"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET and verify the stored value.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/metadata_languages", nil)
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != `["en-GB","en","ja"]` {
+		t.Errorf("expected stored value, got %q", resp["value"])
+	}
+}
+
+func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"not json", `not json`},
+		{"empty array", `[]`},
+		{"too many entries", `["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u"]`},
+		{"empty string tag", `["en",""]`},
+		{"invalid chars", `["en@GB"]`},
+		{"duplicate tags", `["en","en"]`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, tc.value)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+			req.SetPathValue("key", "metadata_languages")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for %q, got %d: %s", tc.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestMetadataLanguagesPref_AcceptsValid(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"single en", `["en"]`},
+		{"multiple", `["en-GB","fr","ja"]`},
+		{"dialect only", `["zh-Hant-TW"]`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, tc.value)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+			req.SetPathValue("key", "metadata_languages")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected 200 for %q, got %d: %s", tc.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestMetadataLanguagesPref_IncludedInGetAll(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreferences(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var prefs map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&prefs); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	got, ok := prefs["metadata_languages"]
+	if !ok {
+		t.Fatal("metadata_languages not present in GET /preferences response")
+	}
+	if got != `["en"]` {
+		t.Errorf("expected default [\"en\"], got %q", got)
+	}
+}
+
+func TestValidateMetadataLanguages(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		valid bool
+	}{
+		{"valid single", `["en"]`, true},
+		{"valid multi", `["en","ja","fr"]`, true},
+		{"valid dialect", `["en-GB"]`, true},
+		{"empty array", `[]`, false},
+		{"not json", `invalid`, false},
+		{"empty tag", `[""]`, false},
+		{"duplicate", `["en","en"]`, false},
+		{"duplicate case insensitive", `["en","EN"]`, false},
+		{"invalid char", `["en@gb"]`, false},
+		{"too long tag", `["aaaaaaaaa-bbbbbbbbb-ccccccccc-ddddddddd"]`, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ok := validateMetadataLanguages(tc.input)
+			if ok != tc.valid {
+				t.Errorf("validateMetadataLanguages(%q) = %v, want %v", tc.input, ok, tc.valid)
+			}
+		})
+	}
+}
+
+func TestIsValidLanguageTag(t *testing.T) {
+	valid := []string{"en", "en-GB", "zh-Hant-TW", "ja", "fr", "eng"}
+	invalid := []string{"", "en@gb", "en gb", "a-", "-en", "toooooolong123456789012345678901234567", "123", "1", "a"}
+
+	for _, s := range valid {
+		if !isValidLanguageTag(s) {
+			t.Errorf("expected %q to be valid", s)
+		}
+	}
+	for _, s := range invalid {
+		if isValidLanguageTag(s) {
+			t.Errorf("expected %q to be invalid", s)
 		}
 	}
 }

@@ -163,13 +163,8 @@ func (e *Executor) scrapeField(
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil {
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
-			// For image fields, only mark as queried when GetImages was actually
-			// invoked and either succeeded or returned ErrNotFound. Skip when
-			// GetImages was never called (no MBID and no provider-specific ID)
-			// or when it returned a transient error (timeout, 5xx). Transient
-			// failures must not mark the field as attempted so that existing
-			// image data is preserved rather than cleared.
-			if !isImage || (pr.imagesAttempted && pr.imageErr == nil) {
+			// See imageFieldQueried for the marking rationale.
+			if !isImage || imageFieldQueried(pr) {
 				queried = true
 			}
 			if applyFieldValue(field.Field, pr, result) {
@@ -196,13 +191,8 @@ func (e *Executor) scrapeField(
 		}
 
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
-		// For image fields, only mark as queried when GetImages was actually
-		// invoked and either succeeded or returned ErrNotFound. Skip when
-		// GetImages was never called (no MBID and no provider-specific ID)
-		// or when it returned a transient error (timeout, 5xx). Transient
-		// failures must not mark the field as attempted so that existing
-		// image data is preserved rather than cleared.
-		if !isImage || (pr.imagesAttempted && pr.imageErr == nil) {
+		// See imageFieldQueried for the marking rationale.
+		if !isImage || imageFieldQueried(pr) {
 			queried = true
 		}
 		if applyFieldValue(field.Field, pr, result) {
@@ -366,6 +356,16 @@ func (e *Executor) getProviderResult(
 	return pr
 }
 
+// imageFieldQueried reports whether an image field should be marked as queried
+// for this provider result. Only mark as queried when GetImages was actually
+// invoked and either succeeded or returned ErrNotFound. Skip when GetImages was
+// never called (no MBID and no provider-specific ID) or when it returned a
+// transient error (timeout, 5xx). Transient failures must not mark the field
+// as attempted so that existing image data is preserved rather than cleared.
+func imageFieldQueried(pr *providerResult) bool {
+	return pr.imagesAttempted && pr.imageErr == nil
+}
+
 // applyFieldValue checks whether a provider result has data for a given field
 // and writes the value into the merged FetchResult. Returns true if the field
 // has a non-empty value that was applied.
@@ -470,11 +470,19 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
 		result.Metadata.SpotifyID = meta.SpotifyID
 	}
-	if meta.Name != "" && result.Metadata.Name == "" {
-		result.Metadata.Name = meta.Name
+	// MusicBrainz is authoritative for artist names (it owns the MBID), so
+	// its Name/SortName always win. This is especially important when
+	// language-aware name promotion selects a localized alias. Other
+	// providers only fill in the Name if MusicBrainz hasn't set one yet.
+	if meta.Name != "" {
+		if source == provider.NameMusicBrainz || result.Metadata.Name == "" {
+			result.Metadata.Name = meta.Name
+		}
 	}
-	if meta.SortName != "" && result.Metadata.SortName == "" {
-		result.Metadata.SortName = meta.SortName
+	if meta.SortName != "" {
+		if source == provider.NameMusicBrainz || result.Metadata.SortName == "" {
+			result.Metadata.SortName = meta.SortName
+		}
 	}
 	if meta.Type != "" && result.Metadata.Type == "" {
 		result.Metadata.Type = meta.Type
@@ -503,7 +511,6 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 		}
 	}
 
-	_ = source // reserved for future per-source tracking
 }
 
 func fieldToImageType(field FieldName) provider.ImageType {

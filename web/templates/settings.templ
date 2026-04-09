@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -58,8 +59,22 @@ type SettingsData struct {
 	SymlinkSupported        bool
 	CacheMaxSizeMB          string
 	NameSimilarityThreshold int
+	MetadataLanguages       []string // Ordered BCP 47 tags for metadata language preference.
 	Users                   UsersTabData
 	AuthProviders           AuthProvidersData
+}
+
+// metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
+// suitable for embedding in a data attribute.
+func (d SettingsData) metadataLanguagesJSON() string {
+	if len(d.MetadataLanguages) == 0 {
+		return `["en"]`
+	}
+	b, err := json.Marshal(d.MetadataLanguages)
+	if err != nil {
+		return `["en"]`
+	}
+	return string(b)
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -478,6 +493,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@profileNamingEditorScript()
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
+		@metadataLanguagesScript()
 		@components.ContextHelpScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
@@ -770,6 +786,44 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				}
+				<!-- Metadata Language Preferences -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.metadata_languages.title") }</h2>
+							@components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.")
+						</div>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "settings.metadata_languages.description") }
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div class="space-y-3">
+							<div
+								id="metadata-lang-container"
+								data-languages={ data.metadataLanguagesJSON() }
+								data-remove-label={ t(ctx, "settings.metadata_languages.remove") }
+							>
+								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
+									<!-- Pills rendered by JS from data-languages -->
+								</div>
+								<div class="mt-2 relative">
+									<input
+										type="text"
+										id="metadata-lang-input"
+										aria-label={ t(ctx, "settings.metadata_languages.input_label") }
+										placeholder={ t(ctx, "settings.metadata_languages.input_placeholder") }
+										autocomplete="off"
+										class="w-full text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									/>
+									<div id="metadata-lang-dropdown" class="hidden absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg">
+										<!-- Autocomplete results rendered by JS -->
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
@@ -3553,6 +3607,237 @@ templ sortableInitScript() {
 		// Re-attach after any HTMX swap so newly rendered priority rows are draggable.
 		document.addEventListener('htmx:afterSwap', function() {
 			initSortableContainers();
+		});
+	</script>
+}
+
+// metadataLanguagesScript renders the inline JS for the metadata language
+// preference pills on the Providers tab: autocomplete search, pill rendering
+// with human-readable names, drag-to-reorder via SortableJS, and persistence.
+templ metadataLanguagesScript() {
+	<script>
+		document.addEventListener('DOMContentLoaded', function () {
+			// Human-readable names for common BCP 47 language tags used by
+			// music metadata providers (MusicBrainz, Wikipedia, Last.fm, etc.).
+			var LANG_NAMES = {
+				'en': 'English',
+				'en-GB': 'British English',
+				'en-US': 'American English',
+				'ja': 'Japanese',
+				'de': 'German',
+				'fr': 'French',
+				'es': 'Spanish',
+				'it': 'Italian',
+				'pt': 'Portuguese',
+				'pt-BR': 'Brazilian Portuguese',
+				'zh': 'Chinese',
+				'zh-TW': 'Traditional Chinese',
+				'ko': 'Korean',
+				'ru': 'Russian',
+				'nl': 'Dutch',
+				'sv': 'Swedish',
+				'no': 'Norwegian',
+				'nb': 'Norwegian Bokmal',
+				'nn': 'Norwegian Nynorsk',
+				'fi': 'Finnish',
+				'da': 'Danish',
+				'pl': 'Polish',
+				'cs': 'Czech',
+				'sk': 'Slovak',
+				'hu': 'Hungarian',
+				'ro': 'Romanian',
+				'bg': 'Bulgarian',
+				'hr': 'Croatian',
+				'sr': 'Serbian',
+				'sl': 'Slovenian',
+				'uk': 'Ukrainian',
+				'el': 'Greek',
+				'tr': 'Turkish',
+				'ar': 'Arabic',
+				'he': 'Hebrew',
+				'hi': 'Hindi',
+				'th': 'Thai',
+				'vi': 'Vietnamese',
+				'id': 'Indonesian',
+				'ms': 'Malay',
+				'tl': 'Tagalog',
+				'ca': 'Catalan',
+				'eu': 'Basque',
+				'gl': 'Galician',
+				'cy': 'Welsh',
+				'ga': 'Irish',
+				'et': 'Estonian',
+				'lv': 'Latvian',
+				'lt': 'Lithuanian',
+				'is': 'Icelandic',
+				'sq': 'Albanian',
+				'mk': 'Macedonian',
+				'bs': 'Bosnian',
+				'ka': 'Georgian',
+				'hy': 'Armenian',
+				'fa': 'Persian',
+				'ur': 'Urdu',
+				'bn': 'Bengali',
+				'ta': 'Tamil',
+				'te': 'Telugu',
+				'ml': 'Malayalam',
+				'kn': 'Kannada',
+				'sw': 'Swahili',
+				'af': 'Afrikaans',
+				'la': 'Latin',
+				'eo': 'Esperanto'
+			};
+
+			function langName(code) {
+				return LANG_NAMES[code] || code;
+			}
+
+			var container = document.getElementById('metadata-lang-container');
+			if (!container) return;
+
+			var pillBox = document.getElementById('metadata-lang-pills');
+			var input = document.getElementById('metadata-lang-input');
+			var dropdown = document.getElementById('metadata-lang-dropdown');
+			var langs = [];
+			try { langs = JSON.parse(container.getAttribute('data-languages') || '["en"]'); }
+			catch (e) { langs = ['en']; }
+
+			function renderPills() {
+				pillBox.innerHTML = '';
+				langs.forEach(function (code, idx) {
+					var pill = document.createElement('span');
+					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
+					pill.setAttribute('data-idx', String(idx));
+					pill.setAttribute('data-lang', code);
+					pill.textContent = langName(code);
+
+					var removeBtn = document.createElement('button');
+					removeBtn.type = 'button';
+					removeBtn.className = 'ml-0.5 text-blue-600 dark:text-blue-300 hover:text-red-500 dark:hover:text-red-400 focus:outline-none';
+					removeBtn.innerHTML = '&times;';
+					removeBtn.setAttribute('aria-label', (container.getAttribute('data-remove-label') || 'Remove') + ' ' + langName(code));
+					removeBtn.addEventListener('click', function () {
+						var previous = langs.slice();
+						var removeIdx = langs.indexOf(code);
+						if (removeIdx >= 0) langs.splice(removeIdx, 1);
+						if (langs.length === 0) langs = ['en'];
+						renderPills();
+						saveLangs(previous);
+					});
+					pill.appendChild(removeBtn);
+					pillBox.appendChild(pill);
+				});
+
+				// Attach SortableJS for drag reorder.
+				if (typeof Sortable !== 'undefined' && !pillBox._sortable) {
+					pillBox._sortable = new Sortable(pillBox, {
+						animation: 150,
+						ghostClass: 'opacity-50',
+						onEnd: function () {
+							var previous = langs.slice();
+							var newOrder = [];
+							pillBox.querySelectorAll('[data-lang]').forEach(function (el) {
+								newOrder.push(el.getAttribute('data-lang'));
+							});
+							langs = newOrder;
+							saveLangs(previous);
+						}
+					});
+				}
+			}
+
+			function saveLangs(previous) {
+				var val = JSON.stringify(langs);
+				container.setAttribute('data-languages', val);
+				if (window.swPreferences) {
+					window.swPreferences.set('metadata_languages', val).then(function (saved) {
+						if (saved === val) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Language preferences saved');
+							}
+						} else {
+							try { langs = JSON.parse(saved || '["en"]'); } catch (_) { langs = previous; }
+							container.setAttribute('data-languages', JSON.stringify(langs));
+							renderPills();
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save language preferences');
+							}
+						}
+					}).catch(function () {
+						langs = previous;
+						container.setAttribute('data-languages', JSON.stringify(langs));
+						renderPills();
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save language preferences');
+						}
+					});
+				}
+			}
+
+			// Autocomplete: filter LANG_NAMES by input, excluding already-selected.
+			function showDropdown() {
+				var query = (input.value || '').trim().toLowerCase();
+				dropdown.innerHTML = '';
+				if (!query) { dropdown.classList.add('hidden'); return; }
+
+				var matches = [];
+				for (var code in LANG_NAMES) {
+					if (langs.indexOf(code) >= 0) continue;
+					var name = LANG_NAMES[code];
+					if (name.toLowerCase().indexOf(query) >= 0 || code.toLowerCase().indexOf(query) >= 0) {
+						matches.push({ code: code, name: name });
+					}
+				}
+
+				if (matches.length === 0) {
+					dropdown.classList.add('hidden');
+					return;
+				}
+
+				matches.sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+				matches.forEach(function (m) {
+					var opt = document.createElement('div');
+					opt.className = 'px-3 py-1.5 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100';
+					opt.textContent = m.name + ' (' + m.code + ')';
+					opt.addEventListener('mousedown', function (e) {
+						e.preventDefault(); // prevent input blur
+						addLang(m.code);
+					});
+					dropdown.appendChild(opt);
+				});
+				dropdown.classList.remove('hidden');
+			}
+
+			function addLang(code) {
+				if (langs.indexOf(code) >= 0) return;
+				if (langs.length >= 20) {
+					if (typeof window.showToast === 'function') {
+						showToast('Maximum of 20 languages allowed');
+					}
+					return;
+				}
+				var previous = langs.slice();
+				langs.push(code);
+				input.value = '';
+				dropdown.classList.add('hidden');
+				renderPills();
+				saveLangs(previous);
+			}
+
+			input.addEventListener('input', showDropdown);
+			input.addEventListener('focus', showDropdown);
+			input.addEventListener('blur', function () {
+				// Delay to allow mousedown on dropdown items.
+				setTimeout(function () { dropdown.classList.add('hidden'); }, 150);
+			});
+			input.addEventListener('keydown', function (e) {
+				if (e.key === 'Escape') {
+					dropdown.classList.add('hidden');
+				}
+			});
+
+			renderPills();
 		});
 	</script>
 }

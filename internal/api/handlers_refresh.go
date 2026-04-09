@@ -50,6 +50,41 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Apply language-promoted name/sort-name from MusicBrainz. When the
+	// user's metadata language preference yields a localized alias, the
+	// provider returns the promoted name. Update the artist record so the
+	// UI reflects it.
+	var nameUpdateFailed bool
+	if result.Metadata != nil {
+		newName := result.Metadata.Name
+		newSort := result.Metadata.SortName
+		nameChanged := (newName != "" && newName != a.Name) ||
+			(newSort != "" && newSort != a.SortName)
+
+		if nameChanged {
+			origName, origSort := a.Name, a.SortName
+			if newName != "" {
+				a.Name = newName
+			}
+			if newSort != "" {
+				a.SortName = newSort
+			}
+			if err := r.artistService.Update(req.Context(), a); err != nil {
+				r.logger.Error("updating artist name after refresh",
+					"artist_id", a.ID,
+					"error", err)
+				a.Name, a.SortName = origName, origSort
+				nameUpdateFailed = true
+			} else {
+				r.logger.Info("artist name updated from provider",
+					"artist_id", a.ID,
+					"old_name", origName,
+					"new_name", a.Name)
+				r.publisher.PublishMetadata(req.Context(), a)
+			}
+		}
+	}
+
 	if r.eventBus != nil {
 		r.eventBus.Publish(event.Event{
 			Type: event.ArtistUpdated,
@@ -64,10 +99,14 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":  "refreshed",
 		"sources": result.Sources,
-	})
+	}
+	if nameUpdateFailed {
+		resp["warning"] = "metadata refreshed but name update could not be saved"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleRefreshSearch searches MusicBrainz and Discogs by name for disambiguation.
@@ -232,7 +271,10 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 
 // executeRefreshCtx runs the orchestrator's FetchMetadata and applies results to the artist.
 // It accepts a bare context so it can be called from both HTTP handlers and background goroutines.
+// When a user ID is present in the context, the user's metadata language preferences
+// are loaded and injected into the context for use by individual providers.
 func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*provider.FetchResult, error) {
+	ctx = r.injectMetadataLanguages(ctx)
 	result, err := r.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		r.logger.Error("metadata refresh failed",

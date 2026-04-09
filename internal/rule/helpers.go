@@ -29,8 +29,7 @@ func EvaluateAndPersistHealth(ctx context.Context, engine *Engine, svc *artist.S
 }
 
 // UpdateProviderFetchTimestamps records the current time as the last-fetched
-// timestamp for each attempted provider. Only providers with a corresponding
-// fetched_at column (audiodb, discogs, wikidata, lastfm) are persisted;
+// timestamp for each attempted provider. All known provider names are accepted;
 // unsupported providers are logged as warnings and skipped.
 func UpdateProviderFetchTimestamps(ctx context.Context, svc *artist.Service, artistID string, attempted []provider.ProviderName, logger *slog.Logger) {
 	for _, prov := range attempted {

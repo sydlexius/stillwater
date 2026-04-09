@@ -178,7 +178,7 @@ func TestMapArtist_GroupExcludesBorn(t *testing.T) {
 		DiedYear:   "2010",
 		Disbanded:  "2010",
 	}
-	meta := mapArtist(art)
+	meta := mapArtist(context.Background(), art)
 	if meta.Formed != "1985" {
 		t.Errorf("Formed = %q, want 1985", meta.Formed)
 	}
@@ -202,7 +202,7 @@ func TestMapArtist_PersonGetsBorn(t *testing.T) {
 		BornYear:   "1965",
 		DiedYear:   "0",
 	}
-	meta := mapArtist(art)
+	meta := mapArtist(context.Background(), art)
 	if meta.Born != "1965" {
 		t.Errorf("Born = %q, want 1965", meta.Born)
 	}

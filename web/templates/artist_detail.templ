@@ -14,15 +14,15 @@ import (
 
 // ArtistDetailData holds the data for the artist detail page.
 type ArtistDetailData struct {
-	Artist            artist.Artist
-	Members           []artist.BandMember
-	Aliases           []artist.Alias
-	FieldProviders    map[string][]string
-	LibraryName       string
-	LibrarySource     string
-	ProfileName       string                   // Active platform profile name for image terminology
-	ActiveTab         string                   // "overview", "images", "providers", "history" (default: "overview")
-	Connections       []ArtistDetailConnection // Platform connections with external URLs
+	Artist             artist.Artist
+	Members            []artist.BandMember
+	Aliases            []artist.Alias
+	FieldProviders     map[string][]string
+	LibraryName        string
+	LibrarySource      string
+	ProfileName        string                   // Active platform profile name for image terminology
+	ActiveTab          string                   // "overview", "images", "providers", "history" (default: "overview")
+	Connections        []ArtistDetailConnection // Platform connections with external URLs
 	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
 }

@@ -280,7 +280,7 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 				{ t(ctx, "settings.appearance.language_section_desc") }
 			</p>
 		</div>
-		<div class="px-6 py-4">
+		<div class="px-6 py-4 space-y-4">
 			<div class="flex items-center justify-between gap-4">
 				<div>
 					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.language") }</div>
@@ -295,6 +295,15 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 					<option value="en" selected?={ prefs.Language == "en" || prefs.Language == "" }>English</option>
 				</select>
 			</div>
+			<p class="text-xs text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.appearance.metadata_lang_hint") + " " }
+				<a
+					href="/settings?tab=providers"
+					class="text-blue-600 dark:text-blue-400 hover:underline"
+				>
+					{ t(ctx, "settings.tab.providers") }
+				</a>
+			</p>
 		</div>
 	</div>
 	@appearanceScript()
@@ -384,6 +393,7 @@ templ appearanceScript() {
 				if (!e.detail) return;
 				swSaveAppearancePref(e.detail.name, e.detail.value);
 			});
+
 		})();
 	</script>
 }
