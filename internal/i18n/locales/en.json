@@ -983,6 +983,8 @@
   "settings.appearance.metadata_languages_priority_desc": "Add language tags (e.g. en, en-GB, ja, fr) in order of preference. The first match found will be used. Drag to reorder.",
   "settings.appearance.metadata_languages_current": "Current:",
   "settings.appearance.metadata_languages_add": "Add",
+  "settings.appearance.metadata_languages_input_label": "Add language tag",
+  "settings.appearance.metadata_languages_remove": "Remove",
   "settings.auth.admin_groups": "Administrator Groups",
   "settings.auth.admin_groups_aria": "OIDC group claims that grant Administrator role (comma-separated)",
   "settings.auth.admin_groups_hint": "OIDC group claims that grant Administrator role (comma-separated)",

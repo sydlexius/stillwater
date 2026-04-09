@@ -123,8 +123,8 @@ const MetadataLanguagesDefault = `["en"]`
 const MetadataLanguagesMaxEntries = 20
 
 // validateMetadataLanguages checks that raw is a valid JSON array of BCP 47
-// language tags and returns the canonical JSON encoding. Returns an error
-// description if the value is invalid.
+// language tags and returns the canonical JSON encoding together with whether
+// the value is valid.
 func validateMetadataLanguages(raw string) (string, bool) {
 	var tags []string
 	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
