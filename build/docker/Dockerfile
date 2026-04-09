@@ -36,9 +36,10 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
 RUN apk add --no-cache ca-certificates tzdata su-exec curl && \
     apk upgrade --no-cache
 
-# Create app user
-RUN addgroup -g 100 stillwater && \
-    adduser -u 99 -G stillwater -s /bin/sh -D stillwater
+# Create app user (guarded: GID/UID may already be claimed after apk upgrade)
+RUN addgroup stillwater 2>/dev/null || true && \
+    adduser -u 99 -G stillwater -s /bin/sh -D stillwater 2>/dev/null || true && \
+    id stillwater
 
 # Create data and music directories
 RUN mkdir -p /data /music && chown stillwater:stillwater /data /music
