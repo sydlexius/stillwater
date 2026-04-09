@@ -197,7 +197,7 @@ go test -v -count=1 ./internal/image/...
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SW_DB_PATH` | `/data/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
+| `SW_DB_PATH` | `/config/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
 | `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `SW_LOG_FORMAT` | `json` | Log format: json, text |
 | `SW_PORT` | `1973` | HTTP port |
