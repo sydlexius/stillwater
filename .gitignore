@@ -29,8 +29,7 @@ coverage.html
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-web/static/css/styles.css
+# Build artifacts (styles.css is committed for go install support)
 
 # Local overrides
 docker-compose.local.yml

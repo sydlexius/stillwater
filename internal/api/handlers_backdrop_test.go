@@ -69,7 +69,7 @@ func testRouterForBackdrops(t *testing.T) (*Router, *artist.Service) {
 		NFOSnapshotService: nfoSnapSvc,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 		ImageCacheDir:      cacheDir,
 	})
 

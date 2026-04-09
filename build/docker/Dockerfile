@@ -45,7 +45,6 @@ RUN addgroup stillwater 2>/dev/null || true && \
 RUN mkdir -p /data /music && chown stillwater:stillwater /data /music
 
 COPY --from=builder /bin/stillwater /usr/local/bin/stillwater
-COPY --from=builder /src/web/static /app/web/static
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

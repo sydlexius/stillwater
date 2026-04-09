@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -70,7 +71,7 @@ type RouterDeps struct {
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
-	StaticDir          string
+	StaticFS           fs.FS
 	ImageCacheDir      string
 	Publisher          *publish.Publisher
 	SSEHub             *SSEHub
@@ -173,7 +174,7 @@ func NewRouter(deps RouterDeps) *Router {
 		imageCacheDir:      deps.ImageCacheDir,
 		publisher:          deps.Publisher,
 		sseHub:             deps.SSEHub,
-		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
+		staticAssets:       NewStaticAssets(deps.StaticFS, deps.Logger),
 		ssrfClient: &http.Client{
 			Timeout:   fetchTimeout,
 			Transport: ssrfSafeTransport(),

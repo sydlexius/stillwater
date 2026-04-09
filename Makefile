@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi hadolint scan
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate migrate favicon hooks check-openapi hadolint scan
 
 # Binary name
 BINARY=stillwater
@@ -65,6 +65,9 @@ templ:
 ## tailwind: Build Tailwind CSS
 tailwind:
 	tailwindcss -i $(TAILWIND_INPUT) -o $(TAILWIND_OUTPUT) --minify
+
+## generate: Run all code generation (templ + tailwind)
+generate: templ tailwind
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:

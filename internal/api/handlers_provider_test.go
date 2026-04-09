@@ -46,7 +46,7 @@ func testRouterWithMirror(t *testing.T) *Router {
 		RateLimiters:     rateLimiters,
 		DB:               db,
 		Logger:           logger,
-		StaticDir:        "../../web/static",
+		StaticFS:         os.DirFS("../../web/static"),
 	})
 }
 

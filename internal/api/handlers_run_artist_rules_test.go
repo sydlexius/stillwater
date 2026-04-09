@@ -65,7 +65,7 @@ func testRouterWithPipelineFull(t *testing.T) (*Router, *artist.Service, *rule.S
 		ProviderSettings:   providerSettings,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 	})
 
 	return r, artistSvc, ruleSvc

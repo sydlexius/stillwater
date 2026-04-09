@@ -77,7 +77,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		I18nBundle:         i18nBundle,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 		Publisher:          pub,
 	})
 
@@ -714,7 +714,7 @@ func TestHandleReportHealthByLibrary(t *testing.T) {
 		ProviderSettings:   providerSettings,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 		Publisher:          pub,
 	})
 

@@ -53,7 +53,7 @@ func testRouterForOnboarding(t *testing.T) *Router {
 		I18nBundle:        i18nBundle,
 		DB:                db,
 		Logger:            logger,
-		StaticDir:         "../../web/static",
+		StaticFS:          os.DirFS("../../web/static"),
 	})
 
 	return r

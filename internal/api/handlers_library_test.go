@@ -52,7 +52,7 @@ func testRouterWithLibrary(t *testing.T) (*Router, *library.Service, *artist.Ser
 		NFOSnapshotService: nfoSnapSvc,
 		DB:                 db,
 		Logger:             logger,
-		StaticDir:          "../../web/static",
+		StaticFS:           os.DirFS("../../web/static"),
 	})
 
 	return r, libSvc, artistSvc
