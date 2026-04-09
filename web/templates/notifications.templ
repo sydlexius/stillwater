@@ -695,13 +695,13 @@ templ candidateScript() {
 
 	function _providerLogoURL(source) {
 		var logos = {
-			'fanarttv':    '/static/img/logos/fanarttv.svg',
-			'audiodb':     '/static/img/logos/audiodb-32.png',
-			'discogs':     '/static/img/logos/discogs.svg',
-			'musicbrainz': '/static/img/logos/musicbrainz.svg',
-			'lastfm':      '/static/img/logos/lastfm.svg',
-			'deezer':      '/static/img/logos/deezer.svg',
-			'genius':      '/static/img/logos/genius.svg'
+			'fanarttv':    _notifBp + '/static/img/logos/fanarttv.svg',
+			'audiodb':     _notifBp + '/static/img/logos/audiodb-32.png',
+			'discogs':     _notifBp + '/static/img/logos/discogs.svg',
+			'musicbrainz': _notifBp + '/static/img/logos/musicbrainz.svg',
+			'lastfm':      _notifBp + '/static/img/logos/lastfm.svg',
+			'deezer':      _notifBp + '/static/img/logos/deezer.svg',
+			'genius':      _notifBp + '/static/img/logos/genius.svg'
 		};
 		return logos[source] || '';
 	}

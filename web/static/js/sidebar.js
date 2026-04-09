@@ -89,7 +89,7 @@
     var links = nav.querySelectorAll('.sw-sidebar-link[data-path]');
     // Strip base path from current pathname to get the app-relative path.
     var pathname = window.location.pathname;
-    if (bp && pathname.indexOf(bp) === 0) {
+    if (bp && (pathname === bp || pathname.indexOf(bp + '/') === 0)) {
       pathname = pathname.substring(bp.length);
     }
     // Normalize: ensure leading slash, handle root.

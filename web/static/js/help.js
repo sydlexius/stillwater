@@ -5,6 +5,7 @@
 
     var sections = [];
     var overlay = null;
+    var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 
     function init() {
         var dataEl = document.getElementById('help-data');
@@ -88,7 +89,7 @@
         var html = '';
         for (var i = 0; i < results.length; i++) {
             var s = results[i];
-            html += '<a href="/guide#' + encodeURIComponent(s.id) + '" class="block rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">'
+            html += '<a href="' + bp + '/guide#' + encodeURIComponent(s.id) + '" class="block rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">'
                 + '<h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">' + escapeHtml(s.title) + '</h4>'
                 + '<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + escapeHtml(s.summary) + '</p>'
                 + '</a>';
@@ -98,6 +99,9 @@
 
     function isPageMatch(pages) {
         var path = window.location.pathname;
+        if (bp && (path === bp || path.indexOf(bp + '/') === 0)) {
+            path = path.substring(bp.length) || '/';
+        }
         for (var i = 0; i < pages.length; i++) {
             var p = pages[i];
             if (p.charAt(p.length - 1) === '/') {
