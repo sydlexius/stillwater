@@ -21,23 +21,9 @@ Stillwater is a self-hosted web application for managing artist and composer met
 
 ## Requirements
 
-Stillwater can be run as a pre-built binary or inside a container. For container deployments, Docker is required. Docker Compose is optional but recommended.
+Docker is required. Docker Compose is optional but recommended.
 
 ## Installation
-
-### Binary
-
-Pre-built binaries are published for Linux, macOS, and Windows (amd64 and arm64) on every tagged release. Download the archive for your platform from the [GitHub Releases page](https://github.com/sydlexius/stillwater/releases), extract it, and run the binary:
-
-```bash
-# Download and extract (replace VERSION and PLATFORM as appropriate)
-tar -xzf stillwater_VERSION_linux_amd64.tar.gz
-
-# Set required environment variables and start
-SW_MUSIC_PATH=/path/to/your/music ./stillwater
-```
-
-Open your browser and go to `http://localhost:1973`.
 
 ### Docker Run
 
@@ -132,7 +118,7 @@ SW_BASE_PATH=/stillwater
 If the app does not appear in search results yet, you can install it manually:
 
 1. Go to **Docker** > **Add Container** > **Template repositories**.
-2. Add `https://raw.githubusercontent.com/sydlexius/stillwater/main/build/unraid/stillwater.xml`.
+2. Add `https://github.com/sydlexius/unraid-templates`.
 3. Click **Save** and then click the **Stillwater** template.
 
 ### Template fields
@@ -140,7 +126,7 @@ If the app does not appear in search results yet, you can install it manually:
 | Field | Description | Default |
 |---|---|---|
 | **Web UI Port** | Host port mapped to the Stillwater web interface. | `1973` |
-| **Config/Database** | Host path for persistent application data (database, backups, config). | `/mnt/user/appdata/stillwater` |
+| **Config/Database** | Host path for persistent application data (database, backups, config). | (auto-detected) |
 | **Music Library** | Host path to your music library. This maps to `/music` inside the container and must be readable and writable by Stillwater. | (required) |
 | **PUID** | User ID Stillwater runs as. Use the ID of the user that owns your music files to avoid permission issues. | `99` (nobody) |
 | **PGID** | Group ID Stillwater runs as. | `100` (users) |
