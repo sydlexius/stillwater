@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi hadolint
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi hadolint scan
 
 # Binary name
 BINARY=stillwater
@@ -77,6 +77,11 @@ migrate:
 ## favicon: Regenerate PNG favicons from logo design
 favicon:
 	go run ./tools/genfavicon
+
+## scan: Build Docker image (no cache) and scan for CVEs (requires grype)
+scan:
+	docker build --no-cache -f build/docker/Dockerfile -t ghcr.io/sydlexius/stillwater:scan .
+	grype ghcr.io/sydlexius/stillwater:scan --fail-on high
 
 ## docker-build: Build Docker image
 docker-build:

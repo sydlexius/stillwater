@@ -68,6 +68,7 @@ make fmt            # Format Go + Templ files
 make hooks          # Install git pre-commit hook
 make check-openapi  # Validate OpenAPI spec
 make clean          # Remove build artifacts
+make scan           # Build Docker image (no cache) and scan for CVEs
 make docker-build   # Build Docker image
 make docker-run     # Start via docker compose
 ```

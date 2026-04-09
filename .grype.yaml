@@ -1,0 +1,10 @@
+# Grype vulnerability scanner configuration
+#
+# Ignored CVEs must include a justification and a review-by date.
+# Remove entries once Alpine ships a patched package.
+
+ignore:
+  # OpenSSL 3.5.5 -- no fix available in Alpine 3.23 as of 2026-04-09.
+  # Upstream: https://www.openssl.org/news/vulnerabilities.html
+  # Review by: 2026-05-09
+  - vulnerability: CVE-2026-2673
