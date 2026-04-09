@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 )
@@ -157,5 +158,47 @@ func TestStaticAssets_WithBasePath(t *testing.T) {
 	}
 	if w.Body.String() != "body{}" {
 		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
+// TestStaticAssetsHandlerStripPrefix verifies that the Handler correctly strips
+// the base path prefix when serving files across multiple base path configurations.
+func TestStaticAssetsHandlerStripPrefix(t *testing.T) {
+	basePaths := []string{"", "/stillwater", "/foo/bar"}
+	for _, bp := range basePaths {
+		t.Run("basePath="+bp, func(t *testing.T) {
+			dir := t.TempDir()
+			cssDir := filepath.Join(dir, "css")
+			if err := os.MkdirAll(cssDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(cssDir, "test.css"), []byte("body{}"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			sa := NewStaticAssets(dir, logger)
+			handler := sa.Handler(bp)
+
+			// Build request path: basePath + /static/css/test.css
+			reqPath := bp + "/static/css/test.css"
+			req := httptest.NewRequest(http.MethodGet, reqPath, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("Handler(%q) status = %d, want %d", reqPath, rr.Code, http.StatusOK)
+			}
+
+			// Verify requests without the base path prefix fail when one is configured.
+			if bp != "" {
+				rrWrong := httptest.NewRecorder()
+				reqWrong := httptest.NewRequest(http.MethodGet, "/static/css/test.css", nil)
+				handler.ServeHTTP(rrWrong, reqWrong)
+				if rrWrong.Code == http.StatusOK {
+					t.Errorf("Handler(%q) without prefix: status = %d, want non-200", bp, rrWrong.Code)
+				}
+			}
+		})
 	}
 }
