@@ -8,5 +8,14 @@ ignore:
   # OpenSSL 3.5.5 -- no fix available in Alpine 3.23 as of 2026-04-09.
   # Upstream: https://www.openssl.org/news/vulnerabilities.html
   - vulnerability: CVE-2026-2673
+    package:
+      name: libcrypto3
+      type: apk
+    review-by: "2026-05-09"
+    reason: "No patched OpenSSL in Alpine 3.23; upstream fix is 3.5.6"
+  - vulnerability: CVE-2026-2673
+    package:
+      name: libssl3
+      type: apk
     review-by: "2026-05-09"
     reason: "No patched OpenSSL in Alpine 3.23; upstream fix is 3.5.6"

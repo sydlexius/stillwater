@@ -6,7 +6,7 @@
 #   trivy             - Container image CVE scan (MEDIUM+), SARIF upload (weekly/manual)
 #   sbom              - SBOM generation (Syft) + vulnerability scan (Grype) on releases
 #   dockle            - CIS benchmark check for container images (weekly/manual)
-#   grype-ignore-exp  - Fail when .grype.yaml ignore entries pass their review-by date (weekly)
+#   grype-ignore-expiry - Fail when .grype.yaml ignore entries pass their review-by date (push/PR/weekly)
 
 name: Security
 
@@ -146,7 +146,6 @@ jobs:
   grype-ignore-expiry:
     name: Grype Ignore Expiry Check
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -160,14 +159,30 @@ jobs:
           today=$(date -u +%Y-%m-%d)
           expired=0
           vuln=""
+          review_by=""
           while IFS= read -r line; do
+            # Skip comments and blank lines
+            case "$line" in '#'*|'') continue ;; esac
             case "$line" in
               *"vulnerability:"*)
-                vuln=$(echo "$line" | sed 's/.*vulnerability:[[:space:]]*//')
+                # Check previous entry had a valid review-by before moving on
+                if [ -n "$vuln" ] && [ -z "$review_by" ]; then
+                  echo "::error::Grype ignore missing review-by: $vuln"
+                  expired=$((expired + 1))
+                fi
+                vuln=$(echo "$line" | sed 's/.*vulnerability:[[:space:]]*//; s/"//g')
+                review_by=""
                 ;;
               *"review-by:"*)
                 review_by=$(echo "$line" | sed 's/.*review-by:[[:space:]]*//; s/"//g')
-                if [ "$today" '>' "$review_by" ] || [ "$today" = "$review_by" ]; then
+                if ! echo "$review_by" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+                  echo "::error::Invalid review-by format for $vuln: $review_by (expected YYYY-MM-DD)"
+                  expired=$((expired + 1))
+                elif ! date -ud "$review_by" +%s >/dev/null 2>&1; then
+                  echo "::error::Invalid review-by date for $vuln: $review_by"
+                  expired=$((expired + 1))
+                # review-by is the last valid day; entry expires the day after
+                elif [ "$today" '>' "$review_by" ]; then
                   echo "::error::Grype ignore expired: $vuln (review-by: $review_by)"
                   expired=$((expired + 1))
                 else
@@ -177,6 +192,11 @@ jobs:
                 ;;
             esac
           done < .grype.yaml
+          # Check the last entry in the file
+          if [ -n "$vuln" ] && [ -z "$review_by" ]; then
+            echo "::error::Grype ignore missing review-by: $vuln"
+            expired=$((expired + 1))
+          fi
           if [ "$expired" -gt 0 ]; then
             echo "::error::${expired} expired Grype ignore(s). Review and either remove or extend the review-by date."
             exit 1
