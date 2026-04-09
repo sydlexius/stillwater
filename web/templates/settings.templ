@@ -3758,11 +3758,18 @@ templ metadataLanguagesScript() {
 				}
 			}
 
+			var latestSaveSeq = 0;
+
 			function saveLangs(previous) {
+				var saveSeq = ++latestSaveSeq;
 				var val = JSON.stringify(langs);
 				container.setAttribute('data-languages', val);
 				if (window.swPreferences) {
 					window.swPreferences.set('metadata_languages', val).then(function (saved) {
+						if (saveSeq !== latestSaveSeq) {
+							console.debug('swPreferences: discarding stale save response (seq ' + saveSeq + ', latest ' + latestSaveSeq + ')');
+							return;
+						}
 						var prevVal = JSON.stringify(previous);
 						// swPreferences.set resolves with previousValue on HTTP error,
 						// so if saved matches previous but differs from what we sent,
@@ -3772,6 +3779,12 @@ templ metadataLanguagesScript() {
 							var parsed;
 							try { parsed = JSON.parse(saved); } catch (_) {
 								console.warn('swPreferences: failed to parse server response for metadata_languages');
+								langs = previous;
+								container.setAttribute('data-languages', JSON.stringify(langs));
+								renderPills();
+								if (typeof window.showToast === 'function') {
+									showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
+								}
 								return;
 							}
 							langs = parsed;
@@ -3789,7 +3802,12 @@ templ metadataLanguagesScript() {
 								showToast(container.getAttribute('data-toast-failed') || 'Failed to save language preferences');
 							}
 						}
-					}).catch(function () {
+					}).catch(function (err) {
+						if (saveSeq !== latestSaveSeq) {
+							console.debug('swPreferences: discarding stale save error', err);
+							return;
+						}
+						console.warn('swPreferences: metadata_languages save failed', err);
 						langs = previous;
 						container.setAttribute('data-languages', JSON.stringify(langs));
 						renderPills();

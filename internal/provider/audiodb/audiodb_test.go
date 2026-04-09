@@ -247,6 +247,13 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			langPrefs: nil,
 			wantBio:   "Default bio.",
 		},
+		{
+			name:      "Regional fallback uses base language in preference order",
+			bio:       "Biographie par défaut.",
+			bioEN:     "English biography.",
+			langPrefs: []string{"fr-CA", "en-GB"},
+			wantBio:   "English biography.",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
