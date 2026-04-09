@@ -114,7 +114,7 @@ docker compose up --build
 
 # Or build the image separately
 docker build -f build/docker/Dockerfile -t stillwater:dev .
-docker run -p 1973:1973 -v stillwater-data:/data -v /path/to/music:/music:rw stillwater:dev
+docker run -p 1973:1973 -v stillwater-data:/config -v /path/to/music:/music:rw stillwater:dev
 ```
 
 The Docker build handles templ generation implicitly (committed `_templ.go` files) and runs Tailwind CSS inside the build stage, so no local tooling beyond Docker is needed for container builds.
