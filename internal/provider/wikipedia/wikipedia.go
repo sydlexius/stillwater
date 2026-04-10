@@ -121,7 +121,8 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		// rather than failing outright. The title from resolveToTitle is an enwiki
 		// title and may not exist on the localized wiki.
 		var notFound *provider.ErrNotFound
-		if wikiLang == "en" || !errors.As(err, &notFound) {
+		var unavailable *provider.ErrProviderUnavailable
+		if wikiLang == "en" || (!errors.As(err, &notFound) && !errors.As(err, &unavailable)) {
 			return nil, err
 		}
 		extract = "" // trigger the fallback below

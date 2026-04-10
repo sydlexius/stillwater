@@ -707,6 +707,41 @@ func TestMetadataLanguagesPref_StoreAndRetrieve(t *testing.T) {
 	}
 }
 
+func TestMetadataLanguagesPref_CanonicalizesCase(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	// PUT with mixed-case tags.
+	body := `{"value":"[\"EN-gb\",\"JA\"]"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET and verify casing was canonicalized.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/metadata_languages", nil)
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != `["en-GB","ja"]` {
+		t.Errorf("expected canonicalized [\"en-GB\",\"ja\"], got %q", resp["value"])
+	}
+}
+
 func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 	r, _, userID := testRouterWithAuth(t)
 
