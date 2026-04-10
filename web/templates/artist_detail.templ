@@ -108,6 +108,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/file", assets.BasePath, data.Artist.ID) }
 						alt=""
 						class="h-full w-full object-cover object-center"
+						onerror="this.closest('.fixed').style.display='none'"
 					/>
 					<div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55 dark:from-black/70 dark:via-black/50 dark:to-black/70"></div>
 				</div>

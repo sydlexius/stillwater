@@ -922,6 +922,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 					alt={ a.Name }
 					loading="lazy"
 					class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+					onerror="this.style.display='none'"
 				/>
 			} else if a.ThumbPlaceholder != "" {
 				<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>

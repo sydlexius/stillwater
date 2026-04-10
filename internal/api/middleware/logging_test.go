@@ -63,6 +63,31 @@ func TestScrubQuery_CaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestStatusWriter_ImplementsFlusher(t *testing.T) {
+	// statusWriter must implement http.Flusher so that the SSE handler can
+	// type-assert the wrapped writer. Without this the SSE endpoint returns 500.
+	rec := httptest.NewRecorder()
+	sw := &statusWriter{ResponseWriter: rec, status: http.StatusOK}
+
+	if _, ok := any(sw).(http.Flusher); !ok {
+		t.Fatal("statusWriter does not implement http.Flusher -- SSE will return 500")
+	}
+	sw.Flush()
+	if !rec.Flushed {
+		t.Error("statusWriter.Flush() did not flush the underlying writer")
+	}
+}
+
+func TestStatusWriter_Unwrap(t *testing.T) {
+	// Unwrap lets http.NewResponseController reach the underlying concrete
+	// writer for operations like SetWriteDeadline used by the SSE handler.
+	rec := httptest.NewRecorder()
+	sw := &statusWriter{ResponseWriter: rec, status: http.StatusOK}
+	if sw.Unwrap() != rec {
+		t.Error("statusWriter.Unwrap() returned wrong writer")
+	}
+}
+
 func TestLogging_LogLevels(t *testing.T) {
 	// Successful requests must be logged at DEBUG, 4xx at WARN, 5xx at ERROR.
 	tests := []struct {

@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -2020,29 +2019,67 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	})
 }
 
-// handleRandomBackdrop picks a random artist that has a fanart image and
-// redirects to its image file endpoint. Used by the ambient backdrop feature
-// to display a blurred background in the layout shell.
+// handleRandomBackdrop serves a random artist fanart file for the ambient
+// backdrop feature. It queries all artists with exists_flag=1 in random order,
+// serves the first one whose file is actually present on disk, and clears the
+// flag for every stale entry it encounters along the way. This self-heals the
+// DB so that exists_flag=1 stays accurate without a separate cleanup pass.
 // GET /api/v1/images/random-backdrop
 func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) {
-	// Query a random artist ID that has at least one fanart image.
-	var artistID string
-	err := r.db.QueryRowContext(req.Context(),
+	rows, err := r.db.QueryContext(req.Context(),
 		`SELECT artist_id FROM artist_images
 		 WHERE image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1
-		 ORDER BY RANDOM() LIMIT 1`).Scan(&artistID)
+		 ORDER BY RANDOM()`)
 	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			r.logger.Error("random backdrop query failed", slog.String("error", err.Error()))
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
+		r.logger.Error("random backdrop query failed", slog.String("error", err.Error()))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close() //nolint:errcheck
+
+	patterns := r.getActiveNamingConfig(req.Context(), "fanart")
+
+	for rows.Next() {
+		var artistID string
+		if err := rows.Scan(&artistID); err != nil {
+			r.logger.Error("random backdrop scan failed", slog.String("error", err.Error()))
+			continue
 		}
-		// No artists with fanart found; return 404 Not Found.
-		http.NotFound(w, req)
+
+		a, err := r.artistService.GetByID(req.Context(), artistID)
+		if err != nil {
+			continue
+		}
+
+		dir := r.imageDir(a)
+		if dir == "" {
+			continue
+		}
+
+		filePath, found := img.FindExistingImage(dir, patterns)
+		if !found {
+			// File is gone despite exists_flag=1; clear the stale flag and keep looking.
+			if err := r.artistService.ClearImageFlag(req.Context(), a.ID, "fanart", 0); err != nil {
+				r.logger.Warn("failed to clear stale backdrop flag",
+					slog.String("artist_id", a.ID),
+					slog.String("error", err.Error()))
+			} else {
+				r.logger.Info("cleared stale backdrop flag", slog.String("artist_id", a.ID))
+			}
+			continue
+		}
+
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, req, filePath)
 		return
 	}
 
-	// Redirect to the standard image serve endpoint for this artist's fanart.
-	target := r.basePath + "/api/v1/artists/" + url.PathEscape(artistID) + "/images/fanart/file"
-	http.Redirect(w, req, target, http.StatusTemporaryRedirect)
+	if err := rows.Err(); err != nil {
+		r.logger.Error("random backdrop iteration failed", slog.String("error", err.Error()))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// No valid fanart found (pool empty or all entries were stale).
+	http.NotFound(w, req)
 }
