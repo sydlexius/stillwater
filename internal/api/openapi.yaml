@@ -2235,6 +2235,13 @@ paths:
           schema:
             type: string
             enum: [thumb, fanart, logo, banner]
+        - name: sort
+          in: query
+          description: Sort order for results. Defaults to likes descending.
+          schema:
+            type: string
+            enum: [likes, resolution]
+            default: likes
       responses:
         "200":
           description: Image search results (returns HTML fragment when HX-Request header is set)

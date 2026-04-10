@@ -67,6 +67,8 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 		data-img-source={ img.Source }
 		data-img-width={ strconv.Itoa(img.Width) }
 		data-img-height={ strconv.Itoa(img.Height) }
+		data-img-likes={ strconv.Itoa(img.Likes) }
+		data-img-area={ strconv.Itoa(img.Width * img.Height) }
 	>
 		<div
 			class={

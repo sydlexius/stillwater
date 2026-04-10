@@ -458,15 +458,9 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	// Probe dimensions for images that have none (e.g., Fanart.tv)
 	images = r.probeImageDimensions(req.Context(), images)
 
-	// Sort by likes (descending), then by resolution (descending)
-	sort.Slice(images, func(i, j int) bool {
-		if images[i].Likes != images[j].Likes {
-			return images[i].Likes > images[j].Likes
-		}
-		areaI := images[i].Width * images[i].Height
-		areaJ := images[j].Width * images[j].Height
-		return areaI > areaJ
-	})
+	// Sort images by the requested criterion (default: likes descending).
+	sortBy := req.URL.Query().Get("sort")
+	sortImageResults(images, sortBy)
 
 	// Return HTML for HTMX requests, JSON for API requests
 	if isHTMXRequest(req) {
@@ -891,6 +885,32 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	}
 
 	return images
+}
+
+// sortImageResults sorts images by the given criterion. Valid values are
+// "likes" (descending, then resolution), "resolution" (descending, then
+// likes). An empty or unrecognized value defaults to "likes".
+func sortImageResults(images []provider.ImageResult, sortBy string) {
+	switch sortBy {
+	case "resolution":
+		sort.Slice(images, func(i, j int) bool {
+			areaI := images[i].Width * images[i].Height
+			areaJ := images[j].Width * images[j].Height
+			if areaI != areaJ {
+				return areaI > areaJ
+			}
+			return images[i].Likes > images[j].Likes
+		})
+	default: // "likes" or empty
+		sort.Slice(images, func(i, j int) bool {
+			if images[i].Likes != images[j].Likes {
+				return images[i].Likes > images[j].Likes
+			}
+			areaI := images[i].Width * images[i].Height
+			areaJ := images[j].Width * images[j].Height
+			return areaI > areaJ
+		})
+	}
 }
 
 // setArtistImageFlag sets the image existence, low-resolution, and placeholder flags and persists them.
