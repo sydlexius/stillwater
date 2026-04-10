@@ -2090,8 +2090,26 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 			continue
 		}
 
-		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFile(w, req, filePath)
+		// no-store: the backing file changes on each call, so the browser
+		// must not cache the response at all. http.ServeContent with a zero
+		// modtime suppresses ETag and Last-Modified so no conditional
+		// request can produce a stale 304.
+		f, err := os.Open(filePath) //nolint:gosec // path from img.FindExistingImage, not user input
+		if err != nil {
+			r.logger.Warn("random backdrop open failed",
+				slog.String("artist_id", a.ID),
+				slog.String("path", filePath),
+				slog.String("error", err.Error()))
+			continue
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeContent(w, req, filepath.Base(filePath), time.Time{}, f)
+		if err := f.Close(); err != nil {
+			r.logger.Warn("random backdrop file close failed",
+				slog.String("artist_id", a.ID),
+				slog.String("path", filePath),
+				slog.String("error", err.Error()))
+		}
 		return
 	}
 
