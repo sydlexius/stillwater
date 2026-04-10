@@ -18,6 +18,33 @@ type ListParams struct {
 	Filters map[string]string
 }
 
+// CountParams configures filtered artist count queries. It mirrors the
+// filtering subset of ListParams but omits pagination, sorting, and ordering
+// since COUNT(*) does not need them.
+type CountParams struct {
+	Search         string
+	Filter         string
+	LibraryID      string
+	HealthScoreMin int
+	HealthScoreMax int
+	Filters        map[string]string
+}
+
+// toListParams converts CountParams to ListParams so the shared
+// buildWhereClause helper can be reused.
+func (p CountParams) toListParams() ListParams {
+	return ListParams{
+		Page:           1,
+		PageSize:       10, // unused but satisfies Validate
+		Search:         p.Search,
+		Filter:         p.Filter,
+		LibraryID:      p.LibraryID,
+		HealthScoreMin: p.HealthScoreMin,
+		HealthScoreMax: p.HealthScoreMax,
+		Filters:        p.Filters,
+	}
+}
+
 // Validate normalizes and validates list parameters.
 func (p *ListParams) Validate() {
 	if p.Page < 1 {

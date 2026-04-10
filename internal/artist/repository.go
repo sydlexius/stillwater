@@ -12,6 +12,10 @@ type Repository interface {
 	FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error)
 	GetByPath(ctx context.Context, path string) (*Artist, error)
 	List(ctx context.Context, params ListParams) ([]Artist, int, error)
+	// Count returns the total number of artists matching the given filters
+	// without fetching any row data. Use this instead of List when only the
+	// count is needed (e.g., sidebar badge).
+	Count(ctx context.Context, params CountParams) (int, error)
 	Update(ctx context.Context, a *Artist) error
 	UpdateField(ctx context.Context, id, field, value string) error
 	ClearField(ctx context.Context, id, field string) error
