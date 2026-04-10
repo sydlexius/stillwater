@@ -1747,6 +1747,32 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 	if !a.ThumbExists {
 		t.Fatal("ThumbExists should be true after setting flag")
 	}
+
+	// Verify the flag was persisted to the DB before testing its cleanup.
+	// Checking only the in-memory field would let this test pass even if the
+	// DB write regressed, since the poll loop below checks DB state.
+	preImages, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist (precondition): %v", err)
+	}
+	thumbPersisted := false
+	for _, im := range preImages {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			thumbPersisted = true
+			break
+		}
+	}
+	if !thumbPersisted {
+		t.Fatal("precondition: thumb image row Exists not persisted to DB before file removal")
+	}
+	preReloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID (precondition): %v", err)
+	}
+	if !preReloaded.ThumbExists {
+		t.Fatal("precondition: artist.ThumbExists not persisted to DB before file removal")
+	}
+
 	if err := os.Remove(filepath.Join(dir, "folder.jpg")); err != nil {
 		t.Fatalf("removing image: %v", err)
 	}
