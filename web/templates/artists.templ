@@ -680,9 +680,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			// A debounce guard prevents duplicate calls when bfcache restore
 			// fires both pageshow and popstate in quick succession.
 			var _restoreLastRun = 0;
+			var _restoreLastHref = '';
 			function restoreStateFromURL() {
 				var now = Date.now();
-				if (now - _restoreLastRun < 100) return;
+				var href = window.location.href;
+				if (href === _restoreLastHref && now - _restoreLastRun < 100) return;
+				_restoreLastHref = href;
 				_restoreLastRun = now;
 				var params = new URLSearchParams(window.location.search);
 				// Re-sync flyout chip states from URL.
