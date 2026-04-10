@@ -130,6 +130,13 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
 		renderTempl(w, req, templates.FieldDisplay(a, field, providers))
+
+		// When the type field changes, also send an OOB swap for the gender
+		// row so it appears/disappears without a full page reload.
+		if field == "type" {
+			genderProviders := r.fieldProviderNames(req, "gender")
+			renderTempl(w, req, templates.GenderFieldOOB(a, genderProviders))
+		}
 		return
 	}
 
@@ -185,6 +192,13 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
 		renderTempl(w, req, templates.FieldDisplay(a, field, providers))
+
+		// Mirror the PATCH handler: when the type field is cleared, send an
+		// OOB swap for the gender row so it reappears without a full reload.
+		if field == "type" {
+			genderProviders := r.fieldProviderNames(req, "gender")
+			renderTempl(w, req, templates.GenderFieldOOB(a, genderProviders))
+		}
 		return
 	}
 

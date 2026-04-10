@@ -40,7 +40,11 @@ templ FieldEdit(a *artist.Artist, field string) {
 			@tagFieldEdit(a, "styles", t(ctx, "artist.styles"), a.Styles)
 		case "moods":
 			@tagFieldEdit(a, "moods", t(ctx, "artist.moods"), a.Moods)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "type":
+			@selectFieldEdit(a, "type", fieldLabel(ctx, "type"), artist.FieldValueFromArtist(a, "type"), typeOptions())
+		case "gender":
+			@selectFieldEdit(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), genderOptions())
+		case "formed", "born", "disbanded", "died", "years_active",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
 			@detailFieldEdit(a, field, fieldLabel(ctx, field), artist.FieldValueFromArtist(a, field))
@@ -476,6 +480,111 @@ script saveMembers(url string, targetSelector string) {
 	}).catch(function() {
 		window.showToast && window.showToast('Network error saving members');
 	});
+}
+
+// SelectOption represents a single option in a dropdown select field.
+type SelectOption struct {
+	Value string
+	Label string
+}
+
+// genderOptions returns the available gender choices for the dropdown.
+func genderOptions() []SelectOption {
+	return []SelectOption{
+		{Value: "", Label: "Not set"},
+		{Value: "Male", Label: "Male"},
+		{Value: "Female", Label: "Female"},
+		{Value: "Non-binary", Label: "Non-binary"},
+		{Value: "Other", Label: "Other"},
+		{Value: "Unknown", Label: "Unknown"},
+	}
+}
+
+// typeOptions returns the available artist type choices for the dropdown.
+// Values are lowercase to match backend canonical types (see artist.Type).
+func typeOptions() []SelectOption {
+	return []SelectOption{
+		{Value: "", Label: "Not set"},
+		{Value: "person", Label: "Person"},
+		{Value: "solo", Label: "Solo"},
+		{Value: "group", Label: "Group"},
+		{Value: "orchestra", Label: "Orchestra"},
+		{Value: "choir", Label: "Choir"},
+		{Value: "character", Label: "Character"},
+		{Value: "other", Label: "Other"},
+	}
+}
+
+// selectFieldEdit renders a detail sidebar field in edit mode with a <select>
+// dropdown instead of a free-text input. Used for type and gender fields.
+templ selectFieldEdit(a *artist.Artist, field, label, value string, options []SelectOption) {
+	<div id={ "field-" + field + "-" + a.ID }>
+		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dd>
+			<form
+				class="flex items-center gap-1 mt-0.5"
+				hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+				hx-target={ "#field-" + field + "-" + a.ID }
+				hx-swap="outerHTML"
+			>
+				<select
+					name="value"
+					aria-label={ label }
+					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					for _, opt := range options {
+						<option
+							value={ opt.Value }
+							if strings.EqualFold(opt.Value, value) {
+								selected
+							}
+						>{ opt.Label }</option>
+					}
+					// If the current value does not match any predefined option,
+					// include it as-is so it is preserved and visible.
+					if value != "" && !matchesOption(value, options) {
+						<option value={ value } selected>{ value }</option>
+					}
+				</select>
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title={ t(ctx, "common.save") } aria-label={ tf(ctx, "artist.save_field", label) }>
+					@components.IconCheck("h-4 w-4")
+				</button>
+				<button
+					type="button"
+					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+					title={ t(ctx, "common.cancel") }
+					aria-label={ tf(ctx, "artist.cancel_editing_field", label) }
+					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
+					hx-target={ "#field-" + field + "-" + a.ID }
+					hx-swap="outerHTML"
+				>
+					@components.IconXMark("h-4 w-4")
+				</button>
+			</form>
+		</dd>
+	</div>
+}
+
+// GenderFieldOOB renders the gender field as an OOB swap fragment. When the
+// type field changes, the handler returns this alongside the type FieldDisplay
+// so HTMX can show or hide the gender row without a full page reload.
+// Targets the stable gender-wrap-{id} container that always exists in the DOM.
+templ GenderFieldOOB(a *artist.Artist, providers []string) {
+	<div id={ "gender-wrap-" + a.ID } hx-swap-oob="innerHTML">
+		if !isGroupType(a.Type) {
+			@detailFieldDisplay(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), providers)
+		}
+	</div>
+}
+
+// matchesOption reports whether value case-insensitively matches any option.
+func matchesOption(value string, options []SelectOption) bool {
+	for _, opt := range options {
+		if strings.EqualFold(opt.Value, value) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Shared edit form buttons ---
