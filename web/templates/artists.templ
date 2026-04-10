@@ -586,9 +586,23 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				return Object.assign(params, overrides);
 			}
 
+			// Update view toggle button classes to reflect the active view.
+			// Mirrors the server-side templ.KV classes on the #view-toggle buttons.
+			var _viewActiveClass = 'p-2 transition-colors bg-blue-600 text-white';
+			var _viewInactiveClass = 'p-2 transition-colors bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700';
+			function updateViewToggleUI(view) {
+				var toggle = document.getElementById('view-toggle');
+				if (!toggle) return;
+				var tableBtn = toggle.querySelector('button[onclick="setView(\'table\')"]');
+				var gridBtn = toggle.querySelector('button[onclick="setView(\'grid\')"]');
+				if (tableBtn) tableBtn.className = view === 'table' ? _viewActiveClass : _viewInactiveClass;
+				if (gridBtn) gridBtn.className = view === 'grid' ? _viewActiveClass : _viewInactiveClass;
+			}
+
 			function setView(view) {
 				var input = document.getElementById('artist-view-input');
 				if (input) input.value = view;
+				updateViewToggleUI(view);
 				// Show/hide column toggle based on view
 				var colToggle = document.getElementById('col-toggle-wrapper');
 				if (colToggle) {
@@ -698,6 +712,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);
 				var viewInput = document.getElementById('artist-view-input');
 				if (viewInput) {
+					updateViewToggleUI(viewInput.value);
 					var colToggle = document.getElementById('col-toggle-wrapper');
 					if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
 				}
