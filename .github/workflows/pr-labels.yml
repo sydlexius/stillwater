@@ -11,6 +11,10 @@
 # re-triggers this workflow through the "labeled" event, giving the gate a
 # second chance to pass without a new commit.
 #
+# Uses pull_request_target so the config is always read from the base branch
+# via the GitHub contents API (no checkout needed).  This prevents a PR from
+# redefining valid labels to bypass the gate.
+#
 # Dependabot PRs are skipped -- they never reference labelled issues.
 #
 # Required status check name: "Label gate / Require release label"
@@ -19,12 +23,13 @@
 name: Label gate
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, edited, synchronize, labeled, unlabeled]
     branches: [main]
 
 permissions:
   contents: read
+  issues: read
   pull-requests: write
 
 jobs:
@@ -34,8 +39,6 @@ jobs:
     if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
       - name: Auto-label from linked issues
         # Skip on label events -- the label is already applied; no need to
         # re-query linked issues.
@@ -45,19 +48,30 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const fs = require('fs');
+            // Read valid release labels from .claude/release.toml on the base
+            // branch via the contents API (no checkout needed; always reads
+            // from base so a PR cannot redefine labels to bypass the gate).
+            const configResp = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: '.claude/release.toml',
+              ref: context.payload.pull_request.base.ref,
+            });
+            const toml = Buffer.from(configResp.data.content, 'base64').toString('utf8');
 
-            // Parse valid release labels from .claude/release.toml.
-            // Reads the [release_notes.group_labels] section and extracts keys.
-            const toml = fs.readFileSync('.claude/release.toml', 'utf8');
-            const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
-            const validLabels = new Set();
-            if (sectionMatch) {
-              for (const line of sectionMatch[1].split('\n')) {
-                const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
-                if (m) validLabels.add(m[1]);
+            function parseValidLabels(toml) {
+              const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
+              const labels = new Set();
+              if (sectionMatch) {
+                for (const line of sectionMatch[1].split('\n')) {
+                  const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
+                  if (m) labels.add(m[1]);
+                }
               }
+              return labels;
             }
+
+            const validLabels = parseValidLabels(toml);
             core.info(`Valid release labels: ${[...validLabels].join(', ')}`);
 
             // Parse issue references from the PR body.
@@ -124,21 +138,32 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const fs = require('fs');
+            // Read valid release labels from .claude/release.toml on the base
+            // branch via the contents API.
+            const configResp = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: '.claude/release.toml',
+              ref: context.payload.pull_request.base.ref,
+            });
+            const toml = Buffer.from(configResp.data.content, 'base64').toString('utf8');
 
-            // Parse valid release labels from .claude/release.toml.
-            const toml = fs.readFileSync('.claude/release.toml', 'utf8');
-            const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
-            const validLabels = new Set();
-            if (sectionMatch) {
-              for (const line of sectionMatch[1].split('\n')) {
-                const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
-                if (m) validLabels.add(m[1]);
+            function parseValidLabels(toml) {
+              const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
+              const labels = new Set();
+              if (sectionMatch) {
+                for (const line of sectionMatch[1].split('\n')) {
+                  const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
+                  if (m) labels.add(m[1]);
+                }
               }
+              return labels;
             }
 
-            // Fetch current PR labels (not from event payload -- auto-label
-            // may have just added some in the previous step).
+            const validLabels = parseValidLabels(toml);
+
+            // Fetch current PR labels via API -- auto-label may have just
+            // added some in the previous step.
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,

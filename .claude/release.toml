@@ -1,0 +1,43 @@
+# Release configuration for /push-release skill
+
+[versioning]
+# Dev fallback version file -- bumped to match the tag so `go run` shows the
+# correct version even without ldflags.
+file = "internal/version/version.go"
+pattern = 'Version = "{version}"'
+post_bump = []
+
+[build]
+working_dir = "."
+pre_checks = [
+    # Wait for all CI checks on main to pass before tagging
+    "echo 'Waiting for CI on main...' && gh run list --branch main --limit 1 --json databaseId,status --jq '.[0]' && gh run watch $(gh run list --branch main --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status",
+    # Run local deterministic checks
+    "bash scripts/pre-push-gate.sh",
+]
+
+[release_notes]
+# Map GitHub PR labels to release note sections.  PRs are grouped by the first
+# matching label; unmatched PRs fall into default_group.
+default_group = "Other Changes"
+
+[release_notes.group_labels]
+enhancement = "New Features"
+bug         = "Bug Fixes"
+ux          = "UX Improvements"
+database    = "Database"
+documentation = "Documentation"
+technical-debt = "Technical Debt"
+testing     = "Testing"
+automation  = "Automation"
+providers   = "Provider Updates"
+scanner     = "Scanner"
+rules       = "Rules Engine"
+images      = "Image Management"
+webhooks    = "Webhooks"
+emby        = "Emby"
+jellyfin    = "Jellyfin"
+reports     = "Reports"
+
+[release]
+tag_prefix = "v"
