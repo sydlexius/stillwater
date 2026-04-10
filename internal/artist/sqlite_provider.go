@@ -151,8 +151,12 @@ func (r *sqliteProviderIDRepo) DeleteAll(ctx context.Context, artistID string) e
 }
 
 func (r *sqliteProviderIDRepo) UpdateProviderFetchedAt(ctx context.Context, artistID, prov string) error {
+	// Must stay in sync with provider.ProviderName constants in
+	// internal/provider/provider.go.
 	validProviders := map[string]bool{
-		"audiodb": true, "discogs": true, "wikidata": true, "lastfm": true,
+		"musicbrainz": true, "fanarttv": true, "audiodb": true, "discogs": true,
+		"lastfm": true, "wikidata": true, "duckduckgo": true, "deezer": true,
+		"genius": true, "wikipedia": true, "allmusic": true, "spotify": true,
 	}
 	if !validProviders[prov] {
 		return fmt.Errorf("unknown provider for fetched_at: %s", prov)

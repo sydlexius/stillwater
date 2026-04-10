@@ -178,7 +178,7 @@ func TestMapArtist_GroupExcludesBorn(t *testing.T) {
 		DiedYear:   "2010",
 		Disbanded:  "2010",
 	}
-	meta := mapArtist(art)
+	meta := mapArtist(context.Background(), art)
 	if meta.Formed != "1985" {
 		t.Errorf("Formed = %q, want 1985", meta.Formed)
 	}
@@ -202,12 +202,76 @@ func TestMapArtist_PersonGetsBorn(t *testing.T) {
 		BornYear:   "1965",
 		DiedYear:   "0",
 	}
-	meta := mapArtist(art)
+	meta := mapArtist(context.Background(), art)
 	if meta.Born != "1965" {
 		t.Errorf("Born = %q, want 1965", meta.Born)
 	}
 	if meta.Formed != "" {
 		t.Errorf("Formed = %q, want empty", meta.Formed)
+	}
+}
+
+func TestMapArtist_BiographyLocalization(t *testing.T) {
+	tests := []struct {
+		name      string
+		bio       string // strBiography (localized default)
+		bioEN     string // strBiographyEN
+		langPrefs []string
+		wantBio   string
+	}{
+		{
+			name:      "English preference selects BiographyEN",
+			bio:       "Biographie auf Deutsch.",
+			bioEN:     "English biography.",
+			langPrefs: []string{"en"},
+			wantBio:   "English biography.",
+		},
+		{
+			name:      "Non-English preference falls back to default bio",
+			bio:       "Biographie auf Deutsch.",
+			bioEN:     "English biography.",
+			langPrefs: []string{"de"},
+			wantBio:   "Biographie auf Deutsch.",
+		},
+		{
+			name:      "Empty English bio falls back to default bio",
+			bio:       "Biographie par default.",
+			bioEN:     "",
+			langPrefs: []string{"en"},
+			wantBio:   "Biographie par default.",
+		},
+		{
+			name:      "No preferences uses fallback",
+			bio:       "Default bio.",
+			bioEN:     "English bio.",
+			langPrefs: nil,
+			wantBio:   "Default bio.",
+		},
+		{
+			name:      "Regional fallback uses base language in preference order",
+			bio:       "Biographie par défaut.",
+			bioEN:     "English biography.",
+			langPrefs: []string{"fr-CA", "en-GB"},
+			wantBio:   "English biography.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			art := &AudioDBArtist{
+				IDArtist:    "99999",
+				Artist:      "Test Artist",
+				Biography:   tt.bio,
+				BiographyEN: tt.bioEN,
+			}
+			ctx := context.Background()
+			if len(tt.langPrefs) > 0 {
+				ctx = provider.WithMetadataLanguages(ctx, tt.langPrefs)
+			}
+			meta := mapArtist(ctx, art)
+			if meta.Biography != tt.wantBio {
+				t.Errorf("Biography = %q, want %q", meta.Biography, tt.wantBio)
+			}
+		})
 	}
 }
 

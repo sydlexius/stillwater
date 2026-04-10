@@ -436,3 +436,71 @@ func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyMergeableFields_MusicBrainzNameAuthority(t *testing.T) {
+	// MusicBrainz Name/SortName should always overwrite, even if the
+	// result already has a Name from another provider.
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name:     "AudioDB Name",
+			SortName: "AudioDB Sort",
+			URLs:     make(map[string]string),
+		},
+	}
+	mbMeta := &provider.ArtistMetadata{
+		Name:     "MusicBrainz Name",
+		SortName: "MusicBrainz Sort",
+	}
+	applyMergeableFields(result, mbMeta, provider.NameMusicBrainz)
+
+	if result.Metadata.Name != "MusicBrainz Name" {
+		t.Errorf("MusicBrainz should overwrite Name; got %s", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "MusicBrainz Sort" {
+		t.Errorf("MusicBrainz should overwrite SortName; got %s", result.Metadata.SortName)
+	}
+}
+
+func TestApplyMergeableFields_NonMBOnlyFillsEmpty(t *testing.T) {
+	// Non-MusicBrainz providers should only fill Name/SortName when empty.
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name:     "Existing Name",
+			SortName: "Existing Sort",
+			URLs:     make(map[string]string),
+		},
+	}
+	otherMeta := &provider.ArtistMetadata{
+		Name:     "AudioDB Name",
+		SortName: "AudioDB Sort",
+	}
+	applyMergeableFields(result, otherMeta, provider.NameAudioDB)
+
+	if result.Metadata.Name != "Existing Name" {
+		t.Errorf("non-MB should not overwrite existing Name; got %s", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "Existing Sort" {
+		t.Errorf("non-MB should not overwrite existing SortName; got %s", result.Metadata.SortName)
+	}
+}
+
+func TestApplyMergeableFields_NonMBFillsEmpty(t *testing.T) {
+	// Non-MusicBrainz providers should fill empty Name/SortName.
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	otherMeta := &provider.ArtistMetadata{
+		Name:     "AudioDB Name",
+		SortName: "AudioDB Sort",
+	}
+	applyMergeableFields(result, otherMeta, provider.NameAudioDB)
+
+	if result.Metadata.Name != "AudioDB Name" {
+		t.Errorf("non-MB should fill empty Name; got %s", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "AudioDB Sort" {
+		t.Errorf("non-MB should fill empty SortName; got %s", result.Metadata.SortName)
+	}
+}

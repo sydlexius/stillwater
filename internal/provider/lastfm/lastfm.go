@@ -130,6 +130,15 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	} else {
 		params.Set("artist", id)
 	}
+	// Set the lang parameter from the user's first metadata language preference.
+	// Last.fm accepts a two- or three-letter language code for biography localization.
+	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 {
+		// Use the base language of the first preference (e.g. "en-GB" -> "en").
+		base := strings.SplitN(langPrefs[0], "-", 2)[0]
+		if len(base) == 2 || len(base) == 3 {
+			params.Set("lang", strings.ToLower(base))
+		}
+	}
 	reqURL := a.baseURL + "/?" + params.Encode()
 
 	body, err := a.doRequest(ctx, reqURL)

@@ -126,7 +126,7 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
-	return a.mapArtist(&artist), nil
+	return a.mapArtist(ctx, &artist), nil
 }
 
 // GetImages returns nil since MusicBrainz does not host artist images.
@@ -293,7 +293,11 @@ func normalizeHyphens(s string) string {
 }
 
 // mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.
-func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
+// When language preferences are set in the context, mapArtist promotes the
+// best-matching primary alias to the Name and SortName fields, placing the
+// canonical name behind all language-matched aliases in the aliases list.
+// Remaining aliases, including the canonical name, are sorted by preference score.
+func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
@@ -364,11 +368,88 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 		meta.Moods = append(meta.Moods, fallbackMoods...)
 	}
 
-	// Aliases
-	for _, alias := range mb.Aliases {
-		if alias.Name != "" && alias.Name != mb.Name {
-			meta.Aliases = append(meta.Aliases, alias.Name)
+	// Language-aware name promotion: if the user has language preferences,
+	// look for a primary alias in the preferred language and promote its
+	// name (and sort name, if present) to the top-level fields. The original
+	// canonical name is demoted into the aliases list so it is not lost.
+	langPrefs := provider.MetadataLanguages(ctx)
+	canonicalName := meta.Name
+	if len(langPrefs) > 0 {
+		bestScore := -1
+		var bestAlias MBAlias
+		for _, alias := range mb.Aliases {
+			if alias.Name == "" || !alias.Primary {
+				continue
+			}
+			score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
+			if score >= 0 && (bestScore < 0 || score < bestScore) {
+				bestScore = score
+				bestAlias = alias
+			}
 		}
+		if bestScore >= 0 {
+			promotedName := normalizeHyphens(bestAlias.Name)
+			promotedSort := normalizeHyphens(bestAlias.SortName)
+			nameChanged := promotedName != "" && promotedName != canonicalName
+			sortChanged := promotedSort != "" && promotedSort != meta.SortName
+			if nameChanged || sortChanged {
+				a.logger.Debug("promoting localized name",
+					"from", canonicalName,
+					"to", bestAlias.Name,
+					"locale", bestAlias.Locale)
+				if nameChanged {
+					meta.Name = promotedName
+				}
+				if sortChanged {
+					meta.SortName = promotedSort
+				} else if nameChanged {
+					a.logger.Debug("promoted alias has no sort name, retaining canonical",
+						"canonical_sort", meta.SortName,
+						"locale", bestAlias.Locale)
+				}
+			}
+		}
+	}
+
+	// Aliases: collect all, then sort by user's language preference if set.
+	// The canonical name is included if it differs from the promoted name.
+	type scoredAlias struct {
+		name  string
+		score int
+	}
+	var scored []scoredAlias
+	seen := make(map[string]bool)
+	seen[meta.Name] = true
+	// If we promoted a different name, add the original canonical name as an alias.
+	if canonicalName != meta.Name {
+		scored = append(scored, scoredAlias{name: canonicalName, score: -1})
+		seen[canonicalName] = true
+	}
+	for _, alias := range mb.Aliases {
+		normalizedAlias := normalizeHyphens(alias.Name)
+		if normalizedAlias == "" || seen[normalizedAlias] {
+			continue
+		}
+		seen[normalizedAlias] = true
+		score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
+		scored = append(scored, scoredAlias{name: normalizedAlias, score: score})
+	}
+	// Sort: matched locales first (lower score wins), unmatched last.
+	if len(langPrefs) > 0 && len(scored) > 1 {
+		sort.SliceStable(scored, func(i, j int) bool {
+			si, sj := scored[i].score, scored[j].score
+			// -1 means unmatched -- push to end
+			if si < 0 && sj >= 0 {
+				return false
+			}
+			if sj < 0 && si >= 0 {
+				return true
+			}
+			return si < sj
+		})
+	}
+	for _, sa := range scored {
+		meta.Aliases = append(meta.Aliases, sa.name)
 	}
 
 	// Relations: extract members and URLs

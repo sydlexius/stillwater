@@ -524,6 +524,55 @@ func TestNormalizeHyphens(t *testing.T) {
 	}
 }
 
+func TestGetArtist_NamePromotion(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	// Without language preferences: canonical name is used.
+	meta, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if meta.Name != "Radiohead" {
+		t.Errorf("without prefs: expected name Radiohead, got %s", meta.Name)
+	}
+
+	// With Japanese preference: the Japanese primary alias should be promoted.
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+	meta, err = a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist with ja pref: %v", err)
+	}
+	if meta.Name == "Radiohead" {
+		t.Error("with ja pref: expected promoted Japanese name, still got Radiohead")
+	}
+	if meta.SortName == "" {
+		t.Error("with ja pref: expected a sort name after promotion")
+	}
+	// The canonical name should appear in aliases after promotion.
+	found := false
+	for _, alias := range meta.Aliases {
+		if alias == "Radiohead" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("with ja pref: canonical name 'Radiohead' should appear in aliases, got %v", meta.Aliases)
+	}
+
+	// With a non-matching preference (German): no promotion, canonical retained.
+	ctx = provider.WithMetadataLanguages(context.Background(), []string{"de"})
+	meta, err = a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist with de pref: %v", err)
+	}
+	if meta.Name != "Radiohead" {
+		t.Errorf("with de pref: expected name Radiohead (no promotion), got %s", meta.Name)
+	}
+}
+
 func isErrNotFound(err error) bool {
 	_, ok := err.(*provider.ErrNotFound)
 	return ok

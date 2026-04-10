@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -331,6 +333,24 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		OIDCLogoURL:           r.getStringSetting(req.Context(), "auth.providers.oidc.logo_url", ""),
 	}
 
+	// Load metadata language preferences for the Providers tab.
+	metadataLangs := parseMetadataLanguages(MetadataLanguagesDefault)
+	if userID != "" {
+		var rawLangs string
+		langErr := r.db.QueryRowContext(req.Context(),
+			`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
+			userID, PrefMetadataLanguages).Scan(&rawLangs)
+		switch {
+		case langErr == nil:
+			if parsed := parseMetadataLanguages(normalizeMetadataLanguages(rawLangs)); parsed != nil {
+				metadataLangs = parsed
+			}
+		case !errors.Is(langErr, sql.ErrNoRows):
+			r.logger.Warn("querying metadata_languages for settings page",
+				"user_id", userID, "error", langErr)
+		}
+	}
+
 	data := templates.SettingsData{
 		ActiveTab:               tab,
 		Libraries:               libs,
@@ -357,6 +377,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
 		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
+		MetadataLanguages:       metadataLangs,
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
 	}

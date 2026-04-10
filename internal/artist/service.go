@@ -622,7 +622,7 @@ func IsSliceField(field string) bool {
 }
 
 // UpdateProviderFetchedAt records when a provider ID fetch was last attempted.
-// The provider argument must be one of "audiodb", "discogs", "wikidata", "lastfm".
+// The provider argument must be a known provider name (e.g. "fanarttv", "audiodb").
 func (s *Service) UpdateProviderFetchedAt(ctx context.Context, artistID, prov string) error {
 	return s.providers.UpdateProviderFetchedAt(ctx, artistID, prov)
 }

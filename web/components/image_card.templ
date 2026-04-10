@@ -31,7 +31,9 @@ func isLowResolution(w, h int, imageType string) bool {
 	return img.IsLowResolution(w, h, imageType)
 }
 
-// normalizeCardImageType maps provider-specific types to base types for crop/compare.
+// normalizeCardImageType maps provider-specific image types (hdlogo, widethumb,
+// background) to their base types (logo, thumb, fanart). Used throughout the
+// image card for data attributes, resolution checks, saves, crop, and compare.
 func normalizeCardImageType(t string) string {
 	switch t {
 	case "hdlogo":
@@ -116,7 +118,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				type="button"
 				class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
-				hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": string(img.Type)}) }
+				hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": normalizeCardImageType(string(img.Type))}) }
 				hx-swap="none"
 				hx-confirm="Save this image?"
 				data-confirm-key="image-save"

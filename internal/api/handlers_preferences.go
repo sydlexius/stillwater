@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -26,6 +28,7 @@ const (
 	PrefReducedMotion       = "reduced_motion"
 	PrefLiteMode            = "lite_mode"
 	PrefLanguage            = "language"
+	PrefMetadataLanguages   = "metadata_languages"
 	PrefNotificationEnabled = "notification_enabled"
 	PrefPageSize            = "page_size"
 
@@ -104,6 +107,193 @@ func normalizePageSize(raw string) string {
 	return strconv.Itoa(n)
 }
 
+// normalizeMetadataLanguages validates and re-encodes a stored metadata_languages
+// value. Invalid or empty values fall back to MetadataLanguagesDefault. This is
+// the read-path counterpart to validateMetadataLanguages (used on write).
+func normalizeMetadataLanguages(raw string) string {
+	canonical, ok := validateMetadataLanguages(raw)
+	if !ok {
+		return MetadataLanguagesDefault
+	}
+	return canonical
+}
+
+// isMetadataLanguagesKey reports whether key is the metadata_languages preference key.
+// metadata_languages is stored as a JSON array of BCP 47 language tags and is
+// not listed in preferenceDefaults because its validation is structural (valid
+// JSON array of language-tag strings) rather than a fixed set.
+func isMetadataLanguagesKey(key string) bool {
+	return key == PrefMetadataLanguages
+}
+
+// MetadataLanguagesDefault is the default value for the metadata_languages
+// preference when no user preference is stored.
+const MetadataLanguagesDefault = `["en"]`
+
+// MetadataLanguagesMaxEntries limits how many language tags a user can store.
+const MetadataLanguagesMaxEntries = 20
+
+// validateMetadataLanguages checks that raw is a valid JSON array of BCP 47
+// language tags and returns the canonical JSON encoding together with whether
+// the value is valid.
+func validateMetadataLanguages(raw string) (string, bool) {
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return "", false
+	}
+	if len(tags) == 0 || len(tags) > MetadataLanguagesMaxEntries {
+		return "", false
+	}
+	seen := make(map[string]bool, len(tags))
+	normalized := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if tag == "" || !isValidLanguageTag(tag) {
+			return "", false
+		}
+		canon := normalizeLanguageTag(tag)
+		lower := strings.ToLower(canon)
+		if seen[lower] {
+			return "", false
+		}
+		seen[lower] = true
+		normalized = append(normalized, canon)
+	}
+	// Re-encode to canonical JSON with normalized casing.
+	canonical, err := json.Marshal(normalized)
+	if err != nil {
+		return "", false
+	}
+	return string(canonical), true
+}
+
+// isValidLanguageTag performs a lightweight check that s looks like a BCP 47
+// language tag (e.g. "en", "en-GB", "zh-Hant-TW"). The primary language subtag
+// must be 2-3 ASCII letters (ISO 639). Subsequent subtags are 1-8 alphanumeric
+// characters separated by hyphens.
+func isValidLanguageTag(s string) bool {
+	// 100-byte cap is a generous upper bound for any valid BCP 47 tag
+	// (including extended/private-use subtags) while still bounding input
+	// at the API boundary.
+	if len(s) == 0 || len(s) > 100 {
+		return false
+	}
+	parts := strings.Split(s, "-")
+	// Primary language subtag: must be 2-3 letters.
+	primary := parts[0]
+	if len(primary) < 2 || len(primary) > 3 {
+		return false
+	}
+	for _, c := range primary {
+		if !isASCIILetter(c) {
+			return false
+		}
+	}
+	// Subsequent subtags: 1-8 ASCII alphanumeric characters.
+	for _, p := range parts[1:] {
+		if len(p) == 0 || len(p) > 8 {
+			return false
+		}
+		for _, c := range p {
+			if !isASCIILetter(c) && !isASCIIDigit(c) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isASCIILetter(c rune) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isASCIIDigit(c rune) bool {
+	return c >= '0' && c <= '9'
+}
+
+// normalizeLanguageTag applies BCP 47 canonical casing: lowercase language,
+// title-case script (4 letters), uppercase region (2 letters).
+// e.g. "EN-gb" -> "en-GB", "zh-hant-tw" -> "zh-Hant-TW".
+// Extension subtags (introduced by a singleton letter like "u" or "t") are
+// preserved verbatim because their internal structure follows different rules.
+func normalizeLanguageTag(tag string) string {
+	parts := strings.Split(tag, "-")
+	// Primary language subtag: always lowercase.
+	parts[0] = strings.ToLower(parts[0])
+	for i := 1; i < len(parts); i++ {
+		p := parts[i]
+		// A single-letter subtag (a-w, y) is a BCP 47 singleton that starts
+		// an extension sequence. Stop applying casing rules from here onward
+		// because extension subtag semantics are extension-defined.
+		if len(p) == 1 && isASCIILetter(rune(p[0])) && p[0] != 'x' && p[0] != 'X' {
+			// Lowercase the singleton itself per convention, keep the rest as-is.
+			parts[i] = strings.ToLower(p)
+			break
+		}
+		// Private-use prefix "x" also stops structural casing.
+		if (p[0] == 'x' || p[0] == 'X') && len(p) == 1 {
+			parts[i] = "x"
+			break
+		}
+		switch {
+		case len(p) == 4:
+			// Script subtag: title-case (e.g. "Hant", "Latn").
+			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+		case len(p) == 2 && isASCIILetter(rune(p[0])):
+			// Region subtag: uppercase (e.g. "GB", "TW").
+			parts[i] = strings.ToUpper(p)
+		default:
+			// Variant or other subtag: lowercase by convention.
+			parts[i] = strings.ToLower(p)
+		}
+	}
+	return strings.Join(parts, "-")
+}
+
+// parseMetadataLanguages parses a stored metadata_languages JSON string into
+// a slice of language tags. Returns nil on parse failure.
+func parseMetadataLanguages(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return nil
+	}
+	return tags
+}
+
+// injectMetadataLanguages loads the user's metadata_languages preference from
+// the database and injects it into the context via provider.WithMetadataLanguages.
+// If the user has no stored preference, the default (["en"]) is used.
+// This allows all providers downstream to read language preferences from the context.
+func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return ctx
+	}
+
+	var raw string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
+		userID, PrefMetadataLanguages).Scan(&raw)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("querying metadata_languages preference, using default",
+				"user_id", userID, "error", err)
+		}
+		raw = MetadataLanguagesDefault
+	}
+
+	// Normalize stored tags so providers always receive canonical, deduplicated,
+	// bounded tags -- even if the DB row predates normalization.
+	normalized := normalizeMetadataLanguages(raw)
+	langs := parseMetadataLanguages(normalized)
+	if len(langs) == 0 {
+		langs = parseMetadataLanguages(MetadataLanguagesDefault)
+	}
+	return provider.WithMetadataLanguages(ctx, langs)
+}
+
 // isSuppressConfirmKey reports whether key is a valid per-action confirm
 // suppression preference (prefix "suppress_confirm_" followed by at least one
 // character that is a lowercase letter, digit, or underscore).
@@ -143,7 +333,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
-	if !known && !suppressKey && !pageSizeKey {
+	metaLangKey := isMetadataLanguagesKey(key)
+	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -163,6 +354,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = "false"
 		case pageSizeKey:
 			value = strconv.Itoa(PageSizeDefault)
+		case metaLangKey:
+			value = MetadataLanguagesDefault
 		default:
 			value = def.defaultValue
 		}
@@ -173,6 +366,16 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	if pageSizeKey {
 		if normalized := normalizePageSize(value); normalized != value {
 			r.logger.Warn("stored page_size normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
+		}
+	}
+
+	// Canonicalize metadata_languages so malformed or manually edited DB rows
+	// always return a valid JSON array of BCP 47 tags.
+	if metaLangKey {
+		if normalized := normalizeMetadataLanguages(value); normalized != value {
+			r.logger.Warn("stored metadata_languages normalized on read",
 				"user_id", userID, "raw_value", value, "normalized", normalized)
 			value = normalized
 		}
@@ -191,12 +394,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults (fixed keys + page_size).
-	prefs := make(map[string]string, len(preferenceDefaults)+1)
+	// Start with defaults (fixed keys + page_size + metadata_languages).
+	prefs := make(map[string]string, len(preferenceDefaults)+2)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
+	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -216,7 +420,7 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		// page_size is valid but not in preferenceDefaults (range-based, not enum).
+		// page_size and metadata_languages are valid but not in preferenceDefaults.
 		_, known := preferenceDefaults[k]
 		if known {
 			prefs[k] = v
@@ -224,6 +428,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			normalized := normalizePageSize(v)
 			if normalized != v {
 				r.logger.Warn("stored page_size normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
+			}
+			prefs[k] = normalized
+		} else if isMetadataLanguagesKey(k) {
+			normalized := normalizeMetadataLanguages(v)
+			if normalized != v {
+				r.logger.Warn("stored metadata_languages normalized on read",
 					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
 			prefs[k] = normalized
@@ -255,7 +466,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
-	if !known && !suppressKey && !pageSizeKey {
+	metaLangKey := isMetadataLanguagesKey(key)
+	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -270,6 +482,7 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	// Validate value against allowed list.
 	// suppress_confirm_* keys only accept "true" or "false".
 	// page_size must be an integer in [PageSizeMin, PageSizeMax].
+	// metadata_languages must be a JSON array of valid language tags.
 	var valid bool
 	switch {
 	case suppressKey:
@@ -280,6 +493,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		if valid {
 			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
 			body.Value = strconv.Itoa(n)
+		}
+	case metaLangKey:
+		canonical, ok := validateMetadataLanguages(body.Value)
+		valid = ok
+		if valid {
+			body.Value = canonical
 		}
 	default:
 		for _, allowed := range def.allowedValues {
