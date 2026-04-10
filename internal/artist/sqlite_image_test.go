@@ -340,3 +340,43 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 		t.Error("LowRes should be true after second UpsertAll")
 	}
 }
+
+// TestClearExistsFlag verifies that ClearExistsFlag sets the exists_flag to 0
+// for the targeted image slot without affecting other slots.
+func TestClearExistsFlag(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Flag Test", "/music/FlagTest")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Set the thumb flag.
+	a.ThumbExists = true
+	a.FanartExists = true
+	if err := svc.Update(ctx, a); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Clear only the thumb flag.
+	if err := svc.ClearImageFlag(ctx, a.ID, "thumb", 0); err != nil {
+		t.Fatalf("ClearImageFlag: %v", err)
+	}
+
+	// Verify thumb is cleared but fanart is still set.
+	images, err := svc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+
+	for _, im := range images {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			t.Error("thumb exists_flag should be false after ClearImageFlag")
+		}
+		if im.ImageType == "fanart" && im.SlotIndex == 0 && !im.Exists {
+			t.Error("fanart exists_flag should still be true")
+		}
+	}
+}

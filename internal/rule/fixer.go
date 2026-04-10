@@ -121,6 +121,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			result.ArtistsProcessed++
 			var perRuleMetadata bool
 			var perRuleImages []string
+			var perRuleDirty bool
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -210,6 +211,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					perRuleDirty = true
 					if fr.ImageType != "" {
 						perRuleImages = append(perRuleImages, fr.ImageType)
 					} else {
@@ -235,6 +237,14 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+				}
+			}
+
+			// Persist any in-memory changes that fixers made to the artist
+			// model (e.g. updated Path after a directory rename).
+			if perRuleDirty {
+				if err := p.artistService.Update(ctx, a); err != nil {
+					p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
 				}
 			}
 
@@ -265,6 +275,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 
 	var metadataFixed bool
 	var fixedImageTypes []string
+	var artistDirty bool // tracks whether the artist model was modified by a fixer
 
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
@@ -358,6 +369,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		if fr.Fixed {
 			result.FixesSucceeded++
 			status = ViolationStatusResolved
+			artistDirty = true
 			if fr.ImageType != "" {
 				fixedImageTypes = append(fixedImageTypes, fr.ImageType)
 			} else {
@@ -383,6 +395,14 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		}
 		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 			p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+		}
+	}
+
+	// Persist any in-memory changes that fixers made to the artist model
+	// (e.g. updated Path after a directory rename, NFOExists after NFO creation).
+	if artistDirty {
+		if err := p.artistService.Update(ctx, a); err != nil {
+			p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
 		}
 	}
 
@@ -423,6 +443,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 			result.ArtistsProcessed++
 			var perArtistMetadata bool
 			var perArtistImages []string
+			var perArtistDirty bool
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -517,6 +538,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					perArtistDirty = true
 					if fr.ImageType != "" {
 						perArtistImages = append(perArtistImages, fr.ImageType)
 					} else {
@@ -542,6 +564,14 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				}
+			}
+
+			// Persist any in-memory changes that fixers made to the artist
+			// model (e.g. updated Path after a directory rename).
+			if perArtistDirty {
+				if err := p.artistService.Update(ctx, a); err != nil {
+					p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
 				}
 			}
 

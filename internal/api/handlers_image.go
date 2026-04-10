@@ -1042,6 +1042,25 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	filePath, found := img.FindExistingImage(dir, patterns)
 	if !found {
+		// If the DB flag says the image exists but the file is gone, clear
+		// the stale flag so subsequent UI renders show a placeholder instead
+		// of a broken image tag. This is best-effort and non-blocking.
+		if imageExistsFlag(a, imageType) {
+			go func() { //nolint:gosec // Background context is intentional: this goroutine outlives the request.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:gosec
+				defer cancel()
+				if err := r.artistService.ClearImageFlag(ctx, a.ID, imageType, 0); err != nil {
+					r.logger.Warn("failed to clear stale image flag",
+						slog.String("artist_id", a.ID),
+						slog.String("image_type", imageType),
+						slog.String("error", err.Error()))
+				} else {
+					r.logger.Info("cleared stale image flag",
+						slog.String("artist_id", a.ID),
+						slog.String("image_type", imageType))
+				}
+			}()
+		}
 		http.NotFound(w, req)
 		return
 	}
@@ -1052,6 +1071,23 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	// served fresh on the very next request (including a normal F5 reload).
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, req, filePath)
+}
+
+// imageExistsFlag returns the value of the exists flag for the given image
+// type on the artist model. Returns false for unknown image types.
+func imageExistsFlag(a *artist.Artist, imageType string) bool {
+	switch imageType {
+	case "thumb":
+		return a.ThumbExists
+	case "fanart":
+		return a.FanartExists
+	case "logo":
+		return a.LogoExists
+	case "banner":
+		return a.BannerExists
+	default:
+		return false
+	}
 }
 
 // handleImageInfo returns metadata about a local artist image (dimensions, file size).

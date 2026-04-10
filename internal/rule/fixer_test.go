@@ -1873,3 +1873,181 @@ func TestLogoPaddingFixer_FixViaAPI_EmptyData(t *testing.T) {
 		t.Errorf("Message = %q", fr.Message)
 	}
 }
+
+// TestPipeline_FixViolation_DirectoryRename_PersistsPath verifies that when a
+// directory rename fix succeeds through the pipeline, the new path is persisted
+// to the database (not just updated in-memory on the artist struct).
+func TestPipeline_FixViolation_DirectoryRename_PersistsPath(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Create a library with non-shared FS so the rename is not blocked.
+	libSvc := library.NewService(db)
+	tmp := t.TempDir()
+	lib := &library.Library{
+		Name:   "Test Library",
+		Path:   tmp,
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := libSvc.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Create a directory whose name differs from the artist name.
+	oldPath := filepath.Join(tmp, "Wrong Name")
+	if err := os.MkdirAll(oldPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a file to verify it moves.
+	if err := os.WriteFile(filepath.Join(oldPath, "artist.nfo"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Correct Name",
+		SortName:  "Correct Name",
+		Path:      oldPath,
+		LibraryID: lib.ID,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Create a violation for the directory name mismatch.
+	rv := &RuleViolation{
+		RuleID:     RuleDirectoryNameMismatch,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "warning",
+		Message:    "directory 'Wrong Name' does not match expected 'Correct Name'",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+
+	logger := testLogger()
+	fsCheck := NewSharedFSCheck(libSvc, logger)
+	fixer := NewDirectoryRenameFixer(fsCheck, logger)
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if !fr.Fixed {
+		t.Fatalf("Fixed = false, want true; message: %s", fr.Message)
+	}
+
+	// The key assertion: reload the artist from the database and verify the
+	// path was persisted, not just updated in the in-memory struct.
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after fix: %v", err)
+	}
+
+	expectedPath := filepath.Join(tmp, "Correct Name")
+	if reloaded.Path != expectedPath {
+		t.Errorf("reloaded.Path = %q, want %q", reloaded.Path, expectedPath)
+	}
+
+	// Verify the file was actually moved.
+	data, err := os.ReadFile(filepath.Join(expectedPath, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading moved file: %v", err)
+	}
+	if string(data) != "test" {
+		t.Errorf("file content = %q, want %q", data, "test")
+	}
+}
+
+// TestPipeline_RunForArtist_PersistsArtistChanges verifies that RunForArtist
+// calls Update on the artist after a fixer modifies it in-memory (e.g. setting
+// a path or flag). This was a bug where fixers modified the artist struct but
+// the changes were never written to the database.
+func TestPipeline_RunForArtist_PersistsArtistChanges(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Set the nfo_exists rule to auto mode so RunForArtist will fix it.
+	nfoRule, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting nfo_exists rule: %v", err)
+	}
+	nfoRule.AutomationMode = AutomationModeAuto
+	if err := ruleSvc.Update(ctx, nfoRule); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	dir := t.TempDir()
+	a := &artist.Artist{
+		Name:     "Auto Fix Artist",
+		SortName: "Auto Fix Artist",
+		Path:     dir,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// A mock fixer that sets a field on the artist model when it fixes.
+	pathFixer := &mockArtistMutatingFixer{
+		canFixRuleID: RuleNFOExists,
+		mutate: func(a *artist.Artist) {
+			a.Biography = "set-by-fixer"
+		},
+	}
+
+	logger := testLogger()
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{pathFixer}, nil, logger)
+
+	result, err := pipeline.RunForArtist(ctx, a)
+	if err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+	if result.FixesSucceeded == 0 {
+		t.Fatal("expected at least one successful fix")
+	}
+
+	// Reload from DB and verify the mutation was persisted.
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after RunForArtist: %v", err)
+	}
+	if reloaded.Biography != "set-by-fixer" {
+		t.Errorf("Biography = %q, want %q (fixer mutation not persisted)", reloaded.Biography, "set-by-fixer")
+	}
+}
+
+// mockArtistMutatingFixer is a test fixer that modifies the artist in-memory
+// when Fix is called, used to verify that pipeline methods persist the changes.
+type mockArtistMutatingFixer struct {
+	canFixRuleID string
+	mutate       func(a *artist.Artist)
+}
+
+func (m *mockArtistMutatingFixer) CanFix(v *Violation) bool {
+	return v.RuleID == m.canFixRuleID
+}
+
+func (m *mockArtistMutatingFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if m.mutate != nil {
+		m.mutate(a)
+	}
+	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "mock mutated artist"}, nil
+}
