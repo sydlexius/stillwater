@@ -1974,6 +1974,22 @@ func TestSortImageResults(t *testing.T) {
 		}
 	})
 
+	t.Run("default sort falls back to resolution when all likes are zero", func(t *testing.T) {
+		imgs := []provider.ImageResult{
+			{URL: "a.jpg", Likes: 0, Width: 100, Height: 100},   // area=10000
+			{URL: "b.jpg", Likes: 0, Width: 50, Height: 50},     // area=2500
+			{URL: "c.jpg", Likes: 0, Width: 1000, Height: 1000}, // area=1000000
+			{URL: "d.jpg", Likes: 0, Width: 200, Height: 200},   // area=40000
+		}
+
+		sortImageResults(imgs, "")
+
+		if imgs[0].URL != "c.jpg" || imgs[1].URL != "d.jpg" || imgs[2].URL != "a.jpg" || imgs[3].URL != "b.jpg" {
+			t.Errorf("expected resolution fallback order [c,d,a,b], got [%s, %s, %s, %s]",
+				imgs[0].URL, imgs[1].URL, imgs[2].URL, imgs[3].URL)
+		}
+	})
+
 	t.Run("unknown sort falls back to likes default", func(t *testing.T) {
 		imgs := make([]provider.ImageResult, len(images))
 		copy(imgs, images)
