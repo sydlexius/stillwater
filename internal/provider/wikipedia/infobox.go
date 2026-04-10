@@ -1,6 +1,7 @@
 package wikipedia
 
 import (
+	"html"
 	"strings"
 	"unicode"
 )
@@ -613,6 +614,10 @@ func splitOnBR(s string) []string {
 // cleanYearsActive normalizes a years_active value.
 // Strips markup and normalizes common patterns like "1985-present", "{{start date|1985}}".
 func cleanYearsActive(s string) string {
+	// Decode HTML entities first so that &ndash; &#8211; etc. become actual
+	// Unicode characters before any further processing removes or normalizes them.
+	s = html.UnescapeString(s)
+
 	s = stripRefs(s)
 	s = stripHTMLTags(s)
 
