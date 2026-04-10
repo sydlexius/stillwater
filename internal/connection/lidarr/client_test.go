@@ -109,6 +109,24 @@ func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	}
 }
 
+func TestCheckNFOWriterEnabled_SingleObject(t *testing.T) {
+	// Newer Lidarr versions return a single object instead of an array
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNFOWriterEnabled (single object) failed: %v", err)
+	}
+	if !enabled {
+		t.Error("expected NFO writer to be enabled from single object response")
+	}
+}
+
 func TestCheckNFOWriterEnabled_False(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -192,6 +210,33 @@ func TestGetMetadataConsumers(t *testing.T) {
 	}
 	if consumers[1].Enabled {
 		t.Error("expected second consumer to be disabled")
+	}
+}
+
+func TestGetMetadataConsumers_SingleObject(t *testing.T) {
+	// Newer Lidarr versions return a single object instead of an array
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/config/metadataprovider" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	consumers, err := c.GetMetadataConsumers(context.Background())
+	if err != nil {
+		t.Fatalf("GetMetadataConsumers (single object): %v", err)
+	}
+	if len(consumers) != 1 {
+		t.Fatalf("got %d consumers, want 1", len(consumers))
+	}
+	if consumers[0].ConsumerName != "Kodi (XBMC) / Emby" {
+		t.Errorf("consumer = %q, want Kodi (XBMC) / Emby", consumers[0].ConsumerName)
+	}
+	if !consumers[0].Enabled {
+		t.Error("expected consumer to be enabled")
 	}
 }
 
