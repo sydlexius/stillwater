@@ -408,7 +408,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
 								@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
 								@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
-								@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+								if !isGroupType(data.Artist.Type) {
+									@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+								}
 								@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
 								@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
 								@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
@@ -956,6 +958,17 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 	</div>
 }
 
+// isGroupType reports whether the artist type is a group-like type where
+// the Gender field is not applicable (groups, orchestras, choirs).
+func isGroupType(artistType string) bool {
+	switch strings.ToLower(artistType) {
+	case "group", "orchestra", "choir":
+		return true
+	default:
+		return false
+	}
+}
+
 // normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
 func normalizeTab(tab string) string {
 	switch tab {
@@ -1086,19 +1099,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
 		<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
-			<div class="flex items-center gap-2">
-				<span class="font-medium text-sm">{ conn.Name }</span>
-				<span
-					class={
-						"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-						templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
-						templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
-					}
-				>{ conn.Type }</span>
-				if state.IsLocked {
-					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
-				}
-			</div>
+			@platformStateHeaderBadges(conn, state)
 			<div class="flex items-center gap-2">
 				<button
 					type="button"
@@ -1121,63 +1122,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 				</button>
 			</div>
 		</div>
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
-				<thead>
-					<tr class="border-b border-gray-200 dark:border-gray-700">
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "artist.platform") }</th>
-						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-					@platformStateRow(t(ctx, "artist.biography"),
-						truncate(a.Biography, 80),
-						truncate(state.Biography, 80),
-						fieldMatch(a.Biography, state.Biography),
-						a.Biography == "" && state.Biography == "")
-					@platformStateRow(t(ctx, "artist.genres"),
-						strings.Join(a.Genres, ", "),
-						strings.Join(state.Genres, ", "),
-						sliceMatch(a.Genres, state.Genres),
-						len(a.Genres) == 0 && len(state.Genres) == 0)
-					@platformStateRow(t(ctx, "artist.formed_premiere_date"),
-						firstNonEmpty(a.Formed, a.Born),
-						state.PremiereDate,
-						fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-						firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
-					@platformStateRow(t(ctx, "artist.disbanded_end_date"),
-						firstNonEmpty(a.Disbanded, a.Died),
-						state.EndDate,
-						fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-						firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
-					@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
-						a.MusicBrainzID,
-						state.MusicBrainzID,
-						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-						a.MusicBrainzID == "" && state.MusicBrainzID == "")
-					<tr>
-						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
-						<td class="px-4 py-2">
-							@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
-							@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
-							@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
-							@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
-						</td>
-						<td class="px-4 py-2">
-							@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
-							@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
-							@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
-							@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
-						</td>
-						<td class="px-4 py-2 text-center">
-							<span class="text-gray-300 dark:text-gray-600">--</span>
-						</td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
+		@platformStateTable(a, conn, state, profileName, t(ctx, "artist.platform"), false)
 	</div>
 }
 
@@ -1197,57 +1142,73 @@ templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, s
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
 		// Header: connection name + type badge + lock badge. No action buttons.
 		<div class="flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
-			<div class="flex items-center gap-2">
-				<span class="font-medium text-sm">{ conn.Name }</span>
-				<span
-					class={
-						"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-						templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
-						templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
-					}
-				>{ conn.Type }</span>
-				if state.IsLocked {
-					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
-				}
-			</div>
+			@platformStateHeaderBadges(conn, state)
 		</div>
-		// Comparison table with all fields including Sort Name, Tags, Backdrop Count, Locked, Locked Fields
-		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
-				<thead>
-					<tr class="border-b border-gray-200 dark:border-gray-700">
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ conn.Name }</th>
-						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-					@platformStateRow(t(ctx, "artist.biography"),
-						truncate(a.Biography, 80),
-						truncate(state.Biography, 80),
-						fieldMatch(a.Biography, state.Biography),
-						a.Biography == "" && state.Biography == "")
-					@platformStateRow(t(ctx, "artist.genres"),
-						strings.Join(a.Genres, ", "),
-						strings.Join(state.Genres, ", "),
-						sliceMatch(a.Genres, state.Genres),
-						len(a.Genres) == 0 && len(state.Genres) == 0)
-					@platformStateRow(t(ctx, "artist.formed_premiere_date"),
-						firstNonEmpty(a.Formed, a.Born),
-						state.PremiereDate,
-						fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-						firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
-					@platformStateRow(t(ctx, "artist.disbanded_end_date"),
-						firstNonEmpty(a.Disbanded, a.Died),
-						state.EndDate,
-						fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-						firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
-					@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
-						a.MusicBrainzID,
-						state.MusicBrainzID,
-						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-						a.MusicBrainzID == "" && state.MusicBrainzID == "")
+		@platformStateTable(a, conn, state, profileName, conn.Name, true)
+	</div>
+}
+
+// platformStateHeaderBadges renders the connection name, type badge, and lock
+// badge shared by both PlatformStateCard and PlatformStateCardReadOnly.
+templ platformStateHeaderBadges(conn *connection.Connection, state *connection.ArtistPlatformState) {
+	<div class="flex items-center gap-2">
+		<span class="font-medium text-sm">{ conn.Name }</span>
+		<span
+			class={
+				"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+				templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
+				templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+			}
+		>{ conn.Type }</span>
+		if state.IsLocked {
+			<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
+		}
+	</div>
+}
+
+// platformStateTable renders the comparison table shared by PlatformStateCard
+// and PlatformStateCardReadOnly. The platformLabel is the column header for the
+// platform side ("Platform" for the Providers tab, the connection name for Debug).
+// When readonly is true, extra debug-only rows (sort name, tags, backdrop count,
+// locked, locked fields) are included.
+templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName, platformLabel string, readonly bool) {
+	<div class="overflow-x-auto">
+		<table class="w-full text-sm">
+			<thead>
+				<tr class="border-b border-gray-200 dark:border-gray-700">
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
+					<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ platformLabel }</th>
+					<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+				@platformStateRow(t(ctx, "artist.biography"),
+					truncate(a.Biography, 80),
+					truncate(state.Biography, 80),
+					fieldMatch(a.Biography, state.Biography),
+					a.Biography == "" && state.Biography == "")
+				@platformStateRow(t(ctx, "artist.genres"),
+					strings.Join(a.Genres, ", "),
+					strings.Join(state.Genres, ", "),
+					sliceMatch(a.Genres, state.Genres),
+					len(a.Genres) == 0 && len(state.Genres) == 0)
+				@platformStateRow(t(ctx, "artist.formed_premiere_date"),
+					firstNonEmpty(a.Formed, a.Born),
+					state.PremiereDate,
+					fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
+				@platformStateRow(t(ctx, "artist.disbanded_end_date"),
+					firstNonEmpty(a.Disbanded, a.Died),
+					state.EndDate,
+					fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
+				@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
+					a.MusicBrainzID,
+					state.MusicBrainzID,
+					fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+					a.MusicBrainzID == "" && state.MusicBrainzID == "")
+				if readonly {
 					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
 						a.SortName,
 						state.SortName,
@@ -1273,27 +1234,27 @@ templ PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, s
 						strings.Join(state.LockedFields, ", "),
 						false,
 						true)
-					<tr>
-						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
-						<td class="px-4 py-2">
-							@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
-							@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
-							@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
-							@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
-						</td>
-						<td class="px-4 py-2">
-							@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
-							@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
-							@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
-							@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
-						</td>
-						<td class="px-4 py-2 text-center">
-							<span class="text-gray-300 dark:text-gray-600">--</span>
-						</td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
+				}
+				<tr>
+					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
+					<td class="px-4 py-2">
+						@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
+						@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
+						@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
+						@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
+					</td>
+					<td class="px-4 py-2">
+						@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
+						@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
+						@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
+						@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
+					</td>
+					<td class="px-4 py-2 text-center">
+						<span class="text-gray-300 dark:text-gray-600">--</span>
+					</td>
+				</tr>
+			</tbody>
+		</table>
 	</div>
 }
 
