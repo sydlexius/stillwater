@@ -10,8 +10,10 @@ post_bump = []
 [build]
 working_dir = "."
 pre_checks = [
-    # Wait for all CI checks on main to pass before tagging
-    "echo 'Waiting for CI on main...' && gh run list --branch main --limit 1 --json databaseId,status --jq '.[0]' && gh run watch $(gh run list --branch main --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status",
+    # Wait for ALL workflow runs on the current main tip to pass before tagging.
+    # Uses --commit <SHA> so every parallel workflow (CI, Security, etc.) is
+    # checked, not just whichever run happens to be most recent on the branch.
+    "sha=$(gh api repos/sydlexius/stillwater/git/ref/heads/main --jq .object.sha) && echo \"Checking all CI runs for main (${sha:0:7})...\" && gh run list --commit \"$sha\" --json databaseId --jq '.[].databaseId' | xargs -r -I{} gh run watch {} --exit-status && echo \"All runs passed\"",
     # Run local deterministic checks
     "bash scripts/pre-push-gate.sh",
 ]
