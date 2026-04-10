@@ -2026,6 +2026,11 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 // DB so that exists_flag=1 stays accurate without a separate cleanup pass.
 // GET /api/v1/images/random-backdrop
 func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) {
+	// Resolve naming patterns before opening the rows cursor. Drain the cursor
+	// into a slice before doing per-artist lookups so that the single-connection
+	// pool is never held by two concurrent queries.
+	patterns := r.getActiveNamingConfig(req.Context(), "fanart")
+
 	rows, err := r.db.QueryContext(req.Context(),
 		`SELECT artist_id FROM artist_images
 		 WHERE image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1
@@ -2035,19 +2040,35 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close() //nolint:errcheck
 
-	patterns := r.getActiveNamingConfig(req.Context(), "fanart")
-
-	for rows.Next() {
-		var artistID string
-		if err := rows.Scan(&artistID); err != nil {
-			r.logger.Error("random backdrop scan failed", slog.String("error", err.Error()))
-			continue
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Warn("random backdrop rows close failed", slog.String("error", err.Error()))
 		}
+	}()
 
+	var artistIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			r.logger.Error("random backdrop scan failed", slog.String("error", err.Error()))
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		artistIDs = append(artistIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		r.logger.Error("random backdrop iteration failed", slog.String("error", err.Error()))
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	for _, artistID := range artistIDs {
 		a, err := r.artistService.GetByID(req.Context(), artistID)
 		if err != nil {
+			r.logger.Warn("random backdrop artist lookup failed",
+				slog.String("artist_id", artistID),
+				slog.String("error", err.Error()))
 			continue
 		}
 
@@ -2071,12 +2092,6 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 
 		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, req, filePath)
-		return
-	}
-
-	if err := rows.Err(); err != nil {
-		r.logger.Error("random backdrop iteration failed", slog.String("error", err.Error()))
-		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 

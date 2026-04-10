@@ -1820,3 +1820,91 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 	}
 	t.Error("thumb exists_flag should have been cleared after serving a missing file (timed out)")
 }
+
+// TestHandleRandomBackdrop_ServesValidFile verifies that the endpoint serves
+// an existing fanart file and returns 200.
+func TestHandleRandomBackdrop_ServesValidFile(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Backdrop Artist", SortName: "Backdrop Artist", Path: dir}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 100, 56)
+
+	// Insert the artist_images row directly to avoid the full placeholder
+	// generation pipeline that setArtistImageFlag runs.
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES (lower(hex(randomblob(16))), ?, 'fanart', 0, 1)
+		 ON CONFLICT (artist_id, image_type, slot_index) DO UPDATE SET exists_flag = 1`,
+		a.ID); err != nil {
+		t.Fatalf("seeding artist_images: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	w := httptest.NewRecorder()
+	r.handleRandomBackdrop(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+// TestHandleRandomBackdrop_ClearsStaleFlag verifies that when the DB says fanart
+// exists but the file is missing, the endpoint returns 404 and synchronously
+// clears the stale exists_flag so the entry is not returned again.
+func TestHandleRandomBackdrop_ClearsStaleFlag(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Stale Backdrop", SortName: "Stale Backdrop", Path: dir}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Seed the flag without creating a file so it is immediately stale.
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES (lower(hex(randomblob(16))), ?, 'fanart', 0, 1)
+		 ON CONFLICT (artist_id, image_type, slot_index) DO UPDATE SET exists_flag = 1`,
+		a.ID); err != nil {
+		t.Fatalf("seeding artist_images: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	w := httptest.NewRecorder()
+	r.handleRandomBackdrop(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	for _, im := range images {
+		if im.ImageType == "fanart" && im.SlotIndex == 0 && im.Exists {
+			t.Error("fanart exists_flag should have been cleared after file was missing")
+		}
+	}
+}
+
+// TestHandleRandomBackdrop_EmptyPool verifies that the endpoint returns 404
+// when no artists have fanart flagged as existing.
+func TestHandleRandomBackdrop_EmptyPool(t *testing.T) {
+	r, _ := testRouterWithPlatform(t)
+
+	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	w := httptest.NewRecorder()
+	r.handleRandomBackdrop(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
