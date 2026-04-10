@@ -4530,6 +4530,8 @@ paths:
                   - notification_enabled
                   - page_size
                   - metadata_languages
+                  - auto_fetch_images
+                  - bg_opacity
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
@@ -4599,6 +4601,8 @@ paths:
                   - notification_enabled
                   - page_size
                   - metadata_languages
+                  - auto_fetch_images
+                  - bg_opacity
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:

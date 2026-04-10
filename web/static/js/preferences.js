@@ -109,8 +109,26 @@
       root.setAttribute(attr, value);
     }
 
+    // When lite mode changes, sync the inline --sw-glass-bg property:
+    // clear it when lite is on (let CSS control opacity), reapply when off.
+    if (key === 'lite_mode') {
+      if (value === 'on') {
+        root.style.removeProperty('--sw-glass-bg');
+      } else {
+        var cached = readCache() || {};
+        var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+        applySingle('bg_opacity', opacityVal);
+      }
+    }
+
     // bg_opacity updates the --sw-glass-bg CSS custom property directly.
+    // Skip when lite mode is active -- lite mode forces an opaque background
+    // via CSS and the inline style would override it.
     if (key === 'bg_opacity') {
+      if (root.getAttribute('data-lite') === 'on') {
+        root.style.removeProperty('--sw-glass-bg');
+        return;
+      }
       var pct = parseInt(value, 10) / 100;
       if (isNaN(pct)) pct = 0.65;
       var isDark = root.classList.contains('dark');

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -108,6 +109,22 @@ const (
 	BgOpacityMin     = 20
 	BgOpacityMax     = 100
 )
+
+// normalizeBoolPref returns "true" or "false" for a raw preference string.
+// Any value other than "true" or "false" is treated as the given fallback.
+// Logs a warning when the raw value is unexpected (e.g. manual DB edits).
+func normalizeBoolPref(raw, fallback string) string {
+	switch raw {
+	case "true", "false":
+		return raw
+	default:
+		if raw != "" {
+			slog.Warn("normalized unexpected boolean preference value",
+				"raw_value", raw, "fallback", fallback)
+		}
+		return fallback
+	}
+}
 
 // normalizeBgOpacity parses a raw bg_opacity string and returns the canonical
 // decimal form when it is a valid integer in [BgOpacityMin, BgOpacityMax].
@@ -466,7 +483,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		// page_size, bg_opacity, and metadata_languages are valid but not in preferenceDefaults.
 		_, known := preferenceDefaults[k]
 		if known {
-			prefs[k] = v
+			// Boolean preferences need normalization in case of manual DB edits.
+			def := preferenceDefaults[k]
+			if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
+				prefs[k] = normalizeBoolPref(v, def.defaultValue)
+			} else {
+				prefs[k] = v
+			}
 		} else if isPageSizeKey(k) {
 			normalized := normalizePageSize(v)
 			if normalized != v {
@@ -664,7 +687,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		FontSize:          pref(PrefFontSize),
 		LiteMode:          pref(PrefLiteMode),
 		PageSize:          pageSize,
-		AutoFetchImages:   pref(PrefAutoFetchImages),
+		AutoFetchImages:   normalizeBoolPref(pref(PrefAutoFetchImages), "false"),
 		BackgroundOpacity: bgOpacity,
 	}
 
