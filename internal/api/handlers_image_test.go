@@ -1791,7 +1791,8 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 	}
 
 	// The flag clearing happens asynchronously; poll until it takes effect.
-	deadline := time.Now().Add(2 * time.Second)
+	// The background goroutine uses a 5s context timeout, so allow 6s here.
+	deadline := time.Now().Add(6 * time.Second)
 	for time.Now().Before(deadline) {
 		images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
 		if err != nil {

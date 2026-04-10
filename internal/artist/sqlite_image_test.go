@@ -371,12 +371,26 @@ func TestClearExistsFlag(t *testing.T) {
 		t.Fatalf("GetImagesForArtist: %v", err)
 	}
 
+	foundThumb := false
+	foundFanart := false
 	for _, im := range images {
-		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
-			t.Error("thumb exists_flag should be false after ClearImageFlag")
+		if im.ImageType == "thumb" && im.SlotIndex == 0 {
+			foundThumb = true
+			if im.Exists {
+				t.Error("thumb exists_flag should be false after ClearImageFlag")
+			}
 		}
-		if im.ImageType == "fanart" && im.SlotIndex == 0 && !im.Exists {
-			t.Error("fanart exists_flag should still be true")
+		if im.ImageType == "fanart" && im.SlotIndex == 0 {
+			foundFanart = true
+			if !im.Exists {
+				t.Error("fanart exists_flag should still be true")
+			}
 		}
+	}
+	if !foundThumb {
+		t.Error("expected thumb image slot 0 to be present")
+	}
+	if !foundFanart {
+		t.Error("expected fanart image slot 0 to be present")
 	}
 }
