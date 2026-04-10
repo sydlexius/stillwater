@@ -662,7 +662,14 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			// then triggers an HTMX content reload so the artist list matches
 			// the URL state. Used by both pageshow (bfcache) and popstate
 			// (history back/forward) handlers.
+			//
+			// A debounce guard prevents duplicate calls when bfcache restore
+			// fires both pageshow and popstate in quick succession.
+			var _restoreLastRun = 0;
 			function restoreStateFromURL() {
+				var now = Date.now();
+				if (now - _restoreLastRun < 100) return;
+				_restoreLastRun = now;
 				var params = new URLSearchParams(window.location.search);
 				// Re-sync flyout chip states from URL.
 				if (window.swFilterFlyout) {
@@ -677,11 +684,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var el = document.querySelector('select[name="' + name + '"]');
 					if (el) el.value = (val !== null) ? val : '';
 				});
-				// Sync hidden inputs from URL params.
+				// Sync hidden inputs from URL params, resetting to markup
+				// defaults when a param is absent so browser history
+				// restoration cannot retain stale values from a newer state.
 				['view', 'sort', 'order'].forEach(function(name) {
 					var val = params.get(name);
 					var el = document.getElementById('artist-' + name + '-input');
-					if (el && val !== null) el.value = val;
+					if (el) el.value = (val !== null) ? val : el.defaultValue;
 				});
 				// Update visible sort labels and view toggle to match restored state.
 				var sortInput = document.getElementById('artist-sort-input');
