@@ -162,10 +162,14 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		// Read a small prefix for diagnostics and drain the rest so the
+		// transport can reuse the connection.
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // cap at 1 MB
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
@@ -175,20 +179,23 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 		return nil, nil
 	}
 
-	// Determine shape by checking the first byte: '[' means array, '{' means object
-	if body[0] == '[' {
+	// Determine shape by checking the first byte: '[' means array, '{' means object.
+	switch body[0] {
+	case '[':
 		var configs []MetadataProviderConfig
 		if err := json.Unmarshal(body, &configs); err != nil {
 			return nil, fmt.Errorf("decoding array response: %w", err)
 		}
 		return configs, nil
+	case '{':
+		var single MetadataProviderConfig
+		if err := json.Unmarshal(body, &single); err != nil {
+			return nil, fmt.Errorf("decoding object response: %w", err)
+		}
+		return []MetadataProviderConfig{single}, nil
+	default:
+		return nil, fmt.Errorf("unexpected JSON root type %q in response", string(body[:1]))
 	}
-
-	var single MetadataProviderConfig
-	if err := json.Unmarshal(body, &single); err != nil {
-		return nil, fmt.Errorf("decoding object response: %w", err)
-	}
-	return []MetadataProviderConfig{single}, nil
 }
 
 func (c *Client) setAuth(req *http.Request) {

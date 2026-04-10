@@ -154,7 +154,7 @@ func (a *Adapter) getVQDFromMainPage(ctx context.Context, query string) (string,
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config, not user input
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +181,7 @@ func (a *Adapter) getVQDFromHTMLPage(ctx context.Context, query string) (string,
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config, not user input
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
 	if err != nil {
 		return "", err
 	}
@@ -236,7 +236,7 @@ func (a *Adapter) fetchImages(ctx context.Context, query, vqd string) ([]imageHi
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", a.baseURL+"/")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config, not user input
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
 	if err != nil {
 		return nil, err
 	}

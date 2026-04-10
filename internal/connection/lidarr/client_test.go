@@ -112,6 +112,15 @@ func TestCheckNFOWriterEnabled_True(t *testing.T) {
 func TestCheckNFOWriterEnabled_SingleObject(t *testing.T) {
 	// Newer Lidarr versions return a single object instead of an array
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/config/metadataprovider" {
+			t.Errorf("path = %s, want /api/v1/config/metadataprovider", r.URL.Path)
+		}
+		if r.Header.Get("X-Api-Key") != "key" {
+			t.Errorf("X-Api-Key = %q, want key", r.Header.Get("X-Api-Key"))
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`))
 	}))
@@ -216,8 +225,14 @@ func TestGetMetadataConsumers(t *testing.T) {
 func TestGetMetadataConsumers_SingleObject(t *testing.T) {
 	// Newer Lidarr versions return a single object instead of an array
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
 		if r.URL.Path != "/api/v1/config/metadataprovider" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+			t.Errorf("path = %s, want /api/v1/config/metadataprovider", r.URL.Path)
+		}
+		if r.Header.Get("X-Api-Key") != "key" {
+			t.Errorf("X-Api-Key = %q, want key", r.Header.Get("X-Api-Key"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`))
