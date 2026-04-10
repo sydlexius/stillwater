@@ -46,19 +46,13 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleArtistsBadge returns an HTML fragment with the total artist count for the
-// sidebar badge. The response is intentionally lightweight: it fetches only the
-// total count (page_size=1) rather than the full artist list.
+// sidebar badge. Uses the dedicated Count() path to avoid fetching and hydrating
+// full artist rows.
 // GET /api/v1/artists/badge
 func (r *Router) handleArtistsBadge(w http.ResponseWriter, req *http.Request) {
-	params := artist.ListParams{
-		Page:     1,
-		PageSize: 1,
-	}
-	params.Validate()
-
 	w.Header().Set("Cache-Control", "no-store")
 
-	_, total, err := r.artistService.List(req.Context(), params)
+	total, err := r.artistService.Count(req.Context(), artist.CountParams{})
 	if err != nil {
 		r.logger.Error("fetching artist count for badge", "error", err)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

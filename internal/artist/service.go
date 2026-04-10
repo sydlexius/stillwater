@@ -286,6 +286,13 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 	return artists, total, nil
 }
 
+// Count returns the total number of artists matching the given filters without
+// fetching or hydrating any row data. Prefer this over List when only the count
+// is needed (e.g., sidebar badge).
+func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
+	return s.artists.Count(ctx, params)
+}
+
 // Update modifies an existing artist and persists its provider IDs and image metadata.
 // Note: if provider or image persistence fails after the artist row is updated,
 // we cannot rollback the artist update (the old data is already overwritten).

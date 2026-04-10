@@ -239,6 +239,21 @@ func (r *sqliteArtistRepo) List(ctx context.Context, params ListParams) ([]Artis
 	return artists, total, nil
 }
 
+// Count returns the number of artists matching the given filter parameters
+// using a lightweight SELECT COUNT(*) query. It reuses buildWhereClause for
+// consistent filtering with List.
+func (r *sqliteArtistRepo) Count(ctx context.Context, params CountParams) (int, error) {
+	lp := params.toListParams()
+	lp.Validate()
+
+	where, args := buildWhereClause(lp)
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM artists"+where, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("counting artists: %w", err)
+	}
+	return total, nil
+}
+
 func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	a.UpdatedAt = time.Now().UTC()
 
