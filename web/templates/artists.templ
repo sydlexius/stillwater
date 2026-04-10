@@ -657,43 +657,64 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}
 			});
 
+			// restoreStateFromURL syncs all filter controls, hidden inputs,
+			// sort labels, and view toggle from the current URL query params,
+			// then triggers an HTMX content reload so the artist list matches
+			// the URL state. Used by both pageshow (bfcache) and popstate
+			// (history back/forward) handlers.
+			function restoreStateFromURL() {
+				var params = new URLSearchParams(window.location.search);
+				// Re-sync flyout chip states from URL.
+				if (window.swFilterFlyout) {
+					swFilterFlyout.initFromURL('artist-filters-flyout');
+				}
+				// Sync the search input from URL params.
+				var searchEl = document.getElementById('artist-search');
+				if (searchEl) searchEl.value = params.get('search') || '';
+				// Sync select elements from URL params.
+				['library_id'].forEach(function(name) {
+					var val = params.get(name);
+					var el = document.querySelector('select[name="' + name + '"]');
+					if (el) el.value = (val !== null) ? val : '';
+				});
+				// Sync hidden inputs from URL params.
+				['view', 'sort', 'order'].forEach(function(name) {
+					var val = params.get(name);
+					var el = document.getElementById('artist-' + name + '-input');
+					if (el && val !== null) el.value = val;
+				});
+				// Update visible sort labels and view toggle to match restored state.
+				var sortInput = document.getElementById('artist-sort-input');
+				var orderInput = document.getElementById('artist-order-input');
+				if (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);
+				var viewInput = document.getElementById('artist-view-input');
+				if (viewInput) {
+					var colToggle = document.getElementById('col-toggle-wrapper');
+					if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
+				}
+				var _rsMeta = document.querySelector('meta[name="htmx-base-path"]');
+				var _rsBp = _rsMeta ? _rsMeta.content : '';
+				var _rsPath = window.location.pathname;
+				if (_rsBp && _rsPath.startsWith(_rsBp)) { _rsPath = _rsPath.slice(_rsBp.length) || '/'; }
+				htmx.ajax('GET', _rsPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+			}
+
 			// When the page is restored from bfcache (browser back/forward navigation),
 			// sync filter controls from the URL query params and reload content so
 			// status badges reflect the latest state.
 			window.addEventListener('pageshow', function(evt) {
 				if (evt.persisted) {
-					var params = new URLSearchParams(window.location.search);
-					// Re-sync flyout chip states from URL.
-					if (window.swFilterFlyout) {
-						swFilterFlyout.initFromURL('artist-filters-flyout');
-					}
-					// Sync select elements from URL params.
-					['library_id'].forEach(function(name) {
-						var val = params.get(name);
-						var el = document.querySelector('select[name="' + name + '"]');
-						if (el) el.value = (val !== null) ? val : '';
-					});
-					// Sync hidden inputs from URL params.
-					['view', 'sort', 'order'].forEach(function(name) {
-						var val = params.get(name);
-						var el = document.getElementById('artist-' + name + '-input');
-						if (el && val !== null) el.value = val;
-					});
-					// Update visible sort labels and view toggle to match restored state.
-					var sortInput = document.getElementById('artist-sort-input');
-					var orderInput = document.getElementById('artist-order-input');
-					if (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);
-					var viewInput = document.getElementById('artist-view-input');
-					if (viewInput) {
-						var colToggle = document.getElementById('col-toggle-wrapper');
-						if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
-					}
-					var _psMeta = document.querySelector('meta[name="htmx-base-path"]');
-					var _psBp = _psMeta ? _psMeta.content : '';
-					var _psPath = window.location.pathname;
-					if (_psBp && _psPath.startsWith(_psBp)) { _psPath = _psPath.slice(_psBp.length) || '/'; }
-					htmx.ajax('GET', _psPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+					restoreStateFromURL();
 				}
+			});
+
+			// Handle browser back/forward navigation between pushState entries
+			// (e.g. filter changes, pagination). Without this, pressing back after
+			// applying filters and navigating away would show stale content even
+			// though the URL contains the correct filter params. Works in Firefox
+			// and all major browsers.
+			window.addEventListener('popstate', function() {
+				restoreStateFromURL();
 			});
 
 			(function() {
