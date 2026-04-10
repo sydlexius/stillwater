@@ -1,0 +1,48 @@
+# Release configuration for /push-release skill
+
+[versioning]
+# Dev fallback version file -- bumped to match the tag so `go run` shows the
+# correct version even without ldflags.
+file = "internal/version/version.go"
+pattern = 'Version = "{version}"'
+post_bump = []
+
+[build]
+working_dir = "."
+pre_checks = [
+    # Wait for ALL workflow runs on the current main tip to pass before tagging.
+    # Uses --commit <SHA> so every parallel workflow (CI, Security, etc.) is
+    # checked, not just whichever run happens to be most recent on the branch.
+    # Captures run IDs first and fails explicitly if the list is empty (xargs -r
+    # would silently succeed with no input, producing a false green).
+    # --limit 100 prevents the default cap of 20 from truncating the list.
+    "sha=$(gh api repos/sydlexius/stillwater/git/ref/heads/main --jq .object.sha) || { echo \"Failed to fetch main HEAD SHA\"; exit 1; }; echo \"Checking all CI runs for main (${sha:0:7})...\"; run_ids=$(gh run list --commit \"$sha\" --limit 100 --json databaseId --jq '.[].databaseId'); if [ -z \"$run_ids\" ]; then echo \"No workflow runs found for $sha\" && exit 1; fi; echo \"$run_ids\" | xargs -I{} gh run watch {} --exit-status && echo \"All runs passed\"",
+    # Run local deterministic checks
+    "bash scripts/pre-push-gate.sh",
+]
+
+[release_notes]
+# Map GitHub PR labels to release note sections.  PRs are grouped by the first
+# matching label; unmatched PRs fall into default_group.
+default_group = "Other Changes"
+
+[release_notes.group_labels]
+enhancement = "New Features"
+bug         = "Bug Fixes"
+ux          = "UX Improvements"
+database    = "Database"
+documentation = "Documentation"
+technical-debt = "Technical Debt"
+testing     = "Testing"
+automation  = "Automation"
+providers   = "Provider Updates"
+scanner     = "Scanner"
+rules       = "Rules Engine"
+images      = "Image Management"
+webhooks    = "Webhooks"
+emby        = "Emby"
+jellyfin    = "Jellyfin"
+reports     = "Reports"
+
+[release]
+tag_prefix = "v"
