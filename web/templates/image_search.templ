@@ -694,7 +694,8 @@ templ imageSearchGeneric(data ImageSearchData) {
 // imageSortBar renders an inline sort control for image search result grids.
 // Sorting is performed client-side by reordering DOM elements based on
 // data attributes (data-img-likes, data-img-area) already present on each card.
-templ imageSortBar() {
+// activeSort reflects the server-side sort so the dropdown shows the correct selection.
+templ imageSortBar(activeSort string) {
 	<div class="image-sort-bar flex items-center justify-end gap-2 mb-3">
 		<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.sort_by") }</span>
 		<select
@@ -702,19 +703,19 @@ templ imageSortBar() {
 			class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1"
 			onchange="sortImageGrid(this.value, this)"
 		>
-			<option value="likes">{ t(ctx, "image.sort_likes") }</option>
-			<option value="resolution">{ t(ctx, "image.sort_resolution") }</option>
+			<option value="likes" selected?={ activeSort != "resolution" }>{ t(ctx, "image.sort_likes") }</option>
+			<option value="resolution" selected?={ activeSort == "resolution" }>{ t(ctx, "image.sort_resolution") }</option>
 		</select>
 	</div>
 }
 
 // ImageSearchResults renders the grid of image results from providers.
 // This is used as an HTMX partial response.
-templ ImageSearchResults(artistID string, images []provider.ImageResult) {
+templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
 	} else {
-		@imageSortBar()
+		@imageSortBar(activeSort)
 		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
 				@components.ImageCard(artistID, img)
@@ -725,12 +726,12 @@ templ ImageSearchResults(artistID string, images []provider.ImageResult) {
 
 // FanartSearchResults renders the grid of fanart search results with checkboxes
 // for multi-select and a floating "Save All" bar for bulk download.
-templ FanartSearchResults(artistID string, images []provider.ImageResult) {
+templ FanartSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
 	} else {
 		<div id="fanart-search-results" data-artist-id={ artistID }>
-			@imageSortBar()
+			@imageSortBar(activeSort)
 			<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for i, img := range images {
 					<div
@@ -845,14 +846,14 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 
 // WebImageSearchResults renders the grid of web search image results.
 // This is used as an HTMX partial response for the "Extend Search" flow.
-templ WebImageSearchResults(artistID string, images []provider.ImageResult) {
+templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_web_search") }</p>
 	} else {
 		<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">
 			{ t(ctx, "image.web_search_warning") }
 		</p>
-		@imageSortBar()
+		@imageSortBar(activeSort)
 		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
 				@components.ImageCard(artistID, img)

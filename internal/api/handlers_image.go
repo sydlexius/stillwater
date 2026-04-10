@@ -459,15 +459,19 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	images = r.probeImageDimensions(req.Context(), images)
 
 	// Sort images by the requested criterion (default: likes descending).
+	// Normalize unknown sort values so only valid values propagate to templates.
 	sortBy := req.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
+		sortBy = ""
+	}
 	sortImageResults(images, sortBy)
 
 	// Return HTML for HTMX requests, JSON for API requests
 	if isHTMXRequest(req) {
 		if typeFilter == "fanart" {
-			renderTempl(w, req, templates.FanartSearchResults(artistID, images))
+			renderTempl(w, req, templates.FanartSearchResults(artistID, images, sortBy))
 		} else {
-			renderTempl(w, req, templates.ImageSearchResults(artistID, images))
+			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy))
 		}
 		return
 	}
@@ -522,8 +526,15 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		allImages = append(allImages, images...)
 	}
 
+	// Sort web search results the same way as the main image search.
+	sortBy := req.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
+		sortBy = ""
+	}
+	sortImageResults(allImages, sortBy)
+
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages))
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy))
 		return
 	}
 

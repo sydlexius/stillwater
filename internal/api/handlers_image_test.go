@@ -1944,6 +1944,15 @@ func TestSortImageResults(t *testing.T) {
 		if imgs[0].URL != "d.jpg" {
 			t.Errorf("expected d.jpg first, got %s", imgs[0].URL)
 		}
+		if imgs[1].URL != "b.jpg" {
+			t.Errorf("expected b.jpg second, got %s", imgs[1].URL)
+		}
+		if imgs[2].URL != "a.jpg" {
+			t.Errorf("expected a.jpg third, got %s", imgs[2].URL)
+		}
+		if imgs[3].URL != "c.jpg" {
+			t.Errorf("expected c.jpg fourth, got %s", imgs[3].URL)
+		}
 	})
 
 	t.Run("resolution sorts by area descending then likes", func(t *testing.T) {
