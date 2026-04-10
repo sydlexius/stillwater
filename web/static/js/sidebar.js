@@ -115,8 +115,7 @@
       }
 
       // When a link specifies data-query, require the query parameter is
-      // present. This distinguishes "Reports" from "Open Violations" on the
-      // same path prefix.
+      // present in the URL for the link to be considered active.
       if (isActive && linkQuery) {
         isActive = ('&' + search.substring(1) + '&').indexOf('&' + linkQuery + '&') !== -1;
       }

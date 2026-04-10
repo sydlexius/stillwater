@@ -370,7 +370,6 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BadgeSeverityError:      r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
 		BadgeSeverityWarning:    r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
 		BadgeSeverityInfo:       r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
-		SidebarShowViolations:   r.getBoolSetting(req.Context(), "sidebar_show_violations", true),
 		APITokens:               apiTokens,
 		RuleScheduleMinutes:     r.ruleScheduleMinutes(req.Context()),
 		BackupRetention:         r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),

@@ -205,7 +205,7 @@ templ DashboardActionHeader(data ActionQueueData) {
 
 // DashboardFilterChips renders the category filter pills for the action queue.
 templ DashboardFilterChips(counts map[string]int, activeCategory string, basePath string) {
-	<div class="flex flex-wrap gap-2 mt-3">
+	<div class="flex flex-wrap gap-2 mt-3 px-1">
 		<button
 			hx-get="/dashboard/actions"
 			hx-target="#action-queue"
