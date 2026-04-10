@@ -69,6 +69,45 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				}
 			}
 			<script>
+				// sortImageGrid reorders the children of the nearest .image-sort-grid
+				// based on the selected sort criterion. Each child card must have
+				// data-img-likes and data-img-area attributes. triggerEl scopes
+				// the sort to the grid that is a sibling of the sort bar's container.
+				function sortImageGrid(criterion, triggerEl) {
+					var grid = null;
+					if (triggerEl) {
+						var container = triggerEl.closest('.image-sort-bar');
+						if (container && container.nextElementSibling &&
+							container.nextElementSibling.classList.contains('image-sort-grid')) {
+							grid = container.nextElementSibling;
+						}
+					}
+					if (!grid) {
+						if (triggerEl) {
+							console.warn('sortImageGrid: scoped traversal failed, falling back to first grid');
+						}
+						grid = document.querySelector('.image-sort-grid');
+					}
+					if (!grid) return;
+					var items = Array.prototype.slice.call(grid.children);
+					items.sort(function(a, b) {
+						var aLikes = parseInt(a.dataset.imgLikes || '0', 10);
+						var bLikes = parseInt(b.dataset.imgLikes || '0', 10);
+						var aArea = parseInt(a.dataset.imgArea || '0', 10);
+						var bArea = parseInt(b.dataset.imgArea || '0', 10);
+						if (criterion === 'resolution') {
+							if (aArea !== bArea) return bArea - aArea;
+							return bLikes - aLikes;
+						}
+						// Default: likes
+						if (aLikes !== bLikes) return bLikes - aLikes;
+						return bArea - aArea;
+					});
+					for (var i = 0; i < items.length; i++) {
+						grid.appendChild(items[i]);
+					}
+				}
+
 				var _cropper = null;
 				var _currentRatio = NaN;
 				var _pendingRatio = NaN;
@@ -652,13 +691,32 @@ templ imageSearchGeneric(data ImageSearchData) {
 	</div>
 }
 
+// imageSortBar renders an inline sort control for image search result grids.
+// Sorting is performed client-side by reordering DOM elements based on
+// data attributes (data-img-likes, data-img-area) already present on each card.
+// activeSort reflects the server-side sort so the dropdown shows the correct selection.
+templ imageSortBar(activeSort string) {
+	<div class="image-sort-bar flex items-center justify-end gap-2 mb-3">
+		<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.sort_by") }</span>
+		<select
+			aria-label={ t(ctx, "image.sort_by") }
+			class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1"
+			onchange="sortImageGrid(this.value, this)"
+		>
+			<option value="likes" selected?={ activeSort != "resolution" }>{ t(ctx, "image.sort_likes") }</option>
+			<option value="resolution" selected?={ activeSort == "resolution" }>{ t(ctx, "image.sort_resolution") }</option>
+		</select>
+	</div>
+}
+
 // ImageSearchResults renders the grid of image results from providers.
 // This is used as an HTMX partial response.
-templ ImageSearchResults(artistID string, images []provider.ImageResult) {
+templ ImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_providers") }</p>
 	} else {
-		<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+		@imageSortBar(activeSort)
+		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
 				@components.ImageCard(artistID, img)
 			}
@@ -668,12 +726,13 @@ templ ImageSearchResults(artistID string, images []provider.ImageResult) {
 
 // FanartSearchResults renders the grid of fanart search results with checkboxes
 // for multi-select and a floating "Save All" bar for bulk download.
-templ FanartSearchResults(artistID string, images []provider.ImageResult) {
+templ FanartSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_fanart_from_providers") }</p>
 	} else {
 		<div id="fanart-search-results" data-artist-id={ artistID }>
-			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+			@imageSortBar(activeSort)
+			<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for i, img := range images {
 					<div
 						class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
@@ -682,6 +741,8 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 						data-img-source={ img.Source }
 						data-img-width={ strconv.Itoa(img.Width) }
 						data-img-height={ strconv.Itoa(img.Height) }
+						data-img-likes={ strconv.Itoa(img.Likes) }
+						data-img-area={ strconv.Itoa(img.Width * img.Height) }
 					>
 						<label class="cursor-pointer">
 							<input
@@ -785,14 +846,15 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 
 // WebImageSearchResults renders the grid of web search image results.
 // This is used as an HTMX partial response for the "Extend Search" flow.
-templ WebImageSearchResults(artistID string, images []provider.ImageResult) {
+templ WebImageSearchResults(artistID string, images []provider.ImageResult, activeSort string) {
 	if len(images) == 0 {
 		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">{ t(ctx, "image.no_images_from_web_search") }</p>
 	} else {
 		<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">
 			{ t(ctx, "image.web_search_warning") }
 		</p>
-		<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+		@imageSortBar(activeSort)
+		<div class="image-sort-grid grid grid-cols-2 sm:grid-cols-3 gap-3">
 			for _, img := range images {
 				@components.ImageCard(artistID, img)
 			}

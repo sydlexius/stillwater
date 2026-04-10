@@ -22,6 +22,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -1907,4 +1908,96 @@ func TestHandleRandomBackdrop_EmptyPool(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
+}
+
+func TestSortImageResults(t *testing.T) {
+	images := []provider.ImageResult{
+		{URL: "a.jpg", Likes: 5, Width: 100, Height: 100},   // area=10000
+		{URL: "b.jpg", Likes: 10, Width: 50, Height: 50},    // area=2500
+		{URL: "c.jpg", Likes: 0, Width: 1000, Height: 1000}, // area=1000000
+		{URL: "d.jpg", Likes: 10, Width: 200, Height: 200},  // area=40000
+	}
+
+	t.Run("default sorts by likes descending then resolution", func(t *testing.T) {
+		imgs := make([]provider.ImageResult, len(images))
+		copy(imgs, images)
+		sortImageResults(imgs, "")
+		// Likes 10 (area 40000) > Likes 10 (area 2500) > Likes 5 > Likes 0
+		if imgs[0].URL != "d.jpg" {
+			t.Errorf("expected d.jpg first, got %s", imgs[0].URL)
+		}
+		if imgs[1].URL != "b.jpg" {
+			t.Errorf("expected b.jpg second, got %s", imgs[1].URL)
+		}
+		if imgs[2].URL != "a.jpg" {
+			t.Errorf("expected a.jpg third, got %s", imgs[2].URL)
+		}
+		if imgs[3].URL != "c.jpg" {
+			t.Errorf("expected c.jpg fourth, got %s", imgs[3].URL)
+		}
+	})
+
+	t.Run("likes sorts by likes descending", func(t *testing.T) {
+		imgs := make([]provider.ImageResult, len(images))
+		copy(imgs, images)
+		sortImageResults(imgs, "likes")
+		if imgs[0].URL != "d.jpg" {
+			t.Errorf("expected d.jpg first, got %s", imgs[0].URL)
+		}
+		if imgs[1].URL != "b.jpg" {
+			t.Errorf("expected b.jpg second, got %s", imgs[1].URL)
+		}
+		if imgs[2].URL != "a.jpg" {
+			t.Errorf("expected a.jpg third, got %s", imgs[2].URL)
+		}
+		if imgs[3].URL != "c.jpg" {
+			t.Errorf("expected c.jpg fourth, got %s", imgs[3].URL)
+		}
+	})
+
+	t.Run("resolution sorts by area descending then likes", func(t *testing.T) {
+		imgs := make([]provider.ImageResult, len(images))
+		copy(imgs, images)
+		sortImageResults(imgs, "resolution")
+		// area 1000000 > area 40000 > area 10000 > area 2500
+		if imgs[0].URL != "c.jpg" {
+			t.Errorf("expected c.jpg first (largest area), got %s", imgs[0].URL)
+		}
+		if imgs[1].URL != "d.jpg" {
+			t.Errorf("expected d.jpg second, got %s", imgs[1].URL)
+		}
+		if imgs[2].URL != "a.jpg" {
+			t.Errorf("expected a.jpg third, got %s", imgs[2].URL)
+		}
+		if imgs[3].URL != "b.jpg" {
+			t.Errorf("expected b.jpg fourth (smallest area), got %s", imgs[3].URL)
+		}
+	})
+
+	t.Run("default sort falls back to resolution when all likes are zero", func(t *testing.T) {
+		imgs := []provider.ImageResult{
+			{URL: "a.jpg", Likes: 0, Width: 100, Height: 100},   // area=10000
+			{URL: "b.jpg", Likes: 0, Width: 50, Height: 50},     // area=2500
+			{URL: "c.jpg", Likes: 0, Width: 1000, Height: 1000}, // area=1000000
+			{URL: "d.jpg", Likes: 0, Width: 200, Height: 200},   // area=40000
+		}
+
+		sortImageResults(imgs, "")
+
+		if imgs[0].URL != "c.jpg" || imgs[1].URL != "d.jpg" || imgs[2].URL != "a.jpg" || imgs[3].URL != "b.jpg" {
+			t.Errorf("expected resolution fallback order [c,d,a,b], got [%s, %s, %s, %s]",
+				imgs[0].URL, imgs[1].URL, imgs[2].URL, imgs[3].URL)
+		}
+	})
+
+	t.Run("unknown sort falls back to likes default", func(t *testing.T) {
+		imgs := make([]provider.ImageResult, len(images))
+		copy(imgs, images)
+		sortImageResults(imgs, "bogus")
+		// Same expected order as default: likes desc, then area desc
+		if imgs[0].URL != "d.jpg" || imgs[1].URL != "b.jpg" || imgs[2].URL != "a.jpg" || imgs[3].URL != "c.jpg" {
+			t.Errorf("unexpected fallback order: got [%s, %s, %s, %s]",
+				imgs[0].URL, imgs[1].URL, imgs[2].URL, imgs[3].URL)
+		}
+	})
 }

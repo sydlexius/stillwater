@@ -458,22 +458,20 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	// Probe dimensions for images that have none (e.g., Fanart.tv)
 	images = r.probeImageDimensions(req.Context(), images)
 
-	// Sort by likes (descending), then by resolution (descending)
-	sort.Slice(images, func(i, j int) bool {
-		if images[i].Likes != images[j].Likes {
-			return images[i].Likes > images[j].Likes
-		}
-		areaI := images[i].Width * images[i].Height
-		areaJ := images[j].Width * images[j].Height
-		return areaI > areaJ
-	})
+	// Sort images by the requested criterion (default: likes descending).
+	// Normalize unknown sort values so only valid values propagate to templates.
+	sortBy := req.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
+		sortBy = ""
+	}
+	sortImageResults(images, sortBy)
 
 	// Return HTML for HTMX requests, JSON for API requests
 	if isHTMXRequest(req) {
 		if typeFilter == "fanart" {
-			renderTempl(w, req, templates.FanartSearchResults(artistID, images))
+			renderTempl(w, req, templates.FanartSearchResults(artistID, images, sortBy))
 		} else {
-			renderTempl(w, req, templates.ImageSearchResults(artistID, images))
+			renderTempl(w, req, templates.ImageSearchResults(artistID, images, sortBy))
 		}
 		return
 	}
@@ -528,8 +526,15 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		allImages = append(allImages, images...)
 	}
 
+	// Sort web search results the same way as the main image search.
+	sortBy := req.URL.Query().Get("sort")
+	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
+		sortBy = ""
+	}
+	sortImageResults(allImages, sortBy)
+
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages))
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages, sortBy))
 		return
 	}
 
@@ -891,6 +896,32 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	}
 
 	return images
+}
+
+// sortImageResults sorts images by the given criterion. Valid values are
+// "likes" (descending, then resolution), "resolution" (descending, then
+// likes). An empty or unrecognized value defaults to "likes".
+func sortImageResults(images []provider.ImageResult, sortBy string) {
+	switch sortBy {
+	case "resolution":
+		sort.Slice(images, func(i, j int) bool {
+			areaI := images[i].Width * images[i].Height
+			areaJ := images[j].Width * images[j].Height
+			if areaI != areaJ {
+				return areaI > areaJ
+			}
+			return images[i].Likes > images[j].Likes
+		})
+	default: // "likes" or empty
+		sort.Slice(images, func(i, j int) bool {
+			if images[i].Likes != images[j].Likes {
+				return images[i].Likes > images[j].Likes
+			}
+			areaI := images[i].Width * images[i].Height
+			areaJ := images[j].Width * images[j].Height
+			return areaI > areaJ
+		})
+	}
 }
 
 // setArtistImageFlag sets the image existence, low-resolution, and placeholder flags and persists them.

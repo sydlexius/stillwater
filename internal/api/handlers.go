@@ -1225,6 +1225,9 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("template render failed", //nolint:gosec // G706: err is a Go error from templ.Render, not raw user input
+			slog.String("path", r.URL.Path),
+			slog.String("error", err.Error()))
 		http.Error(w, "render error", http.StatusInternalServerError)
 	}
 }
