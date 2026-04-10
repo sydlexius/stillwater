@@ -32,7 +32,11 @@ var searchTerms = map[provider.ImageType]string{
 	provider.ImageBanner: "band banner header wide",
 }
 
-var vqdRegex = regexp.MustCompile(`vqd=([0-9-]+)`)
+// vqdRegex matches VQD tokens in various DDG response formats:
+//   - vqd=4-123456789 (query parameter style)
+//   - vqd='4-123456789' (single-quoted in script tags)
+//   - vqd="4-123456789" (double-quoted in script tags)
+var vqdRegex = regexp.MustCompile(`vqd=["']?([0-9a-zA-Z_-]+)["']?`)
 
 // Adapter implements provider.WebImageProvider for DuckDuckGo image search.
 type Adapter struct {
@@ -121,16 +125,36 @@ func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType
 }
 
 // getVQDToken obtains the validation query digest token from DuckDuckGo.
+// It first tries the main search page (GET /?q=QUERY), which embeds the VQD
+// token in a script tag or inline JS. Falls back to the HTML endpoint
+// (POST /html/) for compatibility with older DDG response formats.
 func (a *Adapter) getVQDToken(ctx context.Context, query string) (string, error) {
-	form := url.Values{"q": {query}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.htmlURL+"/html/", strings.NewReader(form.Encode()))
+	// Try the main search page first (current DDG format)
+	token, err := a.getVQDFromMainPage(ctx, query)
+	if err == nil && token != "" {
+		return token, nil
+	}
+
+	a.logger.Debug("main page VQD extraction failed, trying HTML endpoint",
+		slog.String("query", query),
+		slog.Any("error", err))
+
+	// Fall back to HTML endpoint (older DDG format)
+	return a.getVQDFromHTMLPage(ctx, query)
+}
+
+// getVQDFromMainPage extracts the VQD token from the main DuckDuckGo search page.
+func (a *Adapter) getVQDFromMainPage(ctx context.Context, query string) (string, error) {
+	params := url.Values{"q": {query}}
+	reqURL := a.baseURL + "/?" + params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/html")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config, not user input
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
 	if err != nil {
 		return "", err
 	}
@@ -144,12 +168,44 @@ func (a *Adapter) getVQDToken(ctx context.Context, query string) (string, error)
 		}
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	return a.extractVQD(resp.Body)
+}
+
+// getVQDFromHTMLPage extracts the VQD token from the legacy HTML search endpoint.
+func (a *Adapter) getVQDFromHTMLPage(ctx context.Context, query string) (string, error) {
+	form := url.Values{"q": {query}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.htmlURL+"/html/", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameDuckDuckGo,
+			Cause:    fmt.Errorf("VQD request returned status %d", resp.StatusCode),
+		}
+	}
+
+	return a.extractVQD(resp.Body)
+}
+
+// extractVQD reads the response body and extracts the VQD token using regex.
+func (a *Adapter) extractVQD(body io.Reader) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(body, 512*1024))
 	if err != nil {
 		return "", err
 	}
 
-	matches := vqdRegex.FindSubmatch(body)
+	matches := vqdRegex.FindSubmatch(data)
 	if len(matches) < 2 {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameDuckDuckGo,
@@ -180,7 +236,7 @@ func (a *Adapter) fetchImages(ctx context.Context, query, vqd string) ([]imageHi
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", a.baseURL+"/")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config, not user input
+	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
 	if err != nil {
 		return nil, err
 	}

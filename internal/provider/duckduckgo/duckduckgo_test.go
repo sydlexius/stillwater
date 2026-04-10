@@ -23,13 +23,15 @@ func loadFixture(t *testing.T, name string) []byte {
 func TestSearchImages(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 
-	// Mock server that serves VQD token page and image results
+	// Mock server that serves VQD token page and image results.
+	// The main page (GET /) returns the VQD in a script tag, matching
+	// the current DDG response format.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/html/" && r.Method == http.MethodPost:
-			// Return HTML containing VQD token
+		case r.URL.Path == "/" && r.Method == http.MethodGet && r.URL.Query().Get("q") != "":
+			// Main search page with VQD token in script tag
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<html><script>vqd=12345-67890&</script></html>`))
+			w.Write([]byte(`<html><script>vqd='4-12345_abc-DEF'</script></html>`))
 		case r.URL.Path == "/i.js":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(loadFixture(t, "search_radiohead_thumb.json"))
@@ -75,10 +77,10 @@ func TestSearchImagesEmpty(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/html/":
-			w.Write([]byte(`<html><script>vqd=12345&</script></html>`))
-		case "/i.js":
+		switch {
+		case r.URL.Path == "/" && r.URL.Query().Get("q") != "":
+			w.Write([]byte(`<html><script>vqd='12345'</script></html>`))
+		case r.URL.Path == "/i.js":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"results":[]}`))
 		default:
@@ -103,10 +105,10 @@ func TestSearchImagesServerError(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/html/":
-			w.Write([]byte(`<html><script>vqd=12345&</script></html>`))
-		case "/i.js":
+		switch {
+		case r.URL.Path == "/" && r.URL.Query().Get("q") != "":
+			w.Write([]byte(`<html><script>vqd='12345'</script></html>`))
+		case r.URL.Path == "/i.js":
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -168,11 +170,71 @@ func TestName(t *testing.T) {
 	}
 }
 
+func TestVQDFallbackToHTML(t *testing.T) {
+	limiter := provider.NewRateLimiterMap()
+
+	// Main page returns no VQD, but HTML endpoint does (fallback path)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/" && r.URL.Query().Get("q") != "":
+			// Main page without VQD token
+			w.Write([]byte(`<html><body>no token here</body></html>`))
+		case r.URL.Path == "/html/" && r.Method == http.MethodPost:
+			// Legacy HTML endpoint with VQD
+			w.Write([]byte(`<html><script>vqd=98765&</script></html>`))
+		case r.URL.Path == "/i.js":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(loadFixture(t, "search_radiohead_thumb.json"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+
+	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
+	if err != nil {
+		t.Fatalf("SearchImages with HTML fallback: %v", err)
+	}
+	if len(images) != 3 {
+		t.Fatalf("expected 3 images, got %d", len(images))
+	}
+}
+
+func TestVQDTokenFormats(t *testing.T) {
+	// Test that the regex matches various DDG VQD token formats
+	tests := []struct {
+		name  string
+		html  string
+		token string
+	}{
+		{"numeric with dash", `vqd=4-123456789`, "4-123456789"},
+		{"single quoted", `vqd='4-abc_DEF-123'`, "4-abc_DEF-123"},
+		{"double quoted", `vqd="4-abc_DEF-123"`, "4-abc_DEF-123"},
+		{"alphanumeric", `vqd=abc123_DEF`, "abc123_DEF"},
+		{"in script tag", `<script>vqd='token-42';</script>`, "token-42"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matches := vqdRegex.FindStringSubmatch(tt.html)
+			if len(matches) < 2 {
+				t.Fatalf("regex did not match: %s", tt.html)
+			}
+			if matches[1] != tt.token {
+				t.Errorf("got token %q, want %q", matches[1], tt.token)
+			}
+		})
+	}
+}
+
 func TestSearchImagesContextCanceled(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<html><script>vqd=12345&</script></html>`))
+		w.Write([]byte(`<html><script>vqd='12345'</script></html>`))
 	}))
 	defer srv.Close()
 
