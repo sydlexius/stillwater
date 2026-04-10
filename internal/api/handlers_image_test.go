@@ -1726,3 +1726,97 @@ func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleServeImage_ClearsStaleFlag verifies that when the DB says an image
+// exists but the file is missing on disk, the serve endpoint returns 404 and
+// asynchronously clears the stale exists flag so subsequent UI renders show a
+// placeholder instead of a broken image.
+func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Stale Flag", SortName: "Stale Flag", Path: dir}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a thumb so the flag is set, then delete the file.
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	r.setArtistImageFlag(ctx, a, "thumb", true)
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true after setting flag")
+	}
+
+	// Verify the flag was persisted to the DB before testing its cleanup.
+	// Checking only the in-memory field would let this test pass even if the
+	// DB write regressed, since the poll loop below checks DB state.
+	preImages, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist (precondition): %v", err)
+	}
+	thumbPersisted := false
+	for _, im := range preImages {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			thumbPersisted = true
+			break
+		}
+	}
+	if !thumbPersisted {
+		t.Fatal("precondition: thumb image row Exists not persisted to DB before file removal")
+	}
+	preReloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID (precondition): %v", err)
+	}
+	if !preReloaded.ThumbExists {
+		t.Fatal("precondition: artist.ThumbExists not persisted to DB before file removal")
+	}
+
+	if err := os.Remove(filepath.Join(dir, "folder.jpg")); err != nil {
+		t.Fatalf("removing image: %v", err)
+	}
+
+	// Request the image file via the serve endpoint.
+	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID)
+	req := httptest.NewRequest("GET", url, nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+
+	r.handleServeImage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	// The flag clearing happens asynchronously; poll until it takes effect.
+	// The background goroutine uses a 5s context timeout, so allow 6s here.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetImagesForArtist: %v", err)
+		}
+		cleared := true
+		for _, im := range images {
+			if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+				cleared = false
+				break
+			}
+		}
+		if cleared {
+			// Also verify the model-level flag reflects the cleared state.
+			updated, err := artistSvc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading artist: %v", err)
+			}
+			if updated.ThumbExists {
+				t.Error("artist.ThumbExists should be false after flag clear")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Error("thumb exists_flag should have been cleared after serving a missing file (timed out)")
+}

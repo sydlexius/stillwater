@@ -219,6 +219,22 @@ func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageT
 	return nil
 }
 
+// ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
+// This is a best-effort update used when a previously existing image file is
+// confirmed missing on disk, so that subsequent UI renders show a placeholder
+// instead of a broken image.
+func (r *sqliteImageRepo) ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images SET exists_flag = 0
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+		artistID, imageType, slotIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("clearing exists flag for %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	return nil
+}
+
 func (r *sqliteImageRepo) DeleteByArtistID(ctx context.Context, artistID string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM artist_images WHERE artist_id = ?`, artistID)
 	if err != nil {

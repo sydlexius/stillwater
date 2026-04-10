@@ -350,6 +350,14 @@ func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType
 	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, source, fileFormat, lastWrittenAt)
 }
 
+// ClearImageFlag sets the exists flag to false for a single image slot.
+// This is called when a request to serve an image discovers the file is
+// missing on disk, clearing the stale flag so subsequent UI renders show a
+// placeholder instead of a broken image tag.
+func (s *Service) ClearImageFlag(ctx context.Context, artistID, imageType string, slotIndex int) error {
+	return s.images.ClearExistsFlag(ctx, artistID, imageType, slotIndex)
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API. This includes both direct-column fields (in
 // fieldColumnMap) and provider-ID fields (in providerFieldMap).

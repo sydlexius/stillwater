@@ -72,6 +72,10 @@ type ImageRepository interface {
 	Upsert(ctx context.Context, img *ArtistImage) error
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
+	// ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
+	// Used to mark stale image entries when the file is confirmed missing on disk.
+	ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error
+
 	DeleteByArtistID(ctx context.Context, artistID string) error
 
 	// NewestWriteTimesByArtist returns a map of artist_id to their most recent

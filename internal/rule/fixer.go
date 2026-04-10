@@ -121,6 +121,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			result.ArtistsProcessed++
 			var perRuleMetadata bool
 			var perRuleImages []string
+			var perRuleDirty bool
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -210,6 +211,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					perRuleDirty = true
 					if fr.ImageType != "" {
 						perRuleImages = append(perRuleImages, fr.ImageType)
 					} else {
@@ -238,8 +240,9 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 			}
 
-			// Re-evaluate and persist health score, then publish changes.
-			p.updateHealthScore(ctx, a)
+			// Re-evaluate and persist health score (and any in-memory
+			// changes fixers made) in a single write, then publish.
+			p.updateHealthScore(ctx, a, perRuleDirty)
 			p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
 		}
 
@@ -265,6 +268,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 
 	var metadataFixed bool
 	var fixedImageTypes []string
+	var artistDirty bool // tracks whether the artist model was modified by a fixer
 
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
@@ -358,6 +362,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		if fr.Fixed {
 			result.FixesSucceeded++
 			status = ViolationStatusResolved
+			artistDirty = true
 			if fr.ImageType != "" {
 				fixedImageTypes = append(fixedImageTypes, fr.ImageType)
 			} else {
@@ -386,7 +391,9 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		}
 	}
 
-	p.updateHealthScore(ctx, a)
+	// Re-evaluate and persist health score (and any in-memory
+	// changes fixers made) in a single write, then publish.
+	p.updateHealthScore(ctx, a, artistDirty)
 	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
 	return result, nil
 }
@@ -423,6 +430,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 			result.ArtistsProcessed++
 			var perArtistMetadata bool
 			var perArtistImages []string
+			var perArtistDirty bool
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -517,6 +525,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					perArtistDirty = true
 					if fr.ImageType != "" {
 						perArtistImages = append(perArtistImages, fr.ImageType)
 					} else {
@@ -545,8 +554,9 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				}
 			}
 
-			// Re-evaluate and persist health score, then publish changes.
-			p.updateHealthScore(ctx, a)
+			// Re-evaluate and persist health score (and any in-memory
+			// changes fixers made) in a single write, then publish.
+			p.updateHealthScore(ctx, a, perArtistDirty)
 			p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
 		}
 
@@ -626,7 +636,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
 		}
-		p.updateHealthScore(ctx, a)
+		p.updateHealthScore(ctx, a, false)
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -743,16 +753,21 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 }
 
 // updateHealthScore re-evaluates the artist and persists the score.
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist) {
+// When mustPersist is true, the artist is persisted even if health
+// evaluation fails, to flush in-memory changes made by fixers.
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
-		return
+		if !mustPersist {
+			return
+		}
+	} else {
+		a.HealthScore = eval.HealthScore
+		now := time.Now().UTC()
+		a.HealthEvaluatedAt = &now
 	}
-	a.HealthScore = eval.HealthScore
-	now := time.Now().UTC()
-	a.HealthEvaluatedAt = &now
 	if err := p.artistService.Update(ctx, a); err != nil {
-		p.logger.Warn("persisting health score", "artist", a.Name, "error", err)
+		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 	}
 }
