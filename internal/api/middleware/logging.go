@@ -112,6 +112,23 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Flush implements http.Flusher so that SSE and streaming responses work
+// through this wrapper. Without this, w.(http.Flusher) in the SSE handler
+// fails and the endpoint returns 500.
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap returns the underlying ResponseWriter. This is required by
+// http.NewResponseController so it can reach the concrete writer for
+// operations like SetWriteDeadline, which the SSE handler uses to keep
+// the connection open indefinitely.
+func (w *statusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 // scrubQuery redacts sensitive query parameter values.
 func scrubQuery(raw string) string {
 	if raw == "" {
