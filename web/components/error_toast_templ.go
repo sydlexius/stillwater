@@ -8,8 +8,8 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// ErrorToast renders a server-rendered fallback toast notification using the
-// sw-glass treatment and left-border color coding. Level should be "error",
+// ErrorToast renders a server-rendered fallback toast notification using a solid
+// background and left-border color coding. Level should be "error",
 // "warning", or "success". The toast renders inline where placed and
 // auto-dismisses after 5 seconds via a local script tag.
 func ErrorToast(level, message string) templ.Component {
@@ -33,7 +33,7 @@ func ErrorToast(level, message string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{"sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 border-l-4",
+		var templ_7745c5c3_Var2 = []any{"bg-white dark:bg-gray-800 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 border-l-4",
 			templ.KV("border-l-red-500 text-red-800 dark:text-red-200", level == "error"),
 			templ.KV("border-l-amber-500 text-amber-800 dark:text-amber-200", level == "warning"),
 			templ.KV("border-l-emerald-500 text-emerald-800 dark:text-emerald-200", level == "success"),

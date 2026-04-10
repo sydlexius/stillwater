@@ -445,7 +445,8 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 	}
 
 	webSearchEnabled, _ := r.providerSettings.AnyWebSearchEnabled(req.Context())
-	autoFetch := r.getBoolSetting(req.Context(), "auto_fetch_images", false)
+	// Check user preference first; fall back to the legacy app-level setting.
+	autoFetch := r.getUserBoolPreference(req.Context(), PrefAutoFetchImages, r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 	if req.URL.Query().Get("fetch") == "1" {
 		autoFetch = true
 	}

@@ -50,9 +50,16 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefPageSize, "50", got)
 	}
 
-	// Verify the wire contract returns exactly 14 keys.
-	if len(prefs) != 14 {
-		t.Errorf("expected 14 keys, got %d", len(prefs))
+	// Verify bg_opacity is present with its default value.
+	if got, ok := prefs[PrefBgOpacity]; !ok {
+		t.Error("missing default key \"bg_opacity\"")
+	} else if got != "65" {
+		t.Errorf("key %q: expected default %q, got %q", PrefBgOpacity, "65", got)
+	}
+
+	// Verify the wire contract returns exactly 16 keys.
+	if len(prefs) != 16 {
+		t.Errorf("expected 16 keys, got %d", len(prefs))
 	}
 }
 

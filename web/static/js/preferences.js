@@ -108,6 +108,18 @@
       root.setAttribute(attr, value);
     }
 
+    // bg_opacity updates the --sw-glass-bg CSS custom property directly.
+    if (key === 'bg_opacity') {
+      var pct = parseInt(value, 10) / 100;
+      if (isNaN(pct)) pct = 0.65;
+      var isDark = root.classList.contains('dark');
+      if (isDark) {
+        root.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');
+      } else {
+        root.style.setProperty('--sw-glass-bg', 'rgba(255, 255, 255, ' + pct + ')');
+      }
+    }
+
     // Theme also toggles the "dark" class for Tailwind dark-mode support.
     // "system" follows the OS preference via matchMedia.
     if (key === 'theme') {

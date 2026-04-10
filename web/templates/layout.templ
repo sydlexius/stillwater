@@ -144,8 +144,8 @@ templ Layout(title string, assets AssetPaths) {
 			<script>
 				// -- Toast Manager -----------------------------------------------
 				// Provides grouping (same type+message within 2s collapses into a
-				// count badge), a max of 3 visible toasts with queueing, and glass
-				// treatment via the sw-glass CSS class.
+				// count badge), a max of 3 visible toasts with queueing, and solid
+				// background styling.
 				(function() {
 					var MAX_VISIBLE = 3;
 					var GROUP_WINDOW_MS = 2000;
@@ -239,7 +239,7 @@ templ Layout(title string, assets AssetPaths) {
 
 					function createToastElement(type, msg) {
 						var toast = document.createElement('div');
-						toast.className = 'sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 ' + colorClasses(type);
+						toast.className = 'bg-white dark:bg-gray-800 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 ' + colorClasses(type);
 						var span = document.createElement('span');
 						span.className = 'flex-1';
 						span.textContent = msg;
@@ -311,7 +311,7 @@ templ Layout(title string, assets AssetPaths) {
 						if (!container) return;
 
 						var toast = document.createElement('div');
-						toast.className = 'sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200 transition-opacity duration-300';
+						toast.className = 'bg-white dark:bg-gray-800 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200 transition-opacity duration-300';
 
 						var msgSpan = document.createElement('span');
 						msgSpan.className = 'flex-1';

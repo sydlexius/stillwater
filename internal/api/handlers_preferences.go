@@ -30,6 +30,8 @@ const (
 	PrefLanguage            = "language"
 	PrefMetadataLanguages   = "metadata_languages"
 	PrefNotificationEnabled = "notification_enabled"
+	PrefAutoFetchImages     = "auto_fetch_images"
+	PrefBgOpacity           = "bg_opacity"
 	PrefPageSize            = "page_size"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
@@ -65,6 +67,7 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefLiteMode:            {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
 	PrefLanguage:            {defaultValue: "en", allowedValues: []string{"en"}},
 	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
 }
 
 func init() {
@@ -90,6 +93,33 @@ func init() {
 // rather than a fixed set of strings.
 func isPageSizeKey(key string) bool {
 	return key == PrefPageSize
+}
+
+// isBgOpacityKey reports whether key is the bg_opacity preference key.
+// bg_opacity is validated as an integer in [BgOpacityMin, BgOpacityMax].
+func isBgOpacityKey(key string) bool {
+	return key == PrefBgOpacity
+}
+
+// BgOpacityDefault is the default background opacity percentage.
+// BgOpacityMin and BgOpacityMax define the allowed range for the bg_opacity preference.
+const (
+	BgOpacityDefault = 65
+	BgOpacityMin     = 20
+	BgOpacityMax     = 100
+)
+
+// normalizeBgOpacity parses a raw bg_opacity string and returns the canonical
+// decimal form when it is a valid integer in [BgOpacityMin, BgOpacityMax].
+func normalizeBgOpacity(raw string) string {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return strconv.Itoa(BgOpacityDefault)
+	}
+	if n < BgOpacityMin || n > BgOpacityMax {
+		return strconv.Itoa(BgOpacityDefault)
+	}
+	return strconv.Itoa(n)
 }
 
 // normalizePageSize parses a raw page_size string and returns the canonical
@@ -333,8 +363,9 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
+	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -354,6 +385,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = "false"
 		case pageSizeKey:
 			value = strconv.Itoa(PageSizeDefault)
+		case bgOpacityKey:
+			value = strconv.Itoa(BgOpacityDefault)
 		case metaLangKey:
 			value = MetadataLanguagesDefault
 		default:
@@ -366,6 +399,15 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	if pageSizeKey {
 		if normalized := normalizePageSize(value); normalized != value {
 			r.logger.Warn("stored page_size normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
+		}
+	}
+
+	// Canonicalize bg_opacity to a valid integer in range.
+	if bgOpacityKey {
+		if normalized := normalizeBgOpacity(value); normalized != value {
+			r.logger.Warn("stored bg_opacity normalized on read",
 				"user_id", userID, "raw_value", value, "normalized", normalized)
 			value = normalized
 		}
@@ -394,12 +436,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults (fixed keys + page_size + metadata_languages).
-	prefs := make(map[string]string, len(preferenceDefaults)+2)
+	// Start with defaults (fixed keys + page_size + bg_opacity + metadata_languages).
+	prefs := make(map[string]string, len(preferenceDefaults)+3)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
+	prefs[PrefBgOpacity] = strconv.Itoa(BgOpacityDefault)
 	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
 
 	// Overlay with stored values.
@@ -420,7 +463,7 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		// page_size and metadata_languages are valid but not in preferenceDefaults.
+		// page_size, bg_opacity, and metadata_languages are valid but not in preferenceDefaults.
 		_, known := preferenceDefaults[k]
 		if known {
 			prefs[k] = v
@@ -428,6 +471,13 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			normalized := normalizePageSize(v)
 			if normalized != v {
 				r.logger.Warn("stored page_size normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
+			}
+			prefs[k] = normalized
+		} else if isBgOpacityKey(k) {
+			normalized := normalizeBgOpacity(v)
+			if normalized != v {
+				r.logger.Warn("stored bg_opacity normalized on read",
 					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
 			prefs[k] = normalized
@@ -466,8 +516,9 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
+	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -482,6 +533,7 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	// Validate value against allowed list.
 	// suppress_confirm_* keys only accept "true" or "false".
 	// page_size must be an integer in [PageSizeMin, PageSizeMax].
+	// bg_opacity must be an integer in [BgOpacityMin, BgOpacityMax].
 	// metadata_languages must be a JSON array of valid language tags.
 	var valid bool
 	switch {
@@ -492,6 +544,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		valid = err == nil && n >= PageSizeMin && n <= PageSizeMax
 		if valid {
 			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
+			body.Value = strconv.Itoa(n)
+		}
+	case bgOpacityKey:
+		n, err := strconv.Atoi(body.Value)
+		valid = err == nil && n >= BgOpacityMin && n <= BgOpacityMax
+		if valid {
 			body.Value = strconv.Itoa(n)
 		}
 	case metaLangKey:
@@ -587,22 +645,46 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
+	// Parse bg_opacity as integer; fall back to default.
+	bgOpacity := strconv.Itoa(BgOpacityDefault)
+	if v, ok := stored[PrefBgOpacity]; ok {
+		bgOpacity = normalizeBgOpacity(v)
+	}
+
 	prefs := templates.AppearancePrefsData{
-		Theme:          pref(PrefTheme),
-		GlassIntensity: pref(PrefGlassIntensity),
-		ThumbnailSize:  pref(PrefThumbnailSize),
-		SidebarState:   pref(PrefSidebarState),
-		ContentWidth:   pref(PrefContentWidth),
-		ReducedMotion:  pref(PrefReducedMotion),
-		Language:       pref(PrefLanguage),
-		FontFamily:     pref(PrefFontFamily),
-		LetterSpacing:  pref(PrefLetterSpacing),
-		FontSize:       pref(PrefFontSize),
-		LiteMode:       pref(PrefLiteMode),
-		PageSize:       pageSize,
+		Theme:             pref(PrefTheme),
+		GlassIntensity:    pref(PrefGlassIntensity),
+		ThumbnailSize:     pref(PrefThumbnailSize),
+		SidebarState:      pref(PrefSidebarState),
+		ContentWidth:      pref(PrefContentWidth),
+		ReducedMotion:     pref(PrefReducedMotion),
+		Language:          pref(PrefLanguage),
+		FontFamily:        pref(PrefFontFamily),
+		LetterSpacing:     pref(PrefLetterSpacing),
+		FontSize:          pref(PrefFontSize),
+		LiteMode:          pref(PrefLiteMode),
+		PageSize:          pageSize,
+		AutoFetchImages:   pref(PrefAutoFetchImages),
+		BackgroundOpacity: bgOpacity,
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
+}
+
+// getUserBoolPreference reads a boolean user preference from the user_preferences
+// table. Returns the fallback value if no row exists for the current user.
+func (r *Router) getUserBoolPreference(ctx context.Context, key string, fallback bool) bool {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return fallback
+	}
+	var v string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key).Scan(&v)
+	if err != nil {
+		return fallback
+	}
+	return v == "true"
 }
 
 // getUserPageSize reads the page_size preference for the given user from the
