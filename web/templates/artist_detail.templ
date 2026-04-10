@@ -1160,6 +1160,7 @@ templ platformStateHeaderBadges(conn *connection.Connection, state *connection.A
 				"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
 				templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
 				templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+				templ.KV("bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", conn.Type == connection.TypeLidarr),
 			}
 		>{ conn.Type }</span>
 		if state.IsLocked {
