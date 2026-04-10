@@ -1964,4 +1964,15 @@ func TestSortImageResults(t *testing.T) {
 			t.Errorf("expected b.jpg fourth (smallest area), got %s", imgs[3].URL)
 		}
 	})
+
+	t.Run("unknown sort falls back to likes default", func(t *testing.T) {
+		imgs := make([]provider.ImageResult, len(images))
+		copy(imgs, images)
+		sortImageResults(imgs, "bogus")
+		// Same expected order as default: likes desc, then area desc
+		if imgs[0].URL != "d.jpg" || imgs[1].URL != "b.jpg" || imgs[2].URL != "a.jpg" || imgs[3].URL != "c.jpg" {
+			t.Errorf("unexpected fallback order: got [%s, %s, %s, %s]",
+				imgs[0].URL, imgs[1].URL, imgs[2].URL, imgs[3].URL)
+		}
+	})
 }

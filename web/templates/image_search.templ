@@ -71,9 +71,23 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 			<script>
 				// sortImageGrid reorders the children of the nearest .image-sort-grid
 				// based on the selected sort criterion. Each child card must have
-				// data-img-likes and data-img-area attributes.
-				function sortImageGrid(criterion) {
-					var grid = document.querySelector('.image-sort-grid');
+				// data-img-likes and data-img-area attributes. triggerEl scopes
+				// the sort to the grid that is a sibling of the sort bar's container.
+				function sortImageGrid(criterion, triggerEl) {
+					var grid = null;
+					if (triggerEl) {
+						var container = triggerEl.closest('.image-sort-bar');
+						if (container && container.nextElementSibling &&
+							container.nextElementSibling.classList.contains('image-sort-grid')) {
+							grid = container.nextElementSibling;
+						}
+					}
+					if (!grid) {
+						if (triggerEl) {
+							console.warn('sortImageGrid: scoped traversal failed, falling back to first grid');
+						}
+						grid = document.querySelector('.image-sort-grid');
+					}
 					if (!grid) return;
 					var items = Array.prototype.slice.call(grid.children);
 					items.sort(function(a, b) {
@@ -681,13 +695,12 @@ templ imageSearchGeneric(data ImageSearchData) {
 // Sorting is performed client-side by reordering DOM elements based on
 // data attributes (data-img-likes, data-img-area) already present on each card.
 templ imageSortBar() {
-	<div class="flex items-center justify-end gap-2 mb-3">
-		<label for="image-sort-select" class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.sort_by") }</label>
+	<div class="image-sort-bar flex items-center justify-end gap-2 mb-3">
+		<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.sort_by") }</span>
 		<select
-			id="image-sort-select"
 			aria-label={ t(ctx, "image.sort_by") }
 			class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1"
-			onchange="sortImageGrid(this.value)"
+			onchange="sortImageGrid(this.value, this)"
 		>
 			<option value="likes">{ t(ctx, "image.sort_likes") }</option>
 			<option value="resolution">{ t(ctx, "image.sort_resolution") }</option>
