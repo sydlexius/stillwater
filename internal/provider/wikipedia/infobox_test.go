@@ -416,6 +416,11 @@ func TestCleanYearsActive(t *testing.T) {
 		{"en-dash", "1985\u2013present", "1985-present"},
 		{"with start date template", "{{start date|1985}}-present", "1985-present"},
 		{"with ref", "1985-present<ref>source</ref>", "1985-present"},
+		{"named entity ndash", "1987&ndash;present", "1987-present"},
+		{"numeric entity ndash", "1987&#8211;present", "1987-present"},
+		{"amp entity", "rock &amp; roll", "rock & roll"},
+		{"realistic wikipedia value", "{{start date|1987}}&ndash;present<ref>source</ref>", "1987-present"},
+		{"multiple ranges with entities", "1972&#8211;1982, 2018&#8211;2022", "1972-1982, 2018-2022"},
 	}
 
 	for _, tt := range tests {
