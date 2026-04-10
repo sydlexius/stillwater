@@ -4386,7 +4386,7 @@ paths:
       responses:
         "200":
           description: >
-            All 14 preference keys with the user's values merged over defaults.
+            All 16 preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:
@@ -4453,6 +4453,19 @@ paths:
                       JSON array of BCP 47 language tags in priority order for
                       metadata resolution (e.g. '["en","ja"]').
                     example: '["en"]'
+                  auto_fetch_images:
+                    type: string
+                    enum: ["true", "false"]
+                    description: >
+                      Whether to automatically search providers when opening
+                      the image search panel.
+                  bg_opacity:
+                    type: string
+                    pattern: "^(?:[2-9][0-9]|100)$"
+                    description: >
+                      Background glass opacity percentage (integer 20-100
+                      as a string).
+                    example: "65"
                 required:
                   - theme
                   - glass_intensity
@@ -4468,6 +4481,8 @@ paths:
                   - notification_enabled
                   - page_size
                   - metadata_languages
+                  - auto_fetch_images
+                  - bg_opacity
         "401":
           description: Not authenticated
           content:

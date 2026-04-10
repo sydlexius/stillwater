@@ -41,7 +41,7 @@ type AppearancePrefsData struct {
 	LiteMode        string // "off" | "on" | "auto"
 	PageSize        int    // Validated page size in the range 10-500; defaults to 50.
 	AutoFetchImages string // "true" | "false" -- auto-search providers on image search.
-	BackgroundOpacity string // "0"-"100" -- background glass opacity percentage.
+	BackgroundOpacity string // "20"-"100" -- background glass opacity percentage.
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -453,9 +453,27 @@ templ appearanceScript() {
 				var isOn = btn.getAttribute('aria-checked') === 'true';
 				var newVal = !isOn;
 				var valStr = String(newVal);
+				var prevVal = String(isOn);
+				var knob = btn.querySelector('span');
+
+				// Rollback helper restores the toggle to its previous state.
+				function rollback() {
+					btn.setAttribute('aria-checked', prevVal);
+					if (isOn) {
+						btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+						btn.classList.add('bg-blue-600');
+						knob.classList.remove('translate-x-0');
+						knob.classList.add('translate-x-5');
+					} else {
+						btn.classList.remove('bg-blue-600');
+						btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+						knob.classList.remove('translate-x-5');
+						knob.classList.add('translate-x-0');
+					}
+				}
+
 				// Optimistic UI update.
 				btn.setAttribute('aria-checked', valStr);
-				var knob = btn.querySelector('span');
 				if (newVal) {
 					btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
 					btn.classList.add('bg-blue-600');
@@ -467,7 +485,31 @@ templ appearanceScript() {
 					knob.classList.remove('translate-x-5');
 					knob.classList.add('translate-x-0');
 				}
-				swSaveAppearancePref('auto_fetch_images', valStr);
+
+				if (window.swPreferences) {
+					window.swPreferences.set('auto_fetch_images', valStr).then(function (saved) {
+						if (saved === valStr) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Preference saved');
+							}
+						} else {
+							rollback();
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						}
+					}).catch(function (err) {
+						rollback();
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					});
+				} else {
+					rollback();
+					if (typeof window.showToast === 'function') {
+						showToast('Preferences unavailable');
+					}
+				}
 			};
 
 			// Live-update the --sw-glass-bg opacity as the slider moves (no save).
@@ -486,8 +528,50 @@ templ appearanceScript() {
 			};
 
 			// Persist the background opacity preference on slider release.
+			// Captures the previous value so we can rollback on failure.
 			window.swSaveBgOpacity = function (val) {
-				swSaveAppearancePref('bg_opacity', val);
+				var slider = document.getElementById('pref-bg-opacity');
+				var label = document.getElementById('bg-opacity-value');
+				var cache = window.swPreferences ? window.swPreferences.getCache() : null;
+				var prevVal = (cache && cache.bg_opacity) || '65';
+
+				function rollback() {
+					if (slider) slider.value = prevVal;
+					if (label) label.textContent = prevVal + '%';
+					// Restore the CSS custom property to the previous opacity.
+					var pct = parseInt(prevVal, 10) / 100;
+					var isDark = document.documentElement.classList.contains('dark');
+					if (isDark) {
+						document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');
+					} else {
+						document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(255, 255, 255, ' + pct + ')');
+					}
+				}
+
+				if (window.swPreferences) {
+					window.swPreferences.set('bg_opacity', val).then(function (saved) {
+						if (saved === val) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Preference saved');
+							}
+						} else {
+							rollback();
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						}
+					}).catch(function (err) {
+						rollback();
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					});
+				} else {
+					rollback();
+					if (typeof window.showToast === 'function') {
+						showToast('Preferences unavailable');
+					}
+				}
 			};
 
 			// Wire all segmented controls inside the appearance tab panel.

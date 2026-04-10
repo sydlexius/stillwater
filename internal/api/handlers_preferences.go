@@ -682,9 +682,22 @@ func (r *Router) getUserBoolPreference(ctx context.Context, key string, fallback
 	err := r.db.QueryRowContext(ctx,
 		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key).Scan(&v)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("querying boolean user preference",
+				"user_id", userID, "key", key, "error", err)
+		}
 		return fallback
 	}
-	return v == "true"
+	switch v {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		r.logger.Warn("stored boolean user preference invalid, using fallback",
+			"user_id", userID, "key", key, "raw_value", v)
+		return fallback
+	}
 }
 
 // getUserPageSize reads the page_size preference for the given user from the

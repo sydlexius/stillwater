@@ -31,7 +31,8 @@
     reduced_motion: 'system',
     lite_mode: 'off',
     language: 'en',
-    notification_enabled: 'true'
+    notification_enabled: 'true',
+    bg_opacity: '65'
   };
 
   // Mapping from preference key to the data attribute name set on <html>.
@@ -130,6 +131,10 @@
       } else {
         root.classList.remove('dark');
       }
+      // Recompute theme-dependent background color after theme change.
+      var cached = readCache() || {};
+      var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+      applySingle('bg_opacity', opacityVal);
     }
   }
 
@@ -142,6 +147,11 @@
       if (prefs.hasOwnProperty(key)) {
         applySingle(key, prefs[key]);
       }
+    }
+    // bg_opacity is not in ATTR_MAP (it sets a CSS custom property, not a
+    // data attribute), so apply it explicitly after the ATTR_MAP loop.
+    if (prefs.hasOwnProperty('bg_opacity')) {
+      applySingle('bg_opacity', prefs.bg_opacity);
     }
   }
 
