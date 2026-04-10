@@ -104,14 +104,14 @@ templ Layout(title string, assets AssetPaths) {
 				/>
 			</div>
 			@Sidebar(SidebarData{
-				BasePath:       assets.BasePath,
-				IsAdmin:        assets.IsAdmin,
-				Username:       assets.Username,
-				DisplayName:    assets.DisplayName,
-				AvatarURL:      assets.AvatarURL,
-				Role:           assets.Role,
-				Version:        assets.Version,
-		})
+				BasePath:    assets.BasePath,
+				IsAdmin:     assets.IsAdmin,
+				Username:    assets.Username,
+				DisplayName: assets.DisplayName,
+				AvatarURL:   assets.AvatarURL,
+				Role:        assets.Role,
+				Version:     assets.Version,
+			})
 			<div class="min-h-full sw-sidebar-content" id="sw-main-content">
 				if assets.IsAdmin {
 					@SharedFilesystemBar()

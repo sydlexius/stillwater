@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -110,18 +109,15 @@ const (
 	BgOpacityMax     = 100
 )
 
-// normalizeBoolPref returns "true" or "false" for a raw preference string.
-// Any value other than "true" or "false" is treated as the given fallback.
-// Logs a warning when the raw value is unexpected (e.g. manual DB edits).
+// normalizeBoolPref returns "true" or "false". If raw is already one of those
+// it is returned unchanged; otherwise fallback is returned. Callers that have
+// access to a structured logger should log a warning when the returned value
+// differs from raw so unexpected DB values are observable.
 func normalizeBoolPref(raw, fallback string) string {
 	switch raw {
 	case "true", "false":
 		return raw
 	default:
-		if raw != "" {
-			slog.Warn("normalized unexpected boolean preference value",
-				"raw_value", raw, "fallback", fallback)
-		}
 		return fallback
 	}
 }
@@ -406,6 +402,10 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = strconv.Itoa(BgOpacityDefault)
 		case metaLangKey:
 			value = MetadataLanguagesDefault
+		case key == PrefAutoFetchImages:
+			// Fall back to the app-level setting so the API reflects the same
+			// default behavior as the artist image search handler.
+			value = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 		default:
 			value = def.defaultValue
 		}
@@ -440,6 +440,18 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Canonicalize boolean preferences so malformed DB values always return
+	// "true" or "false" regardless of how the value was stored.
+	if known {
+		if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
+			if normalized := normalizeBoolPref(value, def.defaultValue); normalized != value {
+				r.logger.Warn("stored boolean preference normalized on read",
+					"user_id", userID, "key", key, "raw_value", value, "normalized", normalized)
+				value = normalized
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": value})
 }
 
@@ -461,6 +473,9 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
 	prefs[PrefBgOpacity] = strconv.Itoa(BgOpacityDefault)
 	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
+	// Use the app-level setting as the default for auto_fetch_images so the
+	// preference page reflects the effective behavior when no per-user row exists.
+	prefs[PrefAutoFetchImages] = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -486,7 +501,12 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			// Boolean preferences need normalization in case of manual DB edits.
 			def := preferenceDefaults[k]
 			if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
-				prefs[k] = normalizeBoolPref(v, def.defaultValue)
+				normalized := normalizeBoolPref(v, def.defaultValue)
+				if normalized != v {
+					r.logger.Warn("stored boolean preference normalized on read",
+						"user_id", userID, "key", k, "raw_value", v, "normalized", normalized)
+				}
+				prefs[k] = normalized
 			} else {
 				prefs[k] = v
 			}
@@ -674,6 +694,19 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		bgOpacity = normalizeBgOpacity(v)
 	}
 
+	// Determine auto_fetch_images with the app-level setting as the fallback so
+	// the toggle reflects the effective behavior when no per-user row exists.
+	legacyAutoFetch := strconv.FormatBool(r.getBoolSetting(ctx, "auto_fetch_images", false))
+	autoFetchImages := legacyAutoFetch
+	if v, ok := stored[PrefAutoFetchImages]; ok {
+		normalized := normalizeBoolPref(v, legacyAutoFetch)
+		if normalized != v {
+			r.logger.Warn("stored auto_fetch_images normalized for preferences page",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		autoFetchImages = normalized
+	}
+
 	prefs := templates.AppearancePrefsData{
 		Theme:             pref(PrefTheme),
 		GlassIntensity:    pref(PrefGlassIntensity),
@@ -687,7 +720,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		FontSize:          pref(PrefFontSize),
 		LiteMode:          pref(PrefLiteMode),
 		PageSize:          pageSize,
-		AutoFetchImages:   normalizeBoolPref(pref(PrefAutoFetchImages), "false"),
+		AutoFetchImages:   autoFetchImages,
 		BackgroundOpacity: bgOpacity,
 	}
 

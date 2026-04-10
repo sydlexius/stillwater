@@ -655,6 +655,192 @@ func TestIsSuppressConfirmKey(t *testing.T) {
 	}
 }
 
+// -- bg_opacity preference tests --
+
+func TestBgOpacityPref_DefaultReturned(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/bg_opacity", nil)
+	req.SetPathValue("key", "bg_opacity")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	want := fmt.Sprintf("%d", BgOpacityDefault)
+	if resp["value"] != want {
+		t.Errorf("expected value=%s (default), got %q", want, resp["value"])
+	}
+}
+
+func TestBgOpacityPref_StoreAndRetrieve(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	body := `{"value":"80"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/bg_opacity", strings.NewReader(body))
+	req.SetPathValue("key", "bg_opacity")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/bg_opacity", nil)
+	req.SetPathValue("key", "bg_opacity")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "80" {
+		t.Errorf("expected value=80, got %q", resp["value"])
+	}
+}
+
+func TestBgOpacityPref_RejectsOutOfRange(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	cases := []struct {
+		value string
+	}{
+		{"19"},
+		{"101"},
+		{"0"},
+		{"-1"},
+		{"not_a_number"},
+		{""},
+	}
+
+	for _, tc := range cases {
+		t.Run("value_"+tc.value, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, tc.value)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/bg_opacity", strings.NewReader(body))
+			req.SetPathValue("key", "bg_opacity")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", tc.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestBgOpacityPref_AcceptsBoundaryValues(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, v := range []string{fmt.Sprintf("%d", BgOpacityMin), fmt.Sprintf("%d", BgOpacityMax)} {
+		t.Run("value_"+v, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, v)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/bg_opacity", strings.NewReader(body))
+			req.SetPathValue("key", "bg_opacity")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected 200 for boundary value %q, got %d: %s", v, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// -- auto_fetch_images preference tests --
+
+func TestAutoFetchImagesPref_DefaultReturned(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/auto_fetch_images", nil)
+	req.SetPathValue("key", "auto_fetch_images")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	// Default is "false" when no app-level setting is configured.
+	if resp["value"] != "false" {
+		t.Errorf("expected value=false (default), got %q", resp["value"])
+	}
+}
+
+func TestAutoFetchImagesPref_StoreAndRetrieve(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	body := `{"value":"true"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/auto_fetch_images", strings.NewReader(body))
+	req.SetPathValue("key", "auto_fetch_images")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/auto_fetch_images", nil)
+	req.SetPathValue("key", "auto_fetch_images")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("expected value=true, got %q", resp["value"])
+	}
+}
+
+func TestAutoFetchImagesPref_RejectsInvalidValue(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, bad := range []string{"yes", "1", "on", ""} {
+		t.Run("value_"+bad, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, bad)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/auto_fetch_images", strings.NewReader(body))
+			req.SetPathValue("key", "auto_fetch_images")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", bad, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 // -- metadata_languages preference tests --
 
 func TestMetadataLanguagesPref_DefaultReturned(t *testing.T) {
