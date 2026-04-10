@@ -240,16 +240,9 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 			}
 
-			// Persist any in-memory changes that fixers made to the artist
-			// model (e.g. updated Path after a directory rename).
-			if perRuleDirty {
-				if err := p.artistService.Update(ctx, a); err != nil {
-					p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
-				}
-			}
-
-			// Re-evaluate and persist health score, then publish changes.
-			p.updateHealthScore(ctx, a)
+			// Re-evaluate and persist health score (and any in-memory
+			// changes fixers made) in a single write, then publish.
+			p.updateHealthScore(ctx, a, perRuleDirty)
 			p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
 		}
 
@@ -398,15 +391,9 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		}
 	}
 
-	// Persist any in-memory changes that fixers made to the artist model
-	// (e.g. updated Path after a directory rename, NFOExists after NFO creation).
-	if artistDirty {
-		if err := p.artistService.Update(ctx, a); err != nil {
-			p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
-		}
-	}
-
-	p.updateHealthScore(ctx, a)
+	// Re-evaluate and persist health score (and any in-memory
+	// changes fixers made) in a single write, then publish.
+	p.updateHealthScore(ctx, a, artistDirty)
 	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
 	return result, nil
 }
@@ -567,16 +554,9 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				}
 			}
 
-			// Persist any in-memory changes that fixers made to the artist
-			// model (e.g. updated Path after a directory rename).
-			if perArtistDirty {
-				if err := p.artistService.Update(ctx, a); err != nil {
-					p.logger.Warn("persisting artist after fixes", "artist", a.Name, "error", err)
-				}
-			}
-
-			// Re-evaluate and persist health score, then publish changes.
-			p.updateHealthScore(ctx, a)
+			// Re-evaluate and persist health score (and any in-memory
+			// changes fixers made) in a single write, then publish.
+			p.updateHealthScore(ctx, a, perArtistDirty)
 			p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
 		}
 
@@ -656,7 +636,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
 		}
-		p.updateHealthScore(ctx, a)
+		p.updateHealthScore(ctx, a, false)
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -773,16 +753,21 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 }
 
 // updateHealthScore re-evaluates the artist and persists the score.
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist) {
+// When mustPersist is true, the artist is persisted even if health
+// evaluation fails, to flush in-memory changes made by fixers.
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
-		return
+		if !mustPersist {
+			return
+		}
+	} else {
+		a.HealthScore = eval.HealthScore
+		now := time.Now().UTC()
+		a.HealthEvaluatedAt = &now
 	}
-	a.HealthScore = eval.HealthScore
-	now := time.Now().UTC()
-	a.HealthEvaluatedAt = &now
 	if err := p.artistService.Update(ctx, a); err != nil {
-		p.logger.Warn("persisting health score", "artist", a.Name, "error", err)
+		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 	}
 }

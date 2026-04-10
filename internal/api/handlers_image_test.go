@@ -1764,27 +1764,32 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
 
-	// The flag clearing happens asynchronously; give it a moment.
-	time.Sleep(200 * time.Millisecond)
-
-	// Reload the artist and verify the flag was cleared.
-	updated, err := artistSvc.GetByID(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("reloading artist: %v", err)
-	}
-
-	// Check the image row directly since the flag is stored in artist_images.
-	images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("GetImagesForArtist: %v", err)
-	}
-	for _, im := range images {
-		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
-			t.Error("thumb exists_flag should have been cleared after serving a missing file")
+	// The flag clearing happens asynchronously; poll until it takes effect.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetImagesForArtist: %v", err)
 		}
+		cleared := true
+		for _, im := range images {
+			if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+				cleared = false
+				break
+			}
+		}
+		if cleared {
+			// Also verify the model-level flag reflects the cleared state.
+			updated, err := artistSvc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading artist: %v", err)
+			}
+			if updated.ThumbExists {
+				t.Error("artist.ThumbExists should be false after flag clear")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-
-	// The Artist model fields are populated from the image rows on read;
-	// verify the model-level flag reflects the cleared state.
-	_ = updated // updated is loaded fresh and should show the cleared state via image metadata
+	t.Error("thumb exists_flag should have been cleared after serving a missing file (timed out)")
 }

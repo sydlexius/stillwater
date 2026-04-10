@@ -2051,3 +2051,63 @@ func (m *mockArtistMutatingFixer) Fix(_ context.Context, a *artist.Artist, v *Vi
 	}
 	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "mock mutated artist"}, nil
 }
+
+// TestPipeline_RunRule_PersistsArtistChanges verifies that RunRule persists
+// in-memory artist mutations made by fixers, covering the same dirty-tracking
+// path tested for RunForArtist above.
+func TestPipeline_RunRule_PersistsArtistChanges(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	nfoRule, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting nfo_exists rule: %v", err)
+	}
+	nfoRule.AutomationMode = AutomationModeAuto
+	if err := ruleSvc.Update(ctx, nfoRule); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	dir := t.TempDir()
+	a := &artist.Artist{
+		Name:     "RunRule Persist Artist",
+		SortName: "RunRule Persist Artist",
+		Path:     dir,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	pathFixer := &mockArtistMutatingFixer{
+		canFixRuleID: RuleNFOExists,
+		mutate: func(a *artist.Artist) {
+			a.Biography = "set-by-runrule"
+		},
+	}
+
+	logger := testLogger()
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{pathFixer}, nil, logger)
+
+	result, err := pipeline.RunRule(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+	if result.FixesSucceeded == 0 {
+		t.Fatal("expected at least one successful fix")
+	}
+
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after RunRule: %v", err)
+	}
+	if reloaded.Biography != "set-by-runrule" {
+		t.Errorf("Biography = %q, want %q (fixer mutation not persisted via RunRule)", reloaded.Biography, "set-by-runrule")
+	}
+}
