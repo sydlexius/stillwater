@@ -192,9 +192,11 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 			@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
 			@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
 			@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
-			if !isGroupType(data.Artist.Type) {
-				@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
-			}
+			<div id={ "gender-wrap-" + data.Artist.ID }>
+				if !isGroupType(data.Artist.Type) {
+					@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+				}
+			</div>
 			@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
 			@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
 			@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])

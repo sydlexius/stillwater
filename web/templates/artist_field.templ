@@ -491,7 +491,7 @@ type SelectOption struct {
 // genderOptions returns the available gender choices for the dropdown.
 func genderOptions() []SelectOption {
 	return []SelectOption{
-		{Value: "", Label: ""},
+		{Value: "", Label: "Not set"},
 		{Value: "Male", Label: "Male"},
 		{Value: "Female", Label: "Female"},
 		{Value: "Non-binary", Label: "Non-binary"},
@@ -501,15 +501,17 @@ func genderOptions() []SelectOption {
 }
 
 // typeOptions returns the available artist type choices for the dropdown.
+// Values are lowercase to match backend canonical types (see artist.Type).
 func typeOptions() []SelectOption {
 	return []SelectOption{
-		{Value: "", Label: ""},
-		{Value: "Person", Label: "Person"},
-		{Value: "Group", Label: "Group"},
-		{Value: "Orchestra", Label: "Orchestra"},
-		{Value: "Choir", Label: "Choir"},
-		{Value: "Character", Label: "Character"},
-		{Value: "Other", Label: "Other"},
+		{Value: "", Label: "Not set"},
+		{Value: "person", Label: "Person"},
+		{Value: "solo", Label: "Solo"},
+		{Value: "group", Label: "Group"},
+		{Value: "orchestra", Label: "Orchestra"},
+		{Value: "choir", Label: "Choir"},
+		{Value: "character", Label: "Character"},
+		{Value: "other", Label: "Other"},
 	}
 }
 
@@ -560,6 +562,18 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 				</button>
 			</form>
 		</dd>
+	</div>
+}
+
+// GenderFieldOOB renders the gender field as an OOB swap fragment. When the
+// type field changes, the handler returns this alongside the type FieldDisplay
+// so HTMX can show or hide the gender row without a full page reload.
+// Targets the stable gender-wrap-{id} container that always exists in the DOM.
+templ GenderFieldOOB(a *artist.Artist, providers []string) {
+	<div id={ "gender-wrap-" + a.ID } hx-swap-oob="innerHTML">
+		if !isGroupType(a.Type) {
+			@detailFieldDisplay(a, "gender", fieldLabel(ctx, "gender"), artist.FieldValueFromArtist(a, "gender"), providers)
+		}
 	</div>
 }
 
