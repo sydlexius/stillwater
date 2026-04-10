@@ -32,6 +32,7 @@
     lite_mode: 'off',
     language: 'en',
     notification_enabled: 'true',
+    auto_fetch_images: 'false',
     bg_opacity: '65'
   };
 
@@ -131,6 +132,8 @@
       }
       var pct = parseInt(value, 10) / 100;
       if (isNaN(pct)) pct = 0.65;
+      if (pct < 0) pct = 0;
+      if (pct > 1) pct = 1;
       var isDark = root.classList.contains('dark');
       if (isDark) {
         root.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');

@@ -444,7 +444,13 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	// "true" or "false" regardless of how the value was stored.
 	if known {
 		if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
-			if normalized := normalizeBoolPref(value, def.defaultValue); normalized != value {
+			// auto_fetch_images uses the app-level setting as its fallback so that
+			// a malformed stored row is consistent with the no-row path above.
+			boolFallback := def.defaultValue
+			if key == PrefAutoFetchImages {
+				boolFallback = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
+			}
+			if normalized := normalizeBoolPref(value, boolFallback); normalized != value {
 				r.logger.Warn("stored boolean preference normalized on read",
 					"user_id", userID, "key", key, "raw_value", value, "normalized", normalized)
 				value = normalized
@@ -501,7 +507,14 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			// Boolean preferences need normalization in case of manual DB edits.
 			def := preferenceDefaults[k]
 			if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
-				normalized := normalizeBoolPref(v, def.defaultValue)
+				// auto_fetch_images uses the app-level value already in prefs[k]
+				// as its fallback so a malformed row doesn't override the effective
+				// default with the compiled "false".
+				boolFallback := def.defaultValue
+				if k == PrefAutoFetchImages {
+					boolFallback = prefs[k]
+				}
+				normalized := normalizeBoolPref(v, boolFallback)
 				if normalized != v {
 					r.logger.Warn("stored boolean preference normalized on read",
 						"user_id", userID, "key", k, "raw_value", v, "normalized", normalized)
