@@ -353,6 +353,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	baseURL := r.getStringSetting(req.Context(), "server.base_url", "")
+
 	data := templates.SettingsData{
 		ActiveTab:               tab,
 		Libraries:               libs,
@@ -366,8 +368,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		BasePath:                r.basePath,
 		BasePathEnvOverride:     r.basePathFromEnv,
-		Host:                    webhookHost(r.getStringSetting(req.Context(), "server.base_url", ""), req.Host),
-		Scheme:                  webhookScheme(r.getStringSetting(req.Context(), "server.base_url", ""), req),
+		Host:                    webhookHost(baseURL, req.Host),
+		Scheme:                  webhookScheme(baseURL, req),
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,
