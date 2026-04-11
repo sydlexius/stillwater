@@ -9,6 +9,15 @@ import (
 	"github.com/sydlexius/stillwater/web/components"
 )
 
+// formatDateInputValue formats a time.Time for use in an HTML date input (YYYY-MM-DD).
+// Returns an empty string for the zero value.
+func formatDateInputValue(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
 // ActivityPageData holds data for the global activity page.
 type ActivityPageData struct {
 	Changes        []artist.MetadataChangeWithArtist
@@ -19,13 +28,22 @@ type ActivityPageData struct {
 	FilterArtistID string
 	FilterFields   []string
 	FilterSources  []string
+	FilterFrom     time.Time
+	FilterTo       time.Time
 }
 
 // activityFilterCount returns the number of active filters on the activity page.
-// Only counts filters that have corresponding flyout items (field and source).
+// Counts field filters, source filters, and date range bounds.
 // FilterArtistID is excluded because the flyout does not render or round-trip it.
 func activityFilterCount(data ActivityPageData) int {
-	return len(data.FilterFields) + len(data.FilterSources)
+	count := len(data.FilterFields) + len(data.FilterSources)
+	if !data.FilterFrom.IsZero() {
+		count++
+	}
+	if !data.FilterTo.IsZero() {
+		count++
+	}
+	return count
 }
 
 // ActivityPage renders the global activity page at /activity.
@@ -62,6 +80,52 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					}
 				</button>
 			</div>
+			<div class="sw-card rounded-lg px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+				<div class="flex-1">
+					<label for="activity-date-from" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+						{ t(ctx, "activity.date_from") }
+					</label>
+					<input
+						type="date"
+						id="activity-date-from"
+						name="from"
+						value={ formatDateInputValue(data.FilterFrom) }
+						aria-label={ t(ctx, "activity.date_from") }
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<div class="flex-1">
+					<label for="activity-date-to" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+						{ t(ctx, "activity.date_to") }
+					</label>
+					<input
+						type="date"
+						id="activity-date-to"
+						name="to"
+						value={ formatDateInputValue(data.FilterTo) }
+						aria-label={ t(ctx, "activity.date_to") }
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<button
+					type="button"
+					id="activity-date-apply"
+					aria-label={ t(ctx, "activity.apply_date_filter") }
+					class="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					{ t(ctx, "common.apply") }
+				</button>
+				if !data.FilterFrom.IsZero() || !data.FilterTo.IsZero() {
+					<button
+						type="button"
+						id="activity-date-clear"
+						aria-label={ t(ctx, "activity.clear_date_filter") }
+						class="px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
+					>
+						{ t(ctx, "common.clear") }
+					</button>
+				}
+			</div>
 			<div id="activity-content">
 				@ActivityContent(data)
 			</div>
@@ -85,6 +149,8 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				@components.FilterItem("activity-filters-flyout", "source", "scan", t(ctx, "history.source.scan"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "source", "import", t(ctx, "history.source.import"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "source", "revert", t(ctx, "history.source.revert"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "provider:*", t(ctx, "history.source.provider"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "rule:*", t(ctx, "history.source.rule"), "neutral")
 			}
 		}
 		<script>
@@ -103,6 +169,55 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					swFilterFlyout.initFromURL('activity-filters-flyout');
 				} else {
 					console.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');
+				}
+			});
+
+			// Date range filter: apply button updates URL params and reloads content.
+			document.addEventListener('DOMContentLoaded', function() {
+				var applyBtn = document.getElementById('activity-date-apply');
+				var clearBtn = document.getElementById('activity-date-clear');
+
+				if (applyBtn) {
+					applyBtn.addEventListener('click', function() {
+						var fromInput = document.getElementById('activity-date-from');
+						var toInput = document.getElementById('activity-date-to');
+						var params = new URLSearchParams(window.location.search);
+
+						if (fromInput && fromInput.value) {
+							// Convert date input (YYYY-MM-DD) to RFC 3339 start-of-day UTC.
+							params.set('from', fromInput.value + 'T00:00:00Z');
+						} else {
+							params.delete('from');
+						}
+
+						if (toInput && toInput.value) {
+							// Convert date input to end-of-day UTC for inclusive filtering.
+							params.set('to', toInput.value + 'T23:59:59Z');
+						} else {
+							params.delete('to');
+						}
+
+						var newURL = window.location.pathname + '?' + params.toString();
+						window.history.replaceState({}, '', newURL);
+						htmx.ajax('GET', '/activity/content?' + params.toString(), {target: '#activity-content', swap: 'innerHTML'});
+					});
+				}
+
+				if (clearBtn) {
+					clearBtn.addEventListener('click', function() {
+						var fromInput = document.getElementById('activity-date-from');
+						var toInput = document.getElementById('activity-date-to');
+						if (fromInput) fromInput.value = '';
+						if (toInput) toInput.value = '';
+						var params = new URLSearchParams(window.location.search);
+						params.delete('from');
+						params.delete('to');
+						var newURL = window.location.pathname;
+						var qs = params.toString();
+						if (qs) newURL += '?' + qs;
+						window.history.replaceState({}, '', newURL);
+						htmx.ajax('GET', '/activity/content?' + params.toString(), {target: '#activity-content', swap: 'innerHTML'});
+					});
 				}
 			});
 		</script>
@@ -177,6 +292,23 @@ templ ActivityMoreRows(data ActivityPageData) {
 // (e.g. after a successful revert from the activity page).
 templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist, basePath string) {
 	@activityRow(c, basePath)
+}
+
+// ActivityRevertFragment renders a revert response that removes the old row
+// and prepends the new revert entry at the top of the activity list, keeping
+// correct chronological order. Also updates the "Showing X of Y" counter.
+templ ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeWithArtist, basePath string, showing, total int) {
+	// Empty div replaces the reverted row (removes it from its old position).
+	<div id={ "activity-change-" + revertedID } style="display:none"></div>
+	// Prepend the new revert entry at the top of the activity list.
+	<div id="activity-entries" hx-swap-oob="afterbegin">
+		@activityRow(newChange, basePath)
+	</div>
+	if total > 0 {
+		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+			{ tf(ctx, "common.showing_of", showing, total) }
+		</p>
+	}
 }
 
 // activityRow renders a single entry in the global activity feed.
@@ -259,6 +391,12 @@ func activityLoadMoreURL(data ActivityPageData) string {
 	}
 	for _, s := range data.FilterSources {
 		u += "&source=" + url.QueryEscape(s)
+	}
+	if !data.FilterFrom.IsZero() {
+		u += "&from=" + url.QueryEscape(data.FilterFrom.Format(time.RFC3339))
+	}
+	if !data.FilterTo.IsZero() {
+		u += "&to=" + url.QueryEscape(data.FilterTo.Format(time.RFC3339))
 	}
 	return u
 }

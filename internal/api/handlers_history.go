@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -27,6 +28,55 @@ func parseFilterValues(values []string) []string {
 		result = append(result, strings.TrimPrefix(v, "+"))
 	}
 	return result
+}
+
+// splitSourceFilters separates source filter values into exact matches and
+// prefix patterns. Values like "provider:*" and "rule:*" are treated as prefix
+// patterns (matching any source that starts with "provider:" or "rule:").
+// All other values are treated as exact matches.
+func splitSourceFilters(sources []string) (exact []string, prefixes []string) {
+	for _, s := range sources {
+		if strings.HasSuffix(s, ":*") {
+			// Convert "provider:*" to prefix "provider:"
+			prefixes = append(prefixes, strings.TrimSuffix(s, "*"))
+		} else {
+			exact = append(exact, s)
+		}
+	}
+	return exact, prefixes
+}
+
+// parseTimeParam parses an RFC 3339 timestamp from a query parameter.
+// Returns the zero value if the parameter is empty or unparsable.
+func parseTimeParam(req *http.Request, name string) time.Time {
+	raw := req.URL.Query().Get(name)
+	if raw == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// buildGlobalFilter constructs a GlobalHistoryFilter from query parameters.
+// Shared between the API handler and the page/content handlers.
+func buildGlobalFilter(req *http.Request, limit int) artist.GlobalHistoryFilter {
+	q := req.URL.Query()
+	sources := parseFilterValues(q["source"])
+	exactSources, sourcePrefixes := splitSourceFilters(sources)
+
+	return artist.GlobalHistoryFilter{
+		ArtistID:       q.Get("artist_id"),
+		Fields:         parseFilterValues(q["field"]),
+		Sources:        exactSources,
+		SourcePrefixes: sourcePrefixes,
+		From:           parseTimeParam(req, "from"),
+		To:             parseTimeParam(req, "to"),
+		Limit:          limit,
+		Offset:         intQuery(req, "offset", 0),
+	}
 }
 
 // handleListArtistHistory returns paginated metadata change records for an artist.
@@ -210,6 +260,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 
 		if fromActivity {
 			// Activity feed needs MetadataChangeWithArtist (includes artist name).
+			// Fetch the most recent revert for this field to get the new entry.
 			filter := artist.GlobalHistoryFilter{
 				ArtistID: change.ArtistID,
 				Fields:   []string{change.Field},
@@ -221,12 +272,15 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				r.logger.Error("fetching revert confirmation for activity", "change_id", changeID, "error", err)
 			}
 			if err == nil && len(globalChanges) > 0 {
-				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0], r.basePath))
+				// Get updated total count for the counter.
+				allFilter := artist.GlobalHistoryFilter{Limit: 1}
+				_, total, _ := r.historyService.ListGlobal(req.Context(), allFilter)
+				renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, total, total))
 				return
 			}
 		} else {
 			// Artist history tab needs MetadataChange (no artist name needed).
-			changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
+			changes, total, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
 			if err != nil {
 				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", err)
 			}
@@ -240,7 +294,12 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 			if revertChange != nil {
-				renderTempl(w, req, templates.HistoryChangeRowFragment(*revertChange))
+				// showing = min(len(changes), total) since we fetched up to 20 rows.
+				showing := len(changes)
+				if showing > total {
+					showing = total
+				}
+				renderTempl(w, req, templates.HistoryRevertFragment(changeID, *revertChange, showing, total))
 				return
 			}
 		}
@@ -269,15 +328,7 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 	}
 
 	userID := middleware.UserIDFromContext(req.Context())
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
-		Offset:   intQuery(req, "offset", 0),
-	}
-
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)))
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -301,6 +352,19 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 	})
 }
 
+// rebuildSourceFilters reconstructs the combined source list from a
+// GlobalHistoryFilter by merging exact sources with wildcard-suffixed prefixes.
+// This is the inverse of splitSourceFilters and is used when passing filter
+// state back to templates.
+func rebuildSourceFilters(filter artist.GlobalHistoryFilter) []string {
+	all := make([]string, 0, len(filter.Sources)+len(filter.SourcePrefixes))
+	all = append(all, filter.Sources...)
+	for _, p := range filter.SourcePrefixes {
+		all = append(all, p+"*")
+	}
+	return all
+}
+
 // handleActivityPage renders the global activity page.
 // GET /activity
 func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
@@ -310,14 +374,8 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, 0),
-		Offset:   0,
-	}
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, 0))
+	filter.Offset = 0 // activity page always starts at offset 0
 
 	var changes []artist.MetadataChangeWithArtist
 	var total int
@@ -342,7 +400,9 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
-		FilterSources:  filter.Sources,
+		FilterSources:  rebuildSourceFilters(filter),
+		FilterFrom:     filter.From,
+		FilterTo:       filter.To,
 	}
 	renderTempl(w, req, templates.ActivityPage(r.assetsFor(req), data))
 }
@@ -362,14 +422,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
-		Offset:   intQuery(req, "offset", 0),
-	}
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)))
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -392,7 +445,9 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
-		FilterSources:  filter.Sources,
+		FilterSources:  rebuildSourceFilters(filter),
+		FilterFrom:     filter.From,
+		FilterTo:       filter.To,
 	}
 
 	// Load-more requests (offset > 0) return just the new rows + updated

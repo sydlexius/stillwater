@@ -124,13 +124,33 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		}
 		where = append(where, "mc.field IN ("+strings.Join(placeholders, ", ")+")")
 	}
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, s := range filter.Sources {
-			placeholders[i] = "?"
-			args = append(args, s)
+	// Build source filter combining exact matches and prefix matches (e.g. "provider:*").
+	if len(filter.Sources) > 0 || len(filter.SourcePrefixes) > 0 {
+		var sourceClauses []string
+		if len(filter.Sources) > 0 {
+			placeholders := make([]string, len(filter.Sources))
+			for i, s := range filter.Sources {
+				placeholders[i] = "?"
+				args = append(args, s)
+			}
+			sourceClauses = append(sourceClauses, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
 		}
-		where = append(where, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
+		for _, prefix := range filter.SourcePrefixes {
+			sourceClauses = append(sourceClauses, "mc.source LIKE ? ESCAPE '\\'")
+			escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+			args = append(args, escaped+"%")
+		}
+		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
+	}
+
+	// Date range bounds.
+	if !filter.From.IsZero() {
+		where = append(where, "mc.created_at >= ?")
+		args = append(args, filter.From.UTC().Format(time.RFC3339))
+	}
+	if !filter.To.IsZero() {
+		where = append(where, "mc.created_at <= ?")
+		args = append(args, filter.To.UTC().Format(time.RFC3339))
 	}
 
 	whereClause := ""
