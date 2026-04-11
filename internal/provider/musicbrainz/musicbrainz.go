@@ -458,7 +458,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		meta.Aliases = append(meta.Aliases, sa.name)
 	}
 
-	// Relations: extract members and URLs
+	// Relations: extract members, "also performs as" aliases, and URLs.
 	for _, rel := range mb.Relations {
 		switch {
 		case rel.Type == "member of band" && rel.Artist != nil && rel.Direction == "backward":
@@ -471,10 +471,37 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 			}
 			member.Instruments = append(member.Instruments, rel.Attributes...)
 			meta.Members = append(meta.Members, member)
+
+		case rel.Type == "is person" && rel.Artist != nil:
+			// "is person" is the MusicBrainz relation type for "also performs as"
+			// (legal name <-> stage name links). Capture the related artist name
+			// as an alias if it is not already present.
+			aliasName := normalizeHyphens(rel.Artist.Name)
+			if aliasName != "" && aliasName != meta.Name && !seen[aliasName] {
+				meta.Aliases = append(meta.Aliases, aliasName)
+				seen[aliasName] = true
+			}
+
 		case rel.URL != nil && rel.URL.Resource != "":
 			urlType := mapURLType(rel.Type, rel.URL.Resource)
 			if urlType != "" {
 				meta.URLs[urlType] = rel.URL.Resource
+			}
+		}
+	}
+
+	// Deduplicate members by MBID. When the same person appears multiple times
+	// (e.g., different active periods), merge their date ranges and instruments.
+	meta.Members = deduplicateMembers(meta.Members)
+
+	// Synthesize YearsActive from Formed/Disbanded for group-type artists when
+	// the provider did not supply an explicit years-active value.
+	if meta.YearsActive == "" && (mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir") {
+		if meta.Formed != "" {
+			if meta.Disbanded != "" {
+				meta.YearsActive = meta.Formed + "-" + meta.Disbanded
+			} else {
+				meta.YearsActive = meta.Formed + "-present"
 			}
 		}
 	}
@@ -554,6 +581,97 @@ func deduplicateStyles(styles, genres []string) []string {
 		return nil
 	}
 	return result
+}
+
+// deduplicateMembers merges duplicate member entries that share the same MBID.
+// When duplicates exist, their date ranges and instruments are combined into a
+// single entry.
+func deduplicateMembers(members []provider.MemberInfo) []provider.MemberInfo {
+	if len(members) <= 1 {
+		return members
+	}
+
+	type mergedMember struct {
+		info    provider.MemberInfo
+		periods [][2]string // pairs of [joined, left]
+	}
+
+	// Track insertion order so the output is deterministic.
+	var order []string
+	byMBID := make(map[string]*mergedMember, len(members))
+
+	for _, m := range members {
+		key := m.MBID
+		if key == "" {
+			// Members without an MBID cannot be deduplicated; keep as-is by
+			// giving them a unique key.
+			key = "no-mbid-" + m.Name + "-" + m.DateJoined
+		}
+
+		existing, ok := byMBID[key]
+		if !ok {
+			order = append(order, key)
+			byMBID[key] = &mergedMember{
+				info:    m,
+				periods: [][2]string{{m.DateJoined, m.DateLeft}},
+			}
+			continue
+		}
+
+		// Merge: combine date range and instruments from the duplicate.
+		existing.periods = append(existing.periods, [2]string{m.DateJoined, m.DateLeft})
+
+		// Merge instruments, avoiding duplicates.
+		instrSet := make(map[string]bool, len(existing.info.Instruments))
+		for _, inst := range existing.info.Instruments {
+			instrSet[inst] = true
+		}
+		for _, inst := range m.Instruments {
+			if !instrSet[inst] {
+				existing.info.Instruments = append(existing.info.Instruments, inst)
+				instrSet[inst] = true
+			}
+		}
+
+		// If either entry is active, mark the merged result as active.
+		if m.IsActive {
+			existing.info.IsActive = true
+		}
+	}
+
+	// Build the result, picking the earliest joined date and latest left date
+	// across all merged periods.
+	result := make([]provider.MemberInfo, 0, len(order))
+	for _, key := range order {
+		mm := byMBID[key]
+		earliest, latest := mergeDateRanges(mm.periods)
+		mm.info.DateJoined = earliest
+		mm.info.DateLeft = latest
+		result = append(result, mm.info)
+	}
+	return result
+}
+
+// mergeDateRanges finds the earliest start and latest end from a set of
+// [joined, left] date pairs. If any period has an empty end date (open-ended),
+// the returned latest is empty to represent an unbounded range.
+func mergeDateRanges(periods [][2]string) (earliest, latest string) {
+	hasOpenEnd := false
+	for _, p := range periods {
+		joined, left := p[0], p[1]
+		if joined != "" && (earliest == "" || joined < earliest) {
+			earliest = joined
+		}
+		if left == "" {
+			hasOpenEnd = true
+		} else if latest == "" || left > latest {
+			latest = left
+		}
+	}
+	if hasOpenEnd {
+		latest = ""
+	}
+	return earliest, latest
 }
 
 func userAgent() string {

@@ -582,3 +582,400 @@ func isErrUnavailable(err error) bool {
 	_, ok := err.(*provider.ErrProviderUnavailable)
 	return ok
 }
+
+// --- #973: YearsActive synthesis ---
+
+func TestMapArtist_YearsActive_GroupFormedOnly(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Test Band",
+		Type: "Group",
+		LifeSpan: MBLifeSpan{
+			Begin: "1990",
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "1990-present" {
+		t.Errorf("expected YearsActive %q, got %q", "1990-present", meta.YearsActive)
+	}
+}
+
+func TestMapArtist_YearsActive_GroupFormedAndDisbanded(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Test Band",
+		Type: "Group",
+		LifeSpan: MBLifeSpan{
+			Begin: "1990",
+			End:   "2005",
+			Ended: true,
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "1990-2005" {
+		t.Errorf("expected YearsActive %q, got %q", "1990-2005", meta.YearsActive)
+	}
+}
+
+func TestMapArtist_YearsActive_OrchestraFormedOnly(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Berlin Philharmonic",
+		Type: "Orchestra",
+		LifeSpan: MBLifeSpan{
+			Begin: "1882",
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "1882-present" {
+		t.Errorf("expected YearsActive %q, got %q", "1882-present", meta.YearsActive)
+	}
+}
+
+func TestMapArtist_YearsActive_ChoirFormedAndDisbanded(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Test Choir",
+		Type: "Choir",
+		LifeSpan: MBLifeSpan{
+			Begin: "2000",
+			End:   "2020",
+			Ended: true,
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "2000-2020" {
+		t.Errorf("expected YearsActive %q, got %q", "2000-2020", meta.YearsActive)
+	}
+}
+
+func TestMapArtist_YearsActive_SoloArtistNotSynthesized(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Solo Person",
+		Type: "Person",
+		LifeSpan: MBLifeSpan{
+			Begin: "1970",
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "" {
+		t.Errorf("expected empty YearsActive for Person, got %q", meta.YearsActive)
+	}
+}
+
+func TestMapArtist_YearsActive_GroupNoFormedDate(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Mystery Band",
+		Type: "Group",
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "" {
+		t.Errorf("expected empty YearsActive when no Formed date, got %q", meta.YearsActive)
+	}
+}
+
+// --- #974: Member deduplication ---
+
+func TestMapArtist_DeduplicateMembers_MergesDateRanges(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "band-001",
+		Name: "Test Band",
+		Type: "Group",
+		Relations: []MBRelation{
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "1990",
+				End:       "1995",
+				Ended:     true,
+				Artist: &MBArtist{
+					ID:   "member-001",
+					Name: "John Doe",
+				},
+				Attributes: []string{"guitar"},
+			},
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "2000",
+				End:       "",
+				Ended:     false,
+				Artist: &MBArtist{
+					ID:   "member-001",
+					Name: "John Doe",
+				},
+				Attributes: []string{"vocals"},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if len(meta.Members) != 1 {
+		t.Fatalf("expected 1 member after dedup, got %d", len(meta.Members))
+	}
+	m := meta.Members[0]
+	if m.MBID != "member-001" {
+		t.Errorf("expected MBID %q, got %q", "member-001", m.MBID)
+	}
+	if m.DateJoined != "1990" {
+		t.Errorf("expected DateJoined %q, got %q", "1990", m.DateJoined)
+	}
+	// Second stint is open-ended, so DateLeft should be empty.
+	if m.DateLeft != "" {
+		t.Errorf("expected empty DateLeft (still active), got %q", m.DateLeft)
+	}
+	if !m.IsActive {
+		t.Error("expected IsActive=true since second stint is not ended")
+	}
+	// Instruments should be merged.
+	if len(m.Instruments) != 2 {
+		t.Errorf("expected 2 instruments, got %d: %v", len(m.Instruments), m.Instruments)
+	}
+}
+
+func TestMapArtist_DeduplicateMembers_UniqueMembers(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "band-002",
+		Name: "Unique Band",
+		Type: "Group",
+		Relations: []MBRelation{
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "1990",
+				Artist:    &MBArtist{ID: "m1", Name: "Alice"},
+			},
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "1991",
+				Artist:    &MBArtist{ID: "m2", Name: "Bob"},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if len(meta.Members) != 2 {
+		t.Fatalf("expected 2 unique members, got %d", len(meta.Members))
+	}
+}
+
+func TestMapArtist_DeduplicateMembers_BothPeriodsClosed(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "band-003",
+		Name: "Former Band",
+		Type: "Group",
+		LifeSpan: MBLifeSpan{
+			Begin: "1980",
+			End:   "2010",
+			Ended: true,
+		},
+		Relations: []MBRelation{
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "1980",
+				End:       "1990",
+				Ended:     true,
+				Artist:    &MBArtist{ID: "m1", Name: "Dave"},
+			},
+			{
+				Type:      "member of band",
+				Direction: "backward",
+				Begin:     "2000",
+				End:       "2010",
+				Ended:     true,
+				Artist:    &MBArtist{ID: "m1", Name: "Dave"},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if len(meta.Members) != 1 {
+		t.Fatalf("expected 1 member after dedup, got %d", len(meta.Members))
+	}
+	m := meta.Members[0]
+	if m.DateJoined != "1980" {
+		t.Errorf("expected earliest DateJoined %q, got %q", "1980", m.DateJoined)
+	}
+	if m.DateLeft != "2010" {
+		t.Errorf("expected latest DateLeft %q, got %q", "2010", m.DateLeft)
+	}
+}
+
+// --- #908: "Also Performs As" aliases ---
+
+func TestMapArtist_AlsoPerformsAs_AddsAlias(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "person-001",
+		Name: "Richard Melville Hall",
+		Type: "Person",
+		Relations: []MBRelation{
+			{
+				Type:      "is person",
+				Direction: "forward",
+				Artist: &MBArtist{
+					ID:   "person-002",
+					Name: "Moby",
+				},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	found := false
+	for _, alias := range meta.Aliases {
+		if alias == "Moby" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'Moby' in aliases, got %v", meta.Aliases)
+	}
+}
+
+func TestMapArtist_AlsoPerformsAs_NoDuplicateWithExistingAlias(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "person-001",
+		Name: "Main Name",
+		Type: "Person",
+		Aliases: []MBAlias{
+			{Name: "Stage Name", Type: "artist name"},
+		},
+		Relations: []MBRelation{
+			{
+				Type:      "is person",
+				Direction: "forward",
+				Artist: &MBArtist{
+					ID:   "person-002",
+					Name: "Stage Name",
+				},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	count := 0
+	for _, alias := range meta.Aliases {
+		if alias == "Stage Name" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 'Stage Name' exactly once in aliases, found %d times in %v", count, meta.Aliases)
+	}
+}
+
+func TestMapArtist_AlsoPerformsAs_DoesNotAddSelfName(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "person-001",
+		Name: "Same Name",
+		Type: "Person",
+		Relations: []MBRelation{
+			{
+				Type:      "is person",
+				Direction: "forward",
+				Artist: &MBArtist{
+					ID:   "person-002",
+					Name: "Same Name",
+				},
+			},
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if len(meta.Aliases) != 0 {
+		t.Errorf("expected no aliases when relation name matches artist name, got %v", meta.Aliases)
+	}
+}
+
+// --- deduplicateMembers unit tests ---
+
+func TestDeduplicateMembers_EmptySlice(t *testing.T) {
+	result := deduplicateMembers(nil)
+	if result != nil {
+		t.Errorf("expected nil for nil input, got %v", result)
+	}
+}
+
+func TestDeduplicateMembers_SingleMember(t *testing.T) {
+	members := []provider.MemberInfo{{Name: "Solo", MBID: "m1"}}
+	result := deduplicateMembers(members)
+	if len(result) != 1 || result[0].Name != "Solo" {
+		t.Errorf("expected single member unchanged, got %v", result)
+	}
+}
+
+func TestDeduplicateMembers_NoMBID(t *testing.T) {
+	// Members without MBIDs should not be merged with each other.
+	members := []provider.MemberInfo{
+		{Name: "Unknown A"},
+		{Name: "Unknown B"},
+	}
+	result := deduplicateMembers(members)
+	if len(result) != 2 {
+		t.Errorf("expected 2 members without MBIDs kept separate, got %d", len(result))
+	}
+}
+
+// --- mergeDateRanges unit tests ---
+
+func TestMergeDateRanges_SinglePeriod(t *testing.T) {
+	earliest, latest := mergeDateRanges([][2]string{{"1990", "2000"}})
+	if earliest != "1990" || latest != "2000" {
+		t.Errorf("expected 1990-2000, got %s-%s", earliest, latest)
+	}
+}
+
+func TestMergeDateRanges_OpenEnded(t *testing.T) {
+	earliest, latest := mergeDateRanges([][2]string{
+		{"1990", "1995"},
+		{"2000", ""},
+	})
+	if earliest != "1990" || latest != "" {
+		t.Errorf("expected 1990-(open), got %s-%s", earliest, latest)
+	}
+}
+
+func TestMergeDateRanges_MultipleClosed(t *testing.T) {
+	earliest, latest := mergeDateRanges([][2]string{
+		{"2000", "2005"},
+		{"1980", "1990"},
+	})
+	if earliest != "1980" || latest != "2005" {
+		t.Errorf("expected 1980-2005, got %s-%s", earliest, latest)
+	}
+}
