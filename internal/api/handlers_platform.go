@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"os"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -364,7 +363,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		WebSearchProviders:      webSearchProviders,
 		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		BasePath:                r.basePath,
-		BasePathEnvOverride:     os.Getenv("SW_BASE_PATH") != "",
+		BasePathEnvOverride:     r.basePathFromEnv,
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,

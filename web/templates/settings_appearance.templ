@@ -453,11 +453,14 @@ templ appearanceScript() {
 			var autoFetchSeq = 0;
 			var bgOpacitySeq = 0;
 
-			// Last server-confirmed values for rollback. Initialized from the
-			// server-rendered state so rollback always targets a value the server
-			// has accepted, not an optimistic intermediate snapshot.
-			var lastConfirmedAutoFetch = '{ prefs.AutoFetchImages }';
-			var lastConfirmedBgOpacity = '{ prefs.BackgroundOpacity }';
+			// Last server-confirmed values for rollback. Read from the DOM so the
+			// initial value matches what the server rendered, not a literal string.
+			// The toggle and slider elements appear earlier in this component's HTML
+			// and are guaranteed to be in the DOM when this script executes.
+			var _autoFetchEl = document.getElementById('pref-auto-fetch-toggle');
+			var lastConfirmedAutoFetch = _autoFetchEl ? (_autoFetchEl.getAttribute('aria-checked') || 'false') : 'false';
+			var _bgOpacityEl = document.getElementById('pref-bg-opacity');
+			var lastConfirmedBgOpacity = _bgOpacityEl ? (_bgOpacityEl.value || '65') : '65';
 
 			// Toggle the auto-fetch images preference via the iOS-style switch.
 			window.swToggleAutoFetch = function (btn) {

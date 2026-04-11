@@ -71,6 +71,7 @@ type RouterDeps struct {
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
+	BasePathFromEnv    bool
 	StaticFS           fs.FS
 	ImageCacheDir      string
 	Publisher          *publish.Publisher
@@ -115,6 +116,7 @@ type Router struct {
 	publisher          *publish.Publisher
 	logger             *slog.Logger
 	basePath           string
+	basePathFromEnv    bool
 	imageCacheDir      string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
@@ -171,6 +173,7 @@ func NewRouter(deps RouterDeps) *Router {
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
+		basePathFromEnv:    deps.BasePathFromEnv,
 		imageCacheDir:      deps.ImageCacheDir,
 		publisher:          deps.Publisher,
 		sseHub:             deps.SSEHub,
