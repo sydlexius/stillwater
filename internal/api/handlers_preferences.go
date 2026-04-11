@@ -30,6 +30,8 @@ const (
 	PrefLanguage            = "language"
 	PrefMetadataLanguages   = "metadata_languages"
 	PrefNotificationEnabled = "notification_enabled"
+	PrefAutoFetchImages     = "auto_fetch_images"
+	PrefBgOpacity           = "bg_opacity"
 	PrefPageSize            = "page_size"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
@@ -65,6 +67,7 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefLiteMode:            {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
 	PrefLanguage:            {defaultValue: "en", allowedValues: []string{"en"}},
 	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
 }
 
 func init() {
@@ -90,6 +93,46 @@ func init() {
 // rather than a fixed set of strings.
 func isPageSizeKey(key string) bool {
 	return key == PrefPageSize
+}
+
+// isBgOpacityKey reports whether key is the bg_opacity preference key.
+// bg_opacity is validated as an integer in [BgOpacityMin, BgOpacityMax].
+func isBgOpacityKey(key string) bool {
+	return key == PrefBgOpacity
+}
+
+// BgOpacityDefault is the default background opacity percentage.
+// BgOpacityMin and BgOpacityMax define the allowed range for the bg_opacity preference.
+const (
+	BgOpacityDefault = 65
+	BgOpacityMin     = 20
+	BgOpacityMax     = 100
+)
+
+// normalizeBoolPref returns "true" or "false". If raw is already one of those
+// it is returned unchanged; otherwise fallback is returned. Callers that have
+// access to a structured logger should log a warning when the returned value
+// differs from raw so unexpected DB values are observable.
+func normalizeBoolPref(raw, fallback string) string {
+	switch raw {
+	case "true", "false":
+		return raw
+	default:
+		return fallback
+	}
+}
+
+// normalizeBgOpacity parses a raw bg_opacity string and returns the canonical
+// decimal form when it is a valid integer in [BgOpacityMin, BgOpacityMax].
+func normalizeBgOpacity(raw string) string {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return strconv.Itoa(BgOpacityDefault)
+	}
+	if n < BgOpacityMin || n > BgOpacityMax {
+		return strconv.Itoa(BgOpacityDefault)
+	}
+	return strconv.Itoa(n)
 }
 
 // normalizePageSize parses a raw page_size string and returns the canonical
@@ -333,8 +376,9 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
+	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -354,8 +398,14 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			value = "false"
 		case pageSizeKey:
 			value = strconv.Itoa(PageSizeDefault)
+		case bgOpacityKey:
+			value = strconv.Itoa(BgOpacityDefault)
 		case metaLangKey:
 			value = MetadataLanguagesDefault
+		case key == PrefAutoFetchImages:
+			// Fall back to the app-level setting so the API reflects the same
+			// default behavior as the artist image search handler.
+			value = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 		default:
 			value = def.defaultValue
 		}
@@ -371,6 +421,15 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Canonicalize bg_opacity to a valid integer in range.
+	if bgOpacityKey {
+		if normalized := normalizeBgOpacity(value); normalized != value {
+			r.logger.Warn("stored bg_opacity normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
+		}
+	}
+
 	// Canonicalize metadata_languages so malformed or manually edited DB rows
 	// always return a valid JSON array of BCP 47 tags.
 	if metaLangKey {
@@ -378,6 +437,24 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			r.logger.Warn("stored metadata_languages normalized on read",
 				"user_id", userID, "raw_value", value, "normalized", normalized)
 			value = normalized
+		}
+	}
+
+	// Canonicalize boolean preferences so malformed DB values always return
+	// "true" or "false" regardless of how the value was stored.
+	if known {
+		if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
+			// auto_fetch_images uses the app-level setting as its fallback so that
+			// a malformed stored row is consistent with the no-row path above.
+			boolFallback := def.defaultValue
+			if key == PrefAutoFetchImages {
+				boolFallback = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
+			}
+			if normalized := normalizeBoolPref(value, boolFallback); normalized != value {
+				r.logger.Warn("stored boolean preference normalized on read",
+					"user_id", userID, "key", key, "raw_value", value, "normalized", normalized)
+				value = normalized
+			}
 		}
 	}
 
@@ -394,13 +471,17 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults (fixed keys + page_size + metadata_languages).
-	prefs := make(map[string]string, len(preferenceDefaults)+2)
+	// Start with defaults (fixed keys + page_size + bg_opacity + metadata_languages).
+	prefs := make(map[string]string, len(preferenceDefaults)+3)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
 	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
+	prefs[PrefBgOpacity] = strconv.Itoa(BgOpacityDefault)
 	prefs[PrefMetadataLanguages] = MetadataLanguagesDefault
+	// Use the app-level setting as the default for auto_fetch_images so the
+	// preference page reflects the effective behavior when no per-user row exists.
+	prefs[PrefAutoFetchImages] = strconv.FormatBool(r.getBoolSetting(req.Context(), "auto_fetch_images", false))
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -420,14 +501,39 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		// page_size and metadata_languages are valid but not in preferenceDefaults.
+		// page_size, bg_opacity, and metadata_languages are valid but not in preferenceDefaults.
 		_, known := preferenceDefaults[k]
 		if known {
-			prefs[k] = v
+			// Boolean preferences need normalization in case of manual DB edits.
+			def := preferenceDefaults[k]
+			if len(def.allowedValues) == 2 && def.allowedValues[0] == "true" && def.allowedValues[1] == "false" {
+				// auto_fetch_images uses the app-level value already in prefs[k]
+				// as its fallback so a malformed row doesn't override the effective
+				// default with the compiled "false".
+				boolFallback := def.defaultValue
+				if k == PrefAutoFetchImages {
+					boolFallback = prefs[k]
+				}
+				normalized := normalizeBoolPref(v, boolFallback)
+				if normalized != v {
+					r.logger.Warn("stored boolean preference normalized on read",
+						"user_id", userID, "key", k, "raw_value", v, "normalized", normalized)
+				}
+				prefs[k] = normalized
+			} else {
+				prefs[k] = v
+			}
 		} else if isPageSizeKey(k) {
 			normalized := normalizePageSize(v)
 			if normalized != v {
 				r.logger.Warn("stored page_size normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
+			}
+			prefs[k] = normalized
+		} else if isBgOpacityKey(k) {
+			normalized := normalizeBgOpacity(v)
+			if normalized != v {
+				r.logger.Warn("stored bg_opacity normalized on read",
 					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
 			prefs[k] = normalized
@@ -466,8 +572,9 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
 	pageSizeKey := isPageSizeKey(key)
+	bgOpacityKey := isBgOpacityKey(key)
 	metaLangKey := isMetadataLanguagesKey(key)
-	if !known && !suppressKey && !pageSizeKey && !metaLangKey {
+	if !known && !suppressKey && !pageSizeKey && !bgOpacityKey && !metaLangKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -482,6 +589,7 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	// Validate value against allowed list.
 	// suppress_confirm_* keys only accept "true" or "false".
 	// page_size must be an integer in [PageSizeMin, PageSizeMax].
+	// bg_opacity must be an integer in [BgOpacityMin, BgOpacityMax].
 	// metadata_languages must be a JSON array of valid language tags.
 	var valid bool
 	switch {
@@ -492,6 +600,12 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 		valid = err == nil && n >= PageSizeMin && n <= PageSizeMax
 		if valid {
 			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
+			body.Value = strconv.Itoa(n)
+		}
+	case bgOpacityKey:
+		n, err := strconv.Atoi(body.Value)
+		valid = err == nil && n >= BgOpacityMin && n <= BgOpacityMax
+		if valid {
 			body.Value = strconv.Itoa(n)
 		}
 	case metaLangKey:
@@ -587,22 +701,77 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
+	// Parse bg_opacity as integer; fall back to default.
+	bgOpacity := strconv.Itoa(BgOpacityDefault)
+	if v, ok := stored[PrefBgOpacity]; ok {
+		normalized := normalizeBgOpacity(v)
+		if normalized != v {
+			r.logger.Warn("stored bg_opacity invalid for preferences page, using default",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		bgOpacity = normalized
+	}
+
+	// Determine auto_fetch_images with the app-level setting as the fallback so
+	// the toggle reflects the effective behavior when no per-user row exists.
+	legacyAutoFetch := strconv.FormatBool(r.getBoolSetting(ctx, "auto_fetch_images", false))
+	autoFetchImages := legacyAutoFetch
+	if v, ok := stored[PrefAutoFetchImages]; ok {
+		normalized := normalizeBoolPref(v, legacyAutoFetch)
+		if normalized != v {
+			r.logger.Warn("stored auto_fetch_images normalized for preferences page",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		autoFetchImages = normalized
+	}
+
 	prefs := templates.AppearancePrefsData{
-		Theme:          pref(PrefTheme),
-		GlassIntensity: pref(PrefGlassIntensity),
-		ThumbnailSize:  pref(PrefThumbnailSize),
-		SidebarState:   pref(PrefSidebarState),
-		ContentWidth:   pref(PrefContentWidth),
-		ReducedMotion:  pref(PrefReducedMotion),
-		Language:       pref(PrefLanguage),
-		FontFamily:     pref(PrefFontFamily),
-		LetterSpacing:  pref(PrefLetterSpacing),
-		FontSize:       pref(PrefFontSize),
-		LiteMode:       pref(PrefLiteMode),
-		PageSize:       pageSize,
+		Theme:             pref(PrefTheme),
+		GlassIntensity:    pref(PrefGlassIntensity),
+		ThumbnailSize:     pref(PrefThumbnailSize),
+		SidebarState:      pref(PrefSidebarState),
+		ContentWidth:      pref(PrefContentWidth),
+		ReducedMotion:     pref(PrefReducedMotion),
+		Language:          pref(PrefLanguage),
+		FontFamily:        pref(PrefFontFamily),
+		LetterSpacing:     pref(PrefLetterSpacing),
+		FontSize:          pref(PrefFontSize),
+		LiteMode:          pref(PrefLiteMode),
+		PageSize:          pageSize,
+		AutoFetchImages:   autoFetchImages,
+		BackgroundOpacity: bgOpacity,
 	}
 
 	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
+}
+
+// getUserBoolPreference reads a boolean user preference from the user_preferences
+// table. Returns the fallback value if no row exists for the current user.
+func (r *Router) getUserBoolPreference(ctx context.Context, key string, fallback bool) bool {
+	userID := middleware.UserIDFromContext(ctx)
+	if userID == "" {
+		return fallback
+	}
+	var v string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key).Scan(&v)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("querying boolean user preference",
+				"user_id", userID, "key", key, "error", err)
+		}
+		return fallback
+	}
+	switch v {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		r.logger.Warn("stored boolean user preference invalid, using fallback",
+			"user_id", userID, "key", key, "raw_value", v)
+		return fallback
+	}
 }
 
 // getUserPageSize reads the page_size preference for the given user from the

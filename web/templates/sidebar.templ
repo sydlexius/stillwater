@@ -4,13 +4,13 @@ package templates
 // Fields are populated by the handler from the request context and passed
 // through AssetPaths so the layout can render the sidebar server-side.
 type SidebarData struct {
-	BasePath       string
-	IsAdmin        bool
-	Username       string
-	DisplayName    string // Preferred display name; falls back to Username when empty.
-	AvatarURL      string // URL for the user's avatar image (Emby/Jellyfin profile image). Empty for local users.
-	Role           string
-	Version        string
+	BasePath    string
+	IsAdmin     bool
+	Username    string
+	DisplayName string // Preferred display name; falls back to Username when empty.
+	AvatarURL   string // URL for the user's avatar image (Emby/Jellyfin profile image). Empty for local users.
+	Role        string
+	Version     string
 }
 
 // sidebarDisplayName returns the display name if set, otherwise the username.

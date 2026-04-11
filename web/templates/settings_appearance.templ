@@ -28,18 +28,20 @@ templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
 // Appearance settings tab. All fields are pre-populated from the user_preferences
 // table (or the compiled defaults) by the settings page handler.
 type AppearancePrefsData struct {
-	Theme          string // "dark" | "light" | "system"
-	GlassIntensity string // "light" | "medium" | "heavy"
-	ThumbnailSize  string // "small" | "medium" | "large"
-	SidebarState   string // "full" | "icon-only" | "hidden"
-	ContentWidth   string // "narrow" | "wide"
-	ReducedMotion  string // "system" | "on" | "off"
-	Language       string // "en" (Phase 1 only)
-	FontFamily     string // "system" | "inter" | "atkinson"
-	LetterSpacing  string // "normal" | "wide" | "extra-wide"
-	FontSize       string // "small" | "medium" | "large"
-	LiteMode       string // "off" | "on" | "auto"
-	PageSize       int    // Validated page size in the range 10-500; defaults to 50.
+	Theme             string // "dark" | "light" | "system"
+	GlassIntensity    string // "light" | "medium" | "heavy"
+	ThumbnailSize     string // "small" | "medium" | "large"
+	SidebarState      string // "full" | "icon-only" | "hidden"
+	ContentWidth      string // "narrow" | "wide"
+	ReducedMotion     string // "system" | "on" | "off"
+	Language          string // "en" (Phase 1 only)
+	FontFamily        string // "system" | "inter" | "atkinson"
+	LetterSpacing     string // "normal" | "wide" | "extra-wide"
+	FontSize          string // "small" | "medium" | "large"
+	LiteMode          string // "off" | "on" | "auto"
+	PageSize          int    // Validated page size in the range 10-500; defaults to 50.
+	AutoFetchImages   string // "true" | "false" -- auto-search providers on image search.
+	BackgroundOpacity string // "20"-"100" -- background glass opacity percentage.
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -272,6 +274,67 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 			</div>
 		</div>
 	</div>
+	<!-- Behavior -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.behavior") }</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.appearance.behavior_desc") }
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Auto-fetch images -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.auto_fetch.title") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auto_fetch.description") }</div>
+				</div>
+				<button
+					type="button"
+					id="pref-auto-fetch-toggle"
+					class={
+						"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+						templ.KV("bg-blue-600", prefs.AutoFetchImages == "true"),
+						templ.KV("bg-gray-200 dark:bg-gray-600", prefs.AutoFetchImages != "true"),
+					}
+					role="switch"
+					aria-checked={ prefs.AutoFetchImages }
+					aria-label={ t(ctx, "settings.auto_fetch.title") }
+					onclick="swToggleAutoFetch(this)"
+				>
+					<span
+						class={
+							"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+							templ.KV("translate-x-5", prefs.AutoFetchImages == "true"),
+							templ.KV("translate-x-0", prefs.AutoFetchImages != "true"),
+						}
+					></span>
+				</button>
+			</div>
+			<!-- Background opacity -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.bg_opacity") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.bg_opacity_desc") }</div>
+				</div>
+				<div class="flex items-center gap-3">
+					<input
+						type="range"
+						id="pref-bg-opacity"
+						min="20"
+						max="100"
+						step="1"
+						class="w-32 accent-blue-600"
+						aria-label={ t(ctx, "settings.appearance.bg_opacity") }
+						value={ prefs.BackgroundOpacity }
+						oninput="swUpdateBgOpacity(this.value)"
+						onchange="swSaveBgOpacity(this.value)"
+					/>
+					<span id="bg-opacity-value" class="text-xs tabular-nums text-gray-500 dark:text-gray-400 w-8 text-right">{ prefs.BackgroundOpacity }%</span>
+				</div>
+			</div>
+		</div>
+	</div>
 	<!-- Language -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -382,6 +445,184 @@ templ appearanceScript() {
 							showToast('Failed to save preference');
 						}
 					});
+				}
+			};
+
+			// Sequence counters to discard stale async responses when the user
+			// clicks/drags faster than the server responds.
+			var autoFetchSeq = 0;
+			var bgOpacitySeq = 0;
+
+			// Last server-confirmed values for rollback. Read from the DOM so the
+			// initial value matches what the server rendered, not a literal string.
+			// The toggle and slider elements appear earlier in this component's HTML
+			// and are guaranteed to be in the DOM when this script executes.
+			var _autoFetchEl = document.getElementById('pref-auto-fetch-toggle');
+			var lastConfirmedAutoFetch = _autoFetchEl ? (_autoFetchEl.getAttribute('aria-checked') || 'false') : 'false';
+			var _bgOpacityEl = document.getElementById('pref-bg-opacity');
+			var lastConfirmedBgOpacity = _bgOpacityEl ? (_bgOpacityEl.value || '65') : '65';
+
+			// Toggle the auto-fetch images preference via the iOS-style switch.
+			window.swToggleAutoFetch = function (btn) {
+				var isOn = btn.getAttribute('aria-checked') === 'true';
+				var newVal = !isOn;
+				var valStr = String(newVal);
+				var knob = btn.querySelector('span');
+				var seq = ++autoFetchSeq;
+
+				// Rollback helper restores the toggle to the last server-confirmed
+				// state so rapid toggle sequences never restore an unconfirmed value.
+				function rollback() {
+					var confirmed = lastConfirmedAutoFetch === 'true';
+					btn.setAttribute('aria-checked', lastConfirmedAutoFetch);
+					if (confirmed) {
+						btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+						btn.classList.add('bg-blue-600');
+						knob.classList.remove('translate-x-0');
+						knob.classList.add('translate-x-5');
+					} else {
+						btn.classList.remove('bg-blue-600');
+						btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+						knob.classList.remove('translate-x-5');
+						knob.classList.add('translate-x-0');
+					}
+				}
+
+				// Optimistic UI update.
+				btn.setAttribute('aria-checked', valStr);
+				if (newVal) {
+					btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+					btn.classList.add('bg-blue-600');
+					knob.classList.remove('translate-x-0');
+					knob.classList.add('translate-x-5');
+				} else {
+					btn.classList.remove('bg-blue-600');
+					btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+					knob.classList.remove('translate-x-5');
+					knob.classList.add('translate-x-0');
+				}
+
+				if (window.swPreferences) {
+					try {
+						window.swPreferences.set('auto_fetch_images', valStr).then(function (saved) {
+							if (seq !== autoFetchSeq) {
+								if (saved !== valStr) console.warn('auto_fetch_images: stale save rejected (seq ' + seq + ')');
+								return;
+							}
+							if (saved === valStr) {
+								lastConfirmedAutoFetch = saved;
+								if (typeof window.showSuccessToast === 'function') {
+									showSuccessToast('Preference saved');
+								}
+							} else {
+								rollback();
+								if (typeof window.showToast === 'function') {
+									showToast('Failed to save preference');
+								}
+							}
+						}).catch(function (err) {
+							if (seq !== autoFetchSeq) {
+								console.warn('auto_fetch_images: stale request failed (seq ' + seq + ')', err);
+								return;
+							}
+							rollback();
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						});
+					} catch (syncErr) {
+						rollback();
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					}
+				} else {
+					rollback();
+					if (typeof window.showToast === 'function') {
+						showToast('Preferences unavailable');
+					}
+				}
+			};
+
+			// Live-update the --sw-glass-bg opacity as the slider moves (no save).
+			// Skips the inline override when lite mode is active so CSS stays in control.
+			window.swUpdateBgOpacity = function (val) {
+				var label = document.getElementById('bg-opacity-value');
+				if (label) label.textContent = val + '%';
+				if (document.documentElement.getAttribute('data-lite') === 'on') return;
+				var pct = parseInt(val, 10) / 100;
+				// Apply to the dark-mode glass variable. The actual rgba base is
+				// (30, 41, 59) for dark and (255, 255, 255) for light.
+				var isDark = document.documentElement.classList.contains('dark');
+				if (isDark) {
+					document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');
+				} else {
+					document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(255, 255, 255, ' + pct + ')');
+				}
+			};
+
+			// Persist the background opacity preference on slider release.
+			// Rolls back to the last server-confirmed value on failure so rapid
+			// drag sequences never restore an unconfirmed intermediate value.
+			window.swSaveBgOpacity = function (val) {
+				var slider = document.getElementById('pref-bg-opacity');
+				var label = document.getElementById('bg-opacity-value');
+				var seq = ++bgOpacitySeq;
+
+				function rollback() {
+					if (slider) slider.value = lastConfirmedBgOpacity;
+					if (label) label.textContent = lastConfirmedBgOpacity + '%';
+					// Restore the CSS custom property to the confirmed opacity.
+					// Skip when lite mode is active (CSS controls the value).
+					if (document.documentElement.getAttribute('data-lite') === 'on') return;
+					var pct = parseInt(lastConfirmedBgOpacity, 10) / 100;
+					var isDark = document.documentElement.classList.contains('dark');
+					if (isDark) {
+						document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');
+					} else {
+						document.documentElement.style.setProperty('--sw-glass-bg', 'rgba(255, 255, 255, ' + pct + ')');
+					}
+				}
+
+				if (window.swPreferences) {
+					try {
+						window.swPreferences.set('bg_opacity', val).then(function (saved) {
+							if (seq !== bgOpacitySeq) {
+								if (saved !== val) console.warn('bg_opacity: stale save rejected (seq ' + seq + ')');
+								return;
+							}
+							if (saved === val) {
+								lastConfirmedBgOpacity = saved;
+								if (typeof window.showSuccessToast === 'function') {
+									showSuccessToast('Preference saved');
+								}
+							} else {
+								rollback();
+								if (typeof window.showToast === 'function') {
+									showToast('Failed to save preference');
+								}
+							}
+						}).catch(function (err) {
+							if (seq !== bgOpacitySeq) {
+								console.warn('bg_opacity: stale request failed (seq ' + seq + ')', err);
+								return;
+							}
+							rollback();
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						});
+					} catch (syncErr) {
+						rollback();
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					}
+				} else {
+					rollback();
+					if (typeof window.showToast === 'function') {
+						showToast('Preferences unavailable');
+					}
 				}
 			};
 

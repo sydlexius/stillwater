@@ -450,6 +450,7 @@ func run() error {
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
+		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
 		StaticFS:           static.FS,
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 		Publisher:          publisher,

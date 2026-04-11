@@ -23,8 +23,9 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port     int    `yaml:"port"`      // SW_PORT
-	BasePath string `yaml:"base_path"` // SW_BASE_PATH
+	Port            int    `yaml:"port"`      // SW_PORT
+	BasePath        string `yaml:"base_path"` // SW_BASE_PATH
+	BasePathFromEnv bool   `yaml:"-"`         // true when BasePath was set from SW_BASE_PATH
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -140,6 +141,7 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("SW_BASE_PATH"); v != "" {
 		c.Server.BasePath = v
+		c.Server.BasePathFromEnv = true
 	}
 	if v := os.Getenv("SW_DB_PATH"); v != "" {
 		c.Database.Path = v

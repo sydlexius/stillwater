@@ -31,7 +31,9 @@
     reduced_motion: 'system',
     lite_mode: 'off',
     language: 'en',
-    notification_enabled: 'true'
+    notification_enabled: 'true',
+    auto_fetch_images: 'false',
+    bg_opacity: '65'
   };
 
   // Mapping from preference key to the data attribute name set on <html>.
@@ -108,6 +110,37 @@
       root.setAttribute(attr, value);
     }
 
+    // When lite mode changes, sync the inline --sw-glass-bg property:
+    // clear it when lite is on (let CSS control opacity), reapply when off.
+    if (key === 'lite_mode') {
+      if (value === 'on') {
+        root.style.removeProperty('--sw-glass-bg');
+      } else {
+        var cached = readCache() || {};
+        var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+        applySingle('bg_opacity', opacityVal);
+      }
+    }
+
+    // bg_opacity updates the --sw-glass-bg CSS custom property directly.
+    // Skip when lite mode is active -- lite mode forces an opaque background
+    // via CSS and the inline style would override it.
+    if (key === 'bg_opacity') {
+      if (root.getAttribute('data-lite') === 'on') {
+        root.style.removeProperty('--sw-glass-bg');
+        return;
+      }
+      var n = parseInt(value, 10);
+      if (isNaN(n) || n < 20 || n > 100) n = 65;
+      var pct = n / 100;
+      var isDark = root.classList.contains('dark');
+      if (isDark) {
+        root.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');
+      } else {
+        root.style.setProperty('--sw-glass-bg', 'rgba(255, 255, 255, ' + pct + ')');
+      }
+    }
+
     // Theme also toggles the "dark" class for Tailwind dark-mode support.
     // "system" follows the OS preference via matchMedia.
     if (key === 'theme') {
@@ -118,6 +151,10 @@
       } else {
         root.classList.remove('dark');
       }
+      // Recompute theme-dependent background color after theme change.
+      var cached = readCache() || {};
+      var opacityVal = cached.bg_opacity || DEFAULTS.bg_opacity || '65';
+      applySingle('bg_opacity', opacityVal);
     }
   }
 
@@ -130,6 +167,11 @@
       if (prefs.hasOwnProperty(key)) {
         applySingle(key, prefs[key]);
       }
+    }
+    // bg_opacity is not in ATTR_MAP (it sets a CSS custom property, not a
+    // data attribute), so apply it explicitly after the ATTR_MAP loop.
+    if (prefs.hasOwnProperty('bg_opacity')) {
+      applySingle('bg_opacity', prefs.bg_opacity);
     }
   }
 
