@@ -115,7 +115,6 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 			// the event after it expires or is dismissed.
 			if undoID, ok := resp["undo_id"].(string); ok && undoID != "" {
 				expiresIn, _ := resp["undo_expires_in"].(int)
-				w.WriteHeader(http.StatusOK)
 				renderTempl(w, req, templates.UndoToast(undoID, expiresIn))
 			} else {
 				// No undo toast -- trigger queue refresh immediately.

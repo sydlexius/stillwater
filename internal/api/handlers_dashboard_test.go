@@ -108,15 +108,19 @@ func TestHandleDashboardActionQueue_OffsetBranching(t *testing.T) {
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
 
-	// Seed violations.
-	a := &artist.Artist{
-		Name: "Offset Test Artist", SortName: "Offset Test Artist",
-		Type: "group", Path: "/music/OffsetTest", Genres: []string{"Rock"},
-	}
-	if err := r.artistService.Create(ctx, a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
+	// Seed violations with unique artists so UpsertViolation (which
+	// deduplicates on rule_id + artist_id) creates distinct rows.
 	for i := range 5 {
+		a := &artist.Artist{
+			Name:     "Offset Test Artist " + string(rune('A'+i)),
+			SortName: "Offset Test Artist " + string(rune('A'+i)),
+			Type:     "group",
+			Path:     "/music/OffsetTest" + string(rune('A'+i)),
+			Genres:   []string{"Rock"},
+		}
+		if err := r.artistService.Create(ctx, a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
 		v := &rule.RuleViolation{
 			RuleID: rule.RuleThumbExists, ArtistID: a.ID, ArtistName: a.Name,
 			Severity: "warning", Message: "missing thumb " + string(rune('a'+i)),
@@ -149,10 +153,10 @@ func TestHandleDashboardActionQueue_OffsetBranching(t *testing.T) {
 	}
 	body1 := w1.Body.String()
 
-	// The offset=0 response should contain category chip markup that
-	// the offset>0 response should not.
-	if !strings.Contains(body0, "action-queue-entries") {
-		t.Error("offset=0 response should contain action-queue-entries")
+	// The offset=0 response should contain select-all toggle markup that
+	// only the full DashboardActionQueue fragment includes.
+	if !strings.Contains(body0, "select-all-toggle") {
+		t.Error("offset=0 response should contain select-all-toggle (full fragment)")
 	}
 	// The offset>0 response should use OOB swap for appending rows.
 	if !strings.Contains(body1, "hx-swap-oob") {
