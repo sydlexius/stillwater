@@ -364,6 +364,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		BasePath:                r.basePath,
 		BasePathEnvOverride:     r.basePathFromEnv,
+		HostURL:                 req.Host, // Host header for pre-populating webhook URLs
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,
