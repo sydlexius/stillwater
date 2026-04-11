@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -500,8 +501,12 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	if meta.Type != "" && result.Metadata.Type == "" {
 		result.Metadata.Type = meta.Type
 	}
+	// Only merge gender when the accumulated type is individual or still unknown.
+	// Non-individual types (group, orchestra, choir) should not carry gender.
 	if meta.Gender != "" && result.Metadata.Gender == "" {
-		result.Metadata.Gender = meta.Gender
+		if result.Metadata.Type == "" || artist.IsIndividualType(result.Metadata.Type) {
+			result.Metadata.Gender = meta.Gender
+		}
 	}
 	if meta.Disambiguation != "" && result.Metadata.Disambiguation == "" {
 		result.Metadata.Disambiguation = meta.Disambiguation

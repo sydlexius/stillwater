@@ -3977,7 +3977,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					}
 				</button>
 			}
-			if pk.RequiresKey || pk.OptionalKey || pk.HasKey {
+			if pk.RequiresKey || pk.OptionalKey || pk.HasKey || pk.SupportsBaseURL {
 				<button
 					type="button"
 					class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"

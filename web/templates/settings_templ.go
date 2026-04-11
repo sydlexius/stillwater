@@ -6277,7 +6277,7 @@ func ProviderKeyCard(pk provider.ProviderKeyStatus) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if pk.RequiresKey || pk.OptionalKey || pk.HasKey {
+		if pk.RequiresKey || pk.OptionalKey || pk.HasKey || pk.SupportsBaseURL {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 510, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

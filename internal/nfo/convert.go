@@ -5,12 +5,17 @@ import "github.com/sydlexius/stillwater/internal/artist"
 // ToArtist converts an ArtistNFO to a domain Artist model.
 // The caller is responsible for setting ID, Path, LibraryID, and other
 // non-NFO fields (image flags, health score, timestamps, etc.).
+// Gender is cleared for non-individual types (group, orchestra, choir).
 func ToArtist(n *ArtistNFO) *artist.Artist {
+	gender := n.Gender
+	if n.Type != "" && !artist.IsIndividualType(n.Type) {
+		gender = ""
+	}
 	return &artist.Artist{
 		Name:           n.Name,
 		SortName:       n.SortName,
 		Type:           n.Type,
-		Gender:         n.Gender,
+		Gender:         gender,
 		Disambiguation: n.Disambiguation,
 		MusicBrainzID:  n.MusicBrainzArtistID,
 		AudioDBID:      n.AudioDBArtistID,
@@ -33,12 +38,17 @@ func ToArtist(n *ArtistNFO) *artist.Artist {
 // ToMetadataUpdate converts an ArtistNFO into a MetadataUpdate suitable for
 // passing to artist.ApplyMetadata. All NFO metadata fields are mapped; the
 // caller chooses the MergeStrategy.
+// Gender is cleared for non-individual types (group, orchestra, choir).
 func ToMetadataUpdate(n *ArtistNFO) *artist.MetadataUpdate {
+	gender := n.Gender
+	if n.Type != "" && !artist.IsIndividualType(n.Type) {
+		gender = ""
+	}
 	return &artist.MetadataUpdate{
 		Name:           n.Name,
 		SortName:       n.SortName,
 		Type:           n.Type,
-		Gender:         n.Gender,
+		Gender:         gender,
 		Disambiguation: n.Disambiguation,
 		MusicBrainzID:  n.MusicBrainzArtistID,
 		AudioDBID:      n.AudioDBArtistID,
@@ -66,15 +76,10 @@ func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
 	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
 }
 
-// isIndividualType returns true for artist types that can have a gender field
-// (solo/person/character). Groups, orchestras, and choirs do not.
+// isIndividualType delegates to artist.IsIndividualType. Kept as a local
+// shorthand used by FromArtistWithFieldMap.
 func isIndividualType(t string) bool {
-	switch t {
-	case "solo", "person", "character":
-		return true
-	default:
-		return false
-	}
+	return artist.IsIndividualType(t)
 }
 
 // FromArtist converts a domain Artist model to an ArtistNFO using the default

@@ -225,8 +225,10 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 
 	if err := testable.TestConnection(req.Context()); err != nil {
 		r.logger.Error("provider test failed", "provider", name, "error", err)
+		statusPersisted := true
 		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
 			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
+			statusPersisted = false
 		}
 		if isHTMXRequest(req) {
 			if isOOBE {
@@ -236,15 +238,26 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 				r.renderProviderCard(w, req, name, isOOBE)
 				return
 			}
-			renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", "Unable to verify provider credentials", "invalid"))
+			// Only update the status dot if the status was actually persisted.
+			if statusPersisted {
+				renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", "Unable to verify provider credentials", "invalid"))
+			} else {
+				renderTempl(w, req, templates.ProviderTestResult("error", "Unable to verify provider credentials"))
+			}
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": "Unable to verify provider credentials"})
+		resp := map[string]string{"status": "error", "error": "Unable to verify provider credentials"}
+		if !statusPersisted {
+			resp["status_persisted"] = "false"
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
+	statusPersisted := true
 	if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "ok"); setErr != nil {
 		r.logger.Error("persisting provider test success status", "provider", name, "error", setErr)
+		statusPersisted = false
 	}
 	if isHTMXRequest(req) {
 		if isOOBE {
@@ -253,10 +266,19 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 			r.renderProviderCard(w, req, name, isOOBE)
 			return
 		}
-		renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "ok", "", "ok"))
+		// Only update the status dot if the status was actually persisted.
+		if statusPersisted {
+			renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "ok", "", "ok"))
+		} else {
+			renderTempl(w, req, templates.ProviderTestResult("ok", ""))
+		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	resp := map[string]string{"status": "ok"}
+	if !statusPersisted {
+		resp["status_persisted"] = "false"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleGetPriorities returns the provider priority configuration.
