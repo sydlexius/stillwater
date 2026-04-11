@@ -410,7 +410,7 @@ func webhookHost(baseURL, reqHost string) string {
 // otherwise the scheme is detected from the request (TLS or X-Forwarded-Proto header).
 func webhookScheme(baseURL string, req *http.Request) string {
 	if baseURL != "" {
-		if u, err := url.Parse(baseURL); err == nil && u.Scheme != "" {
+		if u, err := url.Parse(baseURL); err == nil && u.Scheme != "" && u.Host != "" {
 			return u.Scheme
 		}
 	}

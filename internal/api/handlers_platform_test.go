@@ -251,6 +251,7 @@ func TestWebhookScheme(t *testing.T) {
 		{"TLS connection", "", true, "", "https"},
 		{"base_url scheme takes priority", "https://example.com", false, "", "https"},
 		{"base_url http overrides forwarded", "http://example.com", false, "https", "http"},
+		{"host:port without scheme falls through", "myserver:9000", false, "", "http"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

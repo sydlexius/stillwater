@@ -84,7 +84,7 @@ func (d SettingsData) inboundWebhookURL(platform string) string {
 	if basePath == "/" {
 		basePath = ""
 	}
-	return scheme + "://" + host + basePath + "/api/v1/webhooks/inbound/" + platform
+	return scheme + "://" + host + basePath + "/api/v1/webhooks/inbound/" + platform + "?apikey=YOUR_TOKEN"
 }
 
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
