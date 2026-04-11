@@ -490,7 +490,7 @@ templ UndoToast(undoID string, expiresIn int) {
 				var el = document.currentScript.parentElement;
 				var secs = parseInt(el.dataset.expiresIn, 10) || 30;
 				setTimeout(function(){
-					if(el){ el.style.opacity="0"; setTimeout(function(){ el.remove() }, 300) }
+					if(el){ el.style.opacity="0"; setTimeout(function(){ el.remove(); document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved')); }, 300) }
 				}, secs * 1000);
 			})();
 		</script>

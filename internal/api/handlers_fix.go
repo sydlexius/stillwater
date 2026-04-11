@@ -109,13 +109,18 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	if isHTMXRequest(req) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if fr.Fixed || fr.Dismissed {
-			w.Header().Set("HX-Trigger", "dashboard:action-resolved")
-			w.WriteHeader(http.StatusOK)
-
-			// Return an undo toast when the fix registered an undo entry.
+			// When an undo toast is present, skip the HX-Trigger so the
+			// queue does not reload and destroy the toast before the user
+			// can click Undo. The toast's auto-dismiss script dispatches
+			// the event after it expires or is dismissed.
 			if undoID, ok := resp["undo_id"].(string); ok && undoID != "" {
 				expiresIn, _ := resp["undo_expires_in"].(int)
+				w.WriteHeader(http.StatusOK)
 				renderTempl(w, req, templates.UndoToast(undoID, expiresIn))
+			} else {
+				// No undo toast -- trigger queue refresh immediately.
+				w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+				w.WriteHeader(http.StatusOK)
 			}
 		} else {
 			// Fix did not resolve -- return 422 with message so the card

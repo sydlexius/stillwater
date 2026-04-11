@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -561,5 +562,158 @@ func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
 		t.Error("expected undo_expires_in to be present for path-bearing artist fix")
 	} else if resp["undo_expires_in"] != float64(int(rule.UndoWindowDuration.Seconds())) {
 		t.Errorf("undo_expires_in = %v, want %v", resp["undo_expires_in"], rule.UndoWindowDuration.Seconds())
+	}
+}
+
+// TestHandleFixViolation_HTMX_WithUndo verifies that when a fix is applied
+// via HTMX and an undo entry exists, the response contains UndoToast HTML
+// and does NOT set the HX-Trigger header (to avoid destroying the toast).
+func TestHandleFixViolation_HTMX_WithUndo(t *testing.T) {
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+
+	a := addTestArtist(t, artistSvc, "HTMX Undo Artist")
+
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+	violations, err := r.ruleService.ListViolationsFiltered(context.Background(), rule.ViolationListParams{Status: "active"})
+	if err != nil || len(violations) == 0 {
+		t.Fatalf("listing violations: %v (count=%d)", err, len(violations))
+	}
+	violationID := violations[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+violationID+"/fix", nil)
+	req.SetPathValue("id", violationID)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// The response should contain undo toast HTML (the templ component).
+	body := w.Body.String()
+	if body == "" {
+		t.Fatal("expected non-empty HTML body with undo toast")
+	}
+	if !strings.Contains(body, "undo-toast-") {
+		t.Errorf("response body does not contain undo toast element; got: %s", body)
+	}
+
+	// HX-Trigger must NOT be set -- the toast's auto-dismiss handles it.
+	if trigger := w.Header().Get("HX-Trigger"); trigger != "" {
+		t.Errorf("HX-Trigger = %q, want empty (should not trigger queue reload when undo toast is present)", trigger)
+	}
+}
+
+// TestHandleFixViolation_HTMX_NoUndo verifies that when a fix is applied
+// via HTMX and there is no undo entry (pathless artist), the response sets
+// HX-Trigger to refresh the queue and returns an empty body.
+func TestHandleFixViolation_HTMX_NoUndo(t *testing.T) {
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+
+	// Create a pathless artist so no undo entry is registered.
+	a := &artist.Artist{
+		Name:     "Pathless HTMX Artist",
+		SortName: "Pathless HTMX Artist",
+		Type:     "group",
+		Genres:   []string{"Rock"},
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+	violations, err := r.ruleService.ListViolationsFiltered(context.Background(), rule.ViolationListParams{Status: "active"})
+	if err != nil || len(violations) == 0 {
+		t.Fatalf("listing violations: %v (count=%d)", err, len(violations))
+	}
+	violationID := violations[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+violationID+"/fix", nil)
+	req.SetPathValue("id", violationID)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// HX-Trigger must be set to refresh the queue.
+	if trigger := w.Header().Get("HX-Trigger"); trigger != "dashboard:action-resolved" {
+		t.Errorf("HX-Trigger = %q, want %q", trigger, "dashboard:action-resolved")
+	}
+
+	// Body should be empty (no undo toast for pathless artist).
+	if body := w.Body.String(); body != "" {
+		t.Errorf("expected empty body, got: %s", body)
+	}
+}
+
+// TestHandleUndoFix_HTMX verifies that when the undo endpoint is called via
+// HTMX, it returns an empty body and sets HX-Trigger to refresh the queue.
+func TestHandleUndoFix_HTMX(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	nr := &noopRevert{}
+	undoID := r.undoStore.Register("v-undo-htmx", nr.fn)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
+	req.SetPathValue("undoId", undoID)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleUndoFix(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !nr.called {
+		t.Error("expected revert function to have been called")
+	}
+
+	// HX-Trigger must be set to refresh the action queue.
+	if trigger := w.Header().Get("HX-Trigger"); trigger != "dashboard:action-resolved" {
+		t.Errorf("HX-Trigger = %q, want %q", trigger, "dashboard:action-resolved")
+	}
+
+	// Body should be empty so outerHTML swap removes the toast.
+	if body := w.Body.String(); body != "" {
+		t.Errorf("expected empty body, got: %s", body)
 	}
 }
