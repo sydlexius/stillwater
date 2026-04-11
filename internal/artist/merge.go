@@ -268,6 +268,19 @@ func applySnapshotRestore(a *Artist, u *MetadataUpdate) bool {
 	return changed
 }
 
+// IsIndividualType returns true for artist types that represent a single person
+// who can have a gender field (solo, person, character). Group-like types
+// (group, orchestra, choir) do not carry gender. Callers should check for
+// empty type separately before using this to clear gender.
+func IsIndividualType(t string) bool {
+	switch t {
+	case "solo", "person", "character":
+		return true
+	default:
+		return false
+	}
+}
+
 // FilterDatesByArtistType clears date fields that are semantically wrong for
 // the artist's type. Solo/person/character artists should not have
 // formed/disbanded; group/orchestra/choir artists should not have born/died.
@@ -291,11 +304,15 @@ func FetchResultToUpdate(result *provider.FetchResult) *MetadataUpdate {
 		return nil
 	}
 	m := result.Metadata
+	gender := m.Gender
+	if m.Type != "" && !IsIndividualType(m.Type) {
+		gender = ""
+	}
 	return &MetadataUpdate{
 		Name:           m.Name,
 		SortName:       m.SortName,
 		Type:           m.Type,
-		Gender:         m.Gender,
+		Gender:         gender,
 		Disambiguation: m.Disambiguation,
 		MusicBrainzID:  m.MusicBrainzID,
 		AudioDBID:      m.AudioDBID,

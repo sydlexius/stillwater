@@ -2,7 +2,7 @@
  *
  * All visual constants are defined here as CSS custom properties.
  * Components reference these tokens instead of hard-coding colors,
- * sizes, or effects. User preferences (glass intensity, font size,
+ * sizes, or effects. User preferences (background opacity, font size,
  * etc.) override tokens via data-* attributes on <html>.
  */
 
@@ -80,10 +80,7 @@
   --sw-glass-bg: rgba(30, 41, 59, 0.65);
   --sw-glass-bg-light: rgba(255, 255, 255, 0.75);
   --sw-glass-border: rgba(255, 255, 255, 0.1);
-  --sw-glass-blur-light: blur(20px) saturate(130%);
-  --sw-glass-blur-medium: blur(32px) saturate(150%);
-  --sw-glass-blur-heavy: blur(48px) saturate(180%);
-  --sw-glass-blur: var(--sw-glass-blur-medium);
+  --sw-glass-blur: blur(32px) saturate(150%);
 
   /* -- Accents ------------------------------------------------------------ */
   --sw-accent-primary: #3b82f6;
@@ -143,11 +140,6 @@
   --sw-glass-bg: rgba(255, 255, 255, 0.55);
   --sw-glass-border: rgba(0, 0, 0, 0.10);
 }
-
-/* -- Glass intensity (set via data-glass on <html>) ----------------------- */
-[data-glass="light"] { --sw-glass-blur: var(--sw-glass-blur-light); }
-[data-glass="medium"] { --sw-glass-blur: var(--sw-glass-blur-medium); }
-[data-glass="heavy"] { --sw-glass-blur: var(--sw-glass-blur-heavy); }
 
 /* -- Content width (set via data-width on <html>) ------------------------- */
 [data-width="narrow"] main { max-width: var(--sw-content-max-width); margin: 0 auto; }

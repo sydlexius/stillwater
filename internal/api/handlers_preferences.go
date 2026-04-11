@@ -18,7 +18,6 @@ import (
 // preference keys in Go code to catch typos at compile time.
 const (
 	PrefTheme               = "theme"
-	PrefGlassIntensity      = "glass_intensity"
 	PrefSidebarState        = "sidebar_state"
 	PrefContentWidth        = "content_width"
 	PrefFontFamily          = "font_family"
@@ -56,7 +55,6 @@ type preferenceDef struct {
 // preferenceDefaults defines every supported preference key with its default and valid values.
 var preferenceDefaults = map[string]preferenceDef{
 	PrefTheme:               {defaultValue: "dark", allowedValues: []string{"dark", "light", "system"}},
-	PrefGlassIntensity:      {defaultValue: "medium", allowedValues: []string{"light", "medium", "heavy"}},
 	PrefSidebarState:        {defaultValue: "full", allowedValues: []string{"full", "icon-only", "hidden"}},
 	PrefContentWidth:        {defaultValue: "narrow", allowedValues: []string{"narrow", "wide"}},
 	PrefFontFamily:          {defaultValue: "inter", allowedValues: []string{"system", "inter", "atkinson"}},
@@ -727,7 +725,6 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 
 	prefs := templates.AppearancePrefsData{
 		Theme:             pref(PrefTheme),
-		GlassIntensity:    pref(PrefGlassIntensity),
 		ThumbnailSize:     pref(PrefThumbnailSize),
 		SidebarState:      pref(PrefSidebarState),
 		ContentWidth:      pref(PrefContentWidth),

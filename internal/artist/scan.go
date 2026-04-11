@@ -269,22 +269,24 @@ func buildWhereClause(params ListParams) (string, []any) {
 	// including multiple types produces OR logic (not impossible AND logic).
 	var typeIncludes, typeExcludes []string
 	for key, state := range params.Filters {
-		var typeName string
+		var typeNames []string
 		switch key {
 		case "type_person":
-			typeName = "person"
+			// MusicBrainz stores Person as "solo"; match both for
+			// compatibility with manually-set "person" values.
+			typeNames = []string{"person", "solo"}
 		case "type_group":
-			typeName = "group"
+			typeNames = []string{"group"}
 		case "type_orchestra":
-			typeName = "orchestra"
+			typeNames = []string{"orchestra"}
 		default:
 			continue
 		}
 		switch state {
 		case "include":
-			typeIncludes = append(typeIncludes, typeName)
+			typeIncludes = append(typeIncludes, typeNames...)
 		case "exclude":
-			typeExcludes = append(typeExcludes, typeName)
+			typeExcludes = append(typeExcludes, typeNames...)
 		}
 	}
 	if len(typeIncludes) > 0 {

@@ -29,7 +29,6 @@ templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
 // table (or the compiled defaults) by the settings page handler.
 type AppearancePrefsData struct {
 	Theme             string // "dark" | "light" | "system"
-	GlassIntensity    string // "light" | "medium" | "heavy"
 	ThumbnailSize     string // "small" | "medium" | "large"
 	SidebarState      string // "full" | "icon-only" | "hidden"
 	ContentWidth      string // "narrow" | "wide"
@@ -74,23 +73,30 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 					prefs.Theme,
 				)
 			</div>
-			<!-- Glass intensity -->
+			<!-- Background opacity -->
 			<div class="flex items-center justify-between gap-4">
 				<div class="flex items-center gap-2">
 					<div>
-						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.glass_intensity") }</div>
-						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.glass_intensity_desc") }</div>
+						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.bg_opacity") }</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.bg_opacity_desc") }</div>
 					</div>
-					@components.ContextHelp("help-glass", t(ctx, "settings.appearance.glass_intensity"), t(ctx, "settings.appearance.help_glass"))
+					@components.ContextHelp("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity"), t(ctx, "settings.appearance.help_bg_opacity"))
 				</div>
-				@components.Segmented("pref-glass-intensity", "glass_intensity",
-					[]components.SegmentOption{
-						{Value: "light", Label: t(ctx, "common.light")},
-						{Value: "medium", Label: t(ctx, "common.medium")},
-						{Value: "heavy", Label: t(ctx, "common.heavy")},
-					},
-					prefs.GlassIntensity,
-				)
+				<div class="flex items-center gap-3">
+					<input
+						type="range"
+						id="pref-bg-opacity"
+						min="20"
+						max="100"
+						step="1"
+						class="w-32 accent-blue-600"
+						aria-label={ t(ctx, "settings.appearance.bg_opacity") }
+						value={ prefs.BackgroundOpacity }
+						oninput="swUpdateBgOpacity(this.value)"
+						onchange="swSaveBgOpacity(this.value)"
+					/>
+					<span id="bg-opacity-value" class="text-xs tabular-nums text-gray-500 dark:text-gray-400 w-8 text-right">{ prefs.BackgroundOpacity }%</span>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -310,28 +316,6 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 						}
 					></span>
 				</button>
-			</div>
-			<!-- Background opacity -->
-			<div class="flex items-center justify-between gap-4">
-				<div>
-					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.bg_opacity") }</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.bg_opacity_desc") }</div>
-				</div>
-				<div class="flex items-center gap-3">
-					<input
-						type="range"
-						id="pref-bg-opacity"
-						min="20"
-						max="100"
-						step="1"
-						class="w-32 accent-blue-600"
-						aria-label={ t(ctx, "settings.appearance.bg_opacity") }
-						value={ prefs.BackgroundOpacity }
-						oninput="swUpdateBgOpacity(this.value)"
-						onchange="swSaveBgOpacity(this.value)"
-					/>
-					<span id="bg-opacity-value" class="text-xs tabular-nums text-gray-500 dark:text-gray-400 w-8 text-right">{ prefs.BackgroundOpacity }%</span>
-				</div>
 			</div>
 		</div>
 	</div>

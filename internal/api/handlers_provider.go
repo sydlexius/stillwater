@@ -111,7 +111,8 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 				defer cancel()
 				testCtx = provider.WithAPIKeyOverride(testCtx, name, apiKey)
 				if testErr := testable.TestConnection(testCtx); testErr != nil {
-					r.logger.Info("provider key test failed before save", "provider", name, "error", testErr)
+					r.logger.Error("provider key test failed before save", "provider", name, "error", testErr)
+					sanitizedMsg := "Unable to verify provider credentials"
 					if isHTMXRequest(req) {
 						if isOOBE {
 							w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
@@ -121,12 +122,12 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 							w.Header().Set("HX-Reswap", "innerHTML")
 						}
 						w.WriteHeader(http.StatusUnprocessableEntity)
-						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, testErr.Error(), isOOBE))
+						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, sanitizedMsg, isOOBE))
 						return
 					}
 					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 						"status": "test_failed",
-						"error":  testErr.Error(),
+						"error":  sanitizedMsg,
 					})
 					return
 				}
@@ -201,7 +202,8 @@ func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Reques
 }
 
 // handleTestProvider tests the connection to a provider and persists the result.
-// For HTMX requests, re-renders the full provider card so the status dot updates.
+// For HTMX requests: OOBE re-renders the full provider card; non-OOBE returns a
+// test result fragment with a status dot update only when persistence succeeds.
 func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	p := r.providerRegistry.Get(name)
@@ -223,38 +225,61 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
 
 	if err := testable.TestConnection(req.Context()); err != nil {
+		r.logger.Error("provider test failed", "provider", name, "error", err)
+		statusPersisted := true
 		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
 			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
+			statusPersisted = false
 		}
 		if isHTMXRequest(req) {
-			// Re-render the full card so the status dot updates to red.
-			w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
-			w.Header().Set("HX-Reswap", "innerHTML")
 			if isOOBE {
+				// OOBE needs the full card re-render for layout.
 				w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
 				w.Header().Set("HX-Reswap", "outerHTML")
+				r.renderProviderCard(w, req, name, isOOBE)
+				return
 			}
-			r.renderProviderCard(w, req, name, isOOBE)
+			// Only update the status dot if the status was actually persisted.
+			if statusPersisted {
+				renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", "Unable to verify provider credentials", "invalid"))
+			} else {
+				renderTempl(w, req, templates.ProviderTestResult("error", "Unable to verify provider credentials"))
+			}
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": err.Error()})
+		resp := map[string]any{"status": "error", "error": "Unable to verify provider credentials"}
+		if !statusPersisted {
+			resp["status_persisted"] = false
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
+	statusPersisted := true
 	if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "ok"); setErr != nil {
 		r.logger.Error("persisting provider test success status", "provider", name, "error", setErr)
+		statusPersisted = false
 	}
 	if isHTMXRequest(req) {
-		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
-		w.Header().Set("HX-Reswap", "innerHTML")
 		if isOOBE {
 			w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
 			w.Header().Set("HX-Reswap", "outerHTML")
+			r.renderProviderCard(w, req, name, isOOBE)
+			return
 		}
-		r.renderProviderCard(w, req, name, isOOBE)
+		// Only update the status dot if the status was actually persisted.
+		if statusPersisted {
+			renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "ok", "", "ok"))
+		} else {
+			renderTempl(w, req, templates.ProviderTestResult("ok", ""))
+		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	resp := map[string]any{"status": "ok"}
+	if !statusPersisted {
+		resp["status_persisted"] = false
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleGetPriorities returns the provider priority configuration.
@@ -673,8 +698,9 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
 		defer cancel()
 		if err := testable.TestConnection(testCtx); err != nil {
+			r.logger.Error("mirror auto-test failed", "provider", name, "error", err)
 			testResult = "error"
-			testError = err.Error()
+			testError = "Unable to verify provider credentials"
 		}
 	}
 
@@ -715,6 +741,13 @@ func (r *Router) handleDeleteMirror(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("deleting mirror rate limit", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to clear rate limit")
 		return
+	}
+
+	// Clear any persisted test status so it does not resurface if a mirror
+	// is later re-added. Non-fatal: the consumer-side gate in
+	// ListProviderKeyStatuses also suppresses stale status display.
+	if err := r.providerSettings.SetKeyStatus(req.Context(), name, ""); err != nil {
+		r.logger.Error("clearing mirror test status", "provider", name, "error", err)
 	}
 
 	// Revert adapter and rate limiter to defaults.

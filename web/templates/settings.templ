@@ -3919,15 +3919,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					aria-hidden="true"
 				/>
 			}
-			<div
-				class={
-					"h-2.5 w-2.5 shrink-0 rounded-full",
-					templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
-					templ.KV("bg-yellow-500", pk.Status == "untested"),
-					templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
-					templ.KV("bg-gray-400 dark:bg-gray-500", pk.Status == "unconfigured"),
-				}
-			></div>
+			@providerStatusDot(string(pk.Name), pk.Status, false)
 			<div>
 				<div class="flex items-center gap-2">
 					<span class="font-medium text-sm">{ pk.DisplayName }</span>
@@ -3985,16 +3977,23 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					}
 				</button>
 			}
-			<button
-				type="button"
-				class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-				aria-label={ "Test " + pk.DisplayName + " connection" }
-				hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
-				hx-target={ "#test-result-" + string(pk.Name) }
-				hx-swap="innerHTML"
-			>
-				Test
-			</button>
+			if pk.RequiresKey || pk.OptionalKey || pk.HasKey || pk.SupportsBaseURL {
+				<button
+					type="button"
+					class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5"
+					aria-label={ "Test " + pk.DisplayName + " connection" }
+					hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
+					hx-target={ "#test-result-" + string(pk.Name) }
+					hx-swap="innerHTML"
+					hx-indicator={ "#test-spinner-" + string(pk.Name) }
+				>
+					Test
+					<svg id={ "test-spinner-" + string(pk.Name) } class="htmx-indicator h-3.5 w-3.5 animate-spin" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+				</button>
+			}
 			if pk.SupportsBaseURL {
 				if mirrorStatusLabel(ctx, pk.Mirror) != "" {
 					<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
@@ -4376,6 +4375,43 @@ templ ProviderTestResult(status string, message string) {
 		<span class="text-green-600 dark:text-green-400">{ t(ctx, "settings.provider_keys.test_success") }</span>
 	} else {
 		<span class="text-red-600 dark:text-red-400">{ message }</span>
+	}
+}
+
+// ProviderTestResultWithDot renders the test result plus an OOB swap to update
+// the status dot in the provider card without a full page reload.
+templ ProviderTestResultWithDot(providerName string, testStatus string, message string, keyStatus string) {
+	@ProviderTestResult(testStatus, message)
+	@providerStatusDot(providerName, keyStatus, true)
+}
+
+// providerStatusDot renders the colored status indicator for a provider card.
+// When oob is true, the element includes hx-swap-oob="true" for out-of-band
+// HTMX updates.
+templ providerStatusDot(name string, status string, oob bool) {
+	if oob {
+		<div
+			id={ "provider-dot-" + name }
+			hx-swap-oob="true"
+			class={
+				"h-2.5 w-2.5 shrink-0 rounded-full",
+				templ.KV("bg-green-500", status == "ok" || status == "not_required"),
+				templ.KV("bg-yellow-500", status == "untested"),
+				templ.KV("bg-red-500", status == "invalid" || status == "error"),
+				templ.KV("bg-gray-400 dark:bg-gray-500", status == "unconfigured"),
+			}
+		></div>
+	} else {
+		<div
+			id={ "provider-dot-" + name }
+			class={
+				"h-2.5 w-2.5 shrink-0 rounded-full",
+				templ.KV("bg-green-500", status == "ok" || status == "not_required"),
+				templ.KV("bg-yellow-500", status == "untested"),
+				templ.KV("bg-red-500", status == "invalid" || status == "error"),
+				templ.KV("bg-gray-400 dark:bg-gray-500", status == "unconfigured"),
+			}
+		></div>
 	}
 }
 

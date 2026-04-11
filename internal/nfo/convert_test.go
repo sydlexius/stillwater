@@ -203,6 +203,51 @@ func TestApplyNFOToArtist(t *testing.T) {
 	}
 }
 
+func TestFromArtist_GenderSuppressedForGroups(t *testing.T) {
+	tests := []struct {
+		artistType string
+		gender     string
+		wantGender string
+	}{
+		{"solo", "male", "male"},
+		{"person", "female", "female"},
+		{"character", "male", "male"},
+		{"group", "male", ""},
+		{"orchestra", "female", ""},
+		{"choir", "male", ""},
+		{"", "male", "male"}, // unknown type preserves gender
+	}
+	for _, tt := range tests {
+		t.Run(tt.artistType, func(t *testing.T) {
+			a := &artist.Artist{Type: tt.artistType, Gender: tt.gender}
+			n := FromArtist(a)
+			if n.Gender != tt.wantGender {
+				t.Errorf("FromArtist(%q).Gender = %q, want %q",
+					tt.artistType, n.Gender, tt.wantGender)
+			}
+		})
+	}
+}
+
+func TestIsIndividualType(t *testing.T) {
+	for _, tt := range []struct {
+		t    string
+		want bool
+	}{
+		{"solo", true},
+		{"person", true},
+		{"character", true},
+		{"group", false},
+		{"orchestra", false},
+		{"choir", false},
+		{"", false},
+	} {
+		if got := isIndividualType(tt.t); got != tt.want {
+			t.Errorf("isIndividualType(%q) = %v, want %v", tt.t, got, tt.want)
+		}
+	}
+}
+
 func TestToMetadataUpdate(t *testing.T) {
 	n := &ArtistNFO{
 		Name:                "Nirvana",
@@ -249,5 +294,41 @@ func TestToMetadataUpdate(t *testing.T) {
 	}
 	if u.Disbanded != "1994" {
 		t.Errorf("Disbanded = %q, want %q", u.Disbanded, "1994")
+	}
+	// Gender should be cleared for non-individual types.
+	if u.Gender != "" {
+		t.Errorf("Gender = %q, want empty for group type", u.Gender)
+	}
+}
+
+func TestToArtist_GenderClearedForGroup(t *testing.T) {
+	n := &ArtistNFO{Name: "Radiohead", Type: "group", Gender: "male"}
+	a := ToArtist(n)
+	if a.Gender != "" {
+		t.Errorf("Gender = %q, want empty for group type", a.Gender)
+	}
+}
+
+func TestToArtist_GenderKeptForSolo(t *testing.T) {
+	n := &ArtistNFO{Name: "Adele", Type: "solo", Gender: "female"}
+	a := ToArtist(n)
+	if a.Gender != "female" {
+		t.Errorf("Gender = %q, want %q for solo type", a.Gender, "female")
+	}
+}
+
+func TestToMetadataUpdate_GenderKeptForSolo(t *testing.T) {
+	n := &ArtistNFO{Name: "Adele", Type: "person", Gender: "female"}
+	u := ToMetadataUpdate(n)
+	if u.Gender != "female" {
+		t.Errorf("Gender = %q, want %q for person type", u.Gender, "female")
+	}
+}
+
+func TestToArtist_GenderKeptForUnknownType(t *testing.T) {
+	n := &ArtistNFO{Name: "Unknown", Type: "", Gender: "male"}
+	a := ToArtist(n)
+	if a.Gender != "male" {
+		t.Errorf("Gender = %q, want %q for unknown type", a.Gender, "male")
 	}
 }

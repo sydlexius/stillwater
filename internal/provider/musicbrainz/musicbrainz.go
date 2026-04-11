@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/tagclass"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -298,13 +299,18 @@ func normalizeHyphens(s string) string {
 // canonical name behind all language-matched aliases in the aliases list.
 // Remaining aliases, including the canonical name, are sorted by preference score.
 func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
+	mappedType := mapArtistType(mb.Type)
+	gender := strings.ToLower(mb.Gender)
+	if mappedType != "" && !artist.IsIndividualType(mappedType) {
+		gender = ""
+	}
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
 		Name:           normalizeHyphens(mb.Name),
 		SortName:       normalizeHyphens(mb.SortName),
-		Type:           mapArtistType(mb.Type),
-		Gender:         strings.ToLower(mb.Gender),
+		Type:           mappedType,
+		Gender:         gender,
 		Disambiguation: mb.Disambiguation,
 		Country:        mb.Country,
 		URLs:           make(map[string]string),

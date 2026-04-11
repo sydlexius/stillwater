@@ -224,8 +224,21 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 		} else if hasKey {
 			status = "untested"
 		}
-		// If a key is present, check for a persisted test status.
-		if hasKey {
+		// Fetch mirror config early so we can use it both for the persisted
+		// status gate and the ProviderKeyStatus assignment below.
+		cap := caps[name]
+		var mirror *MirrorConfig
+		if cap.SupportsBaseURL {
+			m, err := s.GetMirrorConfig(ctx, name)
+			if err != nil {
+				return nil, err
+			}
+			mirror = m
+		}
+		// Only look up persisted test status when the provider has an API key
+		// or an active mirror. Using cap.SupportsBaseURL alone would show stale
+		// status after mirror removal since the capability flag stays true.
+		if hasKey || mirror != nil {
 			persisted, err := s.GetKeyStatus(ctx, name)
 			if err != nil {
 				return nil, err
@@ -234,7 +247,6 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 				status = persisted
 			}
 		}
-		cap := caps[name]
 		pks := ProviderKeyStatus{
 			Name:            name,
 			DisplayName:     name.DisplayName(),
@@ -248,10 +260,6 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			SupportsBaseURL: cap.SupportsBaseURL,
 		}
 		if cap.SupportsBaseURL {
-			mirror, err := s.GetMirrorConfig(ctx, name)
-			if err != nil {
-				return nil, err
-			}
 			pks.Mirror = mirror
 		}
 		statuses = append(statuses, pks)

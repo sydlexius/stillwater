@@ -6,6 +6,21 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+func TestIsIndividualType(t *testing.T) {
+	individual := []string{"solo", "person", "character"}
+	for _, typ := range individual {
+		if !IsIndividualType(typ) {
+			t.Errorf("IsIndividualType(%q) = false, want true", typ)
+		}
+	}
+	nonIndividual := []string{"group", "orchestra", "choir", "other", ""}
+	for _, typ := range nonIndividual {
+		if IsIndividualType(typ) {
+			t.Errorf("IsIndividualType(%q) = true, want false", typ)
+		}
+	}
+}
+
 func TestApplyMetadata_NilUpdate(t *testing.T) {
 	a := &Artist{Name: "Test"}
 	if ApplyMetadata(a, nil, FillEmpty, MergeOptions{}) {
@@ -587,6 +602,34 @@ func TestFetchResultToUpdate(t *testing.T) {
 	}
 	if len(u.Genres) != 1 || u.Genres[0] != "rock" {
 		t.Errorf("Genres = %v, want [rock]", u.Genres)
+	}
+	// Gender should be cleared for non-individual types.
+	if u.Gender != "" {
+		t.Errorf("Gender = %q, want empty for group type", u.Gender)
+	}
+}
+
+func TestFetchResultToUpdate_IndividualKeepsGender(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name: "Solo Artist", Type: "solo", Gender: "female",
+		},
+	}
+	u := FetchResultToUpdate(result)
+	if u.Gender != "female" {
+		t.Errorf("Gender = %q, want %q for solo type", u.Gender, "female")
+	}
+}
+
+func TestFetchResultToUpdate_UnknownTypeKeepsGender(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name: "Unknown", Type: "", Gender: "male",
+		},
+	}
+	u := FetchResultToUpdate(result)
+	if u.Gender != "male" {
+		t.Errorf("Gender = %q, want %q for unknown type", u.Gender, "male")
 	}
 }
 
