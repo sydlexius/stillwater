@@ -179,19 +179,17 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						var params = new URLSearchParams(window.location.search);
 
 						if (fromInput && fromInput.value) {
-							// Convert date input (YYYY-MM-DD) to RFC 3339 start-of-day in the
-							// user's local timezone so the filter aligns with the displayed date.
-							var fromDate = new Date(fromInput.value + 'T00:00:00');
-							params.set('from', fromDate.toISOString());
+							// Store the date input value directly as YYYY-MM-DD to avoid
+							// UTC conversion shifting the date for users west of UTC.
+							params.set('from', fromInput.value + 'T00:00:00Z');
 						} else {
 							params.delete('from');
 						}
 
 						if (toInput && toInput.value) {
-							// Convert date input to end-of-day in the user's local timezone
-							// for inclusive filtering.
-							var toDate = new Date(toInput.value + 'T23:59:59');
-							params.set('to', toDate.toISOString());
+							// Store end-of-day as YYYY-MM-DDT23:59:59Z to keep the date
+							// aligned with the user's selection without UTC drift.
+							params.set('to', toInput.value + 'T23:59:59Z');
 						} else {
 							params.delete('to');
 						}

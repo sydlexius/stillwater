@@ -316,9 +316,15 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// HX-Current-URL so the "showing X of Y" counter stays
 				// accurate relative to the current feed view.
 				activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
-				activeFilter.Limit = 1
+				userID := middleware.UserIDFromContext(req.Context())
+				limit := r.getUserPageSize(req.Context(), userID, 0)
+				activeFilter.Limit = limit
 				_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
-				renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, total, total))
+				showing := activeFilter.Offset + limit
+				if showing > total {
+					showing = total
+				}
+				renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, showing, total))
 				return
 			}
 		} else {
