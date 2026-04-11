@@ -157,7 +157,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 			img.ImageTermFor("thumb", profileName),
 			t(ctx, "image.format_square"),
 			boolToCount(a.ThumbExists),
-			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=thumb&fetch=1", basePath, artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=thumb", basePath, artistID)),
 		).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -217,7 +217,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 			img.ImageTermFor("fanart", profileName),
 			t(ctx, "image.format_widescreen"),
 			a.FanartCount,
-			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=fanart&fetch=1", basePath, artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=fanart", basePath, artistID)),
 		).Render(templ.WithChildren(ctx, templ_7745c5c3_Var8), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -298,7 +298,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 			img.ImageTermFor("logo", profileName),
 			t(ctx, "image.format_transparent_png"),
 			boolToCount(a.LogoExists),
-			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=logo&fetch=1", basePath, artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=logo", basePath, artistID)),
 		).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -316,7 +316,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 			}
 			ctx = templ.InitializeContext(ctx)
 			if a.BannerExists {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"space-y-2\"><div class=\"group relative aspect-[4/1] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800\"><img src=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div class=\"space-y-2\"><div class=\"group relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800\"><img src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -342,7 +342,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"w-full h-full object-cover\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"w-full h-auto max-h-48\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -379,7 +379,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 			img.ImageTermFor("banner", profileName),
 			t(ctx, "image.format_wide"),
 			boolToCount(a.BannerExists),
-			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=banner&fetch=1", basePath, artistID)),
+			templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=banner", basePath, artistID)),
 		).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -742,9 +742,9 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var36 templ.SafeURL
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath, artistID, imageType)))
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath, artistID, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 338, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 338, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {

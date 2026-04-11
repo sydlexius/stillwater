@@ -227,14 +227,14 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
 		}
 		if isHTMXRequest(req) {
-			// Re-render the full card so the status dot updates to red.
-			w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
-			w.Header().Set("HX-Reswap", "innerHTML")
 			if isOOBE {
+				// OOBE needs the full card re-render for layout.
 				w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
 				w.Header().Set("HX-Reswap", "outerHTML")
+				r.renderProviderCard(w, req, name, isOOBE)
+				return
 			}
-			r.renderProviderCard(w, req, name, isOOBE)
+			renderTempl(w, req, templates.ProviderTestResult("error", err.Error()))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": err.Error()})
@@ -245,13 +245,13 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("persisting provider test success status", "provider", name, "error", setErr)
 	}
 	if isHTMXRequest(req) {
-		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
-		w.Header().Set("HX-Reswap", "innerHTML")
 		if isOOBE {
 			w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
 			w.Header().Set("HX-Reswap", "outerHTML")
+			r.renderProviderCard(w, req, name, isOOBE)
+			return
 		}
-		r.renderProviderCard(w, req, name, isOOBE)
+		renderTempl(w, req, templates.ProviderTestResult("ok", ""))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

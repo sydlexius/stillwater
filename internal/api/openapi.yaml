@@ -4405,10 +4405,6 @@ paths:
                     type: string
                     enum: [dark, light, system]
                     description: UI color theme (e.g. dark, light).
-                  glass_intensity:
-                    type: string
-                    enum: [light, medium, heavy]
-                    description: Frosted glass effect intensity preset.
                   sidebar_state:
                     type: string
                     enum: [full, icon-only, hidden]
@@ -4475,7 +4471,6 @@ paths:
                     example: "65"
                 required:
                   - theme
-                  - glass_intensity
                   - sidebar_state
                   - content_width
                   - font_family
@@ -4516,7 +4511,7 @@ paths:
           in: path
           required: true
           description: >
-            A known preference key (theme, glass_intensity, etc.) or a
+            A known preference key (theme, sidebar_state, etc.) or a
             suppress_confirm_* key of the form suppress_confirm_{action} where
             {action} contains only lowercase letters, digits, and underscores.
           schema:
@@ -4524,7 +4519,6 @@ paths:
               - type: string
                 enum:
                   - theme
-                  - glass_intensity
                   - sidebar_state
                   - content_width
                   - font_family
@@ -4595,7 +4589,6 @@ paths:
               - type: string
                 enum:
                   - theme
-                  - glass_intensity
                   - sidebar_state
                   - content_width
                   - font_family

@@ -203,6 +203,51 @@ func TestApplyNFOToArtist(t *testing.T) {
 	}
 }
 
+func TestFromArtist_GenderSuppressedForGroups(t *testing.T) {
+	tests := []struct {
+		artistType string
+		gender     string
+		wantGender string
+	}{
+		{"solo", "male", "male"},
+		{"person", "female", "female"},
+		{"character", "male", "male"},
+		{"group", "male", ""},
+		{"orchestra", "female", ""},
+		{"choir", "male", ""},
+		{"", "male", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.artistType, func(t *testing.T) {
+			a := &artist.Artist{Type: tt.artistType, Gender: tt.gender}
+			n := FromArtist(a)
+			if n.Gender != tt.wantGender {
+				t.Errorf("FromArtist(%q).Gender = %q, want %q",
+					tt.artistType, n.Gender, tt.wantGender)
+			}
+		})
+	}
+}
+
+func TestIsIndividualType(t *testing.T) {
+	for _, tt := range []struct {
+		t    string
+		want bool
+	}{
+		{"solo", true},
+		{"person", true},
+		{"character", true},
+		{"group", false},
+		{"orchestra", false},
+		{"choir", false},
+		{"", false},
+	} {
+		if got := isIndividualType(tt.t); got != tt.want {
+			t.Errorf("isIndividualType(%q) = %v, want %v", tt.t, got, tt.want)
+		}
+	}
+}
+
 func TestToMetadataUpdate(t *testing.T) {
 	n := &ArtistNFO{
 		Name:                "Nirvana",

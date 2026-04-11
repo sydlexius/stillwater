@@ -271,6 +271,36 @@ func TestWrite_BasicNFO(t *testing.T) {
 	}
 }
 
+func TestWrite_GenderSuppressedForGroups(t *testing.T) {
+	nfo := &ArtistNFO{
+		Name:   "Nirvana",
+		Type:   "group",
+		Gender: "male",
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, nfo); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if strings.Contains(buf.String(), "<gender>") {
+		t.Error("gender should not be written for group-type artists")
+	}
+}
+
+func TestWrite_GenderIncludedForSolo(t *testing.T) {
+	nfo := &ArtistNFO{
+		Name:   "Adele",
+		Type:   "solo",
+		Gender: "female",
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, nfo); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if !strings.Contains(buf.String(), "<gender>female</gender>") {
+		t.Error("gender should be written for solo-type artists")
+	}
+}
+
 func TestWrite_RoundTrip(t *testing.T) {
 	f, err := os.Open("testdata/basic.nfo")
 	if err != nil {

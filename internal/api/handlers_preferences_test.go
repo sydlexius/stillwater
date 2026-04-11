@@ -57,9 +57,9 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefBgOpacity, "65", got)
 	}
 
-	// Verify the wire contract returns exactly 16 keys.
-	if len(prefs) != 16 {
-		t.Errorf("expected 16 keys, got %d", len(prefs))
+	// Verify the wire contract returns exactly 15 keys.
+	if len(prefs) != 15 {
+		t.Errorf("expected 15 keys, got %d", len(prefs))
 	}
 }
 
@@ -100,8 +100,8 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 	}
 
 	// Other defaults should still be present.
-	if prefs["glass_intensity"] != "medium" {
-		t.Errorf("expected glass_intensity=medium, got %q", prefs["glass_intensity"])
+	if prefs["sidebar_state"] != "full" {
+		t.Errorf("expected sidebar_state=full, got %q", prefs["sidebar_state"])
 	}
 }
 

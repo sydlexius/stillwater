@@ -66,6 +66,17 @@ func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
 	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
 }
 
+// isIndividualType returns true for artist types that can have a gender field
+// (solo/person/character). Groups, orchestras, and choirs do not.
+func isIndividualType(t string) bool {
+	switch t {
+	case "solo", "person", "character":
+		return true
+	default:
+		return false
+	}
+}
+
 // FromArtist converts a domain Artist model to an ArtistNFO using the default
 // (Kodi-compatible) field mapping. Maps all provider IDs (MusicBrainz, AudioDB,
 // Discogs, Wikidata, Deezer, Spotify) into their NFO XML element equivalents.
@@ -84,11 +95,16 @@ func FromArtistWithFieldMap(a *artist.Artist, fm NFOFieldMap) *ArtistNFO {
 
 	nfoGenres, nfoStyles, nfoMoods := ApplyFieldMap(fm, a.Genres, a.Styles, a.Moods)
 
+	gender := a.Gender
+	if !isIndividualType(a.Type) {
+		gender = ""
+	}
+
 	return &ArtistNFO{
 		Name:                a.Name,
 		SortName:            a.SortName,
 		Type:                a.Type,
-		Gender:              a.Gender,
+		Gender:              gender,
 		Disambiguation:      a.Disambiguation,
 		MusicBrainzArtistID: a.MusicBrainzID,
 		AudioDBArtistID:     a.AudioDBID,

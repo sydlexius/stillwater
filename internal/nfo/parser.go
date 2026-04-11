@@ -340,7 +340,11 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	writeElement(w, "name", nfo.Name)
 	writeElement(w, "sortname", nfo.SortName)
 	writeElement(w, "type", nfo.Type)
-	writeElement(w, "gender", nfo.Gender)
+	// Only write gender for individual artist types; group/orchestra/choir
+	// have no meaningful gender.
+	if isIndividualType(nfo.Type) {
+		writeElement(w, "gender", nfo.Gender)
+	}
 	writeElement(w, "disambiguation", nfo.Disambiguation)
 	writeElement(w, "musicbrainzartistid", nfo.MusicBrainzArtistID)
 	writeElement(w, "audiodbartistid", nfo.AudioDBArtistID)

@@ -15,7 +15,7 @@
 
 /* Global acrylic card treatment -- active on all pages via the fixed background */
 .sw-card {
-  background-color: rgba(255, 255, 255, 0.80);
+  background-color: var(--sw-glass-bg);
   backdrop-filter: blur(18px) saturate(180%);
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   border-width: 1px;
@@ -25,7 +25,6 @@
 }
 
 :where(.dark, .dark *) .sw-card {
-  background-color: rgba(15, 23, 42, 0.80);
   border-color: rgba(255, 255, 255, 0.09);
 }
 

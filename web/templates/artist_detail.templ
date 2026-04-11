@@ -290,7 +290,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									}
 								</button>
 								<a
-									href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?fetch=1", assets.BasePath, data.Artist.ID)) }
+									href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images", assets.BasePath, data.Artist.ID)) }
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								>
@@ -502,7 +502,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</section>
 				// Platform state cards load lazily per connection
 				if len(data.Connections) > 0 {
-					<div class="space-y-4">
+					<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow space-y-4">
 						<h2 class="text-lg font-semibold">{ t(ctx, "artist.platform_state") }</h2>
 						for _, conn := range data.Connections {
 							<div
@@ -519,7 +519,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								</div>
 							</div>
 						}
-					</div>
+					</section>
 				}
 			</div>
 			// -- History --
@@ -753,7 +753,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 			</div>
 		} else {
 			<a
-				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath(), artistID, imageType)) }
+				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)) }
 				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
 				title={ tf(ctx, "artist.add_image_type", label) }
 			>
@@ -1095,6 +1095,23 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 	</section>
 }
 
+// pushMetadata sends a JSON POST to push artist metadata to a platform connection.
+script pushMetadata(artistID string, connectionID string) {
+	var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+	var bp = bpEl ? bpEl.content : '';
+	var csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+	var csrf = csrfMatch ? csrfMatch[1] : '';
+	fetch(bp + '/api/v1/artists/' + artistID + '/push', {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf},
+		body: JSON.stringify({connection_id: connectionID})
+	}).then(function(resp) {
+		if (resp.ok) { window.location.reload(); return; }
+		return resp.json().then(function(data) { alert('Push failed: ' + (data.error || 'unknown error')); });
+	}).catch(function(err) { alert('Push failed: ' + err.message); });
+}
+
 // PlatformStateCard renders the platform state comparison card for one connection.
 // Returned as an HTMX outerHTML swap to replace the loading placeholder.
 // profileName is the active platform profile name used for Stillwater-side image labels.
@@ -1106,10 +1123,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 				<button
 					type="button"
 					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
-					hx-post={ "/api/v1/artists/" + a.ID + "/push" }
-					hx-vals={ hxValsJSON(map[string]string{"connection_id": conn.ID}) }
-					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+					onclick={ pushMetadata(a.ID, conn.ID) }
 				>
 					{ t(ctx, "artist.push_all") }
 				</button>

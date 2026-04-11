@@ -21,7 +21,6 @@
   // Default preferences used when both cache and API are unavailable.
   var DEFAULTS = {
     theme: 'dark',
-    glass_intensity: 'medium',
     sidebar_state: 'full',
     content_width: 'narrow',
     font_family: 'inter',
@@ -40,7 +39,6 @@
   // Keys not listed here are stored in the cache but not applied to the DOM.
   var ATTR_MAP = {
     theme: 'data-theme',
-    glass_intensity: 'data-glass',
     sidebar_state: 'data-sidebar',
     content_width: 'data-width',
     font_family: 'data-font-family',
