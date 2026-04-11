@@ -202,7 +202,8 @@ func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Reques
 }
 
 // handleTestProvider tests the connection to a provider and persists the result.
-// For HTMX requests, returns a test result fragment with an OOB status dot update.
+// For HTMX requests: OOBE re-renders the full provider card; non-OOBE returns a
+// test result fragment with a status dot update only when persistence succeeds.
 func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	p := r.providerRegistry.Get(name)
@@ -740,6 +741,13 @@ func (r *Router) handleDeleteMirror(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("deleting mirror rate limit", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to clear rate limit")
 		return
+	}
+
+	// Clear any persisted test status so it does not resurface if a mirror
+	// is later re-added. Non-fatal: the consumer-side gate in
+	// ListProviderKeyStatuses also suppresses stale status display.
+	if err := r.providerSettings.SetKeyStatus(req.Context(), name, ""); err != nil {
+		r.logger.Error("clearing mirror test status", "provider", name, "error", err)
 	}
 
 	// Revert adapter and rate limiter to defaults.
