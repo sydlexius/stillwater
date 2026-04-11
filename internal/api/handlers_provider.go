@@ -111,7 +111,8 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 				defer cancel()
 				testCtx = provider.WithAPIKeyOverride(testCtx, name, apiKey)
 				if testErr := testable.TestConnection(testCtx); testErr != nil {
-					r.logger.Info("provider key test failed before save", "provider", name, "error", testErr)
+					r.logger.Error("provider key test failed before save", "provider", name, "error", testErr)
+					sanitizedMsg := "Unable to verify provider credentials"
 					if isHTMXRequest(req) {
 						if isOOBE {
 							w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
@@ -121,12 +122,12 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 							w.Header().Set("HX-Reswap", "innerHTML")
 						}
 						w.WriteHeader(http.StatusUnprocessableEntity)
-						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, testErr.Error(), isOOBE))
+						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, sanitizedMsg, isOOBE))
 						return
 					}
 					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 						"status": "test_failed",
-						"error":  testErr.Error(),
+						"error":  sanitizedMsg,
 					})
 					return
 				}
@@ -201,7 +202,7 @@ func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Reques
 }
 
 // handleTestProvider tests the connection to a provider and persists the result.
-// For HTMX requests, re-renders the full provider card so the status dot updates.
+// For HTMX requests, returns a test result fragment with an OOB status dot update.
 func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	p := r.providerRegistry.Get(name)
@@ -223,6 +224,7 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
 
 	if err := testable.TestConnection(req.Context()); err != nil {
+		r.logger.Error("provider test failed", "provider", name, "error", err)
 		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
 			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
 		}
@@ -234,10 +236,10 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 				r.renderProviderCard(w, req, name, isOOBE)
 				return
 			}
-			renderTempl(w, req, templates.ProviderTestResult("error", err.Error()))
+			renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "error", "Unable to verify provider credentials", "invalid"))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": err.Error()})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": "Unable to verify provider credentials"})
 		return
 	}
 
@@ -251,7 +253,7 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 			r.renderProviderCard(w, req, name, isOOBE)
 			return
 		}
-		renderTempl(w, req, templates.ProviderTestResult("ok", ""))
+		renderTempl(w, req, templates.ProviderTestResultWithDot(string(name), "ok", "", "ok"))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -673,8 +675,9 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
 		defer cancel()
 		if err := testable.TestConnection(testCtx); err != nil {
+			r.logger.Error("mirror auto-test failed", "provider", name, "error", err)
 			testResult = "error"
-			testError = err.Error()
+			testError = "Unable to verify provider credentials"
 		}
 	}
 

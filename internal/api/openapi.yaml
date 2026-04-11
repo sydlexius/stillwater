@@ -4388,12 +4388,12 @@ paths:
       operationId: getPreferences
       description: >
         Returns all preference keys for the authenticated user, merged with defaults.
-        Preferences are per-user appearance settings (theme, glass intensity, sidebar
+        Preferences are per-user appearance settings (theme, sidebar
         state, typography, etc.).
       responses:
         "200":
           description: >
-            All 16 preference keys with the user's values merged over defaults.
+            All 15 preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:

@@ -3919,15 +3919,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					aria-hidden="true"
 				/>
 			}
-			<div
-				class={
-					"h-2.5 w-2.5 shrink-0 rounded-full",
-					templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
-					templ.KV("bg-yellow-500", pk.Status == "untested"),
-					templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
-					templ.KV("bg-gray-400 dark:bg-gray-500", pk.Status == "unconfigured"),
-				}
-			></div>
+			@providerStatusDot(string(pk.Name), pk.Status, false)
 			<div>
 				<div class="flex items-center gap-2">
 					<span class="font-medium text-sm">{ pk.DisplayName }</span>
@@ -4383,6 +4375,43 @@ templ ProviderTestResult(status string, message string) {
 		<span class="text-green-600 dark:text-green-400">{ t(ctx, "settings.provider_keys.test_success") }</span>
 	} else {
 		<span class="text-red-600 dark:text-red-400">{ message }</span>
+	}
+}
+
+// ProviderTestResultWithDot renders the test result plus an OOB swap to update
+// the status dot in the provider card without a full page reload.
+templ ProviderTestResultWithDot(providerName string, testStatus string, message string, keyStatus string) {
+	@ProviderTestResult(testStatus, message)
+	@providerStatusDot(providerName, keyStatus, true)
+}
+
+// providerStatusDot renders the colored status indicator for a provider card.
+// When oob is true, the element includes hx-swap-oob="true" for out-of-band
+// HTMX updates.
+templ providerStatusDot(name string, status string, oob bool) {
+	if oob {
+		<div
+			id={ "provider-dot-" + name }
+			hx-swap-oob="true"
+			class={
+				"h-2.5 w-2.5 shrink-0 rounded-full",
+				templ.KV("bg-green-500", status == "ok" || status == "not_required"),
+				templ.KV("bg-yellow-500", status == "untested"),
+				templ.KV("bg-red-500", status == "invalid" || status == "error"),
+				templ.KV("bg-gray-400 dark:bg-gray-500", status == "unconfigured"),
+			}
+		></div>
+	} else {
+		<div
+			id={ "provider-dot-" + name }
+			class={
+				"h-2.5 w-2.5 shrink-0 rounded-full",
+				templ.KV("bg-green-500", status == "ok" || status == "not_required"),
+				templ.KV("bg-yellow-500", status == "untested"),
+				templ.KV("bg-red-500", status == "invalid" || status == "error"),
+				templ.KV("bg-gray-400 dark:bg-gray-500", status == "unconfigured"),
+			}
+		></div>
 	}
 }
 
