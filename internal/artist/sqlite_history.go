@@ -143,13 +143,15 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
 	}
 
-	// Date range bounds.
+	// Date range bounds. Use datetime() to normalize both the stored value and the
+	// parameter to a comparable format. Legacy rows may use "2006-01-02 15:04:05"
+	// while newer rows use RFC 3339; datetime() handles both correctly.
 	if !filter.From.IsZero() {
-		where = append(where, "mc.created_at >= ?")
+		where = append(where, "datetime(mc.created_at) >= datetime(?)")
 		args = append(args, filter.From.UTC().Format(time.RFC3339))
 	}
 	if !filter.To.IsZero() {
-		where = append(where, "mc.created_at <= ?")
+		where = append(where, "datetime(mc.created_at) <= datetime(?)")
 		args = append(args, filter.To.UTC().Format(time.RFC3339))
 	}
 

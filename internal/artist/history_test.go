@@ -447,6 +447,88 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 			t.Error("expected empty slice, got nil")
 		}
 	})
+
+	t.Run("filters by source prefix", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			SourcePrefixes: []string{"provider:"},
+			Limit:          50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 1 {
+			t.Errorf("total = %d, want 1", total)
+		}
+		if len(changes) != 1 {
+			t.Fatalf("len(changes) = %d, want 1", len(changes))
+		}
+		if changes[0].Source != "provider:musicbrainz" {
+			t.Errorf("Source = %q, want provider:musicbrainz", changes[0].Source)
+		}
+	})
+
+	t.Run("filters by date range", func(t *testing.T) {
+		// All test data was inserted moments ago, so filtering with a range
+		// that spans "now" should return all 3 changes.
+		now := time.Now().UTC()
+		from := now.Add(-1 * time.Minute)
+		to := now.Add(1 * time.Minute)
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			From:  from,
+			To:    to,
+			Limit: 50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 3 {
+			t.Errorf("total = %d, want 3", total)
+		}
+		if len(changes) != 3 {
+			t.Errorf("len(changes) = %d, want 3", len(changes))
+		}
+	})
+
+	t.Run("date range excludes future changes", func(t *testing.T) {
+		// Use a range entirely in the past to exclude all changes.
+		past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			From:  past,
+			To:    past.Add(1 * time.Hour),
+			Limit: 50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 0 {
+			t.Errorf("total = %d, want 0", total)
+		}
+		if len(changes) != 0 {
+			t.Errorf("len(changes) = %d, want 0", len(changes))
+		}
+	})
+
+	t.Run("combines prefix and date range filters", func(t *testing.T) {
+		now := time.Now().UTC()
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			SourcePrefixes: []string{"provider:"},
+			From:           now.Add(-1 * time.Minute),
+			To:             now.Add(1 * time.Minute),
+			Limit:          50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 1 {
+			t.Errorf("total = %d, want 1", total)
+		}
+		if len(changes) != 1 {
+			t.Fatalf("len(changes) = %d, want 1", len(changes))
+		}
+		if changes[0].Source != "provider:musicbrainz" {
+			t.Errorf("Source = %q, want provider:musicbrainz", changes[0].Source)
+		}
+	})
 }
 
 func TestIsTrackableField(t *testing.T) {

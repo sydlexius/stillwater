@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +78,44 @@ func buildGlobalFilter(req *http.Request, limit int) artist.GlobalHistoryFilter 
 		To:             parseTimeParam(req, "to"),
 		Limit:          limit,
 		Offset:         intQuery(req, "offset", 0),
+	}
+}
+
+// buildGlobalFilterFromURL constructs a GlobalHistoryFilter from a full URL
+// string (typically from HX-Current-URL). This preserves the active filters
+// when rendering revert fragments so the "showing X of Y" counter stays
+// consistent with the current feed view.
+func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return artist.GlobalHistoryFilter{}
+	}
+	q := u.Query()
+	sources := parseFilterValues(q["source"])
+	exactSources, sourcePrefixes := splitSourceFilters(sources)
+
+	var from, to time.Time
+	if raw := q.Get("from"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			from = t
+		}
+	}
+	if raw := q.Get("to"); raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			to = t
+		}
+	}
+
+	offset, _ := strconv.Atoi(q.Get("offset"))
+
+	return artist.GlobalHistoryFilter{
+		ArtistID:       q.Get("artist_id"),
+		Fields:         parseFilterValues(q["field"]),
+		Sources:        exactSources,
+		SourcePrefixes: sourcePrefixes,
+		From:           from,
+		To:             to,
+		Offset:         offset,
 	}
 }
 
@@ -261,26 +301,31 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		if fromActivity {
 			// Activity feed needs MetadataChangeWithArtist (includes artist name).
 			// Fetch the most recent revert for this field to get the new entry.
-			filter := artist.GlobalHistoryFilter{
+			revertFilter := artist.GlobalHistoryFilter{
 				ArtistID: change.ArtistID,
 				Fields:   []string{change.Field},
 				Sources:  []string{"revert"},
 				Limit:    1,
 			}
-			globalChanges, _, err := r.historyService.ListGlobal(req.Context(), filter)
+			globalChanges, _, err := r.historyService.ListGlobal(req.Context(), revertFilter)
 			if err != nil {
 				r.logger.Error("fetching revert confirmation for activity", "change_id", changeID, "error", err)
 			}
 			if err == nil && len(globalChanges) > 0 {
-				// Get updated total count for the counter.
-				allFilter := artist.GlobalHistoryFilter{Limit: 1}
-				_, total, _ := r.historyService.ListGlobal(req.Context(), allFilter)
+				// Rebuild the active filter from query params carried in
+				// HX-Current-URL so the "showing X of Y" counter stays
+				// accurate relative to the current feed view.
+				activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
+				activeFilter.Limit = 1
+				_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
 				renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, total, total))
 				return
 			}
 		} else {
 			// Artist history tab needs MetadataChange (no artist name needed).
-			changes, total, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
+			userID := middleware.UserIDFromContext(req.Context())
+			limit := r.getUserPageSize(req.Context(), userID, 0)
+			changes, total, err := r.historyService.List(req.Context(), change.ArtistID, limit, 0)
 			if err != nil {
 				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", err)
 			}
@@ -294,7 +339,6 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				}
 			}
 			if revertChange != nil {
-				// showing = min(len(changes), total) since we fetched up to 20 rows.
 				showing := len(changes)
 				if showing > total {
 					showing = total
