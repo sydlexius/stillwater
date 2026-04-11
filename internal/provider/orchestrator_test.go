@@ -1503,6 +1503,226 @@ func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
 	}
 }
 
+// TestFetchImagesRespectsProviderPriority verifies that FetchImages returns
+// images from providers in the configured priority order. When the user sets
+// AudioDB before FanartTV in the thumb priority, AudioDB images should appear
+// first in the result slice.
+func TestFetchImagesRespectsProviderPriority(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Store a dummy API key for FanartTV so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Track the order in which providers are called.
+	var callOrder []ProviderName
+	registry.Register(&mockProvider{
+		name: NameFanartTV,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameFanartTV)
+			return []ImageResult{
+				{URL: "http://fanart.tv/thumb.jpg", Type: ImageThumb, Source: "fanarttv"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameAudioDB)
+			return []ImageResult{
+				{URL: "http://audiodb.com/thumb.jpg", Type: ImageThumb, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	// Configure thumb priority: AudioDB first, then FanartTV (reversed from default).
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameAudioDB, NameFanartTV}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	// Both providers should be called.
+	if len(callOrder) != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", len(callOrder))
+	}
+
+	// AudioDB should be called first (higher priority in configured order).
+	if callOrder[0] != NameAudioDB {
+		t.Errorf("expected AudioDB called first, got %s", callOrder[0])
+	}
+	if callOrder[1] != NameFanartTV {
+		t.Errorf("expected FanartTV called second, got %s", callOrder[1])
+	}
+
+	// Images should appear in priority order: AudioDB thumb first, FanartTV thumb second.
+	if len(result.Images) != 2 {
+		t.Fatalf("expected 2 images, got %d", len(result.Images))
+	}
+	if result.Images[0].Source != "audiodb" {
+		t.Errorf("expected first image from audiodb, got %s", result.Images[0].Source)
+	}
+	if result.Images[1].Source != "fanarttv" {
+		t.Errorf("expected second image from fanarttv, got %s", result.Images[1].Source)
+	}
+}
+
+// TestFetchImages_CrossFieldPriorityConflict verifies first-field-wins semantics
+// when thumb and fanart have conflicting provider orders. Thumb priorities list
+// AudioDB first while fanart priorities list FanartTV first. Because thumb is
+// walked before fanart in imageProvidersInPriorityOrder, AudioDB should be
+// called first globally (thumb's order wins for the first-seen provider).
+func TestFetchImages_CrossFieldPriorityConflict(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Store a dummy API key for FanartTV so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Track the order in which providers are called.
+	var callOrder []ProviderName
+	registry.Register(&mockProvider{
+		name: NameFanartTV,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameFanartTV)
+			return []ImageResult{
+				{URL: "http://fanart.tv/thumb.jpg", Type: ImageThumb, Source: "fanarttv"},
+				{URL: "http://fanart.tv/fanart.jpg", Type: ImageFanart, Source: "fanarttv"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameAudioDB)
+			return []ImageResult{
+				{URL: "http://audiodb.com/thumb.jpg", Type: ImageThumb, Source: "audiodb"},
+				{URL: "http://audiodb.com/fanart.jpg", Type: ImageFanart, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	// Conflicting priorities: thumb wants AudioDB first, fanart wants FanartTV first.
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameAudioDB, NameFanartTV}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "fanart", []ProviderName{NameFanartTV, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority fanart: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	// Both providers should be called.
+	if len(callOrder) != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", len(callOrder))
+	}
+
+	// AudioDB should be called first because thumb (the first image field) lists
+	// AudioDB first. FanartTV's fanart priority does not override this since
+	// AudioDB was already positioned by thumb (first-field-wins).
+	if callOrder[0] != NameAudioDB {
+		t.Errorf("expected AudioDB called first (thumb priority wins), got %s", callOrder[0])
+	}
+	if callOrder[1] != NameFanartTV {
+		t.Errorf("expected FanartTV called second, got %s", callOrder[1])
+	}
+
+	// Should have 4 images total: thumb + fanart from each provider.
+	if len(result.Images) != 4 {
+		t.Fatalf("expected 4 images, got %d", len(result.Images))
+	}
+
+	// First two images should be from AudioDB (called first), last two from FanartTV.
+	if result.Images[0].Source != "audiodb" {
+		t.Errorf("expected first image from audiodb, got %s", result.Images[0].Source)
+	}
+	if result.Images[1].Source != "audiodb" {
+		t.Errorf("expected second image from audiodb, got %s", result.Images[1].Source)
+	}
+	if result.Images[2].Source != "fanarttv" {
+		t.Errorf("expected third image from fanarttv, got %s", result.Images[2].Source)
+	}
+	if result.Images[3].Source != "fanarttv" {
+		t.Errorf("expected fourth image from fanarttv, got %s", result.Images[3].Source)
+	}
+}
+
+// TestFetchImagesDefaultOrderWithoutCustomPriority verifies that FetchImages
+// uses the default priority order when no custom priority is configured.
+func TestFetchImagesDefaultOrderWithoutCustomPriority(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Store a dummy API key for FanartTV so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	var callOrder []ProviderName
+	registry.Register(&mockProvider{
+		name: NameFanartTV,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameFanartTV)
+			return []ImageResult{
+				{URL: "http://fanart.tv/thumb.jpg", Type: ImageThumb, Source: "fanarttv"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			callOrder = append(callOrder, NameAudioDB)
+			return []ImageResult{
+				{URL: "http://audiodb.com/thumb.jpg", Type: ImageThumb, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	// Default thumb priority is FanartTV, AudioDB (see DefaultPriorities).
+	// FanartTV should be called first.
+	if len(callOrder) != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", len(callOrder))
+	}
+	if callOrder[0] != NameFanartTV {
+		t.Errorf("expected FanartTV called first (default priority), got %s", callOrder[0])
+	}
+	if callOrder[1] != NameAudioDB {
+		t.Errorf("expected AudioDB called second (default priority), got %s", callOrder[1])
+	}
+
+	// Images should appear in default priority order.
+	if len(result.Images) != 2 {
+		t.Fatalf("expected 2 images, got %d", len(result.Images))
+	}
+	if result.Images[0].Source != "fanarttv" {
+		t.Errorf("expected first image from fanarttv, got %s", result.Images[0].Source)
+	}
+	if result.Images[1].Source != "audiodb" {
+		t.Errorf("expected second image from audiodb, got %s", result.Images[1].Source)
+	}
+}
+
 // TestApplyFieldImageDoesNotBlockOnWrongType verifies that a provider
 // with images of one type does not block collection of a different type
 // from subsequent providers.

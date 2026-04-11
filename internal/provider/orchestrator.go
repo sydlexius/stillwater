@@ -199,9 +199,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 }
 
 // FetchImages queries all configured, image-capable providers and collects
-// every image candidate they return. All providers are always queried so that
-// callers (image search UI, ImageFixer quality sorting) receive the full set
-// of candidates to choose from.
+// every image candidate they return. Providers are queried in the order
+// determined by imageProvidersInPriorityOrder, which derives ordering from
+// the configured image field priorities (thumb, fanart, logo, banner).
+// All providers are always queried so that callers (image search UI, ImageFixer
+// quality sorting) receive the full set of candidates to choose from.
 // providerIDs supplies provider-specific IDs for providers that do not accept MBIDs
 // (e.g. Deezer uses its own numeric ID). Providers without an entry in providerIDs
 // receive the MBID. Providers with an empty entry are skipped.
@@ -210,7 +212,7 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 		Metadata: &ArtistMetadata{},
 	}
 
-	providers, err := o.availableProviders(ctx)
+	providers, err := o.imageProvidersInPriorityOrder(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +284,53 @@ func (o *Orchestrator) availableProviders(ctx context.Context) ([]Provider, erro
 		}
 	}
 	return result, nil
+}
+
+// imageProvidersInPriorityOrder returns available providers ordered by the
+// configured image field priorities. Image fields are walked in their default
+// order (thumb, fanart, logo, banner) and the first field that lists a
+// provider determines that provider's position. This means thumb priorities
+// take precedence over fanart priorities and so on (first-field-wins).
+// The ordering matches FetchMetadata, which iterates the same priority list.
+func (o *Orchestrator) imageProvidersInPriorityOrder(ctx context.Context) ([]Provider, error) {
+	priorities, err := o.settings.GetPriorities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading priorities: %w", err)
+	}
+
+	available, err := o.settings.AvailableProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading available providers: %w", err)
+	}
+
+	// Collect providers from image field priorities in order, deduplicating.
+	// The first image field that mentions a provider determines its position.
+	seen := make(map[ProviderName]bool)
+	var ordered []Provider
+	for _, pri := range priorities {
+		if !isImageFieldName(pri.Field) {
+			continue
+		}
+		for _, provName := range pri.EnabledProviders() {
+			if seen[provName] || !available[provName] {
+				continue
+			}
+			seen[provName] = true
+			if p := o.registry.Get(provName); p != nil {
+				ordered = append(ordered, p)
+			}
+		}
+	}
+
+	// Append any remaining available providers not listed in image priorities,
+	// so newly registered providers are not silently skipped.
+	for _, p := range o.registry.All() {
+		if !seen[p.Name()] && available[p.Name()] {
+			ordered = append(ordered, p)
+		}
+	}
+
+	return ordered, nil
 }
 
 type providerResult struct {
