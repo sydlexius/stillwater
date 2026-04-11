@@ -138,6 +138,11 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		}
 		applyMergeableFields(result, pr.meta, provName)
 	}
+	// Post-merge normalization: clear gender for non-individual types regardless
+	// of provider iteration order (Go map iteration is non-deterministic).
+	if result.Metadata.Type != "" && !artist.IsIndividualType(result.Metadata.Type) {
+		result.Metadata.Gender = ""
+	}
 	mu.Unlock()
 
 	return result, nil

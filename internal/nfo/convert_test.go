@@ -215,7 +215,7 @@ func TestFromArtist_GenderSuppressedForGroups(t *testing.T) {
 		{"group", "male", ""},
 		{"orchestra", "female", ""},
 		{"choir", "male", ""},
-		{"", "male", ""},
+		{"", "male", "male"}, // unknown type preserves gender
 	}
 	for _, tt := range tests {
 		t.Run(tt.artistType, func(t *testing.T) {

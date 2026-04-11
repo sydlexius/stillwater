@@ -101,7 +101,7 @@ func FromArtistWithFieldMap(a *artist.Artist, fm NFOFieldMap) *ArtistNFO {
 	nfoGenres, nfoStyles, nfoMoods := ApplyFieldMap(fm, a.Genres, a.Styles, a.Moods)
 
 	gender := a.Gender
-	if !isIndividualType(a.Type) {
+	if a.Type != "" && !isIndividualType(a.Type) {
 		gender = ""
 	}
 

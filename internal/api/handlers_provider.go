@@ -246,9 +246,9 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 			}
 			return
 		}
-		resp := map[string]string{"status": "error", "error": "Unable to verify provider credentials"}
+		resp := map[string]any{"status": "error", "error": "Unable to verify provider credentials"}
 		if !statusPersisted {
-			resp["status_persisted"] = "false"
+			resp["status_persisted"] = false
 		}
 		writeJSON(w, http.StatusOK, resp)
 		return
@@ -274,9 +274,9 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
-	resp := map[string]string{"status": "ok"}
+	resp := map[string]any{"status": "ok"}
 	if !statusPersisted {
-		resp["status_persisted"] = "false"
+		resp["status_persisted"] = false
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

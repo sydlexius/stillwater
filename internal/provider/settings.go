@@ -224,8 +224,11 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 		} else if hasKey {
 			status = "untested"
 		}
-		// If a key is present, check for a persisted test status.
-		if hasKey {
+		// If a key is present or the provider supports base URL configuration
+		// (mirror testing), check for a persisted test status so test results
+		// survive page reloads.
+		cap := caps[name]
+		if hasKey || cap.SupportsBaseURL {
 			persisted, err := s.GetKeyStatus(ctx, name)
 			if err != nil {
 				return nil, err
@@ -234,7 +237,6 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 				status = persisted
 			}
 		}
-		cap := caps[name]
 		pks := ProviderKeyStatus{
 			Name:            name,
 			DisplayName:     name.DisplayName(),

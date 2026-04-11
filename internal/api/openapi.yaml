@@ -3289,6 +3289,11 @@ paths:
                   error:
                     type: string
                     description: Error message if the provider test failed.
+                  status_persisted:
+                    type: boolean
+                    description: >
+                      Whether the test result status was persisted to storage.
+                      Only present (as false) when persistence failed.
             text/html:
               schema:
                 type: string
