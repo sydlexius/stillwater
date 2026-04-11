@@ -694,6 +694,26 @@ func TestMapArtist_YearsActive_GroupNoFormedDate(t *testing.T) {
 	}
 }
 
+func TestMapArtist_YearsActive_PartialDates(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "abc-123",
+		Name: "Partial Date Band",
+		Type: "Group",
+		LifeSpan: MBLifeSpan{
+			Begin: "1990-05-14",
+			End:   "2005-12",
+			Ended: true,
+		},
+	}
+
+	meta := a.mapArtist(context.Background(), mb)
+
+	if meta.YearsActive != "1990-2005" {
+		t.Errorf("expected YearsActive %q, got %q", "1990-2005", meta.YearsActive)
+	}
+}
+
 // --- #974: Member deduplication ---
 
 func TestMapArtist_DeduplicateMembers_MergesDateRanges(t *testing.T) {
