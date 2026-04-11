@@ -102,15 +102,20 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	// Fixing a violation changes the artist's health score.
 	r.InvalidateHealthCache()
 
-	// When called via HTMX (dashboard action cards), return empty HTML
-	// so hx-swap="outerHTML" removes the card. Only remove the card when
-	// the fix actually resolved; otherwise return the message so the card
-	// stays visible.
+	// When called via HTMX (dashboard action cards), return HTML so
+	// hx-swap="outerHTML" removes the card. When an undo entry was
+	// registered, render a brief undo toast so the user can revert.
 	if isHTMXRequest(req) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if fr.Fixed || fr.Dismissed {
 			w.Header().Set("HX-Trigger", "dashboard:action-resolved")
 			w.WriteHeader(http.StatusOK)
+
+			// Return an undo toast when the fix registered an undo entry.
+			if undoID, ok := resp["undo_id"].(string); ok && undoID != "" {
+				expiresIn, _ := resp["undo_expires_in"].(int)
+				renderUndoToast(w, undoID, expiresIn)
+			}
 		} else {
 			// Fix did not resolve -- return 422 with message so the card
 			// stays in place and HTMX does not swap it out.
@@ -527,4 +532,41 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 		// dashboard poll reflects the updated health scores.
 		r.InvalidateHealthCache()
 	}()
+}
+
+// renderUndoToast writes a small HTML toast that lets the user revert a fix.
+// The toast auto-dismisses after the undo window expires. It is appended
+// inside the card's outerHTML swap slot so it appears inline in the action
+// queue where the card used to be.
+func renderUndoToast(w io.Writer, undoID string, expiresIn int) {
+	if expiresIn <= 0 {
+		expiresIn = 30
+	}
+	// The toast is a self-contained HTML fragment. It includes:
+	//   - A brief "Fixed" message with an Undo button
+	//   - An hx-post to the undo endpoint that replaces the toast on success
+	//   - A JS timer that removes the toast after the undo window expires
+	_, _ = fmt.Fprintf(w, `<div id="undo-toast-%s" `+
+		`class="flex items-center gap-3 rounded-lg bg-green-50 dark:bg-green-900/20 `+
+		`border border-green-200 dark:border-green-800 px-4 py-2.5 text-sm `+
+		`text-green-800 dark:text-green-200 shadow-sm transition-opacity" `+
+		`role="status" aria-live="polite">`+
+		`<svg class="h-4 w-4 shrink-0 text-green-500 dark:text-green-400" `+
+		`fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">`+
+		`<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>`+
+		`</svg>`+
+		`<span class="flex-1">Fix applied</span>`+
+		`<button type="button" `+
+		`hx-post="/api/v1/fix-undo/%s" `+
+		`hx-target="#undo-toast-%s" `+
+		`hx-swap="outerHTML" `+
+		`aria-label="Undo fix" `+
+		`class="inline-flex items-center rounded px-2 py-1 text-xs font-semibold `+
+		`text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/50 `+
+		`hover:bg-green-200 dark:hover:bg-green-700/50 transition-colors">`+
+		`Undo</button>`+
+		`<script>setTimeout(function(){var el=document.getElementById("undo-toast-%s");`+
+		`if(el){el.style.opacity="0";setTimeout(function(){el.remove()},300)}},`+
+		`%d*1000)</script>`+
+		`</div>`, undoID, undoID, undoID, undoID, expiresIn)
 }

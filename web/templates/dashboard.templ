@@ -23,6 +23,11 @@ type ActionQueueData struct {
 	TotalArtists     int
 	CompliantArtists int
 	BasePath         string
+
+	// HealthStatsError is true when GetHealthStats failed, meaning
+	// TotalArtists/CompliantArtists/HealthScore are unreliable. The
+	// template renders "---" placeholders instead of confident zeros.
+	HealthStatsError bool
 }
 
 // ActivityFeedData holds data for the dashboard activity feed fragment.
@@ -186,17 +191,25 @@ templ DashboardActionHeader(data ActionQueueData) {
 				}
 			</div>
 			<div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-				<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
-				<span class="text-gray-300 dark:text-gray-600">|</span>
-				<span
-					class={
-						templ.KV("text-green-600 dark:text-green-400", data.HealthScore >= 80),
-						templ.KV("text-amber-600 dark:text-amber-400", data.HealthScore >= 50 && data.HealthScore < 80),
-						templ.KV("text-red-600 dark:text-red-400", data.HealthScore < 50),
-					}
-				>
-					{ tf(ctx, "dashboard.health_compliant", data.HealthScore) }
-				</span>
+				if data.HealthStatsError {
+					// Stats failed to load -- show dashes so the user does not
+					// mistake a load failure for "zero artists / 0% health".
+					<span title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+					<span class="text-gray-300 dark:text-gray-600">|</span>
+					<span class="text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+				} else {
+					<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
+					<span class="text-gray-300 dark:text-gray-600">|</span>
+					<span
+						class={
+							templ.KV("text-green-600 dark:text-green-400", data.HealthScore >= 80),
+							templ.KV("text-amber-600 dark:text-amber-400", data.HealthScore >= 50 && data.HealthScore < 80),
+							templ.KV("text-red-600 dark:text-red-400", data.HealthScore < 50),
+						}
+					>
+						{ tf(ctx, "dashboard.health_compliant", data.HealthScore) }
+					</span>
+				}
 				<span class="text-gray-300 dark:text-gray-600">|</span>
 				<span id="last-evaluated-text" class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "common.loading") }</span>
 			</div>

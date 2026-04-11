@@ -322,6 +322,7 @@
   "dashboard.re_identify": "Re-identify",
   "dashboard.recent_activity": "Recent Activity",
   "dashboard.select_all": "Select all",
+  "dashboard.stats_unavailable": "Stats failed to load",
   "dashboard.title": "Dashboard",
   "dashboard.total_artists": "Total Artists",
   "dashboard.total_violations": "Total Violations",
