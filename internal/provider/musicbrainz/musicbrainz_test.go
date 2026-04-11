@@ -925,7 +925,7 @@ func TestMapArtist_AlsoPerformsAs_DoesNotAddSelfName(t *testing.T) {
 // --- deduplicateMembers unit tests ---
 
 func TestDeduplicateMembers_EmptySlice(t *testing.T) {
-	result := deduplicateMembers(nil)
+	result := deduplicateMembers(nil, nil)
 	if result != nil {
 		t.Errorf("expected nil for nil input, got %v", result)
 	}
@@ -933,7 +933,7 @@ func TestDeduplicateMembers_EmptySlice(t *testing.T) {
 
 func TestDeduplicateMembers_SingleMember(t *testing.T) {
 	members := []provider.MemberInfo{{Name: "Solo", MBID: "m1"}}
-	result := deduplicateMembers(members)
+	result := deduplicateMembers(members, nil)
 	if len(result) != 1 || result[0].Name != "Solo" {
 		t.Errorf("expected single member unchanged, got %v", result)
 	}
@@ -945,9 +945,118 @@ func TestDeduplicateMembers_NoMBID(t *testing.T) {
 		{Name: "Unknown A"},
 		{Name: "Unknown B"},
 	}
-	result := deduplicateMembers(members)
+	result := deduplicateMembers(members, nil)
 	if len(result) != 2 {
 		t.Errorf("expected 2 members without MBIDs kept separate, got %d", len(result))
+	}
+}
+
+func TestDeduplicateMembers_NoMBIDIdenticalNameKeptSeparate(t *testing.T) {
+	// Two members with the same name, empty join date, and no MBID should be
+	// kept as separate entries (not merged), even though their names collide.
+	members := []provider.MemberInfo{
+		{
+			Name:        "John Smith",
+			MBID:        "",
+			DateJoined:  "",
+			Instruments: []string{"guitar"},
+		},
+		{
+			Name:        "John Smith",
+			MBID:        "",
+			DateJoined:  "",
+			Instruments: []string{"drums"},
+		},
+	}
+
+	result := deduplicateMembers(members, nil)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 separate members, got %d", len(result))
+	}
+	if result[0].Instruments[0] != "guitar" {
+		t.Errorf("expected first member to play guitar, got %q", result[0].Instruments[0])
+	}
+	if result[1].Instruments[0] != "drums" {
+		t.Errorf("expected second member to play drums, got %q", result[1].Instruments[0])
+	}
+}
+
+func TestDeduplicateMembers_LocalePreference(t *testing.T) {
+	// Two entries for the same member (same MBID) with different name variants.
+	// When language preferences favor "ja", the Japanese name should be selected.
+	members := []provider.MemberInfo{
+		{
+			Name:       "Taro Yamada",
+			MBID:       "aaa-bbb-ccc",
+			DateJoined: "2000",
+			IsActive:   true,
+		},
+		{
+			Name:       "ja",
+			MBID:       "aaa-bbb-ccc",
+			DateJoined: "2005",
+			IsActive:   false,
+		},
+	}
+
+	// With "ja" preference, the name "ja" scores 0 (exact match at index 0)
+	// while "Taro Yamada" scores -1 (no match). So "ja" wins.
+	langPrefs := []string{"ja"}
+	result := deduplicateMembers(members, langPrefs)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 member, got %d", len(result))
+	}
+	if result[0].Name != "ja" {
+		t.Errorf("expected locale-preferred name %q, got %q", "ja", result[0].Name)
+	}
+	// Verify merge still works: should be active since first entry was active.
+	if !result[0].IsActive {
+		t.Error("expected merged member to be active")
+	}
+}
+
+func TestDeduplicateMembers_LocalePreference_NoPrefs(t *testing.T) {
+	// Without language preferences, the first name should be retained.
+	members := []provider.MemberInfo{
+		{
+			Name: "First Name",
+			MBID: "aaa-bbb-ccc",
+		},
+		{
+			Name: "Second Name",
+			MBID: "aaa-bbb-ccc",
+		},
+	}
+
+	result := deduplicateMembers(members, nil)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 member, got %d", len(result))
+	}
+	if result[0].Name != "First Name" {
+		t.Errorf("expected first name to be retained, got %q", result[0].Name)
+	}
+}
+
+func TestIsGroupType(t *testing.T) {
+	tests := []struct {
+		mbType string
+		want   bool
+	}{
+		{"Group", true},
+		{"Orchestra", true},
+		{"Choir", true},
+		{"Person", false},
+		{"Character", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		if got := isGroupType(tt.mbType); got != tt.want {
+			t.Errorf("isGroupType(%q) = %v, want %v", tt.mbType, got, tt.want)
+		}
 	}
 }
 

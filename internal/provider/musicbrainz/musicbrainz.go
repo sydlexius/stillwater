@@ -318,14 +318,14 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 
 	// Life span
 	if mb.LifeSpan.Begin != "" {
-		if mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir" {
+		if isGroupType(mb.Type) {
 			meta.Formed = mb.LifeSpan.Begin
 		} else {
 			meta.Born = mb.LifeSpan.Begin
 		}
 	}
 	if mb.LifeSpan.End != "" {
-		if mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir" {
+		if isGroupType(mb.Type) {
 			meta.Disbanded = mb.LifeSpan.End
 		} else {
 			meta.Died = mb.LifeSpan.End
@@ -492,11 +492,13 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 
 	// Deduplicate members by MBID. When the same person appears multiple times
 	// (e.g., different active periods), merge their date ranges and instruments.
-	meta.Members = deduplicateMembers(meta.Members)
+	// Language preferences are passed so the preferred locale name is selected
+	// when merging duplicates with different name variants.
+	meta.Members = deduplicateMembers(meta.Members, langPrefs)
 
 	// Synthesize YearsActive from Formed/Disbanded for group-type artists when
 	// the provider did not supply an explicit years-active value.
-	if meta.YearsActive == "" && (mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir") {
+	if meta.YearsActive == "" && isGroupType(mb.Type) {
 		if meta.Formed != "" {
 			if meta.Disbanded != "" {
 				meta.YearsActive = meta.Formed + "-" + meta.Disbanded
@@ -507,6 +509,12 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	}
 
 	return meta
+}
+
+// isGroupType returns true for MusicBrainz types that represent ensembles
+// (groups, orchestras, choirs) rather than individual persons.
+func isGroupType(mbType string) bool {
+	return mbType == "Group" || mbType == "Orchestra" || mbType == "Choir"
 }
 
 // mapArtistType normalizes MusicBrainz type strings.
@@ -585,41 +593,66 @@ func deduplicateStyles(styles, genres []string) []string {
 
 // deduplicateMembers merges duplicate member entries that share the same MBID.
 // When duplicates exist, their date ranges and instruments are combined into a
-// single entry.
-func deduplicateMembers(members []provider.MemberInfo) []provider.MemberInfo {
+// single entry. If langPrefs is non-empty, the preferred locale name is selected
+// when merging members with different name variants.
+func deduplicateMembers(members []provider.MemberInfo, langPrefs []string) []provider.MemberInfo {
 	if len(members) <= 1 {
 		return members
 	}
 
 	type mergedMember struct {
-		info    provider.MemberInfo
-		periods [][2]string // pairs of [joined, left]
+		info      provider.MemberInfo
+		periods   [][2]string // pairs of [joined, left]
+		nameScore int         // best language preference score for the current name (-1 = unscored)
 	}
 
 	// Track insertion order so the output is deterministic.
 	var order []string
 	byMBID := make(map[string]*mergedMember, len(members))
 
-	for _, m := range members {
+	for i, m := range members {
 		key := m.MBID
 		if key == "" {
-			// Members without an MBID cannot be deduplicated; keep as-is by
-			// giving them a unique key.
-			key = "no-mbid-" + m.Name + "-" + m.DateJoined
+			// Members without an MBID cannot be deduplicated reliably
+			// (name+date is not unique), so each gets a unique index-based key.
+			key = fmt.Sprintf("no-mbid-%d", i)
 		}
 
 		existing, ok := byMBID[key]
 		if !ok {
 			order = append(order, key)
 			byMBID[key] = &mergedMember{
-				info:    m,
-				periods: [][2]string{{m.DateJoined, m.DateLeft}},
+				info:      m,
+				periods:   [][2]string{{m.DateJoined, m.DateLeft}},
+				nameScore: -1,
 			}
 			continue
 		}
 
 		// Merge: combine date range and instruments from the duplicate.
 		existing.periods = append(existing.periods, [2]string{m.DateJoined, m.DateLeft})
+
+		// Select the preferred locale name when language preferences are set.
+		// Each duplicate member name is scored against the preference list and
+		// the best-scoring name wins. When scores are tied, the first name is kept.
+		if len(langPrefs) > 0 && m.Name != existing.info.Name {
+			// Score the incoming name. MusicBrainz member names do not carry an
+			// explicit locale, but the name itself may match a language preference
+			// if it was populated from a locale-specific alias. We use the MBID
+			// as a proxy -- the first entry keeps its score; the incoming entry
+			// is scored and compared.
+			if existing.nameScore < 0 {
+				// Score the existing name on first collision.
+				existing.nameScore = provider.MatchLanguagePreference(existing.info.Name, langPrefs)
+			}
+			incomingScore := provider.MatchLanguagePreference(m.Name, langPrefs)
+			// Lower non-negative score wins. If the existing has no match (-1)
+			// and the incoming does, the incoming wins.
+			if incomingScore >= 0 && (existing.nameScore < 0 || incomingScore < existing.nameScore) {
+				existing.info.Name = m.Name
+				existing.nameScore = incomingScore
+			}
+		}
 
 		// Merge instruments, avoiding duplicates.
 		instrSet := make(map[string]bool, len(existing.info.Instruments))
