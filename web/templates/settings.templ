@@ -60,20 +60,31 @@ type SettingsData struct {
 	MetadataLanguages       []string // Ordered BCP 47 tags for metadata language preference.
 	BasePath                string   // Current SW_BASE_PATH value (read-only display).
 	BasePathEnvOverride     bool     // True when the SW_BASE_PATH env var is set.
-	HostURL                 string   // Detected host URL (from Host header), used to pre-populate webhook URLs.
+	Host                    string   // Detected host (from base_url setting or Host header), used to pre-populate webhook URLs.
+	Scheme                  string   // Detected scheme ("http" or "https") for webhook URL generation.
 	Users                   UsersTabData
 	AuthProviders           AuthProvidersData
 }
 
 // inboundWebhookURL builds a pre-populated inbound webhook URL for the given
-// platform (e.g. "lidarr", "emby", "jellyfin"). When HostURL is available the
+// platform (e.g. "lidarr", "emby", "jellyfin"). When Host is available the
 // host portion is filled in; otherwise it falls back to the YOUR_HOST placeholder.
+// The scheme is determined from Scheme (detected via X-Forwarded-Proto or TLS),
+// and BasePath is included for sub-path deployments.
 func (d SettingsData) inboundWebhookURL(platform string) string {
 	host := "YOUR_HOST:1973"
-	if d.HostURL != "" {
-		host = d.HostURL
+	if d.Host != "" {
+		host = d.Host
 	}
-	return "http://" + host + "/api/v1/webhooks/inbound/" + platform + "?apikey=YOUR_TOKEN"
+	scheme := d.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	basePath := d.BasePath
+	if basePath == "/" {
+		basePath = ""
+	}
+	return scheme + "://" + host + basePath + "/api/v1/webhooks/inbound/" + platform
 }
 
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
