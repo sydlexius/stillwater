@@ -353,21 +353,18 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.SettingsData{
-		ActiveTab:          tab,
-		Libraries:          libs,
-		Profiles:           profiles,
-		ActiveProfile:      active,
-		ProviderKeys:       providerKeys,
-		Priorities:         priorities,
-		Connections:        conns,
-		Webhooks:           webhooks,
-		WebSearchProviders: webSearchProviders,
-		ShowPlatformDebug:  r.getBoolSetting(req.Context(), "show_platform_debug", false),
-		BasePath:           r.basePath,
-		BasePathEnvOverride: func() bool {
-			_, ok := os.LookupEnv("SW_BASE_PATH")
-			return ok
-		}(),
+		ActiveTab:               tab,
+		Libraries:               libs,
+		Profiles:                profiles,
+		ActiveProfile:           active,
+		ProviderKeys:            providerKeys,
+		Priorities:              priorities,
+		Connections:             conns,
+		Webhooks:                webhooks,
+		WebSearchProviders:      webSearchProviders,
+		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
+		BasePath:                r.basePath,
+		BasePathEnvOverride:     os.Getenv("SW_BASE_PATH") != "",
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,

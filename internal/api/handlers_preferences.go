@@ -704,7 +704,12 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 	// Parse bg_opacity as integer; fall back to default.
 	bgOpacity := strconv.Itoa(BgOpacityDefault)
 	if v, ok := stored[PrefBgOpacity]; ok {
-		bgOpacity = normalizeBgOpacity(v)
+		normalized := normalizeBgOpacity(v)
+		if normalized != v {
+			r.logger.Warn("stored bg_opacity invalid for preferences page, using default",
+				"user_id", userID, "raw_value", v, "normalized", normalized)
+		}
+		bgOpacity = normalized
 	}
 
 	// Determine auto_fetch_images with the app-level setting as the fallback so

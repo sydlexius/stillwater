@@ -130,10 +130,9 @@
         root.style.removeProperty('--sw-glass-bg');
         return;
       }
-      var pct = parseInt(value, 10) / 100;
-      if (isNaN(pct)) pct = 0.65;
-      if (pct < 0) pct = 0;
-      if (pct > 1) pct = 1;
+      var n = parseInt(value, 10);
+      if (isNaN(n) || n < 20 || n > 100) n = 65;
+      var pct = n / 100;
       var isDark = root.classList.contains('dark');
       if (isDark) {
         root.style.setProperty('--sw-glass-bg', 'rgba(30, 41, 59, ' + pct + ')');

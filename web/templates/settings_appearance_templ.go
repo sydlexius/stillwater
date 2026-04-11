@@ -915,7 +915,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><div class=\"flex items-center gap-3\"><input type=\"range\" id=\"pref-bg-opacity\" min=\"20\" max=\"100\" step=\"5\" class=\"w-32 accent-blue-600\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div><div class=\"flex items-center gap-3\"><input type=\"range\" id=\"pref-bg-opacity\" min=\"20\" max=\"100\" step=\"1\" class=\"w-32 accent-blue-600\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
