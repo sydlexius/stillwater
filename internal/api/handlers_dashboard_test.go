@@ -44,29 +44,36 @@ func TestHandleDashboardActionQueue_LimitCapping(t *testing.T) {
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
 
-	// Seed a few violations so the handler has something to return.
-	a := &artist.Artist{
-		Name: "Limit Test Artist", SortName: "Limit Test Artist",
-		Type: "group", Path: "/music/LimitTest", Genres: []string{"Rock"},
-	}
-	if err := r.artistService.Create(ctx, a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-	for i := range 3 {
+	// Seed more violations than PageSizeMin (10) so the limit parameter
+	// actually constrains the result set. getUserPageSize clamps the limit
+	// to [PageSizeMin, PageSizeMax], so we seed 15 and request limit=10.
+	// UpsertViolation deduplicates on (rule_id, artist_id), so we create
+	// separate artists to guarantee unique violations.
+	const seedCount = 15
+	for i := range seedCount {
+		a := &artist.Artist{
+			Name:     "Limit Test Artist " + string(rune('A'+i)),
+			SortName: "Limit Test Artist " + string(rune('A'+i)),
+			Type:     "group",
+			Path:     "/music/LimitTest" + string(rune('A'+i)),
+			Genres:   []string{"Rock"},
+		}
+		if err := r.artistService.Create(ctx, a); err != nil {
+			t.Fatalf("creating artist %d: %v", i, err)
+		}
 		v := &rule.RuleViolation{
 			RuleID: rule.RuleNFOExists, ArtistID: a.ID, ArtistName: a.Name,
 			Severity: "error", Message: "missing nfo",
 			Fixable: true, Status: rule.ViolationStatusOpen,
 		}
-		// Give each a unique "message" so UpsertViolation does not deduplicate.
-		v.Message = v.Message + " " + string(rune('a'+i))
 		if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
 			t.Fatalf("seeding violation %d: %v", i, err)
 		}
 	}
 
-	// Request with an excessively large limit -- should be capped to PageSizeMax.
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=99999", nil)
+	// Request with limit=10 (PageSizeMin) -- should return at most 10 action
+	// cards despite 15 being available.
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?limit=10", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
 
@@ -80,6 +87,20 @@ func TestHandleDashboardActionQueue_LimitCapping(t *testing.T) {
 	ct := w.Header().Get("Content-Type")
 	if !strings.Contains(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+
+	// Count the number of action cards rendered. Each card div has a unique
+	// id like id="action-card-<uuid>". Count those to avoid double-counting
+	// the class attribute.
+	body := w.Body.String()
+	cardCount := strings.Count(body, "id=\"action-card-")
+	if cardCount != 10 {
+		t.Errorf("expected 10 action cards with limit=10 and 15 seeded, got %d", cardCount)
+	}
+
+	// Should render a load-more button since total (15) > returned (10).
+	if !strings.Contains(body, "action-queue-load-more") {
+		t.Error("expected load-more button when total exceeds limit")
 	}
 }
 
@@ -188,12 +209,12 @@ func TestHandleDashboardActivityFeed_WithHistoryService(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 
-	// Should render the "no recent activity" empty state.
-	if !strings.Contains(w.Body.String(), "no_recent_activity") && !strings.Contains(w.Body.String(), "No recent activity") {
-		// The template uses t(ctx, "dashboard.no_recent_activity") which
-		// may render as the key or the translated value depending on i18n
-		// bundle availability. Either is acceptable for this test.
-		t.Log("note: empty activity feed may render key or translated value")
+	// Should render the "no recent activity" empty state. The template uses
+	// t(ctx, "dashboard.no_recent_activity") which may render as the key or
+	// the translated value depending on i18n bundle availability.
+	body := w.Body.String()
+	if !strings.Contains(body, "no_recent_activity") && !strings.Contains(body, "No recent activity") {
+		t.Fatalf("expected empty activity state text in response, got: %s", body)
 	}
 }
 
@@ -226,10 +247,9 @@ func TestHandleDashboardActivityFeed_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestHandleDashboardActivityFeed_LimitCapping(t *testing.T) {
-	// The handler hardcodes limit=10. This test verifies it does not crash
-	// or return errors when the history service is present and returns
-	// an empty result set.
+func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
+	// Verifies the handler renders successfully when the history service is
+	// present but returns an empty result set (no metadata changes recorded).
 	r := testDashboardRouter(t, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/activity", nil)
@@ -240,5 +260,11 @@ func TestHandleDashboardActivityFeed_LimitCapping(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// With no history entries, the handler should render the empty state.
+	body := w.Body.String()
+	if !strings.Contains(body, "no_recent_activity") && !strings.Contains(body, "No recent activity") {
+		t.Errorf("expected empty activity state in response, got: %s", body)
 	}
 }
