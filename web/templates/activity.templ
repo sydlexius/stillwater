@@ -215,7 +215,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						var qs = params.toString();
 						if (qs) newURL += '?' + qs;
 						window.history.replaceState({}, '', newURL);
-						htmx.ajax('GET', '/activity/content?' + params.toString(), {target: '#activity-content', swap: 'innerHTML'});
+						htmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});
 					});
 				}
 			});
