@@ -298,6 +298,8 @@ func normalizeHyphens(s string) string {
 // best-matching primary alias to the Name and SortName fields, placing the
 // canonical name behind all language-matched aliases in the aliases list.
 // Remaining aliases, including the canonical name, are sorted by preference score.
+// Relation-derived aliases ("is person" / "also performs as") are appended after
+// the sorted list because they lack locale metadata for scoring.
 func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
 	mappedType := mapArtistType(mb.Type)
 	gender := strings.ToLower(mb.Gender)
@@ -497,18 +499,31 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	meta.Members = deduplicateMembers(meta.Members, langPrefs)
 
 	// Synthesize YearsActive from Formed/Disbanded for group-type artists when
-	// the provider did not supply an explicit years-active value.
+	// the provider did not supply an explicit years-active value. Formed and
+	// Disbanded may be partial dates ("1991-05", "1946-10-14"), so extract
+	// only the 4-digit year portion for a clean "YYYY-YYYY" range.
 	if meta.YearsActive == "" && isGroupType(mb.Type) {
-		if meta.Formed != "" {
-			if meta.Disbanded != "" {
-				meta.YearsActive = meta.Formed + "-" + meta.Disbanded
+		formedYear := yearFromDate(meta.Formed)
+		disbandedYear := yearFromDate(meta.Disbanded)
+		if formedYear != "" {
+			if disbandedYear != "" {
+				meta.YearsActive = formedYear + "-" + disbandedYear
 			} else {
-				meta.YearsActive = meta.Formed + "-present"
+				meta.YearsActive = formedYear + "-present"
 			}
 		}
 	}
 
 	return meta
+}
+
+// yearFromDate extracts the leading 4-digit year from a date string that may
+// be "YYYY", "YYYY-MM", or "YYYY-MM-DD". Returns "" for empty or short input.
+func yearFromDate(date string) string {
+	if len(date) < 4 {
+		return ""
+	}
+	return date[:4]
 }
 
 // isGroupType returns true for MusicBrainz types that represent ensembles
