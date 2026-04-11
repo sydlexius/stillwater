@@ -208,10 +208,14 @@ templ DashboardActionHeader(data ActionQueueData) {
 // in the dashboard header. Each pill is color-coded to match the category
 // filter chips and the rules settings page for visual consistency.
 templ DashboardCategorySubPills(counts map[string]int) {
-	<span class="inline-flex items-center gap-1.5 ml-1" aria-label="Violation counts by category">
+	<span class="inline-flex items-center gap-1.5 ml-1" aria-label={ t(ctx, "dashboard.violation_counts_by_category") }>
 		for _, cat := range []string{"metadata", "image", "nfo"} {
 			if counts[cat] > 0 {
-				<span class={ categorySubPillClass(cat) } title={ dashboardCategoryLabel(ctx, cat) }>
+				<span
+					class={ categorySubPillClass(cat) }
+					title={ dashboardCategoryLabel(ctx, cat) }
+					aria-label={ fmt.Sprintf("%s: %d", dashboardCategoryLabel(ctx, cat), counts[cat]) }
+				>
 					{ fmt.Sprint(counts[cat]) }
 				</span>
 			}

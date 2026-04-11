@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -540,20 +541,28 @@ func (r *Router) runRulesAfterRefresh(ctx context.Context, a *artist.Artist) {
 		return
 	}
 
+	// Detach from the request-scoped context so client disconnects do not
+	// cancel the rule evaluation, then apply a hard deadline to prevent
+	// unbounded execution. This matches the pattern used elsewhere in this
+	// file (see applyProviderName and executeRefreshCtx).
+	ruleCtx := context.WithoutCancel(ctx)
+	ruleCtx, cancel := context.WithTimeout(ruleCtx, 30*time.Second)
+	defer cancel()
+
 	// Re-fetch the artist so rule evaluation sees the persisted state
 	// (the caller may have applied provider names or other changes).
-	fresh, err := r.artistService.GetByID(ctx, a.ID)
+	fresh, err := r.artistService.GetByID(ruleCtx, a.ID)
 	if err != nil {
 		r.logger.Warn("re-fetching artist for post-refresh rule evaluation",
 			slog.String("artist_id", a.ID),
-			slog.String("error", err.Error()))
+			slog.Any("error", err))
 		return
 	}
 
-	if _, err := r.pipeline.RunForArtist(ctx, fresh); err != nil {
+	if _, err := r.pipeline.RunForArtist(ruleCtx, fresh); err != nil {
 		r.logger.Warn("auto-evaluating rules after refresh",
 			slog.String("artist_id", a.ID),
-			slog.String("error", err.Error()))
+			slog.Any("error", err))
 	}
 }
 

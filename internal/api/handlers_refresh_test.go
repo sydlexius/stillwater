@@ -10,6 +10,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 func TestRenderRefreshWithOOB_ContainsSwapTargets(t *testing.T) {
@@ -371,4 +372,58 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			t.Errorf("expected 2 members preserved (nil metadata), got %d", n)
 		}
 	})
+}
+
+// TestRunRulesAfterRefresh_InvokesPipeline verifies that runRulesAfterRefresh
+// calls the pipeline's RunForArtist method with the re-fetched artist.
+func TestRunRulesAfterRefresh_InvokesPipeline(t *testing.T) {
+	var calledWithID string
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			calledWithID = a.ID
+			return &rule.RunResult{ArtistsProcessed: 1, ViolationsFound: 2}, nil
+		},
+	}
+
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	a := addTestArtist(t, artistSvc, "Refresh Rules Artist")
+
+	r.runRulesAfterRefresh(context.Background(), a)
+
+	if calledWithID == "" {
+		t.Fatal("RunForArtist was not called after refresh")
+	}
+	if calledWithID != a.ID {
+		t.Errorf("RunForArtist called with ID %q, want %q", calledWithID, a.ID)
+	}
+}
+
+// TestRunRulesAfterRefresh_NilPipeline verifies that runRulesAfterRefresh
+// is a no-op when the pipeline is not configured (nil).
+func TestRunRulesAfterRefresh_NilPipeline(t *testing.T) {
+	r, artistSvc := testRouterWithStubPipeline(t, nil)
+	// Set pipeline to nil to simulate unconfigured state.
+	r.pipeline = nil
+
+	a := addTestArtist(t, artistSvc, "No Pipeline Artist")
+
+	// Should not panic.
+	r.runRulesAfterRefresh(context.Background(), a)
+}
+
+// TestRunRulesAfterRefresh_PipelineError_DoesNotPropagate verifies that
+// a pipeline error is swallowed (best-effort) and does not panic or
+// return an error to the caller.
+func TestRunRulesAfterRefresh_PipelineError_DoesNotPropagate(t *testing.T) {
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			return nil, fmt.Errorf("rule engine exploded")
+		},
+	}
+
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	a := addTestArtist(t, artistSvc, "Pipeline Error Artist")
+
+	// Should not panic; error is logged but not propagated.
+	r.runRulesAfterRefresh(context.Background(), a)
 }
