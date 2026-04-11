@@ -316,6 +316,7 @@
   "dashboard.health_compliant": "%.0f%% compliant",
   "dashboard.health_compliant_score": "%.1f%% compliant",
   "dashboard.health_score": "Health Score",
+  "dashboard.violation_counts_by_category": "Violation counts by category",
   "dashboard.load_more": "Load %d more of %d",
   "dashboard.no_recent_activity": "No recent activity",
   "dashboard.re_identify": "Re-identify",

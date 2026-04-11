@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -65,6 +66,10 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 
 	// Metadata refresh changes artist fields that affect health scores.
 	r.InvalidateHealthCache()
+
+	// Auto-resolve rule violations after refresh so the artist's health
+	// score reflects the newly fetched metadata and images immediately.
+	r.runRulesAfterRefresh(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		if nameUpdateFailed {
@@ -199,6 +204,10 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 
 	// Linking a provider ID and refreshing changes health-relevant fields.
 	r.InvalidateHealthCache()
+
+	// Auto-resolve rule violations after re-identification so the artist's
+	// health score reflects the new provider data immediately.
+	r.runRulesAfterRefresh(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		if nameUpdateFailed {
@@ -521,6 +530,40 @@ func (r *Router) applyProviderName(ctx context.Context, a *artist.Artist, meta *
 		"new_name", a.Name)
 	r.publisher.PublishMetadata(writeCtx, a)
 	return false
+}
+
+// runRulesAfterRefresh evaluates and auto-fixes rule violations for a single
+// artist after a metadata refresh. Errors are logged but do not propagate to
+// the caller because the refresh itself already succeeded and the rule
+// evaluation is a best-effort follow-up.
+func (r *Router) runRulesAfterRefresh(ctx context.Context, a *artist.Artist) {
+	if r.pipeline == nil {
+		return
+	}
+
+	// Detach from the request-scoped context so client disconnects do not
+	// cancel the rule evaluation, then apply a hard deadline to prevent
+	// unbounded execution. This matches the pattern used elsewhere in this
+	// file (see applyProviderName and executeRefreshCtx).
+	ruleCtx := context.WithoutCancel(ctx)
+	ruleCtx, cancel := context.WithTimeout(ruleCtx, 30*time.Second)
+	defer cancel()
+
+	// Re-fetch the artist so rule evaluation sees the persisted state
+	// (the caller may have applied provider names or other changes).
+	fresh, err := r.artistService.GetByID(ruleCtx, a.ID)
+	if err != nil {
+		r.logger.Warn("re-fetching artist for post-refresh rule evaluation",
+			slog.String("artist_id", a.ID),
+			slog.Any("error", err))
+		return
+	}
+
+	if _, err := r.pipeline.RunForArtist(ruleCtx, fresh); err != nil {
+		r.logger.Warn("auto-evaluating rules after refresh",
+			slog.String("artist_id", a.ID),
+			slog.Any("error", err))
+	}
 }
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.
