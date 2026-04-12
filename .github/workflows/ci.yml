@@ -98,13 +98,13 @@ jobs:
         run: templ generate
 
       - name: Run tests
-        run: go test -v -race -count=1 -coverprofile=coverage.out ./...
+        run: go test -v -race -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: coverage.out
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   build:
     name: Build
