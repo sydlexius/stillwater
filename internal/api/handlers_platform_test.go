@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -212,5 +213,59 @@ func TestUpdatePlatform_UseSymlinks_BuiltinRejected(t *testing.T) {
 	}
 	if resp["error"] == "" {
 		t.Error("expected error message in response")
+	}
+}
+
+func TestWebhookHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		reqHost string
+		want    string
+	}{
+		{"empty base_url uses req.Host", "", "myhost:1973", "myhost:1973"},
+		{"full base_url extracts host", "https://sw.example.com:8443/app", "", "sw.example.com:8443"},
+		{"base_url without path", "https://sw.example.com", "fallback:1973", "sw.example.com"},
+		{"base_url host-only (no scheme)", "myserver:9000", "fallback:1973", "myserver:9000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := webhookHost(tt.baseURL, tt.reqHost)
+			if got != tt.want {
+				t.Errorf("webhookHost(%q, %q) = %q, want %q", tt.baseURL, tt.reqHost, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWebhookScheme(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		tls      bool
+		fwdProto string
+		want     string
+	}{
+		{"plain HTTP", "", false, "", "http"},
+		{"X-Forwarded-Proto https", "", false, "https", "https"},
+		{"TLS connection", "", true, "", "https"},
+		{"base_url scheme takes priority", "https://example.com", false, "", "https"},
+		{"base_url http overrides forwarded", "http://example.com", false, "https", "http"},
+		{"host:port without scheme falls through", "myserver:9000", false, "", "http"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.fwdProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.fwdProto)
+			}
+			if tt.tls {
+				req.TLS = &tls.ConnectionState{}
+			}
+			got := webhookScheme(tt.baseURL, req)
+			if got != tt.want {
+				t.Errorf("webhookScheme(%q, ...) = %q, want %q", tt.baseURL, got, tt.want)
+			}
+		})
 	}
 }

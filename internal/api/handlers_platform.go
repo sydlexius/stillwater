@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -351,6 +353,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	baseURL := r.getStringSetting(req.Context(), "server.base_url", "")
+
 	data := templates.SettingsData{
 		ActiveTab:               tab,
 		Libraries:               libs,
@@ -364,6 +368,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		BasePath:                r.basePath,
 		BasePathEnvOverride:     r.basePathFromEnv,
+		Host:                    webhookHost(baseURL, req.Host),
+		Scheme:                  webhookScheme(baseURL, req),
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
 		HasLocalLibrary:         hasLocalLibrary,
@@ -382,4 +388,36 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		AuthProviders:           authProvidersData,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
+}
+
+// webhookHost returns the host portion for webhook URL generation.
+// If baseURL is a full URL (from the server.base_url setting) its host is used;
+// otherwise reqHost (from the Host header) is returned as a fallback.
+func webhookHost(baseURL, reqHost string) string {
+	if baseURL != "" {
+		if u, err := url.Parse(baseURL); err == nil && u.Host != "" {
+			return u.Host
+		}
+		// baseURL might be host-only (no scheme); strip any path and return it.
+		if host, _, ok := strings.Cut(baseURL, "/"); ok {
+			return host
+		}
+		return baseURL
+	}
+	return reqHost
+}
+
+// webhookScheme returns the URL scheme for webhook URL generation.
+// If baseURL is a full URL (from the server.base_url setting) its scheme is used;
+// otherwise the scheme is detected from the request (TLS or X-Forwarded-Proto header).
+func webhookScheme(baseURL string, req *http.Request) string {
+	if baseURL != "" {
+		if u, err := url.Parse(baseURL); err == nil && u.Scheme != "" && u.Host != "" {
+			return u.Scheme
+		}
+	}
+	if req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https" {
+		return "https"
+	}
+	return "http"
 }

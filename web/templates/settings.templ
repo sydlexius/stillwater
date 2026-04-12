@@ -60,8 +60,31 @@ type SettingsData struct {
 	MetadataLanguages       []string // Ordered BCP 47 tags for metadata language preference.
 	BasePath                string   // Current SW_BASE_PATH value (read-only display).
 	BasePathEnvOverride     bool     // True when the SW_BASE_PATH env var is set.
+	Host                    string   // Detected host (from base_url setting or Host header), used to pre-populate webhook URLs.
+	Scheme                  string   // Detected scheme ("http" or "https") for webhook URL generation.
 	Users                   UsersTabData
 	AuthProviders           AuthProvidersData
+}
+
+// inboundWebhookURL builds a pre-populated inbound webhook URL for the given
+// platform (e.g. "lidarr", "emby", "jellyfin"). When Host is available the
+// host portion is filled in; otherwise it falls back to the YOUR_HOST placeholder.
+// The scheme is determined from Scheme (detected via X-Forwarded-Proto or TLS),
+// and BasePath is included for sub-path deployments.
+func (d SettingsData) inboundWebhookURL(platform string) string {
+	host := "YOUR_HOST:1973"
+	if d.Host != "" {
+		host = d.Host
+	}
+	scheme := d.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	basePath := d.BasePath
+	if basePath == "/" {
+		basePath = ""
+	}
+	return scheme + "://" + host + basePath + "/api/v1/webhooks/inbound/" + platform + "?apikey=YOUR_TOKEN"
 }
 
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
@@ -1265,7 +1288,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
 								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
-									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/lidarr?apikey=YOUR_TOKEN" }
+									{ data.inboundWebhookURL("lidarr") }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
@@ -1296,7 +1319,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
 								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
-									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/emby?apikey=YOUR_TOKEN" }
+									{ data.inboundWebhookURL("emby") }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
@@ -1327,7 +1350,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
 								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
-									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/jellyfin?apikey=YOUR_TOKEN" }
+									{ data.inboundWebhookURL("jellyfin") }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
