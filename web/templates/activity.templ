@@ -110,16 +110,17 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				>
 					{ t(ctx, "common.apply") }
 				</button>
-				if !data.FilterFrom.IsZero() || !data.FilterTo.IsZero() {
-					<button
-						type="button"
-						id="activity-date-clear"
-						aria-label={ t(ctx, "activity.clear_date_filter") }
-						class="px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						{ t(ctx, "common.clear") }
-					</button>
-				}
+				// Always render the Clear button; hide it via CSS when no date filter is active.
+				// JS shows/hides it based on input values so it becomes visible after Apply
+				// without a full page reload (HTMX only swaps #activity-content, not this bar).
+				<button
+					type="button"
+					id="activity-date-clear"
+					aria-label={ t(ctx, "activity.clear_date_filter") }
+					class={ "px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("hidden", data.FilterFrom.IsZero() && data.FilterTo.IsZero()) }
+				>
+					{ t(ctx, "common.clear") }
+				</button>
 			</div>
 			<div id="activity-content">
 				@ActivityContent(data)
@@ -171,11 +172,25 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 			document.addEventListener('DOMContentLoaded', function() {
 				var applyBtn = document.getElementById('activity-date-apply');
 				var clearBtn = document.getElementById('activity-date-clear');
+				var fromInput = document.getElementById('activity-date-from');
+				var toInput = document.getElementById('activity-date-to');
+
+				// Show or hide the Clear button based on whether either date input has a value.
+				function updateClearVisibility() {
+					if (!clearBtn) return;
+					var hasValue = (fromInput && fromInput.value) || (toInput && toInput.value);
+					clearBtn.classList.toggle('hidden', !hasValue);
+				}
+
+				// Sync visibility on page load (handles server-rendered initial state).
+				updateClearVisibility();
+
+				// Keep Clear button in sync when inputs change.
+				if (fromInput) fromInput.addEventListener('change', updateClearVisibility);
+				if (toInput) toInput.addEventListener('change', updateClearVisibility);
 
 				if (applyBtn) {
 					applyBtn.addEventListener('click', function() {
-						var fromInput = document.getElementById('activity-date-from');
-						var toInput = document.getElementById('activity-date-to');
 						var params = new URLSearchParams(window.location.search);
 
 						if (fromInput && fromInput.value) {
@@ -187,9 +202,8 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						}
 
 						if (toInput && toInput.value) {
-							// Send the raw YYYY-MM-DD value; the server will treat it as
-							// the start of that day in UTC. To include the full day the
-							// server applies >= on from and <= on to using datetime().
+							// Send the raw YYYY-MM-DD value; the server treats plain-date
+							// "to" values as end-of-day UTC so the full day is included.
 							params.set('to', toInput.value);
 						} else {
 							params.delete('to');
@@ -199,14 +213,13 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						var newURL = window.location.pathname;
 						if (qs) newURL += '?' + qs;
 						window.history.replaceState({}, '', newURL);
+						updateClearVisibility();
 						htmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});
 					});
 				}
 
 				if (clearBtn) {
 					clearBtn.addEventListener('click', function() {
-						var fromInput = document.getElementById('activity-date-from');
-						var toInput = document.getElementById('activity-date-to');
 						if (fromInput) fromInput.value = '';
 						if (toInput) toInput.value = '';
 						var params = new URLSearchParams(window.location.search);
@@ -216,6 +229,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						var qs = params.toString();
 						if (qs) newURL += '?' + qs;
 						window.history.replaceState({}, '', newURL);
+						updateClearVisibility();
 						htmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});
 					});
 				}

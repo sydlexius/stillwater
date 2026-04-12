@@ -58,11 +58,28 @@ func sliceContains(slice []string, s string) bool {
 	return false
 }
 
+// isPlainDate reports whether s is a plain YYYY-MM-DD date string.
+func isPlainDate(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for i, c := range s {
+		if i == 4 || i == 7 {
+			if c != '-' {
+				return false
+			}
+		} else if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // parseTimeParam parses a date/time value from a query parameter.
 // Accepts both RFC 3339 timestamps (e.g. "2024-01-15T00:00:00Z") and plain
-// YYYY-MM-DD date strings. Plain dates are interpreted as UTC midnight, which
-// avoids the timezone-drift issue that arises when the browser appends
-// "T00:00:00Z" to a local date input value.
+// YYYY-MM-DD date strings. Plain "from" dates are interpreted as UTC midnight.
+// Plain "to" dates are interpreted as end-of-day UTC (23:59:59.999999999) so
+// that the full day is included in range queries.
 // Returns the zero value if the parameter is empty or unparsable.
 func parseTimeParam(req *http.Request, name string) time.Time {
 	raw := req.URL.Query().Get(name)
@@ -73,9 +90,14 @@ func parseTimeParam(req *http.Request, name string) time.Time {
 	if t, err := time.Parse(time.RFC3339, raw); err == nil {
 		return t
 	}
-	// Fall back to plain date (YYYY-MM-DD), interpreted as UTC midnight.
+	// Fall back to plain date (YYYY-MM-DD).
 	if t, err := time.Parse("2006-01-02", raw); err == nil {
-		return t.UTC()
+		t = t.UTC()
+		// For the "to" bound, advance to end-of-day so the full day is included.
+		if name == "to" && isPlainDate(raw) {
+			t = t.Add(24*time.Hour - time.Nanosecond)
+		}
+		return t
 	}
 	return time.Time{}
 }
@@ -124,7 +146,12 @@ func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
 		if t, err := time.Parse(time.RFC3339, raw); err == nil {
 			to = t
 		} else if t, err := time.Parse("2006-01-02", raw); err == nil {
-			to = t.UTC()
+			t = t.UTC()
+			// For the "to" bound, advance to end-of-day so the full day is included.
+			if isPlainDate(raw) {
+				t = t.Add(24*time.Hour - time.Nanosecond)
+			}
+			to = t
 		}
 	}
 
@@ -343,7 +370,11 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// include "revert", the new revert row is outside the current
 				// view. Skip the fragment injection so we don't insert a row
 				// that would not normally appear in the feed.
-				if len(activeFilter.Sources) > 0 && !sliceContains(activeFilter.Sources, "revert") {
+				// Also suppress when SourcePrefixes is non-empty: "revert" does
+				// not match any provider:/rule: prefix pattern.
+				sourceFiltered := (len(activeFilter.Sources) > 0 && !sliceContains(activeFilter.Sources, "revert")) ||
+					len(activeFilter.SourcePrefixes) > 0
+				if sourceFiltered {
 					// Fall through to the plain-text fallback below.
 				} else {
 					userID := middleware.UserIDFromContext(req.Context())
