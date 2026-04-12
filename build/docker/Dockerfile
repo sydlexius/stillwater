@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine@sha256:c2a1f7b2095d046ae14b286b18413a05bb82c9bca9b25fe7ff5efef0f0826166 AS builder
 
 RUN apk add --no-cache curl libstdc++ libgcc
 
@@ -32,7 +32,7 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
 
 # Runtime stage
-FROM alpine:3.23
+FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 
 LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" \
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
