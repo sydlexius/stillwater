@@ -143,15 +143,17 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
 	}
 
-	// Date range bounds. All inserts use RFC 3339 format and the schema default
-	// is also RFC 3339, so direct string comparison works correctly and allows
-	// SQLite to use the index on created_at.
+	// Date range bounds. datetime() normalises both the stored value and the
+	// bind parameter so that legacy rows using the "2006-01-02 15:04:05" space
+	// separator compare correctly against RFC 3339 bounds. Without this, the
+	// space character ('\x20') sorts before 'T', causing legacy rows to appear
+	// after any RFC 3339 bound in a lexicographic comparison.
 	if !filter.From.IsZero() {
-		where = append(where, "mc.created_at >= ?")
+		where = append(where, "datetime(mc.created_at) >= datetime(?)")
 		args = append(args, filter.From.UTC().Format(time.RFC3339))
 	}
 	if !filter.To.IsZero() {
-		where = append(where, "mc.created_at <= ?")
+		where = append(where, "datetime(mc.created_at) <= datetime(?)")
 		args = append(args, filter.To.UTC().Format(time.RFC3339))
 	}
 

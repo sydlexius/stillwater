@@ -607,7 +607,7 @@ func ActivityPage(assets AssetPaths, data ActivityPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, " <script>\n\t\t\t// Reload activity content when the filter flyout applies filters.\n\t\t\t// The shared htmx:configRequest hook prepends the base path automatically,\n\t\t\t// so we use the root-relative path here to avoid double-prefixing.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\tif (evt.target && evt.target.id === 'activity-content') {\n\t\t\t\t\thtmx.ajax('GET', '/activity/content' + window.location.search, {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Initialise the flyout from URL params on first page load.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tif (typeof swFilterFlyout !== 'undefined') {\n\t\t\t\t\tswFilterFlyout.initFromURL('activity-filters-flyout');\n\t\t\t\t} else {\n\t\t\t\t\tconsole.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Date range filter: apply button updates URL params and reloads content.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar applyBtn = document.getElementById('activity-date-apply');\n\t\t\t\tvar clearBtn = document.getElementById('activity-date-clear');\n\n\t\t\t\tif (applyBtn) {\n\t\t\t\t\tapplyBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar fromInput = document.getElementById('activity-date-from');\n\t\t\t\t\t\tvar toInput = document.getElementById('activity-date-to');\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\n\t\t\t\t\t\tif (fromInput && fromInput.value) {\n\t\t\t\t\t\t\t// Store the date input value directly as YYYY-MM-DD to avoid\n\t\t\t\t\t\t\t// UTC conversion shifting the date for users west of UTC.\n\t\t\t\t\t\t\tparams.set('from', fromInput.value + 'T00:00:00Z');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('from');\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tif (toInput && toInput.value) {\n\t\t\t\t\t\t\t// Store end-of-day as YYYY-MM-DDT23:59:59Z to keep the date\n\t\t\t\t\t\t\t// aligned with the user's selection without UTC drift.\n\t\t\t\t\t\t\tparams.set('to', toInput.value + 'T23:59:59Z');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('to');\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tvar newURL = window.location.pathname;\n\t\t\t\t\t\tif (qs) newURL += '?' + qs;\n\t\t\t\t\t\twindow.history.replaceState({}, '', newURL);\n\t\t\t\t\t\thtmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tif (clearBtn) {\n\t\t\t\t\tclearBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar fromInput = document.getElementById('activity-date-from');\n\t\t\t\t\t\tvar toInput = document.getElementById('activity-date-to');\n\t\t\t\t\t\tif (fromInput) fromInput.value = '';\n\t\t\t\t\t\tif (toInput) toInput.value = '';\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t\tparams.delete('from');\n\t\t\t\t\t\tparams.delete('to');\n\t\t\t\t\t\tvar newURL = window.location.pathname;\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tif (qs) newURL += '?' + qs;\n\t\t\t\t\t\twindow.history.replaceState({}, '', newURL);\n\t\t\t\t\t\thtmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, " <script>\n\t\t\t// Reload activity content when the filter flyout applies filters.\n\t\t\t// The shared htmx:configRequest hook prepends the base path automatically,\n\t\t\t// so we use the root-relative path here to avoid double-prefixing.\n\t\t\tdocument.body.addEventListener('sw:filter-applied', function(evt) {\n\t\t\t\tif (evt.target && evt.target.id === 'activity-content') {\n\t\t\t\t\thtmx.ajax('GET', '/activity/content' + window.location.search, {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Initialise the flyout from URL params on first page load.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tif (typeof swFilterFlyout !== 'undefined') {\n\t\t\t\t\tswFilterFlyout.initFromURL('activity-filters-flyout');\n\t\t\t\t} else {\n\t\t\t\t\tconsole.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Date range filter: apply button updates URL params and reloads content.\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar applyBtn = document.getElementById('activity-date-apply');\n\t\t\t\tvar clearBtn = document.getElementById('activity-date-clear');\n\n\t\t\t\tif (applyBtn) {\n\t\t\t\t\tapplyBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar fromInput = document.getElementById('activity-date-from');\n\t\t\t\t\t\tvar toInput = document.getElementById('activity-date-to');\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\n\t\t\t\t\t\tif (fromInput && fromInput.value) {\n\t\t\t\t\t\t\t// Send the raw YYYY-MM-DD value so the server interprets it\n\t\t\t\t\t\t\t// as UTC midnight without any timezone drift.\n\t\t\t\t\t\t\tparams.set('from', fromInput.value);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('from');\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tif (toInput && toInput.value) {\n\t\t\t\t\t\t\t// Send the raw YYYY-MM-DD value; the server will treat it as\n\t\t\t\t\t\t\t// the start of that day in UTC. To include the full day the\n\t\t\t\t\t\t\t// server applies >= on from and <= on to using datetime().\n\t\t\t\t\t\t\tparams.set('to', toInput.value);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tparams.delete('to');\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tvar newURL = window.location.pathname;\n\t\t\t\t\t\tif (qs) newURL += '?' + qs;\n\t\t\t\t\t\twindow.history.replaceState({}, '', newURL);\n\t\t\t\t\t\thtmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tif (clearBtn) {\n\t\t\t\t\tclearBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar fromInput = document.getElementById('activity-date-from');\n\t\t\t\t\t\tvar toInput = document.getElementById('activity-date-to');\n\t\t\t\t\t\tif (fromInput) fromInput.value = '';\n\t\t\t\t\t\tif (toInput) toInput.value = '';\n\t\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t\tparams.delete('from');\n\t\t\t\t\t\tparams.delete('to');\n\t\t\t\t\t\tvar newURL = window.location.pathname;\n\t\t\t\t\t\tvar qs = params.toString();\n\t\t\t\t\t\tif (qs) newURL += '?' + qs;\n\t\t\t\t\t\twindow.history.replaceState({}, '', newURL);\n\t\t\t\t\t\thtmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t});\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -651,7 +651,7 @@ func ActivityContent(data ActivityPageData) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "activity.empty_state"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 230, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 231, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -694,7 +694,7 @@ func ActivityContent(data ActivityPageData) templ.Component {
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 243, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 244, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -741,7 +741,7 @@ func activityLoadMoreButton(data ActivityPageData) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "activity.load_more_aria"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 256, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 257, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -754,7 +754,7 @@ func activityLoadMoreButton(data ActivityPageData) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(activityLoadMoreURL(data))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 258, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 259, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -767,7 +767,7 @@ func activityLoadMoreButton(data ActivityPageData) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.load_more"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 262, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 263, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -839,7 +839,7 @@ func ActivityMoreRows(data ActivityPageData) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 284, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 285, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -917,7 +917,7 @@ func ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeWi
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs("activity-change-" + revertedID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 301, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 302, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -943,7 +943,7 @@ func ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeWi
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "common.showing_of", showing, total))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 308, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 309, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -987,7 +987,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs("activity-change-" + c.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 315, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 316, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -1000,7 +1000,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var45 templ.SafeURL
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(basePath + "/artists/" + c.ArtistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 319, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 320, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -1013,7 +1013,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(c.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 322, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 323, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -1048,7 +1048,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(historySourceLabel(ctx, c.Source))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 325, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 326, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -1061,7 +1061,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(c.CreatedAt.Format(time.RFC3339))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 328, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 329, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1074,7 +1074,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(c.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 329, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 330, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -1087,7 +1087,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, c.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 332, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 333, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -1105,7 +1105,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/history/" + c.ID + "/revert")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 338, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 339, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1118,7 +1118,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs("#activity-change-" + c.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 339, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 340, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1131,7 +1131,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 341, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 342, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1144,7 +1144,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.undo_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 343, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 344, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1157,7 +1157,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.undo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 345, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 346, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1175,7 +1175,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(historyFieldLabel(ctx, c.Field))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 351, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 352, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1193,7 +1193,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "history.set_to", historyTruncate(c.NewValue, 80)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 354, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 355, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1211,7 +1211,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.cleared"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 356, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 357, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1229,7 +1229,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.changed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 358, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 359, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
@@ -1247,7 +1247,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.no_value"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 360, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 361, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 			if templ_7745c5c3_Err != nil {
@@ -1270,7 +1270,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.previous"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 366, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 367, Col: 111}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1283,7 +1283,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(c.OldValue, 300))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 367, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 368, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1302,7 +1302,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "history.current"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 372, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 373, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1315,7 +1315,7 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(historyTruncate(c.NewValue, 300))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 373, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 374, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1348,10 +1348,10 @@ func activityLoadMoreURL(data ActivityPageData) string {
 		u += "&source=" + url.QueryEscape(s)
 	}
 	if !data.FilterFrom.IsZero() {
-		u += "&from=" + url.QueryEscape(data.FilterFrom.Format(time.RFC3339))
+		u += "&from=" + url.QueryEscape(data.FilterFrom.Format("2006-01-02"))
 	}
 	if !data.FilterTo.IsZero() {
-		u += "&to=" + url.QueryEscape(data.FilterTo.Format(time.RFC3339))
+		u += "&to=" + url.QueryEscape(data.FilterTo.Format("2006-01-02"))
 	}
 	return u
 }

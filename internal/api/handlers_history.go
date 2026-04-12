@@ -48,18 +48,36 @@ func splitSourceFilters(sources []string) (exact []string, prefixes []string) {
 	return exact, prefixes
 }
 
-// parseTimeParam parses an RFC 3339 timestamp from a query parameter.
+// sliceContains reports whether s is present in the slice.
+func sliceContains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTimeParam parses a date/time value from a query parameter.
+// Accepts both RFC 3339 timestamps (e.g. "2024-01-15T00:00:00Z") and plain
+// YYYY-MM-DD date strings. Plain dates are interpreted as UTC midnight, which
+// avoids the timezone-drift issue that arises when the browser appends
+// "T00:00:00Z" to a local date input value.
 // Returns the zero value if the parameter is empty or unparsable.
 func parseTimeParam(req *http.Request, name string) time.Time {
 	raw := req.URL.Query().Get(name)
 	if raw == "" {
 		return time.Time{}
 	}
-	t, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return time.Time{}
+	// Try RFC 3339 first (full timestamp).
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t
 	}
-	return t
+	// Fall back to plain date (YYYY-MM-DD), interpreted as UTC midnight.
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
 }
 
 // buildGlobalFilter constructs a GlobalHistoryFilter from query parameters.
@@ -98,11 +116,15 @@ func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
 	if raw := q.Get("from"); raw != "" {
 		if t, err := time.Parse(time.RFC3339, raw); err == nil {
 			from = t
+		} else if t, err := time.Parse("2006-01-02", raw); err == nil {
+			from = t.UTC()
 		}
 	}
 	if raw := q.Get("to"); raw != "" {
 		if t, err := time.Parse(time.RFC3339, raw); err == nil {
 			to = t
+		} else if t, err := time.Parse("2006-01-02", raw); err == nil {
+			to = t.UTC()
 		}
 	}
 
@@ -316,16 +338,25 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// HX-Current-URL so the "showing X of Y" counter stays
 				// accurate relative to the current feed view.
 				activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
-				userID := middleware.UserIDFromContext(req.Context())
-				limit := r.getUserPageSize(req.Context(), userID, 0)
-				activeFilter.Limit = limit
-				_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
-				showing := activeFilter.Offset + limit
-				if showing > total {
-					showing = total
+
+				// If the active feed filter restricts sources and does not
+				// include "revert", the new revert row is outside the current
+				// view. Skip the fragment injection so we don't insert a row
+				// that would not normally appear in the feed.
+				if len(activeFilter.Sources) > 0 && !sliceContains(activeFilter.Sources, "revert") {
+					// Fall through to the plain-text fallback below.
+				} else {
+					userID := middleware.UserIDFromContext(req.Context())
+					limit := r.getUserPageSize(req.Context(), userID, 0)
+					activeFilter.Limit = limit
+					_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
+					showing := activeFilter.Offset + limit
+					if showing > total {
+						showing = total
+					}
+					renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, showing, total))
+					return
 				}
-				renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, showing, total))
-				return
 			}
 		} else {
 			// Artist history tab needs MetadataChange (no artist name needed).

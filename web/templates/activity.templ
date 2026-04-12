@@ -179,17 +179,18 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 						var params = new URLSearchParams(window.location.search);
 
 						if (fromInput && fromInput.value) {
-							// Store the date input value directly as YYYY-MM-DD to avoid
-							// UTC conversion shifting the date for users west of UTC.
-							params.set('from', fromInput.value + 'T00:00:00Z');
+							// Send the raw YYYY-MM-DD value so the server interprets it
+							// as UTC midnight without any timezone drift.
+							params.set('from', fromInput.value);
 						} else {
 							params.delete('from');
 						}
 
 						if (toInput && toInput.value) {
-							// Store end-of-day as YYYY-MM-DDT23:59:59Z to keep the date
-							// aligned with the user's selection without UTC drift.
-							params.set('to', toInput.value + 'T23:59:59Z');
+							// Send the raw YYYY-MM-DD value; the server will treat it as
+							// the start of that day in UTC. To include the full day the
+							// server applies >= on from and <= on to using datetime().
+							params.set('to', toInput.value);
 						} else {
 							params.delete('to');
 						}
@@ -392,10 +393,10 @@ func activityLoadMoreURL(data ActivityPageData) string {
 		u += "&source=" + url.QueryEscape(s)
 	}
 	if !data.FilterFrom.IsZero() {
-		u += "&from=" + url.QueryEscape(data.FilterFrom.Format(time.RFC3339))
+		u += "&from=" + url.QueryEscape(data.FilterFrom.Format("2006-01-02"))
 	}
 	if !data.FilterTo.IsZero() {
-		u += "&to=" + url.QueryEscape(data.FilterTo.Format(time.RFC3339))
+		u += "&to=" + url.QueryEscape(data.FilterTo.Format("2006-01-02"))
 	}
 	return u
 }
