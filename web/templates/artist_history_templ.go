@@ -540,9 +540,9 @@ func historyChangeRow(c artist.MetadataChange) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var27 string
-			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(`js:{"showing": document.querySelectorAll("#history-change-list > [id^='history-change-']").length}`)
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(`js:{"showing": document.querySelectorAll("#history-tab-content [id^='history-change-']").length}`)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 141, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_history.templ`, Line: 141, Col: 113}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {

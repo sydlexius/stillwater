@@ -76,31 +76,31 @@ func isPlainDate(s string) bool {
 	return true
 }
 
-// parseTimeParam parses a date/time value from a query parameter.
-// Accepts both RFC 3339 timestamps (e.g. "2024-01-15T00:00:00Z") and plain
-// YYYY-MM-DD date strings. Plain "from" dates are interpreted as UTC midnight.
-// Plain "to" dates are interpreted as end-of-day UTC (23:59:59.999999999) so
-// that the full day is included in range queries.
-// Returns the zero value if the parameter is empty or unparsable.
-func parseTimeParam(req *http.Request, name string) time.Time {
-	raw := req.URL.Query().Get(name)
+// parseTimeValue parses a date/time string, applying end-of-day semantics for
+// the "to" bound. Accepts RFC 3339 timestamps and plain YYYY-MM-DD dates.
+// Plain "from" dates resolve to UTC midnight; plain "to" dates resolve to
+// 23:59:59.999999999 UTC so the full day is included in range queries.
+// Returns the zero value if raw is empty or unparsable.
+func parseTimeValue(raw, name string) time.Time {
 	if raw == "" {
 		return time.Time{}
 	}
-	// Try RFC 3339 first (full timestamp).
 	if t, err := time.Parse(time.RFC3339, raw); err == nil {
 		return t
 	}
-	// Fall back to plain date (YYYY-MM-DD).
 	if t, err := time.Parse("2006-01-02", raw); err == nil {
 		t = t.UTC()
-		// For the "to" bound, advance to end-of-day so the full day is included.
 		if name == "to" && isPlainDate(raw) {
 			t = t.Add(24*time.Hour - time.Nanosecond)
 		}
 		return t
 	}
 	return time.Time{}
+}
+
+// parseTimeParam reads a query parameter by name and delegates to parseTimeValue.
+func parseTimeParam(req *http.Request, name string) time.Time {
+	return parseTimeValue(req.URL.Query().Get(name), name)
 }
 
 // buildGlobalFilter constructs a GlobalHistoryFilter from query parameters.
@@ -135,26 +135,8 @@ func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
 	sources := parseFilterValues(q["source"])
 	exactSources, sourcePrefixes := splitSourceFilters(sources)
 
-	var from, to time.Time
-	if raw := q.Get("from"); raw != "" {
-		if t, err := time.Parse(time.RFC3339, raw); err == nil {
-			from = t
-		} else if t, err := time.Parse("2006-01-02", raw); err == nil {
-			from = t.UTC()
-		}
-	}
-	if raw := q.Get("to"); raw != "" {
-		if t, err := time.Parse(time.RFC3339, raw); err == nil {
-			to = t
-		} else if t, err := time.Parse("2006-01-02", raw); err == nil {
-			t = t.UTC()
-			// For the "to" bound, advance to end-of-day so the full day is included.
-			if isPlainDate(raw) {
-				t = t.Add(24*time.Hour - time.Nanosecond)
-			}
-			to = t
-		}
-	}
+	from := parseTimeValue(q.Get("from"), "from")
+	to := parseTimeValue(q.Get("to"), "to")
 
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	if offset < 0 {
