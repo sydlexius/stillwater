@@ -480,8 +480,9 @@ templ UndoToast(undoID string, expiresIn int) {
 			hx-post={ "/api/v1/fix-undo/" + undoID }
 			hx-target={ "#undo-toast-" + undoID }
 			hx-swap="outerHTML"
+			hx-disabled-elt="this"
 			aria-label={ t(ctx, "dashboard.undo_fix") }
-			class="inline-flex items-center rounded px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-700/50 transition-colors"
+			class="inline-flex items-center rounded px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-700/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 		>
 			{ t(ctx, "dashboard.undo") }
 		</button>

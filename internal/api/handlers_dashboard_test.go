@@ -9,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -300,5 +301,62 @@ func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "no_recent_activity") && !strings.Contains(body, "No recent activity") {
 		t.Errorf("expected empty activity state in response, got: %s", body)
+	}
+}
+
+// TestHandleDashboardActionQueue_StatsError verifies that when GetHealthStats
+// returns an error the handler still returns 200 OK and renders the
+// stats-unavailable placeholder ("---") instead of a percentage like "0.0%".
+//
+// To isolate the failure to just the health-stats query, a second in-memory
+// database is opened exclusively for the artist service and then closed before
+// the request is issued. The rule service retains its own open connection so
+// the violation-list queries succeed normally.
+func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
+	r := testDashboardRouter(t, false)
+
+	// Open a separate in-memory database for the artist service so we can
+	// close it independently of the rule service database.
+	artistDB, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening artist test db: %v", err)
+	}
+	if err := database.Migrate(artistDB); err != nil {
+		_ = artistDB.Close()
+		t.Fatalf("migrating artist test db: %v", err)
+	}
+
+	// Replace the router's artist service with one backed by the new database.
+	r.artistService = artist.NewService(artistDB)
+
+	// Closing the database forces any subsequent call to GetHealthStats to
+	// return an error. The rule service still uses its own open connection.
+	if err := artistDB.Close(); err != nil {
+		t.Fatalf("closing artist test db: %v", err)
+	}
+
+	// No violations are seeded, so the handler takes the empty-state branch
+	// and calls DashboardEmptyState with healthStatsError=true.
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions", nil)
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+
+	r.handleDashboardActionQueue(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	body := w.Body.String()
+
+	// The stats-unavailable placeholder must appear in the rendered output.
+	if !strings.Contains(body, "---") {
+		t.Errorf("expected stats-unavailable placeholder (---) in response, got: %s", body)
+	}
+
+	// A real health percentage must NOT appear; that would indicate the error
+	// path was not taken and misleading data is being shown.
+	if strings.Contains(body, "0.0%") {
+		t.Errorf("response must not contain health percentage when stats are unavailable; got: %s", body)
 	}
 }
