@@ -73,6 +73,7 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	// Uses the same GetHealthStats call as handleReportHealth.
 	var healthScore float64
 	var totalArtists, compliantArtists int
+	var healthStatsError bool
 	stats, err := r.artistService.GetHealthStats(ctx, "")
 	if err == nil {
 		healthScore = stats.Score
@@ -80,6 +81,7 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		compliantArtists = stats.CompliantArtists
 	} else {
 		r.logger.Warn("dashboard health stats", "error", err)
+		healthStatsError = true
 	}
 
 	data := templates.ActionQueueData{
@@ -93,6 +95,7 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		TotalArtists:     totalArtists,
 		CompliantArtists: compliantArtists,
 		BasePath:         r.basePath,
+		HealthStatsError: healthStatsError,
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }

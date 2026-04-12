@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // FixAllProgress tracks the state of an async fix-all operation.
@@ -102,15 +103,24 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	// Fixing a violation changes the artist's health score.
 	r.InvalidateHealthCache()
 
-	// When called via HTMX (dashboard action cards), return empty HTML
-	// so hx-swap="outerHTML" removes the card. Only remove the card when
-	// the fix actually resolved; otherwise return the message so the card
-	// stays visible.
+	// When called via HTMX (dashboard action cards), return HTML so
+	// hx-swap="outerHTML" removes the card. When an undo entry was
+	// registered, render a brief undo toast so the user can revert.
 	if isHTMXRequest(req) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if fr.Fixed || fr.Dismissed {
-			w.Header().Set("HX-Trigger", "dashboard:action-resolved")
-			w.WriteHeader(http.StatusOK)
+			// When an undo toast is present, skip the HX-Trigger so the
+			// queue does not reload and destroy the toast before the user
+			// can click Undo. The toast's auto-dismiss script dispatches
+			// the event after it expires or is dismissed.
+			if undoID, ok := resp["undo_id"].(string); ok && undoID != "" {
+				expiresIn, _ := resp["undo_expires_in"].(int)
+				renderTempl(w, req, templates.UndoToast(undoID, expiresIn))
+			} else {
+				// No undo toast -- trigger queue refresh immediately.
+				w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+				w.WriteHeader(http.StatusOK)
+			}
 		} else {
 			// Fix did not resolve -- return 422 with message so the card
 			// stays in place and HTMX does not swap it out.
@@ -289,6 +299,17 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 
 	// Undoing a fix restores pre-fix state, changing health scores.
 	r.InvalidateHealthCache()
+
+	// When called via HTMX (the undo button in the toast), return an empty
+	// HTML fragment so hx-swap="outerHTML" removes the toast from the DOM.
+	// Also trigger a dashboard refresh so the reopened violation reappears.
+	if isHTMXRequest(req) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+		w.WriteHeader(http.StatusOK)
+		// Empty response removes the toast element via outerHTML swap.
+		return
+	}
 
 	if reopenFailed {
 		// Files were restored but the violation status is inconsistent.
