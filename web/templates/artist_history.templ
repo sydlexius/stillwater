@@ -137,6 +137,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
 					hx-target={ "#history-change-" + c.ID }
 					hx-swap="outerHTML"
+					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
 					hx-vals={ `js:{"showing": document.querySelectorAll("#history-tab-content [id^='history-change-']").length}` }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

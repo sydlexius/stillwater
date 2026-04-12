@@ -1096,6 +1096,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 }
 
 // pushMetadata sends a JSON POST to push artist metadata to a platform connection.
+
 script pushMetadata(artistID string, connectionID string) {
 	var bpEl = document.querySelector('meta[name="htmx-base-path"]');
 	var bp = bpEl ? bpEl.content : '';

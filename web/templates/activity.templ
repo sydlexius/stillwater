@@ -357,6 +357,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
 					hx-target={ "#activity-change-" + c.ID }
 					hx-swap="outerHTML"
+					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
 					hx-vals={ `js:{"showing": document.querySelectorAll("#activity-entries > [id^='activity-change-']").length}` }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
