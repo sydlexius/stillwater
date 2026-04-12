@@ -89,6 +89,26 @@ docker_manifests:
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
 
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --output-certificate=${certificate}
+      - --output-signature=${signature}
+      - ${artifact}
+      - --yes
+    artifacts: checksum
+    output: true
+
+docker_signs:
+  - cmd: cosign
+    args:
+      - sign
+      - --yes
+      - ${artifact}
+    artifacts: all
+
 changelog:
   sort: asc
   use: github
