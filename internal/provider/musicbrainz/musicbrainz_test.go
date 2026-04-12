@@ -585,152 +585,86 @@ func isErrUnavailable(err error) bool {
 
 // --- #973: YearsActive synthesis ---
 
-func TestMapArtist_YearsActive_GroupFormedOnly(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Test Band",
-		Type: "Group",
-		LifeSpan: MBLifeSpan{
-			Begin: "1990",
+func TestMapArtist_YearsActive(t *testing.T) {
+	tests := []struct {
+		name            string
+		artistType      string
+		artistName      string
+		lifeSpan        MBLifeSpan
+		wantYearsActive string
+	}{
+		{
+			name:            "GroupFormedOnly",
+			artistType:      "Group",
+			artistName:      "Test Band",
+			lifeSpan:        MBLifeSpan{Begin: "1990"},
+			wantYearsActive: "1990-present",
+		},
+		{
+			name:            "GroupFormedAndDisbanded",
+			artistType:      "Group",
+			artistName:      "Test Band",
+			lifeSpan:        MBLifeSpan{Begin: "1990", End: "2005", Ended: true},
+			wantYearsActive: "1990-2005",
+		},
+		{
+			name:            "OrchestraFormedOnly",
+			artistType:      "Orchestra",
+			artistName:      "Berlin Philharmonic",
+			lifeSpan:        MBLifeSpan{Begin: "1882"},
+			wantYearsActive: "1882-present",
+		},
+		{
+			name:            "ChoirFormedAndDisbanded",
+			artistType:      "Choir",
+			artistName:      "Test Choir",
+			lifeSpan:        MBLifeSpan{Begin: "2000", End: "2020", Ended: true},
+			wantYearsActive: "2000-2020",
+		},
+		{
+			name:            "SoloArtistNotSynthesized",
+			artistType:      "Person",
+			artistName:      "Solo Person",
+			lifeSpan:        MBLifeSpan{Begin: "1970"},
+			wantYearsActive: "",
+		},
+		{
+			name:            "GroupNoFormedDate",
+			artistType:      "Group",
+			artistName:      "Mystery Band",
+			lifeSpan:        MBLifeSpan{},
+			wantYearsActive: "",
+		},
+		{
+			name:            "PartialDates",
+			artistType:      "Group",
+			artistName:      "Partial Date Band",
+			lifeSpan:        MBLifeSpan{Begin: "1990-05-14", End: "2005-12", Ended: true},
+			wantYearsActive: "1990-2005",
+		},
+		{
+			name:            "PartialBeginNoEnd",
+			artistType:      "Group",
+			artistName:      "Active Band",
+			lifeSpan:        MBLifeSpan{Begin: "1990-05", End: "", Ended: false},
+			wantYearsActive: "1990-present",
 		},
 	}
 
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "1990-present" {
-		t.Errorf("expected YearsActive %q, got %q", "1990-present", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_GroupFormedAndDisbanded(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Test Band",
-		Type: "Group",
-		LifeSpan: MBLifeSpan{
-			Begin: "1990",
-			End:   "2005",
-			Ended: true,
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "1990-2005" {
-		t.Errorf("expected YearsActive %q, got %q", "1990-2005", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_OrchestraFormedOnly(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Berlin Philharmonic",
-		Type: "Orchestra",
-		LifeSpan: MBLifeSpan{
-			Begin: "1882",
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "1882-present" {
-		t.Errorf("expected YearsActive %q, got %q", "1882-present", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_ChoirFormedAndDisbanded(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Test Choir",
-		Type: "Choir",
-		LifeSpan: MBLifeSpan{
-			Begin: "2000",
-			End:   "2020",
-			Ended: true,
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "2000-2020" {
-		t.Errorf("expected YearsActive %q, got %q", "2000-2020", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_SoloArtistNotSynthesized(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Solo Person",
-		Type: "Person",
-		LifeSpan: MBLifeSpan{
-			Begin: "1970",
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "" {
-		t.Errorf("expected empty YearsActive for Person, got %q", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_GroupNoFormedDate(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Mystery Band",
-		Type: "Group",
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "" {
-		t.Errorf("expected empty YearsActive when no Formed date, got %q", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_PartialDates(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Partial Date Band",
-		Type: "Group",
-		LifeSpan: MBLifeSpan{
-			Begin: "1990-05-14",
-			End:   "2005-12",
-			Ended: true,
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "1990-2005" {
-		t.Errorf("expected YearsActive %q, got %q", "1990-2005", meta.YearsActive)
-	}
-}
-
-func TestMapArtist_YearsActive_PartialBeginNoEnd(t *testing.T) {
-	a := newTestAdapter(t, "http://localhost:0")
-	mb := &MBArtist{
-		ID:   "abc-123",
-		Name: "Active Band",
-		Type: "Group",
-		LifeSpan: MBLifeSpan{
-			Begin: "1990-05",
-			End:   "",
-			Ended: false,
-		},
-	}
-
-	meta := a.mapArtist(context.Background(), mb)
-
-	if meta.YearsActive != "1990-present" {
-		t.Errorf("expected YearsActive %q, got %q", "1990-present", meta.YearsActive)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestAdapter(t, "http://localhost:0")
+			mb := &MBArtist{
+				ID:       "abc-123",
+				Name:     tc.artistName,
+				Type:     tc.artistType,
+				LifeSpan: tc.lifeSpan,
+			}
+			meta := a.mapArtist(context.Background(), mb)
+			if meta.YearsActive != tc.wantYearsActive {
+				t.Errorf("expected YearsActive %q, got %q", tc.wantYearsActive, meta.YearsActive)
+			}
+		})
 	}
 }
 
@@ -1126,5 +1060,17 @@ func TestMergeDateRanges_MultipleClosed(t *testing.T) {
 	})
 	if earliest != "1980" || latest != "2005" {
 		t.Errorf("expected 1980-2005, got %s-%s", earliest, latest)
+	}
+}
+
+func TestMergeDateRanges_NilAndEmpty(t *testing.T) {
+	e1, l1 := mergeDateRanges(nil)
+	if e1 != "" || l1 != "" {
+		t.Errorf("nil input: expected both empty, got %q %q", e1, l1)
+	}
+
+	e2, l2 := mergeDateRanges([][2]string{})
+	if e2 != "" || l2 != "" {
+		t.Errorf("empty input: expected both empty, got %q %q", e2, l2)
 	}
 }
