@@ -27,15 +27,16 @@ on:
     types: [opened, reopened, edited, synchronize, labeled, unlabeled]
     branches: [main]
 
-permissions:
-  contents: read
-  issues: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   require-label:
     name: Require release label
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: write
     if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     steps:

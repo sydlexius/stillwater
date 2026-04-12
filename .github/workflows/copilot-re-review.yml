@@ -11,12 +11,13 @@ on:
     types:
       - synchronize
 
-permissions:
-  pull-requests: write
+permissions: {}
 
 jobs:
   re-request:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - name: Check for prior Copilot review

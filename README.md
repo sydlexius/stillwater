@@ -5,7 +5,7 @@
 [![codecov](https://codecov.io/gh/sydlexius/stillwater/branch/main/graph/badge.svg)](https://codecov.io/gh/sydlexius/stillwater)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sydlexius/stillwater/badge)](https://securityscorecards.dev/viewer/?uri=github.com/sydlexius/stillwater)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod-go-version/sydlexius/stillwater)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/sydlexius/stillwater)](go.mod)
 
 Stillwater is a self-hosted web application for managing artist and composer metadata and images for Emby, Jellyfin, and Kodi media servers. It reads and writes NFO files and handles artist artwork, letting you keep your music library metadata clean and consistent from a single interface.
 

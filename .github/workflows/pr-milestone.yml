@@ -10,13 +10,14 @@ on:
     types: [opened, edited]
     branches: [main]
 
-permissions:
-  issues: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   assign-milestone:
     runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      pull-requests: write
     # Skip bot PRs (Dependabot, etc.) -- they never reference milestone issues
     if: github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
