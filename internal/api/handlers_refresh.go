@@ -285,11 +285,12 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 
 	rule.UpdateProviderFetchTimestamps(writeCtx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
-	// Update members if the provider attempted the "members" field.
-	// When the provider was queried but returned an empty list, we clear
-	// existing members (e.g., artist type changed from group to solo).
-	// When "members" was not attempted (provider down, not configured),
-	// leave existing members untouched.
+	// Update members if the provider attempted the "members" field and
+	// returned a non-empty list. An empty list is not treated as an
+	// intentional clear: MusicBrainz relation data is often incomplete, and
+	// wiping existing members when the API returns nothing would be lossy.
+	// Leave existing members untouched when the provider was not attempted
+	// (provider down, not configured) or returned 0 members.
 	if result.Metadata != nil {
 		membersAttempted := false
 		for _, f := range result.AttemptedFields {
@@ -298,7 +299,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 				break
 			}
 		}
-		if membersAttempted {
+		if membersAttempted && len(result.Metadata.Members) > 0 {
 			members := convertProviderMembers(a.ID, result.Metadata.Members)
 			if err := r.artistService.UpsertMembers(writeCtx, a.ID, members); err != nil {
 				r.logger.Warn("upserting members after refresh",
