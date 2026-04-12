@@ -98,9 +98,16 @@ templ HistoryChangeRowFragment(c artist.MetadataChange) {
 // HistoryRevertFragment renders a revert response that removes the old row
 // and prepends the new revert entry at the top of the history list, keeping
 // correct chronological order. Also updates the "Showing X of Y" counter.
+//
+// The placeholder id uses the `history-revert-placeholder-` prefix so the
+// undo button's hx-vals selector (which counts `[id^="history-change-"]`
+// descendants of the list) does not treat the hidden placeholder as a
+// visible row. Keeping the `history-change-` prefix here would inflate
+// the next "showing" value because the hidden div would still be counted.
 templ HistoryRevertFragment(revertedID string, newChange artist.MetadataChange, showing, total int) {
-	// Empty div replaces the reverted row (removes it from its old position).
-	<div id={ "history-change-" + revertedID } style="display:none"></div>
+	// Empty placeholder replaces the reverted row at its old position so the
+	// visible row count drops by 1 while the prepended new row adds 1 back.
+	<div id={ "history-revert-placeholder-" + revertedID } class="hidden"></div>
 	// Prepend the new revert entry at the top of the history list.
 	<div id="history-change-list" hx-swap-oob="afterbegin">
 		@historyChangeRow(newChange)
@@ -131,6 +138,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 					hx-target={ "#history-change-" + c.ID }
 					hx-swap="outerHTML"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
+					hx-vals={ `js:{"showing": document.querySelectorAll("#history-change-list > [id^='history-change-']").length}` }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>

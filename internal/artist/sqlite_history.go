@@ -75,11 +75,17 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 		return []MetadataChange{}, 0, nil
 	}
 
+	// Wrap created_at with datetime() so mixed-format timestamps (legacy
+	// "YYYY-MM-DD HH:MM:SS" rows and RFC 3339 rows) sort consistently. Without
+	// this, the space character (0x20) sorts before 'T' in a raw text
+	// comparison, causing legacy rows to appear out of chronological order
+	// relative to RFC 3339 rows. This mirrors the normalisation applied in
+	// ListGlobal() above.
 	const q = `
 		SELECT id, artist_id, field, old_value, new_value, source, created_at
 		FROM metadata_changes
 		WHERE artist_id = ?
-		ORDER BY created_at DESC, id DESC
+		ORDER BY datetime(created_at) DESC, id DESC
 		LIMIT ? OFFSET ?`
 
 	rows, err := r.db.QueryContext(ctx, q, artistID, limit, offset)

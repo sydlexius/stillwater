@@ -362,8 +362,18 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		// pattern, which races against any concurrent writer to the same field.
 		revertChange, err := r.historyService.GetByID(req.Context(), revertChangeID)
 		if err != nil {
-			r.logger.Error("fetching revert change by id",
-				"change_id", changeID, "revert_change_id", revertChangeID, "error", err)
+			// A missing revert history row is an expected edge case: the revert
+			// can become a no-op (e.g. the field already matched OldValue so
+			// UpdateField/ClearField recorded nothing) or history recording was
+			// best-effort. Log at Info in that case to avoid noisy error logs
+			// from user-initiated reverts; reserve Error for genuine failures.
+			if errors.Is(err, artist.ErrChangeNotFound) {
+				r.logger.Info("revert change history row not found; rendering fallback fragment",
+					"change_id", changeID, "revert_change_id", revertChangeID)
+			} else {
+				r.logger.Error("fetching revert change by id",
+					"change_id", changeID, "revert_change_id", revertChangeID, "error", err)
+			}
 		}
 
 		if fromActivity && revertChange != nil {
@@ -436,9 +446,36 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 			if listErr != nil {
 				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", listErr)
 			} else {
-				showing := len(changes)
-				if showing > total {
-					showing = total
+				// The fragment hides the reverted row and prepends the new
+				// revert row, so the number of visible rows is unchanged
+				// (+1 prepended, -1 hidden). This branch only runs when
+				// revertChange != nil (the revert history row exists), so
+				// DB total grew by exactly 1 and len(changes) from the
+				// first page overstates visible rows by 1 when the list
+				// fits on one page. Compensate by subtracting 1 (clamped
+				// at 0). This fallback assumes a single page was loaded;
+				// when load-more has been used, the client hint below is
+				// authoritative.
+				showing := len(changes) - 1
+				if showing < 0 {
+					showing = 0
+				}
+				// Prefer the client-reported visible count when available.
+				// The undo button carries the DOM row count via hx-vals so
+				// the counter stays accurate even when additional pages have
+				// been appended via load-more (in which case len(changes)
+				// underreports actual DOM rows).
+				if v := req.FormValue("showing"); v != "" {
+					if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
+						showing = n
+					} else if err != nil {
+						// Non-numeric hint indicates a client-side bug (stale
+						// JS or tampered request). Log at Debug so it is
+						// visible in verbose logs without polluting normal
+						// output.
+						r.logger.Debug("invalid showing hint in revert request",
+							"value", v, "error", err)
+					}
 				}
 				renderTempl(w, req, templates.HistoryRevertFragment(changeID, *revertChange, showing, total))
 				return
