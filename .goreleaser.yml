@@ -145,7 +145,7 @@ release:
     owner: sydlexius
     name: stillwater
   prerelease: auto
-  make_latest: auto
+  make_latest: false
   header: |
     ## Stillwater {{ .Tag }}
 
