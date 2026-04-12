@@ -375,8 +375,9 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// that would not normally appear in the feed.
 				// Also suppress when SourcePrefixes is non-empty: "revert" does
 				// not match any provider:/rule: prefix pattern.
-				sourceFiltered := (len(activeFilter.Sources) > 0 && !sliceContains(activeFilter.Sources, "revert")) ||
-					len(activeFilter.SourcePrefixes) > 0
+				allowsRevert := (len(activeFilter.Sources) == 0 && len(activeFilter.SourcePrefixes) == 0) ||
+					sliceContains(activeFilter.Sources, "revert")
+				sourceFiltered := !allowsRevert
 
 				// Guard against active date-range bounds: if the new revert row
 				// falls outside the current feed's from/to window, skip fragment

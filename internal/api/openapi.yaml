@@ -2507,8 +2507,11 @@ paths:
             (e.g. 2024-01-15T00:00:00Z) or a plain date (YYYY-MM-DD, interpreted
             as midnight UTC on that day).
           schema:
-            type: string
-            format: date-time
+            oneOf:
+              - type: string
+                format: date-time
+              - type: string
+                format: date
         - name: to
           in: query
           description: >
@@ -2517,8 +2520,11 @@ paths:
             value is treated as end-of-UTC-day (23:59:59.999999999) so the full
             day is included.
           schema:
-            type: string
-            format: date-time
+            oneOf:
+              - type: string
+                format: date-time
+              - type: string
+                format: date
       responses:
         "200":
           description: Paginated list of metadata changes with artist names.
