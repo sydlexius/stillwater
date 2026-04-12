@@ -385,13 +385,13 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				if c.OldValue != "" {
 					<div>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.previous") }</span>
-						<p class="text-red-500 dark:text-red-400 line-through break-words">{ historyTruncate(c.OldValue, 300) }</p>
+						<p class="text-red-500 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
 					</div>
 				}
 				if c.NewValue != "" {
 					<div>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.current") }</span>
-						<p class="text-green-600 dark:text-green-400 break-words">{ historyTruncate(c.NewValue, 300) }</p>
+						<p class="text-green-600 dark:text-green-400 break-words whitespace-pre-wrap">{ c.NewValue }</p>
 					</div>
 				}
 			</div>
