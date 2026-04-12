@@ -156,6 +156,9 @@ func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
 	}
 
 	offset, _ := strconv.Atoi(q.Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
 
 	return artist.GlobalHistoryFilter{
 		ArtistID:       q.Get("artist_id"),
@@ -374,7 +377,15 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// not match any provider:/rule: prefix pattern.
 				sourceFiltered := (len(activeFilter.Sources) > 0 && !sliceContains(activeFilter.Sources, "revert")) ||
 					len(activeFilter.SourcePrefixes) > 0
-				if sourceFiltered {
+
+				// Guard against active date-range bounds: if the new revert row
+				// falls outside the current feed's from/to window, skip fragment
+				// injection so we don't insert a row that would not appear in the feed.
+				createdAt := globalChanges[0].CreatedAt
+				dateFiltered := (!activeFilter.From.IsZero() && createdAt.Before(activeFilter.From)) ||
+					(!activeFilter.To.IsZero() && createdAt.After(activeFilter.To))
+
+				if sourceFiltered || dateFiltered {
 					// Fall through to the plain-text fallback below.
 				} else {
 					userID := middleware.UserIDFromContext(req.Context())

@@ -2503,14 +2503,19 @@ paths:
         - name: from
           in: query
           description: >
-            Include changes on or after this timestamp (RFC 3339 format).
+            Include changes on or after this timestamp. Accepts RFC 3339 date-time
+            (e.g. 2024-01-15T00:00:00Z) or a plain date (YYYY-MM-DD, interpreted
+            as midnight UTC on that day).
           schema:
             type: string
             format: date-time
         - name: to
           in: query
           description: >
-            Include changes on or before this timestamp (RFC 3339 format).
+            Include changes on or before this timestamp. Accepts RFC 3339 date-time
+            (e.g. 2024-01-15T23:59:59Z) or a plain date (YYYY-MM-DD). A date-only
+            value is treated as end-of-UTC-day (23:59:59.999999999) so the full
+            day is included.
           schema:
             type: string
             format: date-time
