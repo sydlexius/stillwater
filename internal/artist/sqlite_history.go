@@ -174,13 +174,16 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		return []MetadataChangeWithArtist{}, 0, nil
 	}
 
-	// Fetch rows with artist name.
+	// Fetch rows with artist name. ORDER BY uses datetime() to normalise mixed
+	// timestamp formats (RFC 3339 vs SQLite "YYYY-MM-DD HH:MM:SS") so legacy
+	// rows sort consistently with the datetime()-normalised WHERE bounds above.
+	// Otherwise the lexicographic 'T' vs ' ' difference would invert ordering.
 	selectQ := `
 		SELECT mc.id, mc.artist_id, a.name, mc.field, mc.old_value, mc.new_value, mc.source, mc.created_at
 		FROM metadata_changes mc
 		JOIN artists a ON a.id = mc.artist_id
 		` + whereClause + `
-		ORDER BY mc.created_at DESC, mc.id DESC
+		ORDER BY datetime(mc.created_at) DESC, mc.id DESC
 		LIMIT ? OFFSET ?`
 
 	queryArgs := make([]any, len(args))

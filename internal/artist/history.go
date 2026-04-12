@@ -99,8 +99,15 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 	if !validSource {
 		return fmt.Errorf("invalid source: %s", source)
 	}
+	// If the caller pre-assigned a change ID via ContextWithHistoryID, use it
+	// so the caller can later fetch the resulting row by GetByID without a
+	// racy "most recent change for X" lookup. Otherwise generate a fresh UUID.
+	id := HistoryIDFromContext(ctx)
+	if id == "" {
+		id = uuid.New().String()
+	}
 	change := &MetadataChange{
-		ID:        uuid.New().String(),
+		ID:        id,
 		ArtistID:  artistID,
 		Field:     field,
 		OldValue:  oldValue,

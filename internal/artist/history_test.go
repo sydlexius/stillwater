@@ -307,6 +307,102 @@ func TestHistoryService_GetByID(t *testing.T) {
 	})
 }
 
+// TestHistoryService_RecordUsesContextHistoryID verifies that Record honors a
+// pre-assigned change ID supplied via ContextWithHistoryID. This locks in the
+// race-free revert flow: the handler pre-generates the change ID, injects it
+// via context, then fetches the resulting row by ID instead of doing a "most
+// recent revert for field X" lookup that races against concurrent writers.
+func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
+	svc := setupHistoryTestDB(t)
+	preID := "00000000-0000-4000-8000-000000000abc"
+
+	ctx := ContextWithHistoryID(context.Background(), preID)
+	if err := svc.Record(ctx, "artist-ctxid", "biography", "old", "new", "revert"); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+
+	got, err := svc.GetByID(context.Background(), preID)
+	if err != nil {
+		t.Fatalf("GetByID(preID) error = %v", err)
+	}
+	if got.ID != preID {
+		t.Errorf("recorded ID = %q, want pre-assigned %q", got.ID, preID)
+	}
+
+	// A second Record call without a context ID must generate a fresh UUID,
+	// not collide with the pre-assigned one.
+	if err := svc.Record(context.Background(), "artist-ctxid", "biography", "new", "newer", "manual"); err != nil {
+		t.Fatalf("second Record() error = %v", err)
+	}
+	changes, _, err := svc.List(context.Background(), "artist-ctxid", 10, 0)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("len(changes) = %d, want 2", len(changes))
+	}
+}
+
+// TestHistoryService_ListGlobalOrderMixedTimestampFormats verifies that
+// ListGlobal returns rows in true chronological order even when created_at
+// values are stored in different formats. SQLite's metadata_changes column
+// holds RFC 3339 strings for new rows ("2024-01-15T10:00:00Z") but legacy
+// rows wrote the SQLite default ("2024-01-15 11:00:00"). Lexicographic sort
+// puts the space-separated form after any RFC 3339 form ('T' < ' ' is false:
+// ' ' = 0x20, 'T' = 0x54), so a raw ORDER BY mc.created_at would invert
+// real-world ordering. The query wraps both the WHERE bounds and the
+// ORDER BY in datetime() to normalise both representations.
+func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
+	svc := setupHistoryTestDB(t)
+	ctx := context.Background()
+	db := svc.repo.(*sqliteHistoryRepo).db
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path) VALUES (?, ?, ?, '')`,
+		"artist-mixed", "Mixed", "Mixed",
+	); err != nil {
+		t.Fatalf("inserting artist: %v", err)
+	}
+
+	// Insert three rows directly so we can control the created_at format.
+	// Expected DESC order (newest first): newer-rfc, middle-sqlite, oldest-rfc.
+	rows := []struct {
+		id, createdAt string
+	}{
+		{"oldest-rfc", "2024-01-15T08:00:00Z"},
+		{"middle-sqlite", "2024-01-15 09:00:00"}, // legacy SQLite format
+		{"newer-rfc", "2024-01-15T10:00:00Z"},
+	}
+	for _, r := range rows {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			r.id, "artist-mixed", "biography", "", "v", "manual", r.createdAt,
+		); err != nil {
+			t.Fatalf("inserting %s: %v", r.id, err)
+		}
+	}
+
+	changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("ListGlobal() error = %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
+	if len(changes) != 3 {
+		t.Fatalf("len(changes) = %d, want 3", len(changes))
+	}
+
+	want := []string{"newer-rfc", "middle-sqlite", "oldest-rfc"}
+	got := []string{changes[0].ID, changes[1].ID, changes[2].ID}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("position %d: got %q, want %q (full order: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestHistoryService_ListGlobal(t *testing.T) {
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()

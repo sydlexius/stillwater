@@ -16,6 +16,14 @@ type ctxKey string
 // changing method signatures.
 const sourceKey ctxKey = "history_source"
 
+// historyIDKey carries a pre-generated metadata change ID through context so
+// callers (e.g. the revert handler) can deterministically locate the change
+// row that an in-flight UpdateField/ClearField call will record. Without this,
+// the handler would have to do a "fetch most recent change for field X" lookup
+// after the mutation, which races against any other writer that touches the
+// same field at the same instant.
+const historyIDKey ctxKey = "history_change_id"
+
 // ContextWithSource returns a child context that carries the given history
 // source string. When the Service records metadata changes, it reads this
 // value to populate the MetadataChange.Source field.
@@ -30,6 +38,28 @@ func sourceFromContext(ctx context.Context) string {
 		return v
 	}
 	return "manual"
+}
+
+// ContextWithHistoryID returns a child context that pre-assigns the metadata
+// change ID for history records written via this context. The HistoryService
+// reads the value on every Record call and uses it as-is, so this context
+// must only be used with code paths that write at most one history row;
+// otherwise the second insert collides with the same primary key. Use it for
+// single-mutation flows like the revert handler so the resulting change row
+// can be fetched deterministically by ID instead of via a racy "most recent
+// matching change" lookup.
+func ContextWithHistoryID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, historyIDKey, id)
+}
+
+// HistoryIDFromContext extracts the pre-assigned change ID from ctx, returning
+// the empty string when none is set. Exported so the HistoryService (in the
+// same package) and tests can read it.
+func HistoryIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(historyIDKey).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // trackableFields lists the metadata fields that are tracked by the history

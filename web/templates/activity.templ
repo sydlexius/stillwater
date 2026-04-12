@@ -312,8 +312,12 @@ templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist, basePath stri
 // and prepends the new revert entry at the top of the activity list, keeping
 // correct chronological order. Also updates the "Showing X of Y" counter.
 templ ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeWithArtist, basePath string, showing, total int) {
-	// Empty div replaces the reverted row (removes it from its old position).
-	<div id={ "activity-change-" + revertedID } style="display:none"></div>
+	// Empty placeholder replaces the reverted row in its old position. The id
+	// must NOT match the activity-change- prefix because the undo button's
+	// hx-vals selector counts elements with that prefix to compute the visible
+	// row count. Keeping the activity-change- id here would cause the placeholder
+	// to be counted, inflating the next "showing" value.
+	<div id={ "activity-revert-placeholder-" + revertedID } class="hidden"></div>
 	// Prepend the new revert entry at the top of the activity list.
 	<div id="activity-entries" hx-swap-oob="afterbegin">
 		@activityRow(newChange, basePath)
@@ -407,11 +411,16 @@ func activityLoadMoreURL(data ActivityPageData) string {
 	for _, s := range data.FilterSources {
 		u += "&source=" + url.QueryEscape(s)
 	}
+	// Round-trip the original filter precision so a "from=2024-01-15T03:30:00Z"
+	// applied via API/URL is not silently widened to "from=2024-01-15" when the
+	// user clicks load-more. RFC3339Nano preserves any sub-second precision the
+	// client originally provided, and parseTimeParam accepts both RFC 3339 and
+	// plain YYYY-MM-DD on the way back in.
 	if !data.FilterFrom.IsZero() {
-		u += "&from=" + url.QueryEscape(data.FilterFrom.Format("2006-01-02"))
+		u += "&from=" + url.QueryEscape(data.FilterFrom.UTC().Format(time.RFC3339Nano))
 	}
 	if !data.FilterTo.IsZero() {
-		u += "&to=" + url.QueryEscape(data.FilterTo.Format("2006-01-02"))
+		u += "&to=" + url.QueryEscape(data.FilterTo.UTC().Format(time.RFC3339Nano))
 	}
 	return u
 }

@@ -625,6 +625,29 @@ func TestHandleListGlobalHistory_DateRange(t *testing.T) {
 	if resp2["total"] != float64(0) {
 		t.Errorf("total = %v, want 0", resp2["total"])
 	}
+
+	// Plain YYYY-MM-DD bounds: the date input on the activity page emits
+	// these values, and the parser must treat from=YYYY-MM-DD as UTC midnight
+	// and to=YYYY-MM-DD as end-of-day UTC so the full day is included. Using
+	// today's UTC date guarantees the just-inserted change falls within the
+	// window regardless of the test machine's wall clock.
+	today := now.Format("2006-01-02")
+	req3 := httptest.NewRequest(http.MethodGet, "/api/v1/history?from="+today+"&to="+today, nil)
+	w3 := httptest.NewRecorder()
+
+	r.handleListGlobalHistory(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w3.Code, http.StatusOK, w3.Body.String())
+	}
+
+	var resp3 map[string]any
+	if err := json.NewDecoder(w3.Body).Decode(&resp3); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp3["total"] != float64(1) {
+		t.Errorf("plain-date total = %v, want 1", resp3["total"])
+	}
 }
 
 func TestHandleActivityPage(t *testing.T) {
