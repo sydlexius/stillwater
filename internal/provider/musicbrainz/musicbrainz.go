@@ -298,6 +298,8 @@ func normalizeHyphens(s string) string {
 // best-matching primary alias to the Name and SortName fields, placing the
 // canonical name behind all language-matched aliases in the aliases list.
 // Remaining aliases, including the canonical name, are sorted by preference score.
+// Relation-derived aliases ("is person" / "also performs as") are appended after
+// the sorted list because they lack locale metadata for scoring.
 func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
 	mappedType := mapArtistType(mb.Type)
 	gender := strings.ToLower(mb.Gender)
@@ -318,14 +320,14 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 
 	// Life span
 	if mb.LifeSpan.Begin != "" {
-		if mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir" {
+		if isGroupType(mb.Type) {
 			meta.Formed = mb.LifeSpan.Begin
 		} else {
 			meta.Born = mb.LifeSpan.Begin
 		}
 	}
 	if mb.LifeSpan.End != "" {
-		if mb.Type == "Group" || mb.Type == "Orchestra" || mb.Type == "Choir" {
+		if isGroupType(mb.Type) {
 			meta.Disbanded = mb.LifeSpan.End
 		} else {
 			meta.Died = mb.LifeSpan.End
@@ -458,7 +460,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		meta.Aliases = append(meta.Aliases, sa.name)
 	}
 
-	// Relations: extract members and URLs
+	// Relations: extract members, "also performs as" aliases, and URLs.
 	for _, rel := range mb.Relations {
 		switch {
 		case rel.Type == "member of band" && rel.Artist != nil && rel.Direction == "backward":
@@ -471,6 +473,17 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 			}
 			member.Instruments = append(member.Instruments, rel.Attributes...)
 			meta.Members = append(meta.Members, member)
+
+		case rel.Type == "is person" && rel.Artist != nil:
+			// "is person" is the MusicBrainz relation type for "also performs as"
+			// (legal name <-> stage name links). Capture the related artist name
+			// as an alias if it is not already present.
+			aliasName := normalizeHyphens(rel.Artist.Name)
+			if aliasName != "" && aliasName != meta.Name && !seen[aliasName] {
+				meta.Aliases = append(meta.Aliases, aliasName)
+				seen[aliasName] = true
+			}
+
 		case rel.URL != nil && rel.URL.Resource != "":
 			urlType := mapURLType(rel.Type, rel.URL.Resource)
 			if urlType != "" {
@@ -479,7 +492,44 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		}
 	}
 
+	// Deduplicate members by MBID. When the same person appears multiple times
+	// (e.g., different active periods), merge their date ranges and instruments.
+	// Language preferences are passed so the preferred locale name is selected
+	// when merging duplicates with different name variants.
+	meta.Members = deduplicateMembers(meta.Members, langPrefs)
+
+	// Synthesize YearsActive from Formed/Disbanded for group-type artists when
+	// the provider did not supply an explicit years-active value. Formed and
+	// Disbanded may be partial dates ("1991-05", "1946-10-14"), so extract
+	// only the 4-digit year portion for a clean "YYYY-YYYY" range.
+	if meta.YearsActive == "" && isGroupType(mb.Type) {
+		formedYear := yearFromDate(meta.Formed)
+		disbandedYear := yearFromDate(meta.Disbanded)
+		if formedYear != "" {
+			if disbandedYear != "" {
+				meta.YearsActive = formedYear + "-" + disbandedYear
+			} else {
+				meta.YearsActive = formedYear + "-present"
+			}
+		}
+	}
+
 	return meta
+}
+
+// yearFromDate extracts the leading 4-digit year from a date string that may
+// be "YYYY", "YYYY-MM", or "YYYY-MM-DD". Returns "" for empty or short input.
+func yearFromDate(date string) string {
+	if len(date) < 4 {
+		return ""
+	}
+	return date[:4]
+}
+
+// isGroupType returns true for MusicBrainz types that represent ensembles
+// (groups, orchestras, choirs) rather than individual persons.
+func isGroupType(mbType string) bool {
+	return mbType == "Group" || mbType == "Orchestra" || mbType == "Choir"
 }
 
 // mapArtistType normalizes MusicBrainz type strings.
@@ -554,6 +604,122 @@ func deduplicateStyles(styles, genres []string) []string {
 		return nil
 	}
 	return result
+}
+
+// deduplicateMembers merges duplicate member entries that share the same MBID.
+// When duplicates exist, their date ranges and instruments are combined into a
+// single entry. If langPrefs is non-empty, the preferred locale name is selected
+// when merging members with different name variants.
+func deduplicateMembers(members []provider.MemberInfo, langPrefs []string) []provider.MemberInfo {
+	if len(members) <= 1 {
+		return members
+	}
+
+	type mergedMember struct {
+		info      provider.MemberInfo
+		periods   [][2]string // pairs of [joined, left]
+		nameScore int         // best language preference score for the current name (-1 = unscored)
+	}
+
+	// Track insertion order so the output is deterministic.
+	var order []string
+	byMBID := make(map[string]*mergedMember, len(members))
+
+	for i, m := range members {
+		key := m.MBID
+		if key == "" {
+			// Members without an MBID cannot be deduplicated reliably
+			// (name+date is not unique), so each gets a unique index-based key.
+			key = fmt.Sprintf("no-mbid-%d", i)
+		}
+
+		existing, ok := byMBID[key]
+		if !ok {
+			order = append(order, key)
+			byMBID[key] = &mergedMember{
+				info:      m,
+				periods:   [][2]string{{m.DateJoined, m.DateLeft}},
+				nameScore: -1,
+			}
+			continue
+		}
+
+		// Merge: combine date range and instruments from the duplicate.
+		existing.periods = append(existing.periods, [2]string{m.DateJoined, m.DateLeft})
+
+		// Select the preferred locale name when language preferences are set.
+		// Each duplicate member name is scored against the preference list and
+		// the best-scoring name wins. When scores are tied, the first name is kept.
+		if len(langPrefs) > 0 && m.Name != existing.info.Name {
+			// Score the incoming name. MusicBrainz member names do not carry an
+			// explicit locale, but the name itself may match a language preference
+			// if it was populated from a locale-specific alias. We use the MBID
+			// as a proxy -- the first entry keeps its score; the incoming entry
+			// is scored and compared.
+			if existing.nameScore < 0 {
+				// Score the existing name on first collision.
+				existing.nameScore = provider.MatchLanguagePreference(existing.info.Name, langPrefs)
+			}
+			incomingScore := provider.MatchLanguagePreference(m.Name, langPrefs)
+			// Lower non-negative score wins. If the existing has no match (-1)
+			// and the incoming does, the incoming wins.
+			if incomingScore >= 0 && (existing.nameScore < 0 || incomingScore < existing.nameScore) {
+				existing.info.Name = m.Name
+				existing.nameScore = incomingScore
+			}
+		}
+
+		// Merge instruments, avoiding duplicates.
+		instrSet := make(map[string]bool, len(existing.info.Instruments))
+		for _, inst := range existing.info.Instruments {
+			instrSet[inst] = true
+		}
+		for _, inst := range m.Instruments {
+			if !instrSet[inst] {
+				existing.info.Instruments = append(existing.info.Instruments, inst)
+				instrSet[inst] = true
+			}
+		}
+
+		// If either entry is active, mark the merged result as active.
+		if m.IsActive {
+			existing.info.IsActive = true
+		}
+	}
+
+	// Build the result, picking the earliest joined date and latest left date
+	// across all merged periods.
+	result := make([]provider.MemberInfo, 0, len(order))
+	for _, key := range order {
+		mm := byMBID[key]
+		earliest, latest := mergeDateRanges(mm.periods)
+		mm.info.DateJoined = earliest
+		mm.info.DateLeft = latest
+		result = append(result, mm.info)
+	}
+	return result
+}
+
+// mergeDateRanges finds the earliest start and latest end from a set of
+// [joined, left] date pairs. If any period has an empty end date (open-ended),
+// the returned latest is empty to represent an unbounded range.
+func mergeDateRanges(periods [][2]string) (earliest, latest string) {
+	hasOpenEnd := false
+	for _, p := range periods {
+		joined, left := p[0], p[1]
+		if joined != "" && (earliest == "" || joined < earliest) {
+			earliest = joined
+		}
+		if left == "" {
+			hasOpenEnd = true
+		} else if latest == "" || left > latest {
+			latest = left
+		}
+	}
+	if hasOpenEnd {
+		latest = ""
+	}
+	return earliest, latest
 }
 
 func userAgent() string {
