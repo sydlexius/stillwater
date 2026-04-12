@@ -393,9 +393,19 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 					limit := r.getUserPageSize(req.Context(), userID, 0)
 					activeFilter.Limit = limit
 					_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
+					// Compute the fallback showing count from offset+limit.
 					showing := activeFilter.Offset + limit
 					if showing > total {
 						showing = total
+					}
+					// Prefer the client-reported visible count (sent via hx-vals on the
+					// undo button). After load-more the browser URL does not update, so
+					// activeFilter.Offset is 0 and offset+limit underreports the actual
+					// number of rows rendered in the DOM.
+					if v := req.FormValue("showing"); v != "" {
+						if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
+							showing = n
+						}
 					}
 					renderTempl(w, req, templates.ActivityRevertFragment(changeID, globalChanges[0], r.basePath, showing, total))
 					return
