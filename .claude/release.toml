@@ -29,6 +29,7 @@ default_group = "Other Changes"
 [release_notes.group_labels]
 enhancement = "New Features"
 bug         = "Bug Fixes"
+security    = "Security"
 ux          = "UX Improvements"
 database    = "Database"
 documentation = "Documentation"
@@ -43,6 +44,7 @@ webhooks    = "Webhooks"
 emby        = "Emby"
 jellyfin    = "Jellyfin"
 reports     = "Reports"
+chore       = "Maintenance"
 
 [release]
 tag_prefix = "v"

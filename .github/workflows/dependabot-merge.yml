@@ -15,13 +15,14 @@ on:
     types:
       - completed
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   merge:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       startsWith(github.event.workflow_run.head_branch, 'dependabot/')
