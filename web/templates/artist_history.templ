@@ -95,6 +95,30 @@ templ HistoryChangeRowFragment(c artist.MetadataChange) {
 	@historyChangeRow(c)
 }
 
+// HistoryRevertFragment renders a revert response that removes the old row
+// and prepends the new revert entry at the top of the history list, keeping
+// correct chronological order. Also updates the "Showing X of Y" counter.
+//
+// The placeholder id uses the `history-revert-placeholder-` prefix so the
+// undo button's hx-vals selector (which counts `[id^="history-change-"]`
+// descendants of the list) does not treat the hidden placeholder as a
+// visible row. Keeping the `history-change-` prefix here would inflate
+// the next "showing" value because the hidden div would still be counted.
+templ HistoryRevertFragment(revertedID string, newChange artist.MetadataChange, showing, total int) {
+	// Empty placeholder replaces the reverted row at its old position so the
+	// visible row count drops by 1 while the prepended new row adds 1 back.
+	<div id={ "history-revert-placeholder-" + revertedID } class="hidden"></div>
+	// Prepend the new revert entry at the top of the history list.
+	<div id="history-change-list" hx-swap-oob="afterbegin">
+		@historyChangeRow(newChange)
+	</div>
+	if total > 0 {
+		<p id="history-showing-counter" hx-swap-oob="true" class="text-xs text-gray-600 dark:text-gray-500 text-right">
+			{ tf(ctx, "common.showing_of", showing, total) }
+		</p>
+	}
+}
+
 // historyChangeRow renders a single metadata change entry in the timeline.
 templ historyChangeRow(c artist.MetadataChange) {
 	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-3 pr-4 rounded-r-lg bg-gray-50 dark:bg-gray-800/80">
@@ -113,7 +137,9 @@ templ historyChangeRow(c artist.MetadataChange) {
 					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
 					hx-target={ "#history-change-" + c.ID }
 					hx-swap="outerHTML"
+					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
+					hx-vals={ `js:{"showing": document.querySelectorAll("#history-tab-content [id^='history-change-']").length}` }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>
@@ -121,20 +147,36 @@ templ historyChangeRow(c artist.MetadataChange) {
 				</button>
 			}
 		</div>
-		<div class="mt-1 text-sm">
-			<span class="font-medium text-gray-800 dark:text-gray-200">{ historyFieldLabel(ctx, c.Field) }</span>
-			<span class="mx-1 text-gray-600 dark:text-gray-400">--</span>
-			if c.OldValue == "" && c.NewValue != "" {
-				<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 120)) }</span>
-			} else if c.OldValue != "" && c.NewValue == "" {
-				<span class="text-red-500 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
-			} else if c.OldValue != "" && c.NewValue != "" {
-				<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
-				<span class="text-green-600 dark:text-green-400">{ historyTruncate(c.NewValue, 60) }</span>
-			} else {
-				<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
-			}
-		</div>
+		<details class="mt-1">
+			<summary class="text-sm cursor-pointer text-gray-700 dark:text-gray-300">
+				<span class="font-medium text-gray-800 dark:text-gray-200">{ historyFieldLabel(ctx, c.Field) }</span>
+				<span class="mx-1 text-gray-600 dark:text-gray-400">--</span>
+				if c.OldValue == "" && c.NewValue != "" {
+					<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 120)) }</span>
+				} else if c.OldValue != "" && c.NewValue == "" {
+					<span class="text-red-500 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
+				} else if c.OldValue != "" && c.NewValue != "" {
+					<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
+					<span class="text-green-600 dark:text-green-400">{ historyTruncate(c.NewValue, 60) }</span>
+				} else {
+					<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
+				}
+			</summary>
+			<div class="mt-2 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-1 text-sm">
+				if c.OldValue != "" {
+					<div>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.previous") }</span>
+						<p class="text-red-500 dark:text-red-400 line-through break-words whitespace-pre-wrap">{ c.OldValue }</p>
+					</div>
+				}
+				if c.NewValue != "" {
+					<div>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.current") }</span>
+						<p class="text-green-600 dark:text-green-400 break-words whitespace-pre-wrap">{ c.NewValue }</p>
+					</div>
+				}
+			</div>
+		</details>
 	</div>
 }
 

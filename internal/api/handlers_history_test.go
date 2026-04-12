@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -548,6 +549,105 @@ func TestHandleListGlobalHistory(t *testing.T) {
 			t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 		}
 	})
+}
+
+func TestHandleListGlobalHistory_WildcardSource(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Wildcard Source Artist")
+	addHistoryChange(t, historySvc, a.ID, "biography", "", "bio", "provider:musicbrainz")
+	addHistoryChange(t, historySvc, a.ID, "genres", "", "Rock", "provider:audiodb")
+	addHistoryChange(t, historySvc, a.ID, "moods", "", "Happy", "manual")
+
+	// The wildcard "provider:*" should match both provider sources.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/history?source=provider:*", nil)
+	w := httptest.NewRecorder()
+
+	r.handleListGlobalHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["total"] != float64(2) {
+		t.Errorf("total = %v, want 2", resp["total"])
+	}
+}
+
+func TestHandleListGlobalHistory_DateRange(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Date Range Artist")
+	addHistoryChange(t, historySvc, a.ID, "biography", "", "bio", "manual")
+
+	// Use a time range that spans now to include the just-inserted change.
+	now := time.Now().UTC()
+	from := now.Add(-1 * time.Minute).Format(time.RFC3339)
+	to := now.Add(1 * time.Minute).Format(time.RFC3339)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/history?from="+from+"&to="+to, nil)
+	w := httptest.NewRecorder()
+
+	r.handleListGlobalHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["total"] != float64(1) {
+		t.Errorf("total = %v, want 1", resp["total"])
+	}
+
+	// Use a range entirely in the past to exclude the change.
+	pastFrom := "2020-01-01T00:00:00Z"
+	pastTo := "2020-01-01T01:00:00Z"
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/history?from="+pastFrom+"&to="+pastTo, nil)
+	w2 := httptest.NewRecorder()
+
+	r.handleListGlobalHistory(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w2.Code, http.StatusOK)
+	}
+
+	var resp2 map[string]any
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp2["total"] != float64(0) {
+		t.Errorf("total = %v, want 0", resp2["total"])
+	}
+
+	// Plain YYYY-MM-DD bounds: the date input on the activity page emits
+	// these values, and the parser must treat from=YYYY-MM-DD as UTC midnight
+	// and to=YYYY-MM-DD as end-of-day UTC so the full day is included. Using
+	// today's UTC date guarantees the just-inserted change falls within the
+	// window regardless of the test machine's wall clock.
+	today := now.Format("2006-01-02")
+	req3 := httptest.NewRequest(http.MethodGet, "/api/v1/history?from="+today+"&to="+today, nil)
+	w3 := httptest.NewRecorder()
+
+	r.handleListGlobalHistory(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w3.Code, http.StatusOK, w3.Body.String())
+	}
+
+	var resp3 map[string]any
+	if err := json.NewDecoder(w3.Body).Decode(&resp3); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp3["total"] != float64(1) {
+		t.Errorf("plain-date total = %v, want 1", resp3["total"])
+	}
 }
 
 func TestHandleActivityPage(t *testing.T) {

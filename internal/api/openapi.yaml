@@ -2492,13 +2492,39 @@ paths:
           in: query
           description: >
             Filter by change source. Repeat the parameter to include multiple
-            sources (e.g. ?source=manual&source=scan).
+            sources (e.g. ?source=manual&source=scan). Use wildcard suffix for
+            prefix matching (e.g. ?source=provider:* matches all provider sources).
           style: form
           explode: true
           schema:
             type: array
             items:
               type: string
+        - name: from
+          in: query
+          description: >
+            Include changes on or after this timestamp. Accepts RFC 3339 date-time
+            (e.g. 2024-01-15T00:00:00Z) or a plain date (YYYY-MM-DD, interpreted
+            as midnight UTC on that day).
+          schema:
+            oneOf:
+              - type: string
+                format: date-time
+              - type: string
+                format: date
+        - name: to
+          in: query
+          description: >
+            Include changes on or before this timestamp. Accepts RFC 3339 date-time
+            (e.g. 2024-01-15T23:59:59Z) or a plain date (YYYY-MM-DD). A date-only
+            value is treated as end-of-UTC-day (23:59:59.999999999) so the full
+            day is included.
+          schema:
+            oneOf:
+              - type: string
+                format: date-time
+              - type: string
+                format: date
       responses:
         "200":
           description: Paginated list of metadata changes with artist names.

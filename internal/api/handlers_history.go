@@ -3,8 +3,12 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -27,6 +31,127 @@ func parseFilterValues(values []string) []string {
 		result = append(result, strings.TrimPrefix(v, "+"))
 	}
 	return result
+}
+
+// splitSourceFilters separates source filter values into exact matches and
+// prefix patterns. Values like "provider:*" and "rule:*" are treated as prefix
+// patterns (matching any source that starts with "provider:" or "rule:").
+// All other values are treated as exact matches.
+func splitSourceFilters(sources []string) (exact []string, prefixes []string) {
+	for _, s := range sources {
+		if strings.HasSuffix(s, ":*") {
+			// Convert "provider:*" to prefix "provider:"
+			prefixes = append(prefixes, strings.TrimSuffix(s, "*"))
+		} else {
+			exact = append(exact, s)
+		}
+	}
+	return exact, prefixes
+}
+
+// sliceContains reports whether s is present in the slice.
+func sliceContains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// isPlainDate reports whether s is a plain YYYY-MM-DD date string.
+func isPlainDate(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for i, c := range s {
+		if i == 4 || i == 7 {
+			if c != '-' {
+				return false
+			}
+		} else if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseTimeValue parses a date/time string, applying end-of-day semantics for
+// the "to" bound. Accepts RFC 3339 timestamps and plain YYYY-MM-DD dates.
+// Plain "from" dates resolve to UTC midnight; plain "to" dates resolve to
+// 23:59:59.999999999 UTC so the full day is included in range queries.
+// Returns the zero value if raw is empty or unparsable.
+func parseTimeValue(raw, name string) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		t = t.UTC()
+		if name == "to" && isPlainDate(raw) {
+			t = t.Add(24*time.Hour - time.Nanosecond)
+		}
+		return t
+	}
+	return time.Time{}
+}
+
+// parseTimeParam reads a query parameter by name and delegates to parseTimeValue.
+func parseTimeParam(req *http.Request, name string) time.Time {
+	return parseTimeValue(req.URL.Query().Get(name), name)
+}
+
+// buildGlobalFilter constructs a GlobalHistoryFilter from query parameters.
+// Shared between the API handler and the page/content handlers.
+func buildGlobalFilter(req *http.Request, limit int) artist.GlobalHistoryFilter {
+	q := req.URL.Query()
+	sources := parseFilterValues(q["source"])
+	exactSources, sourcePrefixes := splitSourceFilters(sources)
+
+	return artist.GlobalHistoryFilter{
+		ArtistID:       q.Get("artist_id"),
+		Fields:         parseFilterValues(q["field"]),
+		Sources:        exactSources,
+		SourcePrefixes: sourcePrefixes,
+		From:           parseTimeParam(req, "from"),
+		To:             parseTimeParam(req, "to"),
+		Limit:          limit,
+		Offset:         intQuery(req, "offset", 0),
+	}
+}
+
+// buildGlobalFilterFromURL constructs a GlobalHistoryFilter from a full URL
+// string (typically from HX-Current-URL). This preserves the active filters
+// when rendering revert fragments so the "showing X of Y" counter stays
+// consistent with the current feed view.
+func buildGlobalFilterFromURL(rawURL string) artist.GlobalHistoryFilter {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return artist.GlobalHistoryFilter{}
+	}
+	q := u.Query()
+	sources := parseFilterValues(q["source"])
+	exactSources, sourcePrefixes := splitSourceFilters(sources)
+
+	from := parseTimeValue(q.Get("from"), "from")
+	to := parseTimeValue(q.Get("to"), "to")
+
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	return artist.GlobalHistoryFilter{
+		ArtistID:       q.Get("artist_id"),
+		Fields:         parseFilterValues(q["field"]),
+		Sources:        exactSources,
+		SourcePrefixes: sourcePrefixes,
+		From:           from,
+		To:             to,
+		Offset:         offset,
+	}
 }
 
 // handleListArtistHistory returns paginated metadata change records for an artist.
@@ -171,8 +296,14 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Inject "revert" as the history source so the auto-recorded change
-	// is distinguishable from manual edits.
+	// is distinguishable from manual edits. Pre-assign the change ID via
+	// ContextWithHistoryID so we can fetch the resulting row deterministically
+	// with GetByID below; otherwise the post-mutation lookup races against any
+	// concurrent writer that touches the same field at the same instant
+	// (e.g. a metadata refresh, an automated rule fix, or a parallel revert).
+	revertChangeID := uuid.New().String()
 	ctx := artist.ContextWithSource(req.Context(), "revert")
+	ctx = artist.ContextWithHistoryID(ctx, revertChangeID)
 
 	// ClearField/UpdateField currently succeed silently when the artist ID
 	// does not exist (UPDATE affects zero rows). The ErrNotFound guards below
@@ -208,46 +339,146 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		// the artist history tab so we can render the correct fragment type.
 		fromActivity := strings.Contains(req.Header.Get("HX-Current-URL"), "/activity")
 
-		if fromActivity {
+		// Fetch the new revert change row deterministically by its pre-assigned
+		// ID. This avoids the prior "find most recent revert for this field"
+		// pattern, which races against any concurrent writer to the same field.
+		revertChange, err := r.historyService.GetByID(req.Context(), revertChangeID)
+		if err != nil {
+			// A missing revert history row is an expected edge case: the revert
+			// can become a no-op (e.g. the field already matched OldValue so
+			// UpdateField/ClearField recorded nothing) or history recording was
+			// best-effort. Log at Info in that case to avoid noisy error logs
+			// from user-initiated reverts; reserve Error for genuine failures.
+			if errors.Is(err, artist.ErrChangeNotFound) {
+				r.logger.Info("revert change history row not found; rendering fallback fragment",
+					"change_id", changeID, "revert_change_id", revertChangeID)
+			} else {
+				r.logger.Error("fetching revert change by id",
+					"change_id", changeID, "revert_change_id", revertChangeID, "error", err)
+			}
+		}
+
+		if fromActivity && revertChange != nil {
 			// Activity feed needs MetadataChangeWithArtist (includes artist name).
-			filter := artist.GlobalHistoryFilter{
-				ArtistID: change.ArtistID,
-				Fields:   []string{change.Field},
-				Sources:  []string{"revert"},
-				Limit:    1,
+			// Fetch the artist name separately since GetByID returns only the
+			// metadata_changes row.
+			artistRow, artistErr := r.artistService.GetByID(req.Context(), revertChange.ArtistID)
+			if artistErr != nil {
+				r.logger.Error("fetching artist for revert fragment",
+					"artist_id", revertChange.ArtistID, "error", artistErr)
 			}
-			globalChanges, _, err := r.historyService.ListGlobal(req.Context(), filter)
-			if err != nil {
-				r.logger.Error("fetching revert confirmation for activity", "change_id", changeID, "error", err)
-			}
-			if err == nil && len(globalChanges) > 0 {
-				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0], r.basePath))
-				return
-			}
-		} else {
-			// Artist history tab needs MetadataChange (no artist name needed).
-			changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
-			if err != nil {
-				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", err)
-			}
-			var revertChange *artist.MetadataChange
-			if err == nil {
-				for i := range changes {
-					if changes[i].Field == change.Field && changes[i].Source == "revert" {
-						revertChange = &changes[i]
-						break
+			if artistErr == nil {
+				newChange := artist.MetadataChangeWithArtist{
+					MetadataChange: *revertChange,
+					ArtistName:     artistRow.Name,
+				}
+
+				// Rebuild the active filter from query params carried in
+				// HX-Current-URL so the "showing X of Y" counter stays
+				// accurate relative to the current feed view.
+				activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
+
+				// If the active feed filter restricts sources and does not
+				// include "revert", the new revert row is outside the current
+				// view. Skip the fragment injection so we don't insert a row
+				// that would not normally appear in the feed.
+				// Also suppress when SourcePrefixes is non-empty: "revert" does
+				// not match any provider:/rule: prefix pattern.
+				allowsRevert := (len(activeFilter.Sources) == 0 && len(activeFilter.SourcePrefixes) == 0) ||
+					sliceContains(activeFilter.Sources, "revert")
+				sourceFiltered := !allowsRevert
+
+				// Guard against active date-range bounds: if the new revert row
+				// falls outside the current feed's from/to window, skip fragment
+				// injection so we don't insert a row that would not appear in the feed.
+				createdAt := newChange.CreatedAt
+				dateFiltered := (!activeFilter.From.IsZero() && createdAt.Before(activeFilter.From)) ||
+					(!activeFilter.To.IsZero() && createdAt.After(activeFilter.To))
+
+				if !sourceFiltered && !dateFiltered {
+					userID := middleware.UserIDFromContext(req.Context())
+					limit := r.getUserPageSize(req.Context(), userID, 0)
+					activeFilter.Limit = limit
+					_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
+					// Compute the fallback showing count from offset+limit.
+					showing := activeFilter.Offset + limit
+					if showing > total {
+						showing = total
 					}
+					// Prefer the client-reported visible count (sent via hx-vals on the
+					// undo button). After load-more the browser URL does not update, so
+					// activeFilter.Offset is 0 and offset+limit underreports the actual
+					// number of rows rendered in the DOM.
+					if v := req.FormValue("showing"); v != "" {
+						if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
+							showing = n
+						}
+					}
+					renderTempl(w, req, templates.ActivityRevertFragment(changeID, newChange, r.basePath, showing, total))
+					return
 				}
 			}
-			if revertChange != nil {
-				renderTempl(w, req, templates.HistoryChangeRowFragment(*revertChange))
+		} else if !fromActivity && revertChange != nil {
+			// Artist history tab needs MetadataChange (no artist name needed).
+			// Use the deterministically-fetched revertChange and call List only
+			// to get the page total for the "showing X of Y" counter.
+			userID := middleware.UserIDFromContext(req.Context())
+			limit := r.getUserPageSize(req.Context(), userID, 0)
+			changes, total, listErr := r.historyService.List(req.Context(), change.ArtistID, limit, 0)
+			if listErr != nil {
+				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", listErr)
+			} else {
+				// The fragment hides the reverted row and prepends the new
+				// revert row, so the number of visible rows is unchanged
+				// (+1 prepended, -1 hidden). This branch only runs when
+				// revertChange != nil (the revert history row exists), so
+				// DB total grew by exactly 1 and len(changes) from the
+				// first page overstates visible rows by 1 when the list
+				// fits on one page. Compensate by subtracting 1 (clamped
+				// at 0). This fallback assumes a single page was loaded;
+				// when load-more has been used, the client hint below is
+				// authoritative.
+				showing := len(changes) - 1
+				if showing < 0 {
+					showing = 0
+				}
+				// Prefer the client-reported visible count when available.
+				// The undo button carries the DOM row count via hx-vals so
+				// the counter stays accurate even when additional pages have
+				// been appended via load-more (in which case len(changes)
+				// underreports actual DOM rows).
+				if v := req.FormValue("showing"); v != "" {
+					if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
+						showing = n
+					} else if err != nil {
+						// Non-numeric hint indicates a client-side bug (stale
+						// JS or tampered request). Log at Debug so it is
+						// visible in verbose logs without polluting normal
+						// output.
+						r.logger.Debug("invalid showing hint in revert request",
+							"value", v, "error", err)
+					}
+				}
+				renderTempl(w, req, templates.HistoryRevertFragment(changeID, *revertChange, showing, total))
 				return
 			}
 		}
 
-		// Fallback: the revert succeeded but we could not locate the new record.
-		r.logger.Warn("revert record not found in recent history, using fallback confirmation",
-			"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
+		// Fallback: the revert succeeded but we could not render the rich
+		// confirmation. The cause is one of (a) the new revert row falls
+		// outside the active feed filter, (b) GetByID/artist lookup returned
+		// an error already logged above, or (c) the row is genuinely missing.
+		// Logged at INFO when revertChange was found (filter mismatch is the
+		// expected branch), WARN otherwise so genuine misses stand out.
+		if revertChange != nil {
+			r.logger.Info("revert succeeded; fragment suppressed by active filter",
+				"change_id", changeID, "revert_change_id", revertChangeID,
+				"field", change.Field, "artist_id", change.ArtistID)
+		} else {
+			r.logger.Warn("revert record not located after mutation, using fallback confirmation",
+				"change_id", changeID, "revert_change_id", revertChangeID,
+				"field", change.Field, "artist_id", change.ArtistID)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted. Refresh the page to see the updated entry.</p></div>`))
@@ -269,15 +500,7 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 	}
 
 	userID := middleware.UserIDFromContext(req.Context())
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
-		Offset:   intQuery(req, "offset", 0),
-	}
-
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)))
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -301,6 +524,19 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 	})
 }
 
+// rebuildSourceFilters reconstructs the combined source list from a
+// GlobalHistoryFilter by merging exact sources with wildcard-suffixed prefixes.
+// This is the inverse of splitSourceFilters and is used when passing filter
+// state back to templates.
+func rebuildSourceFilters(filter artist.GlobalHistoryFilter) []string {
+	all := make([]string, 0, len(filter.Sources)+len(filter.SourcePrefixes))
+	all = append(all, filter.Sources...)
+	for _, p := range filter.SourcePrefixes {
+		all = append(all, p+"*")
+	}
+	return all
+}
+
 // handleActivityPage renders the global activity page.
 // GET /activity
 func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
@@ -310,14 +546,8 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, 0),
-		Offset:   0,
-	}
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, 0))
+	filter.Offset = 0 // activity page always starts at offset 0
 
 	var changes []artist.MetadataChangeWithArtist
 	var total int
@@ -342,7 +572,9 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
-		FilterSources:  filter.Sources,
+		FilterSources:  rebuildSourceFilters(filter),
+		FilterFrom:     filter.From,
+		FilterTo:       filter.To,
 	}
 	renderTempl(w, req, templates.ActivityPage(r.assetsFor(req), data))
 }
@@ -362,14 +594,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	q := req.URL.Query()
-	filter := artist.GlobalHistoryFilter{
-		ArtistID: q.Get("artist_id"),
-		Fields:   parseFilterValues(q["field"]),
-		Sources:  parseFilterValues(q["source"]),
-		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
-		Offset:   intQuery(req, "offset", 0),
-	}
+	filter := buildGlobalFilter(req, r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)))
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -392,7 +617,9 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
-		FilterSources:  filter.Sources,
+		FilterSources:  rebuildSourceFilters(filter),
+		FilterFrom:     filter.From,
+		FilterTo:       filter.To,
 	}
 
 	// Load-more requests (offset > 0) return just the new rows + updated

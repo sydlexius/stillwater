@@ -36,11 +36,14 @@ type MetadataChangeWithArtist struct {
 
 // GlobalHistoryFilter specifies filter criteria for cross-artist history queries.
 type GlobalHistoryFilter struct {
-	ArtistID string   // optional: restrict to a single artist
-	Fields   []string // optional: e.g. ["biography", "genres"]
-	Sources  []string // optional: e.g. ["manual", "revert"]
-	Limit    int
-	Offset   int
+	ArtistID       string    // optional: restrict to a single artist
+	Fields         []string  // optional: e.g. ["biography", "genres"]
+	Sources        []string  // optional: e.g. ["manual", "revert"]
+	SourcePrefixes []string  // optional: prefix matches e.g. ["provider:", "rule:"]
+	From           time.Time // optional: include changes on or after this timestamp
+	To             time.Time // optional: include changes on or before this timestamp
+	Limit          int
+	Offset         int
 }
 
 // HistoryRepository defines the persistence interface for metadata change records.
@@ -96,8 +99,15 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 	if !validSource {
 		return fmt.Errorf("invalid source: %s", source)
 	}
+	// If the caller pre-assigned a change ID via ContextWithHistoryID, use it
+	// so the caller can later fetch the resulting row by GetByID without a
+	// racy "most recent change for X" lookup. Otherwise generate a fresh UUID.
+	id := HistoryIDFromContext(ctx)
+	if id == "" {
+		id = uuid.New().String()
+	}
 	change := &MetadataChange{
-		ID:        uuid.New().String(),
+		ID:        id,
 		ArtistID:  artistID,
 		Field:     field,
 		OldValue:  oldValue,

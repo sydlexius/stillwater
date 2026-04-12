@@ -75,11 +75,17 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 		return []MetadataChange{}, 0, nil
 	}
 
+	// Wrap created_at with datetime() so mixed-format timestamps (legacy
+	// "YYYY-MM-DD HH:MM:SS" rows and RFC 3339 rows) sort consistently. Without
+	// this, the space character (0x20) sorts before 'T' in a raw text
+	// comparison, causing legacy rows to appear out of chronological order
+	// relative to RFC 3339 rows. This mirrors the normalisation applied in
+	// ListGlobal() above.
 	const q = `
 		SELECT id, artist_id, field, old_value, new_value, source, created_at
 		FROM metadata_changes
 		WHERE artist_id = ?
-		ORDER BY created_at DESC, id DESC
+		ORDER BY datetime(created_at) DESC, id DESC
 		LIMIT ? OFFSET ?`
 
 	rows, err := r.db.QueryContext(ctx, q, artistID, limit, offset)
@@ -124,13 +130,37 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		}
 		where = append(where, "mc.field IN ("+strings.Join(placeholders, ", ")+")")
 	}
-	if len(filter.Sources) > 0 {
-		placeholders := make([]string, len(filter.Sources))
-		for i, s := range filter.Sources {
-			placeholders[i] = "?"
-			args = append(args, s)
+	// Build source filter combining exact matches and prefix matches (e.g. "provider:*").
+	if len(filter.Sources) > 0 || len(filter.SourcePrefixes) > 0 {
+		var sourceClauses []string
+		if len(filter.Sources) > 0 {
+			placeholders := make([]string, len(filter.Sources))
+			for i, s := range filter.Sources {
+				placeholders[i] = "?"
+				args = append(args, s)
+			}
+			sourceClauses = append(sourceClauses, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
 		}
-		where = append(where, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
+		for _, prefix := range filter.SourcePrefixes {
+			sourceClauses = append(sourceClauses, "mc.source LIKE ? ESCAPE '\\'")
+			escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+			args = append(args, escaped+"%")
+		}
+		where = append(where, "("+strings.Join(sourceClauses, " OR ")+")")
+	}
+
+	// Date range bounds. datetime() normalises both the stored value and the
+	// bind parameter so that legacy rows using the "2006-01-02 15:04:05" space
+	// separator compare correctly against RFC 3339 bounds. Without this, the
+	// space character ('\x20') sorts before 'T', causing legacy rows to appear
+	// after any RFC 3339 bound in a lexicographic comparison.
+	if !filter.From.IsZero() {
+		where = append(where, "datetime(mc.created_at) >= datetime(?)")
+		args = append(args, filter.From.UTC().Format(time.RFC3339))
+	}
+	if !filter.To.IsZero() {
+		where = append(where, "datetime(mc.created_at) <= datetime(?)")
+		args = append(args, filter.To.UTC().Format(time.RFC3339))
 	}
 
 	whereClause := ""
@@ -150,13 +180,16 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		return []MetadataChangeWithArtist{}, 0, nil
 	}
 
-	// Fetch rows with artist name.
+	// Fetch rows with artist name. ORDER BY uses datetime() to normalise mixed
+	// timestamp formats (RFC 3339 vs SQLite "YYYY-MM-DD HH:MM:SS") so legacy
+	// rows sort consistently with the datetime()-normalised WHERE bounds above.
+	// Otherwise the lexicographic 'T' vs ' ' difference would invert ordering.
 	selectQ := `
 		SELECT mc.id, mc.artist_id, a.name, mc.field, mc.old_value, mc.new_value, mc.source, mc.created_at
 		FROM metadata_changes mc
 		JOIN artists a ON a.id = mc.artist_id
 		` + whereClause + `
-		ORDER BY mc.created_at DESC, mc.id DESC
+		ORDER BY datetime(mc.created_at) DESC, mc.id DESC
 		LIMIT ? OFFSET ?`
 
 	queryArgs := make([]any, len(args))

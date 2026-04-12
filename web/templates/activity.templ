@@ -9,6 +9,15 @@ import (
 	"github.com/sydlexius/stillwater/web/components"
 )
 
+// formatDateInputValue formats a time.Time for use in an HTML date input (YYYY-MM-DD).
+// Returns an empty string for the zero value.
+func formatDateInputValue(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
 // ActivityPageData holds data for the global activity page.
 type ActivityPageData struct {
 	Changes        []artist.MetadataChangeWithArtist
@@ -19,11 +28,15 @@ type ActivityPageData struct {
 	FilterArtistID string
 	FilterFields   []string
 	FilterSources  []string
+	FilterFrom     time.Time
+	FilterTo       time.Time
 }
 
 // activityFilterCount returns the number of active filters on the activity page.
-// Only counts filters that have corresponding flyout items (field and source).
-// FilterArtistID is excluded because the flyout does not render or round-trip it.
+// Only counts field and source filters (managed by the flyout JS). Date range
+// bounds are excluded because the flyout does not track them, and including
+// them would desynchronize the badge count from the flyout's internal state.
+// FilterArtistID is also excluded because the flyout does not render or round-trip it.
 func activityFilterCount(data ActivityPageData) int {
 	return len(data.FilterFields) + len(data.FilterSources)
 }
@@ -62,6 +75,53 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					}
 				</button>
 			</div>
+			<div class="sw-card rounded-lg px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+				<div class="flex-1">
+					<label for="activity-date-from" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+						{ t(ctx, "activity.date_from") }
+					</label>
+					<input
+						type="date"
+						id="activity-date-from"
+						name="from"
+						value={ formatDateInputValue(data.FilterFrom) }
+						aria-label={ t(ctx, "activity.date_from") }
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<div class="flex-1">
+					<label for="activity-date-to" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+						{ t(ctx, "activity.date_to") }
+					</label>
+					<input
+						type="date"
+						id="activity-date-to"
+						name="to"
+						value={ formatDateInputValue(data.FilterTo) }
+						aria-label={ t(ctx, "activity.date_to") }
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<button
+					type="button"
+					id="activity-date-apply"
+					aria-label={ t(ctx, "activity.apply_date_filter") }
+					class="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					{ t(ctx, "common.apply") }
+				</button>
+				// Always render the Clear button; hide it via CSS when no date filter is active.
+				// JS shows/hides it based on input values so it becomes visible after Apply
+				// without a full page reload (HTMX only swaps #activity-content, not this bar).
+				<button
+					type="button"
+					id="activity-date-clear"
+					aria-label={ t(ctx, "activity.clear_date_filter") }
+					class={ "px-4 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("hidden", data.FilterFrom.IsZero() && data.FilterTo.IsZero()) }
+				>
+					{ t(ctx, "common.clear") }
+				</button>
+			</div>
 			<div id="activity-content">
 				@ActivityContent(data)
 			</div>
@@ -85,6 +145,8 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				@components.FilterItem("activity-filters-flyout", "source", "scan", t(ctx, "history.source.scan"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "source", "import", t(ctx, "history.source.import"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "source", "revert", t(ctx, "history.source.revert"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "provider:*", t(ctx, "history.source.provider"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "rule:*", t(ctx, "history.source.rule"), "neutral")
 			}
 		}
 		<script>
@@ -103,6 +165,73 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					swFilterFlyout.initFromURL('activity-filters-flyout');
 				} else {
 					console.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');
+				}
+			});
+
+			// Date range filter: apply button updates URL params and reloads content.
+			document.addEventListener('DOMContentLoaded', function() {
+				var applyBtn = document.getElementById('activity-date-apply');
+				var clearBtn = document.getElementById('activity-date-clear');
+				var fromInput = document.getElementById('activity-date-from');
+				var toInput = document.getElementById('activity-date-to');
+
+				// Show or hide the Clear button based on whether either date input has a value.
+				function updateClearVisibility() {
+					if (!clearBtn) return;
+					var hasValue = (fromInput && fromInput.value) || (toInput && toInput.value);
+					clearBtn.classList.toggle('hidden', !hasValue);
+				}
+
+				// Sync visibility on page load (handles server-rendered initial state).
+				updateClearVisibility();
+
+				// Keep Clear button in sync when inputs change.
+				if (fromInput) fromInput.addEventListener('change', updateClearVisibility);
+				if (toInput) toInput.addEventListener('change', updateClearVisibility);
+
+				if (applyBtn) {
+					applyBtn.addEventListener('click', function() {
+						var params = new URLSearchParams(window.location.search);
+
+						if (fromInput && fromInput.value) {
+							// Send the raw YYYY-MM-DD value so the server interprets it
+							// as UTC midnight without any timezone drift.
+							params.set('from', fromInput.value);
+						} else {
+							params.delete('from');
+						}
+
+						if (toInput && toInput.value) {
+							// Send the raw YYYY-MM-DD value; the server treats plain-date
+							// "to" values as end-of-day UTC so the full day is included.
+							params.set('to', toInput.value);
+						} else {
+							params.delete('to');
+						}
+
+						var qs = params.toString();
+						var newURL = window.location.pathname;
+						if (qs) newURL += '?' + qs;
+						window.history.replaceState({}, '', newURL);
+						updateClearVisibility();
+						htmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});
+					});
+				}
+
+				if (clearBtn) {
+					clearBtn.addEventListener('click', function() {
+						if (fromInput) fromInput.value = '';
+						if (toInput) toInput.value = '';
+						var params = new URLSearchParams(window.location.search);
+						params.delete('from');
+						params.delete('to');
+						var newURL = window.location.pathname;
+						var qs = params.toString();
+						if (qs) newURL += '?' + qs;
+						window.history.replaceState({}, '', newURL);
+						updateClearVisibility();
+						htmx.ajax('GET', '/activity/content' + (qs ? '?' + qs : ''), {target: '#activity-content', swap: 'innerHTML'});
+					});
 				}
 			});
 		</script>
@@ -179,6 +308,27 @@ templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist, basePath stri
 	@activityRow(c, basePath)
 }
 
+// ActivityRevertFragment renders a revert response that removes the old row
+// and prepends the new revert entry at the top of the activity list, keeping
+// correct chronological order. Also updates the "Showing X of Y" counter.
+templ ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeWithArtist, basePath string, showing, total int) {
+	// Empty placeholder replaces the reverted row in its old position. The id
+	// must NOT match the activity-change- prefix because the undo button's
+	// hx-vals selector counts elements with that prefix to compute the visible
+	// row count. Keeping the activity-change- id here would cause the placeholder
+	// to be counted, inflating the next "showing" value.
+	<div id={ "activity-revert-placeholder-" + revertedID } class="hidden"></div>
+	// Prepend the new revert entry at the top of the activity list.
+	<div id="activity-entries" hx-swap-oob="afterbegin">
+		@activityRow(newChange, basePath)
+	</div>
+	if total > 0 {
+		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+			{ tf(ctx, "common.showing_of", showing, total) }
+		</p>
+	}
+}
+
 // activityRow renders a single entry in the global activity feed.
 templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 	<div id={ "activity-change-" + c.ID } class="sw-card rounded-lg p-4">
@@ -207,7 +357,9 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
 					hx-target={ "#activity-change-" + c.ID }
 					hx-swap="outerHTML"
+					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
+					hx-vals={ `js:{"showing": document.querySelectorAll("#activity-entries > [id^='activity-change-']").length}` }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>
@@ -259,6 +411,17 @@ func activityLoadMoreURL(data ActivityPageData) string {
 	}
 	for _, s := range data.FilterSources {
 		u += "&source=" + url.QueryEscape(s)
+	}
+	// Round-trip the original filter precision so a "from=2024-01-15T03:30:00Z"
+	// applied via API/URL is not silently widened to "from=2024-01-15" when the
+	// user clicks load-more. RFC3339Nano preserves any sub-second precision the
+	// client originally provided, and parseTimeParam accepts both RFC 3339 and
+	// plain YYYY-MM-DD on the way back in.
+	if !data.FilterFrom.IsZero() {
+		u += "&from=" + url.QueryEscape(data.FilterFrom.UTC().Format(time.RFC3339Nano))
+	}
+	if !data.FilterTo.IsZero() {
+		u += "&to=" + url.QueryEscape(data.FilterTo.UTC().Format(time.RFC3339Nano))
 	}
 	return u
 }
