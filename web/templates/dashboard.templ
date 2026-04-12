@@ -194,9 +194,9 @@ templ DashboardActionHeader(data ActionQueueData) {
 				if data.HealthStatsError {
 					// Stats failed to load -- show dashes so the user does not
 					// mistake a load failure for "zero artists / 0% health".
-					<span title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+					<span title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
 					<span class="text-gray-300 dark:text-gray-600">|</span>
-					<span class="text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") }>---</span>
+					<span class="text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>---</span>
 				} else {
 					<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
 					<span class="text-gray-300 dark:text-gray-600">|</span>
@@ -437,7 +437,7 @@ templ DashboardEmptyState(score float64, healthStatsError bool) {
 		</div>
 		<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "dashboard.all_clear") }</h3>
 		if healthStatsError {
-			<p class="mt-2 text-3xl font-bold text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") }>
+			<p class="mt-2 text-3xl font-bold text-gray-400 dark:text-gray-500" title={ t(ctx, "dashboard.stats_unavailable") } aria-label={ t(ctx, "dashboard.stats_unavailable") }>
 				---
 			</p>
 		} else {

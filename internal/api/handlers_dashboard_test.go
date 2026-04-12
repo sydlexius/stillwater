@@ -180,16 +180,46 @@ func TestHandleDashboardActionQueue_Unauthorized(t *testing.T) {
 
 func TestHandleDashboardActionQueue_NegativeOffset(t *testing.T) {
 	r := testDashboardRouter(t, false)
+	ctx := context.Background()
 
-	// Negative offset should be clamped to 0 (no panic or error).
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?offset=-5", nil)
+	// Seed one violation so the response is non-trivial and the select-all
+	// toggle is rendered (which only appears on the full offset=0 fragment).
+	a := &artist.Artist{
+		Name:     "Negative Offset Artist",
+		SortName: "Negative Offset Artist",
+		Type:     "group",
+		Path:     "/music/NegativeOffset",
+		Genres:   []string{"Rock"},
+	}
+	if err := r.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	v := &rule.RuleViolation{
+		RuleID: rule.RuleNFOExists, ArtistID: a.ID, ArtistName: a.Name,
+		Severity: "error", Message: "missing nfo",
+		Fixable: true, Status: rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+
+	// A negative offset should be clamped to 0 and return the full fragment
+	// (header + chips + cards), identical to requesting offset=0 explicitly.
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?offset=-1", nil)
 	req = withTestUser(req)
 	w := httptest.NewRecorder()
 
 	r.handleDashboardActionQueue(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// The full fragment (offset=0 after clamping) includes the select-all
+	// toggle, which the "more rows" fragment does not.
+	body := w.Body.String()
+	if !strings.Contains(body, "select-all-toggle") {
+		t.Error("negative offset should clamp to 0 and render full fragment with select-all-toggle")
 	}
 }
 
