@@ -12,19 +12,22 @@ type FieldName string
 
 // Known field names.
 const (
-	FieldBiography FieldName = "biography"
-	FieldGenres    FieldName = "genres"
-	FieldStyles    FieldName = "styles"
-	FieldMoods     FieldName = "moods"
-	FieldMembers   FieldName = "members"
-	FieldFormed    FieldName = "formed"
-	FieldBorn      FieldName = "born"
-	FieldDied      FieldName = "died"
-	FieldDisbanded FieldName = "disbanded"
-	FieldThumb     FieldName = "thumb"
-	FieldFanart    FieldName = "fanart"
-	FieldLogo      FieldName = "logo"
-	FieldBanner    FieldName = "banner"
+	FieldBiography   FieldName = "biography"
+	FieldGenres      FieldName = "genres"
+	FieldStyles      FieldName = "styles"
+	FieldMoods       FieldName = "moods"
+	FieldMembers     FieldName = "members"
+	FieldFormed      FieldName = "formed"
+	FieldBorn        FieldName = "born"
+	FieldDied        FieldName = "died"
+	FieldDisbanded   FieldName = "disbanded"
+	FieldYearsActive FieldName = "years_active"
+	FieldType        FieldName = "type"
+	FieldGender      FieldName = "gender"
+	FieldThumb       FieldName = "thumb"
+	FieldFanart      FieldName = "fanart"
+	FieldLogo        FieldName = "logo"
+	FieldBanner      FieldName = "banner"
 )
 
 // AllFieldNames returns all known field names in display order.
@@ -32,6 +35,7 @@ func AllFieldNames() []FieldName {
 	return []FieldName{
 		FieldBiography, FieldGenres, FieldStyles, FieldMoods,
 		FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
+		FieldYearsActive, FieldType, FieldGender,
 		FieldThumb, FieldFanart, FieldLogo, FieldBanner,
 	}
 }
@@ -173,6 +177,9 @@ func DefaultConfig() *ScraperConfig {
 			{Field: FieldBorn, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldDied, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldDisbanded, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldYearsActive, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldType, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldGender, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldThumb, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
 			{Field: FieldFanart, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
 			{Field: FieldLogo, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
@@ -212,6 +219,7 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{
 				FieldGenres, FieldStyles, FieldMembers,
 				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
+				FieldType, FieldGender,
 			},
 		},
 		{
@@ -225,7 +233,7 @@ func ProviderCapabilities() []ProviderCapability {
 			DisplayName:  provider.NameAudioDB.DisplayName(),
 			RequiresAuth: true,
 			MetadataFields: []FieldName{
-				FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldFormed,
+				FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldFormed, FieldYearsActive,
 			},
 			ImageFields: []FieldName{FieldThumb, FieldFanart, FieldLogo, FieldBanner},
 		},
@@ -254,13 +262,16 @@ func ProviderCapabilities() []ProviderCapability {
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
 				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
+				FieldType, FieldGender,
 			},
 		},
 		{
-			Provider:       provider.NameWikipedia,
-			DisplayName:    provider.NameWikipedia.DisplayName(),
-			RequiresAuth:   false,
-			MetadataFields: []FieldName{FieldBiography},
+			Provider:     provider.NameWikipedia,
+			DisplayName:  provider.NameWikipedia.DisplayName(),
+			RequiresAuth: false,
+			MetadataFields: []FieldName{
+				FieldBiography, FieldYearsActive, FieldBorn, FieldFormed, FieldDied, FieldDisbanded,
+			},
 		},
 		{
 			Provider:       provider.NameGenius,

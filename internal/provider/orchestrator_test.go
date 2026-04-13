@@ -1308,6 +1308,48 @@ func TestIsImageFieldName(t *testing.T) {
 	}
 }
 
+// TestApplyFieldDetailFields verifies that applyField handles the detail
+// fields (gender, type, years_active, born, died, disbanded) by setting the
+// target field only when it is currently empty (first-match-wins) and returns
+// true when a value was applied.
+func TestApplyFieldDetailFields(t *testing.T) {
+	cases := []struct {
+		field    string
+		meta     ArtistMetadata
+		readBack func(*ArtistMetadata) string
+	}{
+		{"gender", ArtistMetadata{Gender: "Male"}, func(m *ArtistMetadata) string { return m.Gender }},
+		{"type", ArtistMetadata{Type: "group"}, func(m *ArtistMetadata) string { return m.Type }},
+		{"years_active", ArtistMetadata{YearsActive: "1980-1990"}, func(m *ArtistMetadata) string { return m.YearsActive }},
+		{"born", ArtistMetadata{Born: "1970-01-01"}, func(m *ArtistMetadata) string { return m.Born }},
+		{"died", ArtistMetadata{Died: "2020-01-01"}, func(m *ArtistMetadata) string { return m.Died }},
+		{"disbanded", ArtistMetadata{Disbanded: "2005-01-01"}, func(m *ArtistMetadata) string { return m.Disbanded }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
+			pr := &providerResult{meta: &tc.meta}
+			if !applyField(result, tc.field, pr, NameMusicBrainz) {
+				t.Fatalf("applyField(%s) = false, want true", tc.field)
+			}
+			if got := tc.readBack(result.Metadata); got != tc.readBack(&tc.meta) {
+				t.Errorf("after apply %s: got %q, want %q", tc.field, got, tc.readBack(&tc.meta))
+			}
+			if !hasFieldSource(result.Sources, tc.field) {
+				t.Errorf("applyField(%s) did not record FieldSource", tc.field)
+			}
+			// Second provider must not overwrite the first-match-wins value.
+			pr2 := &providerResult{meta: &ArtistMetadata{
+				Gender: "Female", Type: "solo", YearsActive: "1999", Born: "x",
+				Died: "y", Disbanded: "z",
+			}}
+			if applyField(result, tc.field, pr2, NameWikidata) {
+				t.Errorf("applyField(%s) returned true on second provider, expected first-match-wins", tc.field)
+			}
+		})
+	}
+}
+
 // TestApplyFieldImageTypeFilter verifies that applyField returns true only
 // when the provider has images of the requested type, not just any images.
 func TestApplyFieldImageTypeFilter(t *testing.T) {

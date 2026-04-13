@@ -453,6 +453,24 @@ func applyFieldValue(field FieldName, pr *providerResult, result *provider.Fetch
 		}
 		result.Metadata.Disbanded = meta.Disbanded
 		return true
+	case FieldYearsActive:
+		if meta.YearsActive == "" {
+			return false
+		}
+		result.Metadata.YearsActive = meta.YearsActive
+		return true
+	case FieldType:
+		if meta.Type == "" {
+			return false
+		}
+		result.Metadata.Type = meta.Type
+		return true
+	case FieldGender:
+		if meta.Gender == "" {
+			return false
+		}
+		result.Metadata.Gender = meta.Gender
+		return true
 	case FieldThumb, FieldFanart, FieldLogo, FieldBanner:
 		imgType := fieldToImageType(field)
 		found := false
