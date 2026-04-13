@@ -45,10 +45,19 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 	if a.Path != "" {
 		nfoPath := filepath.Join(a.Path, "artist.nfo")
 		parsed, parseErr := parseNFOFile(nfoPath)
-		if parseErr == nil {
+		switch {
+		case parseErr == nil:
 			onDiskNFO = parsed
-		} else {
+		case errors.Is(parseErr, os.ErrNotExist):
+			// No file on disk: diff against nil (full added-fields diff).
 			onDiskNFO = nil
+		default:
+			// Read/parse failure: surface via log so operators can
+			// diagnose, and treat as no on-disk NFO so the diff does
+			// not silently hide corruption.
+			onDiskNFO = nil
+			r.logger.Warn("failed to parse artist.nfo for nfo diff",
+				"artist_id", artistID, "path", nfoPath, "error", parseErr)
 		}
 	}
 	diff := nfo.Diff(onDiskNFO, dbNFO)
