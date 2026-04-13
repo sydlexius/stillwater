@@ -45,6 +45,22 @@ jobs:
         with:
           cosign-release: 'v2.4.1'
 
+      # For stable tags (no -rc/-beta/-alpha suffix), force goreleaser to
+      # compute the changelog from the previous *stable* tag, not the most
+      # recent pre-release. Without this override, promoting vX.Y.Z after
+      # vX.Y.Z-rc.N produces a nearly-empty changelog because only the
+      # commits between rc.N and the stable tag are included.
+      - name: Compute previous stable tag
+        id: prev
+        if: "!contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha')"
+        run: |
+          prev=$(git tag --list 'v*' --sort=-v:refname \
+            | grep -vE '\-(rc|beta|alpha)' \
+            | grep -v "^${GITHUB_REF_NAME}$" \
+            | head -n1)
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          echo "Previous stable tag: $prev"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7
         with:
@@ -53,6 +69,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.prev.outputs.prev }}
 
       - name: Mark stable release as latest
         if: "!contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha')"
