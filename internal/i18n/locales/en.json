@@ -74,6 +74,7 @@
   "artist.locked_banner": "This artist is locked. Automated changes are skipped. Manual edits are still allowed.",
   "artist.locked_fields": "Locked fields",
   "artist.unlock_field": "Unlock field",
+  "artist.unlock_field_failed": "Unlock failed. Please try again.",
   "artist.member_original": "(original)",
   "artist.member_present": "present",
   "artist.members": "Members",

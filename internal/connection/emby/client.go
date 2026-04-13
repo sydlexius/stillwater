@@ -377,6 +377,11 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 	if err := c.Get(ctx, getPath, &item); err != nil {
 		return fmt.Errorf("fetching artist for lock update: %w", err)
 	}
+	// Guard against a JSON null / empty body that would leave item as a
+	// nil map; assigning to a nil map panics.
+	if item == nil {
+		item = make(map[string]any)
+	}
 	item["LockData"] = lockData
 	item["LockedFields"] = canonicalizeLockedFields(lockedFields)
 
