@@ -399,11 +399,13 @@ func TestApplyMemberRefresh(t *testing.T) {
 	})
 
 	t.Run("upsert_error_logged_not_propagated", func(t *testing.T) {
-		a := addTestArtist(t, artistSvc, "Guard Test Band 5")
+		// Use an isolated router so closing its DB does not affect other subtests.
+		rIsolated, svcIsolated := testRouter(t)
+		a := addTestArtist(t, svcIsolated, "Guard Test Band 5")
 
-		// Close the DB so UpsertMembers returns an error. The function must
-		// log at Warn and continue without panicking or returning an error.
-		_ = r.db.Close()
+		// Close the isolated DB so UpsertMembers returns an error. The function
+		// must log at Warn and continue without panicking or returning an error.
+		_ = rIsolated.db.Close()
 
 		result := &provider.FetchResult{
 			Metadata: &provider.ArtistMetadata{
@@ -413,7 +415,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		rIsolated.applyMemberRefresh(context.Background(), a.ID, result)
 		// No assertions beyond "did not panic" -- error is swallowed by design.
 	})
 }
