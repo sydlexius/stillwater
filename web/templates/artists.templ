@@ -830,6 +830,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						if (cb.checked) visibleChecked++;
 					});
 					// Select-All indeterminate state.
+					var allChecked = false;
 					if (selectAll) {
 						if (boxes.length === 0) {
 							selectAll.checked = false;
@@ -840,10 +841,25 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						} else if (visibleChecked === boxes.length) {
 							selectAll.checked = true;
 							selectAll.indeterminate = false;
+							allChecked = true;
 						} else {
 							selectAll.checked = false;
 							selectAll.indeterminate = true;
 						}
+					}
+					// Swap the checkbox label between Select all / Deselect all
+					// so screen readers and sighted users both see the action
+					// that a click will perform next.
+					var labelEl = document.getElementById('bulk-select-all-label');
+					if (labelEl) {
+						var i18nSelectAll = bar.getAttribute('data-i18n-select-all') || 'Select all on page';
+						var i18nDeselectAll = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';
+						labelEl.textContent = allChecked ? i18nDeselectAll : i18nSelectAll;
+					}
+					if (selectAll) {
+						var i18nSelectAllAria = bar.getAttribute('data-i18n-select-all') || 'Select all on page';
+						var i18nDeselectAllAria = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';
+						selectAll.setAttribute('aria-label', allChecked ? i18nDeselectAllAria : i18nSelectAllAria);
 					}
 				}
 
@@ -935,6 +951,8 @@ templ BulkActionBar(data ArtistListData) {
 			data-i18n-selected={ t(ctx, "artists.bulk.selected") }
 			data-i18n-busy={ t(ctx, "artists.bulk.busy") }
 			data-i18n-failed={ t(ctx, "artists.bulk.failed") }
+			data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
+			data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
 		>
 			<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
 				<input
@@ -944,7 +962,7 @@ templ BulkActionBar(data ArtistListData) {
 					aria-controls="artist-content"
 					aria-label={ t(ctx, "artists.bulk.select_all") }
 				/>
-				<span>{ t(ctx, "artists.bulk.select_all") }</span>
+				<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
 			</label>
 			<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
 				{ t(ctx, "artists.bulk.none_selected") }

@@ -163,6 +163,7 @@
   "artists.order.desc": "desc",
   "artists.bulk.toolbar": "Bulk actions",
   "artists.bulk.select_all": "Select all on page",
+  "artists.bulk.deselect_all": "Deselect all on page",
   "artists.bulk.select_column": "Select",
   "artists.bulk.select_artist": "Select %s",
   "artists.bulk.none_selected": "None selected",

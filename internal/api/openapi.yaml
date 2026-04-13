@@ -3863,6 +3863,7 @@ paths:
                   maxItems: 1000
                   items:
                     type: string
+                    pattern: "^[A-Za-z0-9_-]{1,64}$"
                   description: Artist IDs to process (max 1000 per request).
       responses:
         "202":
@@ -3893,6 +3894,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status, message]
                 properties:
                   status:
                     type: string
@@ -3913,7 +3915,7 @@ paths:
       operationId: getBulkActionStatus
       responses:
         "200":
-          description: Current progress or idle when no run is active
+          description: Current or most recent bulk-action snapshot; returns idle only when no snapshot exists yet.
           content:
             application/json:
               schema:
@@ -3924,6 +3926,7 @@ paths:
                     enum: [idle, running, completed, failed]
                   action:
                     type: string
+                    enum: [run_rules, re_identify, scan, fetch_images]
                   total:
                     type: integer
                   processed:

@@ -170,10 +170,25 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 			return
 		}
-	case BulkActionReIdentify, BulkActionScan:
+	case BulkActionReIdentify:
 		if r.artistService == nil {
 			releaseSlot()
 			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+			return
+		}
+	case BulkActionScan:
+		// scan reuses the rule pipeline to refresh derived artist state,
+		// so both the artist service and the pipeline must be configured.
+		// Gate both upfront; otherwise applyBulkAction would silently skip
+		// and the caller would see a misleading 202 + completed snapshot.
+		if r.artistService == nil {
+			releaseSlot()
+			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+			return
+		}
+		if r.pipeline == nil {
+			releaseSlot()
+			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 			return
 		}
 	}
