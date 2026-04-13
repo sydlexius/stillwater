@@ -148,9 +148,16 @@ func TestAllFieldNames(t *testing.T) {
 }
 
 // TestIsValidFieldName verifies that every known field is accepted and that
-// unknown values are rejected.
+// unknown values are rejected. The positive path uses an explicit constant
+// list rather than AllFieldNames() so a regression that drops a name from
+// IsValidFieldName AND AllFieldNames simultaneously would still fail here.
 func TestIsValidFieldName(t *testing.T) {
-	for _, f := range AllFieldNames() {
+	expected := []FieldName{
+		FieldBiography, FieldGenres, FieldStyles, FieldMoods, FieldMembers,
+		FieldFormed, FieldBorn, FieldDied, FieldDisbanded, FieldYearsActive,
+		FieldType, FieldGender, FieldThumb, FieldFanart, FieldLogo, FieldBanner,
+	}
+	for _, f := range expected {
 		if !IsValidFieldName(f) {
 			t.Errorf("IsValidFieldName(%q) = false, want true", f)
 		}
