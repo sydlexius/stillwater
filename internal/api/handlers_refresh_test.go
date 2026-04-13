@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -270,11 +269,11 @@ func TestConvertProviderMembers_WithData(t *testing.T) {
 	}
 }
 
-// TestMembersAttemptedGuard exercises the AttemptedFields guard logic that
-// executeRefresh uses to decide whether to clear or preserve members.
-// This tests the decision layer, not just the UpsertMembers mechanism.
-func TestMembersAttemptedGuard(t *testing.T) {
-	_, artistSvc := testRouter(t)
+// TestApplyMemberRefresh exercises the applyMemberRefresh method that
+// executeRefreshCtx delegates to for member upsert decisions.
+// Calling the real method ensures coverage of the changed guard condition.
+func TestApplyMemberRefresh(t *testing.T) {
+	r, artistSvc := testRouter(t)
 
 	seedMembers := func(t *testing.T, artistID string) {
 		t.Helper()
@@ -296,24 +295,6 @@ func TestMembersAttemptedGuard(t *testing.T) {
 		return len(members)
 	}
 
-	// Simulate the same guard logic from executeRefresh:
-	// if "members" is in AttemptedFields AND the list is non-empty, call UpsertMembers.
-	// An empty result is treated as incomplete data, not an intentional clear.
-	// If "members" is NOT in AttemptedFields, skip -- preserve existing members.
-	applyMembersGuard := func(artistID string, result *provider.FetchResult, svc *artist.Service) {
-		if result.Metadata != nil {
-			membersAttempted := slices.Contains(result.AttemptedFields, "members")
-			if membersAttempted && len(result.Metadata.Members) > 0 {
-				members := convertProviderMembers(artistID, result.Metadata.Members)
-				if err := svc.UpsertMembers(context.Background(), artistID, members); err != nil {
-					// In production this is logged at Warn and execution continues,
-					// but in tests we want to fail fast on unexpected errors.
-					panic(fmt.Sprintf("UpsertMembers failed in test guard: %v", err))
-				}
-			}
-		}
-	}
-
 	t.Run("members_attempted_empty_preserves", func(t *testing.T) {
 		a := addTestArtist(t, artistSvc, "Guard Test Band 1")
 		seedMembers(t, a.ID)
@@ -328,7 +309,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Members: nil},
 			AttemptedFields: []string{"biography", "members"},
 		}
-		applyMembersGuard(a.ID, result, artistSvc)
+		r.applyMemberRefresh(context.Background(), a.ID, result)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved after attempted-empty refresh, got %d", n)
@@ -343,7 +324,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			t.Fatalf("expected 2 seeded members, got %d", n)
 		}
 
-		// Provider attempted "members" and returned a non-empty list. Members
+		// Provider attempted "members" and returned a non-empty list -- members
 		// should be replaced with the provider data.
 		result := &provider.FetchResult{
 			Metadata: &provider.ArtistMetadata{
@@ -353,7 +334,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		applyMembersGuard(a.ID, result, artistSvc)
+		r.applyMemberRefresh(context.Background(), a.ID, result)
 
 		if n := countMembers(t, a.ID); n != 1 {
 			t.Errorf("expected 1 member after nonempty upsert, got %d", n)
@@ -373,7 +354,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Biography: "new bio"},
 			AttemptedFields: []string{"biography"},
 		}
-		applyMembersGuard(a.ID, result, artistSvc)
+		r.applyMemberRefresh(context.Background(), a.ID, result)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (unattempted), got %d", n)
@@ -389,7 +370,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			Metadata:        nil,
 			AttemptedFields: []string{"members"},
 		}
-		applyMembersGuard(a.ID, result, artistSvc)
+		r.applyMemberRefresh(context.Background(), a.ID, result)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (nil metadata), got %d", n)
