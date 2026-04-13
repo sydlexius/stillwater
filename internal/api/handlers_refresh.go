@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -285,30 +286,28 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 
 	rule.UpdateProviderFetchTimestamps(writeCtx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
-	// Update members if the provider attempted the "members" field.
-	// When the provider was queried but returned an empty list, we clear
-	// existing members (e.g., artist type changed from group to solo).
-	// When "members" was not attempted (provider down, not configured),
-	// leave existing members untouched.
-	if result.Metadata != nil {
-		membersAttempted := false
-		for _, f := range result.AttemptedFields {
-			if f == "members" {
-				membersAttempted = true
-				break
-			}
-		}
-		if membersAttempted {
-			members := convertProviderMembers(a.ID, result.Metadata.Members)
-			if err := r.artistService.UpsertMembers(writeCtx, a.ID, members); err != nil {
-				r.logger.Warn("upserting members after refresh",
-					"artist_id", a.ID,
-					"error", err)
-			}
-		}
-	}
+	r.applyMemberRefresh(writeCtx, a.ID, result)
 
 	return result, nil
+}
+
+// applyMemberRefresh upserts provider-returned members for an artist when the
+// provider both attempted the "members" field and returned a non-empty list.
+// An empty list is treated as incomplete data (MusicBrainz relation data is
+// often sparse), not an intentional clear. Existing members are left untouched
+// when the provider was not attempted or returned zero members.
+func (r *Router) applyMemberRefresh(ctx context.Context, artistID string, result *provider.FetchResult) {
+	if result.Metadata == nil {
+		return
+	}
+	if slices.Contains(result.AttemptedFields, "members") && len(result.Metadata.Members) > 0 {
+		members := convertProviderMembers(artistID, result.Metadata.Members)
+		if err := r.artistService.UpsertMembers(ctx, artistID, members); err != nil {
+			r.logger.Warn("upserting members after refresh",
+				"artist_id", artistID,
+				"error", err)
+		}
+	}
 }
 
 // convertProviderMembers converts provider MemberInfo to artist BandMember models.

@@ -667,3 +667,37 @@ func TestHandleActivityPage(t *testing.T) {
 		t.Error("response body missing 'Activity' heading")
 	}
 }
+
+// TestHandleActivityContent_RendersRow verifies that handleActivityContent
+// renders activityRow entries including the old/new value blocks.
+// This covers the whitespace-pre-wrap change in the generated activity_templ.go.
+func TestHandleActivityContent_RendersRow(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	a := addTestArtist(t, artistSvc, "Activity Row Artist")
+
+	// Use long (>300 char) multi-line values so this test catches regressions
+	// in either 300-char truncation or newline rendering (whitespace-pre-wrap).
+	oldVal := "old biography line 1\n" + strings.Repeat("A", 340)
+	newVal := "new biography line 1\nnew biography line 2\n" + strings.Repeat("B", 340)
+	addHistoryChange(t, historySvc, a.ID, "biography", oldVal, newVal, "manual")
+
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/activity/content", nil)
+	w := httptest.NewRecorder()
+
+	r.handleActivityContent(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, oldVal) {
+		t.Error("response missing full old value in activity row (truncation regression?)")
+	}
+	if !strings.Contains(body, newVal) {
+		t.Error("response missing full new value in activity row (truncation regression?)")
+	}
+	if !strings.Contains(body, "whitespace-pre-wrap") {
+		t.Error("response missing whitespace-pre-wrap class (multiline rendering regression?)")
+	}
+}
