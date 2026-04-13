@@ -64,16 +64,22 @@ changed_go=$(git diff "$BASE"..HEAD --name-only -- '*.go' | grep -v '_test.go' |
 if [ -z "$changed_go" ]; then
   echo "Skipped (no Go source changes)."
 else
-  cover_funcs=$(go tool cover -func="$COVER_OUT" 2>/dev/null || true)
+  if ! cover_funcs=$(go tool cover -func="$COVER_OUT" 2>/dev/null); then
+    echo "WARNING: Unable to parse coverage profile; skipping changed-file coverage check."
+    echo "Codecov will still validate patch coverage in CI."
+    cover_funcs=""
+  fi
   uncovered=""
   while IFS= read -r f; do
-    hits=$(printf '%s\n' "$cover_funcs" | grep "/${f}:" | awk '$NF == "0.0%"' || true)
+    hits=$(printf '%s\n' "$cover_funcs" | grep -F "/${f}:" | awk '$NF == "0.0%"' || true)
     if [ -n "$hits" ]; then
       uncovered="${uncovered}${hits}"$'\n'
     fi
   done <<< "$changed_go"
 
-  if [ -n "$uncovered" ]; then
+  if [ -z "$cover_funcs" ]; then
+    :
+  elif [ -n "$uncovered" ]; then
     echo "WARNING: Functions with 0% coverage in changed files:"
     echo "$uncovered"
     echo "These may be intentionally tested via integration or missing unit tests."
