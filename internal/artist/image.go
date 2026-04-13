@@ -17,4 +17,5 @@ type ArtistImage struct {
 	FileFormat    string `json:"file_format,omitempty"`
 	Source        string `json:"source,omitempty"`
 	LastWrittenAt string `json:"last_written_at,omitempty"`
+	Locked        bool   `json:"locked"`
 }

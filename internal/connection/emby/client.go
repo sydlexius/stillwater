@@ -359,6 +359,41 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
+// UpdateArtistLocks persists the given field-level lock list and whole-item lock
+// flag to Emby for the named artist. Emby requires a full item payload on
+// POST /Items/{id}, so this method first fetches the current item (via the
+// user-scoped endpoint) and then POSTs the mutation back with only LockData
+// and LockedFields overwritten. Other properties are preserved verbatim to
+// avoid clobbering fields Stillwater does not manage.
+func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string, lockData bool, lockedFields []string) error {
+	if c.userID == "" {
+		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
+	}
+	// Fetch the full item payload as Emby returns it. Emby's POST /Items/{id}
+	// treats the body as a full replacement, so we must preserve unrelated
+	// fields to avoid dropping them.
+	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.userID, platformArtistID)
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return fmt.Errorf("fetching artist for lock update: %w", err)
+	}
+	item["LockData"] = lockData
+	if lockedFields == nil {
+		lockedFields = []string{}
+	}
+	item["LockedFields"] = lockedFields
+
+	body, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("encoding lock update body: %w", err)
+	}
+	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
+		return fmt.Errorf("posting artist lock update: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("X-Emby-Token", c.APIKey)
 }

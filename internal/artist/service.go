@@ -713,6 +713,72 @@ func (s *Service) Unlock(ctx context.Context, id string) error {
 	return s.artists.SetLock(ctx, id, false, "")
 }
 
+// SetLockedFields replaces the full set of locked field names for an artist.
+// Empty slice clears all field locks.
+func (s *Service) SetLockedFields(ctx context.Context, id string, fields []string) error {
+	return s.artists.SetLockedFields(ctx, id, fields)
+}
+
+// AddLockedField appends a single field to the artist's locked-field set.
+// Existing entries are preserved; duplicates are elided by the repository's
+// normalization step.
+func (s *Service) AddLockedField(ctx context.Context, id, field string) error {
+	a, err := s.artists.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	fields := append([]string{}, a.LockedFields...)
+	fields = append(fields, field)
+	return s.artists.SetLockedFields(ctx, id, fields)
+}
+
+// RemoveLockedField removes a single field from the artist's locked-field set.
+// Missing entries are silently ignored.
+func (s *Service) RemoveLockedField(ctx context.Context, id, field string) error {
+	a, err := s.artists.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	target := strings.ToLower(strings.TrimSpace(field))
+	kept := make([]string, 0, len(a.LockedFields))
+	for _, f := range a.LockedFields {
+		if strings.ToLower(f) == target {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return s.artists.SetLockedFields(ctx, id, kept)
+}
+
+// UpsertImage writes or updates a single image row. Exposed primarily for
+// tests and tooling; production code paths use UpsertAll via scanning flows.
+func (s *Service) UpsertImage(ctx context.Context, img *ArtistImage) error {
+	return s.images.Upsert(ctx, img)
+}
+
+// SetImageLock toggles the lock flag on a single image row for an artist.
+// The imageID must belong to the given artist; callers should verify ownership
+// before invoking this method.
+func (s *Service) SetImageLock(ctx context.Context, imageID string, locked bool) error {
+	return s.images.SetLock(ctx, imageID, locked)
+}
+
+// IsFieldLocked returns true when the artist has the given field marked as
+// locked. Comparison is case-insensitive and ignores leading/trailing
+// whitespace on the input.
+func (s *Service) IsFieldLocked(a *Artist, field string) bool {
+	if a == nil {
+		return false
+	}
+	target := strings.ToLower(strings.TrimSpace(field))
+	for _, f := range a.LockedFields {
+		if strings.ToLower(f) == target {
+			return true
+		}
+	}
+	return false
+}
+
 // ListMembersByArtistID returns all band members for an artist, ordered by sort_order.
 func (s *Service) ListMembersByArtistID(ctx context.Context, artistID string) ([]BandMember, error) {
 	return s.members.ListByArtistID(ctx, artistID)

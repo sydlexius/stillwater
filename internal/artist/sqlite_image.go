@@ -21,7 +21,7 @@ func newSQLiteImageRepo(db *sql.DB) *sqliteImageRepo {
 func (r *sqliteImageRepo) GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source, last_written_at
+			width, height, phash, file_format, source, last_written_at, locked
 		FROM artist_images WHERE artist_id = ? ORDER BY image_type, slot_index`,
 		artistID)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 	}
 
 	query := `SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder, ` + //nolint:gosec // G202: placeholders are "?" literals
-		`width, height, phash, file_format, source, last_written_at ` +
+		`width, height, phash, file_format, source, last_written_at, locked ` +
 		`FROM artist_images ` +
 		`WHERE artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
 		`ORDER BY artist_id, image_type, slot_index`
@@ -58,17 +58,18 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 	result := make(map[string][]ArtistImage, len(artistIDs))
 	for rows.Next() {
 		var img ArtistImage
-		var existsFlag, lowRes int
+		var existsFlag, lowRes, locked int
 		if err := rows.Scan(
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
 			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
-			&img.LastWrittenAt,
+			&img.LastWrittenAt, &locked,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
 		}
 		img.Exists = existsFlag == 1
 		img.LowRes = lowRes == 1
+		img.Locked = locked == 1
 		result[img.ArtistID] = append(result[img.ArtistID], img)
 	}
 	return result, rows.Err()
@@ -81,8 +82,8 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source, last_written_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			width, height, phash, file_format, source, last_written_at, locked)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
 			id = excluded.id,
 			exists_flag = excluded.exists_flag,
@@ -93,10 +94,12 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 			phash = excluded.phash,
 			file_format = excluded.file_format,
 			source = excluded.source,
-			last_written_at = excluded.last_written_at`,
+			last_written_at = excluded.last_written_at,
+			locked = excluded.locked`,
 		img.ID, img.ArtistID, img.ImageType, img.SlotIndex,
 		dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
 		img.Width, img.Height, img.PHash, img.FileFormat, img.Source, img.LastWrittenAt,
+		dbutil.BoolToInt(img.Locked),
 	)
 	if err != nil {
 		return fmt.Errorf("upserting image %s/%s: %w", img.ArtistID, img.ImageType, err)
@@ -235,6 +238,26 @@ func (r *sqliteImageRepo) ClearExistsFlag(ctx context.Context, artistID, imageTy
 	return nil
 }
 
+// SetLock toggles the lock flag for a single image row identified by its
+// primary key. Returns an error if no matching row exists.
+func (r *sqliteImageRepo) SetLock(ctx context.Context, imageID string, locked bool) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artist_images SET locked = ? WHERE id = ?`,
+		dbutil.BoolToInt(locked), imageID,
+	)
+	if err != nil {
+		return fmt.Errorf("setting image lock %s: %w", imageID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading image lock rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("image not found: %s", imageID)
+	}
+	return nil
+}
+
 func (r *sqliteImageRepo) DeleteByArtistID(ctx context.Context, artistID string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM artist_images WHERE artist_id = ?`, artistID)
 	if err != nil {
@@ -278,17 +301,18 @@ func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
 	var images []ArtistImage
 	for rows.Next() {
 		var img ArtistImage
-		var existsFlag, lowRes int
+		var existsFlag, lowRes, locked int
 		if err := rows.Scan(
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
 			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
-			&img.LastWrittenAt,
+			&img.LastWrittenAt, &locked,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image: %w", err)
 		}
 		img.Exists = existsFlag == 1
 		img.LowRes = lowRes == 1
+		img.Locked = locked == 1
 		images = append(images, img)
 	}
 	return images, rows.Err()

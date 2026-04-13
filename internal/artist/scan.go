@@ -14,7 +14,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists,
 	health_score, health_evaluated_at, is_excluded, exclusion_reason, is_classical,
-	locked, lock_source, locked_at,
+	locked, lock_source, locked_at, locked_fields,
 	metadata_sources,
 	last_scanned_at, created_at, updated_at`
 
@@ -43,6 +43,7 @@ type scannedArtist struct {
 	isClassical       int
 	locked            int
 	lockedAt          sql.NullString
+	lockedFields      string
 	createdAt         string
 	updatedAt         string
 }
@@ -55,7 +56,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.libraryID, &s.nfo,
 		&s.a.HealthScore, &s.healthEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
-		&s.locked, &s.a.LockSource, &s.lockedAt,
+		&s.locked, &s.a.LockSource, &s.lockedAt, &s.lockedFields,
 		&s.metadataSources,
 		&s.lastScannedAt,
 		&s.createdAt, &s.updatedAt,
@@ -82,6 +83,7 @@ func (s *scannedArtist) apply() {
 		t := dbutil.ParseTime(s.lockedAt.String)
 		s.a.LockedAt = &t
 	}
+	s.a.LockedFields = UnmarshalStringSlice(s.lockedFields)
 	s.a.MetadataSources = UnmarshalStringMap(s.metadataSources)
 	if s.lastScannedAt.Valid {
 		t := dbutil.ParseTime(s.lastScannedAt.String)

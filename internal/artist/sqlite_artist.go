@@ -83,10 +83,10 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 			years_active, born, formed, died, disbanded, biography,
 			path, library_id, nfo_exists,
 			health_score, is_excluded, exclusion_reason, is_classical,
-			locked, lock_source, locked_at,
+			locked, lock_source, locked_at, locked_fields,
 			metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
@@ -94,6 +94,7 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
+		MarshalStringSlice(a.LockedFields),
 		MarshalStringMap(a.MetadataSources),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
@@ -264,7 +265,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?, nfo_exists = ?,
 			health_score = ?, health_evaluated_at = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
-			locked = ?, lock_source = ?, locked_at = ?,
+			locked = ?, lock_source = ?, locked_at = ?, locked_fields = ?,
 			metadata_sources = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
@@ -275,6 +276,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.FormatNullableTime(a.HealthEvaluatedAt), dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
+		MarshalStringSlice(a.LockedFields),
 		MarshalStringMap(a.MetadataSources),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
@@ -387,6 +389,48 @@ func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, 
 		artists = append(artists, *a)
 	}
 	return artists, rows.Err()
+}
+
+// SetLockedFields replaces the set of locked field names for an artist.
+// Field names are normalized to lowercase unique tokens before being persisted
+// as a JSON array. Pass an empty slice to clear all field locks.
+func (r *sqliteArtistRepo) SetLockedFields(ctx context.Context, id string, fields []string) error {
+	normalized := normalizeLockedFields(fields)
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET locked_fields = ?, updated_at = ? WHERE id = ?`,
+		MarshalStringSlice(normalized), now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("setting locked fields for artist %s: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading locked_fields rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return nil
+}
+
+// normalizeLockedFields trims, lowercases, and deduplicates locked field
+// entries while preserving their first-seen order. Empty tokens are dropped.
+func normalizeLockedFields(fields []string) []string {
+	seen := make(map[string]struct{}, len(fields))
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		f = strings.TrimSpace(strings.ToLower(f))
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
+	}
+	return out
 }
 
 // ErrAlreadyLocked is returned when trying to lock an already-locked artist.

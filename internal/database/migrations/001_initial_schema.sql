@@ -176,6 +176,10 @@ CREATE TABLE IF NOT EXISTS artists (
     locked INTEGER NOT NULL DEFAULT 0,
     lock_source TEXT NOT NULL DEFAULT '' CHECK (lock_source IN ('', 'user', 'imported')),
     locked_at TEXT CHECK (locked = 0 OR (locked = 1 AND locked_at IS NOT NULL)),
+    -- JSON array of field names locked at the field level (e.g. from Emby LockedFields).
+    -- Independent of the whole-artist lock; a single field can be locked without the
+    -- full artist lock being set.
+    locked_fields TEXT NOT NULL DEFAULT '[]',
     metadata_sources TEXT NOT NULL DEFAULT '{}',
     last_scanned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -215,6 +219,9 @@ CREATE TABLE IF NOT EXISTS artist_images (
     file_format TEXT NOT NULL DEFAULT '',
     source         TEXT NOT NULL DEFAULT '',
     last_written_at TEXT NOT NULL DEFAULT '',
+    -- Per-image lock flag. When set, automated refresh and replacement operations
+    -- must not overwrite this slot. Round-trips to Emby's LockData for artist images.
+    locked         INTEGER NOT NULL DEFAULT 0,
     UNIQUE(artist_id, image_type, slot_index)
 );
 

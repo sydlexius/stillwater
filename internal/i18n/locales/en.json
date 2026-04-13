@@ -72,6 +72,8 @@
   "artist.loading_history": "Loading history...",
   "artist.lock_artist": "Lock Artist",
   "artist.locked_banner": "This artist is locked. Automated changes are skipped. Manual edits are still allowed.",
+  "artist.locked_fields": "Locked fields",
+  "artist.unlock_field": "Unlock field",
   "artist.member_original": "(original)",
   "artist.member_present": "present",
   "artist.members": "Members",
