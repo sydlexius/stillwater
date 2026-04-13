@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +14,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// stubScraperExecutor implements provider.ScraperExecutor for tests that need
+// a live orchestrator without real provider network calls.
+type stubScraperExecutor struct {
+	result *provider.FetchResult
+	err    error
+}
+
+func (s *stubScraperExecutor) ScrapeAll(_ context.Context, _, _, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	return s.result, s.err
+}
 
 func TestRenderRefreshWithOOB_ContainsSwapTargets(t *testing.T) {
 	r, artistSvc := testRouter(t)
@@ -438,4 +451,49 @@ func TestRunRulesAfterRefresh_PipelineError_DoesNotPropagate(t *testing.T) {
 
 	// Should not panic; error is logged but not propagated.
 	r.runRulesAfterRefresh(context.Background(), a)
+}
+
+// TestExecuteRefreshCtx_AppliesMemberRefresh verifies that executeRefreshCtx
+// delegates to applyMemberRefresh and persists provider-returned members.
+// This covers the r.applyMemberRefresh call site inside the orchestration path.
+func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	// Wire a stub orchestrator so FetchMetadata returns a controlled result
+	// without real provider network calls.
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{
+					{Name: "Carol", MBID: "mb-carol"},
+				},
+			},
+			AttemptedFields: []string{"members"},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	a := addTestArtist(t, artistSvc, "Orchestrate Refresh Artist")
+
+	result, err := r.executeRefreshCtx(context.Background(), a)
+	if err != nil {
+		t.Fatalf("executeRefreshCtx returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("executeRefreshCtx returned nil result")
+	}
+
+	saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("listing members after executeRefreshCtx: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("expected 1 member after refresh, got %d", len(saved))
+	}
+	if saved[0].MemberName != "Carol" || saved[0].MemberMBID != "mb-carol" {
+		t.Errorf("unexpected member: name=%q mbid=%q", saved[0].MemberName, saved[0].MemberMBID)
+	}
 }
