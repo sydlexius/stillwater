@@ -97,7 +97,7 @@ func TestHandleArtistDiscographyTab_NotFound(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decoding JSON: %v (body=%q)", err, w.Body.String())
 	}
-	if payload["message"] != "artist not found" {
+	if payload["error"] != "artist not found" {
 		t.Errorf("payload = %+v, want message=\"artist not found\"", payload)
 	}
 }
@@ -133,7 +133,7 @@ func TestHandleArtistDiscographyTab_InternalError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decoding JSON: %v (body=%q)", err, w.Body.String())
 	}
-	if payload["message"] != "internal error" {
+	if payload["error"] != "internal error" {
 		t.Errorf("payload = %+v, want message=\"internal error\"", payload)
 	}
 }

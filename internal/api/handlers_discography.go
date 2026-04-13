@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -16,7 +17,7 @@ import (
 func writeDiscographyJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 // handleArtistDiscographyTab renders the Discography tab fragment for the
@@ -40,16 +41,24 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// Parse the on-disk NFO directly so the tab reflects persisted state, not
-	// the in-memory artist struct (which does not carry the Discography slice
-	// through the standard repository load path today).
+	// Parse the on-disk NFO directly so the tab reflects persisted state.
+	// The cached artist.NFOExists flag is intentionally not consulted here:
+	// if the file was added or restored out-of-band, the tab should still
+	// reflect reality rather than waiting for a separate scan to refresh
+	// the DB flag. ErrNotExist is treated as an empty-state signal; all
+	// other read/parse errors are warned so operators can diagnose.
 	var albums []artist.DiscographyAlbum
-	if a.Path != "" && a.NFOExists {
+	if a.Path != "" {
 		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		if parsed := parseNFOFile(nfoPath); parsed != nil {
+		parsed, err := parseNFOFile(nfoPath)
+		switch {
+		case err == nil:
 			albums = discographyFromNFO(parsed)
-		} else {
-			r.logger.Warn("failed to parse artist.nfo for discography tab", "artist_id", artistID, "path", nfoPath)
+		case errors.Is(err, os.ErrNotExist):
+			// No file on disk: render empty state silently.
+		default:
+			r.logger.Warn("failed to parse artist.nfo for discography tab",
+				"artist_id", artistID, "path", nfoPath, "error", err)
 		}
 	}
 

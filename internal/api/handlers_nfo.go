@@ -44,7 +44,12 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 	onDiskNFO := dbNFO // default: identical, so no diff for pathless artists
 	if a.Path != "" {
 		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		onDiskNFO = parseNFOFile(nfoPath)
+		parsed, parseErr := parseNFOFile(nfoPath)
+		if parseErr == nil {
+			onDiskNFO = parsed
+		} else {
+			onDiskNFO = nil
+		}
 	}
 	diff := nfo.Diff(onDiskNFO, dbNFO)
 
@@ -270,17 +275,20 @@ func nfoWriterWarning(connType, libName string) string {
 	return label + " NFO writer is enabled and may overwrite changes"
 }
 
-// parseNFOFile parses an NFO file from disk, returning nil if it cannot be read.
-func parseNFOFile(path string) *nfo.ArtistNFO {
+// parseNFOFile parses an NFO file from disk. Returns (parsed, nil) on success,
+// (nil, err) on failure. Callers can distinguish a missing file (os.ErrNotExist)
+// from a parse error via errors.Is, so they can treat absence as an empty state
+// while still surfacing corruption or IO errors.
+func parseNFOFile(path string) (*nfo.ArtistNFO, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: path is constructed from trusted artist.Path, not user input
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer f.Close() //nolint:errcheck
 
 	parsed, err := nfo.Parse(f)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return parsed
+	return parsed, nil
 }
