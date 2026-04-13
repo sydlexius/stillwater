@@ -336,8 +336,16 @@ func TestApplyMemberRefresh(t *testing.T) {
 		}
 		r.applyMemberRefresh(context.Background(), a.ID, result)
 
-		if n := countMembers(t, a.ID); n != 1 {
-			t.Errorf("expected 1 member after nonempty upsert, got %d", n)
+		saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("listing members after upsert: %v", err)
+		}
+		if len(saved) != 1 {
+			t.Fatalf("expected 1 member after nonempty upsert, got %d", len(saved))
+		}
+		if saved[0].MemberName != "Dave" || saved[0].MemberMBID != "mb-dave" || saved[0].SortOrder != 0 {
+			t.Errorf("unexpected persisted member: name=%q mbid=%q sort=%d",
+				saved[0].MemberName, saved[0].MemberMBID, saved[0].SortOrder)
 		}
 	})
 
