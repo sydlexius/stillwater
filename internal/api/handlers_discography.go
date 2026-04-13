@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -9,6 +10,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/web/templates"
 )
+
+// writeDiscographyJSONError writes a JSON error payload matching the
+// OpenAPI Error contract for the discography tab endpoint.
+func writeDiscographyJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+}
 
 // handleArtistDiscographyTab renders the Discography tab fragment for the
 // artist detail page. Album entries are sourced from the on-disk artist.nfo
@@ -23,11 +32,11 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		if errors.Is(err, artist.ErrNotFound) {
-			http.Error(w, "artist not found", http.StatusNotFound)
+			writeDiscographyJSONError(w, http.StatusNotFound, "artist not found")
 			return
 		}
 		r.logger.Error("loading artist for discography tab", "artist_id", artistID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeDiscographyJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -36,8 +45,11 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 	// through the standard repository load path today).
 	var albums []artist.DiscographyAlbum
 	if a.Path != "" && a.NFOExists {
-		if parsed := parseNFOFile(filepath.Join(a.Path, "artist.nfo")); parsed != nil {
+		nfoPath := filepath.Join(a.Path, "artist.nfo")
+		if parsed := parseNFOFile(nfoPath); parsed != nil {
 			albums = discographyFromNFO(parsed)
+		} else {
+			r.logger.Warn("failed to parse artist.nfo for discography tab", "artist_id", artistID, "path", nfoPath)
 		}
 	}
 
