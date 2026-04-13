@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -175,8 +176,12 @@ func TestValidateConfig(t *testing.T) {
 		cfg := &ScraperConfig{
 			Fields: []FieldConfig{{Field: "bogus", Primary: provider.NameMusicBrainz}},
 		}
-		if err := ValidateConfig(cfg); err == nil {
-			t.Error("ValidateConfig with unknown field returned nil error")
+		err := ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("ValidateConfig with unknown field returned nil error")
+		}
+		if !strings.Contains(err.Error(), "unknown field name") {
+			t.Errorf("err = %v, want substring %q", err, "unknown field name")
 		}
 	})
 
@@ -184,8 +189,12 @@ func TestValidateConfig(t *testing.T) {
 		cfg := &ScraperConfig{
 			Fields: []FieldConfig{{Field: FieldBiography, Primary: "not-a-provider"}},
 		}
-		if err := ValidateConfig(cfg); err == nil {
-			t.Error("ValidateConfig with unknown provider returned nil error")
+		err := ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("ValidateConfig with unknown provider returned nil error")
+		}
+		if !strings.Contains(err.Error(), "unknown provider name") {
+			t.Errorf("err = %v, want substring %q", err, "unknown provider name")
 		}
 	})
 
@@ -204,8 +213,12 @@ func TestValidateConfig(t *testing.T) {
 				{Category: CategoryMetadata, Providers: []provider.ProviderName{"nope"}},
 			},
 		}
-		if err := ValidateConfig(cfg); err == nil {
-			t.Error("ValidateConfig with unknown fallback provider returned nil error")
+		err := ValidateConfig(cfg)
+		if err == nil {
+			t.Fatal("ValidateConfig with unknown fallback provider returned nil error")
+		}
+		if !strings.Contains(err.Error(), "unknown provider name in fallback chain") {
+			t.Errorf("err = %v, want substring %q", err, "unknown provider name in fallback chain")
 		}
 	})
 }
