@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -233,8 +234,9 @@ func TestUpsertMembers_NilSliceClearsExisting(t *testing.T) {
 }
 
 // TestConvertProviderMembers_EmptyInput verifies that convertProviderMembers
-// returns an empty (non-nil) slice when given nil input, so UpsertMembers
-// receives a valid slice that triggers the delete-all path.
+// returns an empty (non-nil) slice when given nil input. The guard in
+// executeRefresh skips UpsertMembers when Members is empty, so this path
+// is informational -- verifying the converter itself is well-behaved.
 func TestConvertProviderMembers_EmptyInput(t *testing.T) {
 	result := convertProviderMembers("artist-1", nil)
 	if result == nil {
@@ -295,18 +297,13 @@ func TestMembersAttemptedGuard(t *testing.T) {
 	}
 
 	// Simulate the same guard logic from executeRefresh:
-	// if "members" is in AttemptedFields, call UpsertMembers (even with empty slice).
+	// if "members" is in AttemptedFields AND the list is non-empty, call UpsertMembers.
+	// An empty result is treated as incomplete data, not an intentional clear.
 	// If "members" is NOT in AttemptedFields, skip -- preserve existing members.
 	applyMembersGuard := func(artistID string, result *provider.FetchResult, svc *artist.Service) {
 		if result.Metadata != nil {
-			membersAttempted := false
-			for _, f := range result.AttemptedFields {
-				if f == "members" {
-					membersAttempted = true
-					break
-				}
-			}
-			if membersAttempted {
+			membersAttempted := slices.Contains(result.AttemptedFields, "members")
+			if membersAttempted && len(result.Metadata.Members) > 0 {
 				members := convertProviderMembers(artistID, result.Metadata.Members)
 				if err := svc.UpsertMembers(context.Background(), artistID, members); err != nil {
 					// In production this is logged at Warn and execution continues,
@@ -317,7 +314,7 @@ func TestMembersAttemptedGuard(t *testing.T) {
 		}
 	}
 
-	t.Run("members_attempted_empty_clears", func(t *testing.T) {
+	t.Run("members_attempted_empty_preserves", func(t *testing.T) {
 		a := addTestArtist(t, artistSvc, "Guard Test Band 1")
 		seedMembers(t, a.ID)
 
@@ -325,15 +322,41 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			t.Fatalf("expected 2 seeded members, got %d", n)
 		}
 
-		// Provider attempted "members" but returned empty list.
+		// Provider attempted "members" but returned empty list. Empty is treated
+		// as incomplete MB data, not an intentional clear -- members are preserved.
 		result := &provider.FetchResult{
 			Metadata:        &provider.ArtistMetadata{Members: nil},
 			AttemptedFields: []string{"biography", "members"},
 		}
 		applyMembersGuard(a.ID, result, artistSvc)
 
-		if n := countMembers(t, a.ID); n != 0 {
-			t.Errorf("expected 0 members after attempted-empty refresh, got %d", n)
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Errorf("expected 2 members preserved after attempted-empty refresh, got %d", n)
+		}
+	})
+
+	t.Run("members_attempted_nonempty_upserts", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Guard Test Band 4")
+		seedMembers(t, a.ID)
+
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Fatalf("expected 2 seeded members, got %d", n)
+		}
+
+		// Provider attempted "members" and returned a non-empty list. Members
+		// should be replaced with the provider data.
+		result := &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{
+					{Name: "Dave", MBID: "mb-dave"},
+				},
+			},
+			AttemptedFields: []string{"members"},
+		}
+		applyMembersGuard(a.ID, result, artistSvc)
+
+		if n := countMembers(t, a.ID); n != 1 {
+			t.Errorf("expected 1 member after nonempty upsert, got %d", n)
 		}
 	})
 
