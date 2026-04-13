@@ -53,6 +53,7 @@ type RunResult struct {
 // with stubs instead of requiring a full Engine, Service, and Fixer chain.
 type PipelineRunner interface {
 	RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
+	RunImageRulesForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
 	RunRule(ctx context.Context, ruleID string) (*RunResult, error)
 	RunAll(ctx context.Context) (*RunResult, error)
 	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
@@ -256,8 +257,23 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 }
 
 // RunForArtist evaluates rules and attempts fixes for a single artist,
-// respecting each rule's AutomationMode.
+// respecting each rule's AutomationMode. All categories are considered.
 func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error) {
+	return p.runForArtistFiltered(ctx, a, "")
+}
+
+// RunImageRulesForArtist is the fetch-images counterpart to RunForArtist:
+// it runs only violations whose rule category is "image", so callers like
+// the bulk-actions fetch_images path cannot accidentally mutate non-image
+// metadata/NFO state via auto-mode fixers for other categories.
+func (p *Pipeline) RunImageRulesForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error) {
+	return p.runForArtistFiltered(ctx, a, "image")
+}
+
+// runForArtistFiltered is the shared body of RunForArtist and
+// RunImageRulesForArtist. An empty categoryFilter runs every violation;
+// a non-empty value runs only violations whose Category matches exactly.
+func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, categoryFilter string) (*RunResult, error) {
 	result := &RunResult{}
 
 	if a.IsExcluded || a.Locked {
@@ -280,6 +296,9 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 
 	for j := range eval.Violations {
 		v := &eval.Violations[j]
+		if categoryFilter != "" && v.Category != categoryFilter {
+			continue
+		}
 		result.ViolationsFound++
 
 		// Look up rule to determine automation mode.

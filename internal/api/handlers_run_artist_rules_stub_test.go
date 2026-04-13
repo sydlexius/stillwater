@@ -23,12 +23,23 @@ import (
 // stubPipeline is a test double for rule.PipelineRunner that returns
 // preconfigured results without requiring a real Engine or Service.
 type stubPipeline struct {
-	runForArtistFn func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
-	runRuleFn      func(ctx context.Context, ruleID string) (*rule.RunResult, error)
-	fixViolationFn func(ctx context.Context, violationID string) (*rule.FixResult, error)
+	runForArtistFn  func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
+	runImageRulesFn func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
+	runRuleFn       func(ctx context.Context, ruleID string) (*rule.RunResult, error)
+	fixViolationFn  func(ctx context.Context, violationID string) (*rule.FixResult, error)
 }
 
 func (s *stubPipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*rule.RunResult, error) {
+	if s.runForArtistFn != nil {
+		return s.runForArtistFn(ctx, a)
+	}
+	return &rule.RunResult{}, nil
+}
+
+func (s *stubPipeline) RunImageRulesForArtist(ctx context.Context, a *artist.Artist) (*rule.RunResult, error) {
+	if s.runImageRulesFn != nil {
+		return s.runImageRulesFn(ctx, a)
+	}
 	if s.runForArtistFn != nil {
 		return s.runForArtistFn(ctx, a)
 	}

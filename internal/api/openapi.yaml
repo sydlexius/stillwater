@@ -3915,7 +3915,7 @@ paths:
       operationId: getBulkActionStatus
       responses:
         "200":
-          description: Current or most recent bulk-action snapshot; returns idle only when no snapshot exists yet.
+          description: Returns live progress while a bulk action is running, or the most recent completed/failed snapshot once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
           content:
             application/json:
               schema:

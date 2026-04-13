@@ -812,12 +812,15 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var selectAll = document.getElementById('bulk-select-all');
 					var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
 					var i18nNone = bar.getAttribute('data-i18n-none') || 'None selected';
-					var i18nSelected = bar.getAttribute('data-i18n-selected') || '{n} selected';
+					var i18nSelectedOne = bar.getAttribute('data-i18n-selected-one') || '1 selected';
+					var i18nSelectedOther = bar.getAttribute('data-i18n-selected-other') || '{count} selected';
 					if (countEl) {
 						if (selected.size === 0) {
 							countEl.textContent = i18nNone;
+						} else if (selected.size === 1) {
+							countEl.textContent = i18nSelectedOne;
 						} else {
-							countEl.textContent = i18nSelected.replace('{n}', String(selected.size));
+							countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
 						}
 					}
 					if (applyBtn) applyBtn.disabled = selected.size === 0 || !selectEl || !selectEl.value;
@@ -920,11 +923,35 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					});
 				});
 
+				// Scope token: filter-identifying params only. If any of
+				// these change across an htmx swap, the user is looking
+				// at a different result set and the previous selection is
+				// no longer meaningful. Pagination and sort do NOT reset
+				// selection so the user can page through filtered results
+				// while preserving their selection.
+				function currentScopeToken() {
+					var p = new URLSearchParams(window.location.search);
+					var keys = [];
+					p.forEach(function(_v, k) {
+						if (k === 'search' || k === 'library_id' || k.indexOf('filter_') === 0) {
+							keys.push(k);
+						}
+					});
+					keys.sort();
+					return keys.map(function(k) { return k + '=' + p.get(k); }).join('&');
+				}
+				var lastScopeToken = currentScopeToken();
+
 				// Re-sync on initial load and after every HTMX swap of the
 				// artist content (pagination, filter change, etc.).
 				document.addEventListener('DOMContentLoaded', updateBar);
 				document.body.addEventListener('htmx:afterSwap', function(evt) {
 					if (evt.detail.target && evt.detail.target.id === 'artist-content') {
+						var currentToken = currentScopeToken();
+						if (currentToken !== lastScopeToken) {
+							selected.clear();
+							lastScopeToken = currentToken;
+						}
 						updateBar();
 					}
 				});
@@ -948,7 +975,8 @@ templ BulkActionBar(data ArtistListData) {
 			role="toolbar"
 			aria-label={ t(ctx, "artists.bulk.toolbar") }
 			data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
-			data-i18n-selected={ t(ctx, "artists.bulk.selected") }
+			data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
+			data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
 			data-i18n-busy={ t(ctx, "artists.bulk.busy") }
 			data-i18n-failed={ t(ctx, "artists.bulk.failed") }
 			data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }

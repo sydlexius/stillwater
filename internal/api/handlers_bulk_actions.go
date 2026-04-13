@@ -89,11 +89,25 @@ func validActions(s string) bool {
 // POST /api/v1/artists/bulk-actions
 func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 	// Parse and validate the request body before claiming the singleton slot
-	// so a malformed request cannot lock out legitimate ones.
+	// so a malformed request cannot lock out legitimate ones. The 1 MiB cap
+	// on the raw body is enforced before JSON decoding so a hostile caller
+	// cannot force a large allocation to reach the downstream per-request
+	// MaxBulkActionIDs cap.
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 	var body bulkActionRequest
 	dec := json.NewDecoder(req.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	// Reject bodies that contain extra JSON tokens after the object so
+	// `{...}{...}` smuggling or accidental concatenation does not silently
+	// succeed on only the first object.
+	if err := dec.Decode(&struct{}{}); err == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unexpected trailing data in body"})
+		return
+	} else if !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
@@ -315,13 +329,21 @@ const (
 // the progress counters uniformly.
 func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.Artist, connIdx *connectionIndex) bulkOutcome {
 	switch action {
-	case BulkActionRunRules, BulkActionFetchImages:
-		// Both actions flow through the rule pipeline. run_rules evaluates
-		// every enabled rule and auto-fixes those in auto mode; image rules
-		// in auto mode will fetch missing art as a side effect, which is
-		// the natural implementation of "fetch images".
+	case BulkActionRunRules:
+		// run_rules evaluates every enabled rule and auto-fixes those in
+		// auto mode.
 		if _, err := r.pipeline.RunForArtist(ctx, a); err != nil {
 			r.logger.Warn("bulk action: RunForArtist failed", "action", action, "artist_id", a.ID, "error", err)
+			return bulkOutcomeFailed
+		}
+		return bulkOutcomeSucceeded
+
+	case BulkActionFetchImages:
+		// fetch_images must be scoped to image-category rules so it cannot
+		// mutate NFO/metadata as a side effect of auto-mode fixers firing
+		// for other categories.
+		if _, err := r.pipeline.RunImageRulesForArtist(ctx, a); err != nil {
+			r.logger.Warn("bulk action: RunImageRulesForArtist failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed
 		}
 		return bulkOutcomeSucceeded
