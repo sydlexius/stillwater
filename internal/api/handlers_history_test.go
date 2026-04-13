@@ -675,8 +675,11 @@ func TestHandleActivityContent_RendersRow(t *testing.T) {
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	a := addTestArtist(t, artistSvc, "Activity Row Artist")
 
-	addHistoryChange(t, historySvc, a.ID, "biography",
-		"old biography text", "new biography text", "manual")
+	// Use long (>300 char) multi-line values so this test catches regressions
+	// in either 300-char truncation or newline rendering (whitespace-pre-wrap).
+	oldVal := "old biography line 1\n" + strings.Repeat("A", 340)
+	newVal := "new biography line 1\nnew biography line 2\n" + strings.Repeat("B", 340)
+	addHistoryChange(t, historySvc, a.ID, "biography", oldVal, newVal, "manual")
 
 	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/activity/content", nil)
@@ -688,10 +691,13 @@ func TestHandleActivityContent_RendersRow(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "old biography text") {
-		t.Error("response missing old value in activity row")
+	if !strings.Contains(body, oldVal) {
+		t.Error("response missing full old value in activity row (truncation regression?)")
 	}
-	if !strings.Contains(body, "new biography text") {
-		t.Error("response missing new value in activity row")
+	if !strings.Contains(body, newVal) {
+		t.Error("response missing full new value in activity row (truncation regression?)")
+	}
+	if !strings.Contains(body, "whitespace-pre-wrap") {
+		t.Error("response missing whitespace-pre-wrap class (multiline rendering regression?)")
 	}
 }
