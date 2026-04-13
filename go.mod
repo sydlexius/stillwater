@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.0
 	golang.org/x/crypto v0.50.0
-	golang.org/x/image v0.38.0
+	golang.org/x/image v0.39.0
 	golang.org/x/net v0.53.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.42.0
