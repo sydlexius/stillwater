@@ -130,6 +130,8 @@ type Router struct {
 	fixAllMu           sync.RWMutex
 	identifyProgress   *IdentifyProgress
 	identifyMu         sync.RWMutex
+	bulkActionProgress *BulkActionProgress
+	bulkActionMu       sync.RWMutex
 	undoStore          *rule.UndoStore
 	sseHub             *SSEHub
 	i18nBundle         *i18n.Bundle
@@ -412,6 +414,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyProgress, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyCancel, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-identify/link", wrapAuth(r.handleBulkIdentifyLink, authMw))
+
+	// Bulk actions over an explicit artist ID list (run rules, re-identify,
+	// scan, fetch images). Singleton with 409 on concurrent start.
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-actions", wrapAuth(r.handleBulkAction, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/bulk-actions/status", wrapAuth(r.handleBulkActionStatus, authMw))
 
 	// SSE event stream
 	mux.HandleFunc("GET "+bp+"/api/v1/events/stream", wrapAuth(r.handleSSEStream, authMw))
