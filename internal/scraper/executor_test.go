@@ -504,3 +504,73 @@ func TestApplyMergeableFields_NonMBFillsEmpty(t *testing.T) {
 		t.Errorf("non-MB should fill empty SortName; got %s", result.Metadata.SortName)
 	}
 }
+
+// TestApplyFieldValueDetailFields covers the detail-field cases added to
+// applyFieldValue (years_active, type, gender). Each case must return true
+// and write the value when populated, and return false when empty.
+func TestApplyFieldValueDetailFields(t *testing.T) {
+	cases := []struct {
+		name     string
+		field    FieldName
+		meta     provider.ArtistMetadata
+		want     string
+		readBack func(*provider.ArtistMetadata) string
+	}{
+		{
+			name:     "years_active populated",
+			field:    FieldYearsActive,
+			meta:     provider.ArtistMetadata{YearsActive: "1980-1990"},
+			want:     "1980-1990",
+			readBack: func(m *provider.ArtistMetadata) string { return m.YearsActive },
+		},
+		{
+			name:     "type populated",
+			field:    FieldType,
+			meta:     provider.ArtistMetadata{Type: "Group"},
+			want:     "Group",
+			readBack: func(m *provider.ArtistMetadata) string { return m.Type },
+		},
+		{
+			name:     "gender populated",
+			field:    FieldGender,
+			meta:     provider.ArtistMetadata{Gender: "Female"},
+			want:     "Female",
+			readBack: func(m *provider.ArtistMetadata) string { return m.Gender },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+			pr := &providerResult{meta: &tc.meta}
+			if !applyFieldValue(tc.field, pr, result) {
+				t.Fatalf("applyFieldValue(%s) populated = false, want true", tc.field)
+			}
+			if got := tc.readBack(result.Metadata); got != tc.want {
+				t.Errorf("applyFieldValue(%s) wrote %q, want %q", tc.field, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestApplyFieldValueDetailFieldsEmpty verifies that the new detail-field
+// branches return false without mutating the result when source metadata is
+// empty, so an empty scrape never clobbers an existing value.
+func TestApplyFieldValueDetailFieldsEmpty(t *testing.T) {
+	fields := []FieldName{FieldYearsActive, FieldType, FieldGender}
+	for _, f := range fields {
+		t.Run(string(f), func(t *testing.T) {
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{
+				YearsActive: "keep", Type: "keep", Gender: "keep",
+			}}
+			pr := &providerResult{meta: &provider.ArtistMetadata{}}
+			if applyFieldValue(f, pr, result) {
+				t.Errorf("applyFieldValue(%s) with empty meta = true, want false", f)
+			}
+			if result.Metadata.YearsActive != "keep" ||
+				result.Metadata.Type != "keep" ||
+				result.Metadata.Gender != "keep" {
+				t.Errorf("applyFieldValue(%s) mutated result on empty source: %+v", f, result.Metadata)
+			}
+		})
+	}
+}
