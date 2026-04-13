@@ -7,4 +7,4 @@ coverage:
 
 ignore:
   # Templ codegen output -- byte-for-byte compiler output, not hand-written.
-  - "web/templates/**_templ.go"
+  - "**/*_templ.go"

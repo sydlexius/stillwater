@@ -397,6 +397,25 @@ func TestApplyMemberRefresh(t *testing.T) {
 			t.Errorf("expected 2 members preserved (nil metadata), got %d", n)
 		}
 	})
+
+	t.Run("upsert_error_logged_not_propagated", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Guard Test Band 5")
+
+		// Close the DB so UpsertMembers returns an error. The function must
+		// log at Warn and continue without panicking or returning an error.
+		_ = r.db.Close()
+
+		result := &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{
+					{Name: "Eve", MBID: "mb-eve"},
+				},
+			},
+			AttemptedFields: []string{"members"},
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result)
+		// No assertions beyond "did not panic" -- error is swallowed by design.
+	})
 }
 
 // TestRunRulesAfterRefresh_InvokesPipeline verifies that runRulesAfterRefresh
