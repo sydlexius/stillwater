@@ -1801,9 +1801,11 @@ paths:
       tags: [Artists]
       summary: Lock a single metadata field
       description: |
-        Adds the named field to the artist's locked-field set so that automated
-        refresh operations skip it. On Emby-backed artists this value is the
-        local mirror of Emby's LockedFields and can be synced back to the server.
+        Adds the named field to the artist's locked-field set. This is persisted
+        state that Stillwater mirrors to Emby's LockedFields via the connection
+        sync path. Refresh-cycle enforcement (skipping locked fields on rewrite)
+        is implemented per-rule at the refresh layer and is not guaranteed by
+        this endpoint in isolation.
       operationId: lockArtistField
       parameters:
         - name: id
@@ -1863,9 +1865,11 @@ paths:
       tags: [Artists]
       summary: Lock a single artist image slot
       description: |
-        Sets the lock flag on a single artist_images row so that automated
-        refresh cycles will not overwrite it. The imageId must belong to the
-        artist identified by the path id.
+        Sets the locked flag on the matching artist_images row. This is
+        persisted state. Whether a given refresh/rewrite path honours the flag
+        is implemented per-publisher and is not guaranteed by this endpoint in
+        isolation. The imageId must belong to the artist identified by the
+        path id.
       operationId: lockArtistImage
       parameters:
         - name: id

@@ -396,7 +396,12 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 // the LockedFields property. Any value not present here is dropped from the
 // payload so we never send enum values Emby does not recognize.
 var embyLockedFieldCanonical = map[string]string{
-	"name":                "Name",
+	"name": "Name",
+	// Stillwater exposes "biography" as the user-facing lock key, but Emby's
+	// MetadataFields enum names the underlying storage "Overview" (see the
+	// Get path at line 190 which also fetches Fields=Overview). Both aliases
+	// map to the same PascalCase value so lock UI using either term syncs.
+	"biography":           "Overview",
 	"overview":            "Overview",
 	"genres":              "Genres",
 	"cast":                "Cast",
