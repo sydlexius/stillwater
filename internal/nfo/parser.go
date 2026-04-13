@@ -18,7 +18,7 @@ var knownElements = map[string]bool{
 	"genre": true, "style": true, "mood": true, "yearsactive": true,
 	"born": true, "formed": true, "died": true, "disbanded": true,
 	"biography": true, "thumb": true, "fanart": true, "lockdata": true,
-	"stillwater": true,
+	"stillwater": true, "album": true,
 }
 
 // htmlEntityReplacer handles common HTML entities that are not valid XML.
@@ -220,6 +220,16 @@ func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start 
 			return err
 		}
 		nfo.LockData = parseBoolString(s)
+	case "album":
+		album := DiscographyAlbum{}
+		if err := parseAlbum(decoder, &album); err != nil {
+			return err
+		}
+		// Preserve empty <album/> entries if callers include them; skip
+		// wholly-empty entries to avoid polluting round-tripped output.
+		if album.Title != "" || album.Year != "" || album.MusicBrainzReleaseGroupID != "" {
+			nfo.Albums = append(nfo.Albums, album)
+		}
 	case "stillwater":
 		nfo.Stillwater = &StillwaterMeta{}
 		for _, attr := range start.Attr {
@@ -269,6 +279,42 @@ func parseFanart(decoder *xml.Decoder, fanart *Fanart) error {
 			}
 		case xml.EndElement:
 			if t.Name.Local == "fanart" {
+				return nil
+			}
+		}
+	}
+}
+
+// parseAlbum reads the child elements of a single <album> entry.
+// Unknown children are skipped to keep the discography list well-formed.
+func parseAlbum(decoder *xml.Decoder, album *DiscographyAlbum) error {
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "title":
+				if err := decodeCharData(decoder, &album.Title); err != nil {
+					return err
+				}
+			case "year":
+				if err := decodeCharData(decoder, &album.Year); err != nil {
+					return err
+				}
+			case "musicbrainzreleasegroupid":
+				if err := decodeCharData(decoder, &album.MusicBrainzReleaseGroupID); err != nil {
+					return err
+				}
+			default:
+				if err := decoder.Skip(); err != nil {
+					return err
+				}
+			}
+		case xml.EndElement:
+			if t.Name.Local == "album" {
 				return nil
 			}
 		}
@@ -382,6 +428,12 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 			nfo.Stillwater.Version, nfo.Stillwater.Written)
 	}
 
+	// Write discography <album> entries after metadata but before image
+	// references, matching the Kodi NFO ordering convention.
+	for _, album := range nfo.Albums {
+		writeAlbum(w, album)
+	}
+
 	for _, thumb := range nfo.Thumbs {
 		writeThumb(w, thumb)
 	}
@@ -419,6 +471,32 @@ func writeElement(w io.Writer, name, value string) {
 		return
 	}
 	fmt.Fprintf(w, "  <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck
+}
+
+// writeAlbum writes a single <album> entry with title, year, and optional
+// MusicBrainz release group ID. Empty entries are skipped to keep output tidy.
+func writeAlbum(w io.Writer, a DiscographyAlbum) {
+	if a.Title == "" && a.Year == "" && a.MusicBrainzReleaseGroupID == "" {
+		return
+	}
+	fmt.Fprintf(w, "  <album>\n") //nolint:errcheck
+	writeInnerElement(w, "title", a.Title)
+	writeInnerElement(w, "year", a.Year)
+	writeInnerElement(w, "musicbrainzreleasegroupid", a.MusicBrainzReleaseGroupID)
+	fmt.Fprintf(w, "  </album>\n") //nolint:errcheck
+}
+
+// writeInnerElement writes a nested XML element with four-space indent.
+// Used for children of structured elements like <album>.
+func writeInnerElement(w io.Writer, name, value string) {
+	if value == "" {
+		return
+	}
+	var buf bytes.Buffer
+	if err := xml.EscapeText(&buf, []byte(value)); err != nil {
+		return
+	}
+	fmt.Fprintf(w, "    <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck
 }
 
 // writeThumb writes a <thumb> element with optional attributes.

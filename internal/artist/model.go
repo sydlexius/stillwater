@@ -72,8 +72,22 @@ type Artist struct {
 	LastFMFetchedAt     *time.Time        `json:"lastfm_fetched_at,omitempty"`
 	MetadataSources     map[string]string `json:"metadata_sources,omitempty"`
 	LastScannedAt       *time.Time        `json:"last_scanned_at,omitempty"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	// Discography captures the artist's album entries parsed from the NFO.
+	// This is a transient field populated on NFO read; it is not persisted
+	// to the database in this release.
+	Discography []DiscographyAlbum `json:"discography,omitempty"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+}
+
+// DiscographyAlbum is the artist-domain representation of a single NFO
+// <album> entry. It mirrors nfo.DiscographyAlbum but lives in the artist
+// package so callers outside the nfo package can reference it without
+// pulling the XML model in.
+type DiscographyAlbum struct {
+	Title                     string `json:"title"`
+	Year                      string `json:"year,omitempty"`
+	MusicBrainzReleaseGroupID string `json:"musicbrainz_release_group_id,omitempty"`
 }
 
 // ProviderIDMap returns the artist's provider-specific IDs as a map keyed by
