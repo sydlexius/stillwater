@@ -362,4 +362,11 @@ func TestImageLocks(t *testing.T) {
 	if imgs[0].Locked {
 		t.Error("expected image to be unlocked after SetImageLock(false)")
 	}
+
+	t.Run("nonexistent image returns ErrNotFound", func(t *testing.T) {
+		err := svc.SetImageLock(ctx, "no-such-image", true)
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got %v", err)
+		}
+	})
 }

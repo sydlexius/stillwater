@@ -135,3 +135,51 @@ func TestHandleLockArtistImage(t *testing.T) {
 		t.Error("expected image to be unlocked after DELETE")
 	}
 }
+
+// TestHandleUnlockArtistField_NotFound verifies 404 from the DELETE endpoint
+// when the artist does not exist.
+func TestHandleUnlockArtistField_NotFound(t *testing.T) {
+	r, _ := testRouter(t)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/missing/field-locks/biography", nil)
+	req.SetPathValue("id", "missing")
+	req.SetPathValue("field", "biography")
+	w := httptest.NewRecorder()
+	r.handleUnlockArtistField(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleLockArtistImage_MissingArtist verifies 404 when the artist id in
+// the path does not resolve to any images (GetImagesForArtist returns empty,
+// so the ownership check fails).
+func TestHandleLockArtistImage_MissingArtist(t *testing.T) {
+	r, _ := testRouter(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/image-locks/img-1", nil)
+	req.SetPathValue("id", "missing")
+	req.SetPathValue("imageId", "img-1")
+	w := httptest.NewRecorder()
+	r.handleLockArtistImage(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestHandleUnlockArtistImage_WrongImage verifies 404 when the imageId does
+// not belong to the artist on the DELETE path.
+func TestHandleUnlockArtistImage_WrongImage(t *testing.T) {
+	r, svc := testRouter(t)
+	ctx := context.Background()
+	a := &artist.Artist{Name: "Unlock Wrong", Path: "/music/unlock-wrong"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/image-locks/bogus", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("imageId", "bogus")
+	w := httptest.NewRecorder()
+	r.handleUnlockArtistImage(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}

@@ -253,7 +253,7 @@ func (r *sqliteImageRepo) SetLock(ctx context.Context, imageID string, locked bo
 		return fmt.Errorf("reading image lock rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("image not found: %s", imageID)
+		return fmt.Errorf("%w: image %s", ErrNotFound, imageID)
 	}
 	return nil
 }

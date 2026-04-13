@@ -1012,9 +1012,10 @@ components:
           description: Timestamp when the lock was applied. Omitted when not locked.
         locked_fields:
           type: array
+          uniqueItems: true
           items:
             type: string
-          description: Field names that are locked at the field level. Independent of the whole-artist lock. Round-trips to Emby's LockedFields.
+          description: Lowercased field names locked at the field level. Values are deduplicated. Independent of the whole-artist lock. Round-trips to Emby's LockedFields.
         audiodb_id_fetched_at:
           type: string
           format: date-time

@@ -392,7 +392,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								<button
 									type="button"
 									class="ml-1 text-amber-700 dark:text-amber-400 hover:text-amber-900"
-									hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/field-locks/" + f }
+									hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/field-locks/" + url.PathEscape(f) }
 									hx-swap="none"
 									hx-trigger="click"
 									aria-label={ t(ctx, "artist.unlock_field") }

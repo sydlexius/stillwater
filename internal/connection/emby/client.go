@@ -378,10 +378,7 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 		return fmt.Errorf("fetching artist for lock update: %w", err)
 	}
 	item["LockData"] = lockData
-	if lockedFields == nil {
-		lockedFields = []string{}
-	}
-	item["LockedFields"] = lockedFields
+	item["LockedFields"] = canonicalizeLockedFields(lockedFields)
 
 	body, err := json.Marshal(item)
 	if err != nil {
@@ -392,6 +389,51 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 		return fmt.Errorf("posting artist lock update: %w", err)
 	}
 	return nil
+}
+
+// embyLockedFieldCanonical maps the lowercase field names Stillwater stores in
+// the database to the PascalCase values Emby's MetadataFields enum expects on
+// the LockedFields property. Any value not present here is dropped from the
+// payload so we never send enum values Emby does not recognize.
+var embyLockedFieldCanonical = map[string]string{
+	"name":                "Name",
+	"overview":            "Overview",
+	"genres":              "Genres",
+	"cast":                "Cast",
+	"productionlocations": "ProductionLocations",
+	"tags":                "Tags",
+	"studios":             "Studios",
+	"images":              "Images",
+	"backdrops":           "Backdrops",
+	"sortname":            "SortName",
+	"officialrating":      "OfficialRating",
+	"parentalrating":      "ParentalRating",
+	"runtime":             "Runtime",
+}
+
+// canonicalizeLockedFields converts Stillwater's lowercase locked field names
+// into Emby's canonical PascalCase MetadataFields enum values. Unknown names
+// are dropped (strict allow-list). The returned slice is always non-nil so
+// Emby receives an empty array rather than null when no fields are locked.
+func canonicalizeLockedFields(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, f := range in {
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		canon, ok := embyLockedFieldCanonical[key]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[canon]; dup {
+			continue
+		}
+		seen[canon] = struct{}{}
+		out = append(out, canon)
+	}
+	return out
 }
 
 func (c *Client) setAuth(req *http.Request) {
