@@ -1,9 +1,9 @@
 coverage:
   patch:
     default:
-      # Threshold is checked against patch lines only.
-      # Generated template files (*_templ.go) are excluded below.
-      threshold: 70%
+      # Minimum patch coverage required -- fails CI if new lines are under-tested.
+      # Generated template files (*_templ.go) are excluded via the ignore list below.
+      target: 70%
 
 ignore:
   # Templ codegen output -- byte-for-byte compiler output, not hand-written.
