@@ -125,4 +125,87 @@ func TestAllFieldNames(t *testing.T) {
 		}
 		seen[n] = true
 	}
+
+	// Explicitly verify that the newly-added detail fields are present.
+	// Length alone is not sufficient: a swap could satisfy the count check
+	// while dropping one of the required field names.
+	required := map[FieldName]bool{
+		FieldYearsActive: false,
+		FieldType:        false,
+		FieldGender:      false,
+	}
+	for _, n := range names {
+		if _, ok := required[n]; ok {
+			required[n] = true
+		}
+	}
+	for f, found := range required {
+		if !found {
+			t.Errorf("missing field name: %s", f)
+		}
+	}
+}
+
+// TestIsValidFieldName verifies that every known field is accepted and that
+// unknown values are rejected.
+func TestIsValidFieldName(t *testing.T) {
+	for _, f := range AllFieldNames() {
+		if !IsValidFieldName(f) {
+			t.Errorf("IsValidFieldName(%q) = false, want true", f)
+		}
+	}
+	for _, bad := range []FieldName{"", "unknown", "BIOGRAPHY", "thumbnail"} {
+		if IsValidFieldName(bad) {
+			t.Errorf("IsValidFieldName(%q) = true, want false", bad)
+		}
+	}
+}
+
+// TestValidateConfig exercises the success path and each failure branch of
+// ValidateConfig (unknown field, unknown primary provider, unknown provider
+// in fallback chain).
+func TestValidateConfig(t *testing.T) {
+	t.Run("default config is valid", func(t *testing.T) {
+		if err := ValidateConfig(DefaultConfig()); err != nil {
+			t.Errorf("ValidateConfig(DefaultConfig()) = %v, want nil", err)
+		}
+	})
+
+	t.Run("unknown field", func(t *testing.T) {
+		cfg := &ScraperConfig{
+			Fields: []FieldConfig{{Field: "bogus", Primary: provider.NameMusicBrainz}},
+		}
+		if err := ValidateConfig(cfg); err == nil {
+			t.Error("ValidateConfig with unknown field returned nil error")
+		}
+	})
+
+	t.Run("unknown primary provider", func(t *testing.T) {
+		cfg := &ScraperConfig{
+			Fields: []FieldConfig{{Field: FieldBiography, Primary: "not-a-provider"}},
+		}
+		if err := ValidateConfig(cfg); err == nil {
+			t.Error("ValidateConfig with unknown provider returned nil error")
+		}
+	})
+
+	t.Run("empty primary is allowed", func(t *testing.T) {
+		cfg := &ScraperConfig{
+			Fields: []FieldConfig{{Field: FieldBiography, Primary: ""}},
+		}
+		if err := ValidateConfig(cfg); err != nil {
+			t.Errorf("ValidateConfig with empty primary = %v, want nil", err)
+		}
+	})
+
+	t.Run("unknown provider in fallback chain", func(t *testing.T) {
+		cfg := &ScraperConfig{
+			FallbackChains: []FallbackChain{
+				{Category: CategoryMetadata, Providers: []provider.ProviderName{"nope"}},
+			},
+		}
+		if err := ValidateConfig(cfg); err == nil {
+			t.Error("ValidateConfig with unknown fallback provider returned nil error")
+		}
+	})
 }
