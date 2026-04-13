@@ -6,8 +6,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
+COVER_OUT=$(mktemp /tmp/stillwater-cover.XXXXXX.out)
+trap 'rm -f "${COVER_OUT:-}"' EXIT
+
 echo "=== Tests ==="
-go test -race -count=1 ./...
+go test -race -count=1 -covermode=atomic -coverprofile="$COVER_OUT" ./...
 
 echo ""
 echo "=== OpenAPI consistency ==="
@@ -52,6 +55,30 @@ if command -v oasdiff &>/dev/null; then
   fi
 else
   echo "Skipped (oasdiff not installed -- install: go install github.com/oasdiff/oasdiff@latest)"
+fi
+
+echo ""
+echo "=== Coverage on changed files ==="
+changed_go=$(git diff "$BASE"..HEAD --name-only -- '*.go' | grep -v '_test.go' || true)
+if [ -z "$changed_go" ]; then
+  echo "Skipped (no Go source changes)."
+else
+  uncovered=""
+  while IFS= read -r f; do
+    hits=$(go tool cover -func="$COVER_OUT" 2>/dev/null | grep "/${f}:" | awk '$NF == "0.0%"' || true)
+    if [ -n "$hits" ]; then
+      uncovered="${uncovered}${hits}"$'\n'
+    fi
+  done <<< "$changed_go"
+
+  if [ -n "$uncovered" ]; then
+    echo "WARNING: Functions with 0% coverage in changed files:"
+    echo "$uncovered"
+    echo "These may be intentionally tested via integration or missing unit tests."
+    echo "Codecov will flag patch coverage -- consider adding tests before opening a PR."
+  else
+    echo "OK"
+  fi
 fi
 
 echo ""
