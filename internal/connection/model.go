@@ -33,6 +33,13 @@ type Connection struct {
 	FeatureMetadataPush   bool       `json:"feature_metadata_push"`
 	FeatureTriggerRefresh bool       `json:"feature_trigger_refresh"`
 	PlatformUserID        string     `json:"platform_user_id,omitempty"`
+	// PlatformServerID is the Emby/Jellyfin server identity returned by
+	// /System/Info. Web deep-links must include serverId=<id> so the
+	// platform client loads the correct item view; without it the URL
+	// lands on a generic page or an unrelated server in multi-server
+	// setups. Empty for connection types that have no server concept
+	// (Lidarr) or until the first successful connection test resolves it.
+	PlatformServerID string `json:"platform_server_id,omitempty"`
 }
 
 // ValidateBaseURL checks that a base URL is safe for use as an HTTP client target.

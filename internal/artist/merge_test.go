@@ -147,7 +147,7 @@ func TestOverwriteAttempted_ProviderIDsFillEmptyOnly(t *testing.T) {
 	}
 }
 
-func TestOverwriteAttempted_SkipsNameSortNameDisambiguation(t *testing.T) {
+func TestOverwriteAttempted_SkipsNameSortName(t *testing.T) {
 	a := &Artist{Name: "Original", SortName: "Original, The", Disambiguation: "UK"}
 	u := &MetadataUpdate{Name: "Changed", SortName: "Changed, The", Disambiguation: "US"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -159,8 +159,22 @@ func TestOverwriteAttempted_SkipsNameSortNameDisambiguation(t *testing.T) {
 	if a.SortName != "Original, The" {
 		t.Errorf("SortName should not change, got %q", a.SortName)
 	}
-	if a.Disambiguation != "UK" {
-		t.Errorf("Disambiguation should not change, got %q", a.Disambiguation)
+	// Disambiguation now follows Type/Gender semantics: non-empty overwrite
+	// so a provider-supplied value replaces any stale local value without
+	// waiting for a separate NFO import pass.
+	if a.Disambiguation != "US" {
+		t.Errorf("Disambiguation should be overwritten, got %q", a.Disambiguation)
+	}
+}
+
+// TestOverwriteAttempted_DisambiguationNonEmptyOnly verifies that an empty
+// provider Disambiguation does NOT clear a populated local value.
+func TestOverwriteAttempted_DisambiguationNonEmptyOnly(t *testing.T) {
+	a := &Artist{Disambiguation: "UK rock band"}
+	u := &MetadataUpdate{Disambiguation: ""}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+	if a.Disambiguation != "UK rock band" {
+		t.Errorf("Disambiguation = %q, want preserved %q", a.Disambiguation, "UK rock band")
 	}
 }
 

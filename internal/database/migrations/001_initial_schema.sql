@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS connections (
     feature_metadata_push INTEGER NOT NULL DEFAULT 0,
     feature_trigger_refresh INTEGER NOT NULL DEFAULT 0,
     platform_user_id TEXT,
+    platform_server_id TEXT NOT NULL DEFAULT '',
     last_checked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))

@@ -167,6 +167,22 @@ func (c *Client) GetArtistBackdrop(ctx context.Context, artistID string, index i
 	return c.GetRaw(ctx, path)
 }
 
+// GetServerID fetches the Emby server's identity from GET /System/Info and
+// returns the "Id" field. This value is what the Emby web client expects in
+// the ?serverId=<id> query parameter when deep linking into an item. Used at
+// connection-test time to resolve and persist the server ID in the
+// connections table.
+func (c *Client) GetServerID(ctx context.Context) (string, error) {
+	var info SystemInfo
+	if err := c.Get(ctx, "/System/Info", &info); err != nil {
+		return "", fmt.Errorf("getting system info: %w", err)
+	}
+	if info.ID == "" {
+		return "", fmt.Errorf("system info did not return a server id")
+	}
+	return info.ID, nil
+}
+
 // GetFirstUserID fetches the first user ID from GET /Users. Used at connection-test time
 // to resolve and persist the user ID in the connections table.
 func (c *Client) GetFirstUserID(ctx context.Context) (string, error) {

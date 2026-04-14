@@ -873,7 +873,11 @@ func loadDBLoggingConfig(db *sql.DB, mgr *logging.Manager, logger *slog.Logger) 
 	ctx := context.Background()
 	level := getDBStringSetting(db, ctx, "logging.level", "")
 	format := getDBStringSetting(db, ctx, "logging.format", "")
-	if level == "" && format == "" {
+	filePath := getDBStringSetting(db, ctx, "logging.file_path", "")
+	fileMaxSize := getDBIntSetting(db, "logging.file_max_size_mb", 0)
+	fileMaxFiles := getDBIntSetting(db, "logging.file_max_files", 0)
+	fileMaxAge := getDBIntSetting(db, "logging.file_max_age_days", 0)
+	if level == "" && format == "" && filePath == "" && fileMaxSize <= 0 && fileMaxFiles <= 0 && fileMaxAge <= 0 {
 		return // no DB overrides
 	}
 
@@ -884,19 +888,53 @@ func loadDBLoggingConfig(db *sql.DB, mgr *logging.Manager, logger *slog.Logger) 
 	if format != "" && logging.ValidFormat(format) {
 		cfg.Format = format
 	}
-	cfg.FilePath = getDBStringSetting(db, ctx, "logging.file_path", cfg.FilePath)
-	if v := getDBIntSetting(db, "logging.file_max_size_mb", 0); v > 0 {
-		cfg.FileMaxSizeMB = v
+	if filePath != "" {
+		cfg.FilePath = filePath
 	}
-	if v := getDBIntSetting(db, "logging.file_max_files", 0); v > 0 {
-		cfg.FileMaxFiles = v
+	if fileMaxSize > 0 {
+		cfg.FileMaxSizeMB = fileMaxSize
 	}
-	if v := getDBIntSetting(db, "logging.file_max_age_days", 0); v > 0 {
-		cfg.FileMaxAgeDays = v
+	if fileMaxFiles > 0 {
+		cfg.FileMaxFiles = fileMaxFiles
+	}
+	if fileMaxAge > 0 {
+		cfg.FileMaxAgeDays = fileMaxAge
+	}
+
+	// Probe the log file path before handing it to the log manager. Containers
+	// have /config/logs pre-created by the entrypoint, but native installs
+	// (dev, Homebrew, bare systemd) often do not. Attempt to create the parent
+	// directory and open the file for append. If either fails, drop the file
+	// handler entirely and log a single WARN so the user sees the path that
+	// was rejected without spamming stderr with per-log failures.
+	if cfg.FilePath != "" {
+		if err := logFilePathWritable(cfg.FilePath); err != nil {
+			logger.Warn("log file path unwritable; using stdout only",
+				slog.String("path", cfg.FilePath),
+				slog.Any("error", err))
+			cfg.FilePath = ""
+		}
 	}
 
 	mgr.Reconfigure(cfg)
 	logger.Info("applied DB logging overrides", "config", cfg.String())
+}
+
+// logFilePathWritable returns nil if path can be created and appended to, or
+// the underlying error so callers can surface the reason in a warning. It
+// creates the parent directory if missing and opens the file in
+// O_APPEND|O_CREATE mode so a successful probe does not truncate an
+// existing log. The file handle is closed before returning.
+func logFilePathWritable(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("creating parent directory: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // G304: operator-provided log path
+	if err != nil {
+		return fmt.Errorf("opening log file for append: %w", err)
+	}
+	_ = f.Close()
+	return nil
 }
 
 // getDBStringSetting reads a string setting directly from the database.

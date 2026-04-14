@@ -477,6 +477,15 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
 				r.logger.Error("persisting emby platform user id", "error", updErr)
 			}
+			// Capture the server identity for deep-link URL building. A missing
+			// server ID is non-fatal: the link will simply be built without
+			// the ?serverId= parameter and the web client will fall back to
+			// its default behavior (works for single-server setups).
+			if sid, sidErr := client.GetServerID(testCtx); sidErr != nil {
+				r.logger.Warn("could not resolve emby platform server id", "error", sidErr)
+			} else if updErr := r.connectionService.UpdatePlatformServerID(testCtx, id, sid); updErr != nil {
+				r.logger.Error("persisting emby platform server id", "error", updErr)
+			}
 			// Drift detection: check for conflicting platform settings.
 			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {
 				for _, s := range settings {
@@ -501,6 +510,13 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 			}
 			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
 				r.logger.Error("persisting jellyfin platform user id", "error", updErr)
+			}
+			// Capture the server identity for deep-link URL building. See
+			// the equivalent Emby branch above for the no-id fallback rationale.
+			if sid, sidErr := client.GetServerID(testCtx); sidErr != nil {
+				r.logger.Warn("could not resolve jellyfin platform server id", "error", sidErr)
+			} else if updErr := r.connectionService.UpdatePlatformServerID(testCtx, id, sid); updErr != nil {
+				r.logger.Error("persisting jellyfin platform server id", "error", updErr)
 			}
 			// Drift detection: check for conflicting platform settings.
 			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {

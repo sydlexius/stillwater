@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -1007,6 +1009,14 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 
 	if strings.EqualFold(dirName, canonical) {
+		return nil
+	}
+
+	// Unicode-equivalence check: macOS APFS/HFS stores directory names in NFD
+	// (decomposed) form while user-typed or provider-sourced names are usually
+	// NFC. A byte-level mismatch that collapses to the same code points under
+	// NFC is functionally identical and should not trigger a rename.
+	if strings.EqualFold(norm.NFC.String(dirName), norm.NFC.String(canonical)) {
 		return nil
 	}
 
