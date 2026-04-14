@@ -36,6 +36,7 @@ fi
 
 echo "==> Launching Stillwater..."
 LOG_FILE="${SW_DEV_LOG:-/tmp/stillwater.log}"
+mkdir -p "$(dirname "$LOG_FILE")"
 ./stillwater >"$LOG_FILE" 2>&1 &
 SWPID=$!
 sleep 2

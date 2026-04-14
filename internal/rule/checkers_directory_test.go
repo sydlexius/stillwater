@@ -145,4 +145,17 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 			t.Errorf("expected nil for NFC/NFD equivalent names, got %+v", v)
 		}
 	})
+
+	// When directory names differ by both Unicode normalization form AND
+	// letter case, the initial case-insensitive check fails on unnormalized
+	// strings in different forms, and the normalized check must be
+	// case-insensitive too to avoid a false-positive violation.
+	t.Run("nfd lowercase vs nfc uppercase no violation", func(t *testing.T) {
+		nfdLower := "maria joa\u0303o pires" // lowercase, decomposed
+		nfcUpper := "Maria Jo\u00e3o Pires"  // mixed case, precomposed
+		a := &artist.Artist{Name: nfcUpper, Path: "/music/" + nfdLower}
+		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+			t.Errorf("expected nil for NFC/NFD + case equivalent names, got %+v", v)
+		}
+	})
 }

@@ -1016,7 +1016,7 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 	// (decomposed) form while user-typed or provider-sourced names are usually
 	// NFC. A byte-level mismatch that collapses to the same code points under
 	// NFC is functionally identical and should not trigger a rename.
-	if norm.NFC.String(dirName) == norm.NFC.String(canonical) {
+	if strings.EqualFold(norm.NFC.String(dirName), norm.NFC.String(canonical)) {
 		return nil
 	}
 
