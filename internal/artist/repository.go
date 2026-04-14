@@ -23,6 +23,10 @@ type Repository interface {
 	Search(ctx context.Context, query string) ([]Artist, error)
 	SetLock(ctx context.Context, id string, locked bool, source string) error
 
+	// SetLockedFields replaces the set of locked field names for an artist.
+	// Pass an empty slice to clear all field locks.
+	SetLockedFields(ctx context.Context, id string, fields []string) error
+
 	// ListPathsByLibrary returns a map of artist ID to filesystem path for
 	// all artists in the given library that have a non-empty path.
 	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
@@ -79,6 +83,10 @@ type ImageRepository interface {
 	// ClearExistsFlag sets exists_flag=0 for the given artist/image_type/slot.
 	// Used to mark stale image entries when the file is confirmed missing on disk.
 	ClearExistsFlag(ctx context.Context, artistID, imageType string, slotIndex int) error
+
+	// SetLock toggles the lock flag for a single image row identified by its
+	// primary key id.
+	SetLock(ctx context.Context, imageID string, locked bool) error
 
 	DeleteByArtistID(ctx context.Context, artistID string) error
 

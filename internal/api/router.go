@@ -262,6 +262,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleUnlockArtist, authMw))
+	// Field-level and per-image lock toggles for platforms that support
+	// granular lock semantics (Emby LockedFields, image LockData).
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/field-locks/{field}", wrapAuth(r.handleLockArtistField, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/field-locks/{field}", wrapAuth(r.handleUnlockArtistField, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/image-locks/{imageId}", wrapAuth(r.handleLockArtistImage, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/image-locks/{imageId}", wrapAuth(r.handleUnlockArtistImage, authMw))
 	// Alias routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleListAliases, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleAddAlias, authMw))

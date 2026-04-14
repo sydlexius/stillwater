@@ -1010,6 +1010,12 @@ components:
           type: string
           format: date-time
           description: Timestamp when the lock was applied. Omitted when not locked.
+        locked_fields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          description: Lowercased field names locked at the field level. Values are deduplicated. Independent of the whole-artist lock. Round-trips to Emby's LockedFields.
         audiodb_id_fetched_at:
           type: string
           format: date-time
@@ -1785,6 +1791,144 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Artist is not locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/field-locks/{field}:
+    post:
+      tags: [Artists]
+      summary: Lock a single metadata field
+      description: |
+        Adds the named field to the artist's locked-field set. This is persisted
+        state that Stillwater mirrors to Emby's LockedFields via the connection
+        sync path. Refresh-cycle enforcement (skipping locked fields on rewrite)
+        is implemented per-rule at the refresh layer and is not guaranteed by
+        this endpoint in isolation.
+      operationId: lockArtistField
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full Artist object with updated locked_fields list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artist"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Artists]
+      summary: Unlock a single metadata field
+      operationId: unlockArtistField
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full Artist object with updated locked_fields list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artist"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/image-locks/{imageId}:
+    post:
+      tags: [Artists]
+      summary: Lock a single artist image slot
+      description: |
+        Sets the locked flag on the matching artist_images row. This is
+        persisted state. Whether a given refresh/rewrite path honours the flag
+        is implemented per-publisher and is not guaranteed by this endpoint in
+        isolation. The imageId must belong to the artist identified by the
+        path id.
+      operationId: lockArtistImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated image list for the artist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: object
+        "404":
+          description: Image or artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Artists]
+      summary: Unlock a single artist image slot
+      operationId: unlockArtistImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated image list for the artist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: object
+        "404":
+          description: Image or artist not found
           content:
             application/json:
               schema:

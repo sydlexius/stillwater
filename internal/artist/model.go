@@ -66,6 +66,7 @@ type Artist struct {
 	Locked              bool              `json:"locked"`
 	LockSource          string            `json:"lock_source,omitempty"`
 	LockedAt            *time.Time        `json:"locked_at,omitempty"`
+	LockedFields        []string          `json:"locked_fields,omitempty"`
 	AudioDBIDFetchedAt  *time.Time        `json:"audiodb_id_fetched_at,omitempty"`
 	DiscogsIDFetchedAt  *time.Time        `json:"discogs_id_fetched_at,omitempty"`
 	WikidataIDFetchedAt *time.Time        `json:"wikidata_id_fetched_at,omitempty"`

@@ -248,3 +248,125 @@ func TestLockPreservedOnUpdate(t *testing.T) {
 		t.Errorf("lock_source = %q, want %q", after.LockSource, "user")
 	}
 }
+
+func TestFieldLocks(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Björk", "/music/Bjork")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Initially no locked fields.
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(got.LockedFields) != 0 {
+		t.Errorf("expected empty locked_fields, got %v", got.LockedFields)
+	}
+
+	// Add a field lock; values are normalized to lowercase.
+	if err := svc.AddLockedField(ctx, a.ID, "Biography"); err != nil {
+		t.Fatalf("AddLockedField: %v", err)
+	}
+	got, _ = svc.GetByID(ctx, a.ID)
+	if !svc.IsFieldLocked(got, "biography") {
+		t.Errorf("expected biography to be locked, got %v", got.LockedFields)
+	}
+	if !svc.IsFieldLocked(got, "BIOGRAPHY") {
+		t.Error("IsFieldLocked should be case-insensitive")
+	}
+
+	// Adding a duplicate (different casing) should not produce two entries.
+	if err := svc.AddLockedField(ctx, a.ID, "biography"); err != nil {
+		t.Fatalf("AddLockedField dup: %v", err)
+	}
+	got, _ = svc.GetByID(ctx, a.ID)
+	if len(got.LockedFields) != 1 {
+		t.Errorf("expected 1 locked field after dup add, got %v", got.LockedFields)
+	}
+
+	// Remove the lock.
+	if err := svc.RemoveLockedField(ctx, a.ID, "biography"); err != nil {
+		t.Fatalf("RemoveLockedField: %v", err)
+	}
+	got, _ = svc.GetByID(ctx, a.ID)
+	if svc.IsFieldLocked(got, "biography") {
+		t.Errorf("expected biography unlocked, got %v", got.LockedFields)
+	}
+
+	// SetLockedFields replaces the entire set.
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"Name", "Genres", "Name"}); err != nil {
+		t.Fatalf("SetLockedFields: %v", err)
+	}
+	got, _ = svc.GetByID(ctx, a.ID)
+	if len(got.LockedFields) != 2 {
+		t.Errorf("expected 2 fields after SetLockedFields, got %v", got.LockedFields)
+	}
+
+	// Unknown artist.
+	err = svc.SetLockedFields(ctx, "nonexistent", []string{"biography"})
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound for missing artist, got %v", err)
+	}
+}
+
+func TestImageLocks(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Portishead", "/music/Portishead")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	img := &ArtistImage{
+		ArtistID:  a.ID,
+		ImageType: "thumb",
+		SlotIndex: 0,
+		Exists:    true,
+	}
+	if err := svc.UpsertImage(ctx, img); err != nil {
+		// Fall back: use the raw repo through the service's GetImagesForArtist
+		// path. Test existing service API.
+		t.Fatalf("UpsertImage: %v", err)
+	}
+
+	imgs, err := svc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	if len(imgs) == 0 {
+		t.Fatal("expected one image")
+	}
+	if imgs[0].Locked {
+		t.Error("expected new image to start unlocked")
+	}
+
+	if err := svc.SetImageLock(ctx, imgs[0].ID, true); err != nil {
+		t.Fatalf("SetImageLock: %v", err)
+	}
+	imgs, _ = svc.GetImagesForArtist(ctx, a.ID)
+	if !imgs[0].Locked {
+		t.Error("expected image to be locked after SetImageLock(true)")
+	}
+
+	if err := svc.SetImageLock(ctx, imgs[0].ID, false); err != nil {
+		t.Fatalf("SetImageLock false: %v", err)
+	}
+	imgs, _ = svc.GetImagesForArtist(ctx, a.ID)
+	if imgs[0].Locked {
+		t.Error("expected image to be unlocked after SetImageLock(false)")
+	}
+
+	t.Run("nonexistent image returns ErrNotFound", func(t *testing.T) {
+		err := svc.SetImageLock(ctx, "no-such-image", true)
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("expected ErrNotFound, got %v", err)
+		}
+	})
+}

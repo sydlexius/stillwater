@@ -1315,3 +1315,92 @@ func TestDisableConflictingSettings_LibraryNotFound(t *testing.T) {
 		t.Errorf("error = %v, want 'not found'", err)
 	}
 }
+
+// TestCanonicalizeLockedFields verifies the lowercase-to-PascalCase mapping
+// used before POSTing LockedFields to Emby. Unknown values are dropped and
+// duplicates are collapsed.
+func TestCanonicalizeLockedFields(t *testing.T) {
+	got := canonicalizeLockedFields([]string{"name", "overview", "genres"})
+	want := []string{"Name", "Overview", "Genres"}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d (%v), want %d (%v)", len(got), got, len(want), want)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Errorf("[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+
+	// Unknown values dropped; duplicates collapsed; whitespace trimmed.
+	got = canonicalizeLockedFields([]string{"name", "NAME", " genres ", "bogus", ""})
+	if len(got) != 2 || got[0] != "Name" || got[1] != "Genres" {
+		t.Errorf("dedup/drop mismatch: %v", got)
+	}
+
+	if out := canonicalizeLockedFields(nil); out == nil || len(out) != 0 {
+		t.Errorf("nil input should yield empty non-nil slice, got %v", out)
+	}
+}
+
+// TestUpdateArtistLocks verifies the full round-trip: fetch the item, overwrite
+// only LockData/LockedFields (PascalCase), and POST the merged payload back.
+func TestUpdateArtistLocks(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// Fetch: return minimal item payload.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Radiohead","LockData":false,"LockedFields":[],"Genres":["Rock"]}`))
+		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistLocks(context.Background(), "a1", true, []string{"name", "overview", "genres"})
+	if err != nil {
+		t.Fatalf("UpdateArtistLocks: %v", err)
+	}
+	got := <-bodyCh
+	if lock, _ := got["LockData"].(bool); !lock {
+		t.Errorf("LockData = %v, want true", got["LockData"])
+	}
+	rawFields, _ := got["LockedFields"].([]any)
+	if len(rawFields) != 3 {
+		t.Fatalf("LockedFields = %v, want 3 entries", got["LockedFields"])
+	}
+	wantFields := []string{"Name", "Overview", "Genres"}
+	for i, v := range wantFields {
+		if s, _ := rawFields[i].(string); s != v {
+			t.Errorf("LockedFields[%d] = %v, want %q", i, rawFields[i], v)
+		}
+	}
+	// Unrelated fields must be preserved.
+	if got["Name"] != "Radiohead" {
+		t.Errorf("Name preservation failed: %v", got["Name"])
+	}
+}
+
+// TestUpdateArtistLocks_NoUserID verifies the early-return guard when the
+// client has no user context.
+func TestUpdateArtistLocks_NoUserID(t *testing.T) {
+	c := NewWithHTTPClient("http://invalid", "test-key", "", http.DefaultClient, testLogger())
+	err := c.UpdateArtistLocks(context.Background(), "a1", true, nil)
+	if err == nil {
+		t.Fatal("expected error when userID missing")
+	}
+	if !strings.Contains(err.Error(), "user ID") {
+		t.Errorf("error = %v, want user ID message", err)
+	}
+}

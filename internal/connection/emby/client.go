@@ -359,6 +359,93 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
+// UpdateArtistLocks persists the given field-level lock list and whole-item lock
+// flag to Emby for the named artist. Emby requires a full item payload on
+// POST /Items/{id}, so this method first fetches the current item (via the
+// user-scoped endpoint) and then POSTs the mutation back with only LockData
+// and LockedFields overwritten. Other properties are preserved verbatim to
+// avoid clobbering fields Stillwater does not manage.
+func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string, lockData bool, lockedFields []string) error {
+	if c.userID == "" {
+		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
+	}
+	// Fetch the full item payload as Emby returns it. Emby's POST /Items/{id}
+	// treats the body as a full replacement, so we must preserve unrelated
+	// fields to avoid dropping them.
+	getPath := fmt.Sprintf("/Users/%s/Items/%s", c.userID, platformArtistID)
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return fmt.Errorf("fetching artist for lock update: %w", err)
+	}
+	// Guard against a JSON null / empty body that would leave item as a
+	// nil map; assigning to a nil map panics.
+	if item == nil {
+		item = make(map[string]any)
+	}
+	item["LockData"] = lockData
+	item["LockedFields"] = canonicalizeLockedFields(lockedFields)
+
+	body, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("encoding lock update body: %w", err)
+	}
+	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
+		return fmt.Errorf("posting artist lock update: %w", err)
+	}
+	return nil
+}
+
+// embyLockedFieldCanonical maps the lowercase field names Stillwater stores in
+// the database to the PascalCase values Emby's MetadataFields enum expects on
+// the LockedFields property. Any value not present here is dropped from the
+// payload so we never send enum values Emby does not recognize.
+var embyLockedFieldCanonical = map[string]string{
+	"name": "Name",
+	// Stillwater exposes "biography" as the user-facing lock key, but Emby's
+	// MetadataFields enum names the underlying storage "Overview" (see the
+	// Get path at line 190 which also fetches Fields=Overview). Both aliases
+	// map to the same PascalCase value so lock UI using either term syncs.
+	"biography":           "Overview",
+	"overview":            "Overview",
+	"genres":              "Genres",
+	"cast":                "Cast",
+	"productionlocations": "ProductionLocations",
+	"tags":                "Tags",
+	"studios":             "Studios",
+	"images":              "Images",
+	"backdrops":           "Backdrops",
+	"sortname":            "SortName",
+	"officialrating":      "OfficialRating",
+	"parentalrating":      "ParentalRating",
+	"runtime":             "Runtime",
+}
+
+// canonicalizeLockedFields converts Stillwater's lowercase locked field names
+// into Emby's canonical PascalCase MetadataFields enum values. Unknown names
+// are dropped (strict allow-list). The returned slice is always non-nil so
+// Emby receives an empty array rather than null when no fields are locked.
+func canonicalizeLockedFields(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, f := range in {
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		canon, ok := embyLockedFieldCanonical[key]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[canon]; dup {
+			continue
+		}
+		seen[canon] = struct{}{}
+		out = append(out, canon)
+	}
+	return out
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("X-Emby-Token", c.APIKey)
 }

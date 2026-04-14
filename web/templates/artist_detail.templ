@@ -375,6 +375,39 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					{ t(ctx, "artist.locked_banner") }
 				</div>
 			}
+			// Field-level locks panel. Shown only when at least one field is
+			// locked so the UI stays quiet for the common case. Individual
+			// rows expose a small delete button that unlocks the field via
+			// HTMX; the response body is not rendered (hx-swap="none") and
+			// the chip is removed from the DOM client-side after a successful
+			// DELETE. If the final chip is removed the whole panel is hidden
+			// to avoid an empty amber card; a failed request leaves the chip
+			// in place and surfaces the error to the user.
+			if len(data.Artist.LockedFields) > 0 {
+				<div id={ "field-locks-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow">
+					<div class="flex items-center gap-2 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+						@components.IconLockClosed("h-4 w-4")
+						<span>{ t(ctx, "artist.locked_fields") }</span>
+					</div>
+					<div class="flex flex-wrap gap-2">
+						for _, f := range data.Artist.LockedFields {
+							<span class="field-chip inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
+								{ f }
+								<button
+									type="button"
+									class="ml-1 text-amber-700 dark:text-amber-400 hover:text-amber-900"
+									hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/field-locks/" + url.PathEscape(f) }
+									hx-swap="none"
+									hx-trigger="click"
+									hx-on::after-request="(function(btn, ev){ if (ev.detail.successful) { var chip = btn.closest('.field-chip'); var panel = btn.closest('[id^=\'field-locks-\']'); chip.remove(); if (panel && !panel.querySelector('.field-chip')) { panel.remove(); } } else { alert(btn.getAttribute('data-unlock-error') || 'Unlock failed. Please try again.'); } })(this, event)"
+									data-unlock-error={ t(ctx, "artist.unlock_field_failed") }
+									aria-label={ t(ctx, "artist.unlock_field") }
+								>x</button>
+							</span>
+						}
+					</div>
+				</div>
+			}
 			// Tab bar
 			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && data.HasDebugConnection)
 			// Tab panels
