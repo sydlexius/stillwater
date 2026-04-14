@@ -96,6 +96,37 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Error("Fixed = true, want false for empty path")
 		}
 	})
+
+	// Clears any stale violations when the only difference is Unicode
+	// normalization form. The fixer must not attempt a rename (target would
+	// collide with source on APFS) but must report Fixed so fix-all loops
+	// stop re-queueing the same artist.
+	t.Run("nfc nfd equivalent short circuits", func(t *testing.T) {
+		tmp := t.TempDir()
+		nfd := "Maria Joa\u0303o Pires"
+		nfc := "Maria Jo\u00e3o Pires"
+		oldPath := filepath.Join(tmp, nfd)
+		if err := os.MkdirAll(oldPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		a := &artist.Artist{Name: nfc, Path: oldPath, LibraryID: "lib-test"}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if !result.Fixed {
+			t.Errorf("Fixed = false, want true; message: %s", result.Message)
+		}
+		if !strings.Contains(result.Message, "Unicode-equivalent") {
+			t.Errorf("expected Unicode-equivalent message, got: %s", result.Message)
+		}
+	})
 }
 
 func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {

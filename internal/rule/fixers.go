@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -1142,6 +1144,20 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
 	if canonical == "" {
 		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "canonical name is empty or unsafe"}, nil
+	}
+
+	// Short-circuit when the existing directory name is Unicode-equivalent
+	// (NFC vs NFD) to the canonical form. macOS filesystems store paths in
+	// decomposed form, so an incoming NFC name and on-disk NFD name can
+	// mismatch byte-for-byte while being the same text. In that case any
+	// rename would be a no-op and must report Fixed to clear the violation.
+	dirName := filepath.Base(a.Path)
+	if norm.NFC.String(dirName) == norm.NFC.String(canonical) {
+		return &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   true,
+			Message: "directory name is Unicode-equivalent; no rename needed",
+		}, nil
 	}
 
 	newPath := filepath.Join(filepath.Dir(a.Path), canonical)

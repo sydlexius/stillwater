@@ -82,5 +82,20 @@ func FuzzParseWriteRoundTrip(f *testing.F) {
 			t.Errorf("MBID mismatch after round-trip: %q vs %q",
 				nfo1.MusicBrainzArtistID, nfo2.MusicBrainzArtistID)
 		}
+		if nfo1.Disambiguation != nfo2.Disambiguation {
+			t.Errorf("disambiguation mismatch after round-trip: %q vs %q",
+				nfo1.Disambiguation, nfo2.Disambiguation)
+		}
+		if len(nfo1.Albums) != len(nfo2.Albums) {
+			t.Errorf("album count mismatch after round-trip: %d vs %d",
+				len(nfo1.Albums), len(nfo2.Albums))
+			return
+		}
+		for i := range nfo1.Albums {
+			if nfo1.Albums[i] != nfo2.Albums[i] {
+				t.Errorf("album %d mismatch after round-trip: %+v vs %+v",
+					i, nfo1.Albums[i], nfo2.Albums[i])
+			}
+		}
 	})
 }

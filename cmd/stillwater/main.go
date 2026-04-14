@@ -895,8 +895,36 @@ func loadDBLoggingConfig(db *sql.DB, mgr *logging.Manager, logger *slog.Logger) 
 		cfg.FileMaxAgeDays = v
 	}
 
+	// Probe the log file path before handing it to the log manager. Containers
+	// have /config/logs pre-created by the entrypoint, but native installs
+	// (dev, Homebrew, bare systemd) often do not. Attempt to create the parent
+	// directory and open the file for append. If either fails, drop the file
+	// handler entirely and log a single WARN so the user sees the path that
+	// was rejected without spamming stderr with per-log failures.
+	if cfg.FilePath != "" && !logFilePathWritable(cfg.FilePath) {
+		logger.Warn("log file path unwritable; using stdout only",
+			slog.String("path", cfg.FilePath))
+		cfg.FilePath = ""
+	}
+
 	mgr.Reconfigure(cfg)
 	logger.Info("applied DB logging overrides", "config", cfg.String())
+}
+
+// logFilePathWritable reports whether path can be created and appended to.
+// It creates the parent directory if missing and opens the file in
+// O_APPEND|O_CREATE mode so a successful probe does not truncate an
+// existing log. The file handle is closed before returning.
+func logFilePathWritable(path string) bool {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return false
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // G304: operator-provided log path
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
 }
 
 // getDBStringSetting reads a string setting directly from the database.

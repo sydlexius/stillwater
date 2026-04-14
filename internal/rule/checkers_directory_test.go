@@ -132,4 +132,17 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 			t.Errorf("expected nil for suffix mode match, got %+v", v)
 		}
 	})
+
+	// NFC vs NFD: macOS filesystems store directory names in decomposed
+	// (NFD) form, while provider metadata uses composed (NFC). A byte-level
+	// comparison would flag a spurious mismatch; the checker must normalize
+	// both sides before comparing.
+	t.Run("nfc vs nfd equivalent no violation", func(t *testing.T) {
+		nfd := "Maria Joa\u0303o Pires" // o + combining tilde
+		nfc := "Maria Jo\u00e3o Pires"  // precomposed o-tilde
+		a := &artist.Artist{Name: nfc, Path: "/music/" + nfd}
+		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+			t.Errorf("expected nil for NFC/NFD equivalent names, got %+v", v)
+		}
+	})
 }

@@ -35,12 +35,14 @@ else
 fi
 
 echo "==> Launching Stillwater..."
-./stillwater &
+LOG_FILE="${SW_DEV_LOG:-/tmp/stillwater.log}"
+./stillwater >"$LOG_FILE" 2>&1 &
 SWPID=$!
 sleep 2
 
 if kill -0 "$SWPID" 2>/dev/null; then
   echo "==> Stillwater running (PID $SWPID) on http://localhost:${SW_PORT:-1973}"
+  echo "==> Logs: $LOG_FILE"
 else
   echo "==> ERROR: Stillwater failed to start"
   exit 1

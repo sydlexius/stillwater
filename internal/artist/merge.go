@@ -123,8 +123,9 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 
 // applyOverwriteAttempted implements the refresh handler merge: overwrite fields
 // that were attempted by providers, use non-empty overwrite for type/gender/
-// yearsActive, and fill-empty for provider IDs. Name, SortName, and
-// Disambiguation are never touched (handled separately in handler code).
+// disambiguation/yearsActive, and fill-empty for provider IDs. Name and
+// SortName are never touched (handled separately in handler code so the user's
+// chosen display name is not overwritten mid-refresh).
 func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []string) bool {
 	attempted := make(map[string]bool, len(attemptedFields))
 	for _, f := range attemptedFields {
@@ -159,9 +160,13 @@ func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []str
 		changed = setString(&a.Disbanded, u.Disbanded) || changed
 	}
 
-	// Type, Gender, YearsActive: non-empty overwrite only (never clear).
+	// Type, Gender, Disambiguation, YearsActive: non-empty overwrite only
+	// (never clear). Disambiguation is populated here so a provider refresh
+	// records the value returned by MusicBrainz without waiting for a
+	// separate NFO import pass.
 	changed = setNonEmpty(&a.Type, u.Type) || changed
 	changed = setNonEmpty(&a.Gender, u.Gender) || changed
+	changed = setNonEmpty(&a.Disambiguation, u.Disambiguation) || changed
 	changed = setNonEmpty(&a.YearsActive, u.YearsActive) || changed
 
 	// Provider IDs: fill-empty only.

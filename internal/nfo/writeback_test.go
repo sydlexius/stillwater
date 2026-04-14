@@ -332,3 +332,78 @@ func TestWriteBackArtistNFOWithFieldMap_MoodsAsStyles(t *testing.T) {
 		t.Error("Stillwater meta should be set")
 	}
 }
+
+// TestWriteBackArtistNFO_Discography covers the data-loss regression where
+// <album> entries on an Artist's Discography were dropped during write-back.
+// Empty, single, and multi-entry cases all round-trip through WriteBackArtistNFO
+// and reload from disk without losing fields.
+func TestWriteBackArtistNFO_Discography(t *testing.T) {
+	cases := []struct {
+		name   string
+		albums []artist.DiscographyAlbum
+	}{
+		{name: "empty", albums: nil},
+		{
+			name: "single",
+			albums: []artist.DiscographyAlbum{
+				{Title: "Nevermind", Year: "1991", MusicBrainzReleaseGroupID: "rg-nevermind"},
+			},
+		},
+		{
+			name: "multiple",
+			albums: []artist.DiscographyAlbum{
+				{Title: "Bleach", Year: "1989"},
+				{Title: "Nevermind", Year: "1991", MusicBrainzReleaseGroupID: "rg-nevermind"},
+				{Title: "In Utero", Year: "1993"},
+			},
+		},
+		{
+			name: "partial fields",
+			albums: []artist.DiscographyAlbum{
+				{Title: "Title Only"},
+				{Title: "Year Missing MBID", MusicBrainzReleaseGroupID: "rg-only"},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			a := &artist.Artist{
+				ID:             "art-disco",
+				Name:           "Nirvana",
+				Type:           "group",
+				Disambiguation: "Seattle grunge",
+				Path:           dir,
+				Discography:    tc.albums,
+			}
+			if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+				t.Fatalf("WriteBackArtistNFO: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+			if err != nil {
+				t.Fatalf("reading nfo: %v", err)
+			}
+			parsed, err := Parse(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("parsing nfo: %v", err)
+			}
+
+			if parsed.Disambiguation != "Seattle grunge" {
+				t.Errorf("Disambiguation = %q, want %q", parsed.Disambiguation, "Seattle grunge")
+			}
+			if len(parsed.Albums) != len(tc.albums) {
+				t.Fatalf("Albums count = %d, want %d; serialized: %s",
+					len(parsed.Albums), len(tc.albums), string(data))
+			}
+			for i, want := range tc.albums {
+				got := parsed.Albums[i]
+				if got.Title != want.Title || got.Year != want.Year ||
+					got.MusicBrainzReleaseGroupID != want.MusicBrainzReleaseGroupID {
+					t.Errorf("album[%d] = %+v, want %+v", i, got, want)
+				}
+			}
+		})
+	}
+}

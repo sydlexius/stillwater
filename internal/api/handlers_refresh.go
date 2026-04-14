@@ -250,6 +250,18 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 		return nil, fmt.Errorf("fetch metadata returned nil result for %s", a.ID)
 	}
 
+	// Split-on-ingest: if the local artist Name is the concatenation
+	// "Canonical (disambiguation)" and the provider confirms both halves,
+	// promote the parenthesised suffix into Disambiguation before merging
+	// provider metadata. This runs before ApplyMetadata so the downstream
+	// merge sees the split values and does not re-combine them.
+	if artist.SplitNameDisambiguation(a, result.Metadata) {
+		r.logger.Info("promoted parenthesised suffix into disambiguation",
+			"artist_id", a.ID,
+			"name", a.Name,
+			"disambiguation", a.Disambiguation)
+	}
+
 	// Apply fetched metadata to the artist using the shared merge helper.
 	if u := artist.FetchResultToUpdate(result); u != nil {
 		artist.ApplyMetadata(a, u, artist.OverwriteAttempted, artist.MergeOptions{

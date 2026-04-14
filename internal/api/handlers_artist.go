@@ -407,14 +407,28 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 }
 
 // buildPlatformArtistURL constructs the external URL to view an artist on
-// the given platform connection.
+// the given platform connection. For Emby and Jellyfin the URL includes the
+// server's identity (?serverId=<id>) when it has been resolved from
+// /System/Info, which is required for deep-links to land on the correct
+// server in multi-server web client setups. When the server ID has not yet
+// been captured (e.g. legacy connections before the first successful test),
+// the parameter is omitted cleanly so the URL still works for single-server
+// deployments.
 func buildPlatformArtistURL(conn *connection.Connection, platformArtistID string) string {
 	base := strings.TrimRight(conn.URL, "/")
 	switch conn.Type {
 	case connection.TypeEmby:
-		return base + "/web/index.html#!/item?id=" + url.QueryEscape(platformArtistID)
+		u := base + "/web/index.html#!/item?id=" + url.QueryEscape(platformArtistID)
+		if conn.PlatformServerID != "" {
+			u += "&serverId=" + url.QueryEscape(conn.PlatformServerID)
+		}
+		return u
 	case connection.TypeJellyfin:
-		return base + "/web/index.html#!/details?id=" + url.QueryEscape(platformArtistID)
+		u := base + "/web/index.html#!/details?id=" + url.QueryEscape(platformArtistID)
+		if conn.PlatformServerID != "" {
+			u += "&serverId=" + url.QueryEscape(conn.PlatformServerID)
+		}
+		return u
 	case connection.TypeLidarr:
 		return base + "/artist/" + url.PathEscape(platformArtistID)
 	default:
