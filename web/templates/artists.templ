@@ -1010,37 +1010,47 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// Start polling bulk-actions/status every 2s. Stops on terminal
 				// status and surfaces an outcome-breakdown toast. Page reloads
 				// mid-action re-attach by calling this on DOMContentLoaded.
+				// Process one /status snapshot. Returns true when the status
+				// is terminal (idle/completed/failed) so callers know to stop
+				// polling and do not need to start one. Shared between the
+				// active poll callback and the DOMContentLoaded recovery
+				// path so a page reload near the end of a bulk job still
+				// surfaces the summary toast from the terminal snapshot.
+				function handleProgressSnapshot(data, initialAction) {
+					if (!data || data.status === 'idle') {
+						hideProgressPill();
+						bulkActionRunning = false;
+						updateBar();
+						return true;
+					}
+					renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
+					if (data.status === 'completed' || data.status === 'failed') {
+						hideProgressPill();
+						bulkActionRunning = false;
+						updateBar();
+						var pill = document.getElementById('bulk-progress-pill');
+						var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
+						var msg = tpl
+							.replace('{succeeded}', String(data.succeeded || 0))
+							.replace('{failed}', String(data.failed || 0))
+							.replace('{skipped}', String(data.skipped || 0));
+						if (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {
+							window.showSuccessToast(msg);
+						} else if (typeof window.showToast === 'function') {
+							window.showToast(msg);
+						}
+						return true;
+					}
+					return false;
+				}
+
 				function startProgressPoll(initialAction) {
 					if (progressPoll) { progressPoll.stop(); progressPoll = null; }
 					bulkActionRunning = true;
 					updateBar();
 					progressPoll = pollAsyncStatus(_artistsBp + '/api/v1/artists/bulk-actions/status', {
 						onData: function(data) {
-							if (!data || data.status === 'idle') {
-								hideProgressPill();
-								bulkActionRunning = false;
-								updateBar();
-								return true;
-							}
-							renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
-							if (data.status === 'completed' || data.status === 'failed') {
-								hideProgressPill();
-								bulkActionRunning = false;
-								updateBar();
-								var pill = document.getElementById('bulk-progress-pill');
-								var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
-								var msg = tpl
-									.replace('{succeeded}', String(data.succeeded || 0))
-									.replace('{failed}', String(data.failed || 0))
-									.replace('{skipped}', String(data.skipped || 0));
-								if (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {
-									window.showSuccessToast(msg);
-								} else if (typeof window.showToast === 'function') {
-									window.showToast(msg);
-								}
-								return true;
-							}
-							return false;
+							return handleProgressSnapshot(data, initialAction);
 						},
 						onHTTPError: function() {
 							hideProgressPill();
@@ -1077,8 +1087,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					if (selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) {
 						verb = selectEl.selectedOptions[0].textContent || action;
 					}
+					// The large-count copy names external provider APIs, so
+					// only use it for actions that actually hit them. Local
+					// actions (scan, run_rules) get the plain small template
+					// regardless of count to avoid misleading warnings.
+					var usesExternalProviders = action === 're_identify' || action === 'fetch_images';
 					var tpl;
-					if (count > 500) {
+					if (count > 500 && usesExternalProviders) {
 						tpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';
 					} else {
 						tpl = (pill && pill.getAttribute('data-i18n-confirm-small')) || 'Apply {action} to {count} artists?';
@@ -1162,10 +1177,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					fetch(_artistsBp + '/api/v1/artists/bulk-actions/status', {credentials: 'same-origin'})
 						.then(function(r) { return r.ok ? r.json() : null; })
 						.then(function(data) {
-							if (data && data.status === 'running') {
-								renderProgressPill(data.action || '', data.processed || 0, data.total || 0);
-								startProgressPoll(data.action || '');
-							}
+							// Terminal snapshots (completed/failed/idle) are
+							// handled in-place so the summary toast is not
+							// dropped on reload-near-end. Non-terminal returns
+							// false and we start the normal poll.
+							if (!data) return;
+							if (handleProgressSnapshot(data, data.action || '')) return;
+							startProgressPoll(data.action || '');
 						})
 						.catch(function(){ /* ignore */ });
 				});
