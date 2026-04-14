@@ -814,6 +814,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// Polling handle for the in-flight bulk action status. Non-null
 				// while a bulk or single-artist run-rules action is running.
 				var progressPoll = null;
+				// Tracks whether a bulk action is running end-to-end. Gates the
+				// Apply button so checkbox/dropdown changes cannot re-enable it
+				// mid-flight and queue a second POST (which would 409-loop).
+				var bulkActionRunning = false;
 
 				function warnCap() {
 					if (capWarned) return;
@@ -853,8 +857,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
 						}
 					}
-					if (applyBtn) applyBtn.disabled = selected.size === 0 || !selectEl || !selectEl.value;
-					if (selectEl) selectEl.disabled = selected.size === 0;
+					if (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;
+					if (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;
 					// Sync per-row checkboxes with persisted selection state.
 					var visibleChecked = 0;
 					boxes.forEach(function(cb) {
@@ -1008,19 +1012,21 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// mid-action re-attach by calling this on DOMContentLoaded.
 				function startProgressPoll(initialAction) {
 					if (progressPoll) { progressPoll.stop(); progressPoll = null; }
-					var applyBtn = document.getElementById('bulk-action-apply');
-					if (applyBtn) applyBtn.disabled = true;
+					bulkActionRunning = true;
+					updateBar();
 					progressPoll = pollAsyncStatus(_artistsBp + '/api/v1/artists/bulk-actions/status', {
 						onData: function(data) {
 							if (!data || data.status === 'idle') {
 								hideProgressPill();
-								if (applyBtn) applyBtn.disabled = false;
+								bulkActionRunning = false;
+								updateBar();
 								return true;
 							}
 							renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
 							if (data.status === 'completed' || data.status === 'failed') {
 								hideProgressPill();
-								if (applyBtn) applyBtn.disabled = false;
+								bulkActionRunning = false;
+								updateBar();
 								var pill = document.getElementById('bulk-progress-pill');
 								var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
 								var msg = tpl
@@ -1038,11 +1044,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						},
 						onHTTPError: function() {
 							hideProgressPill();
-							if (applyBtn) applyBtn.disabled = false;
+							bulkActionRunning = false;
+							updateBar();
 						},
 						onNetworkError: function() {
 							hideProgressPill();
-							if (applyBtn) applyBtn.disabled = false;
+							bulkActionRunning = false;
+							updateBar();
 						}
 					});
 				}
@@ -1167,9 +1175,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						if (currentToken !== lastScopeToken) {
 							selected.clear();
 							capWarned = false;
-							lastClickedId = null;
 							lastScopeToken = currentToken;
 						}
+						// Reset the shift-click anchor on every swap: after
+						// pagination or sort the prior DOM ordering no longer
+						// applies, so an old anchor could select an unintended
+						// range on the next shift-click.
+						lastClickedId = null;
 						updateBar();
 					}
 				});
