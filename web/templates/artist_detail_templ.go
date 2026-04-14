@@ -29,7 +29,7 @@ type ArtistDetailData struct {
 	LibraryName        string
 	LibrarySource      string
 	ProfileName        string                   // Active platform profile name for image terminology
-	ActiveTab          string                   // "overview", "images", "providers", "history" (default: "overview")
+	ActiveTab          string                   // "overview", "images", "providers", "discography", "history" (default: "overview")
 	Connections        []ArtistDetailConnection // Platform connections with external URLs
 	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
@@ -1732,12 +1732,12 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var106 = []any{templ.KV("hidden", normalizeTab(data.ActiveTab) != "history")}
+			var templ_7745c5c3_Var106 = []any{templ.KV("hidden", normalizeTab(data.ActiveTab) != "discography")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var106...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "<div id=\"panel-history\" role=\"tabpanel\" aria-labelledby=\"tab-history\" data-tab-panel=\"history\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "<div id=\"panel-discography\" role=\"tabpanel\" aria-labelledby=\"tab-discography\" data-tab-panel=\"discography\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1755,9 +1755,9 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var108 string
-			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-tab-" + data.Artist.ID)
+			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs("artist-discography-tab-" + data.Artist.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 567, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 567, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 			if templ_7745c5c3_Err != nil {
@@ -1768,9 +1768,9 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var109 string
-			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs("/artists/" + data.Artist.ID + "/history/tab")
+			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs("/artists/" + data.Artist.ID + "/discography/tab")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 568, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 568, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 			if templ_7745c5c3_Err != nil {
@@ -1781,9 +1781,9 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var110 string
-			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.loading_history"))
+			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discography.loading"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 572, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 572, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 			if templ_7745c5c3_Err != nil {
@@ -1793,64 +1793,125 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			var templ_7745c5c3_Var111 = []any{templ.KV("hidden", normalizeTab(data.ActiveTab) != "history")}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var111...)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "<div id=\"panel-history\" role=\"tabpanel\" aria-labelledby=\"tab-history\" data-tab-panel=\"history\" class=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var112 string
+			templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var111).String())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "\"><div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var113 string
+			templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-tab-" + data.Artist.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 584, Col: 48}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "\" hx-get=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var114 string
+			templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs("/artists/" + data.Artist.ID + "/history/tab")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 585, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "\" hx-trigger=\"intersect once\" hx-swap=\"innerHTML\"><p class=\"text-sm text-gray-400 italic py-8 text-center\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var115 string
+			templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.loading_history"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 589, Col: 96}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "</p></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			if data.ShowPlatformDebug && data.HasDebugConnection {
-				var templ_7745c5c3_Var111 = []any{templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug")}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var111...)
+				var templ_7745c5c3_Var116 = []any{templ.KV("hidden", normalizeTab(data.ActiveTab) != "debug")}
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var116...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "<div id=\"panel-debug\" role=\"tabpanel\" aria-labelledby=\"tab-debug\" data-tab-panel=\"debug\" class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "<div id=\"panel-debug\" role=\"tabpanel\" aria-labelledby=\"tab-debug\" data-tab-panel=\"debug\" class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var112 string
-				templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var111).String())
+				var templ_7745c5c3_Var117 string
+				templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var116).String())
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "\"><div class=\"space-y-4\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "\"><div class=\"space-y-4\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, conn := range data.Connections {
 					if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "<div id=\"")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<div id=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var113 string
-						templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs("debug-platform-state-" + conn.ID)
+						var templ_7745c5c3_Var118 string
+						templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs("debug-platform-state-" + conn.ID)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 591, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 608, Col: 47}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "\" hx-get=\"")
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var114 string
-						templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID))
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 592, Col: 122}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "\" hx-get=\"")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "\" hx-trigger=\"revealed\" hx-swap=\"outerHTML\"><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse\"><div class=\"flex items-center gap-2\"><div class=\"h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full\"></div></div></div></div>")
+						var templ_7745c5c3_Var119 string
+						templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", data.Artist.ID, conn.ID))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 609, Col: 122}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\" hx-trigger=\"revealed\" hx-swap=\"outerHTML\"><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse\"><div class=\"flex items-center gap-2\"><div class=\"h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full\"></div></div></div></div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1858,7 +1919,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1867,7 +1928,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1898,12 +1959,12 @@ func artistDetailTabBar(activeTab string, showDebug bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var115 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var115 == nil {
-			templ_7745c5c3_Var115 = templ.NopComponent
+		templ_7745c5c3_Var120 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var120 == nil {
+			templ_7745c5c3_Var120 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "<nav class=\"flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1\" role=\"tablist\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "<nav class=\"flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1\" role=\"tablist\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1919,6 +1980,10 @@ func artistDetailTabBar(activeTab string, showDebug bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = artistDetailTab("discography", t(ctx, "artist.tab_discography"), activeTab).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -1929,7 +1994,7 @@ func artistDetailTabBar(activeTab string, showDebug bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "</nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "</nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1953,98 +2018,98 @@ func artistDetailTab(id string, label string, activeTab string) templ.Component 
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var116 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var116 == nil {
-			templ_7745c5c3_Var116 = templ.NopComponent
+		templ_7745c5c3_Var121 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var121 == nil {
+			templ_7745c5c3_Var121 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var117 = []any{"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
+		var templ_7745c5c3_Var122 = []any{"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
 			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
 			templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", activeTab != id),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var117...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var122...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "<button type=\"button\" role=\"tab\" id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var118 string
-		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs("tab-" + id)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 632, Col: 18}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "\" data-tab=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var119 string
-		templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(id)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 633, Col: 15}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "\" aria-controls=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var120 string
-		templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs("panel-" + id)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 634, Col: 31}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var121 string
-		templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var117).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "\" aria-selected=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var122 string
-		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(activeTab == id))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 640, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "\" onclick=\"switchArtistTab(event, this)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "<button type=\"button\" role=\"tab\" id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var123 string
-		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs("tab-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 643, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 650, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "</button>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "\" data-tab=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var124 string
+		templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinStringErrs(id)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 651, Col: 15}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "\" aria-controls=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var125 string
+		templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinStringErrs("panel-" + id)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 652, Col: 31}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var126 string
+		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var122).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "\" aria-selected=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var127 string
+		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(activeTab == id))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 658, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\" onclick=\"switchArtistTab(event, this)\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var128 string
+		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 661, Col: 9}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "</button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2069,12 +2134,12 @@ func artistDetailTabScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var124 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var124 == nil {
-			templ_7745c5c3_Var124 = templ.NopComponent
+		templ_7745c5c3_Var129 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var129 == nil {
+			templ_7745c5c3_Var129 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "<script>\n\t\tfunction switchArtistTab(event, el) {\n\t\t\tevent.preventDefault();\n\t\t\tvar tabId = el.dataset.tab;\n\t\t\tdocument.querySelectorAll('[data-tab-panel]').forEach(function(p) {\n\t\t\t\tp.classList.add('hidden');\n\t\t\t});\n\t\t\tvar panel = null;\n\t\t\tdocument.querySelectorAll('[data-tab-panel]').forEach(function(p) {\n\t\t\t\tif (p.dataset.tabPanel === tabId) {\n\t\t\t\t\tpanel = p;\n\t\t\t\t}\n\t\t\t});\n\t\t\tif (panel) panel.classList.remove('hidden');\n\t\t\tdocument.querySelectorAll('[data-tab]').forEach(function(t) {\n\t\t\t\tt.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');\n\t\t\t\tt.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');\n\t\t\t\tt.setAttribute('aria-selected', 'false');\n\t\t\t});\n\t\t\tel.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');\n\t\t\tel.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');\n\t\t\tel.setAttribute('aria-selected', 'true');\n\t\t\tvar url = new URL(window.location);\n\t\t\tif (tabId === 'overview') {\n\t\t\t\turl.searchParams.delete('tab');\n\t\t\t} else {\n\t\t\t\turl.searchParams.set('tab', tabId);\n\t\t\t}\n\t\t\thistory.replaceState(null, '', url);\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<script>\n\t\tfunction switchArtistTab(event, el) {\n\t\t\tevent.preventDefault();\n\t\t\tvar tabId = el.dataset.tab;\n\t\t\tdocument.querySelectorAll('[data-tab-panel]').forEach(function(p) {\n\t\t\t\tp.classList.add('hidden');\n\t\t\t});\n\t\t\tvar panel = null;\n\t\t\tdocument.querySelectorAll('[data-tab-panel]').forEach(function(p) {\n\t\t\t\tif (p.dataset.tabPanel === tabId) {\n\t\t\t\t\tpanel = p;\n\t\t\t\t}\n\t\t\t});\n\t\t\tif (panel) panel.classList.remove('hidden');\n\t\t\tdocument.querySelectorAll('[data-tab]').forEach(function(t) {\n\t\t\t\tt.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');\n\t\t\t\tt.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');\n\t\t\t\tt.setAttribute('aria-selected', 'false');\n\t\t\t});\n\t\t\tel.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');\n\t\t\tel.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');\n\t\t\tel.setAttribute('aria-selected', 'true');\n\t\t\tvar url = new URL(window.location);\n\t\t\tif (tabId === 'overview') {\n\t\t\t\turl.searchParams.delete('tab');\n\t\t\t} else {\n\t\t\t\turl.searchParams.set('tab', tabId);\n\t\t\t}\n\t\t\thistory.replaceState(null, '', url);\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2100,103 +2165,103 @@ func ArtistHistorySection(artistID string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var125 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var125 == nil {
-			templ_7745c5c3_Var125 = templ.NopComponent
+		templ_7745c5c3_Var130 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var130 == nil {
+			templ_7745c5c3_Var130 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "<section id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var126 string
-		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-" + artistID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 685, Col: 43}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "\" class=\"sw-card rounded-lg bg-white dark:bg-gray-800 shadow\"><button type=\"button\" class=\"w-full flex items-center justify-between px-6 py-4 text-left\" aria-expanded=\"false\" aria-controls=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var127 string
-		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-body-" + artistID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 690, Col: 52}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\" onclick=\"\n\t\t\t\tvar btn = this;\n\t\t\t\tvar body = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\tbody.classList.toggle('hidden', expanded);\n\t\t\t\" hx-get=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var128 string
-		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs("/artists/" + artistID + "/history/tab")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 698, Col: 51}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "\" hx-target=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var129 string
-		templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs("#artist-history-body-" + artistID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 699, Col: 49}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "\" hx-swap=\"innerHTML\" hx-trigger=\"click once\"><h2 class=\"text-lg font-semibold\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var130 string
-		templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_history"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 703, Col: 67}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "</h2><svg class=\"h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"></path></svg></button><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "<section id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var131 string
-		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-body-" + artistID)
+		templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 708, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 703, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "\" class=\"hidden px-6 pb-6\"><p class=\"text-sm text-gray-400 italic\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "\" class=\"sw-card rounded-lg bg-white dark:bg-gray-800 shadow\"><button type=\"button\" class=\"w-full flex items-center justify-between px-6 py-4 text-left\" aria-expanded=\"false\" aria-controls=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var132 string
-		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.loading"))
+		templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-body-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 709, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 708, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "</p></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "\" onclick=\"\n\t\t\t\tvar btn = this;\n\t\t\t\tvar body = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\tbody.classList.toggle('hidden', expanded);\n\t\t\t\" hx-get=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var133 string
+		templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs("/artists/" + artistID + "/history/tab")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 716, Col: 51}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\" hx-target=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var134 string
+		templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs("#artist-history-body-" + artistID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 717, Col: 49}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "\" hx-swap=\"innerHTML\" hx-trigger=\"click once\"><h2 class=\"text-lg font-semibold\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var135 string
+		templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_history"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 721, Col: 67}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "</h2><svg class=\"h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"></path></svg></button><div id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var136 string
+		templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs("artist-history-body-" + artistID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 726, Col: 45}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "\" class=\"hidden px-6 pb-6\"><p class=\"text-sm text-gray-400 italic\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var137 string
+		templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.loading"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 727, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "</p></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2222,143 +2287,143 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string, fan
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var133 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var133 == nil {
-			templ_7745c5c3_Var133 = templ.NopComponent
+		templ_7745c5c3_Var138 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var138 == nil {
+			templ_7745c5c3_Var138 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var134 string
-		templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs("image-preview-" + imageType + "-" + artistID)
+		var templ_7745c5c3_Var139 string
+		templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs("image-preview-" + imageType + "-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 718, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 736, Col: 52}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if exists {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "<div class=\"relative group\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "<div class=\"relative group\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var135 = []any{"aspect-square flex items-center justify-center overflow-hidden",
+			var templ_7745c5c3_Var140 = []any{"aspect-square flex items-center justify-center overflow-hidden",
 				templ.KV("checkered-bg", imageType == "logo"),
 				templ.KV("bg-gray-100 dark:bg-gray-900", imageType != "logo"),
 			}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var135...)
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var140...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "<div class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var136 string
-			templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var135).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "\"><img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var137 string
-			templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", basePath(), artistID, imageType))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 731, Col: 95}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "\" alt=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var138 string
-			templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 732, Col: 17}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "\" class=\"max-w-full max-h-full object-contain\" loading=\"lazy\"></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if fanartCount > 1 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "<span class=\"absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var139 string
-				templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.image_count", fanartCount))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 739, Col: 50}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "</span>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "<div class=\"absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3\"><a href=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var140 templ.SafeURL
-			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 744, Col: 104}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<div class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var141 string
-			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.edit_image"))
+			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var140).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 746, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "\"><img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var142 string
-			templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.edit_image_type", label))
+			templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", basePath(), artistID, imageType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 747, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 749, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "\" alt=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var143 string
+			templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 750, Col: 17}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 185, "\" class=\"max-w-full max-h-full object-contain\" loading=\"lazy\"></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if fanartCount > 1 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "<span class=\"absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var144 string
+				templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artist.image_count", fanartCount))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 757, Col: 50}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "</span>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "<div class=\"absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var145 templ.SafeURL
+			templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 762, Col: 104}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var146 string
+			templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.edit_image"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 764, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var147 string
+			templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.edit_image_type", label))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 765, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2366,51 +2431,51 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string, fan
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 187, "</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if imageType == "logo" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 188, "<button type=\"button\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "<button type=\"button\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var143 string
-				templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.trim_transparent_border"))
+				var templ_7745c5c3_Var148 string
+				templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.trim_transparent_border"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 755, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 773, Col: 55}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "\" aria-label=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var144 string
-				templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.trim_transparent_border"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 756, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 190, "\" hx-post=\"")
+				var templ_7745c5c3_Var149 string
+				templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.trim_transparent_border"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 774, Col: 60}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var145 string
-				templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 757, Col: 77}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "\" hx-post=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\">")
+				var templ_7745c5c3_Var150 string
+				templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 775, Col: 77}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2418,77 +2483,77 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string, fan
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 192, "</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 193, "<button type=\"button\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "<button type=\"button\" class=\"rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var146 string
-			templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_image"))
+			var templ_7745c5c3_Var151 string
+			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_image"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 767, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 785, Col: 43}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 194, "\" aria-label=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var147 string
-			templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_image_type", label))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 768, Col: 61}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 195, "\" hx-delete=\"")
+			var templ_7745c5c3_Var152 string
+			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_image_type", label))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 786, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var148 string
-			templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 769, Col: 82}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "\" hx-delete=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 196, "\" hx-target=\"")
+			var templ_7745c5c3_Var153 string
+			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 787, Col: 82}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var149 string
-			templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs("#image-preview-" + imageType + "-" + artistID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 770, Col: 64}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "\" hx-target=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 197, "\" hx-swap=\"outerHTML\" hx-confirm=\"")
+			var templ_7745c5c3_Var154 string
+			templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs("#image-preview-" + imageType + "-" + artistID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 788, Col: 64}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var150 string
-			templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_image_confirm", label))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 772, Col: 64}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "\" hx-swap=\"outerHTML\" hx-confirm=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 198, "\" data-confirm-key=\"image-delete\">")
+			var templ_7745c5c3_Var155 string
+			templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_image_confirm", label))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 790, Col: 64}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "\" data-confirm-key=\"image-delete\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2496,64 +2561,64 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string, fan
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 199, "</button></div></div><div class=\"p-1.5 text-center\"><span class=\"text-xs font-medium text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 204, "</button></div></div><div class=\"p-1.5 text-center\"><span class=\"text-xs font-medium text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var151 string
-			templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			var templ_7745c5c3_Var156 string
+			templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 780, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 798, Col: 78}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 200, "</span><div hx-get=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var152 string
-			templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", artistID, imageType))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 782, Col: 83}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "</span><div hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 201, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"></div></div>")
+			var templ_7745c5c3_Var157 string
+			templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", artistID, imageType))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 800, Col: 83}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 202, "<a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 207, "<a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var153 templ.SafeURL
-			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)))
+			var templ_7745c5c3_Var158 templ.SafeURL
+			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath(), artistID, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 789, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 807, Col: 102}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 203, "\" class=\"aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add\" title=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var154 string
-			templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.add_image_type", label))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 791, Col: 51}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "\" class=\"aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 204, "\"><div class=\"text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors\">")
+			var templ_7745c5c3_Var159 string
+			templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.add_image_type", label))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 809, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "\"><div class=\"text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2561,38 +2626,38 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string, fan
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "<span class=\"text-xs mt-1 block\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 210, "<span class=\"text-xs mt-1 block\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var155 string
-			templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			var templ_7745c5c3_Var160 string
+			templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 795, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 813, Col: 45}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 206, "</span></div></a><div class=\"p-1.5 text-center\"><span class=\"text-xs font-medium text-gray-600 dark:text-gray-400\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var160))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var156 string
-			templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 799, Col: 78}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 211, "</span></div></a><div class=\"p-1.5 text-center\"><span class=\"text-xs font-medium text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 207, "</span></div>")
+			var templ_7745c5c3_Var161 string
+			templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 817, Col: 78}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 212, "</span></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 213, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2618,40 +2683,40 @@ func ImageInfoBadge(width, height int, size int64) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var157 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var157 == nil {
-			templ_7745c5c3_Var157 = templ.NopComponent
+		templ_7745c5c3_Var162 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var162 == nil {
+			templ_7745c5c3_Var162 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 209, "<span class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 214, "<span class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if width > 0 && height > 0 {
-			var templ_7745c5c3_Var158 string
-			templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(width) + "x" + strconv.Itoa(height) + " ")
+			var templ_7745c5c3_Var163 string
+			templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(width) + "x" + strconv.Itoa(height) + " ")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 810, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 828, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 210, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		var templ_7745c5c3_Var159 string
-		templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSizeTempl(size))
+		var templ_7745c5c3_Var164 string
+		templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.JoinStringErrs(formatFileSizeTempl(size))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 812, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 830, Col: 29}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var164))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 211, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2686,183 +2751,183 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var160 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var160 == nil {
-			templ_7745c5c3_Var160 = templ.NopComponent
+		templ_7745c5c3_Var165 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var165 == nil {
+			templ_7745c5c3_Var165 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 212, "<div id=\"fanart-gallery\" class=\"space-y-4\" data-artist-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var161 string
-		templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinStringErrs(artistID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 831, Col: 27}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 213, "\" data-label-delete-n-one=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var162 string
-		templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_selected.one"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 832, Col: 66}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 214, "\" data-label-delete-n-other=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var163 string
-		templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_selected.other"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 833, Col: 70}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 215, "\" data-confirm-delete-n-one=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var164 string
-		templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_fanart_confirm.one"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 834, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var164))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 216, "\" data-confirm-delete-n-other=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var165 string
-		templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_fanart_confirm.other"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 835, Col: 78}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "\" data-session-expired=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "<div id=\"fanart-gallery\" class=\"space-y-4\" data-artist-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var166 string
-		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.session_expired"))
+		templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 836, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 849, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 218, "\" data-toast-delete-failed=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 218, "\" data-label-delete-n-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var167 string
-		templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected_failed"))
+		templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_selected.one"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 837, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 850, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "\" data-toast-delete-network=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 219, "\" data-label-delete-n-other=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var168 string
-		templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected_network"))
+		templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_selected.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 838, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 851, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var168))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 220, "\"><div class=\"flex items-center justify-between\"><h3 class=\"text-sm font-semibold\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 220, "\" data-confirm-delete-n-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var169 string
-		templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "image.fanart_count", len(items)))
+		templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_fanart_confirm.one"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 841, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 852, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 221, "</h3><button type=\"button\" id=\"fanart-delete-selected\" class=\"hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 221, "\" data-confirm-delete-n-other=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var170 string
-		templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected"))
+		templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_n_fanart_confirm.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 847, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 853, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "</button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "\" data-session-expired=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var171 string
+		templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.session_expired"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 854, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 223, "\" data-toast-delete-failed=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var172 string
+		templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected_failed"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 855, Col: 68}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "\" data-toast-delete-network=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var173 string
+		templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected_network"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 856, Col: 70}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 225, "\"><div class=\"flex items-center justify-between\"><h3 class=\"text-sm font-semibold\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var174 string
+		templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "image.fanart_count", len(items)))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 859, Col: 80}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 226, "</h3><button type=\"button\" id=\"fanart-delete-selected\" class=\"hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var175 string
+		templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_selected"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 865, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 227, "</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(items) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 223, "<div class=\"grid grid-cols-2 sm:grid-cols-3 gap-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 228, "<div class=\"grid grid-cols-2 sm:grid-cols-3 gap-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, item := range items {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 224, "<div class=\"relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group\"><input type=\"checkbox\" class=\"fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 229, "<div class=\"relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group\"><input type=\"checkbox\" class=\"fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var171 string
-				templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Index))
+				var templ_7745c5c3_Var176 string
+				templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Index))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 858, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 876, Col: 39}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 225, "\" aria-label=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var172 string
-				templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs("Select " + item.Filename)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 859, Col: 45}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 230, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 226, "\">")
+				var templ_7745c5c3_Var177 string
+				templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs("Select " + item.Filename)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 877, Col: 45}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if item.Index == 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 227, "<span class=\"absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 232, "<span class=\"absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -2870,99 +2935,99 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var173 string
-					templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.primary"))
+					var templ_7745c5c3_Var178 string
+					templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.primary"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 865, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 883, Col: 34}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 228, "</span>")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 233, "</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 229, "<div class=\"aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden\"><img src=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var174 string
-				templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 870, Col: 105}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 230, "\" alt=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var175 string
-				templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(item.Filename)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 871, Col: 27}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 231, "\" class=\"max-w-full max-h-full object-cover\" loading=\"lazy\"></div><div class=\"absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3\"><button type=\"button\" class=\"p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm\" title=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var176 string
-				templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.view_full_size"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 883, Col: 47}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 232, "\" aria-label=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var177 string
-				templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.view_full_size_name", item.Filename))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 884, Col: 73}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 233, "\" data-lightbox-src=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var178 string
-				templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 885, Col: 119}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 234, "\" data-lightbox-alt=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 234, "<div class=\"aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden\"><img src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var179 string
-				templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(item.Filename)
+				templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 886, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 888, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 235, "\" onclick=\"openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 235, "\" alt=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var180 string
+				templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(item.Filename)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 889, Col: 27}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "\" class=\"max-w-full max-h-full object-cover\" loading=\"lazy\"></div><div class=\"absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3\"><button type=\"button\" class=\"p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var181 string
+				templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.view_full_size"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 901, Col: 47}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "\" aria-label=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var182 string
+				templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.view_full_size_name", item.Filename))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 902, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 238, "\" data-lightbox-src=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var183 string
+				templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", basePath(), artistID, item.Index))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 903, Col: 119}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 239, "\" data-lightbox-alt=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var184 string
+				templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(item.Filename)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 904, Col: 41}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 240, "\" onclick=\"openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2970,142 +3035,142 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 241, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if item.Index > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "<button type=\"button\" class=\"p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm\" title=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var180 string
-					templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_as_primary"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 896, Col: 48}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 238, "\" aria-label=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var181 string
-					templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.set_as_primary_name", item.Filename))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 897, Col: 74}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 239, "\" data-set-primary-index=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var182 string
-					templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Index))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 898, Col: 58}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 240, "\" data-set-primary-count=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var183 string
-					templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(items)))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 899, Col: 58}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 241, "\" data-set-primary-artist=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var184 string
-					templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(artistID)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 900, Col: 43}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 242, "\" data-confirm=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 242, "<button type=\"button\" class=\"p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm\" title=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var185 string
-					templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_as_primary_confirm"))
+					templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_as_primary"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 901, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 914, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 243, "\" data-reorder-error=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 243, "\" aria-label=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var186 string
-					templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_reorder_error"))
+					templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.set_as_primary_name", item.Filename))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 902, Col: 72}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 915, Col: 74}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 244, "\" data-session-expired=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 244, "\" data-set-primary-index=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var187 string
-					templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.session_expired"))
+					templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Index))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 903, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 916, Col: 58}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 245, "\" data-set-primary-failed=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 245, "\" data-set-primary-count=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var188 string
-					templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_failed"))
+					templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(len(items)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 904, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 917, Col: 58}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "\" data-set-primary-network=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 246, "\" data-set-primary-artist=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var189 string
-					templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_network"))
+					templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(artistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 905, Col: 72}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 918, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 247, "\" onclick=\"setFanartPrimary(this)\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 247, "\" data-confirm=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var190 string
+					templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_as_primary_confirm"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 919, Col: 63}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var190))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 248, "\" data-reorder-error=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var191 string
+					templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_reorder_error"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 920, Col: 72}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 249, "\" data-session-expired=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var192 string
+					templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.session_expired"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 921, Col: 64}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 250, "\" data-set-primary-failed=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var193 string
+					templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_failed"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 922, Col: 70}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 251, "\" data-set-primary-network=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var194 string
+					templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.set_primary_network"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 923, Col: 72}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "\" onclick=\"setFanartPrimary(this)\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -3113,64 +3178,64 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 248, "</button>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 253, "</button>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 249, "<button hx-delete=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, "<button hx-delete=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var190 string
-				templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index))
+				var templ_7745c5c3_Var195 string
+				templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 913, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 931, Col: 92}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var190))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 250, "\" hx-confirm=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var191 string
-				templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_fanart_confirm"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 914, Col: 59}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, "\" hx-confirm=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 251, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
+				var templ_7745c5c3_Var196 string
+				templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.delete_fanart_confirm"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 932, Col: 59}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var192 string
-				templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 918, Col: 39}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\" class=\"p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 252, "\" aria-label=\"")
+				var templ_7745c5c3_Var197 string
+				templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 936, Col: 39}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var193 string
-				templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_filename", item.Filename))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 919, Col: 69}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 253, "\">")
+				var templ_7745c5c3_Var198 string
+				templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.delete_filename", item.Filename))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 937, Col: 69}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 258, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3178,63 +3243,63 @@ func FanartGallery(artistID string, items []FanartGalleryItem, profileName strin
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, "</button></div><div class=\"p-1.5 text-center\"><span class=\"text-xs text-gray-500 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 259, "</button></div><div class=\"p-1.5 text-center\"><span class=\"text-xs text-gray-500 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if item.Width > 0 && item.Height > 0 {
-					var templ_7745c5c3_Var194 string
-					templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height))
+					var templ_7745c5c3_Var199 string
+					templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 927, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 945, Col: 69}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 260, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				var templ_7745c5c3_Var195 string
-				templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(" " + formatFileSizeTempl(item.Size))
+				var templ_7745c5c3_Var200 string
+				templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.JoinStringErrs(" " + formatFileSizeTempl(item.Size))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 929, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 947, Col: 46}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var200))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "</span></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 261, "</span></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 257, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 262, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 258, "<p class=\"text-sm text-gray-400 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 263, "<p class=\"text-sm text-gray-400 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var196 string
-			templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.no_fanart_images"))
+			var templ_7745c5c3_Var201 string
+			templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.no_fanart_images"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 936, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 954, Col: 78}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 259, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 264, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 260, "<script>\n\t\t\t(function() {\n\t\t\t\tvar gallery = document.getElementById('fanart-gallery');\n\t\t\t\tif (!gallery) return;\n\t\t\t\tvar basePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\tvar deleteBtn = document.getElementById('fanart-delete-selected');\n\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t}\n\t\t\t\tgallery.addEventListener('change', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tdeleteBtn.classList.remove('hidden');\n\t\t\t\t\t\tdeleteBtn.textContent = pluralize(checked.length, gallery.dataset.labelDeleteNOne || 'Delete 1 selected', gallery.dataset.labelDeleteNOther || 'Delete {count} selected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdeleteBtn.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tdeleteBtn.addEventListener('click', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\tif (!confirm(pluralize(checked.length, gallery.dataset.confirmDeleteNOne || 'Delete 1 fanart image?', gallery.dataset.confirmDeleteNOther || 'Delete {count} fanart images?'))) return;\n\t\t\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tif (!token) {\n\t\t\t\t\t\talert(gallery.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar indices = [];\n\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\tindices.push(parseInt(checked[i].value, 10));\n\t\t\t\t\t}\n\t\t\t\t\tvar id = gallery.dataset.artistId;\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/' + id + '/images/fanart/batch', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': token\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({indices: indices}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) {\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn r.text().then(function(body) {\n\t\t\t\t\t\t\talert((gallery.dataset.toastDeleteFailed || 'Failed to delete selected images: %s').replace('%s', function() { return body; }));\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\talert((gallery.dataset.toastDeleteNetwork || 'Network error deleting selected images: %s').replace('%s', function() { return err.message; }));\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 265, "<script>\n\t\t\t(function() {\n\t\t\t\tvar gallery = document.getElementById('fanart-gallery');\n\t\t\t\tif (!gallery) return;\n\t\t\t\tvar basePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\tvar deleteBtn = document.getElementById('fanart-delete-selected');\n\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t}\n\t\t\t\tgallery.addEventListener('change', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tdeleteBtn.classList.remove('hidden');\n\t\t\t\t\t\tdeleteBtn.textContent = pluralize(checked.length, gallery.dataset.labelDeleteNOne || 'Delete 1 selected', gallery.dataset.labelDeleteNOther || 'Delete {count} selected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdeleteBtn.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tdeleteBtn.addEventListener('click', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\tif (!confirm(pluralize(checked.length, gallery.dataset.confirmDeleteNOne || 'Delete 1 fanart image?', gallery.dataset.confirmDeleteNOther || 'Delete {count} fanart images?'))) return;\n\t\t\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tif (!token) {\n\t\t\t\t\t\talert(gallery.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar indices = [];\n\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\tindices.push(parseInt(checked[i].value, 10));\n\t\t\t\t\t}\n\t\t\t\t\tvar id = gallery.dataset.artistId;\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/' + id + '/images/fanart/batch', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': token\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({indices: indices}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) {\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn r.text().then(function(body) {\n\t\t\t\t\t\t\talert((gallery.dataset.toastDeleteFailed || 'Failed to delete selected images: %s').replace('%s', function() { return body; }));\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\talert((gallery.dataset.toastDeleteNetwork || 'Network error deleting selected images: %s').replace('%s', function() { return err.message; }));\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3256,7 +3321,7 @@ func isGroupType(artistType string) bool {
 // normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
 func normalizeTab(tab string) string {
 	switch tab {
-	case "overview", "images", "providers", "history", "debug":
+	case "overview", "images", "providers", "discography", "history", "debug":
 		return tab
 	default:
 		return "overview"
@@ -3305,42 +3370,42 @@ func MembersSection(artistID string, members []artist.BandMember, providers []st
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var197 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var197 == nil {
-			templ_7745c5c3_Var197 = templ.NopComponent
+		templ_7745c5c3_Var202 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var202 == nil {
+			templ_7745c5c3_Var202 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 261, "<section id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 266, "<section id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var198 string
-		templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs("members-section-" + artistID)
+		var templ_7745c5c3_Var203 string
+		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs("members-section-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1044, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1062, Col: 44}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 262, "\" class=\"sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow\"><div class=\"flex items-center justify-between mb-3\"><h2 class=\"text-lg font-semibold\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var199 string
-		templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.members"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1046, Col: 63}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 267, "\" class=\"sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow\"><div class=\"flex items-center justify-between mb-3\"><h2 class=\"text-lg font-semibold\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 263, "</h2><span class=\"inline-flex items-center gap-0.5\">")
+		var templ_7745c5c3_Var204 string
+		templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.members"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1064, Col: 63}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var200 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 268, "</h2><span class=\"inline-flex items-center gap-0.5\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var205 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -3353,33 +3418,33 @@ func MembersSection(artistID string, members []artist.BandMember, providers []st
 			}
 			ctx = templ.InitializeContext(ctx)
 			if len(providers) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 264, "<button type=\"button\" role=\"menuitem\" class=\"flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\" hx-get=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "<button type=\"button\" role=\"menuitem\" class=\"flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\" hx-get=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var201 string
-				templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/fields/members/providers")
+				var templ_7745c5c3_Var206 string
+				templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/fields/members/providers")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1054, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1072, Col: 75}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 265, "\" hx-target=\"#field-provider-modal-body\" hx-swap=\"innerHTML\" hx-indicator=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var202 string
-				templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinStringErrs("#members-spinner-" + artistID)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1057, Col: 52}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 270, "\" hx-target=\"#field-provider-modal-body\" hx-swap=\"innerHTML\" hx-indicator=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 266, "\">")
+				var templ_7745c5c3_Var207 string
+				templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs("#members-spinner-" + artistID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1075, Col: 52}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 271, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3387,71 +3452,71 @@ func MembersSection(artistID string, members []artist.BandMember, providers []st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var203 string
-				templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.fetch_from_providers"))
+				var templ_7745c5c3_Var208 string
+				templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.fetch_from_providers"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1060, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1078, Col: 46}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 267, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 272, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 268, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 273, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(members) > 0 {
 				if len(providers) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 269, "<div class=\"my-1 border-t border-gray-200 dark:border-gray-700\"></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "<div class=\"my-1 border-t border-gray-200 dark:border-gray-700\"></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 270, " <button type=\"button\" role=\"menuitem\" class=\"flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20\" hx-delete=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, " <button type=\"button\" role=\"menuitem\" class=\"flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20\" hx-delete=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var204 string
-				templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/members")
+				var templ_7745c5c3_Var209 string
+				templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/members")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1071, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1089, Col: 61}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 271, "\" hx-target=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var205 string
-				templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs("#members-section-" + artistID)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1072, Col: 49}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 276, "\" hx-target=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 272, "\" hx-swap=\"outerHTML\" hx-confirm=\"")
+				var templ_7745c5c3_Var210 string
+				templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs("#members-section-" + artistID)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1090, Col: 49}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var206 string
-				templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.clear_all_members_confirm"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1074, Col: 62}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 277, "\" hx-swap=\"outerHTML\" hx-confirm=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 273, "\" data-confirm-key=\"members-clear\">")
+				var templ_7745c5c3_Var211 string
+				templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.clear_all_members_confirm"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1092, Col: 62}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 278, "\" data-confirm-key=\"members-clear\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3459,194 +3524,194 @@ func MembersSection(artistID string, members []artist.BandMember, providers []st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var207 string
-				templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.clear_all_members"))
+				var templ_7745c5c3_Var212 string
+				templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.clear_all_members"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1078, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1096, Col: 43}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 279, "</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = components.ContextMenu("members-"+artistID, true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var200), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextMenu("members-"+artistID, true).Render(templ.WithChildren(ctx, templ_7745c5c3_Var205), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 275, "<span id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "<span id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var208 string
-		templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs("members-spinner-" + artistID)
+		var templ_7745c5c3_Var213 string
+		templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs("members-spinner-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1082, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1100, Col: 44}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 276, "\" class=\"htmx-indicator\"><svg class=\"h-3.5 w-3.5 animate-spin text-gray-400\" fill=\"none\" viewBox=\"0 0 24 24\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\"></path></svg></span></span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 281, "\" class=\"htmx-indicator\"><svg class=\"h-3.5 w-3.5 animate-spin text-gray-400\" fill=\"none\" viewBox=\"0 0 24 24\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\"></path></svg></span></span></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(members) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 277, "<div class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 282, "<div class=\"divide-y divide-gray-200 dark:divide-gray-700\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, m := range members {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 278, "<div class=\"py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between\"><div><p class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 283, "<div class=\"py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between\"><div><p class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var209 string
-				templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(m.MemberName)
+				var templ_7745c5c3_Var214 string
+				templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(m.MemberName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1096, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1114, Col: 22}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 279, " ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 284, " ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if m.IsOriginalMember {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 280, "<span class=\"ml-1 text-xs text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 285, "<span class=\"ml-1 text-xs text-gray-400\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var210 string
-					templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.member_original"))
+					var templ_7745c5c3_Var215 string
+					templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.member_original"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1098, Col: 84}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1116, Col: 84}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 281, "</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 286, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 282, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 287, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if len(m.Instruments) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 283, "<p class=\"text-xs text-gray-500 dark:text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 288, "<p class=\"text-xs text-gray-500 dark:text-gray-400\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					for i, inst := range m.Instruments {
 						if i > 0 {
-							var templ_7745c5c3_Var211 string
-							templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
+							var templ_7745c5c3_Var216 string
+							templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1105, Col: 17}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1123, Col: 17}
 							}
-							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 284, " ")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 289, " ")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var212 string
-						templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(inst)
+						var templ_7745c5c3_Var217 string
+						templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinStringErrs(inst)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1107, Col: 16}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1125, Col: 16}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 285, "</p>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 290, "</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 286, "</div><div class=\"text-xs text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "</div><div class=\"text-xs text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if m.DateJoined != "" {
-					var templ_7745c5c3_Var213 string
-					templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(m.DateJoined)
+					var templ_7745c5c3_Var218 string
+					templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(m.DateJoined)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1114, Col: 22}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1132, Col: 22}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 287, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 292, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if m.DateLeft != "" {
-						var templ_7745c5c3_Var214 string
-						templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + m.DateLeft)
+						var templ_7745c5c3_Var219 string
+						templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + m.DateLeft)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1116, Col: 29}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1134, Col: 29}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					} else {
-						var templ_7745c5c3_Var215 string
-						templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + t(ctx, "artist.member_present"))
+						var templ_7745c5c3_Var220 string
+						templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + t(ctx, "artist.member_present"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1118, Col: 50}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1136, Col: 50}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 288, "</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 293, "</div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 289, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 294, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 290, "<p class=\"text-sm text-gray-400 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 295, "<p class=\"text-sm text-gray-400 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var216 string
-			templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.no_members"))
+			var templ_7745c5c3_Var221 string
+			templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.no_members"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1126, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1144, Col: 72}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 291, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 296, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 292, "</section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 297, "</section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3696,12 +3761,12 @@ func PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *con
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var217 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var217 == nil {
-			templ_7745c5c3_Var217 = templ.NopComponent
+		templ_7745c5c3_Var222 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var222 == nil {
+			templ_7745c5c3_Var222 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 293, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 298, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3709,7 +3774,7 @@ func PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *con
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 294, "<div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 299, "<div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3717,55 +3782,55 @@ func PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *con
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 295, "<button type=\"button\" class=\"inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 300, "<button type=\"button\" class=\"inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var218 templ.ComponentScript = pushMetadata(a.ID, conn.ID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var218.Call)
+		var templ_7745c5c3_Var223 templ.ComponentScript = pushMetadata(a.ID, conn.ID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var223.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 296, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var219 string
-		templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.push_all"))
+		var templ_7745c5c3_Var224 string
+		templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.push_all"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1162, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1180, Col: 32}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 297, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" hx-post=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var220 string
-		templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1167, Col: 75}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "</button> <button type=\"button\" class=\"inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 298, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\">")
+		var templ_7745c5c3_Var225 string
+		templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1185, Col: 75}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var221 string
-		templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.pull_from_platform"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1171, Col: 42}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 299, "</button></div></div>")
+		var templ_7745c5c3_Var226 string
+		templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.pull_from_platform"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1189, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3773,7 +3838,7 @@ func PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *con
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 300, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3798,38 +3863,38 @@ func PlatformStateError(conn *connection.Connection, errMsg string) templ.Compon
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var222 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var222 == nil {
-			templ_7745c5c3_Var222 = templ.NopComponent
+		templ_7745c5c3_Var227 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var227 == nil {
+			templ_7745c5c3_Var227 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "<div class=\"rounded-lg border border-red-200 dark:border-red-800 p-4\"><div class=\"flex items-center gap-2 text-red-600 dark:text-red-400\"><span class=\"font-medium text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "<div class=\"rounded-lg border border-red-200 dark:border-red-800 p-4\"><div class=\"flex items-center gap-2 text-red-600 dark:text-red-400\"><span class=\"font-medium text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var223 string
-		templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
+		var templ_7745c5c3_Var228 string
+		templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1183, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1201, Col: 48}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "</span> <span class=\"text-xs\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var224 string
-		templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.platform_state_error", errMsg))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1184, Col: 73}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "</span> <span class=\"text-xs\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "</span></div></div>")
+		var templ_7745c5c3_Var229 string
+		templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.platform_state_error", errMsg))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1202, Col: 73}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "</span></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3855,12 +3920,12 @@ func PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, st
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var225 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var225 == nil {
-			templ_7745c5c3_Var225 = templ.NopComponent
+		templ_7745c5c3_Var230 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var230 == nil {
+			templ_7745c5c3_Var230 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><div class=\"flex items-center px-4 py-3 bg-gray-50 dark:bg-gray-700/50\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3868,7 +3933,7 @@ func PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3876,7 +3941,7 @@ func PlatformStateCardReadOnly(a *artist.Artist, conn *connection.Connection, st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -3902,87 +3967,87 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var226 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var226 == nil {
-			templ_7745c5c3_Var226 = templ.NopComponent
+		templ_7745c5c3_Var231 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var231 == nil {
+			templ_7745c5c3_Var231 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "<div class=\"flex items-center gap-2\"><span class=\"font-medium text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "<div class=\"flex items-center gap-2\"><span class=\"font-medium text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var227 string
-		templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
+		var templ_7745c5c3_Var232 string
+		templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1205, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1223, Col: 47}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "</span> ")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var228 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "</span> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var233 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
 			templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
 			templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
 			templ.KV("bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", conn.Type == connection.TypeLidarr),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var228...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var233...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var229 string
-		templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var228).String())
+		var templ_7745c5c3_Var234 string
+		templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var233).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var230 string
-		templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Type)
+		var templ_7745c5c3_Var235 string
+		templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Type)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1213, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1231, Col: 14}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if state.IsLocked {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "<span class=\"inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "<span class=\"inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var231 string
-			templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.locked"))
+			var templ_7745c5c3_Var236 string
+			templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.locked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1215, Col: 169}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1233, Col: 169}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4011,51 +4076,51 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var232 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var232 == nil {
-			templ_7745c5c3_Var232 = templ.NopComponent
+		templ_7745c5c3_Var237 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var237 == nil {
+			templ_7745c5c3_Var237 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "<div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, "<div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var233 string
-		templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.field"))
+		var templ_7745c5c3_Var238 string
+		templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.field"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1230, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1248, Col: 111}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var233))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">Stillwater</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var234 string
-		templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(platformLabel)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1232, Col: 97}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, "</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">Stillwater</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "</th><th class=\"text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20\">")
+		var templ_7745c5c3_Var239 string
+		templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(platformLabel)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1250, Col: 97}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var235 string
-		templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.status"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1233, Col: 114}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 322, "</th><th class=\"text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "</th></tr></thead> <tbody class=\"divide-y divide-gray-100 dark:divide-gray-700/50\">")
+		var templ_7745c5c3_Var240 string
+		templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.status"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1251, Col: 114}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 323, "</th></tr></thead> <tbody class=\"divide-y divide-gray-100 dark:divide-gray-700/50\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4108,7 +4173,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 324, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -4120,7 +4185,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 325, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -4132,7 +4197,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 326, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -4144,7 +4209,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 322, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 327, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -4157,20 +4222,20 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 323, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 328, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var236 string
-		templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_images"))
+		var templ_7745c5c3_Var241 string
+		templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_images"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1290, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1308, Col: 111}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 324, "</td><td class=\"px-4 py-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 329, "</td><td class=\"px-4 py-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4190,7 +4255,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 325, "</td><td class=\"px-4 py-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 330, "</td><td class=\"px-4 py-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4210,7 +4275,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 326, "</td><td class=\"px-4 py-2 text-center\"><span class=\"text-gray-300 dark:text-gray-600\">--</span></td></tr></tbody></table></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 331, "</td><td class=\"px-4 py-2 text-center\"><span class=\"text-gray-300 dark:text-gray-600\">--</span></td></tr></tbody></table></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4234,137 +4299,137 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty bool) t
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var237 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var237 == nil {
-			templ_7745c5c3_Var237 = templ.NopComponent
+		templ_7745c5c3_Var242 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var242 == nil {
+			templ_7745c5c3_Var242 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 327, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 332, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var238 string
-		templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(field)
+		var templ_7745c5c3_Var243 string
+		templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(field)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1314, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1332, Col: 86}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 328, "</td><td class=\"px-4 py-2 text-gray-900 dark:text-gray-100 align-top\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 333, "</td><td class=\"px-4 py-2 text-gray-900 dark:text-gray-100 align-top\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if swValue != "" {
-			var templ_7745c5c3_Var239 string
-			templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(swValue)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1317, Col: 13}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 329, "<span class=\"text-gray-400 italic\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var240 string
-			templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1319, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 330, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 331, "</td><td class=\"px-4 py-2 text-gray-900 dark:text-gray-100 align-top\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if platValue != "" {
-			var templ_7745c5c3_Var241 string
-			templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(platValue)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1324, Col: 15}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 332, "<span class=\"text-gray-400 italic\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var242 string
-			templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1326, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 333, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 334, "</td><td class=\"px-4 py-2 text-center align-top\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if bothEmpty {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, "<span class=\"text-gray-300 dark:text-gray-600\">--</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else if match {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 336, "<span class=\"text-green-500\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var243 string
-			templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.match"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1333, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 337, "\"><svg class=\"h-4 w-4 inline\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"></path></svg></span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 338, "<span class=\"text-amber-500\" title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			var templ_7745c5c3_Var244 string
-			templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.mismatch"))
+			templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(swValue)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1339, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1335, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "\"><svg class=\"h-4 w-4 inline\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z\"></path></svg></span>")
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 334, "<span class=\"text-gray-400 italic\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var245 string
+			templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1337, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "</td></tr>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 336, "</td><td class=\"px-4 py-2 text-gray-900 dark:text-gray-100 align-top\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if platValue != "" {
+			var templ_7745c5c3_Var246 string
+			templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(platValue)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1342, Col: 15}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 337, "<span class=\"text-gray-400 italic\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var247 string
+			templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1344, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var247))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 338, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "</td><td class=\"px-4 py-2 text-center align-top\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if bothEmpty {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "<span class=\"text-gray-300 dark:text-gray-600\">--</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if match {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, "<span class=\"text-green-500\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var248 string
+			templ_7745c5c3_Var248, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.match"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1351, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var248))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "\"><svg class=\"h-4 w-4 inline\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"></path></svg></span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "<span class=\"text-amber-500\" title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var249 string
+			templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.mismatch"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1357, Col: 66}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, "\"><svg class=\"h-4 w-4 inline\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z\"></path></svg></span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "</td></tr>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4388,46 +4453,46 @@ func platformImageBadge(label string, present bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var245 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var245 == nil {
-			templ_7745c5c3_Var245 = templ.NopComponent
+		templ_7745c5c3_Var250 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var250 == nil {
+			templ_7745c5c3_Var250 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var246 = []any{"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
+		var templ_7745c5c3_Var251 = []any{"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
 			templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
 			templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var246...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var251...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var247 string
-		templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var246).String())
+		var templ_7745c5c3_Var252 string
+		templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var251).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var247))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var248 string
-		templ_7745c5c3_Var248, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var253 string
+		templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1356, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1374, Col: 9}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var248))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4525,116 +4590,116 @@ func fieldProvenanceSection(providers map[string][]string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var249 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var249 == nil {
-			templ_7745c5c3_Var249 = templ.NopComponent
+		templ_7745c5c3_Var254 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var254 == nil {
+			templ_7745c5c3_Var254 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(providers) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, "<div class=\"mt-4 sw-card bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden\"><div class=\"px-4 py-3 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-sm font-medium\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, "<div class=\"mt-4 sw-card bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden\"><div class=\"px-4 py-3 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-sm font-medium\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var250 string
-			templ_7745c5c3_Var250, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.field_provenance"))
+			var templ_7745c5c3_Var255 string
+			templ_7745c5c3_Var255, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.field_provenance"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1437, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1455, Col: 71}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var250))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "</h3></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-40\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var255))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var251 string
-			templ_7745c5c3_Var251, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.field"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1443, Col: 113}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var251))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "</h3></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700\"><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-40\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">")
+			var templ_7745c5c3_Var256 string
+			templ_7745c5c3_Var256, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.field"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1461, Col: 113}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var256))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var252 string
-			templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.field_provenance.providers"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1444, Col: 129}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, "</th><th class=\"text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "</th></tr></thead> <tbody class=\"divide-y divide-gray-100 dark:divide-gray-700/50\">")
+			var templ_7745c5c3_Var257 string
+			templ_7745c5c3_Var257, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.field_provenance.providers"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1462, Col: 129}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var257))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "</th></tr></thead> <tbody class=\"divide-y divide-gray-100 dark:divide-gray-700/50\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, key := range sortedKeys(providers) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "<tr><td class=\"px-4 py-2 text-gray-500 dark:text-gray-400 font-medium\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var253 string
-				templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(key)
+				var templ_7745c5c3_Var258 string
+				templ_7745c5c3_Var258, templ_7745c5c3_Err = templ.JoinStringErrs(key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1450, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1468, Col: 80}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var258))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, "</td>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, "</td>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if len(providers[key]) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "<td class=\"px-4 py-2 text-gray-900 dark:text-gray-100\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, "<td class=\"px-4 py-2 text-gray-900 dark:text-gray-100\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var254 string
-					templ_7745c5c3_Var254, templ_7745c5c3_Err = templ.JoinStringErrs(strings.Join(providers[key], ", "))
+					var templ_7745c5c3_Var259 string
+					templ_7745c5c3_Var259, templ_7745c5c3_Err = templ.JoinStringErrs(strings.Join(providers[key], ", "))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1452, Col: 100}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1470, Col: 100}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var254))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var259))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, "</td>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 356, "</td>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "<td class=\"px-4 py-2 text-gray-400 italic\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 357, "<td class=\"px-4 py-2 text-gray-400 italic\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var255 string
-					templ_7745c5c3_Var255, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.none"))
+					var templ_7745c5c3_Var260 string
+					templ_7745c5c3_Var260, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.none"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1454, Col: 75}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1472, Col: 75}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var255))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var260))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "</td>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 358, "</td>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, "</tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 359, "</tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, "</tbody></table></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 360, "</tbody></table></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
