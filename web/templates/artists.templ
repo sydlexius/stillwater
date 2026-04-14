@@ -212,6 +212,13 @@ func filterState(filters map[string]string, key string) string {
 	return "neutral"
 }
 
+// isFilterActive returns whether the artist list has any active filter.
+// Bulk selection is only available when a filter narrows the visible set; this
+// guards against users accidentally selecting the entire library.
+func isFilterActive(data ArtistListData) bool {
+	return activeFilterCount(data.Filters) > 0 || data.Search != "" || data.LibraryID != "" || data.Filter != ""
+}
+
 // activeFilterCount returns the number of active (non-neutral) filters in the map.
 func activeFilterCount(filters map[string]string) int {
 	count := 0
@@ -785,13 +792,279 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					});
 				});
 			})();
+
+			// Bulk-action controller. Wires the Select-All checkbox, per-row
+			// checkboxes, the "N selected" indicator, and the action dropdown
+			// to the /api/v1/artists/bulk-actions endpoint. The controller is
+			// idempotent: it attaches listeners via event delegation so it
+			// works across HTMX swaps of #artist-content without re-binding.
+			(function() {
+				// Selection state persists across HTMX swaps of the list so
+				// the user can paginate while keeping earlier selections.
+				var selected = new Set();
+				// Matches the backend cap in handlers_bulk_actions.go; keeps
+				// the UI in sync so we never POST a payload the server will
+				// reject with a generic "failed to start" toast.
+				var MAX_BULK_SELECTION = 1000;
+				var capWarned = false;
+
+				function warnCap() {
+					if (capWarned) return;
+					capWarned = true;
+					var bar = document.getElementById('bulk-action-bar');
+					var tpl = (bar && bar.getAttribute('data-i18n-selection-cap')) || 'You can select up to {count} artists at a time.';
+					alert(tpl.replace('{count}', String(MAX_BULK_SELECTION)));
+				}
+
+				function tryAdd(id) {
+					if (selected.has(id)) return true;
+					if (selected.size >= MAX_BULK_SELECTION) {
+						warnCap();
+						return false;
+					}
+					selected.add(id);
+					return true;
+				}
+
+				function updateBar() {
+					var bar = document.getElementById('bulk-action-bar');
+					if (!bar) return;
+					var countEl = document.getElementById('bulk-selected-count');
+					var applyBtn = document.getElementById('bulk-action-apply');
+					var selectEl = document.getElementById('bulk-action-select');
+					var selectAll = document.getElementById('bulk-select-all');
+					var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
+					var i18nNone = bar.getAttribute('data-i18n-none') || 'None selected';
+					var i18nSelectedOne = bar.getAttribute('data-i18n-selected-one') || '1 selected';
+					var i18nSelectedOther = bar.getAttribute('data-i18n-selected-other') || '{count} selected';
+					if (countEl) {
+						if (selected.size === 0) {
+							countEl.textContent = i18nNone;
+						} else if (selected.size === 1) {
+							countEl.textContent = i18nSelectedOne;
+						} else {
+							countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
+						}
+					}
+					if (applyBtn) applyBtn.disabled = selected.size === 0 || !selectEl || !selectEl.value;
+					if (selectEl) selectEl.disabled = selected.size === 0;
+					// Sync per-row checkboxes with persisted selection state.
+					var visibleChecked = 0;
+					boxes.forEach(function(cb) {
+						var id = cb.getAttribute('data-artist-id');
+						cb.checked = selected.has(id);
+						if (cb.checked) visibleChecked++;
+					});
+					// Select-All indeterminate state.
+					var allChecked = false;
+					if (selectAll) {
+						if (boxes.length === 0) {
+							selectAll.checked = false;
+							selectAll.indeterminate = false;
+						} else if (visibleChecked === 0) {
+							selectAll.checked = false;
+							selectAll.indeterminate = false;
+						} else if (visibleChecked === boxes.length) {
+							selectAll.checked = true;
+							selectAll.indeterminate = false;
+							allChecked = true;
+						} else {
+							selectAll.checked = false;
+							selectAll.indeterminate = true;
+						}
+					}
+					// Swap the checkbox label between Select all / Deselect all
+					// so screen readers and sighted users both see the action
+					// that a click will perform next.
+					var labelEl = document.getElementById('bulk-select-all-label');
+					if (labelEl) {
+						var i18nSelectAll = bar.getAttribute('data-i18n-select-all') || 'Select all on page';
+						var i18nDeselectAll = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';
+						labelEl.textContent = allChecked ? i18nDeselectAll : i18nSelectAll;
+					}
+					if (selectAll) {
+						var i18nSelectAllAria = bar.getAttribute('data-i18n-select-all') || 'Select all on page';
+						var i18nDeselectAllAria = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';
+						selectAll.setAttribute('aria-label', allChecked ? i18nDeselectAllAria : i18nSelectAllAria);
+					}
+				}
+
+				document.body.addEventListener('change', function(ev) {
+					var t = ev.target;
+					if (!t) return;
+					if (t.classList && t.classList.contains('sw-bulk-select')) {
+						var id = t.getAttribute('data-artist-id');
+						if (!id) return;
+						if (t.checked) {
+							if (!tryAdd(id)) { t.checked = false; }
+						} else {
+							selected.delete(id);
+							capWarned = false;
+						}
+						updateBar();
+					} else if (t.id === 'bulk-select-all') {
+						var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
+						boxes.forEach(function(cb) {
+							var id = cb.getAttribute('data-artist-id');
+							if (!id) return;
+							if (t.checked) {
+								cb.checked = tryAdd(id);
+							} else {
+								cb.checked = false;
+								selected.delete(id);
+							}
+						});
+						if (!t.checked) capWarned = false;
+						updateBar();
+					} else if (t.id === 'bulk-action-select') {
+						updateBar();
+					}
+				});
+
+				document.body.addEventListener('click', function(ev) {
+					var t = ev.target;
+					if (!t || t.id !== 'bulk-action-apply') return;
+					var selectEl = document.getElementById('bulk-action-select');
+					if (!selectEl || !selectEl.value || selected.size === 0) return;
+					var action = selectEl.value;
+					// Defensive truncation: the UI cap should already prevent
+					// this, but guard against any drift so we never hit the
+					// backend's hard 1000-ID rejection with a generic toast.
+					var ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);
+					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+					t.disabled = true;
+					fetch(_artistsBp + '/api/v1/artists/bulk-actions', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+						body: JSON.stringify({action: action, ids: ids})
+					}).then(function(r) {
+						var bar = document.getElementById('bulk-action-bar');
+						var i18nBusy = (bar && bar.getAttribute('data-i18n-busy')) || 'A bulk action is already running. Please wait for it to finish.';
+						var i18nFailed = (bar && bar.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.';
+						if (r.status === 409) {
+							alert(i18nBusy);
+						} else if (!r.ok) {
+							alert(i18nFailed);
+						} else {
+							// Clear selection on success. Live progress is surfaced
+							// via SSE (bulk.completed event). Reset the cap warning
+							// so a future over-cap attempt on the same page warns
+							// again rather than silently dropping the addition.
+							selected.clear();
+							capWarned = false;
+							updateBar();
+						}
+					}).catch(function() {
+						var bar2 = document.getElementById('bulk-action-bar');
+						alert((bar2 && bar2.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');
+					}).finally(function() {
+						t.disabled = false;
+					});
+				});
+
+				// Scope token: filter-identifying params only. If any of
+				// these change across an htmx swap, the user is looking
+				// at a different result set and the previous selection is
+				// no longer meaningful. Pagination and sort do NOT reset
+				// selection so the user can page through filtered results
+				// while preserving their selection.
+				function currentScopeToken() {
+					var p = new URLSearchParams(window.location.search);
+					var keys = [];
+					p.forEach(function(_v, k) {
+						if (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0) {
+							keys.push(k);
+						}
+					});
+					keys.sort();
+					return keys.map(function(k) { return k + '=' + p.get(k); }).join('&');
+				}
+				var lastScopeToken = currentScopeToken();
+
+				// Re-sync on initial load and after every HTMX swap of the
+				// artist content (pagination, filter change, etc.).
+				document.addEventListener('DOMContentLoaded', updateBar);
+				document.body.addEventListener('htmx:afterSwap', function(evt) {
+					if (evt.detail.target && evt.detail.target.id === 'artist-content') {
+						var currentToken = currentScopeToken();
+						if (currentToken !== lastScopeToken) {
+							selected.clear();
+							capWarned = false;
+							lastScopeToken = currentToken;
+						}
+						updateBar();
+					}
+				});
+			})();
 		</script>
 	}
 }
 
 // ArtistTable is the HTMX-swappable table fragment.
+// BulkActionBar renders the Select-All control, "N selected" indicator, and
+// bulk action dropdown. It is only rendered when a filter is active so the
+// user cannot accidentally select the entire library in one click. The bar
+// is wired to a small client-side controller (initialized in ArtistsPage)
+// that manages checkbox state, Select-All indeterminate, and POSTs the
+// selected IDs to /api/v1/artists/bulk-actions.
+templ BulkActionBar(data ArtistListData) {
+	if isFilterActive(data) {
+		<div
+			id="bulk-action-bar"
+			class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
+			role="toolbar"
+			aria-label={ t(ctx, "artists.bulk.toolbar") }
+			data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
+			data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
+			data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
+			data-i18n-busy={ t(ctx, "artists.bulk.busy") }
+			data-i18n-failed={ t(ctx, "artists.bulk.failed") }
+			data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
+			data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
+			data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
+		>
+			<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+				<input
+					id="bulk-select-all"
+					type="checkbox"
+					class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					aria-controls="artist-content"
+					aria-label={ t(ctx, "artists.bulk.select_all") }
+				/>
+				<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
+			</label>
+			<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
+				{ t(ctx, "artists.bulk.none_selected") }
+			</span>
+			<div class="ml-auto">
+				<select
+					id="bulk-action-select"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+					disabled
+					aria-label={ t(ctx, "artists.bulk.action_label") }
+				>
+					<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
+					<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
+					<option value="re_identify">{ t(ctx, "artists.bulk.action.re_identify") }</option>
+					<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
+					<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
+				</select>
+				<button
+					id="bulk-action-apply"
+					type="button"
+					class="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled
+				>
+					{ t(ctx, "artists.bulk.apply") }
+				</button>
+			</div>
+		</div>
+	}
+}
+
 templ ArtistTable(data ArtistListData) {
-	<div id="artist-content">
+	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
+		@BulkActionBar(data)
 		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
 		if activeFilterCount(data.Filters) > 0 {
 			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label={ t(ctx, "common.active_filters") }>
@@ -818,6 +1091,11 @@ templ ArtistTable(data ArtistListData) {
 			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
+						if isFilterActive(data) {
+							<th scope="col" class="px-3 py-3 w-8">
+								<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
+							</th>
+						}
 						<th scope="col" data-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
@@ -855,13 +1133,19 @@ templ ArtistTable(data ArtistListData) {
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 					if len(data.Artists) == 0 {
 						<tr>
-							<td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-								{ t(ctx, "artists.empty_state") }
-							</td>
+							if isFilterActive(data) {
+								<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+									{ t(ctx, "artists.empty_state") }
+								</td>
+							} else {
+								<td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+									{ t(ctx, "artists.empty_state") }
+								</td>
+							}
 						</tr>
 					}
 					for _, a := range data.Artists {
-						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName)
+						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, isFilterActive(data))
 					}
 				</tbody>
 			</table>
@@ -870,8 +1154,18 @@ templ ArtistTable(data ArtistListData) {
 	</div>
 }
 
-templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string) {
+templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string, selectable bool) {
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
+		if selectable {
+			<td class="px-3 py-3 w-8 align-middle">
+				<input
+					type="checkbox"
+					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					data-artist-id={ a.ID }
+					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+				/>
+			</td>
+		}
 		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
 				if complianceAvailable(compliance) {
@@ -917,7 +1211,8 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 
 // ArtistGrid is the HTMX-swappable grid fragment.
 templ ArtistGrid(data ArtistListData) {
-	<div id="artist-content">
+	<div id="artist-content" data-filter-active?={ isFilterActive(data) }>
+		@BulkActionBar(data)
 		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
 		if activeFilterCount(data.Filters) > 0 {
 			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label={ t(ctx, "common.active_filters") }>
@@ -947,7 +1242,7 @@ templ ArtistGrid(data ArtistListData) {
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence)
+					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, isFilterActive(data))
 				}
 			</div>
 		}
@@ -955,7 +1250,23 @@ templ ArtistGrid(data ArtistListData) {
 	</div>
 }
 
-templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence) {
+templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, selectable bool) {
+	<div class="relative">
+		if selectable {
+			<label
+				class="absolute top-1.5 right-1.5 z-10 flex items-center justify-center rounded-full bg-white/90 dark:bg-gray-900/90 p-0.5 shadow cursor-pointer"
+				onclick="event.stopPropagation();"
+				aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+			>
+				<input
+					type="checkbox"
+					class="sw-bulk-select h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+					data-artist-id={ a.ID }
+					onclick="event.stopPropagation();"
+					aria-label={ tf(ctx, "artists.bulk.select_artist", a.Name) }
+				/>
+			</label>
+		}
 	<a
 		href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
 		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
@@ -1000,6 +1311,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 			</p>
 		</div>
 	</a>
+	</div>
 }
 
 // artistPlatformBadges renders inline platform badges for the table view name column.
