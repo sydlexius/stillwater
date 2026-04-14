@@ -32,7 +32,42 @@ func ToArtist(n *ArtistNFO) *artist.Artist {
 		Died:           n.Died,
 		Disbanded:      n.Disbanded,
 		Biography:      n.Biography,
+		Discography:    toArtistDiscography(n.Albums),
 	}
+}
+
+// toArtistDiscography converts parsed NFO album entries into the artist
+// domain's DiscographyAlbum slice, preserving order.
+func toArtistDiscography(albums []DiscographyAlbum) []artist.DiscographyAlbum {
+	if len(albums) == 0 {
+		return nil
+	}
+	out := make([]artist.DiscographyAlbum, 0, len(albums))
+	for _, a := range albums {
+		out = append(out, artist.DiscographyAlbum{
+			Title:                     a.Title,
+			Year:                      a.Year,
+			MusicBrainzReleaseGroupID: a.MusicBrainzReleaseGroupID,
+		})
+	}
+	return out
+}
+
+// fromArtistDiscography converts artist-domain discography entries back to
+// the NFO album slice for serialization.
+func fromArtistDiscography(albums []artist.DiscographyAlbum) []DiscographyAlbum {
+	if len(albums) == 0 {
+		return nil
+	}
+	out := make([]DiscographyAlbum, 0, len(albums))
+	for _, a := range albums {
+		out = append(out, DiscographyAlbum{
+			Title:                     a.Title,
+			Year:                      a.Year,
+			MusicBrainzReleaseGroupID: a.MusicBrainzReleaseGroupID,
+		})
+	}
+	return out
 }
 
 // ToMetadataUpdate converts an ArtistNFO into a MetadataUpdate suitable for
@@ -74,6 +109,9 @@ func ToMetadataUpdate(n *ArtistNFO) *artist.MetadataUpdate {
 func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
 	u := ToMetadataUpdate(n)
 	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
+	// Discography is a transient field not covered by ApplyMetadata; copy it
+	// across explicitly so the artist reflects the NFO's album entries.
+	a.Discography = toArtistDiscography(n.Albums)
 }
 
 // isIndividualType delegates to artist.IsIndividualType. Kept as a local
@@ -127,5 +165,6 @@ func FromArtistWithFieldMap(a *artist.Artist, fm NFOFieldMap) *ArtistNFO {
 		Disbanded:           a.Disbanded,
 		Biography:           a.Biography,
 		Fanart:              fanart,
+		Albums:              fromArtistDiscography(a.Discography),
 	}
 }

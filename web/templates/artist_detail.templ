@@ -21,7 +21,7 @@ type ArtistDetailData struct {
 	LibraryName        string
 	LibrarySource      string
 	ProfileName        string                   // Active platform profile name for image terminology
-	ActiveTab          string                   // "overview", "images", "providers", "history" (default: "overview")
+	ActiveTab          string                   // "overview", "images", "providers", "discography", "history" (default: "overview")
 	Connections        []ArtistDetailConnection // Platform connections with external URLs
 	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
@@ -543,6 +543,23 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</section>
 				}
 			</div>
+			// -- Discography --
+			<div
+				id="panel-discography"
+				role="tabpanel"
+				aria-labelledby="tab-discography"
+				data-tab-panel="discography"
+				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "discography"), }
+			>
+				<div
+					id={ "artist-discography-tab-" + data.Artist.ID }
+					hx-get={ "/artists/" + data.Artist.ID + "/discography/tab" }
+					hx-trigger="intersect once"
+					hx-swap="innerHTML"
+				>
+					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "discography.loading") }</p>
+				</div>
+			</div>
 			// -- History --
 			<div
 				id="panel-history"
@@ -606,6 +623,7 @@ templ artistDetailTabBar(activeTab string, showDebug bool) {
 		@artistDetailTab("overview", t(ctx, "artist.tab_overview"), activeTab)
 		@artistDetailTab("images", t(ctx, "artist.tab_images"), activeTab)
 		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
+		@artistDetailTab("discography", t(ctx, "artist.tab_discography"), activeTab)
 		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
 		if showDebug {
 			@artistDetailTab("debug", t(ctx, "artist.tab_debug"), activeTab)
@@ -995,7 +1013,7 @@ func isGroupType(artistType string) bool {
 // normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
 func normalizeTab(tab string) string {
 	switch tab {
-	case "overview", "images", "providers", "history", "debug":
+	case "overview", "images", "providers", "discography", "history", "debug":
 		return tab
 	default:
 		return "overview"
