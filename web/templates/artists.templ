@@ -498,6 +498,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				@ArtistTable(data)
 			}
 		</div>
+		@BulkProgressPill()
 		<script>
 			var _artistsBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			// Inject flyout filter params from the URL into HTMX requests that
@@ -807,6 +808,16 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// reject with a generic "failed to start" toast.
 				var MAX_BULK_SELECTION = 1000;
 				var capWarned = false;
+				// Tracks the last checkbox clicked for shift-click range
+				// selection (Gmail/GitHub-style). Reset on scope change.
+				var lastClickedId = null;
+				// Polling handle for the in-flight bulk action status. Non-null
+				// while a bulk or single-artist run-rules action is running.
+				var progressPoll = null;
+				// Tracks whether a bulk action is running end-to-end. Gates the
+				// Apply button so checkbox/dropdown changes cannot re-enable it
+				// mid-flight and queue a second POST (which would 409-loop).
+				var bulkActionRunning = false;
 
 				function warnCap() {
 					if (capWarned) return;
@@ -846,8 +857,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
 						}
 					}
-					if (applyBtn) applyBtn.disabled = selected.size === 0 || !selectEl || !selectEl.value;
-					if (selectEl) selectEl.disabled = selected.size === 0;
+					if (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;
+					if (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;
 					// Sync per-row checkboxes with persisted selection state.
 					var visibleChecked = 0;
 					boxes.forEach(function(cb) {
@@ -889,6 +900,51 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 				}
 
+				// Shift-click range selection: capture on click (before the
+				// change event) so we can see event.shiftKey. If shift is
+				// held and we have a prior lastClickedId, select/deselect
+				// every checkbox between the two anchors in DOM order.
+				document.body.addEventListener('click', function(ev) {
+					var t = ev.target;
+					if (!t || !t.classList || !t.classList.contains('sw-bulk-select')) return;
+					var id = t.getAttribute('data-artist-id');
+					if (!id) return;
+					// Keyboard Shift+Space triggers a click with shiftKey.
+					if (ev.shiftKey && lastClickedId && lastClickedId !== id) {
+						var boxes = Array.prototype.slice.call(
+							document.querySelectorAll('#artist-content .sw-bulk-select')
+						);
+						var idx1 = -1, idx2 = -1;
+						for (var i = 0; i < boxes.length; i++) {
+							var bid = boxes[i].getAttribute('data-artist-id');
+							if (bid === lastClickedId) idx1 = i;
+							if (bid === id) idx2 = i;
+						}
+						if (idx1 >= 0 && idx2 >= 0) {
+							var lo = Math.min(idx1, idx2), hi = Math.max(idx1, idx2);
+							// Target state follows the just-clicked checkbox's
+							// post-click state (which the browser has already
+							// set by the time this click handler runs).
+							var target = t.checked;
+							for (var j = lo; j <= hi; j++) {
+								var cb = boxes[j];
+								var cid = cb.getAttribute('data-artist-id');
+								if (!cid) continue;
+								if (target) {
+									if (!tryAdd(cid)) { cb.checked = false; continue; }
+									cb.checked = true;
+								} else {
+									selected.delete(cid);
+									cb.checked = false;
+								}
+							}
+							if (!target) capWarned = false;
+							updateBar();
+						}
+					}
+					lastClickedId = id;
+				}, true);
+
 				document.body.addEventListener('change', function(ev) {
 					var t = ev.target;
 					if (!t) return;
@@ -921,6 +977,137 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 				});
 
+				// Build the localized verb label for a bulk action from the
+				// data attributes on the progress pill. Falls back to the
+				// raw action key if a verb is missing.
+				function actionVerb(action) {
+					var pill = document.getElementById('bulk-progress-pill');
+					if (!pill) return action;
+					var key = 'data-i18n-verb-' + action.replace(/_/g, '-');
+					return pill.getAttribute(key) || action;
+				}
+
+				// Render the progress pill with the current snapshot. Called
+				// from both the initial 202 response and the poll callback.
+				function renderProgressPill(action, processed, total) {
+					var pill = document.getElementById('bulk-progress-pill');
+					var txt = document.getElementById('bulk-progress-text');
+					if (!pill || !txt) return;
+					var tpl = pill.getAttribute('data-i18n-template') || '{verb}: {processed} of {total} artists';
+					var verb = actionVerb(action);
+					txt.textContent = tpl
+						.replace('{verb}', verb)
+						.replace('{processed}', String(processed))
+						.replace('{total}', String(total));
+					pill.classList.remove('hidden');
+				}
+
+				function hideProgressPill() {
+					var pill = document.getElementById('bulk-progress-pill');
+					if (pill) pill.classList.add('hidden');
+				}
+
+				// Start polling bulk-actions/status every 2s. Stops on terminal
+				// status and surfaces an outcome-breakdown toast. Page reloads
+				// mid-action re-attach by calling this on DOMContentLoaded.
+				// Process one /status snapshot. Returns true when the status
+				// is terminal (idle/completed/failed) so callers know to stop
+				// polling and do not need to start one. Shared between the
+				// active poll callback and the DOMContentLoaded recovery
+				// path so a page reload near the end of a bulk job still
+				// surfaces the summary toast from the terminal snapshot.
+				function handleProgressSnapshot(data, initialAction) {
+					if (!data || data.status === 'idle') {
+						hideProgressPill();
+						bulkActionRunning = false;
+						updateBar();
+						return true;
+					}
+					renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
+					if (data.status === 'completed' || data.status === 'failed') {
+						hideProgressPill();
+						bulkActionRunning = false;
+						updateBar();
+						var pill = document.getElementById('bulk-progress-pill');
+						var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
+						var msg = tpl
+							.replace('{succeeded}', String(data.succeeded || 0))
+							.replace('{failed}', String(data.failed || 0))
+							.replace('{skipped}', String(data.skipped || 0));
+						if (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {
+							window.showSuccessToast(msg);
+						} else if (typeof window.showToast === 'function') {
+							window.showToast(msg);
+						}
+						return true;
+					}
+					return false;
+				}
+
+				function startProgressPoll(initialAction) {
+					if (progressPoll) { progressPoll.stop(); progressPoll = null; }
+					bulkActionRunning = true;
+					updateBar();
+					progressPoll = pollAsyncStatus(_artistsBp + '/api/v1/artists/bulk-actions/status', {
+						onData: function(data) {
+							return handleProgressSnapshot(data, initialAction);
+						},
+						onHTTPError: function() {
+							// Transport/HTTP errors are non-terminal: the backend
+							// job may still be running. Keep bulkActionRunning set
+							// so Apply stays disabled; a later idle/completed/
+							// failed snapshot from the polling retry will clear
+							// the lock. Releasing here would reopen the duplicate-
+							// submit window and reintroduce the 409 loop.
+							updateBar();
+						},
+						onNetworkError: function() {
+							// Same rationale as onHTTPError: the status endpoint
+							// may be transiently unreachable while the action is
+							// still running. Do not clear the lock on an unknown
+							// status.
+							updateBar();
+						}
+					});
+				}
+				// Expose so other controllers (single-artist run-rules on the
+				// artist detail page) can attach to an in-flight action.
+				window.swBulkProgress = {
+					start: startProgressPoll,
+					render: renderProgressPill,
+					hide: hideProgressPill
+				};
+
+				// Size-aware confirm dialog. <=50: no dialog; >50 and <=500:
+				// simple confirm with action + count; >500: stronger warning
+				// that names external API impact for re-identify and
+				// fetch_images. Returns true when the user confirmed.
+				function confirmBulkAction(action, count) {
+					if (count <= 50) return true;
+					var pill = document.getElementById('bulk-progress-pill');
+					// Use the action-dropdown's selected option label so the
+					// confirm text reads naturally (e.g. "Apply Run rules to
+					// 100 artists?") rather than the progress-verb form.
+					var selectEl = document.getElementById('bulk-action-select');
+					var verb = action;
+					if (selectEl && selectEl.selectedOptions && selectEl.selectedOptions[0]) {
+						verb = selectEl.selectedOptions[0].textContent || action;
+					}
+					// The large-count copy names external provider APIs, so
+					// only use it for actions that actually hit them. Local
+					// actions (scan, run_rules) get the plain small template
+					// regardless of count to avoid misleading warnings.
+					var usesExternalProviders = action === 're_identify' || action === 'fetch_images';
+					var tpl;
+					if (count > 500 && usesExternalProviders) {
+						tpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';
+					} else {
+						tpl = (pill && pill.getAttribute('data-i18n-confirm-small')) || 'Apply {action} to {count} artists?';
+					}
+					var msg = tpl.replace('{action}', verb).replace('{count}', String(count));
+					return window.confirm(msg);
+				}
+
 				document.body.addEventListener('click', function(ev) {
 					var t = ev.target;
 					if (!t || t.id !== 'bulk-action-apply') return;
@@ -931,6 +1118,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					// this, but guard against any drift so we never hit the
 					// backend's hard 1000-ID rejection with a generic toast.
 					var ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);
+					if (!confirmBulkAction(action, ids.length)) return;
 					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 					t.disabled = true;
 					fetch(_artistsBp + '/api/v1/artists/bulk-actions', {
@@ -943,21 +1131,24 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var i18nFailed = (bar && bar.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.';
 						if (r.status === 409) {
 							alert(i18nBusy);
+							t.disabled = false;
 						} else if (!r.ok) {
 							alert(i18nFailed);
+							t.disabled = false;
 						} else {
-							// Clear selection on success. Live progress is surfaced
-							// via SSE (bulk.completed event). Reset the cap warning
-							// so a future over-cap attempt on the same page warns
-							// again rather than silently dropping the addition.
+							// Render an immediate 0-of-total pill so the user sees
+							// feedback before the first poll tick lands, then
+							// start polling. Apply-disabled stays true until the
+							// poll observes a terminal status.
+							renderProgressPill(action, 0, ids.length);
 							selected.clear();
 							capWarned = false;
 							updateBar();
+							startProgressPoll(action);
 						}
 					}).catch(function() {
 						var bar2 = document.getElementById('bulk-action-bar');
 						alert((bar2 && bar2.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');
-					}).finally(function() {
 						t.disabled = false;
 					});
 				});
@@ -982,8 +1173,26 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				var lastScopeToken = currentScopeToken();
 
 				// Re-sync on initial load and after every HTMX swap of the
-				// artist content (pagination, filter change, etc.).
-				document.addEventListener('DOMContentLoaded', updateBar);
+				// artist content (pagination, filter change, etc.). Also
+				// probe the bulk-actions/status endpoint on load so a page
+				// reload mid-action re-attaches the progress pill.
+				document.addEventListener('DOMContentLoaded', function() {
+					updateBar();
+					// Fire-and-forget status probe. If an action is in flight
+					// the poll attaches; otherwise the pill stays hidden.
+					fetch(_artistsBp + '/api/v1/artists/bulk-actions/status', {credentials: 'same-origin'})
+						.then(function(r) { return r.ok ? r.json() : null; })
+						.then(function(data) {
+							// Terminal snapshots (completed/failed/idle) are
+							// handled in-place so the summary toast is not
+							// dropped on reload-near-end. Non-terminal returns
+							// false and we start the normal poll.
+							if (!data) return;
+							if (handleProgressSnapshot(data, data.action || '')) return;
+							startProgressPoll(data.action || '');
+						})
+						.catch(function(){ /* ignore */ });
+				});
 				document.body.addEventListener('htmx:afterSwap', function(evt) {
 					if (evt.detail.target && evt.detail.target.id === 'artist-content') {
 						var currentToken = currentScopeToken();
@@ -992,6 +1201,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							capWarned = false;
 							lastScopeToken = currentToken;
 						}
+						// Reset the shift-click anchor on every swap: after
+						// pagination or sort the prior DOM ordering no longer
+						// applies, so an old anchor could select an unintended
+						// range on the next shift-click.
+						lastClickedId = null;
 						updateBar();
 					}
 				});
@@ -1008,8 +1222,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 // that manages checkbox state, Select-All indeterminate, and POSTs the
 // selected IDs to /api/v1/artists/bulk-actions.
 templ BulkActionBar(data ArtistListData) {
-	if isFilterActive(data) {
-		<div
+	<div
 			id="bulk-action-bar"
 			class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
 			role="toolbar"
@@ -1059,7 +1272,6 @@ templ BulkActionBar(data ArtistListData) {
 				</button>
 			</div>
 		</div>
-	}
 }
 
 templ ArtistTable(data ArtistListData) {
@@ -1091,11 +1303,9 @@ templ ArtistTable(data ArtistListData) {
 			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
-						if isFilterActive(data) {
-							<th scope="col" class="px-3 py-3 w-8">
-								<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
-							</th>
-						}
+						<th scope="col" class="px-3 py-3 w-8">
+							<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
+						</th>
 						<th scope="col" data-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
@@ -1133,19 +1343,13 @@ templ ArtistTable(data ArtistListData) {
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 					if len(data.Artists) == 0 {
 						<tr>
-							if isFilterActive(data) {
-								<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-									{ t(ctx, "artists.empty_state") }
-								</td>
-							} else {
-								<td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-									{ t(ctx, "artists.empty_state") }
-								</td>
-							}
+							<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+								{ t(ctx, "artists.empty_state") }
+							</td>
 						</tr>
 					}
 					for _, a := range data.Artists {
-						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, isFilterActive(data))
+						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName, true)
 					}
 				</tbody>
 			</table>
@@ -1242,7 +1446,7 @@ templ ArtistGrid(data ArtistListData) {
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, isFilterActive(data))
+					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, true)
 				}
 			</div>
 		}
@@ -1337,4 +1541,34 @@ templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySource
 			}
 		</div>
 	}
+}
+
+// BulkProgressPill renders the persistent in-flight action notification used
+// by bulk actions and single-artist run-rules. The pill is hidden until
+// bulk-controller JS populates and reveals it, and is attached at the
+// ArtistsPage root so it stays visible during HTMX swaps of #artist-content.
+// The progress text is composed in JS from the verb + processed + total
+// counters returned by /api/v1/artists/bulk-actions/status.
+templ BulkProgressPill() {
+	<div
+		id="bulk-progress-pill"
+		class="hidden fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-lg"
+		role="status"
+		aria-live="polite"
+		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
+		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
+		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
+		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
+		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
+		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
+		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
+		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
+	>
+		<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+		</svg>
+		<span id="bulk-progress-text">...</span>
+	</div>
 }

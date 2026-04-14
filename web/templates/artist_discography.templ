@@ -27,7 +27,11 @@ templ ArtistDiscographyTab(data DiscographyTabData) {
 				}
 			</ol>
 			<p class="text-xs text-gray-600 dark:text-gray-500 text-right">
-				{ tf(ctx, "discography.count", len(data.Albums)) }
+				if len(data.Albums) == 1 {
+					{ t(ctx, "discography.count.one") }
+				} else {
+					{ tf(ctx, "discography.count.other", len(data.Albums)) }
+				}
 			</p>
 		}
 	</div>
