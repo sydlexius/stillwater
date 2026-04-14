@@ -510,6 +510,53 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			return true
 		}
+	case "born":
+		if meta.Born != "" && result.Metadata.Born == "" {
+			result.Metadata.Born = meta.Born
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "died":
+		if meta.Died != "" && result.Metadata.Died == "" {
+			result.Metadata.Died = meta.Died
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "disbanded":
+		if meta.Disbanded != "" && result.Metadata.Disbanded == "" {
+			result.Metadata.Disbanded = meta.Disbanded
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "years_active":
+		if meta.YearsActive != "" && result.Metadata.YearsActive == "" {
+			result.Metadata.YearsActive = meta.YearsActive
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "type":
+		if meta.Type != "" && result.Metadata.Type == "" {
+			result.Metadata.Type = meta.Type
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			// Non-individual types (group, orchestra, choir) cannot carry a
+			// gender value. Clear any previously-applied gender value and its
+			// provenance to mirror the scraper-executor normalization path.
+			if !isIndividualTypeValue(meta.Type) {
+				result.Metadata.Gender = ""
+				result.Sources = removeFieldSource(result.Sources, "gender")
+			}
+			return true
+		}
+	case "gender":
+		// Only accept a gender when the accumulated type is empty (unknown)
+		// or an individual type. Group/orchestra/choir types do not carry
+		// gender.
+		if meta.Gender != "" && result.Metadata.Gender == "" &&
+			(result.Metadata.Type == "" || isIndividualTypeValue(result.Metadata.Type)) {
+			result.Metadata.Gender = meta.Gender
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
 	case "thumb", "fanart", "logo", "banner":
 		// For image fields, collect all matching candidates from this provider.
 		// Unlike text fields, images aggregate across providers so users can
@@ -773,6 +820,29 @@ func hasFieldSource(sources []FieldSource, field string) bool {
 		}
 	}
 	return false
+}
+
+// removeFieldSource returns a copy of the slice with any FieldSource entry for
+// the given field removed. Used to clear stale provenance when a dependent
+// field (e.g. gender) is invalidated by a change to another field (e.g. type).
+func removeFieldSource(sources []FieldSource, field string) []FieldSource {
+	out := sources[:0]
+	for _, s := range sources {
+		if s.Field == field {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// isIndividualTypeValue reports whether the given artist type string
+// represents a single individual (and therefore can carry a gender value).
+// The check is trimmed and case-insensitive. Non-individual types such as
+// "group", "orchestra", or "choir" return false and must not have a gender
+// attached.
+func isIndividualTypeValue(v string) bool {
+	return strings.EqualFold(strings.TrimSpace(v), "person")
 }
 
 func fieldToImageType(field string) ImageType {

@@ -1062,3 +1062,32 @@ func TestListWebScraperStatuses(t *testing.T) {
 		t.Error("expected enabled after set")
 	}
 }
+
+// TestAnyWebScraperEnabled verifies that AnyWebScraperEnabled returns false
+// when no web scraper providers are enabled, and true once any one of them is.
+func TestAnyWebScraperEnabled(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	any, err := svc.AnyWebScraperEnabled(ctx)
+	if err != nil {
+		t.Fatalf("AnyWebScraperEnabled: %v", err)
+	}
+	if any {
+		t.Error("expected false when no scrapers enabled")
+	}
+
+	if err := svc.SetWebScraperEnabled(ctx, NameAllMusic, true); err != nil {
+		t.Fatalf("SetWebScraperEnabled: %v", err)
+	}
+
+	any, err = svc.AnyWebScraperEnabled(ctx)
+	if err != nil {
+		t.Fatalf("AnyWebScraperEnabled after enable: %v", err)
+	}
+	if !any {
+		t.Error("expected true after enabling a scraper")
+	}
+}
