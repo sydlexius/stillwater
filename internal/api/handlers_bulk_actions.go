@@ -374,10 +374,8 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 		// Per-artist "scan" reparses the NFO state and refreshes derived
 		// flags. Running the rule pipeline achieves this (it refreshes
 		// artist fields and persists any metadata delta) without needing
-		// a separate filesystem walk.
-		if r.pipeline == nil {
-			return bulkOutcomeSkipped
-		}
+		// a separate filesystem walk. Pipeline availability is guaranteed
+		// by the upfront service gate in handleBulkAction.
 		if _, err := r.pipeline.RunForArtist(ctx, a); err != nil {
 			r.logger.Warn("bulk action: scan RunForArtist failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed

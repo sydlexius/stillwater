@@ -947,8 +947,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							alert(i18nFailed);
 						} else {
 							// Clear selection on success. Live progress is surfaced
-							// via SSE (bulk.completed event).
+							// via SSE (bulk.completed event). Reset the cap warning
+							// so a future over-cap attempt on the same page warns
+							// again rather than silently dropping the addition.
 							selected.clear();
+							capWarned = false;
 							updateBar();
 						}
 					}).catch(function() {
