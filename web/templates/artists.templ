@@ -1053,13 +1053,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							return handleProgressSnapshot(data, initialAction);
 						},
 						onHTTPError: function() {
-							hideProgressPill();
-							bulkActionRunning = false;
+							// Transport/HTTP errors are non-terminal: the backend
+							// job may still be running. Keep bulkActionRunning set
+							// so Apply stays disabled; a later idle/completed/
+							// failed snapshot from the polling retry will clear
+							// the lock. Releasing here would reopen the duplicate-
+							// submit window and reintroduce the 409 loop.
 							updateBar();
 						},
 						onNetworkError: function() {
-							hideProgressPill();
-							bulkActionRunning = false;
+							// Same rationale as onHTTPError: the status endpoint
+							// may be transiently unreachable while the action is
+							// still running. Do not clear the lock on an unknown
+							// status.
 							updateBar();
 						}
 					});
