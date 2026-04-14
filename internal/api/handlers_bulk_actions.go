@@ -328,6 +328,12 @@ const (
 // branches return one of the three bulkOutcome values so the caller can update
 // the progress counters uniformly.
 func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.Artist, connIdx *connectionIndex) bulkOutcome {
+	// Rule pipeline short-circuits locked/excluded artists to a nil no-op.
+	// Mirror that here so the bulk summary counts them as skipped rather
+	// than inflating Succeeded for actions that didn't actually run.
+	if (action == BulkActionRunRules || action == BulkActionFetchImages || action == BulkActionScan) && (a.IsExcluded || a.Locked) {
+		return bulkOutcomeSkipped
+	}
 	switch action {
 	case BulkActionRunRules:
 		// run_rules evaluates every enabled rule and auto-fixes those in

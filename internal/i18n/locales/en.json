@@ -178,6 +178,7 @@
   "artists.bulk.apply": "Apply",
   "artists.bulk.busy": "A bulk action is already running. Please wait for it to finish.",
   "artists.bulk.failed": "Bulk action failed to start.",
+  "artists.bulk.selection_cap": "You can select up to {count} artists at a time.",
   "artists.scan_library": "Scan Library",
   "artists.scanning": "Scanning...",
   "artists.search_placeholder": "Search artists...",

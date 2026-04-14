@@ -40,9 +40,6 @@ func (s *stubPipeline) RunImageRulesForArtist(ctx context.Context, a *artist.Art
 	if s.runImageRulesFn != nil {
 		return s.runImageRulesFn(ctx, a)
 	}
-	if s.runForArtistFn != nil {
-		return s.runForArtistFn(ctx, a)
-	}
 	return &rule.RunResult{}, nil
 }
 

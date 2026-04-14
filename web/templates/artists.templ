@@ -802,6 +802,29 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// Selection state persists across HTMX swaps of the list so
 				// the user can paginate while keeping earlier selections.
 				var selected = new Set();
+				// Matches the backend cap in handlers_bulk_actions.go; keeps
+				// the UI in sync so we never POST a payload the server will
+				// reject with a generic "failed to start" toast.
+				var MAX_BULK_SELECTION = 1000;
+				var capWarned = false;
+
+				function warnCap() {
+					if (capWarned) return;
+					capWarned = true;
+					var bar = document.getElementById('bulk-action-bar');
+					var tpl = (bar && bar.getAttribute('data-i18n-selection-cap')) || 'You can select up to {count} artists at a time.';
+					alert(tpl.replace('{count}', String(MAX_BULK_SELECTION)));
+				}
+
+				function tryAdd(id) {
+					if (selected.has(id)) return true;
+					if (selected.size >= MAX_BULK_SELECTION) {
+						warnCap();
+						return false;
+					}
+					selected.add(id);
+					return true;
+				}
 
 				function updateBar() {
 					var bar = document.getElementById('bulk-action-bar');
@@ -872,16 +895,26 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					if (t.classList && t.classList.contains('sw-bulk-select')) {
 						var id = t.getAttribute('data-artist-id');
 						if (!id) return;
-						if (t.checked) selected.add(id); else selected.delete(id);
+						if (t.checked) {
+							if (!tryAdd(id)) { t.checked = false; }
+						} else {
+							selected.delete(id);
+							capWarned = false;
+						}
 						updateBar();
 					} else if (t.id === 'bulk-select-all') {
 						var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
 						boxes.forEach(function(cb) {
 							var id = cb.getAttribute('data-artist-id');
 							if (!id) return;
-							cb.checked = t.checked;
-							if (t.checked) selected.add(id); else selected.delete(id);
+							if (t.checked) {
+								cb.checked = tryAdd(id);
+							} else {
+								cb.checked = false;
+								selected.delete(id);
+							}
 						});
+						if (!t.checked) capWarned = false;
 						updateBar();
 					} else if (t.id === 'bulk-action-select') {
 						updateBar();
@@ -894,7 +927,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var selectEl = document.getElementById('bulk-action-select');
 					if (!selectEl || !selectEl.value || selected.size === 0) return;
 					var action = selectEl.value;
-					var ids = Array.from(selected);
+					// Defensive truncation: the UI cap should already prevent
+					// this, but guard against any drift so we never hit the
+					// backend's hard 1000-ID rejection with a generic toast.
+					var ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);
 					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 					t.disabled = true;
 					fetch(_artistsBp + '/api/v1/artists/bulk-actions', {
@@ -933,7 +969,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var p = new URLSearchParams(window.location.search);
 					var keys = [];
 					p.forEach(function(_v, k) {
-						if (k === 'search' || k === 'library_id' || k.indexOf('filter_') === 0) {
+						if (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0) {
 							keys.push(k);
 						}
 					});
@@ -950,6 +986,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var currentToken = currentScopeToken();
 						if (currentToken !== lastScopeToken) {
 							selected.clear();
+							capWarned = false;
 							lastScopeToken = currentToken;
 						}
 						updateBar();
@@ -981,6 +1018,7 @@ templ BulkActionBar(data ArtistListData) {
 			data-i18n-failed={ t(ctx, "artists.bulk.failed") }
 			data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
 			data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
+			data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
 		>
 			<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
 				<input
