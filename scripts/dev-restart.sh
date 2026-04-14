@@ -39,12 +39,12 @@ LOG_FILE="${SW_DEV_LOG:-/tmp/stillwater.log}"
 mkdir -p "$(dirname "$LOG_FILE")"
 ./stillwater >"$LOG_FILE" 2>&1 &
 SWPID=$!
+echo "==> Logs: $LOG_FILE"
 sleep 2
 
 if kill -0 "$SWPID" 2>/dev/null; then
   echo "==> Stillwater running (PID $SWPID) on http://localhost:${SW_PORT:-1973}"
-  echo "==> Logs: $LOG_FILE"
 else
-  echo "==> ERROR: Stillwater failed to start"
+  echo "==> ERROR: Stillwater failed to start (see $LOG_FILE)"
   exit 1
 fi
