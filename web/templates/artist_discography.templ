@@ -1,0 +1,56 @@
+package templates
+
+import (
+	"github.com/sydlexius/stillwater/internal/artist"
+)
+
+// DiscographyTabData carries the artist's album entries into the Discography
+// tab template. Albums are expected to be in the order they appear in the NFO.
+type DiscographyTabData struct {
+	ArtistID string
+	Albums   []artist.DiscographyAlbum
+}
+
+// ArtistDiscographyTab renders the read-only discography list for the artist
+// detail page. The template is intentionally simple: a numbered list of
+// album title, year, and optional MusicBrainz release group link.
+templ ArtistDiscographyTab(data DiscographyTabData) {
+	<div id="discography-tab-content" class="space-y-4">
+		if len(data.Albums) == 0 {
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-4 text-center">
+				{ t(ctx, "discography.empty_state") }
+			</p>
+		} else {
+			<ol class="divide-y divide-gray-100 dark:divide-gray-700 rounded-lg bg-white dark:bg-gray-800 shadow">
+				for _, alb := range data.Albums {
+					@discographyRow(alb)
+				}
+			</ol>
+			<p class="text-xs text-gray-600 dark:text-gray-500 text-right">
+				{ tf(ctx, "discography.count", len(data.Albums)) }
+			</p>
+		}
+	</div>
+}
+
+// discographyRow renders a single album entry.
+templ discographyRow(alb artist.DiscographyAlbum) {
+	<li class="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+		<div class="min-w-0 flex-1">
+			<p class="font-medium text-gray-900 dark:text-gray-100 truncate">{ alb.Title }</p>
+			if alb.MusicBrainzReleaseGroupID != "" {
+				<a
+					href={ templ.SafeURL("https://musicbrainz.org/release-group/" + alb.MusicBrainzReleaseGroupID) }
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+				>
+					{ t(ctx, "discography.view_musicbrainz") }
+				</a>
+			}
+		</div>
+		if alb.Year != "" {
+			<span class="text-xs tabular-nums text-gray-600 dark:text-gray-400">{ alb.Year }</span>
+		}
+	</li>
+}

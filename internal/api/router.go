@@ -430,6 +430,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/history/tab", wrapOptionalAuth(r.handleArtistHistoryTab, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}/discography/tab", wrapOptionalAuth(r.handleArtistDiscographyTab, optAuthMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/history/{id}/revert", wrapAuth(r.handleRevertHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/history", wrapAuth(r.handleListGlobalHistory, authMw))
 

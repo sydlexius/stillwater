@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -224,9 +225,12 @@ func TestHandleNFOConflictCheck_PathlessArtist(t *testing.T) {
 }
 
 func TestParseNFOFile_NonExistent(t *testing.T) {
-	result := parseNFOFile("/nonexistent/path/artist.nfo")
+	result, err := parseNFOFile("/nonexistent/path/artist.nfo")
 	if result != nil {
 		t.Error("expected nil for non-existent file")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("err = %v, want os.ErrNotExist", err)
 	}
 }
 
@@ -242,7 +246,10 @@ func TestParseNFOFile_Valid(t *testing.T) {
 		t.Fatalf("writing test file: %v", err)
 	}
 
-	result := parseNFOFile(path)
+	result, err := parseNFOFile(path)
+	if err != nil {
+		t.Fatalf("parseNFOFile err = %v", err)
+	}
 	if result == nil {
 		t.Fatal("expected non-nil result for valid NFO")
 	}

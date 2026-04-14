@@ -332,3 +332,44 @@ func TestToArtist_GenderKeptForUnknownType(t *testing.T) {
 		t.Errorf("Gender = %q, want %q for unknown type", a.Gender, "male")
 	}
 }
+
+// TestToArtist_Discography verifies album entries propagate to the domain model.
+func TestToArtist_Discography(t *testing.T) {
+	n := &ArtistNFO{
+		Name: "Nirvana",
+		Type: "group",
+		Albums: []DiscographyAlbum{
+			{Title: "Bleach", Year: "1989"},
+			{Title: "Nevermind", Year: "1991", MusicBrainzReleaseGroupID: "rg-1"},
+		},
+	}
+	a := ToArtist(n)
+	if len(a.Discography) != 2 {
+		t.Fatalf("Discography count = %d, want 2", len(a.Discography))
+	}
+	if a.Discography[0].Title != "Bleach" || a.Discography[0].Year != "1989" {
+		t.Errorf("Discography[0] = %+v", a.Discography[0])
+	}
+	if a.Discography[1].MusicBrainzReleaseGroupID != "rg-1" {
+		t.Errorf("Discography[1].MBID = %q", a.Discography[1].MusicBrainzReleaseGroupID)
+	}
+}
+
+// TestFromArtist_Discography verifies discography entries round-trip back to NFO.
+func TestFromArtist_Discography(t *testing.T) {
+	input := &ArtistNFO{
+		Name: "Nirvana",
+		Type: "group",
+		Albums: []DiscographyAlbum{
+			{Title: "Bleach", Year: "1989"},
+		},
+	}
+	a := ToArtist(input)
+	out := FromArtist(a)
+	if len(out.Albums) != 1 {
+		t.Fatalf("Albums count = %d, want 1", len(out.Albums))
+	}
+	if out.Albums[0] != input.Albums[0] {
+		t.Errorf("album differs: %+v vs %+v", out.Albums[0], input.Albums[0])
+	}
+}

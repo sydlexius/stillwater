@@ -29,7 +29,19 @@ type ArtistNFO struct {
 	Fanart              *Fanart         `xml:"fanart,omitempty"`
 	LockData            bool            `xml:"lockdata,omitempty"`
 	Stillwater          *StillwaterMeta `xml:"stillwater,omitempty"`
-	ExtraElements       []RawElement    `xml:"-"`
+	// Albums lists the artist's discography entries per Kodi's NFO spec.
+	// Each <album> nests <title>, <year>, and an optional
+	// <musicbrainzreleasegroupid> used for cross-referencing with providers.
+	Albums        []DiscographyAlbum `xml:"album,omitempty"`
+	ExtraElements []RawElement       `xml:"-"`
+}
+
+// DiscographyAlbum represents one <album> entry inside an artist.nfo file.
+// Ordering in the source NFO is preserved on round-trip.
+type DiscographyAlbum struct {
+	Title                     string `xml:"title,omitempty" json:"title"`
+	Year                      string `xml:"year,omitempty" json:"year,omitempty"`
+	MusicBrainzReleaseGroupID string `xml:"musicbrainzreleasegroupid,omitempty" json:"musicbrainz_release_group_id,omitempty"`
 }
 
 // Thumb represents a thumbnail image reference.
