@@ -435,7 +435,28 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</div>
 					<div class="space-y-6">
 						<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.details") }</h2>
+							<div class="flex items-center justify-between mb-3">
+								<h2 class="text-lg font-semibold">{ t(ctx, "artist.details") }</h2>
+								<button
+									type="button"
+									class="inline-flex items-center gap-1 rounded p-1 text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+									title={ t(ctx, "artist.refresh_details") }
+									aria-label={ t(ctx, "artist.refresh_details") }
+									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+									hx-target="#refresh-panel"
+									hx-swap="innerHTML"
+									hx-indicator={ "#details-refresh-spinner-" + data.Artist.ID }
+								>
+									@components.IconArrowPath("h-4 w-4")
+									<span class="text-xs font-medium">{ t(ctx, "common.refresh") }</span>
+									<span id={ "details-refresh-spinner-" + data.Artist.ID } class="htmx-indicator">
+										<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+										</svg>
+									</span>
+								</button>
+							</div>
 							<dl class="space-y-2 text-sm">
 								@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
 								@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])

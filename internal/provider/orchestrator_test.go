@@ -1308,6 +1308,126 @@ func TestIsImageFieldName(t *testing.T) {
 	}
 }
 
+// TestApplyFieldDetailFields verifies that applyField handles the detail
+// fields (gender, type, years_active, born, died, disbanded) by setting the
+// target field only when it is currently empty (first-match-wins) and returns
+// true when a value was applied.
+func TestApplyFieldDetailFields(t *testing.T) {
+	cases := []struct {
+		field    string
+		meta     ArtistMetadata
+		readBack func(*ArtistMetadata) string
+	}{
+		{"gender", ArtistMetadata{Gender: "Male"}, func(m *ArtistMetadata) string { return m.Gender }},
+		{"type", ArtistMetadata{Type: "group"}, func(m *ArtistMetadata) string { return m.Type }},
+		{"years_active", ArtistMetadata{YearsActive: "1980-1990"}, func(m *ArtistMetadata) string { return m.YearsActive }},
+		{"born", ArtistMetadata{Born: "1970-01-01"}, func(m *ArtistMetadata) string { return m.Born }},
+		{"died", ArtistMetadata{Died: "2020-01-01"}, func(m *ArtistMetadata) string { return m.Died }},
+		{"disbanded", ArtistMetadata{Disbanded: "2005-01-01"}, func(m *ArtistMetadata) string { return m.Disbanded }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
+			pr := &providerResult{meta: &tc.meta}
+			if !applyField(result, tc.field, pr, NameMusicBrainz) {
+				t.Fatalf("applyField(%s) = false, want true", tc.field)
+			}
+			if got := tc.readBack(result.Metadata); got != tc.readBack(&tc.meta) {
+				t.Errorf("after apply %s: got %q, want %q", tc.field, got, tc.readBack(&tc.meta))
+			}
+			src := findSource(result.Sources, tc.field)
+			if src == nil || src.Provider != NameMusicBrainz {
+				t.Errorf("applyField(%s) source = %v, want provider %s", tc.field, src, NameMusicBrainz)
+			}
+			// Second provider must not overwrite the first-match-wins value.
+			pr2 := &providerResult{meta: &ArtistMetadata{
+				Gender: "Female", Type: "solo", YearsActive: "1999", Born: "x",
+				Died: "y", Disbanded: "z",
+			}}
+			if applyField(result, tc.field, pr2, NameWikidata) {
+				t.Errorf("applyField(%s) returned true on second provider, expected first-match-wins", tc.field)
+			}
+		})
+	}
+}
+
+// TestApplyFieldGenderClearedOnNonIndividualType verifies that applying a
+// non-individual "type" value (e.g. "group") to a result that already holds a
+// gender clears the gender value and its FieldSource provenance. This
+// mirrors the scraper-executor normalization path, which forbids gender on
+// group/orchestra/choir types.
+func TestApplyFieldGenderClearedOnNonIndividualType(t *testing.T) {
+	result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
+
+	// First apply gender from one provider.
+	prGender := &providerResult{meta: &ArtistMetadata{Gender: "Female"}}
+	if !applyField(result, "gender", prGender, NameMusicBrainz) {
+		t.Fatalf("applyField(gender) = false, want true")
+	}
+	if result.Metadata.Gender != "Female" {
+		t.Fatalf("Gender = %q, want Female", result.Metadata.Gender)
+	}
+	if findSource(result.Sources, "gender") == nil {
+		t.Fatalf("gender FieldSource missing after initial apply")
+	}
+
+	// Now apply a non-individual type; gender and its provenance must clear.
+	prType := &providerResult{meta: &ArtistMetadata{Type: "group"}}
+	if !applyField(result, "type", prType, NameWikidata) {
+		t.Fatalf("applyField(type) = false, want true")
+	}
+	if result.Metadata.Gender != "" {
+		t.Errorf("Gender = %q after non-individual type, want empty", result.Metadata.Gender)
+	}
+	if s := findSource(result.Sources, "gender"); s != nil {
+		t.Errorf("gender FieldSource = %v after non-individual type, want nil", s)
+	}
+	if findSource(result.Sources, "type") == nil {
+		t.Errorf("type FieldSource missing after apply")
+	}
+}
+
+// TestApplyFieldGenderRejectedWhenTypeNonIndividual verifies that when the
+// accumulated type is already a non-individual value, a later gender apply
+// is rejected.
+func TestApplyFieldGenderRejectedWhenTypeNonIndividual(t *testing.T) {
+	result := &FetchResult{
+		Metadata: &ArtistMetadata{Type: "group", URLs: make(map[string]string)},
+		Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
+	}
+	pr := &providerResult{meta: &ArtistMetadata{Gender: "Male"}}
+	if applyField(result, "gender", pr, NameWikidata) {
+		t.Errorf("applyField(gender) = true with non-individual type, want false")
+	}
+	if result.Metadata.Gender != "" {
+		t.Errorf("Gender = %q, want empty", result.Metadata.Gender)
+	}
+	if findSource(result.Sources, "gender") != nil {
+		t.Errorf("gender FieldSource set on rejected apply")
+	}
+}
+
+// TestIsIndividualTypeValue verifies case/whitespace handling of the helper.
+func TestIsIndividualTypeValue(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"person", true},
+		{"Person", true},
+		{"  person  ", true},
+		{"group", false},
+		{"orchestra", false},
+		{"choir", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := isIndividualTypeValue(tc.in); got != tc.want {
+			t.Errorf("isIndividualTypeValue(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestApplyFieldImageTypeFilter verifies that applyField returns true only
 // when the provider has images of the requested type, not just any images.
 func TestApplyFieldImageTypeFilter(t *testing.T) {
