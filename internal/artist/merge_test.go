@@ -701,6 +701,67 @@ func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
 	}
 }
 
+func TestApplyMetadata_FillEmpty_SkipsLockedFields(t *testing.T) {
+	// Biography and Genres are intentionally empty so FillEmpty would
+	// populate them; the lock must prevent the write even on empty dst.
+	a := &Artist{Biography: "", Genres: nil, Type: ""}
+	u := &MetadataUpdate{Biography: "from-provider", Genres: []string{"rock"}, Type: "group"}
+	ApplyMetadata(a, u, FillEmpty, MergeOptions{
+		LockedFields: []string{"biography", "genres"},
+	})
+	if a.Biography != "" {
+		t.Errorf("locked empty biography was filled: got %q", a.Biography)
+	}
+	if len(a.Genres) != 0 {
+		t.Errorf("locked empty genres were filled: got %v", a.Genres)
+	}
+	if a.Type != "group" {
+		t.Errorf("unlocked type should have been filled: got %q", a.Type)
+	}
+}
+
+func TestApplyMetadata_NFOImport_SkipsLockedFields(t *testing.T) {
+	a := &Artist{Name: "Pinned", Biography: "old", Genres: []string{"pinned-genre"}}
+	u := &MetadataUpdate{Name: "FromNFO", Biography: "nfo-bio", Genres: []string{"nfo-genre"}}
+	ApplyMetadata(a, u, NFOImport, MergeOptions{
+		LockedFields: []string{"name", "genres"},
+	})
+	if a.Name != "Pinned" {
+		t.Errorf("locked name was overwritten by NFOImport: got %q", a.Name)
+	}
+	if len(a.Genres) != 1 || a.Genres[0] != "pinned-genre" {
+		t.Errorf("locked genres were overwritten by NFOImport: got %v", a.Genres)
+	}
+	if a.Biography != "nfo-bio" {
+		t.Errorf("unlocked biography should have been overwritten: got %q", a.Biography)
+	}
+}
+
+// TestBuildLockedSet_DropsBlankTokens ensures that blank or whitespace-only
+// entries in LockedFields never produce a map key that would match a lookup
+// for an empty field name.
+func TestBuildLockedSet_DropsBlankTokens(t *testing.T) {
+	if got := buildLockedSet(nil); got != nil {
+		t.Errorf("buildLockedSet(nil) = %v, want nil", got)
+	}
+	if got := buildLockedSet([]string{"", "   ", "\t"}); got != nil {
+		t.Errorf("buildLockedSet(blank-only) = %v, want nil", got)
+	}
+	got := buildLockedSet([]string{"", " Biography ", "   ", "Genres"})
+	if len(got) != 2 {
+		t.Fatalf("buildLockedSet(mixed) len = %d, want 2 (got %v)", len(got), got)
+	}
+	if _, ok := got["biography"]; !ok {
+		t.Errorf("missing lowercase 'biography' in set: %v", got)
+	}
+	if _, ok := got["genres"]; !ok {
+		t.Errorf("missing lowercase 'genres' in set: %v", got)
+	}
+	if _, ok := got[""]; ok {
+		t.Errorf("empty-string key present in set: %v", got)
+	}
+}
+
 // TestApplyMetadata_LockedDateSurvivesFilterByType guards against a subtle
 // regression: the per-field skip protects the direct write, but
 // FilterDatesByType runs AFTER the merge and could still blank a locked

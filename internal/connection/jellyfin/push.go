@@ -221,6 +221,12 @@ func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, 
 	if len(result.Items) == 0 {
 		return nil, fmt.Errorf("item %s not found", itemID)
 	}
+	// Jellyfin can legitimately return a null Items[0] for tombstoned or
+	// access-denied records. Treat it as "not found" rather than returning
+	// a nil map that would panic on the caller's first write.
+	if result.Items[0] == nil {
+		return nil, fmt.Errorf("item %s returned null payload", itemID)
+	}
 	return result.Items[0], nil
 }
 

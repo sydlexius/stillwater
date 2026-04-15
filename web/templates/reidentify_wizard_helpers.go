@@ -1,6 +1,9 @@
 package templates
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // WizardCandidateView is the flat projection of a scored provider candidate
 // used by the re-identify wizard. The handler package converts its domain
@@ -79,26 +82,9 @@ func wizardSaveExitURL(sessionID string) string {
 	return "/api/v1/artists/re-identify/wizard/" + sessionID + "/save-exit"
 }
 
-// itoa is a tiny local helper so the template file does not need to import
-// strconv purely for URL assembly helpers.
+// itoa delegates to strconv.Itoa. Kept as a package-private alias so the
+// wizard URL-assembly helpers stay compact and can move to a bytes/builder
+// approach later without touching call sites.
 func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
+	return strconv.Itoa(n)
 }

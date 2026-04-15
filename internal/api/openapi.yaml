@@ -4074,7 +4074,7 @@ paths:
                     enum: [idle, running, completed, failed, canceled]
                   action:
                     type: string
-                    enum: [run_rules, re_identify, re_identify_auto, re_identify_review, scan, fetch_images]
+                    enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images]
                   total:
                     type: integer
                   processed:

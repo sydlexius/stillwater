@@ -90,13 +90,24 @@ func isLocked(locked map[string]struct{}, field string) bool {
 }
 
 // buildLockedSet normalizes a locked-fields slice to a lowercase lookup set.
+// Blank and whitespace-only tokens are dropped so a slice like []{"", " "}
+// produces a nil set rather than one that would match a lookup for "".
+// Returns nil when no valid tokens remain so isLocked can short-circuit on
+// len==0 without allocating.
 func buildLockedSet(fields []string) map[string]struct{} {
 	if len(fields) == 0 {
 		return nil
 	}
 	out := make(map[string]struct{}, len(fields))
 	for _, f := range fields {
-		out[strings.ToLower(strings.TrimSpace(f))] = struct{}{}
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		out[key] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

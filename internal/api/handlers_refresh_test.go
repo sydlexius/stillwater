@@ -549,3 +549,75 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 		t.Errorf("unexpected member: name=%q mbid=%q", saved[0].MemberName, saved[0].MemberMBID)
 	}
 }
+
+// TestApplyProviderName_RespectsLocks verifies that a user pinning the Name
+// or SortName field via the field-lock UI prevents applyProviderName from
+// overwriting it with provider metadata. This path runs separately from
+// ApplyMetadata's MergeOptions.LockedFields guard, so it needs its own
+// coverage.
+func TestApplyProviderName_RespectsLocks(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	t.Run("name_locked_preserves_user_value", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Pinned Name")
+		a.LockedFields = []string{"name"}
+		if err := artistSvc.SetLockedFields(context.Background(), a.ID, a.LockedFields); err != nil {
+			t.Fatalf("SetLockedFields: %v", err)
+		}
+		meta := &provider.ArtistMetadata{Name: "Provider Wants This", SortName: "Provider, Wants This"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.Name != "Pinned Name" {
+			t.Errorf("locked name overwritten: got %q", a.Name)
+		}
+		if a.SortName != "Provider, Wants This" {
+			t.Errorf("unlocked sort_name should be updated: got %q", a.SortName)
+		}
+	})
+
+	t.Run("sort_name_locked_preserves_user_value", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unlocked Name")
+		a.SortName = "Locked, Sort"
+		a.LockedFields = []string{"sort_name"}
+		if err := artistSvc.Update(context.Background(), a); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if err := artistSvc.SetLockedFields(context.Background(), a.ID, a.LockedFields); err != nil {
+			t.Fatalf("SetLockedFields: %v", err)
+		}
+		meta := &provider.ArtistMetadata{Name: "Updated Name", SortName: "Provider, Overrides"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.SortName != "Locked, Sort" {
+			t.Errorf("locked sort_name overwritten: got %q", a.SortName)
+		}
+		if a.Name != "Updated Name" {
+			t.Errorf("unlocked name should be updated: got %q", a.Name)
+		}
+	})
+
+	t.Run("no_locks_overwrites_both", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Freely Renamed")
+		meta := &provider.ArtistMetadata{Name: "New", SortName: "New, The"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.Name != "New" || a.SortName != "New, The" {
+			t.Errorf("unlocked fields not updated: name=%q sort=%q", a.Name, a.SortName)
+		}
+	})
+
+	t.Run("nil_meta_noops", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unchanged")
+		orig := a.Name
+		r.applyProviderName(context.Background(), a, nil)
+		if a.Name != orig {
+			t.Errorf("nil meta should not modify artist, got %q", a.Name)
+		}
+	})
+}
