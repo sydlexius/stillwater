@@ -226,6 +226,97 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 	}
 }
 
+// PushLocks synchronizes only the artist's lock state (whole-item flag and
+// per-field list) to every connected platform. This is called from the lock
+// toggle handlers so Emby/Jellyfin reflect the pin immediately without
+// requiring a manual push. Critically, it does NOT go through PushMetadata:
+// sending LockData on every metadata write would cause the platforms to
+// re-scrape unlocked items and can replace existing images with provider
+// results.
+func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
+	if p == nil {
+		return
+	}
+	platformIDs, err := p.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil {
+		p.logger.Error("lock-push: listing platform IDs",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()))
+		return
+	}
+	if len(platformIDs) == 0 {
+		return
+	}
+
+	locked := a.Locked
+	fields := append([]string(nil), a.LockedFields...)
+
+	for _, pid := range platformIDs {
+		go func() {
+			gCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pushTimeout)
+			defer cancel()
+			defer func() {
+				if v := recover(); v != nil {
+					p.logger.Error("lock-push: panic in goroutine",
+						slog.String("artist_id", a.ID),
+						slog.String("connection_id", pid.ConnectionID),
+						slog.Any("panic", v),
+						slog.String("stack", string(debug.Stack())))
+				}
+			}()
+
+			conn, connErr := p.connectionService.GetByID(gCtx, pid.ConnectionID)
+			if connErr != nil {
+				p.logger.Error("lock-push: fetching connection",
+					slog.String("artist_id", a.ID),
+					slog.String("connection_id", pid.ConnectionID),
+					slog.String("error", connErr.Error()))
+				return
+			}
+			if !conn.Enabled {
+				p.logger.Debug("lock-push: skipping disabled connection",
+					slog.String("artist_id", a.ID),
+					slog.String("connection", conn.Name))
+				return
+			}
+
+			syncer := newLockSyncer(conn, p.logger)
+			if syncer == nil {
+				p.logger.Debug("lock-push: connection type does not support lock sync",
+					slog.String("artist_id", a.ID),
+					slog.String("connection", conn.Name),
+					slog.String("type", conn.Type))
+				return
+			}
+			if err := syncer.UpdateArtistLocks(gCtx, pid.PlatformArtistID, locked, fields); err != nil {
+				p.logger.Error("lock-push: update failed",
+					slog.String("artist_id", a.ID),
+					slog.String("connection", conn.Name),
+					slog.String("error", err.Error()))
+			} else {
+				p.logger.Info("lock-push: locks synchronized",
+					slog.String("artist_id", a.ID),
+					slog.String("connection", conn.Name),
+					slog.Bool("locked", locked),
+					slog.Int("field_count", len(fields)))
+			}
+		}()
+	}
+}
+
+// newLockSyncer constructs a LockSyncer for the given connection type.
+// Returns nil for connection types that do not support lock updates.
+func newLockSyncer(conn *connection.Connection, logger *slog.Logger) connection.LockSyncer {
+	switch conn.Type {
+	case connection.TypeEmby:
+		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+	case connection.TypeJellyfin:
+		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger)
+	default:
+		return nil
+	}
+}
+
 // SyncImageToPlatforms uploads the specified image type to every platform
 // connection that has a stored artist ID mapping. Errors are logged and
 // returned as warning strings so the caller can surface them to the client.

@@ -322,7 +322,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Members: nil},
 			AttemptedFields: []string{"biography", "members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved after attempted-empty refresh, got %d", n)
@@ -347,7 +347,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
 		if err != nil {
@@ -375,7 +375,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Biography: "new bio"},
 			AttemptedFields: []string{"biography"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (unattempted), got %d", n)
@@ -391,7 +391,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        nil,
 			AttemptedFields: []string{"members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (nil metadata), got %d", n)
@@ -415,7 +415,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		rIsolated.applyMemberRefresh(context.Background(), a.ID, result)
+		rIsolated.applyMemberRefresh(context.Background(), a.ID, result, nil)
 		// No assertions beyond "did not panic" -- error is swallowed by design.
 	})
 }

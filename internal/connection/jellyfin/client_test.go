@@ -589,6 +589,57 @@ func TestPushMetadata(t *testing.T) {
 	}
 }
 
+// TestUpdateArtistLocks verifies that the lock-sync path sets LockData on the
+// merged item payload, leaves LockedFields untouched (Jellyfin doesn't honor
+// per-field locks at the item level), strips read-only fields, and POSTs the
+// body back. Mirrors TestUpdateArtistLocks on the Emby client.
+func TestUpdateArtistLocks(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Bjork","LockData":false,"LockedFields":["Tags"],"ImageTags":{"Primary":"abc"}}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-a1" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decoding body: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UpdateArtistLocks(context.Background(), "jf-a1", true, []string{"name", "biography"}); err != nil {
+		t.Fatalf("UpdateArtistLocks: %v", err)
+	}
+
+	got := <-bodyCh
+	if lock, _ := got["LockData"].(bool); !lock {
+		t.Errorf("LockData = %v, want true", got["LockData"])
+	}
+	// Per-field LockedFields must be preserved from the fetched state: we
+	// intentionally do not overwrite the server-side list.
+	lf, _ := got["LockedFields"].([]any)
+	if len(lf) != 1 {
+		t.Fatalf("LockedFields = %v, want preserved single [\"Tags\"]", got["LockedFields"])
+	}
+	if s, _ := lf[0].(string); s != "Tags" {
+		t.Errorf("LockedFields[0] = %v, want \"Tags\"", lf[0])
+	}
+	// Read-only fields must be stripped.
+	if _, present := got["ImageTags"]; present {
+		t.Errorf("read-only ImageTags should have been stripped, got %v", got["ImageTags"])
+	}
+}
+
 // TestPushMetadata_ClearsFields verifies that empty values in the push data
 // overwrite existing Jellyfin values, allowing field clears to propagate.
 func TestPushMetadata_ClearsFields(t *testing.T) {

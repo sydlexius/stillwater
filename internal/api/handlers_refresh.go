@@ -268,6 +268,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 			AttemptedFields:   result.AttemptedFields,
 			FilterDatesByType: true,
 			Sources:           result.Sources,
+			LockedFields:      a.LockedFields,
 		})
 	}
 
@@ -298,7 +299,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 
 	rule.UpdateProviderFetchTimestamps(writeCtx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
-	r.applyMemberRefresh(writeCtx, a.ID, result)
+	r.applyMemberRefresh(writeCtx, a.ID, result, a.LockedFields)
 
 	return result, nil
 }
@@ -308,9 +309,14 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 // An empty list is treated as incomplete data (MusicBrainz relation data is
 // often sparse), not an intentional clear. Existing members are left untouched
 // when the provider was not attempted or returned zero members.
-func (r *Router) applyMemberRefresh(ctx context.Context, artistID string, result *provider.FetchResult) {
+func (r *Router) applyMemberRefresh(ctx context.Context, artistID string, result *provider.FetchResult, locked []string) {
 	if result.Metadata == nil {
 		return
+	}
+	for _, f := range locked {
+		if strings.EqualFold(f, "members") {
+			return
+		}
 	}
 	if slices.Contains(result.AttemptedFields, "members") && len(result.Metadata.Members) > 0 {
 		members := convertProviderMembers(artistID, result.Metadata.Members)
@@ -513,6 +519,18 @@ func (r *Router) applyProviderName(ctx context.Context, a *artist.Artist, meta *
 		return false
 	}
 	newName, newSort := meta.Name, meta.SortName
+	// Respect per-field locks: a user pin on Name or SortName must survive
+	// a provider refresh. ApplyMetadata skips these intentionally so the
+	// user's display name is not clobbered mid-refresh, but applyProviderName
+	// runs on a separate path and must enforce the same rule.
+	nameLocked := r.artistService.IsFieldLocked(a, "name")
+	sortLocked := r.artistService.IsFieldLocked(a, "sort_name")
+	if nameLocked {
+		newName = ""
+	}
+	if sortLocked {
+		newSort = ""
+	}
 	nameChanged := (newName != "" && newName != a.Name) ||
 		(newSort != "" && newSort != a.SortName)
 	if !nameChanged {

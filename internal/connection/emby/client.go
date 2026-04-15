@@ -399,7 +399,12 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 		item = make(map[string]any)
 	}
 	item["LockData"] = lockData
-	item["LockedFields"] = canonicalizeLockedFields(lockedFields)
+	canonLocks, dropped := canonicalizeLockedFieldsDrops(lockedFields)
+	item["LockedFields"] = canonLocks
+	for _, d := range dropped {
+		c.Logger.Warn("emby: dropping unmappable lock field",
+			"artist_id", platformArtistID, "field", d)
+	}
 
 	body, err := json.Marshal(item)
 	if err != nil {
@@ -422,9 +427,15 @@ var embyLockedFieldCanonical = map[string]string{
 	// MetadataFields enum names the underlying storage "Overview" (see the
 	// Get path at line 190 which also fetches Fields=Overview). Both aliases
 	// map to the same PascalCase value so lock UI using either term syncs.
-	"biography":           "Overview",
-	"overview":            "Overview",
-	"genres":              "Genres",
+	"biography": "Overview",
+	"overview":  "Overview",
+	"genres":    "Genres",
+	// Styles and Moods are stored as Tags on Emby's item (see PushMetadata
+	// tagItems mapping); lock them as "Tags" on the platform side. Multiple
+	// Stillwater keys canonicalize to the same platform value; dedup in
+	// canonicalizeLockedFields ensures "Tags" appears only once.
+	"styles":              "Tags",
+	"moods":               "Tags",
 	"cast":                "Cast",
 	"productionlocations": "ProductionLocations",
 	"tags":                "Tags",
@@ -432,6 +443,7 @@ var embyLockedFieldCanonical = map[string]string{
 	"images":              "Images",
 	"backdrops":           "Backdrops",
 	"sortname":            "SortName",
+	"sort_name":           "SortName",
 	"officialrating":      "OfficialRating",
 	"parentalrating":      "ParentalRating",
 	"runtime":             "Runtime",
@@ -442,24 +454,33 @@ var embyLockedFieldCanonical = map[string]string{
 // are dropped (strict allow-list). The returned slice is always non-nil so
 // Emby receives an empty array rather than null when no fields are locked.
 func canonicalizeLockedFields(in []string) []string {
-	out := make([]string, 0, len(in))
+	out, _ := canonicalizeLockedFieldsDrops(in)
+	return out
+}
+
+// canonicalizeLockedFieldsDrops is the diagnostic variant that also returns
+// the list of input tokens that had no mapping. Used by the publish path to
+// surface mapping gaps via a warn log rather than failing silently.
+func canonicalizeLockedFieldsDrops(in []string) (canon []string, dropped []string) {
+	canon = make([]string, 0, len(in))
 	seen := make(map[string]struct{}, len(in))
 	for _, f := range in {
 		key := strings.ToLower(strings.TrimSpace(f))
 		if key == "" {
 			continue
 		}
-		canon, ok := embyLockedFieldCanonical[key]
+		c, ok := embyLockedFieldCanonical[key]
 		if !ok {
+			dropped = append(dropped, key)
 			continue
 		}
-		if _, dup := seen[canon]; dup {
+		if _, dup := seen[c]; dup {
 			continue
 		}
-		seen[canon] = struct{}{}
-		out = append(out, canon)
+		seen[c] = struct{}{}
+		canon = append(canon, c)
 	}
-	return out
+	return canon, dropped
 }
 
 func (c *Client) setAuth(req *http.Request) {

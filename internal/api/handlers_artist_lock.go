@@ -36,6 +36,10 @@ func (r *Router) handleLockArtist(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Propagate the new lock state to every connected platform immediately
+	// so Emby/Jellyfin show the pin without requiring a manual push.
+	r.publisher.PushLocks(req.Context(), updated)
+
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -67,6 +71,8 @@ func (r *Router) handleUnlockArtist(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+
+	r.publisher.PushLocks(req.Context(), updated)
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -101,6 +107,7 @@ func (r *Router) handleLockArtistField(w http.ResponseWriter, req *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	r.publisher.PushLocks(req.Context(), updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 

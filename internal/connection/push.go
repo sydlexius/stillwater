@@ -24,6 +24,15 @@ type MetadataPusher interface {
 	PushMetadata(ctx context.Context, platformArtistID string, data ArtistPushData) error
 }
 
+// LockSyncer updates the whole-item and per-field lock state for an artist on
+// a platform without touching content metadata. Kept separate from
+// MetadataPusher because lock changes are sensitive (toggling LockData via the
+// generic metadata push can trigger Emby/Jellyfin to re-scrape and replace
+// images) and must run on their own HTTP cycle.
+type LockSyncer interface {
+	UpdateArtistLocks(ctx context.Context, platformArtistID string, lockData bool, lockedFields []string) error
+}
+
 // ImageUploader uploads images to an external platform.
 type ImageUploader interface {
 	UploadImage(ctx context.Context, platformArtistID string, imageType string, data []byte, contentType string) error

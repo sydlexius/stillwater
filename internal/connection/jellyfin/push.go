@@ -126,6 +126,57 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	return nil
 }
 
+// UpdateArtistLocks persists the overall lock state for the given Jellyfin
+// artist without touching content metadata. Jellyfin does NOT honor per-field
+// LockedFields at the item level, so this method only syncs the whole-item
+// LockData flag; the lockedFields argument is accepted for interface
+// conformance and logged at debug but otherwise discarded. The item POST is a
+// full replacement, so this method fetches the current item map, overwrites
+// LockData, strips read-only fields, and POSTs the merged body back.
+// Keeping lock sync on its own HTTP cycle (rather than piggybacking on
+// PushMetadata) prevents accidental re-scrapes when LockData toggles through
+// the normal metadata push path.
+func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string, lockData bool, lockedFields []string) error {
+	existing, err := c.fetchItem(ctx, platformArtistID)
+	if err != nil {
+		return fmt.Errorf("fetching artist for lock update: %w", err)
+	}
+	existing["LockData"] = lockData
+	if len(lockedFields) > 0 {
+		c.Logger.Debug("jellyfin: per-field locks ignored (not supported at item level)",
+			"artist_id", platformArtistID, "field_count", len(lockedFields))
+	}
+	for _, key := range jellyfinReadOnlyFields {
+		delete(existing, key)
+	}
+
+	body, err := json.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("encoding lock update body: %w", err)
+	}
+	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating lock update request: %w", err)
+	}
+	c.AuthFunc(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	if err != nil {
+		return fmt.Errorf("executing lock update: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode >= 300 {
+		const maxErrBody = 1 << 20
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return fmt.Errorf("lock update failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
 // jellyfinReadOnlyFields are item fields that Jellyfin rejects in POST
 // /Items/{id}. These must be stripped from the GET response before POSTing.
 var jellyfinReadOnlyFields = []string{

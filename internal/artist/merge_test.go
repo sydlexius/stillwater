@@ -655,3 +655,48 @@ func TestFetchResultToUpdate_NilMetadata(t *testing.T) {
 		t.Error("expected nil for nil metadata")
 	}
 }
+
+// --- LockedFields honored across strategies ---
+
+func TestApplyMetadata_OverwriteAttempted_SkipsLockedFields(t *testing.T) {
+	a := &Artist{Biography: "keep me", Born: "1970", Genres: []string{"jazz"}}
+	u := &MetadataUpdate{Biography: "overwrite", Born: "1980", Genres: []string{"rock"}}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"biography", "born", "genres"},
+		LockedFields:    []string{"biography", "genres"},
+	})
+	if a.Biography != "keep me" {
+		t.Errorf("locked biography overwritten: got %q", a.Biography)
+	}
+	if len(a.Genres) != 1 || a.Genres[0] != "jazz" {
+		t.Errorf("locked genres overwritten: got %v", a.Genres)
+	}
+	if a.Born != "1980" {
+		t.Errorf("unlocked born not updated: got %q", a.Born)
+	}
+}
+
+func TestApplyMetadata_OverwriteAttempted_LockedDisambiguationKept(t *testing.T) {
+	a := &Artist{Disambiguation: "Seattle grunge"}
+	u := &MetadataUpdate{Disambiguation: "replaced"}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		LockedFields: []string{"Disambiguation"}, // case-insensitive
+	})
+	if a.Disambiguation != "Seattle grunge" {
+		t.Errorf("locked disambiguation overwritten: got %q", a.Disambiguation)
+	}
+}
+
+func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
+	a := &Artist{Name: "Pinned", Biography: "old"}
+	u := &MetadataUpdate{Name: "Snapshot", Biography: "restored"}
+	ApplyMetadata(a, u, SnapshotRestore, MergeOptions{
+		LockedFields: []string{"name"},
+	})
+	if a.Name != "Pinned" {
+		t.Errorf("locked name was restored: got %q", a.Name)
+	}
+	if a.Biography != "restored" {
+		t.Errorf("unlocked biography not restored: got %q", a.Biography)
+	}
+}

@@ -773,7 +773,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 					pollAsyncStatus(_artistsBp + '/api/v1/scanner/status', {
 						onData: function(data) {
-							if (data.status === 'completed' || data.status === 'failed') {
+							if (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {
 								resetScanUI();
 								var _scMeta = document.querySelector('meta[name="htmx-base-path"]');
 								var _scBp = _scMeta ? _scMeta.content : '';
@@ -1000,6 +1000,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						.replace('{processed}', String(processed))
 						.replace('{total}', String(total));
 					pill.classList.remove('hidden');
+					// Re-enable the cancel button each render tick so a prior
+					// canceled run does not leave the button disabled on the
+					// next action.
+					var cancelBtn = document.getElementById('bulk-progress-cancel');
+					if (cancelBtn) cancelBtn.disabled = false;
 				}
 
 				function hideProgressPill() {
@@ -1024,16 +1029,33 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						return true;
 					}
 					renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
-					if (data.status === 'completed' || data.status === 'failed') {
+					if (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {
 						hideProgressPill();
 						bulkActionRunning = false;
 						updateBar();
 						var pill = document.getElementById('bulk-progress-pill');
-						var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
-						var msg = tpl
-							.replace('{succeeded}', String(data.succeeded || 0))
-							.replace('{failed}', String(data.failed || 0))
-							.replace('{skipped}', String(data.skipped || 0));
+						// Re-identify auto breaks out auto_linked/queued/
+						// no_match counters so the toast can say "3 auto-
+						// linked, 2 queued, 1 no match" instead of the
+						// generic succeeded/skipped triad. Other actions
+						// keep the existing summary text.
+						var msg;
+						if ((data.action === 're_identify_auto' || data.action === 're_identify') &&
+							((data.auto_linked || 0) + (data.queued || 0) + (data.no_match || 0) + (data.failed || 0) > 0)) {
+							var rtpl = (pill && pill.getAttribute('data-i18n-reidentify-summary')) ||
+								'{auto_linked} auto-linked, {queued} queued, {no_match} no match';
+							msg = rtpl
+								.replace('{auto_linked}', String(data.auto_linked || 0))
+								.replace('{queued}', String(data.queued || 0))
+								.replace('{no_match}', String(data.no_match || 0))
+								.replace('{failed}', String(data.failed || 0));
+						} else {
+							var tpl = (pill && pill.getAttribute('data-i18n-summary')) || '{succeeded} succeeded, {failed} failed, {skipped} skipped';
+							msg = tpl
+								.replace('{succeeded}', String(data.succeeded || 0))
+								.replace('{failed}', String(data.failed || 0))
+								.replace('{skipped}', String(data.skipped || 0));
+						}
 						if (typeof window.showSuccessToast === 'function' && (data.failed || 0) === 0) {
 							window.showSuccessToast(msg);
 						} else if (typeof window.showToast === 'function') {
@@ -1078,6 +1100,22 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					hide: hideProgressPill
 				};
 
+				// Cancel the in-flight bulk action. The button is wired via
+				// onclick on the pill; the poll loop picks up the terminal
+				// "canceled" status on the next tick and clears the pill.
+				window.swCancelBulkAction = function() {
+					var btn = document.getElementById('bulk-progress-cancel');
+					if (btn) btn.disabled = true;
+					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+					fetch(_artistsBp + '/api/v1/artists/bulk-actions/cancel', {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken}
+					}).catch(function() {
+						if (btn) btn.disabled = false;
+					});
+				};
+
 				// Size-aware confirm dialog. <=50: no dialog; >50 and <=500:
 				// simple confirm with action + count; >500: stronger warning
 				// that names external API impact for re-identify and
@@ -1097,7 +1135,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					// only use it for actions that actually hit them. Local
 					// actions (scan, run_rules) get the plain small template
 					// regardless of count to avoid misleading warnings.
-					var usesExternalProviders = action === 're_identify' || action === 'fetch_images';
+					var usesExternalProviders = action === 're_identify_auto' || action === 're_identify_review' || action === 'fetch_images';
 					var tpl;
 					if (count > 500 && usesExternalProviders) {
 						tpl = (pill && pill.getAttribute('data-i18n-confirm-large')) || 'You are about to apply {action} to {count} artists. This may take a while and will hit external provider APIs (MusicBrainz, Fanart.tv, etc.). Continue?';
@@ -1121,6 +1159,33 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					if (!confirmBulkAction(action, ids.length)) return;
 					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 					t.disabled = true;
+					// Re-identify (review) dispatches to the wizard flow
+					// rather than the bulk-actions endpoint: the wizard is
+					// interactive and owns its own session state, so routing
+					// it through the singleton bulk-action slot would be
+					// misleading. Start the wizard then redirect the user to
+					// its first step.
+					if (action === 're_identify_review') {
+						fetch(_artistsBp + '/api/v1/artists/re-identify/wizard', {
+							method: 'POST',
+							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+							body: JSON.stringify({ids: ids})
+						}).then(function(r) {
+							if (!r.ok) {
+								var bar3 = document.getElementById('bulk-action-bar');
+								alert((bar3 && bar3.getAttribute('data-i18n-failed')) || 'Bulk action failed to start.');
+								t.disabled = false;
+								return;
+							}
+							return r.json();
+						}).then(function(data) {
+							if (!data || !data.session_id) return;
+							window.location.href = _artistsBp + '/artists/re-identify/wizard/' + data.session_id + '/step/0';
+						}).catch(function() {
+							t.disabled = false;
+						});
+						return;
+					}
 					fetch(_artistsBp + '/api/v1/artists/bulk-actions', {
 						method: 'POST',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
@@ -1258,7 +1323,8 @@ templ BulkActionBar(data ArtistListData) {
 				>
 					<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
 					<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
-					<option value="re_identify">{ t(ctx, "artists.bulk.action.re_identify") }</option>
+					<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
+					<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
 					<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
 					<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
 				</select>
@@ -1557,11 +1623,14 @@ templ BulkProgressPill() {
 		aria-live="polite"
 		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
 		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
+		data-i18n-verb-re-identify-auto={ t(ctx, "artists.bulk.progress.re_identify_auto") }
+		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
 		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
 		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
 		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
 		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
 		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
+		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
 		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
 		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
 	>
@@ -1570,5 +1639,14 @@ templ BulkProgressPill() {
 			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 		</svg>
 		<span id="bulk-progress-text">...</span>
+		<button
+			type="button"
+			id="bulk-progress-cancel"
+			class="ml-2 inline-flex items-center rounded-full bg-white/15 hover:bg-white/25 px-3 py-0.5 text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-white/60 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.cancel") }
+			onclick="swCancelBulkAction()"
+		>
+			{ t(ctx, "artists.bulk.cancel") }
+		</button>
 	</div>
 }
