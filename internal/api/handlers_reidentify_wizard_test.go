@@ -330,6 +330,39 @@ func TestHandleReIdentifyWizardStart_ServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestHandleReIdentifyWizardStart_Success(t *testing.T) {
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := &artist.Artist{ID: "startHappy1", Name: "Start Happy"}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	body := strings.NewReader(`{"ids":["` + a.ID + `"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardStart(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	sid, _ := resp["session_id"].(string)
+	if sid == "" {
+		t.Errorf("session_id missing or empty: %v", resp["session_id"])
+	}
+	if total, ok := resp["total"].(float64); !ok || total != 1 {
+		t.Errorf("total = %v, want 1", resp["total"])
+	}
+	if idx, ok := resp["index"].(float64); !ok || idx != 0 {
+		t.Errorf("index = %v, want 0", resp["index"])
+	}
+	if sid != "" && r.reIdentifyWizardStore.get(sid) == nil {
+		t.Errorf("store missing session %q returned in response", sid)
+	}
+}
+
 func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
 	req := httptest.NewRequest(http.MethodGet, "/artists/re-identify/wizard/unknown/step/0", nil)
@@ -537,6 +570,87 @@ func TestHandleReIdentifyWizardAccept_FormBody(t *testing.T) {
 	r.handleReIdentifyWizardAccept(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (empty form body)", w.Code)
+	}
+}
+
+func TestHandleReIdentifyWizardAccept_AdvancedSuccess(t *testing.T) {
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := &artist.Artist{ID: "acceptAdv1", Name: "Accept Advanced"}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+		{ArtistID: a.ID}, {ArtistID: "other"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{"mbid":"mbid-abc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("sid", sess.ID)
+	req.SetPathValue("idx", "0")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardAccept(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "advanced" {
+		t.Errorf("status = %v, want advanced", resp["status"])
+	}
+	if idx, ok := resp["index"].(float64); !ok || idx != 1 {
+		t.Errorf("index = %v, want 1", resp["index"])
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	if sess.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", sess.Accepted)
+	}
+	if sess.Steps[0].Decision != "accepted" {
+		t.Errorf("Steps[0].Decision = %q, want accepted", sess.Steps[0].Decision)
+	}
+}
+
+func TestHandleReIdentifyWizardAccept_DoneSuccess(t *testing.T) {
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := &artist.Artist{ID: "acceptDone1", Name: "Accept Done"}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	// Single-step session so accepting step 0 terminates the wizard.
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: a.ID}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{"mbid":"mbid-xyz"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("sid", sess.ID)
+	req.SetPathValue("idx", "0")
+	w := httptest.NewRecorder()
+	r.handleReIdentifyWizardAccept(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "done" {
+		t.Errorf("status = %v, want done", resp["status"])
+	}
+	if sid, ok := resp["session_id"].(string); !ok || sid != sess.ID {
+		t.Errorf("session_id = %v, want %q", resp["session_id"], sess.ID)
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	if sess.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", sess.Accepted)
+	}
+	if sess.Steps[0].Decision != "accepted" {
+		t.Errorf("Steps[0].Decision = %q, want accepted", sess.Steps[0].Decision)
 	}
 }
 
