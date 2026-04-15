@@ -98,23 +98,37 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 }
 
 // fieldActions renders a persistent inline edit button (pencil icon) and,
-// when applicable, an overflow menu for Clear and Fetch from providers actions.
+// when applicable, an overflow menu for Clear and Fetch from providers
+// actions. Callers can pass the artist via fieldActionsFor to hide
+// edit/clear/fetch affordances automatically when the field is locked.
 templ fieldActions(artistID, field string, hasValue bool, providers []string) {
+	@fieldActionsLocked(artistID, field, hasValue, providers, false)
+}
+
+// fieldActionsFor is the lock-aware variant. When the field is pinned the
+// pencil, clear, and fetch-from-providers controls are omitted so the lock
+// is visually enforced; users must unlock via the FieldLockToggle first.
+templ fieldActionsFor(a *artist.Artist, field string, hasValue bool, providers []string) {
+	@fieldActionsLocked(a.ID, field, hasValue, providers, isFieldLockedIn(a, field))
+}
+
+templ fieldActionsLocked(artistID, field string, hasValue bool, providers []string, locked bool) {
 	<span class="inline-flex items-center gap-0.5">
-		// Direct edit button (pencil icon)
-		<button
-			type="button"
-			class="inline-flex items-center justify-center rounded p-0.5 text-gray-700 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-			title={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
-			aria-label={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
-			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
-			hx-target={ "#field-" + field + "-" + artistID }
-			hx-swap="outerHTML"
-		>
-			@components.IconPencilSquare("h-3.5 w-3.5")
-		</button>
-		// Overflow menu for clear and fetch actions
-		if hasValue || len(providers) > 0 {
+		if !locked {
+			<button
+				type="button"
+				class="inline-flex items-center justify-center rounded p-0.5 text-gray-700 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+				title={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
+				aria-label={ tf(ctx, "artist.edit_field", fieldLabel(ctx, field)) }
+				hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
+				hx-target={ "#field-" + field + "-" + artistID }
+				hx-swap="outerHTML"
+			>
+				@components.IconPencilSquare("h-3.5 w-3.5")
+			</button>
+		}
+		// Overflow menu for clear and fetch actions (suppressed when locked)
+		if !locked && (hasValue || len(providers) > 0) {
 			@components.ContextMenu("fa-"+field+"-"+artistID, true) {
 				if hasValue {
 					<button
@@ -167,7 +181,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 				{ t(ctx, "artist.biography") }
 				@FieldLockToggle(a, "biography")
 			</h2>
-			@fieldActions(a.ID, "biography", a.Biography != "", providers)
+			@fieldActionsFor(a, "biography", a.Biography != "", providers)
 		</div>
 		if a.Biography != "" {
 			<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ a.Biography }</p>
@@ -202,7 +216,8 @@ templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colo
 	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
 		<h3 class="text-xs font-medium uppercase text-gray-700 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
-			@fieldActions(a.ID, field, len(tags) > 0, providers)
+			@FieldLockToggle(a, field)
+			@fieldActionsFor(a, field, len(tags) > 0, providers)
 		</h3>
 		if len(tags) > 0 {
 			<div class="flex flex-wrap gap-1">
@@ -246,7 +261,7 @@ templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers
 		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
 			{ label }
 			@FieldLockToggle(a, field)
-			@fieldActions(a.ID, field, value != "", providers)
+			@fieldActionsFor(a, field, value != "", providers)
 		</dt>
 		if value != "" {
 			<dd class="font-medium">{ value }</dd>
@@ -358,7 +373,7 @@ templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, provi
 	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-700 dark:text-gray-400 flex items-center gap-1">
 			{ label }
-			@fieldActions(a.ID, field, value != "", providers)
+			@fieldActionsFor(a, field, value != "", providers)
 		</dt>
 		if value != "" {
 			if url := providerIDURL(field, value); url != "" {

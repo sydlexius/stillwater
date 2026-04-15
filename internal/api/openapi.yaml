@@ -230,8 +230,12 @@ components:
           description: Filesystem path to the artist directory.
         tier:
           type: string
-          enum: [connection, album, name]
-          description: The pipeline tier that produced this candidate.
+          enum: [connection, album, name, wizard]
+          description: >
+            The pipeline tier that produced this candidate. The wizard
+            value marks entries pushed onto the review queue by
+            POST /artists/re-identify/wizard/{sid}/save-exit when the
+            user ends a review session with undecided artists.
         candidates:
           type: array
           description: Ranked list of potential MusicBrainz matches.
@@ -3985,8 +3989,10 @@ paths:
       description: >
         Runs the requested action for each artist in the supplied ID list.
         Only one bulk action may run at a time; concurrent starts are rejected
-        with 409 Conflict. The accepted actions are run_rules, re_identify,
-        scan, and fetch_images. Progress is reported via
+        with 409 Conflict. The accepted actions are run_rules,
+        re_identify_auto (legacy alias: re_identify), scan, and
+        fetch_images. The review flow is started separately via
+        POST /artists/re-identify/wizard. Progress is reported via
         GET /artists/bulk-actions/status and a bulk.completed SSE event is
         published when the run finishes.
       requestBody:
@@ -3999,8 +4005,12 @@ paths:
               properties:
                 action:
                   type: string
-                  enum: [run_rules, re_identify, scan, fetch_images]
-                  description: Action to apply to each artist in the list.
+                  enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images]
+                  description: >
+                    Action to apply to each artist in the list. The legacy
+                    value re_identify is an alias for re_identify_auto; the
+                    wizard variant (re_identify_review) is dispatched
+                    separately via POST /artists/re-identify/wizard.
                 ids:
                   type: array
                   minItems: 1
@@ -4023,7 +4033,12 @@ paths:
                     enum: [running]
                   action:
                     type: string
-                    enum: [run_rules, re_identify, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    description: >
+                      Canonical action value as emitted by the handler.
+                      The legacy alias re_identify is normalized to
+                      re_identify_auto on entry, so this response will
+                      never carry the legacy value.
                   total:
                     type: integer
         "400":
@@ -4059,7 +4074,7 @@ paths:
       operationId: getBulkActionStatus
       responses:
         "200":
-          description: Returns live progress while a bulk action is running, or the most recent completed/failed snapshot once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
+          description: Returns live progress while a bulk action is running, or the most recent terminal snapshot (completed, failed, or canceled) once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
           content:
             application/json:
               schema:
@@ -4067,10 +4082,14 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [idle, running, completed, failed]
+                    enum: [idle, running, completed, failed, canceled]
                   action:
                     type: string
-                    enum: [run_rules, re_identify, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    description: >
+                      Canonical emitted action value. The legacy alias
+                      re_identify is normalized on entry by
+                      handleBulkAction, so the snapshot never carries it.
                   total:
                     type: integer
                   processed:
@@ -4082,6 +4101,38 @@ paths:
                   failed:
                     type: integer
                   current_name:
+                    type: string
+
+  /artists/bulk-actions/cancel:
+    post:
+      tags: [Bulk Operations]
+      summary: Cancel the in-flight bulk action
+      operationId: cancelBulkAction
+      description: >
+        Signals the running bulk action goroutine to stop at its next iteration.
+        The action's progress snapshot is finalized with status=canceled so
+        clients can distinguish canceled runs from normal completion.
+      responses:
+        "200":
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [canceling]
+        "409":
+          description: No bulk action is currently running
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
                     type: string
 
   /artists/bulk-identify:
@@ -4266,6 +4317,213 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: Artist service not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/re-identify/wizard:
+    post:
+      tags: [Bulk Operations]
+      summary: Start an interactive re-identify wizard session
+      operationId: startReIdentifyWizard
+      description: >
+        Creates a new wizard session over the supplied artist IDs and returns
+        a session_id the UI uses to walk through per-artist candidate review.
+        Candidates are fetched on demand (with the next step pre-fetched in
+        the background). Sessions are in-memory and TTL-bounded; they are not
+        persisted across restarts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: string
+                    pattern: "^[A-Za-z0-9_-]{1,64}$"
+      responses:
+        "202":
+          description: Wizard session created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, total, index]
+                properties:
+                  session_id: {type: string}
+                  total:      {type: integer}
+                  index:      {type: integer}
+        "400": {description: Invalid request body}
+        "503": {description: Artist service not configured}
+
+  /artists/re-identify/wizard/{sid}/step/{idx}/accept:
+    post:
+      tags: [Bulk Operations]
+      summary: Accept a candidate for the current wizard step
+      operationId: acceptReIdentifyWizardStep
+      parameters:
+        - in: path
+          name: sid
+          required: true
+          schema: {type: string}
+        - in: path
+          name: idx
+          required: true
+          schema: {type: integer}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mbid]
+              properties:
+                mbid:       {type: string}
+                discogs_id: {type: string}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [mbid]
+              properties:
+                mbid:       {type: string}
+                discogs_id: {type: string}
+      responses:
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
+        "400": {description: Missing or invalid mbid}
+        "404": {description: Wizard session not found or artist missing}
+
+  /artists/re-identify/wizard/{sid}/step/{idx}/skip:
+    post:
+      tags: [Bulk Operations]
+      summary: Skip the current wizard step without changes
+      operationId: skipReIdentifyWizardStep
+      parameters:
+        - in: path
+          name: sid
+          required: true
+          schema: {type: string}
+        - in: path
+          name: idx
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
+        "404": {description: Wizard session not found}
+
+  /artists/re-identify/wizard/{sid}/step/{idx}/decline:
+    post:
+      tags: [Bulk Operations]
+      summary: Mark the current wizard step as no-match
+      operationId: declineReIdentifyWizardStep
+      parameters:
+        - in: path
+          name: sid
+          required: true
+          schema: {type: string}
+        - in: path
+          name: idx
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
+        "404": {description: Wizard session not found}
+
+  /artists/re-identify/wizard/{sid}/save-exit:
+    post:
+      tags: [Bulk Operations]
+      summary: End the wizard early and leave remaining artists in review
+      operationId: saveExitReIdentifyWizard
+      parameters:
+        - in: path
+          name: sid
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Wizard closed; undecided artists moved to the review queue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, accepted, skipped, declined, leftover]
+                properties:
+                  status:   {type: string, enum: [saved]}
+                  accepted: {type: integer}
+                  skipped:  {type: integer}
+                  declined: {type: integer}
+                  leftover: {type: integer}
+        "404":
+          description: Wizard session not found
           content:
             application/json:
               schema:

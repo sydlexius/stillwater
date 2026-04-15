@@ -1,0 +1,228 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ReIdentifyWizardStepData is the per-step view model rendered by the wizard.
+// Candidates is intentionally typed as any rather than []ScoredCandidate so
+// this template does not import the api package (which would be a layering
+// violation: handlers already import templates). The handler passes scored
+// candidates through as the empty interface and this template reads fields
+// via a helper shim declared alongside the handler file.
+type ReIdentifyWizardStepData struct {
+	SessionID  string
+	Index      int
+	Total      int
+	ArtistID   string
+	ArtistName string
+	Candidates any
+}
+
+// ReIdentifyWizardDoneData is the completion summary shown after the last
+// step (or when Save-and-exit is used).
+type ReIdentifyWizardDoneData struct {
+	SessionID string
+	Total     int
+	Accepted  int
+	Skipped   int
+	Declined  int
+}
+
+// ReIdentifyWizardPage is the full-page wrapper used when the wizard is
+// loaded directly (no HTMX). Subsequent steps are swapped into #wizard-body
+// via hx-swap from the action buttons.
+templ ReIdentifyWizardPage(assets AssetPaths, data ReIdentifyWizardStepData) {
+	@Layout(t(ctx, "artists.bulk.reidentify.wizard.title"), assets) {
+		<div class="max-w-3xl mx-auto space-y-4">
+			<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+			<div id="wizard-body">
+				@ReIdentifyWizardStep(data)
+			</div>
+		</div>
+	}
+}
+
+// ReIdentifyWizardPageDone is the full-page equivalent of the done fragment
+// used when the caller (non-HTMX) hit the final step directly.
+templ ReIdentifyWizardPageDone(assets AssetPaths, data ReIdentifyWizardDoneData) {
+	@Layout(t(ctx, "artists.bulk.reidentify.wizard.title"), assets) {
+		<div class="max-w-3xl mx-auto space-y-4">
+			<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+			@ReIdentifyWizardDone(data)
+		</div>
+	}
+}
+
+// ReIdentifyWizardStep renders one artist + candidate list. Action buttons
+// HTMX-POST to the per-step endpoints and swap the response into
+// #wizard-body, so the stepper advances without a full navigation.
+templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
+	<section
+		id="wizard-step"
+		class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow space-y-4"
+		data-session-id={ data.SessionID }
+		data-step-index={ strconv.Itoa(data.Index) }
+	>
+		<header class="flex items-center justify-between">
+			<div>
+				<div class="text-xs uppercase tracking-wider text-gray-500">
+					{ tf(ctx, "artists.bulk.reidentify.wizard.step_of", data.Index+1, data.Total) }
+				</div>
+				<h2 class="text-lg font-semibold">{ data.ArtistName }</h2>
+			</div>
+			<progress class="w-32" value={ strconv.Itoa(data.Index + 1) } max={ strconv.Itoa(data.Total) }></progress>
+		</header>
+		<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+			@reIdentifyWizardCandidates(data)
+		</div>
+		<footer class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+			if data.Index > 0 {
+				<button
+					type="button"
+					class="inline-flex items-center gap-1 rounded border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 [&.htmx-request]:opacity-60 [&.htmx-request]:cursor-wait"
+					hx-get={ wizardStepURL(data.SessionID, data.Index-1) }
+					hx-target="#wizard-body"
+					hx-swap="innerHTML"
+					hx-disabled-elt="this"
+				>
+					<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					{ t(ctx, "artists.bulk.reidentify.wizard.back") }
+				</button>
+			}
+			<button
+				type="button"
+				class="inline-flex items-center gap-1 rounded border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 [&.htmx-request]:opacity-60 [&.htmx-request]:cursor-wait"
+				hx-post={ wizardActionURL(data.SessionID, data.Index, "skip") }
+				hx-target="#wizard-body"
+				hx-swap="innerHTML"
+				hx-disabled-elt="this"
+			>
+				<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+				{ t(ctx, "artists.bulk.reidentify.wizard.skip") }
+			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1 rounded border border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 px-3 py-1.5 text-sm hover:bg-amber-100 dark:hover:bg-amber-900/40 [&.htmx-request]:opacity-60 [&.htmx-request]:cursor-wait"
+				hx-post={ wizardActionURL(data.SessionID, data.Index, "decline") }
+				hx-target="#wizard-body"
+				hx-swap="innerHTML"
+				hx-disabled-elt="this"
+			>
+				<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+				{ t(ctx, "artists.bulk.reidentify.wizard.decline") }
+			</button>
+			<div class="ml-auto">
+				<button
+					type="button"
+					class="inline-flex items-center gap-1 rounded bg-gray-600 text-white px-3 py-1.5 text-sm hover:bg-gray-500 [&.htmx-request]:opacity-60 [&.htmx-request]:cursor-wait"
+					hx-post={ wizardSaveExitURL(data.SessionID) }
+					hx-swap="none"
+					hx-disabled-elt="this"
+					hx-on::after-request="if (event.detail.successful) { var m = document.querySelector('meta[name=htmx-base-path]'); window.location.href = (m ? m.content : '') + '/artists'; }"
+				>
+					<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					{ t(ctx, "artists.bulk.reidentify.wizard.save_exit") }
+				</button>
+			</div>
+		</footer>
+	</section>
+}
+
+// reIdentifyWizardCandidates renders the candidate list for the current step.
+// When Candidates is nil (pre-fetch has not landed) an inline spinner is
+// shown; an empty slice prints an explicit no-results message.
+templ reIdentifyWizardCandidates(data ReIdentifyWizardStepData) {
+	if wizardCandidatesNil(data.Candidates) {
+		<div
+			class="flex items-center gap-2 text-sm text-gray-500"
+			hx-get={ wizardStepURL(data.SessionID, data.Index) }
+			hx-trigger="load delay:750ms"
+			hx-target="#wizard-body"
+			hx-swap="innerHTML"
+		>
+			@components.IconMagnifyingGlass("h-4 w-4")
+			{ t(ctx, "artists.bulk.reidentify.wizard.loading") }
+		</div>
+	} else if wizardCandidatesLen(data.Candidates) == 0 {
+		<p class="text-sm text-gray-500 italic">{ t(ctx, "artists.bulk.reidentify.wizard.no_candidates") }</p>
+	} else {
+		<ul class="space-y-2">
+			for _, c := range wizardCandidatesIter(data.Candidates) {
+				<li>
+					<button
+						type="button"
+						class="group/link relative w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors [&.htmx-request]:border-blue-400 [&.htmx-request]:dark:border-blue-600"
+						hx-post={ wizardActionURL(data.SessionID, data.Index, "accept") }
+						hx-vals={ wizardAcceptVals(c.MBID) }
+						hx-target="#wizard-body"
+						hx-swap="innerHTML"
+						hx-disabled-elt="this"
+					>
+						// Loading overlay - shown when htmx-request is active
+						<div class="hidden group-[.htmx-request]/link:flex absolute inset-0 items-center justify-center rounded bg-white/80 dark:bg-gray-800/80 z-10">
+							<svg class="h-5 w-5 animate-spin text-blue-500 mr-2" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+							<span class="text-sm font-medium text-blue-600 dark:text-blue-400">{ t(ctx, "image.linking_and_refreshing") }</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<div class="flex-1 min-w-0">
+								<div class="font-medium text-sm">{ c.Name }</div>
+								<div class="text-xs text-gray-500 mt-0.5">
+									if c.Disambiguation != "" {
+										<span class="italic">({ c.Disambiguation })</span>
+									}
+									if c.Country != "" {
+										<span class="ml-1">{ c.Country }</span>
+									}
+								</div>
+								if c.MBID != "" {
+									<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{ c.MBID }</div>
+								}
+							</div>
+							<div class="shrink-0 ml-3 text-xs text-gray-500">
+								if c.ConfidencePct > 0 {
+									<span>{ strconv.Itoa(c.ConfidencePct) }%</span>
+								}
+							</div>
+						</div>
+					</button>
+				</li>
+			}
+		</ul>
+	}
+}
+
+// ReIdentifyWizardDone renders the terminal summary.
+templ ReIdentifyWizardDone(data ReIdentifyWizardDoneData) {
+	<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow space-y-3">
+		<h2 class="text-lg font-semibold">{ t(ctx, "artists.bulk.reidentify.wizard.done.title") }</h2>
+		<p class="text-sm text-gray-600 dark:text-gray-400">
+			{ tf(ctx, "artists.bulk.reidentify.wizard.done.summary", data.Accepted, data.Skipped, data.Declined, data.Total) }
+		</p>
+		<div>
+			<a
+				href={ templ.SafeURL(basePath() + "/artists") }
+				class="inline-flex items-center gap-1 rounded bg-blue-600 text-white px-3 py-1.5 text-sm hover:bg-blue-500"
+			>
+				{ t(ctx, "artists.bulk.reidentify.wizard.done.back_to_artists") }
+			</a>
+		</div>
+	</section>
+}

@@ -951,7 +951,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4">
-						<div id="settings-library-list" class="space-y-3 mb-4">
+						<div id="settings-library-list" class="space-y-3 mb-4" data-connection-label={ t(ctx, "settings.libraries.connection_badge") }>
 							for _, lib := range data.Libraries {
 								@settingsLibraryRow(lib)
 							}
@@ -3111,6 +3111,18 @@ templ settingsLibraryScript() {
 			}).then(function(res) { return res.json(); })
 			.then(function(libs) {
 				var list = document.getElementById("settings-library-list");
+				// Read the i18n-translated badge text from the container's
+				// data attribute. Templ does NOT interpolate { } inside
+				// <script> blocks, so we cannot use { t(ctx, ...) } here --
+				// that produces literal text in the rendered DOM.
+				var connectionLabel = (list && list.getAttribute("data-connection-label")) || "Connection";
+				// Defensive HTML-escape: the source is a trusted t(ctx, ...)
+				// string rendered into a data attribute, but it is concatenated
+				// into innerHTML below so escape it to neutralize any future
+				// locale value that contains HTML-special characters.
+				var _connLabelEsc = document.createElement("div");
+				_connLabelEsc.textContent = connectionLabel;
+				var safeConnectionLabel = _connLabelEsc.innerHTML;
 				if (!libs || libs.length === 0) {
 					list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>';
 					return;
@@ -3125,7 +3137,7 @@ templ settingsLibraryScript() {
 					div.textContent = lib.type;
 					var safeType = div.innerHTML;
 					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
-					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "settings.libraries.connection_badge") }</span>' : '';
+					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + safeConnectionLabel + '</span>' : '';
 					var sourceBadge = '';
 					if (lib.source && lib.source !== 'manual' && sourceNames[lib.source]) {
 						sourceBadge = '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">'

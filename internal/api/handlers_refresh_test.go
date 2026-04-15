@@ -322,10 +322,41 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Members: nil},
 			AttemptedFields: []string{"biography", "members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved after attempted-empty refresh, got %d", n)
+		}
+	})
+
+	t.Run("members_locked_early_returns", func(t *testing.T) {
+		// Locking "members" must make applyMemberRefresh a no-op even when
+		// the provider returned a full roster, so a user's pinned lineup
+		// survives a refresh.
+		a := addTestArtist(t, artistSvc, "Locked Members Band")
+		seedMembers(t, a.ID)
+		result := &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{
+					{Name: "Intruder", MBID: "mb-intruder"},
+				},
+			},
+			AttemptedFields: []string{"members"},
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result, []string{"members"})
+
+		saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("listing members after locked refresh: %v", err)
+		}
+		if len(saved) != 2 {
+			t.Fatalf("expected 2 members preserved by lock, got %d: %+v", len(saved), saved)
+		}
+		names := []string{saved[0].MemberName, saved[1].MemberName}
+		for _, n := range names {
+			if n == "Intruder" {
+				t.Errorf("locked members overwritten by provider data: names=%v", names)
+			}
 		}
 	})
 
@@ -347,7 +378,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
 		if err != nil {
@@ -375,7 +406,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        &provider.ArtistMetadata{Biography: "new bio"},
 			AttemptedFields: []string{"biography"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (unattempted), got %d", n)
@@ -391,7 +422,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			Metadata:        nil,
 			AttemptedFields: []string{"members"},
 		}
-		r.applyMemberRefresh(context.Background(), a.ID, result)
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
 
 		if n := countMembers(t, a.ID); n != 2 {
 			t.Errorf("expected 2 members preserved (nil metadata), got %d", n)
@@ -415,7 +446,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 			},
 			AttemptedFields: []string{"members"},
 		}
-		rIsolated.applyMemberRefresh(context.Background(), a.ID, result)
+		rIsolated.applyMemberRefresh(context.Background(), a.ID, result, nil)
 		// No assertions beyond "did not panic" -- error is swallowed by design.
 	})
 }
@@ -517,4 +548,76 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 	if saved[0].MemberName != "Carol" || saved[0].MemberMBID != "mb-carol" {
 		t.Errorf("unexpected member: name=%q mbid=%q", saved[0].MemberName, saved[0].MemberMBID)
 	}
+}
+
+// TestApplyProviderName_RespectsLocks verifies that a user pinning the Name
+// or SortName field via the field-lock UI prevents applyProviderName from
+// overwriting it with provider metadata. This path runs separately from
+// ApplyMetadata's MergeOptions.LockedFields guard, so it needs its own
+// coverage.
+func TestApplyProviderName_RespectsLocks(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	t.Run("name_locked_preserves_user_value", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Pinned Name")
+		a.LockedFields = []string{"name"}
+		if err := artistSvc.SetLockedFields(context.Background(), a.ID, a.LockedFields); err != nil {
+			t.Fatalf("SetLockedFields: %v", err)
+		}
+		meta := &provider.ArtistMetadata{Name: "Provider Wants This", SortName: "Provider, Wants This"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.Name != "Pinned Name" {
+			t.Errorf("locked name overwritten: got %q", a.Name)
+		}
+		if a.SortName != "Provider, Wants This" {
+			t.Errorf("unlocked sort_name should be updated: got %q", a.SortName)
+		}
+	})
+
+	t.Run("sort_name_locked_preserves_user_value", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unlocked Name")
+		a.SortName = "Locked, Sort"
+		a.LockedFields = []string{"sort_name"}
+		if err := artistSvc.Update(context.Background(), a); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if err := artistSvc.SetLockedFields(context.Background(), a.ID, a.LockedFields); err != nil {
+			t.Fatalf("SetLockedFields: %v", err)
+		}
+		meta := &provider.ArtistMetadata{Name: "Updated Name", SortName: "Provider, Overrides"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.SortName != "Locked, Sort" {
+			t.Errorf("locked sort_name overwritten: got %q", a.SortName)
+		}
+		if a.Name != "Updated Name" {
+			t.Errorf("unlocked name should be updated: got %q", a.Name)
+		}
+	})
+
+	t.Run("no_locks_overwrites_both", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Freely Renamed")
+		meta := &provider.ArtistMetadata{Name: "New", SortName: "New, The"}
+		failed := r.applyProviderName(context.Background(), a, meta)
+		if failed {
+			t.Fatal("applyProviderName reported failure")
+		}
+		if a.Name != "New" || a.SortName != "New, The" {
+			t.Errorf("unlocked fields not updated: name=%q sort=%q", a.Name, a.SortName)
+		}
+	})
+
+	t.Run("nil_meta_noops", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unchanged")
+		orig := a.Name
+		r.applyProviderName(context.Background(), a, nil)
+		if a.Name != orig {
+			t.Errorf("nil meta should not modify artist, got %q", a.Name)
+		}
+	})
 }

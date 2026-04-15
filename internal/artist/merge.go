@@ -2,6 +2,7 @@ package artist
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -72,6 +73,43 @@ type MergeOptions struct {
 	// Sources records which provider supplied each field. When non-nil,
 	// populates a.MetadataSources.
 	Sources []provider.FieldSource
+
+	// LockedFields lists field names that must not be overwritten regardless
+	// of strategy. Compared case-insensitively. Used by the refresh path so a
+	// user's pinned values survive provider refetches.
+	LockedFields []string
+}
+
+// isLocked reports whether the given field name is in locked (case-insensitive).
+func isLocked(locked map[string]struct{}, field string) bool {
+	if len(locked) == 0 {
+		return false
+	}
+	_, ok := locked[strings.ToLower(field)]
+	return ok
+}
+
+// buildLockedSet normalizes a locked-fields slice to a lowercase lookup set.
+// Blank and whitespace-only tokens are dropped so a slice like []{"", " "}
+// produces a nil set rather than one that would match a lookup for "".
+// Returns nil when no valid tokens remain so isLocked can short-circuit on
+// len==0 without allocating.
+func buildLockedSet(fields []string) map[string]struct{} {
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		out[key] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ApplyMetadata merges incoming metadata into an Artist using the specified
@@ -82,24 +120,42 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 	}
 
 	var changed bool
+	locked := buildLockedSet(opts.LockedFields)
 
 	switch strategy {
 	case OverwriteAttempted:
-		changed = applyOverwriteAttempted(a, u, opts.AttemptedFields)
+		changed = applyOverwriteAttempted(a, u, opts.AttemptedFields, locked)
 	case FillEmpty:
-		changed = applyFillEmpty(a, u)
+		changed = applyFillEmpty(a, u, locked)
 	case NFOImport:
-		changed = applyNFOImport(a, u)
+		changed = applyNFOImport(a, u, locked)
 	case SnapshotRestore:
-		changed = applySnapshotRestore(a, u)
+		changed = applySnapshotRestore(a, u, locked)
 	default:
 		// Unknown strategy: no-op. This should not happen in normal use.
 		return false
 	}
 
 	if opts.FilterDatesByType {
+		// Snapshot before the filter so we can detect both genuine changes
+		// and any date that was blanked despite a user lock. Locked date
+		// fields are restored from the snapshot after filtering so a pinned
+		// value survives both the per-field merge skip and the post-merge
+		// type filter (e.g. a user who pinned Born on a group type).
 		before := [4]string{a.Born, a.Died, a.Formed, a.Disbanded}
 		FilterDatesByArtistType(a)
+		if isLocked(locked, "born") {
+			a.Born = before[0]
+		}
+		if isLocked(locked, "died") {
+			a.Died = before[1]
+		}
+		if isLocked(locked, "formed") {
+			a.Formed = before[2]
+		}
+		if isLocked(locked, "disbanded") {
+			a.Disbanded = before[3]
+		}
 		if a.Born != before[0] || a.Died != before[1] || a.Formed != before[2] || a.Disbanded != before[3] {
 			changed = true
 		}
@@ -126,7 +182,7 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 // disambiguation/yearsActive, and fill-empty for provider IDs. Name and
 // SortName are never touched (handled separately in handler code so the user's
 // chosen display name is not overwritten mid-refresh).
-func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []string) bool {
+func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []string, locked map[string]struct{}) bool {
 	attempted := make(map[string]bool, len(attemptedFields))
 	for _, f := range attemptedFields {
 		attempted[f] = true
@@ -134,29 +190,29 @@ func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []str
 
 	changed := false
 
-	// Attempted metadata fields: overwrite (including clearing).
-	if attempted["biography"] {
+	// Attempted metadata fields: overwrite (including clearing). Skip locked.
+	if attempted["biography"] && !isLocked(locked, "biography") {
 		changed = setString(&a.Biography, u.Biography) || changed
 	}
-	if attempted["genres"] {
+	if attempted["genres"] && !isLocked(locked, "genres") {
 		changed = setSlice(&a.Genres, u.Genres) || changed
 	}
-	if attempted["styles"] {
+	if attempted["styles"] && !isLocked(locked, "styles") {
 		changed = setSlice(&a.Styles, u.Styles) || changed
 	}
-	if attempted["moods"] {
+	if attempted["moods"] && !isLocked(locked, "moods") {
 		changed = setSlice(&a.Moods, u.Moods) || changed
 	}
-	if attempted["formed"] {
+	if attempted["formed"] && !isLocked(locked, "formed") {
 		changed = setString(&a.Formed, u.Formed) || changed
 	}
-	if attempted["born"] {
+	if attempted["born"] && !isLocked(locked, "born") {
 		changed = setString(&a.Born, u.Born) || changed
 	}
-	if attempted["died"] {
+	if attempted["died"] && !isLocked(locked, "died") {
 		changed = setString(&a.Died, u.Died) || changed
 	}
-	if attempted["disbanded"] {
+	if attempted["disbanded"] && !isLocked(locked, "disbanded") {
 		changed = setString(&a.Disbanded, u.Disbanded) || changed
 	}
 
@@ -164,44 +220,75 @@ func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []str
 	// (never clear). Disambiguation is populated here so a provider refresh
 	// records the value returned by MusicBrainz without waiting for a
 	// separate NFO import pass.
-	changed = setNonEmpty(&a.Type, u.Type) || changed
-	changed = setNonEmpty(&a.Gender, u.Gender) || changed
-	changed = setNonEmpty(&a.Disambiguation, u.Disambiguation) || changed
-	changed = setNonEmpty(&a.YearsActive, u.YearsActive) || changed
+	if !isLocked(locked, "type") {
+		changed = setNonEmpty(&a.Type, u.Type) || changed
+	}
+	if !isLocked(locked, "gender") {
+		changed = setNonEmpty(&a.Gender, u.Gender) || changed
+	}
+	if !isLocked(locked, "disambiguation") {
+		changed = setNonEmpty(&a.Disambiguation, u.Disambiguation) || changed
+	}
+	if !isLocked(locked, "years_active") {
+		changed = setNonEmpty(&a.YearsActive, u.YearsActive) || changed
+	}
 
 	// Provider IDs: fill-empty only.
-	changed = fillEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
-	changed = fillEmpty(&a.AudioDBID, u.AudioDBID) || changed
-	changed = fillEmpty(&a.DiscogsID, u.DiscogsID) || changed
-	changed = fillEmpty(&a.WikidataID, u.WikidataID) || changed
-	changed = fillEmpty(&a.DeezerID, u.DeezerID) || changed
-	changed = fillEmpty(&a.SpotifyID, u.SpotifyID) || changed
+	if !isLocked(locked, "musicbrainz_id") {
+		changed = fillEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
+	}
+	if !isLocked(locked, "audiodb_id") {
+		changed = fillEmpty(&a.AudioDBID, u.AudioDBID) || changed
+	}
+	if !isLocked(locked, "discogs_id") {
+		changed = fillEmpty(&a.DiscogsID, u.DiscogsID) || changed
+	}
+	if !isLocked(locked, "wikidata_id") {
+		changed = fillEmpty(&a.WikidataID, u.WikidataID) || changed
+	}
+	if !isLocked(locked, "deezer_id") {
+		changed = fillEmpty(&a.DeezerID, u.DeezerID) || changed
+	}
+	if !isLocked(locked, "spotify_id") {
+		changed = fillEmpty(&a.SpotifyID, u.SpotifyID) || changed
+	}
 
 	return changed
 }
 
 // applyFillEmpty only sets fields that are currently empty/zero on the artist.
 // Name, SortName, and Disambiguation are skipped (same as OverwriteAttempted).
-func applyFillEmpty(a *Artist, u *MetadataUpdate) bool {
+func applyFillEmpty(a *Artist, u *MetadataUpdate, locked map[string]struct{}) bool {
 	changed := false
 
-	changed = fillEmpty(&a.Type, u.Type) || changed
-	changed = fillEmpty(&a.Gender, u.Gender) || changed
-	changed = fillEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
-	changed = fillEmpty(&a.AudioDBID, u.AudioDBID) || changed
-	changed = fillEmpty(&a.DiscogsID, u.DiscogsID) || changed
-	changed = fillEmpty(&a.WikidataID, u.WikidataID) || changed
-	changed = fillEmpty(&a.DeezerID, u.DeezerID) || changed
-	changed = fillEmpty(&a.SpotifyID, u.SpotifyID) || changed
-	changed = fillEmpty(&a.Biography, u.Biography) || changed
-	changed = fillEmptySlice(&a.Genres, u.Genres) || changed
-	changed = fillEmptySlice(&a.Styles, u.Styles) || changed
-	changed = fillEmptySlice(&a.Moods, u.Moods) || changed
-	changed = fillEmpty(&a.YearsActive, u.YearsActive) || changed
-	changed = fillEmpty(&a.Born, u.Born) || changed
-	changed = fillEmpty(&a.Formed, u.Formed) || changed
-	changed = fillEmpty(&a.Died, u.Died) || changed
-	changed = fillEmpty(&a.Disbanded, u.Disbanded) || changed
+	setStr := func(field string, dst *string, val string) {
+		if !isLocked(locked, field) {
+			changed = fillEmpty(dst, val) || changed
+		}
+	}
+	setSl := func(field string, dst *[]string, val []string) {
+		if !isLocked(locked, field) {
+			changed = fillEmptySlice(dst, val) || changed
+		}
+	}
+
+	setStr("type", &a.Type, u.Type)
+	setStr("gender", &a.Gender, u.Gender)
+	setStr("musicbrainz_id", &a.MusicBrainzID, u.MusicBrainzID)
+	setStr("audiodb_id", &a.AudioDBID, u.AudioDBID)
+	setStr("discogs_id", &a.DiscogsID, u.DiscogsID)
+	setStr("wikidata_id", &a.WikidataID, u.WikidataID)
+	setStr("deezer_id", &a.DeezerID, u.DeezerID)
+	setStr("spotify_id", &a.SpotifyID, u.SpotifyID)
+	setStr("biography", &a.Biography, u.Biography)
+	setSl("genres", &a.Genres, u.Genres)
+	setSl("styles", &a.Styles, u.Styles)
+	setSl("moods", &a.Moods, u.Moods)
+	setStr("years_active", &a.YearsActive, u.YearsActive)
+	setStr("born", &a.Born, u.Born)
+	setStr("formed", &a.Formed, u.Formed)
+	setStr("died", &a.Died, u.Died)
+	setStr("disbanded", &a.Disbanded, u.Disbanded)
 
 	return changed
 }
@@ -211,64 +298,92 @@ func applyFillEmpty(a *Artist, u *MetadataUpdate) bool {
 //   - All provider IDs: non-empty overwrite
 //   - Classification (Type, Gender, Disambiguation): unconditional
 //   - Lists (Genres, Styles, Moods) and dates: unconditional
-func applyNFOImport(a *Artist, u *MetadataUpdate) bool {
+func applyNFOImport(a *Artist, u *MetadataUpdate, locked map[string]struct{}) bool {
 	changed := false
 
-	// Identity fields: non-empty overwrite (NFO takes precedence when it has a value).
-	changed = setNonEmpty(&a.Name, u.Name) || changed
-	changed = setNonEmpty(&a.SortName, u.SortName) || changed
-	changed = setNonEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
-	changed = setNonEmpty(&a.AudioDBID, u.AudioDBID) || changed
-	changed = setNonEmpty(&a.DiscogsID, u.DiscogsID) || changed
-	changed = setNonEmpty(&a.WikidataID, u.WikidataID) || changed
-	changed = setNonEmpty(&a.DeezerID, u.DeezerID) || changed
-	changed = setNonEmpty(&a.SpotifyID, u.SpotifyID) || changed
-	changed = setNonEmpty(&a.Biography, u.Biography) || changed
+	nonEmpty := func(field string, dst *string, val string) {
+		if !isLocked(locked, field) {
+			changed = setNonEmpty(dst, val) || changed
+		}
+	}
+	setStr := func(field string, dst *string, val string) {
+		if !isLocked(locked, field) {
+			changed = setString(dst, val) || changed
+		}
+	}
+	setSl := func(field string, dst *[]string, val []string) {
+		if !isLocked(locked, field) {
+			changed = setSlice(dst, val) || changed
+		}
+	}
 
-	// Classification fields: unconditional overwrite.
-	changed = setString(&a.Type, u.Type) || changed
-	changed = setString(&a.Gender, u.Gender) || changed
-	changed = setString(&a.Disambiguation, u.Disambiguation) || changed
+	// Identity fields: non-empty overwrite.
+	nonEmpty("name", &a.Name, u.Name)
+	nonEmpty("sort_name", &a.SortName, u.SortName)
+	nonEmpty("musicbrainz_id", &a.MusicBrainzID, u.MusicBrainzID)
+	nonEmpty("audiodb_id", &a.AudioDBID, u.AudioDBID)
+	nonEmpty("discogs_id", &a.DiscogsID, u.DiscogsID)
+	nonEmpty("wikidata_id", &a.WikidataID, u.WikidataID)
+	nonEmpty("deezer_id", &a.DeezerID, u.DeezerID)
+	nonEmpty("spotify_id", &a.SpotifyID, u.SpotifyID)
+	nonEmpty("biography", &a.Biography, u.Biography)
+
+	// Classification: unconditional overwrite.
+	setStr("type", &a.Type, u.Type)
+	setStr("gender", &a.Gender, u.Gender)
+	setStr("disambiguation", &a.Disambiguation, u.Disambiguation)
 
 	// Lists: unconditional overwrite.
-	changed = setSlice(&a.Genres, u.Genres) || changed
-	changed = setSlice(&a.Styles, u.Styles) || changed
-	changed = setSlice(&a.Moods, u.Moods) || changed
+	setSl("genres", &a.Genres, u.Genres)
+	setSl("styles", &a.Styles, u.Styles)
+	setSl("moods", &a.Moods, u.Moods)
 
 	// Dates and years: unconditional overwrite.
-	changed = setString(&a.YearsActive, u.YearsActive) || changed
-	changed = setString(&a.Born, u.Born) || changed
-	changed = setString(&a.Formed, u.Formed) || changed
-	changed = setString(&a.Died, u.Died) || changed
-	changed = setString(&a.Disbanded, u.Disbanded) || changed
+	setStr("years_active", &a.YearsActive, u.YearsActive)
+	setStr("born", &a.Born, u.Born)
+	setStr("formed", &a.Formed, u.Formed)
+	setStr("died", &a.Died, u.Died)
+	setStr("disbanded", &a.Disbanded, u.Disbanded)
 
 	return changed
 }
 
-// applySnapshotRestore unconditionally sets all metadata fields.
-func applySnapshotRestore(a *Artist, u *MetadataUpdate) bool {
+// applySnapshotRestore unconditionally sets all metadata fields. Locked fields
+// are preserved so snapshot restores never clobber user pins.
+func applySnapshotRestore(a *Artist, u *MetadataUpdate, locked map[string]struct{}) bool {
 	changed := false
 
-	changed = setString(&a.Name, u.Name) || changed
-	changed = setString(&a.SortName, u.SortName) || changed
-	changed = setString(&a.Type, u.Type) || changed
-	changed = setString(&a.Gender, u.Gender) || changed
-	changed = setString(&a.Disambiguation, u.Disambiguation) || changed
-	changed = setString(&a.MusicBrainzID, u.MusicBrainzID) || changed
-	changed = setString(&a.AudioDBID, u.AudioDBID) || changed
-	changed = setString(&a.DiscogsID, u.DiscogsID) || changed
-	changed = setString(&a.WikidataID, u.WikidataID) || changed
-	changed = setString(&a.DeezerID, u.DeezerID) || changed
-	changed = setString(&a.SpotifyID, u.SpotifyID) || changed
-	changed = setString(&a.Biography, u.Biography) || changed
-	changed = setSlice(&a.Genres, u.Genres) || changed
-	changed = setSlice(&a.Styles, u.Styles) || changed
-	changed = setSlice(&a.Moods, u.Moods) || changed
-	changed = setString(&a.YearsActive, u.YearsActive) || changed
-	changed = setString(&a.Born, u.Born) || changed
-	changed = setString(&a.Formed, u.Formed) || changed
-	changed = setString(&a.Died, u.Died) || changed
-	changed = setString(&a.Disbanded, u.Disbanded) || changed
+	setStr := func(field string, dst *string, val string) {
+		if !isLocked(locked, field) {
+			changed = setString(dst, val) || changed
+		}
+	}
+	setSl := func(field string, dst *[]string, val []string) {
+		if !isLocked(locked, field) {
+			changed = setSlice(dst, val) || changed
+		}
+	}
+
+	setStr("name", &a.Name, u.Name)
+	setStr("sort_name", &a.SortName, u.SortName)
+	setStr("type", &a.Type, u.Type)
+	setStr("gender", &a.Gender, u.Gender)
+	setStr("disambiguation", &a.Disambiguation, u.Disambiguation)
+	setStr("musicbrainz_id", &a.MusicBrainzID, u.MusicBrainzID)
+	setStr("audiodb_id", &a.AudioDBID, u.AudioDBID)
+	setStr("discogs_id", &a.DiscogsID, u.DiscogsID)
+	setStr("wikidata_id", &a.WikidataID, u.WikidataID)
+	setStr("deezer_id", &a.DeezerID, u.DeezerID)
+	setStr("spotify_id", &a.SpotifyID, u.SpotifyID)
+	setStr("biography", &a.Biography, u.Biography)
+	setSl("genres", &a.Genres, u.Genres)
+	setSl("styles", &a.Styles, u.Styles)
+	setSl("moods", &a.Moods, u.Moods)
+	setStr("years_active", &a.YearsActive, u.YearsActive)
+	setStr("born", &a.Born, u.Born)
+	setStr("formed", &a.Formed, u.Formed)
+	setStr("died", &a.Died, u.Died)
+	setStr("disbanded", &a.Disbanded, u.Disbanded)
 
 	return changed
 }

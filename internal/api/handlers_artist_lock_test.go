@@ -165,6 +165,88 @@ func TestHandleLockArtistImage_MissingArtist(t *testing.T) {
 	}
 }
 
+// TestHandleLockArtist exercises the whole-artist lock/unlock round trip.
+// POST sets the lock, GET confirms it, DELETE removes it. PushLocks runs
+// inline; without a configured connection it is a no-op.
+func TestHandleLockArtist(t *testing.T) {
+	r, svc := testRouter(t)
+	ctx := context.Background()
+	a := &artist.Artist{Name: "Wholesale Lock"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleLockArtist(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("lock status = %d; body = %s", w.Code, w.Body.String())
+	}
+	var locked artist.Artist
+	if err := json.Unmarshal(w.Body.Bytes(), &locked); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !locked.Locked {
+		t.Error("expected Locked=true after handleLockArtist")
+	}
+
+	// Second lock should 409 since AlreadyLocked is surfaced explicitly.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	w = httptest.NewRecorder()
+	r.handleLockArtist(w, req)
+	if w.Code != http.StatusConflict {
+		t.Errorf("double-lock status = %d, want 409", w.Code)
+	}
+
+	// Unlock path.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	w = httptest.NewRecorder()
+	r.handleUnlockArtist(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("unlock status = %d; body = %s", w.Code, w.Body.String())
+	}
+	var unlocked artist.Artist
+	if err := json.Unmarshal(w.Body.Bytes(), &unlocked); err != nil {
+		t.Fatalf("decode unlock response: %v", err)
+	}
+	if unlocked.Locked {
+		t.Error("expected Locked=false in handleUnlockArtist response body")
+	}
+	// Unlock-when-not-locked is also a 409.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/lock", nil)
+	req.SetPathValue("id", a.ID)
+	r.handleUnlockArtist(w, req)
+	if w.Code != http.StatusConflict {
+		t.Errorf("double-unlock status = %d, want 409", w.Code)
+	}
+}
+
+func TestHandleLockArtist_NotFound(t *testing.T) {
+	r, _ := testRouter(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/lock", nil)
+	req.SetPathValue("id", "missing")
+	w := httptest.NewRecorder()
+	r.handleLockArtist(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHandleUnlockArtist_NotFound(t *testing.T) {
+	r, _ := testRouter(t)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/missing/lock", nil)
+	req.SetPathValue("id", "missing")
+	w := httptest.NewRecorder()
+	r.handleUnlockArtist(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
 // TestHandleUnlockArtistImage_WrongImage verifies 404 when the imageId does
 // not belong to the artist on the DELETE path.
 func TestHandleUnlockArtistImage_WrongImage(t *testing.T) {

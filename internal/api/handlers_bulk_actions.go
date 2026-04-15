@@ -20,11 +20,18 @@ import (
 const MaxBulkActionIDs = 1000
 
 // Allowed bulk action types.
+//
+// BulkActionReIdentify is the legacy alias retained so existing callers keep
+// working; it is normalized to BulkActionReIdentifyAuto on entry. The review
+// variant (re_identify_review string in the UI) is dispatched separately
+// through the wizard endpoints in handlers_reidentify_wizard.go and never
+// flows through this handler, so no Go constant is defined for it here.
 const (
-	BulkActionRunRules    = "run_rules"
-	BulkActionReIdentify  = "re_identify"
-	BulkActionScan        = "scan"
-	BulkActionFetchImages = "fetch_images"
+	BulkActionRunRules       = "run_rules"
+	BulkActionReIdentify     = "re_identify"      // legacy alias for re_identify_auto
+	BulkActionReIdentifyAuto = "re_identify_auto" // silent auto-link + queue path
+	BulkActionScan           = "scan"
+	BulkActionFetchImages    = "fetch_images"
 )
 
 // idPattern accepts UUIDs and other plausible artist ID encodings used in the
@@ -38,15 +45,27 @@ var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 type BulkActionProgress struct {
 	mu          sync.RWMutex
 	Action      string `json:"action"`
-	Status      string `json:"status"` // "running", "completed", "failed"
+	Status      string `json:"status"` // "running", "completed", "failed", "canceled"
 	Total       int    `json:"total"`
 	Processed   int    `json:"processed"`
 	Succeeded   int    `json:"succeeded"`
 	Skipped     int    `json:"skipped"`
 	Failed      int    `json:"failed"`
 	CurrentName string `json:"current_name"`
+	// Re-identify-specific breakdown. These remain zero for other actions,
+	// so the bulk-completion toast can detect the re_identify_auto path by
+	// checking whether any of them are non-zero. Populated in addition to
+	// the generic succeeded/skipped/failed counters so existing consumers
+	// keep working unchanged.
+	AutoLinked  int `json:"auto_linked"`
+	Queued      int `json:"queued"`
+	NoMatch     int `json:"no_match"`
 	StartedAt   time.Time
 	CompletedAt time.Time
+	// cancelFn cancels the detached goroutine running this action. Stored on
+	// the progress so the cancel handler can reach it without a separate
+	// registry. nil for terminal snapshots.
+	cancelFn context.CancelFunc
 }
 
 // snapshot copies the progress state for safe JSON marshaling.
@@ -62,6 +81,9 @@ func (p *BulkActionProgress) snapshot() map[string]any {
 		"skipped":      p.Skipped,
 		"failed":       p.Failed,
 		"current_name": p.CurrentName,
+		"auto_linked":  p.AutoLinked,
+		"queued":       p.Queued,
+		"no_match":     p.NoMatch,
 	}
 }
 
@@ -75,7 +97,11 @@ type bulkActionRequest struct {
 // recognized bulk-action types.
 func validActions(s string) bool {
 	switch s {
-	case BulkActionRunRules, BulkActionReIdentify, BulkActionScan, BulkActionFetchImages:
+	case BulkActionRunRules,
+		BulkActionReIdentify,
+		BulkActionReIdentifyAuto,
+		BulkActionScan,
+		BulkActionFetchImages:
 		return true
 	}
 	return false
@@ -114,6 +140,12 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 	if !validActions(body.Action) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid or missing action"})
 		return
+	}
+	// Normalize the legacy alias. Everything downstream treats the auto and
+	// alias keys identically; carrying one canonical value keeps snapshots
+	// and switch statements simple.
+	if body.Action == BulkActionReIdentify {
+		body.Action = BulkActionReIdentifyAuto
 	}
 	if len(body.IDs) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ids must be a non-empty list"})
@@ -184,7 +216,15 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 			return
 		}
-	case BulkActionReIdentify:
+		// runBulkAction calls r.artistService.GetByID per artist before
+		// dispatch; a partially configured router would accept the request
+		// and then panic in the background goroutine. Gate up front.
+		if r.artistService == nil {
+			releaseSlot()
+			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+			return
+		}
+	case BulkActionReIdentifyAuto:
 		if r.artistService == nil {
 			releaseSlot()
 			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
@@ -232,22 +272,60 @@ func (r *Router) handleBulkActionStatus(w http.ResponseWriter, _ *http.Request) 
 	writeJSON(w, http.StatusOK, progress.snapshot())
 }
 
+// handleBulkActionCancel signals the in-flight bulk action (if any) to stop.
+// The background goroutine observes ctx.Err() on the next loop iteration and
+// finalizes the progress with status="canceled".
+//
+// POST /api/v1/artists/bulk-actions/cancel
+func (r *Router) handleBulkActionCancel(w http.ResponseWriter, _ *http.Request) {
+	r.bulkActionMu.RLock()
+	progress := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	if progress == nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no bulk action in progress"})
+		return
+	}
+	progress.mu.Lock()
+	running := progress.Status == "running"
+	cancel := progress.cancelFn
+	progress.mu.Unlock()
+	if !running || cancel == nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no bulk action in progress"})
+		return
+	}
+	cancel()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "canceling"})
+}
+
 // runBulkAction executes the action for each artist ID in a detached goroutine.
 // Uses a mutex-protected progress struct so status polls see consistent state.
 func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []string, progress *BulkActionProgress) {
+	// Detach from the request lifecycle but keep request-scoped values
+	// (user, logger, etc.). fix-all uses the same pattern. Wrap with a
+	// cancel so the cancel handler can stop the loop mid-run.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(reqCtx))
+	progress.mu.Lock()
+	progress.cancelFn = cancel
+	progress.mu.Unlock()
+
 	go func() {
-		// Detach from the request lifecycle but keep request-scoped values
-		// (user, logger, etc.). fix-all uses the same pattern.
-		ctx := context.WithoutCancel(reqCtx)
+		defer cancel()
 
 		// Build the connection index once for re-identify so per-artist
 		// work inside the loop stays cheap.
 		var connIdx *connectionIndex
-		if action == BulkActionReIdentify {
+		if action == BulkActionReIdentifyAuto {
 			connIdx = r.buildConnectionIndex(ctx)
 		}
 
 		for _, id := range ids {
+			// Cancellation check. Break out of the loop and flag the
+			// progress as canceled so the completion path surfaces a
+			// distinct status rather than a successful completion on a
+			// short-circuited run.
+			if ctx.Err() != nil {
+				break
+			}
 			a, err := r.artistService.GetByID(ctx, id)
 			if err != nil {
 				progress.mu.Lock()
@@ -265,6 +343,51 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			progress.mu.Lock()
 			progress.CurrentName = a.Name
 			progress.mu.Unlock()
+
+			// The re-identify auto path needs a finer-grained outcome
+			// (auto-linked vs queued vs no-match) than the generic
+			// succeeded/skipped/failed triad exposes. Handle it inline so
+			// those counters land on the progress snapshot for the
+			// completion toast.
+			if action == BulkActionReIdentifyAuto {
+				res := r.identifyArtist(ctx, a, connIdx)
+				// For outcomeQueued, identifyArtist returns a review
+				// candidate that must land in the bulk-identify review
+				// queue so the user can decide later. Previously the
+				// bulk-action path dropped res.Candidate on the floor,
+				// silently losing every ambiguous match.
+				if res.Outcome == outcomeQueued && res.Candidate != nil {
+					r.identifyMu.Lock()
+					if r.identifyProgress == nil {
+						r.identifyProgress = &IdentifyProgress{Status: "completed"}
+					}
+					rp := r.identifyProgress
+					r.identifyMu.Unlock()
+					rp.mu.Lock()
+					rp.ReviewQueue = append(rp.ReviewQueue, *res.Candidate)
+					rp.mu.Unlock()
+				}
+				progress.mu.Lock()
+				progress.Processed++
+				switch res.Outcome {
+				case outcomeAutoLinked:
+					progress.AutoLinked++
+					progress.Succeeded++
+				case outcomeQueued:
+					progress.Queued++
+					progress.Skipped++
+				case outcomeUnmatched:
+					progress.NoMatch++
+					progress.Skipped++
+				case outcomeSkipped:
+					progress.Skipped++
+				case outcomeFailed:
+					progress.Failed++
+				}
+				progress.mu.Unlock()
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
 
 			outcome := r.applyBulkAction(ctx, action, a, connIdx)
 
@@ -286,22 +409,33 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 		}
 
 		progress.mu.Lock()
-		progress.Status = "completed"
+		// A cancel POST can land after the last artist has already been
+		// processed but before this epilogue runs. In that race ctx.Err()
+		// is non-nil yet every item is complete; reporting "canceled" here
+		// lies to /status and the completion event. Gate on remaining work.
+		finalStatus := "completed"
+		if ctx.Err() != nil && progress.Processed < progress.Total {
+			finalStatus = "canceled"
+		}
+		progress.Status = finalStatus
 		progress.CurrentName = ""
 		progress.CompletedAt = time.Now().UTC()
+		progress.cancelFn = nil
 		succeeded := progress.Succeeded
 		failed := progress.Failed
 		total := progress.Total
 		progress.mu.Unlock()
 
 		// Surface the completion via the event bus so the SSE hub can
-		// broadcast a toast to connected clients.
+		// broadcast a toast to connected clients. Canceled runs emit the
+		// same event type with status="canceled" so the client can show a
+		// distinct toast.
 		if r.eventBus != nil {
 			r.eventBus.Publish(event.Event{
 				Type: event.BulkCompleted,
 				Data: map[string]any{
 					"type":      action,
-					"status":    "completed",
+					"status":    finalStatus,
 					"total":     total,
 					"succeeded": succeeded,
 					"failed":    failed,
@@ -354,9 +488,12 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 		}
 		return bulkOutcomeSucceeded
 
-	case BulkActionReIdentify:
-		// Reuse the same tiered pipeline bulk-identify already exercises so
-		// behavior stays consistent across entry points.
+	case BulkActionReIdentifyAuto:
+		// Normally handled inline in runBulkAction so the auto/queued/
+		// no-match breakdown lands on the progress snapshot. Retained here
+		// as a defensive fallback so any future caller that dispatches
+		// through applyBulkAction still gets consistent succeeded/skipped
+		// semantics instead of silently falling through to skipped.
 		if r.orchestrator == nil && connIdx == nil {
 			return bulkOutcomeSkipped
 		}

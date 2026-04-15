@@ -132,9 +132,14 @@ type Router struct {
 	identifyMu         sync.RWMutex
 	bulkActionProgress *BulkActionProgress
 	bulkActionMu       sync.RWMutex
-	undoStore          *rule.UndoStore
-	sseHub             *SSEHub
-	i18nBundle         *i18n.Bundle
+	// reIdentifyWizardStore backs the interactive re-identify review flow.
+	// Sessions are in-memory, TTL-bounded, and never persisted across
+	// restarts; the flow is an interactive user task so lossy restart
+	// semantics are acceptable and avoid a schema change for this RC fix.
+	reIdentifyWizardStore *reIdentifyWizardStore
+	undoStore             *rule.UndoStore
+	sseHub                *SSEHub
+	i18nBundle            *i18n.Bundle
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -184,10 +189,11 @@ func NewRouter(deps RouterDeps) *Router {
 			Timeout:   fetchTimeout,
 			Transport: ssrfSafeTransport(),
 		},
-		fileRemover: osRemover{},
-		libraryOps:  make(map[string]*LibraryOpResult),
-		undoStore:   rule.NewUndoStore(),
-		i18nBundle:  deps.I18nBundle,
+		fileRemover:           osRemover{},
+		libraryOps:            make(map[string]*LibraryOpResult),
+		undoStore:             rule.NewUndoStore(),
+		i18nBundle:            deps.I18nBundle,
+		reIdentifyWizardStore: newReIdentifyWizardStore(),
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -425,6 +431,17 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// scan, fetch images). Singleton with 409 on concurrent start.
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-actions", wrapAuth(r.handleBulkAction, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/bulk-actions/status", wrapAuth(r.handleBulkActionStatus, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-actions/cancel", wrapAuth(r.handleBulkActionCancel, authMw))
+
+	// Re-identify review wizard. Interactive per-artist stepper over the
+	// same artist IDs that /bulk-actions accepts; see
+	// handlers_reidentify_wizard.go for the session-store design.
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard", wrapAuth(r.handleReIdentifyWizardStart, authMw))
+	mux.HandleFunc("GET "+bp+"/artists/re-identify/wizard/{sid}/step/{idx}", wrapAuth(r.handleReIdentifyWizardStep, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/accept", wrapAuth(r.handleReIdentifyWizardAccept, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/skip", wrapAuth(r.handleReIdentifyWizardSkip, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/decline", wrapAuth(r.handleReIdentifyWizardDecline, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/save-exit", wrapAuth(r.handleReIdentifyWizardSaveExit, authMw))
 
 	// SSE event stream
 	mux.HandleFunc("GET "+bp+"/api/v1/events/stream", wrapAuth(r.handleSSEStream, authMw))

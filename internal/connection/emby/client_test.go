@@ -1342,6 +1342,44 @@ func TestCanonicalizeLockedFields(t *testing.T) {
 	}
 }
 
+// TestCanonicalizeLockedFieldsDrops verifies the diagnostic variant returns
+// the list of unmappable tokens so the caller can log a warn. This is the
+// mechanism that surfaces future mapping gaps (e.g. a new Stillwater lock
+// key that has not yet been added to the allow-list) instead of silently
+// dropping them.
+func TestCanonicalizeLockedFieldsDrops(t *testing.T) {
+	canon, dropped := canonicalizeLockedFieldsDrops([]string{
+		"biography", "bogus1", " styles ", "SortName", "not_a_field", "", "\t",
+	})
+	// Canonicalized: biography->Overview, styles->Tags, sortname->SortName.
+	wantCanon := []string{"Overview", "Tags", "SortName"}
+	if len(canon) != len(wantCanon) {
+		t.Fatalf("canon = %v, want %v", canon, wantCanon)
+	}
+	for i, v := range wantCanon {
+		if canon[i] != v {
+			t.Errorf("canon[%d] = %q, want %q", i, canon[i], v)
+		}
+	}
+	// Only unmappable non-empty tokens are reported; blank tokens are
+	// silently discarded at the normalization step.
+	wantDropped := map[string]bool{"bogus1": true, "not_a_field": true}
+	if len(dropped) != len(wantDropped) {
+		t.Fatalf("dropped = %v, want keys %v", dropped, wantDropped)
+	}
+	for _, d := range dropped {
+		if !wantDropped[d] {
+			t.Errorf("unexpected dropped token %q", d)
+		}
+	}
+
+	// All-mapped input reports no drops.
+	_, dropped = canonicalizeLockedFieldsDrops([]string{"name", "genres"})
+	if len(dropped) != 0 {
+		t.Errorf("dropped for fully-mapped input = %v, want empty", dropped)
+	}
+}
+
 // TestUpdateArtistLocks verifies the full round-trip: fetch the item, overwrite
 // only LockData/LockedFields (PascalCase), and POST the merged payload back.
 func TestUpdateArtistLocks(t *testing.T) {

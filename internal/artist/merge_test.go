@@ -655,3 +655,131 @@ func TestFetchResultToUpdate_NilMetadata(t *testing.T) {
 		t.Error("expected nil for nil metadata")
 	}
 }
+
+// --- LockedFields honored across strategies ---
+
+func TestApplyMetadata_OverwriteAttempted_SkipsLockedFields(t *testing.T) {
+	a := &Artist{Biography: "keep me", Born: "1970", Genres: []string{"jazz"}}
+	u := &MetadataUpdate{Biography: "overwrite", Born: "1980", Genres: []string{"rock"}}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"biography", "born", "genres"},
+		LockedFields:    []string{"biography", "genres"},
+	})
+	if a.Biography != "keep me" {
+		t.Errorf("locked biography overwritten: got %q", a.Biography)
+	}
+	if len(a.Genres) != 1 || a.Genres[0] != "jazz" {
+		t.Errorf("locked genres overwritten: got %v", a.Genres)
+	}
+	if a.Born != "1980" {
+		t.Errorf("unlocked born not updated: got %q", a.Born)
+	}
+}
+
+func TestApplyMetadata_OverwriteAttempted_LockedDisambiguationKept(t *testing.T) {
+	a := &Artist{Disambiguation: "Seattle grunge"}
+	u := &MetadataUpdate{Disambiguation: "replaced"}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		LockedFields: []string{"Disambiguation"}, // case-insensitive
+	})
+	if a.Disambiguation != "Seattle grunge" {
+		t.Errorf("locked disambiguation overwritten: got %q", a.Disambiguation)
+	}
+}
+
+func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
+	a := &Artist{Name: "Pinned", Biography: "old"}
+	u := &MetadataUpdate{Name: "Snapshot", Biography: "restored"}
+	ApplyMetadata(a, u, SnapshotRestore, MergeOptions{
+		LockedFields: []string{"name"},
+	})
+	if a.Name != "Pinned" {
+		t.Errorf("locked name was restored: got %q", a.Name)
+	}
+	if a.Biography != "restored" {
+		t.Errorf("unlocked biography not restored: got %q", a.Biography)
+	}
+}
+
+func TestApplyMetadata_FillEmpty_SkipsLockedFields(t *testing.T) {
+	// Biography and Genres are intentionally empty so FillEmpty would
+	// populate them; the lock must prevent the write even on empty dst.
+	a := &Artist{Biography: "", Genres: nil, Type: ""}
+	u := &MetadataUpdate{Biography: "from-provider", Genres: []string{"rock"}, Type: "group"}
+	ApplyMetadata(a, u, FillEmpty, MergeOptions{
+		LockedFields: []string{"biography", "genres"},
+	})
+	if a.Biography != "" {
+		t.Errorf("locked empty biography was filled: got %q", a.Biography)
+	}
+	if len(a.Genres) != 0 {
+		t.Errorf("locked empty genres were filled: got %v", a.Genres)
+	}
+	if a.Type != "group" {
+		t.Errorf("unlocked type should have been filled: got %q", a.Type)
+	}
+}
+
+func TestApplyMetadata_NFOImport_SkipsLockedFields(t *testing.T) {
+	a := &Artist{Name: "Pinned", Biography: "old", Genres: []string{"pinned-genre"}}
+	u := &MetadataUpdate{Name: "FromNFO", Biography: "nfo-bio", Genres: []string{"nfo-genre"}}
+	ApplyMetadata(a, u, NFOImport, MergeOptions{
+		LockedFields: []string{"name", "genres"},
+	})
+	if a.Name != "Pinned" {
+		t.Errorf("locked name was overwritten by NFOImport: got %q", a.Name)
+	}
+	if len(a.Genres) != 1 || a.Genres[0] != "pinned-genre" {
+		t.Errorf("locked genres were overwritten by NFOImport: got %v", a.Genres)
+	}
+	if a.Biography != "nfo-bio" {
+		t.Errorf("unlocked biography should have been overwritten: got %q", a.Biography)
+	}
+}
+
+// TestBuildLockedSet_DropsBlankTokens ensures that blank or whitespace-only
+// entries in LockedFields never produce a map key that would match a lookup
+// for an empty field name.
+func TestBuildLockedSet_DropsBlankTokens(t *testing.T) {
+	if got := buildLockedSet(nil); got != nil {
+		t.Errorf("buildLockedSet(nil) = %v, want nil", got)
+	}
+	if got := buildLockedSet([]string{"", "   ", "\t"}); got != nil {
+		t.Errorf("buildLockedSet(blank-only) = %v, want nil", got)
+	}
+	got := buildLockedSet([]string{"", " Biography ", "   ", "Genres"})
+	if len(got) != 2 {
+		t.Fatalf("buildLockedSet(mixed) len = %d, want 2 (got %v)", len(got), got)
+	}
+	if _, ok := got["biography"]; !ok {
+		t.Errorf("missing lowercase 'biography' in set: %v", got)
+	}
+	if _, ok := got["genres"]; !ok {
+		t.Errorf("missing lowercase 'genres' in set: %v", got)
+	}
+	if _, ok := got[""]; ok {
+		t.Errorf("empty-string key present in set: %v", got)
+	}
+}
+
+// TestApplyMetadata_LockedDateSurvivesFilterByType guards against a subtle
+// regression: the per-field skip protects the direct write, but
+// FilterDatesByType runs AFTER the merge and could still blank a locked
+// born/formed/died/disbanded value based on the artist's Type. A user who
+// pinned born="1970" on a group should see that date survive the merge AND
+// the post-merge type filter.
+func TestApplyMetadata_LockedDateSurvivesFilterByType(t *testing.T) {
+	a := &Artist{Type: "group", Born: "1970", Died: "2010"}
+	u := &MetadataUpdate{Type: "group", Born: "2020", Died: "2030"}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields:   []string{"born", "died"},
+		FilterDatesByType: true,
+		LockedFields:      []string{"born", "died"},
+	})
+	if a.Born != "1970" {
+		t.Errorf("locked born was clobbered by merge or FilterDatesByType: got %q", a.Born)
+	}
+	if a.Died != "2010" {
+		t.Errorf("locked died was clobbered by merge or FilterDatesByType: got %q", a.Died)
+	}
+}
