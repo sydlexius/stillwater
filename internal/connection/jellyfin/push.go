@@ -186,9 +186,12 @@ var jellyfinReadOnlyFields = []string{
 
 // fetchItem retrieves a single item from Jellyfin by ID, returning the
 // full item body as a generic map. Uses /Items?Ids={id}&Fields=... to
-// ensure metadata fields are populated.
+// ensure metadata fields are populated. LockData and LockedFields are NOT
+// returned by default on Jellyfin's item endpoints; they must be listed
+// explicitly or the subsequent full-replacement POST from UpdateArtistLocks
+// / PushMetadata will silently clear server-side locks.
 func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, error) {
-	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags", url.QueryEscape(itemID))
+	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,LockData,LockedFields", url.QueryEscape(itemID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating fetch request: %w", err)

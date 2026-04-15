@@ -126,8 +126,25 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 	}
 
 	if opts.FilterDatesByType {
+		// Snapshot before the filter so we can detect both genuine changes
+		// and any date that was blanked despite a user lock. Locked date
+		// fields are restored from the snapshot after filtering so a pinned
+		// value survives both the per-field merge skip and the post-merge
+		// type filter (e.g. a user who pinned Born on a group type).
 		before := [4]string{a.Born, a.Died, a.Formed, a.Disbanded}
 		FilterDatesByArtistType(a)
+		if isLocked(locked, "born") {
+			a.Born = before[0]
+		}
+		if isLocked(locked, "died") {
+			a.Died = before[1]
+		}
+		if isLocked(locked, "formed") {
+			a.Formed = before[2]
+		}
+		if isLocked(locked, "disbanded") {
+			a.Disbanded = before[3]
+		}
 		if a.Born != before[0] || a.Died != before[1] || a.Formed != before[2] || a.Disbanded != before[3] {
 			changed = true
 		}

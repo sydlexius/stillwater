@@ -346,8 +346,7 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 		return
 	}
 	sess.mu.Lock()
-	step.Decision = "accepted"
-	sess.Accepted++
+	applyDecision(sess, step, "accepted")
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
@@ -361,8 +360,7 @@ func (r *Router) handleReIdentifyWizardSkip(w http.ResponseWriter, req *http.Req
 		return
 	}
 	sess.mu.Lock()
-	step.Decision = "skipped"
-	sess.Skipped++
+	applyDecision(sess, step, "skipped")
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
@@ -379,11 +377,43 @@ func (r *Router) handleReIdentifyWizardDecline(w http.ResponseWriter, req *http.
 		return
 	}
 	sess.mu.Lock()
-	step.Decision = "declined"
-	sess.Declined++
+	applyDecision(sess, step, "declined")
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
+}
+
+// applyDecision makes wizard decisions idempotent across Back/retry. The
+// session mutex must be held. Revisiting a step with the same decision is a
+// no-op; changing decisions normalizes counters so the totals always match
+// the set of step.Decision values.
+func applyDecision(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, next string) {
+	if step.Decision == next {
+		return
+	}
+	switch step.Decision {
+	case "accepted":
+		if sess.Accepted > 0 {
+			sess.Accepted--
+		}
+	case "skipped":
+		if sess.Skipped > 0 {
+			sess.Skipped--
+		}
+	case "declined":
+		if sess.Declined > 0 {
+			sess.Declined--
+		}
+	}
+	step.Decision = next
+	switch next {
+	case "accepted":
+		sess.Accepted++
+	case "skipped":
+		sess.Skipped++
+	case "declined":
+		sess.Declined++
+	}
 }
 
 // handleReIdentifyWizardSaveExit ends the wizard early and leaves any
@@ -607,12 +637,15 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 		}
 	}
 
-	// Commit the result atomically with the ready flip.
+	// Commit the result atomically with the ready flip. Store only a
+	// sanitized, client-safe message on the step; full errors are logged
+	// server-side via slog.Warn above. A surface for the errored flag in
+	// the wizard template is tracked as an M46.5 follow-up.
 	sess.mu.Lock()
 	step.inFlight = false
 	if fetchErr != nil {
 		step.errored = true
-		step.errMsg = fetchErr.Error()
+		step.errMsg = "candidate lookup failed; retry or skip this artist"
 	} else {
 		step.Candidates = candidates
 	}

@@ -130,7 +130,7 @@ templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
 					hx-post={ wizardSaveExitURL(data.SessionID) }
 					hx-swap="none"
 					hx-disabled-elt="this"
-					hx-on::after-request="window.location.href = document.querySelector('meta[name=htmx-base-path]').content + '/artists';"
+					hx-on::after-request="if (event.detail.successful) { var m = document.querySelector('meta[name=htmx-base-path]'); window.location.href = (m ? m.content : '') + '/artists'; }"
 				>
 					<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -218,7 +218,7 @@ templ ReIdentifyWizardDone(data ReIdentifyWizardDoneData) {
 		</p>
 		<div>
 			<a
-				href="/artists"
+				href={ templ.SafeURL(basePath() + "/artists") }
 				class="inline-flex items-center gap-1 rounded bg-blue-600 text-white px-3 py-1.5 text-sm hover:bg-blue-500"
 			>
 				{ t(ctx, "artists.bulk.reidentify.wizard.done.back_to_artists") }

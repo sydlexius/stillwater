@@ -329,6 +329,37 @@ func TestApplyMemberRefresh(t *testing.T) {
 		}
 	})
 
+	t.Run("members_locked_early_returns", func(t *testing.T) {
+		// Locking "members" must make applyMemberRefresh a no-op even when
+		// the provider returned a full roster, so a user's pinned lineup
+		// survives a refresh.
+		a := addTestArtist(t, artistSvc, "Locked Members Band")
+		seedMembers(t, a.ID)
+		result := &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{
+					{Name: "Intruder", MBID: "mb-intruder"},
+				},
+			},
+			AttemptedFields: []string{"members"},
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result, []string{"members"})
+
+		saved, err := artistSvc.ListMembersByArtistID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("listing members after locked refresh: %v", err)
+		}
+		if len(saved) != 2 {
+			t.Fatalf("expected 2 members preserved by lock, got %d: %+v", len(saved), saved)
+		}
+		names := []string{saved[0].MemberName, saved[1].MemberName}
+		for _, n := range names {
+			if n == "Intruder" {
+				t.Errorf("locked members overwritten by provider data: names=%v", names)
+			}
+		}
+	})
+
 	t.Run("members_attempted_nonempty_upserts", func(t *testing.T) {
 		a := addTestArtist(t, artistSvc, "Guard Test Band 4")
 		seedMembers(t, a.ID)

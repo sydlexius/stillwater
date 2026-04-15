@@ -700,3 +700,25 @@ func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
 		t.Errorf("unlocked biography not restored: got %q", a.Biography)
 	}
 }
+
+// TestApplyMetadata_LockedDateSurvivesFilterByType guards against a subtle
+// regression: the per-field skip protects the direct write, but
+// FilterDatesByType runs AFTER the merge and could still blank a locked
+// born/formed/died/disbanded value based on the artist's Type. A user who
+// pinned born="1970" on a group should see that date survive the merge AND
+// the post-merge type filter.
+func TestApplyMetadata_LockedDateSurvivesFilterByType(t *testing.T) {
+	a := &Artist{Type: "group", Born: "1970", Died: "2010"}
+	u := &MetadataUpdate{Type: "group", Born: "2020", Died: "2030"}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields:   []string{"born", "died"},
+		FilterDatesByType: true,
+		LockedFields:      []string{"born", "died"},
+	})
+	if a.Born != "1970" {
+		t.Errorf("locked born was clobbered by merge or FilterDatesByType: got %q", a.Born)
+	}
+	if a.Died != "2010" {
+		t.Errorf("locked died was clobbered by merge or FilterDatesByType: got %q", a.Died)
+	}
+}

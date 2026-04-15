@@ -1,5 +1,7 @@
 package templates
 
+import "encoding/json"
+
 // WizardCandidateView is the flat projection of a scored provider candidate
 // used by the re-identify wizard. The handler package converts its domain
 // ScoredCandidate into this type so the template does not need to import the
@@ -59,11 +61,17 @@ func wizardActionURL(sessionID string, index int, action string) string {
 }
 
 // wizardAcceptVals builds the hx-vals JSON literal for the accept button.
-// Kept as a helper so the template does not need to inline quote-escaping
-// logic inline; MBID values come from the provider search so they are
-// UUID-shaped in practice and do not need additional escaping.
+// Uses encoding/json rather than string concatenation so that any mbid
+// containing quotes, backslashes, or other JSON-special characters is
+// properly escaped. The empty-object fallback keeps the accept handler from
+// panicking on malformed input -- the server-side mbid presence check will
+// then reject the request with a 400.
 func wizardAcceptVals(mbid string) string {
-	return `{"mbid":"` + mbid + `"}`
+	b, err := json.Marshal(map[string]string{"mbid": mbid})
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 // wizardSaveExitURL is the POST URL that ends the session early.

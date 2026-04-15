@@ -23,17 +23,15 @@ const MaxBulkActionIDs = 1000
 //
 // BulkActionReIdentify is the legacy alias retained so existing callers keep
 // working; it is normalized to BulkActionReIdentifyAuto on entry. The review
-// variant (BulkActionReIdentifyReview) is dispatched separately through the
-// wizard endpoints in handlers_reidentify_wizard.go and is not a valid value
-// here -- it is only listed so the UI dropdown validation can share a single
-// allow-list.
+// variant (re_identify_review string in the UI) is dispatched separately
+// through the wizard endpoints in handlers_reidentify_wizard.go and never
+// flows through this handler, so no Go constant is defined for it here.
 const (
-	BulkActionRunRules         = "run_rules"
-	BulkActionReIdentify       = "re_identify"        // legacy alias for re_identify_auto
-	BulkActionReIdentifyAuto   = "re_identify_auto"   // silent auto-link + queue path
-	BulkActionReIdentifyReview = "re_identify_review" // wizard (handled elsewhere)
-	BulkActionScan             = "scan"
-	BulkActionFetchImages      = "fetch_images"
+	BulkActionRunRules       = "run_rules"
+	BulkActionReIdentify     = "re_identify"      // legacy alias for re_identify_auto
+	BulkActionReIdentifyAuto = "re_identify_auto" // silent auto-link + queue path
+	BulkActionScan           = "scan"
+	BulkActionFetchImages    = "fetch_images"
 )
 
 // idPattern accepts UUIDs and other plausible artist ID encodings used in the
@@ -345,6 +343,22 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			// completion toast.
 			if action == BulkActionReIdentifyAuto {
 				res := r.identifyArtist(ctx, a, connIdx)
+				// For outcomeQueued, identifyArtist returns a review
+				// candidate that must land in the bulk-identify review
+				// queue so the user can decide later. Previously the
+				// bulk-action path dropped res.Candidate on the floor,
+				// silently losing every ambiguous match.
+				if res.Outcome == outcomeQueued && res.Candidate != nil {
+					r.identifyMu.Lock()
+					if r.identifyProgress == nil {
+						r.identifyProgress = &IdentifyProgress{Status: "completed"}
+					}
+					rp := r.identifyProgress
+					r.identifyMu.Unlock()
+					rp.mu.Lock()
+					rp.ReviewQueue = append(rp.ReviewQueue, *res.Candidate)
+					rp.mu.Unlock()
+				}
 				progress.mu.Lock()
 				progress.Processed++
 				switch res.Outcome {

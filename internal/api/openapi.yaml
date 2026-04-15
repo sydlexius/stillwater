@@ -4340,11 +4340,11 @@ paths:
                 type: object
                 required: [session_id, total, index]
                 properties:
-                  session_id: { type: string }
-                  total:      { type: integer }
-                  index:      { type: integer }
-        "400": { description: Invalid request body }
-        "503": { description: Artist service not configured }
+                  session_id: {type: string}
+                  total:      {type: integer}
+                  index:      {type: integer}
+        "400": {description: Invalid request body}
+        "503": {description: Artist service not configured}
 
   /artists/re-identify/wizard/{sid}/step/{idx}/accept:
     post:
@@ -4355,11 +4355,11 @@ paths:
         - in: path
           name: sid
           required: true
-          schema: { type: string }
+          schema: {type: string}
         - in: path
           name: idx
           required: true
-          schema: { type: integer }
+          schema: {type: integer}
       requestBody:
         required: true
         content:
@@ -4368,19 +4368,19 @@ paths:
               type: object
               required: [mbid]
               properties:
-                mbid:       { type: string }
-                discogs_id: { type: string }
+                mbid:       {type: string}
+                discogs_id: {type: string}
           application/x-www-form-urlencoded:
             schema:
               type: object
               required: [mbid]
               properties:
-                mbid:       { type: string }
-                discogs_id: { type: string }
+                mbid:       {type: string}
+                discogs_id: {type: string}
       responses:
-        "200": { description: Step advanced }
-        "400": { description: Missing or invalid mbid }
-        "404": { description: Wizard session not found or artist missing }
+        "200": {description: Step advanced}
+        "400": {description: Missing or invalid mbid}
+        "404": {description: Wizard session not found or artist missing}
 
   /artists/re-identify/wizard/{sid}/step/{idx}/skip:
     post:
@@ -4391,14 +4391,14 @@ paths:
         - in: path
           name: sid
           required: true
-          schema: { type: string }
+          schema: {type: string}
         - in: path
           name: idx
           required: true
-          schema: { type: integer }
+          schema: {type: integer}
       responses:
-        "200": { description: Step advanced }
-        "404": { description: Wizard session not found }
+        "200": {description: Step advanced}
+        "404": {description: Wizard session not found}
 
   /artists/re-identify/wizard/{sid}/step/{idx}/decline:
     post:
@@ -4409,14 +4409,14 @@ paths:
         - in: path
           name: sid
           required: true
-          schema: { type: string }
+          schema: {type: string}
         - in: path
           name: idx
           required: true
-          schema: { type: integer }
+          schema: {type: integer}
       responses:
-        "200": { description: Step advanced }
-        "404": { description: Wizard session not found }
+        "200": {description: Step advanced}
+        "404": {description: Wizard session not found}
 
   /artists/re-identify/wizard/{sid}/save-exit:
     post:
@@ -4427,7 +4427,7 @@ paths:
         - in: path
           name: sid
           required: true
-          schema: { type: string }
+          schema: {type: string}
       responses:
         "200":
           description: Wizard closed; undecided artists moved to the review queue
@@ -4436,12 +4436,12 @@ paths:
               schema:
                 type: object
                 properties:
-                  status:   { type: string, enum: [saved] }
-                  accepted: { type: integer }
-                  skipped:  { type: integer }
-                  declined: { type: integer }
-                  leftover: { type: integer }
-        "404": { description: Wizard session not found }
+                  status:   {type: string, enum: [saved]}
+                  accepted: {type: integer}
+                  skipped:  {type: integer}
+                  declined: {type: integer}
+                  leftover: {type: integer}
+        "404": {description: Wizard session not found}
 
   /reports/health:
     get:
