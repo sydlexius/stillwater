@@ -4391,7 +4391,28 @@ paths:
                 mbid:       {type: string}
                 discogs_id: {type: string}
       responses:
-        "200": {description: Step advanced}
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
         "400": {description: Missing or invalid mbid}
         "404": {description: Wizard session not found or artist missing}
 
@@ -4410,7 +4431,28 @@ paths:
           required: true
           schema: {type: integer}
       responses:
-        "200": {description: Step advanced}
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
         "404": {description: Wizard session not found}
 
   /artists/re-identify/wizard/{sid}/step/{idx}/decline:
@@ -4428,7 +4470,28 @@ paths:
           required: true
           schema: {type: integer}
       responses:
-        "200": {description: Step advanced}
+        "200":
+          description: >
+            Wizard advanced. The response body is one of two shapes:
+            {status: advanced, index: <next>} when there is another
+            step, or {status: done, session_id: <sid>} when the
+            advance landed on the final step.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [status, index]
+                    properties:
+                      status: {type: string, enum: [advanced]}
+                      index:  {type: integer}
+                  - type: object
+                    required: [status, session_id]
+                    properties:
+                      status:     {type: string, enum: [done]}
+                      session_id: {type: string}
+                discriminator:
+                  propertyName: status
         "404": {description: Wizard session not found}
 
   /artists/re-identify/wizard/{sid}/save-exit:

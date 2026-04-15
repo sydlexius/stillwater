@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -280,7 +281,10 @@ func TestHandleReIdentifyWizardStart_TooManyIDs(t *testing.T) {
 	// before any per-ID work runs.
 	ids := make([]string, 0, MaxBulkActionIDs+1)
 	for i := 0; i <= MaxBulkActionIDs; i++ {
-		ids = append(ids, "id"+strings.Repeat("a", 3))
+		// Use unique IDs so the test intent (length cap) cannot be
+		// confused with deduplication behavior if the handler ever adds
+		// an up-front dedup pass.
+		ids = append(ids, fmt.Sprintf("id%04d", i))
 	}
 	body, _ := json.Marshal(map[string][]string{"ids": ids})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", strings.NewReader(string(body)))
