@@ -596,10 +596,20 @@ func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 	if len(r.identifyProgress.ReviewQueue) != 2 {
 		t.Errorf("ReviewQueue len = %d, want 2", len(r.identifyProgress.ReviewQueue))
 	}
+	gotIDs := map[string]bool{}
 	for _, q := range r.identifyProgress.ReviewQueue {
 		if q.Tier != "wizard" {
 			t.Errorf("leftover tier = %q, want wizard", q.Tier)
 		}
+		gotIDs[q.ArtistID] = true
+	}
+	for _, want := range []string{"a1", "a3"} {
+		if !gotIDs[want] {
+			t.Errorf("leftover queue missing ArtistID %q; got %v", want, gotIDs)
+		}
+	}
+	if gotIDs["a2"] {
+		t.Errorf("leftover queue unexpectedly contains accepted ArtistID a2")
 	}
 }
 
