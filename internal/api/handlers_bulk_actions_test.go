@@ -19,6 +19,54 @@ import (
 // path in applyBulkAction.
 var errBulkPipelineTest = errors.New("bulk pipeline test failure")
 
+// TestBulkAction_Cancel_NoRun verifies the cancel endpoint returns 409 when
+// there is no in-flight bulk action to stop.
+func TestBulkAction_Cancel_NoRun(t *testing.T) {
+	r, _, _ := testRouterWithIdentify(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
+	w := httptest.NewRecorder()
+	r.handleBulkActionCancel(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestBulkAction_Cancel_Running covers the happy path: a running progress
+// with a non-nil cancelFn returns 200 and invokes the cancel function.
+func TestBulkAction_Cancel_Running(t *testing.T) {
+	r, _, _ := testRouterWithIdentify(t)
+	canceled := false
+	cancel := func() { canceled = true }
+	r.bulkActionMu.Lock()
+	r.bulkActionProgress = &BulkActionProgress{Status: "running", Action: "run_rules", Total: 1, cancelFn: cancel}
+	r.bulkActionMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
+	w := httptest.NewRecorder()
+	r.handleBulkActionCancel(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if !canceled {
+		t.Error("cancel function was not invoked")
+	}
+}
+
+// TestBulkAction_Cancel_StaleProgress handles the case where a completed
+// snapshot lingers with a nil cancelFn; cancel must 409 rather than panic.
+func TestBulkAction_Cancel_StaleProgress(t *testing.T) {
+	r, _, _ := testRouterWithIdentify(t)
+	r.bulkActionMu.Lock()
+	r.bulkActionProgress = &BulkActionProgress{Status: "completed", Action: "run_rules", Total: 1}
+	r.bulkActionMu.Unlock()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
+	w := httptest.NewRecorder()
+	r.handleBulkActionCancel(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (stale progress); body: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestBulkAction_InvalidAction rejects unknown action values with 400.
 func TestBulkAction_InvalidAction(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)

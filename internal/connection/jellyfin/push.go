@@ -191,6 +191,13 @@ var jellyfinReadOnlyFields = []string{
 // explicitly or the subsequent full-replacement POST from UpdateArtistLocks
 // / PushMetadata will silently clear server-side locks.
 func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, error) {
+	// Empty or whitespace-only itemID would build "Ids=" which Jellyfin
+	// accepts and returns the library's first item. Returning the wrong
+	// artist here corrupts every downstream write (including lock state),
+	// so reject at the boundary before issuing the request.
+	if strings.TrimSpace(itemID) == "" {
+		return nil, fmt.Errorf("item id is required")
+	}
 	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,LockData,LockedFields", url.QueryEscape(itemID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {

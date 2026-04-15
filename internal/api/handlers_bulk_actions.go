@@ -216,6 +216,14 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 			return
 		}
+		// runBulkAction calls r.artistService.GetByID per artist before
+		// dispatch; a partially configured router would accept the request
+		// and then panic in the background goroutine. Gate up front.
+		if r.artistService == nil {
+			releaseSlot()
+			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
+			return
+		}
 	case BulkActionReIdentifyAuto:
 		if r.artistService == nil {
 			releaseSlot()

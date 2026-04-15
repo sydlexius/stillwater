@@ -640,6 +640,27 @@ func TestUpdateArtistLocks(t *testing.T) {
 	}
 }
 
+// TestUpdateArtistLocks_EmptyItemID verifies that UpdateArtistLocks rejects
+// an empty/whitespace platformArtistID at the boundary. Without the guard,
+// fetchItem would issue /Items?Ids= (no value), which Jellyfin accepts and
+// answers with the first item in the library - silently corrupting every
+// downstream write.
+func TestUpdateArtistLocks_EmptyItemID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	cases := []string{"", "   ", "\t\n "}
+	for _, id := range cases {
+		if err := c.UpdateArtistLocks(context.Background(), id, true, nil); err == nil {
+			t.Errorf("UpdateArtistLocks(%q) = nil, want error", id)
+		}
+	}
+}
+
 // TestPushMetadata_ClearsFields verifies that empty values in the push data
 // overwrite existing Jellyfin values, allowing field clears to propagate.
 func TestPushMetadata_ClearsFields(t *testing.T) {

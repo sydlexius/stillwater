@@ -139,6 +139,10 @@ func (r *Router) handleUnlockArtistField(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// Parity with handleLockArtistField: push the new per-field lock state
+	// to connected platforms immediately so the pin disappears in Emby/
+	// Jellyfin without waiting for a manual sync.
+	r.publisher.PushLocks(req.Context(), updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 

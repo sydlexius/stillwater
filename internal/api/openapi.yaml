@@ -3985,8 +3985,10 @@ paths:
       description: >
         Runs the requested action for each artist in the supplied ID list.
         Only one bulk action may run at a time; concurrent starts are rejected
-        with 409 Conflict. The accepted actions are run_rules, re_identify,
-        scan, and fetch_images. Progress is reported via
+        with 409 Conflict. The accepted actions are run_rules,
+        re_identify_auto (legacy alias: re_identify), scan, and
+        fetch_images. The review flow is started separately via
+        POST /artists/re-identify/wizard. Progress is reported via
         GET /artists/bulk-actions/status and a bulk.completed SSE event is
         published when the run finishes.
       requestBody:
@@ -4027,7 +4029,12 @@ paths:
                     enum: [running]
                   action:
                     type: string
-                    enum: [run_rules, re_identify, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    description: >
+                      Canonical action value as emitted by the handler.
+                      The legacy alias re_identify is normalized to
+                      re_identify_auto on entry, so this response will
+                      never carry the legacy value.
                   total:
                     type: integer
         "400":
