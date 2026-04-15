@@ -430,10 +430,17 @@ func (a *Adapter) resolveToTitleAndQID(ctx context.Context, id string) (string, 
 
 // orderedLanguages builds the language list to attempt. It normalizes each
 // preference to a 2- or 3-letter lowercase code, removes duplicates while
-// preserving order, and guarantees "en" appears as a final fallback.
+// preserving order, and appends "en" at the end if not already present.
 func orderedLanguages(prefs []string) []string {
-	seen := make(map[string]struct{}, len(prefs)+1)
-	out := make([]string, 0, len(prefs)+1)
+	// Cap the preallocation hint to a sane upper bound. Language preference
+	// lists are tiny in practice; the explicit cap also silences CodeQL's
+	// "size computation may overflow" warning on len(prefs)+1.
+	n := len(prefs)
+	if n > 256 {
+		n = 256
+	}
+	seen := make(map[string]struct{}, n+1)
+	out := make([]string, 0, n+1)
 	for _, p := range prefs {
 		base := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
 		if len(base) != 2 && len(base) != 3 {
