@@ -337,7 +337,10 @@ func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
 
 func TestHandleReIdentifyWizardStep_InvalidIndex(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/artists/re-identify/wizard/"+sess.ID+"/step/-1", nil)
 	req.SetPathValue("sid", sess.ID)
 	req.SetPathValue("idx", "nope")
@@ -364,7 +367,10 @@ func TestWizardStepFromRequest_ServiceUnavailable(t *testing.T) {
 
 func TestWizardStepFromRequest_IndexOutOfRange(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", nil)
 	req.SetPathValue("sid", sess.ID)
 	req.SetPathValue("idx", "99")
@@ -381,9 +387,12 @@ func TestWizardStepFromRequest_IndexOutOfRange(t *testing.T) {
 // decision counter and return status=advanced for the non-HTMX caller.
 func TestHandleReIdentifyWizardSkip(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1"}, {ArtistID: "a2"},
 	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", nil)
 	req.SetPathValue("sid", sess.ID)
 	req.SetPathValue("idx", "0")
@@ -404,9 +413,12 @@ func TestHandleReIdentifyWizardSkip(t *testing.T) {
 
 func TestHandleReIdentifyWizardDecline(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1"}, {ArtistID: "a2"},
 	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", nil)
 	req.SetPathValue("sid", sess.ID)
 	req.SetPathValue("idx", "0")
@@ -424,7 +436,10 @@ func TestHandleReIdentifyWizardDecline(t *testing.T) {
 
 func TestHandleReIdentifyWizardAccept_MissingMBID(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("sid", sess.ID)
@@ -441,7 +456,10 @@ func TestHandleReIdentifyWizardAccept_MissingMBID(t *testing.T) {
 
 func TestHandleReIdentifyWizardAccept_InvalidJSON(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{broken`))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.SetPathValue("sid", sess.ID)
@@ -457,7 +475,10 @@ func TestHandleReIdentifyWizardAccept_ArtistNotFound(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
 	// Step references an artist that does not exist in the DB, so the
 	// accept handler's GetByID returns ErrNotFound.
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "ghost"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "ghost"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(`{"mbid":"abc"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("sid", sess.ID)
@@ -474,7 +495,10 @@ func TestHandleReIdentifyWizardAccept_FormBody(t *testing.T) {
 	// mbid here too; this exercises the non-JSON branch of the content-type
 	// switch.
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/any", strings.NewReader(""))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetPathValue("sid", sess.ID)
@@ -488,11 +512,14 @@ func TestHandleReIdentifyWizardAccept_FormBody(t *testing.T) {
 
 func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1", ArtistName: "A One", Decision: ""},
 		{ArtistID: "a2", ArtistName: "A Two", Decision: "accepted"},
 		{ArtistID: "a3", ArtistName: "A Three", Decision: ""},
 	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	sess.mu.Lock()
 	sess.Accepted = 1
 	sess.mu.Unlock()
@@ -557,7 +584,10 @@ func TestHandleReIdentifyWizardSaveExit_SessionNotFound(t *testing.T) {
 // as an M46.5 follow-up but the state on the session is already populated.
 func TestEnsureWizardCandidates_NoOrchestrator(t *testing.T) {
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1", ArtistName: "A"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1", ArtistName: "A"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	r.ensureWizardCandidates(context.Background(), sess, 0)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
@@ -580,7 +610,10 @@ func TestEnsureWizardCandidates_OutOfRange(t *testing.T) {
 	// idx < 0 or >= len(Steps) is a silent no-op; safe to call from
 	// pre-fetch goroutines without bounds checks.
 	r, _, _ := testRouterWithIdentify(t)
-	sess, _ := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	r.ensureWizardCandidates(context.Background(), sess, 99)
 	r.ensureWizardCandidates(context.Background(), sess, -1)
 	sess.mu.Lock()
