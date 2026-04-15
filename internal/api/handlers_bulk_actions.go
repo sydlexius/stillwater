@@ -409,8 +409,12 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 		}
 
 		progress.mu.Lock()
+		// A cancel POST can land after the last artist has already been
+		// processed but before this epilogue runs. In that race ctx.Err()
+		// is non-nil yet every item is complete; reporting "canceled" here
+		// lies to /status and the completion event. Gate on remaining work.
 		finalStatus := "completed"
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && progress.Processed < progress.Total {
 			finalStatus = "canceled"
 		}
 		progress.Status = finalStatus

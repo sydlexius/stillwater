@@ -588,18 +588,18 @@ func TestHandleBulkAction_ReIdentifyAliasNormalization(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.handleBulkAction(w, req)
-	// With no orchestrator the handler will fail 503; that is fine, the
-	// normalization we want to exercise happens before that check.
-	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusAccepted {
-		t.Fatalf("status = %d (want 503 or 202); body: %s", w.Code, w.Body.String())
+	// testRouterWithIdentify wires an artistService, so the re_identify_auto
+	// availability check passes and we must get the normalized 202 snapshot.
+	// Allowing 503 would let a regression in the start path silently mask
+	// the normalization assertion.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
 	}
-	if w.Code == http.StatusAccepted {
-		var resp map[string]any
-		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if resp["action"] != "re_identify_auto" {
-			t.Errorf("action = %v, want re_identify_auto", resp["action"])
-		}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["action"] != "re_identify_auto" {
+		t.Errorf("action = %v, want re_identify_auto", resp["action"])
 	}
 }

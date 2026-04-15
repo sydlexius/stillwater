@@ -4081,7 +4081,11 @@ paths:
                     enum: [idle, running, completed, failed, canceled]
                   action:
                     type: string
-                    enum: [run_rules, re_identify, re_identify_auto, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    description: >
+                      Canonical emitted action value. The legacy alias
+                      re_identify is normalized on entry by
+                      handleBulkAction, so the snapshot never carries it.
                   total:
                     type: integer
                   processed:
@@ -4111,6 +4115,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status]
                 properties:
                   status:
                     type: string
@@ -4121,6 +4126,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [error]
                 properties:
                   error:
                     type: string
@@ -4442,6 +4448,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status, accepted, skipped, declined, leftover]
                 properties:
                   status:   {type: string, enum: [saved]}
                   accepted: {type: integer}

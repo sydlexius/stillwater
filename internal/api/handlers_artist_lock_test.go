@@ -208,6 +208,13 @@ func TestHandleLockArtist(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("unlock status = %d; body = %s", w.Code, w.Body.String())
 	}
+	var unlocked artist.Artist
+	if err := json.Unmarshal(w.Body.Bytes(), &unlocked); err != nil {
+		t.Fatalf("decode unlock response: %v", err)
+	}
+	if unlocked.Locked {
+		t.Error("expected Locked=false in handleUnlockArtist response body")
+	}
 	// Unlock-when-not-locked is also a 409.
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/lock", nil)
