@@ -145,7 +145,10 @@ func TestWizardStore(t *testing.T) {
 
 	t.Run("delete_removes_session", func(t *testing.T) {
 		s := newReIdentifyWizardStore()
-		sess, _ := s.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+		sess, err := s.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
 		s.delete(sess.ID)
 		if got := s.get(sess.ID); got != nil {
 			t.Errorf("get after delete = %v, want nil", got)
@@ -154,7 +157,10 @@ func TestWizardStore(t *testing.T) {
 
 	t.Run("expired_session_evicted_on_get", func(t *testing.T) {
 		s := newReIdentifyWizardStore()
-		sess, _ := s.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+		sess, err := s.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
 		// Backdate past TTL so the next get drops the session.
 		sess.mu.Lock()
 		sess.Updated = time.Now().Add(-2 * reIdentifyWizardSessionTTL)
@@ -166,11 +172,17 @@ func TestWizardStore(t *testing.T) {
 
 	t.Run("create_prunes_expired_siblings", func(t *testing.T) {
 		s := newReIdentifyWizardStore()
-		stale, _ := s.create([]*reIdentifyWizardStep{{ArtistID: "old"}})
+		stale, err := s.create([]*reIdentifyWizardStep{{ArtistID: "old"}})
+		if err != nil {
+			t.Fatalf("create stale: %v", err)
+		}
 		stale.mu.Lock()
 		stale.Updated = time.Now().Add(-2 * reIdentifyWizardSessionTTL)
 		stale.mu.Unlock()
-		fresh, _ := s.create([]*reIdentifyWizardStep{{ArtistID: "new"}})
+		fresh, err := s.create([]*reIdentifyWizardStep{{ArtistID: "new"}})
+		if err != nil {
+			t.Fatalf("create fresh: %v", err)
+		}
 		if got := s.get(stale.ID); got != nil {
 			t.Errorf("stale session should have been pruned during create")
 		}

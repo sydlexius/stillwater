@@ -230,8 +230,12 @@ components:
           description: Filesystem path to the artist directory.
         tier:
           type: string
-          enum: [connection, album, name]
-          description: The pipeline tier that produced this candidate.
+          enum: [connection, album, name, wizard]
+          description: >
+            The pipeline tier that produced this candidate. The wizard
+            value marks entries pushed onto the review queue by
+            POST /artists/re-identify/wizard/{sid}/save-exit when the
+            user ends a review session with undecided artists.
         candidates:
           type: array
           description: Ranked list of potential MusicBrainz matches.
@@ -4070,7 +4074,7 @@ paths:
       operationId: getBulkActionStatus
       responses:
         "200":
-          description: Returns live progress while a bulk action is running, or the most recent completed/failed snapshot once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
+          description: Returns live progress while a bulk action is running, or the most recent terminal snapshot (completed, failed, or canceled) once it has finished. Returns status=idle only when no snapshot exists yet (process has never run a bulk action since startup).
           content:
             application/json:
               schema:
@@ -4518,7 +4522,12 @@ paths:
                   skipped:  {type: integer}
                   declined: {type: integer}
                   leftover: {type: integer}
-        "404": {description: Wizard session not found}
+        "404":
+          description: Wizard session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /reports/health:
     get:
