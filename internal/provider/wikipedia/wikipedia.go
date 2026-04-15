@@ -88,64 +88,121 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 // Returns biography text from the article intro section and structured
 // metadata (members, genres, years active, origin) from infobox parsing.
 // When the user has metadata language preferences set in the context,
-// the adapter tries the preferred language's Wikipedia first, falling back
-// to English if the preferred language article does not exist.
+// the adapter walks the full preference list in order: for each language it
+// looks up the localized Wikipedia article title via Wikidata sitelinks and
+// fetches the extract from that language's Wikipedia. The first language
+// that returns a real article wins; missing articles, not-found responses,
+// and empty extracts cause a graceful fall-through to the next language.
+// English is always tried last as a final fallback.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
-	// Determine the preferred Wikipedia language from context.
-	wikiLang := "en"
-	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 {
-		base := strings.SplitN(strings.ToLower(langPrefs[0]), "-", 2)[0]
-		if len(base) == 2 || len(base) == 3 {
-			wikiLang = base
-		}
-	}
-
-	title, err := a.resolveToTitle(ctx, id)
+	// Resolve the input ID to an English-wiki title and, when possible, a
+	// Wikidata Q-ID that we can use to look up localized sitelinks.
+	enTitle, qid, err := a.resolveToTitleAndQID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build a language-specific action endpoint for the preferred language.
-	actionEP := a.actionEndpointForLang(wikiLang)
+	// Build the ordered language list to try. User preferences first (in order),
+	// then "en" as a guaranteed final fallback. Duplicates are removed while
+	// preserving order.
+	langs := orderedLanguages(provider.MetadataLanguages(ctx))
 
-	// Fetch the article intro extract for biography text.
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-	name, extract, err := a.fetchExtractFrom(ctx, actionEP, title)
-	if err != nil {
-		// If the preferred language wiki returned not-found, fall back to English
-		// rather than failing outright. The title from resolveToTitle is an enwiki
-		// title and may not exist on the localized wiki.
-		var notFound *provider.ErrNotFound
-		var unavailable *provider.ErrProviderUnavailable
-		if wikiLang == "en" || (!errors.As(err, &notFound) && !errors.As(err, &unavailable)) {
-			return nil, err
-		}
-		extract = "" // trigger the fallback below
-	}
+	var (
+		name     string
+		extract  string
+		wikiLang string
+		title    string
+		lastErr  error
+	)
 
-	// If the preferred language returned an empty extract and it is not English,
-	// fall back to English.
-	if strings.TrimSpace(extract) == "" && wikiLang != "en" {
+	for _, lang := range langs {
+		// Determine the article title for this language.
+		var candidateTitle string
+		switch {
+		case lang == "en":
+			// The enTitle we resolved is already the enwiki title.
+			candidateTitle = enTitle
+		case qid != "":
+			// Look up the localized sitelink via Wikidata.
+			if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+				return nil, &provider.ErrProviderUnavailable{
+					Provider: provider.NameWikipedia,
+					Cause:    fmt.Errorf("rate limiter: %w", err),
+				}
+			}
+			localized, err := a.resolveToLocalizedTitle(ctx, qid, lang)
+			if err != nil {
+				var notFound *provider.ErrNotFound
+				if errors.As(err, &notFound) {
+					a.logger.Debug("no localized Wikipedia sitelink for language; trying next",
+						slog.String("qid", qid),
+						slog.String("lang", lang))
+					lastErr = err
+					continue
+				}
+				// Provider unavailable or other transport error: record and try next lang.
+				a.logger.Debug("localized title lookup failed; trying next language",
+					slog.String("qid", qid),
+					slog.String("lang", lang),
+					slog.Any("error", err))
+				lastErr = err
+				continue
+			}
+			candidateTitle = localized
+		default:
+			// No Q-ID available (input was a plain article title). Only the
+			// enwiki title is meaningful here, so skip non-English attempts.
+			a.logger.Debug("skipping non-English attempt without Q-ID",
+				slog.String("title", enTitle),
+				slog.String("lang", lang))
+			continue
+		}
+
+		// Fetch the article intro extract for biography text.
 		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
 			return nil, &provider.ErrProviderUnavailable{
 				Provider: provider.NameWikipedia,
 				Cause:    fmt.Errorf("rate limiter: %w", err),
 			}
 		}
-		wikiLang = "en"
-		actionEP = a.actionEndpointForLang("en")
-		name, extract, err = a.fetchExtractFrom(ctx, actionEP, title)
+		actionEP := a.actionEndpointForLang(lang)
+		gotName, gotExtract, err := a.fetchExtractFrom(ctx, actionEP, candidateTitle)
 		if err != nil {
+			var notFound *provider.ErrNotFound
+			var unavailable *provider.ErrProviderUnavailable
+			if errors.As(err, &notFound) || errors.As(err, &unavailable) {
+				a.logger.Debug("extract fetch missed; trying next language",
+					slog.String("title", candidateTitle),
+					slog.String("lang", lang),
+					slog.Any("error", err))
+				lastErr = err
+				continue
+			}
+			// Unexpected error type: propagate immediately.
 			return nil, err
 		}
+		if strings.TrimSpace(gotExtract) == "" {
+			a.logger.Debug("empty extract; trying next language",
+				slog.String("title", candidateTitle),
+				slog.String("lang", lang))
+			lastErr = &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: candidateTitle}
+			continue
+		}
+
+		a.logger.Debug("Wikipedia extract hit",
+			slog.String("title", candidateTitle),
+			slog.String("lang", lang))
+		name = gotName
+		extract = gotExtract
+		wikiLang = lang
+		title = candidateTitle
+		break
 	}
 
 	if strings.TrimSpace(extract) == "" {
+		if lastErr != nil {
+			return nil, lastErr
+		}
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
 	}
 	if name == "" {
@@ -338,12 +395,14 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// resolveToTitle determines the ID type and resolves it to a Wikipedia article title.
-func (a *Adapter) resolveToTitle(ctx context.Context, id string) (string, error) {
+// resolveToTitleAndQID determines the ID type and resolves it to (enwiki title, Q-ID).
+// The Q-ID is returned when available so that callers can later look up localized
+// sitelinks for other languages. For plain article-title inputs the Q-ID is "".
+func (a *Adapter) resolveToTitleAndQID(ctx context.Context, id string) (string, string, error) {
 	switch {
 	case provider.IsUUID(id):
 		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-			return "", &provider.ErrProviderUnavailable{
+			return "", "", &provider.ErrProviderUnavailable{
 				Provider: provider.NameWikipedia,
 				Cause:    fmt.Errorf("rate limiter: %w", err),
 			}
@@ -352,17 +411,44 @@ func (a *Adapter) resolveToTitle(ctx context.Context, id string) (string, error)
 
 	case isQID(id):
 		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-			return "", &provider.ErrProviderUnavailable{
+			return "", "", &provider.ErrProviderUnavailable{
 				Provider: provider.NameWikipedia,
 				Cause:    fmt.Errorf("rate limiter: %w", err),
 			}
 		}
-		return a.resolveFromQID(ctx, id)
+		title, err := a.resolveFromQID(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		return title, strings.ToUpper(id), nil
 
 	default:
-		// Treat as a Wikipedia article title directly.
-		return id, nil
+		// Treat as a Wikipedia article title directly. No Q-ID available.
+		return id, "", nil
 	}
+}
+
+// orderedLanguages builds the language list to attempt. It normalizes each
+// preference to a 2- or 3-letter lowercase code, removes duplicates while
+// preserving order, and guarantees "en" appears as a final fallback.
+func orderedLanguages(prefs []string) []string {
+	seen := make(map[string]struct{}, len(prefs)+1)
+	out := make([]string, 0, len(prefs)+1)
+	for _, p := range prefs {
+		base := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
+		if len(base) != 2 && len(base) != 3 {
+			continue
+		}
+		if _, ok := seen[base]; ok {
+			continue
+		}
+		seen[base] = struct{}{}
+		out = append(out, base)
+	}
+	if _, ok := seen["en"]; !ok {
+		out = append(out, "en")
+	}
+	return out
 }
 
 // isQID returns true if id looks like a Wikidata Q-ID (e.g. "Q44190").
@@ -379,9 +465,11 @@ func isQID(id string) bool {
 }
 
 // resolveFromMBID uses a Wikidata SPARQL query to find the English Wikipedia
-// article title for an artist identified by MusicBrainz ID.
-func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, error) {
-	query := fmt.Sprintf(`SELECT ?article WHERE {
+// article title and Wikidata Q-ID for an artist identified by MusicBrainz ID.
+// The Q-ID is extracted from the bound ?item URI so that callers can look up
+// localized sitelinks for other languages.
+func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, string, error) {
+	query := fmt.Sprintf(`SELECT ?item ?article WHERE {
   ?item wdt:P434 "%s" .
   ?article schema:about ?item ;
            schema:isPartOf <https://en.wikipedia.org/> .
@@ -395,7 +483,7 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
+		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("creating SPARQL request: %w", err),
 		}
@@ -406,6 +494,97 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 	a.logger.Debug("resolving MBID to Wikipedia title via Wikidata", slog.String("mbid", mbid))
 
 	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted SPARQL endpoint
+	if err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    err,
+		}
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata SPARQL HTTP %d", resp.StatusCode),
+		}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("reading SPARQL response: %w", err),
+		}
+	}
+
+	var sparql sparqlResponse
+	if err := json.Unmarshal(body, &sparql); err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("parsing SPARQL response: %w", err),
+		}
+	}
+
+	if len(sparql.Results.Bindings) == 0 {
+		return "", "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: mbid}
+	}
+
+	title, err := extractArticleTitle(sparql.Results.Bindings[0].Article.Value, mbid, a.logger)
+	if err != nil {
+		return "", "", err
+	}
+	qid := extractQID(sparql.Results.Bindings[0].Item.Value)
+	return title, qid, nil
+}
+
+// extractQID pulls the Q-ID out of a Wikidata entity URI such as
+// "http://www.wikidata.org/entity/Q44190". Returns "" if the URI does not
+// contain a recognizable Q-ID suffix. An empty result is not fatal; callers
+// simply skip localized sitelink lookups when the Q-ID is unknown.
+func extractQID(entityURI string) string {
+	if entityURI == "" {
+		return ""
+	}
+	// Take the segment after the last '/'.
+	idx := strings.LastIndex(entityURI, "/")
+	if idx < 0 || idx == len(entityURI)-1 {
+		return ""
+	}
+	tail := entityURI[idx+1:]
+	if !isQID(tail) {
+		return ""
+	}
+	return strings.ToUpper(tail)
+}
+
+// resolveToLocalizedTitle looks up the Wikipedia article title for the given
+// Q-ID on a specific language wiki via Wikidata sitelinks. Returns
+// provider.ErrNotFound when no sitelink exists for that language.
+func (a *Adapter) resolveToLocalizedTitle(ctx context.Context, qid, lang string) (string, error) {
+	site := lang + "wiki"
+	params := url.Values{
+		"action":     {"wbgetentities"},
+		"ids":        {strings.ToUpper(qid)},
+		"props":      {"sitelinks"},
+		"sitefilter": {site},
+		"format":     {"json"},
+	}
+	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("creating Wikidata API request: %w", err),
+		}
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	a.logger.Debug("resolving localized Wikipedia title via Wikidata sitelinks",
+		slog.String("qid", qid), slog.String("lang", lang))
+
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikidata endpoint
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -418,7 +597,7 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikidata SPARQL HTTP %d", resp.StatusCode),
+			Cause:    fmt.Errorf("wikidata API HTTP %d", resp.StatusCode),
 		}
 	}
 
@@ -426,23 +605,29 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("reading SPARQL response: %w", err),
+			Cause:    fmt.Errorf("reading Wikidata API response: %w", err),
 		}
 	}
 
-	var sparql sparqlResponse
-	if err := json.Unmarshal(body, &sparql); err != nil {
+	var wbResp wbEntityResponse
+	if err := json.Unmarshal(body, &wbResp); err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("parsing SPARQL response: %w", err),
+			Cause:    fmt.Errorf("parsing Wikidata API response: %w", err),
 		}
 	}
 
-	if len(sparql.Results.Bindings) == 0 {
-		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: mbid}
+	upperQID := strings.ToUpper(qid)
+	entity, ok := wbResp.Entities[upperQID]
+	if !ok {
+		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: qid}
 	}
 
-	return extractArticleTitle(sparql.Results.Bindings[0].Article.Value, mbid, a.logger)
+	link, ok := entity.Sitelinks[site]
+	if !ok || link.Title == "" {
+		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: qid}
+	}
+	return link.Title, nil
 }
 
 // resolveFromQID uses the Wikidata entity API to resolve a Q-ID to a

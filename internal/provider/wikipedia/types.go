@@ -1,9 +1,15 @@
 package wikipedia
 
 // sparqlResponse is the SPARQL query result for resolving MBID to Wikipedia title.
+// The Item binding carries the Wikidata entity URI (e.g.
+// https://www.wikidata.org/entity/Q44190) which is used to derive the Q-ID for
+// localized sitelink lookups.
 type sparqlResponse struct {
 	Results struct {
 		Bindings []struct {
+			Item struct {
+				Value string `json:"value"`
+			} `json:"item"`
 			Article struct {
 				Value string `json:"value"`
 			} `json:"article"`
