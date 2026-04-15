@@ -93,7 +93,9 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 // fetches the extract from that language's Wikipedia. The first language
 // that returns a real article wins; missing articles, not-found responses,
 // and empty extracts cause a graceful fall-through to the next language.
-// English is always tried last as a final fallback.
+// English is appended as a fallback when not already present in the
+// preference list; if the user has explicitly placed "en" earlier, it
+// is tried in that position rather than last.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
 	// Resolve the input ID to an English-wiki title and, when possible, a
 	// Wikidata Q-ID that we can use to look up localized sitelinks.
@@ -432,15 +434,13 @@ func (a *Adapter) resolveToTitleAndQID(ctx context.Context, id string) (string, 
 // preference to a 2- or 3-letter lowercase code, removes duplicates while
 // preserving order, and appends "en" at the end if not already present.
 func orderedLanguages(prefs []string) []string {
-	// Cap the preallocation hint to a sane upper bound. Language preference
-	// lists are tiny in practice; the explicit cap also silences CodeQL's
-	// "size computation may overflow" warning on len(prefs)+1.
-	n := len(prefs)
-	if n > 256 {
-		n = 256
-	}
-	seen := make(map[string]struct{}, n+1)
-	out := make([]string, 0, n+1)
+	// Use a small literal preallocation hint. Language preference lists are
+	// tiny in practice (typically 1-5 entries), so the slice will rarely need
+	// to grow. Avoiding any arithmetic on len(prefs) also keeps CodeQL's
+	// "size computation may overflow" rule satisfied.
+	const initialHint = 8
+	seen := make(map[string]struct{}, initialHint)
+	out := make([]string, 0, initialHint)
 	for _, p := range prefs {
 		base := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
 		if len(base) != 2 && len(base) != 3 {
