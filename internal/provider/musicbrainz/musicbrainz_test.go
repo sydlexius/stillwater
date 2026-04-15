@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -45,6 +46,22 @@ func newTestServer(t *testing.T) *httptest.Server {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
+			// Member alias lookups return per-member fixtures so tests can
+			// verify localization behavior without mocking a second server.
+			switch mbid {
+			case "8bfac288-ccc5-448d-9573-c33ea2aa5c30":
+				w.Write(loadFixture(t, "member_thom_yorke.json"))
+				return
+			case "member-002":
+				w.Write(loadFixture(t, "member_jonny_greenwood.json"))
+				return
+			case "member-003":
+				w.Write(loadFixture(t, "member_no_aliases.json"))
+				return
+			case "member-error":
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			w.Write(loadFixture(t, "artist_radiohead.json"))
 
 		case r.URL.Path == "/release-group" && r.URL.Query().Get("artist") != "":
@@ -64,6 +81,9 @@ func newTestServer(t *testing.T) *httptest.Server {
 func newTestAdapter(t *testing.T, baseURL string) *Adapter {
 	t.Helper()
 	limiter := provider.NewRateLimiterMap()
+	// Tests use a high rate to avoid the real 1 req/sec MusicBrainz pacing.
+	// Production uses the default limiter; see internal/provider/ratelimit.go.
+	limiter.SetLimit(provider.NameMusicBrainz, 1000)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	return NewWithBaseURL(limiter, logger, baseURL)
 }
@@ -1072,5 +1092,225 @@ func TestMergeDateRanges_NilAndEmpty(t *testing.T) {
 	e2, l2 := mergeDateRanges([][2]string{})
 	if e2 != "" || l2 != "" {
 		t.Errorf("empty input: expected both empty, got %q %q", e2, l2)
+	}
+}
+
+// --- #964: member name localization via MusicBrainz aliases ---
+
+// TestGetArtist_MemberNamePromotion drives member alias localization through
+// GetArtist, verifying each table case from the issue: language match,
+// no-match fallback, cache-hit behavior, and fetch failure tolerance.
+func TestGetArtist_MemberNamePromotion(t *testing.T) {
+	tests := []struct {
+		name      string
+		langs     []string
+		wantThom  string
+		wantJonny string
+		wantColin string
+	}{
+		{
+			name:      "JapanesePreferenceLocalizesMembers",
+			langs:     []string{"ja"},
+			wantThom:  "トム・ヨーク",
+			wantJonny: "ジョニー・グリーンウッド",
+			// Colin has no aliases, so his canonical name is retained.
+			wantColin: "Colin Greenwood",
+		},
+		{
+			name:      "UnmatchedPreferenceKeepsCanonicalName",
+			langs:     []string{"de"},
+			wantThom:  "Thom Yorke",
+			wantJonny: "Jonny Greenwood",
+			wantColin: "Colin Greenwood",
+		},
+		{
+			name:      "NoPreferencesSkipsMemberFetch",
+			langs:     nil,
+			wantThom:  "Thom Yorke",
+			wantJonny: "Jonny Greenwood",
+			wantColin: "Colin Greenwood",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t)
+			defer srv.Close()
+			a := newTestAdapter(t, srv.URL)
+
+			ctx := context.Background()
+			if len(tc.langs) > 0 {
+				ctx = provider.WithMetadataLanguages(ctx, tc.langs)
+			}
+
+			meta, err := a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+			if err != nil {
+				t.Fatalf("GetArtist: %v", err)
+			}
+
+			byMBID := make(map[string]string, len(meta.Members))
+			for _, m := range meta.Members {
+				byMBID[m.MBID] = m.Name
+			}
+
+			if got := byMBID["8bfac288-ccc5-448d-9573-c33ea2aa5c30"]; got != tc.wantThom {
+				t.Errorf("Thom Yorke: got %q, want %q", got, tc.wantThom)
+			}
+			if got := byMBID["member-002"]; got != tc.wantJonny {
+				t.Errorf("Jonny Greenwood: got %q, want %q", got, tc.wantJonny)
+			}
+			if got := byMBID["member-003"]; got != tc.wantColin {
+				t.Errorf("Colin Greenwood: got %q, want %q", got, tc.wantColin)
+			}
+		})
+	}
+}
+
+// TestGetArtist_MemberAliasFetchFailureFallsBack verifies that a per-member
+// upstream failure does not block the overall artist refresh and that the
+// member retains the canonical (non-localized) name returned in the primary
+// artist payload.
+func TestGetArtist_MemberAliasFetchFailureFallsBack(t *testing.T) {
+	// Serve a custom artist payload that includes a member whose MBID always
+	// returns 503. The rest of the artist should still localize where it can.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mbid := strings.TrimPrefix(r.URL.Path, "/artist/")
+		switch mbid {
+		case "main-artist":
+			w.Write([]byte(`{
+				"id": "main-artist",
+				"type": "Group",
+				"name": "Test Band",
+				"sort-name": "Test Band",
+				"relations": [
+					{"type": "member of band", "target-type": "artist", "direction": "backward",
+					 "artist": {"id": "member-error", "name": "Broken Member", "sort-name": "Member, Broken", "type": "Person"}},
+					{"type": "member of band", "target-type": "artist", "direction": "backward",
+					 "artist": {"id": "8bfac288-ccc5-448d-9573-c33ea2aa5c30", "name": "Thom Yorke", "sort-name": "Yorke, Thom", "type": "Person"}}
+				]
+			}`))
+		case "member-error":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "8bfac288-ccc5-448d-9573-c33ea2aa5c30":
+			w.Write(loadFixture(t, "member_thom_yorke.json"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+
+	meta, err := a.GetArtist(ctx, "main-artist")
+	if err != nil {
+		t.Fatalf("GetArtist should not fail because one member alias fetch failed: %v", err)
+	}
+	if len(meta.Members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(meta.Members))
+	}
+
+	var broken, thom string
+	for _, m := range meta.Members {
+		switch m.MBID {
+		case "member-error":
+			broken = m.Name
+		case "8bfac288-ccc5-448d-9573-c33ea2aa5c30":
+			thom = m.Name
+		}
+	}
+	if broken != "Broken Member" {
+		t.Errorf("broken member: expected canonical name retained, got %q", broken)
+	}
+	if thom != "トム・ヨーク" {
+		t.Errorf("good member: expected Japanese promotion, got %q", thom)
+	}
+}
+
+// TestLocalizeMembers_CacheAvoidsRefetch verifies the per-request cache
+// prevents redundant upstream calls when the same member MBID appears more
+// than once in a single refresh.
+func TestLocalizeMembers_CacheAvoidsRefetch(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_thom_yorke.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+
+	members := []provider.MemberInfo{
+		{MBID: "8bfac288-ccc5-448d-9573-c33ea2aa5c30", Name: "Thom Yorke"},
+		{MBID: "8bfac288-ccc5-448d-9573-c33ea2aa5c30", Name: "Thom Yorke"},
+		{MBID: "8bfac288-ccc5-448d-9573-c33ea2aa5c30", Name: "Thom Yorke"},
+	}
+	a.localizeMembers(ctx, members, []string{"ja"}, newMemberAliasCache())
+
+	if hits != 1 {
+		t.Errorf("expected exactly 1 upstream fetch due to cache, got %d", hits)
+	}
+	for _, m := range members {
+		if m.Name != "トム・ヨーク" {
+			t.Errorf("expected all members localized, got %q", m.Name)
+		}
+	}
+}
+
+// TestLocalizeMembers_RateLimiterIsInvoked ensures the member-alias path
+// routes through the shared rate limiter. We install a 1 req/sec limiter
+// and verify two sequential lookups take at least ~1 second in aggregate.
+func TestLocalizeMembers_RateLimiterIsInvoked(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_thom_yorke.json"))
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	// Real MB production rate; burst 1 means the second call waits ~1 second.
+	limiter.SetLimit(provider.NameMusicBrainz, 1)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, logger, srv.URL)
+
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+	members := []provider.MemberInfo{
+		{MBID: "mbid-a", Name: "A"},
+		{MBID: "mbid-b", Name: "B"},
+	}
+
+	start := time.Now()
+	a.localizeMembers(ctx, members, []string{"ja"}, newMemberAliasCache())
+	elapsed := time.Since(start)
+
+	// Two distinct MBIDs; burst=1 means the second Wait blocks ~1s. Allow
+	// some slack for CI. If the limiter were bypassed this would be ms-scale.
+	if elapsed < 800*time.Millisecond {
+		t.Errorf("expected rate-limited sequential fetch (>=800ms), got %v", elapsed)
+	}
+}
+
+// TestLocalizeMembers_PreservesNonMBIDMembers asserts that members without
+// an MBID (user-added entries that have not been matched to MusicBrainz)
+// keep whatever name they arrived with. Localization only runs for members
+// whose MBID can be resolved upstream.
+func TestLocalizeMembers_PreservesNonMBIDMembers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no upstream fetch expected for member without MBID, but got request %q", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	members := []provider.MemberInfo{
+		{MBID: "", Name: "Custom Manual Entry"},
+	}
+	a.localizeMembers(context.Background(), members, []string{"ja"}, newMemberAliasCache())
+
+	if members[0].Name != "Custom Manual Entry" {
+		t.Errorf("expected user-added member name preserved, got %q", members[0].Name)
 	}
 }

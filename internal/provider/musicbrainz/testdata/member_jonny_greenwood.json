@@ -1,0 +1,15 @@
+{
+  "id": "member-002",
+  "type": "Person",
+  "name": "Jonny Greenwood",
+  "sort-name": "Greenwood, Jonny",
+  "aliases": [
+    {
+      "name": "ジョニー・グリーンウッド",
+      "sort-name": "ジョニー・グリーンウッド",
+      "type": "Artist name",
+      "locale": "ja",
+      "primary": true
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "8bfac288-ccc5-448d-9573-c33ea2aa5c30",
+  "type": "Person",
+  "name": "Thom Yorke",
+  "sort-name": "Yorke, Thom",
+  "aliases": [
+    {
+      "name": "トム・ヨーク",
+      "sort-name": "トム・ヨーク",
+      "type": "Artist name",
+      "locale": "ja",
+      "primary": true
+    },
+    {
+      "name": "Thomas Edward Yorke",
+      "sort-name": "Yorke, Thomas Edward",
+      "type": "Legal name",
+      "locale": "en",
+      "primary": false
+    }
+  ]
+}
