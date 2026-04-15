@@ -127,7 +127,115 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
-	return a.mapArtist(ctx, &artist), nil
+	meta := a.mapArtist(ctx, &artist)
+
+	// Localize member names from each member's primary aliases when the user
+	// has set metadata language preferences. MusicBrainz omits aliases from
+	// embedded relation artists, so a per-member lookup is required. Failures
+	// are logged and the canonical (non-localized) name is retained so a single
+	// member fetch error cannot block the artist refresh.
+	if langPrefs := provider.MetadataLanguages(ctx); len(langPrefs) > 0 && len(meta.Members) > 0 {
+		a.localizeMembers(ctx, meta.Members, langPrefs, newMemberAliasCache())
+	}
+
+	return meta, nil
+}
+
+// memberAliasCache is an in-memory, per-request cache of member MBID to
+// fetched aliases. It avoids refetching the same member when the same MBID
+// appears across multiple code paths during a single artist refresh.
+type memberAliasCache struct {
+	entries map[string][]MBAlias
+}
+
+func newMemberAliasCache() *memberAliasCache {
+	return &memberAliasCache{entries: make(map[string][]MBAlias)}
+}
+
+// localizeMembers promotes each member's name to its best-matching primary
+// alias for the configured language preferences. Members without an MBID, or
+// whose alias fetch fails, retain their canonical name. The shared rate
+// limiter ensures MusicBrainz's 1 req/sec policy is honored even when many
+// members are resolved in sequence.
+func (a *Adapter) localizeMembers(ctx context.Context, members []provider.MemberInfo, langPrefs []string, cache *memberAliasCache) {
+	for i := range members {
+		m := &members[i]
+		mbid := m.MBID
+		if mbid == "" {
+			continue
+		}
+
+		aliases, cached := cache.entries[mbid]
+		if !cached {
+			fetched, err := a.fetchMemberAliases(ctx, mbid)
+			if err != nil {
+				a.logger.Warn("member alias fetch failed; retaining canonical name",
+					slog.String("member_mbid", mbid),
+					slog.String("member_name", m.Name),
+					slog.Any("err", err))
+				// Cache the failure as an empty slice so repeated members with
+				// the same MBID do not trigger redundant fetches.
+				cache.entries[mbid] = nil
+				continue
+			}
+			cache.entries[mbid] = fetched
+			aliases = fetched
+		}
+
+		if len(aliases) == 0 {
+			continue
+		}
+
+		bestScore := -1
+		var bestAlias MBAlias
+		for _, al := range aliases {
+			if al.Name == "" || !al.Primary {
+				continue
+			}
+			score := provider.MatchLanguagePreference(al.Locale, langPrefs)
+			if score >= 0 && (bestScore < 0 || score < bestScore) {
+				bestScore = score
+				bestAlias = al
+			}
+		}
+		if bestScore < 0 {
+			continue
+		}
+		promoted := normalizeHyphens(bestAlias.Name)
+		if promoted == "" || promoted == m.Name {
+			continue
+		}
+		a.logger.Debug("promoting localized member name",
+			slog.String("from", m.Name),
+			slog.String("to", promoted),
+			slog.String("locale", bestAlias.Locale))
+		m.Name = promoted
+	}
+}
+
+// fetchMemberAliases retrieves only the alias list for a given member MBID.
+// Uses the shared rate-limited doRequest path so the MusicBrainz 1 req/sec
+// policy is enforced across all provider traffic.
+func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) ([]MBAlias, error) {
+	params := url.Values{
+		"inc": {"aliases"},
+		"fmt": {"json"},
+	}
+	a.mu.RLock()
+	base := a.baseURL
+	a.mu.RUnlock()
+	reqURL := base + "/artist/" + url.PathEscape(mbid) + "?" + params.Encode()
+
+	body, err := a.doRequest(ctx, reqURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp MBArtist
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parsing member alias response: %w", err)
+	}
+	return resp.Aliases, nil
 }
 
 // GetImages returns nil since MusicBrainz does not host artist images.
