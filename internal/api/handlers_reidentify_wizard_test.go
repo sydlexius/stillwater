@@ -183,10 +183,17 @@ func TestWizardStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create fresh: %v", err)
 		}
-		if got := s.get(stale.ID); got != nil {
+		// Assert stale removal directly from the store's internal map so
+		// we measure create-time pruning rather than the side-effect
+		// eviction performed by get().
+		s.mu.Lock()
+		_, staleStillPresent := s.sessions[stale.ID]
+		_, freshPresent := s.sessions[fresh.ID]
+		s.mu.Unlock()
+		if staleStillPresent {
 			t.Errorf("stale session should have been pruned during create")
 		}
-		if got := s.get(fresh.ID); got != fresh {
+		if !freshPresent {
 			t.Errorf("fresh session missing after create")
 		}
 	})
@@ -563,6 +570,12 @@ func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 	}
 	if resp["accepted"].(float64) != 1 {
 		t.Errorf("accepted = %v, want 1", resp["accepted"])
+	}
+	if resp["skipped"].(float64) != 0 {
+		t.Errorf("skipped = %v, want 0", resp["skipped"])
+	}
+	if resp["declined"].(float64) != 0 {
+		t.Errorf("declined = %v, want 0", resp["declined"])
 	}
 	if resp["leftover"].(float64) != 2 {
 		t.Errorf("leftover = %v, want 2", resp["leftover"])
