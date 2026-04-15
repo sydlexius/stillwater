@@ -401,6 +401,19 @@ func TestHandleReIdentifyWizardSkip(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
+	// Lock in the OpenAPI-documented response contract so a regression
+	// away from {status: advanced, index: N} surfaces here, not later in
+	// the client.
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "advanced" {
+		t.Errorf("status = %v, want advanced", resp["status"])
+	}
+	if idx, ok := resp["index"].(float64); !ok || idx != 1 {
+		t.Errorf("index = %v, want 1", resp["index"])
+	}
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if sess.Skipped != 1 {
@@ -426,6 +439,16 @@ func TestHandleReIdentifyWizardDecline(t *testing.T) {
 	r.handleReIdentifyWizardDecline(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "advanced" {
+		t.Errorf("status = %v, want advanced", resp["status"])
+	}
+	if idx, ok := resp["index"].(float64); !ok || idx != 1 {
+		t.Errorf("index = %v, want 1", resp["index"])
 	}
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
