@@ -379,7 +379,7 @@ templ IndexPage(assets AssetPaths, initialQuery string) {
 						}).then(function(res) {
 							if (res.ok) {
 								bulkBar.classList.add('hidden');
-								htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+								htmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
 							} else {
 								window.showToast && window.showToast('Dismiss failed (' + res.status + ')');
 							}
@@ -405,7 +405,7 @@ templ IndexPage(assets AssetPaths, initialQuery string) {
 									var fixesFailedTpl = pluralize(failed, bulkBar.dataset.labelFixesFailedOne || '1 of {total} fixes failed', bulkBar.dataset.labelFixesFailedOther || '{failed} of {total} fixes failed');
 									window.showToast && window.showToast(fixesFailedTpl.replace('{failed}', failed).replace('{total}', total));
 								}
-								htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+								htmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
 								return;
 							}
 							bulkFixBtn.textContent = (bulkBar.dataset.labelFixingProgress || 'Fixing {current}/{total}...').replace('{current}', i + 1).replace('{total}', total);
@@ -431,9 +431,10 @@ templ IndexPage(assets AssetPaths, initialQuery string) {
 				});
 
 				// Reload the full action queue after each fix/dismiss so filter chip
-				// counts, pagination, and empty-state stay in sync.
+				// counts, pagination, and empty-state stay in sync. Forward the
+				// current query string so the reload preserves active filters.
 				document.body.addEventListener('dashboard:action-resolved', function() {
-					htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+					htmx.ajax('GET', '/dashboard/actions' + (window.location.search || ''), {target: '#action-queue', swap: 'innerHTML'});
 				});
 			})();
 		</script>

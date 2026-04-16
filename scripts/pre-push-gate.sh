@@ -59,35 +59,12 @@ else
 fi
 
 echo ""
-echo "=== Coverage on changed files ==="
-changed_go=$(git diff "$BASE"..HEAD --name-only -- '*.go' | grep -v '_test.go' || true)
-if [ -z "$changed_go" ]; then
-  echo "Skipped (no Go source changes)."
-else
-  if ! cover_funcs=$(go tool cover -func="$COVER_OUT" 2>/dev/null); then
-    echo "WARNING: Unable to parse coverage profile; skipping changed-file coverage check."
-    echo "Codecov will still validate patch coverage in CI."
-    cover_funcs=""
-  fi
-  uncovered=""
-  while IFS= read -r f; do
-    hits=$(printf '%s\n' "$cover_funcs" | grep -F "/${f}:" | awk '$NF == "0.0%"' || true)
-    if [ -n "$hits" ]; then
-      uncovered="${uncovered}${hits}"$'\n'
-    fi
-  done <<< "$changed_go"
-
-  if [ -z "$cover_funcs" ]; then
-    :
-  elif [ -n "$uncovered" ]; then
-    echo "WARNING: Functions with 0% coverage in changed files:"
-    echo "$uncovered"
-    echo "These may be intentionally tested via integration or missing unit tests."
-    echo "Codecov will flag patch coverage -- consider adding tests before opening a PR."
-  else
-    echo "OK"
-  fi
-fi
+echo "=== Patch coverage ==="
+# Matches codecov.yml's 70% patch threshold. The script approximates the
+# same semantics locally so we catch gaps before push instead of learning
+# about them from a failing codecov check.
+COVER_OUT="$COVER_OUT" BASE="$BASE" PATCH_COVERAGE_THRESHOLD=70 \
+  bash "$SCRIPT_DIR/patch-coverage.sh"
 
 echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
