@@ -457,6 +457,23 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 		t.Errorf("info count = %d, want 1", counts["info"])
 	}
 
+	// Facet self-exclusion: the severity dimension is the one being
+	// counted, so passing p.Severity must NOT restrict the result. If
+	// CountActiveViolationsBySeverity ever starts honoring its own
+	// parameter, the dashboard's severity badges fall out of sync with
+	// the filtered list and none of the other assertions here would
+	// catch it.
+	facet, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{Severity: "error"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity(facet): %v", err)
+	}
+	for _, sev := range []string{"error", "warning", "info"} {
+		if facet[sev] != counts[sev] {
+			t.Errorf("severity facet leaked its own filter: %s count = %d under Severity=error, want %d (unfiltered)",
+				sev, facet[sev], counts[sev])
+		}
+	}
+
 	// With no active violations (empty DB), all counts should be zero.
 	db2 := setupTestDB(t)
 	svc2 := NewService(db2)
@@ -1894,6 +1911,22 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 	// No metadata violations inserted.
 	if counts["metadata"] != 0 {
 		t.Errorf("metadata count = %d, want 0", counts["metadata"])
+	}
+
+	// Facet self-exclusion: the category dimension is the one being
+	// counted, so passing p.Category must NOT restrict the result. If
+	// CountActiveViolationsByCategory ever starts honoring its own
+	// parameter, the dashboard's category badges silently fall out of
+	// sync with the filtered list.
+	facet, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{Category: "nfo"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory(facet): %v", err)
+	}
+	for _, cat := range []string{"nfo", "image", "metadata"} {
+		if facet[cat] != counts[cat] {
+			t.Errorf("category facet leaked its own filter: %s count = %d under Category=nfo, want %d (unfiltered)",
+				cat, facet[cat], counts[cat])
+		}
 	}
 
 	// Empty DB: all counts should be zero.
