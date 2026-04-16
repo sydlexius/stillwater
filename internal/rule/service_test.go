@@ -442,7 +442,7 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 		}
 	}
 
-	counts, err := svc.CountActiveViolationsBySeverity(ctx)
+	counts, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 	// With no active violations (empty DB), all counts should be zero.
 	db2 := setupTestDB(t)
 	svc2 := NewService(db2)
-	counts2, err := svc2.CountActiveViolationsBySeverity(ctx)
+	counts2, err := svc2.CountActiveViolationsBySeverity(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity (empty): %v", err)
 	}
@@ -1878,7 +1878,7 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 		}
 	}
 
-	counts, err := svc.CountActiveViolationsByCategory(ctx)
+	counts, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByCategory: %v", err)
 	}
@@ -1902,7 +1902,7 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 	if err := svc2.SeedDefaults(ctx); err != nil {
 		t.Fatalf("SeedDefaults (empty): %v", err)
 	}
-	counts2, err := svc2.CountActiveViolationsByCategory(ctx)
+	counts2, err := svc2.CountActiveViolationsByCategory(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByCategory (empty): %v", err)
 	}

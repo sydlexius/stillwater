@@ -771,6 +771,27 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, p.Category)
 	}
 
+	// Free-text search across artist name, message, and rule ID
+	if p.Search != "" {
+		like := "%" + p.Search + "%"
+		whereClauses = append(whereClauses, "(rv.artist_name LIKE ? OR rv.message LIKE ? OR rv.rule_id LIKE ?)")
+		args = append(args, like, like, like)
+	}
+
+	// Library filter via artist join (artists table is already joined)
+	if p.LibraryID != "" {
+		whereClauses = append(whereClauses, "a.library_id = ?")
+		args = append(args, p.LibraryID)
+	}
+
+	// Fixable filter
+	switch p.Fixable {
+	case "yes":
+		whereClauses = append(whereClauses, "rv.fixable = 1")
+	case "no":
+		whereClauses = append(whereClauses, "rv.fixable = 0")
+	}
+
 	return whereClauses, args, needJoin
 }
 
@@ -1036,13 +1057,21 @@ func (s *Service) ResolveViolation(ctx context.Context, id string) error {
 }
 
 // CountActiveViolationsBySeverity returns the count of active (open + pending_choice)
-// violations grouped by severity level.
-func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT severity, COUNT(*) FROM rule_violations
-		WHERE status IN (?, ?)
-		GROUP BY severity
-	`, ViolationStatusOpen, ViolationStatusPendingChoice)
+// violations grouped by severity level. Applies the facet-count pattern: all
+// filter dimensions in p EXCEPT severity are applied. Pass a zero-value
+// ViolationListParams to get global unfiltered counts.
+func (s *Service) CountActiveViolationsBySeverity(ctx context.Context, p ViolationListParams) (map[string]int, error) {
+	where, args, needJoin := countActiveWithFilter(p, "severity")
+	// Severity is on rv; use rv alias consistently even when no join.
+	from := ` FROM rule_violations rv`
+	if needJoin {
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
+	} else if strings.Contains(where, "a.library_id") {
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
+	}
+	query := `SELECT rv.severity, COUNT(*)` + from + where + ` GROUP BY rv.severity` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by severity: %w", err)
 	}
@@ -1065,6 +1094,148 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[stri
 	return counts, rows.Err()
 }
 
+// RuleViolationCount holds a rule ID, its human-readable name, and the count
+// of active violations for that rule.
+type RuleViolationCount struct {
+	RuleID   string `json:"rule_id"`
+	RuleName string `json:"rule_name"`
+	Count    int    `json:"count"`
+}
+
+// countActiveWithFilter builds the WHERE/JOIN portion of a facet-count query
+// given a filter. It always forces Status=active and clears the dimension the
+// caller is counting (so that dimension's own filter is not applied to its
+// own counts, yielding standard facet-count semantics: "if I selected X,
+// how many violations would remain?").
+//
+// excludeDim is the ViolationListParams field to clear before building the
+// filter: "severity", "category", "rule", "library", or "fixable". Pass ""
+// to apply the filter as-is.
+func countActiveWithFilter(p ViolationListParams, excludeDim string) (where string, args []any, needJoin bool) {
+	p.Status = "active"
+	switch excludeDim {
+	case "severity":
+		p.Severity = ""
+	case "category":
+		p.Category = ""
+	case "rule":
+		p.RuleID = ""
+	case "library":
+		p.LibraryID = ""
+	case "fixable":
+		p.Fixable = ""
+	}
+	clauses, args, needJoin := buildViolationFilter(p)
+	if len(clauses) == 0 {
+		return "", args, needJoin
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args, needJoin
+}
+
+// CountActiveViolationsByRule returns the count of active (open + pending_choice)
+// violations grouped by rule, along with the rule name. Only rules with at
+// least one matching violation are returned. Applies the facet-count pattern:
+// all filter dimensions in p EXCEPT rule/rule_id are applied, so the caller
+// sees counts within the current filter context.
+func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationListParams) ([]RuleViolationCount, error) {
+	where, args, needJoin := countActiveWithFilter(p, "rule")
+	// The rule counts always need the rules join for r.name and category filtering.
+	from := ` FROM rule_violations rv JOIN rules r ON r.id = rv.rule_id`
+	// needJoin signals the category filter needs `r` (already joined above).
+	// The library filter independently requires the artists-table join because
+	// a.library_id is in the WHERE clause.
+	if needJoin || strings.Contains(where, "a.library_id") {
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
+	}
+	query := `SELECT rv.rule_id, r.name, COUNT(*) AS cnt` + from + where + ` GROUP BY rv.rule_id ORDER BY cnt DESC, rv.rule_id ASC` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("counting active violations by rule: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var counts []RuleViolationCount
+	for rows.Next() {
+		var rc RuleViolationCount
+		if err := rows.Scan(&rc.RuleID, &rc.RuleName, &rc.Count); err != nil {
+			return nil, fmt.Errorf("scanning rule violation count: %w", err)
+		}
+		counts = append(counts, rc)
+	}
+	return counts, rows.Err()
+}
+
+// CountActiveViolationsByLibrary returns the count of active (open + pending_choice)
+// violations grouped by library ID. Applies the facet-count pattern:
+// all filter dimensions in p EXCEPT library are applied.
+func (s *Service) CountActiveViolationsByLibrary(ctx context.Context, p ViolationListParams) (map[string]int, error) {
+	where, args, needJoin := countActiveWithFilter(p, "library")
+	// Library counts always need the artist join for a.library_id.
+	from := ` FROM rule_violations rv JOIN artists a ON a.id = rv.artist_id`
+	if needJoin {
+		// needJoin signals a rules-table join for category filter.
+		from += ` JOIN rules r ON r.id = rv.rule_id`
+	}
+	// Constrain non-NULL library even without other filters so the grouping key stays usable.
+	nonNull := " WHERE a.library_id IS NOT NULL"
+	if where != "" {
+		nonNull = where + " AND a.library_id IS NOT NULL"
+	}
+	query := `SELECT a.library_id, COUNT(*) AS cnt` + from + nonNull + ` GROUP BY a.library_id` //nolint:gosec // G202: from/nonNull are built from whitelisted clauses with parameterized placeholders
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("counting active violations by library: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var libID string
+		var cnt int
+		if err := rows.Scan(&libID, &cnt); err != nil {
+			return nil, fmt.Errorf("scanning library violation count: %w", err)
+		}
+		counts[libID] = cnt
+	}
+	return counts, rows.Err()
+}
+
+// CountActiveViolationsByFixable returns the count of active (open + pending_choice)
+// violations grouped by fixable status. Applies the facet-count pattern:
+// all filter dimensions in p EXCEPT fixable are applied.
+func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p ViolationListParams) (fixable int, notFixable int, err error) {
+	where, args, needJoin := countActiveWithFilter(p, "fixable")
+	from := ` FROM rule_violations rv`
+	if needJoin {
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
+	} else if strings.Contains(where, "a.library_id") {
+		// The library filter requires the artist join even when category is not set.
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
+	}
+	query := `SELECT rv.fixable, COUNT(*) AS cnt` + from + where + ` GROUP BY rv.fixable` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, 0, fmt.Errorf("counting active violations by fixable: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var f, cnt int
+		if err := rows.Scan(&f, &cnt); err != nil {
+			return 0, 0, fmt.Errorf("scanning fixable violation count: %w", err)
+		}
+		if f == 1 {
+			fixable = cnt
+		} else {
+			notFixable = cnt
+		}
+	}
+	return fixable, notFixable, rows.Err()
+}
+
 // DismissViolationsForLibrary dismisses all active violations for artists that
 // belong to the given library. This should be called before deleting a library
 // with deleteArtists=false, because the delete NULLs artists.library_id and the
@@ -1085,15 +1256,19 @@ func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID str
 }
 
 // CountActiveViolationsByCategory returns the count of active (open + pending_choice)
-// violations grouped by rule category (nfo, image, metadata). Categories are
-// determined by joining the rules table.
-func (s *Service) CountActiveViolationsByCategory(ctx context.Context) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.category, COUNT(*) FROM rule_violations rv
-		JOIN rules r ON r.id = rv.rule_id
-		WHERE rv.status IN (?, ?)
-		GROUP BY r.category
-	`, ViolationStatusOpen, ViolationStatusPendingChoice)
+// violations grouped by rule category (nfo, image, metadata). Applies the
+// facet-count pattern: all filter dimensions in p EXCEPT category are applied.
+// Pass a zero-value ViolationListParams to get global unfiltered counts.
+func (s *Service) CountActiveViolationsByCategory(ctx context.Context, p ViolationListParams) (map[string]int, error) {
+	where, args, _ := countActiveWithFilter(p, "category")
+	// Category counts always need the rules join (GROUP BY r.category).
+	from := ` FROM rule_violations rv JOIN rules r ON r.id = rv.rule_id`
+	if strings.Contains(where, "a.library_id") {
+		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
+	}
+	query := `SELECT r.category, COUNT(*)` + from + where + ` GROUP BY r.category` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by category: %w", err)
 	}

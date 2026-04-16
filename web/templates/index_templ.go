@@ -9,7 +9,10 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // IndexPage renders the BLUF dashboard with action queue and activity feed.
-func IndexPage(assets AssetPaths) templ.Component {
+// initialQuery is a query-string suffix (e.g. "?severity=warning") that the
+// initial HTMX load of /dashboard/actions picks up so bookmarkable URLs
+// like /?severity=warning open the dashboard with that filter applied.
+func IndexPage(assets AssetPaths, initialQuery string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -42,202 +45,267 @@ func IndexPage(assets AssetPaths) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col gap-6 lg:flex-row\" id=\"dashboard-columns\"><section class=\"min-h-0 lg:w-[65%] lg:overflow-y-auto lg:pr-3\" style=\"scrollbar-width: thin;\"><div id=\"action-queue\" hx-get=\"/dashboard/actions\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><div class=\"space-y-3\"><div class=\"sw-card rounded-lg px-5 py-4 shadow-sm animate-pulse\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-3\"><div class=\"h-5 w-28 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-5 w-32 bg-red-100 dark:bg-red-900/30 rounded-full\"></div></div><div class=\"h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded\"></div></div></div><div class=\"flex gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"dashboard-main\"><section><div id=\"action-queue\" hx-get=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var3 string
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs("/dashboard/actions" + initialQuery)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 14, Col: 49}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-trigger=\"load\" hx-swap=\"innerHTML\"><div class=\"space-y-3\"><div class=\"sw-card rounded-lg px-5 py-4 shadow-sm animate-pulse\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-3\"><div class=\"h-5 w-28 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-5 w-32 bg-red-100 dark:bg-red-900/30 rounded-full\"></div></div><div class=\"h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded\"></div></div></div><div class=\"flex gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for i := 0; i < 4; i++ {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"h-8 w-28 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse\"></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"h-8 w-28 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse\"></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for i := 0; i < 5; i++ {
-				var templ_7745c5c3_Var3 = []any{"rounded-lg border-l-4 bg-white dark:bg-gray-800/80 px-3 py-2.5 shadow-sm animate-pulse",
+				var templ_7745c5c3_Var4 = []any{"rounded-lg border-l-4 bg-white dark:bg-gray-800/80 px-3 py-2.5 shadow-sm animate-pulse",
 					templ.KV("border-l-red-400", i%3 == 0),
 					templ.KV("border-l-indigo-400", i%3 == 1),
 					templ.KV("border-l-amber-400", i%3 == 2),
 				}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var3...)
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var4...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var3).String())
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var4).String())
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 1, Col: 0}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"flex items-center gap-2.5\"><div class=\"h-3.5 w-3.5 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-full\"></div><div class=\"flex-1 space-y-1.5\"><div class=\"h-3.5 w-32 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-3 w-56 bg-gray-200 dark:bg-gray-700 rounded\"></div></div><div class=\"flex gap-1\"><div class=\"h-6 w-20 bg-blue-100 dark:bg-blue-900/30 rounded-md\"></div><div class=\"h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-md\"></div></div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"><div class=\"flex items-center gap-2.5\"><div class=\"h-3.5 w-3.5 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-full\"></div><div class=\"flex-1 space-y-1.5\"><div class=\"h-3.5 w-32 bg-gray-200 dark:bg-gray-700 rounded\"></div><div class=\"h-3 w-56 bg-gray-200 dark:bg-gray-700 rounded\"></div></div><div class=\"flex gap-1\"><div class=\"h-6 w-20 bg-blue-100 dark:bg-blue-900/30 rounded-md\"></div><div class=\"h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-md\"></div></div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div><div id=\"bulk-bar\" data-label-selected-one=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var5 string
-			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.n_selected.one"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 59, Col: 65}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" data-label-selected-other=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><div id=\"bulk-bar\" data-label-selected-one=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.n_selected.other"))
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.n_selected.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 60, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 62, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" data-label-fix-selected=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" data-label-selected-other=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_selected"))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.n_selected.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 61, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 63, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-label-fixing-progress=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-label-fix-selected=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixing_progress"))
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 62, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 64, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-label-fixes-failed-one=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-label-fixing-progress=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixes_failed.one"))
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixing_progress"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 63, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 65, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-label-fixes-failed-other=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-label-fixes-failed-one=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixes_failed.other"))
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixes_failed.one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 64, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 66, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"fixed bottom-0 left-0 right-0 z-40 hidden border-t border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95\"><div class=\"mx-auto flex max-w-3xl items-center justify-between\"><div class=\"flex items-center gap-3\"><span id=\"bulk-count\" class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-label-fixes-failed-other=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.zero_selected"))
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fixes_failed.other"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 69, Col: 125}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 67, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</span> <button id=\"bulk-select-all-btn\" class=\"text-xs text-blue-600 dark:text-blue-400 hover:underline\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" class=\"fixed bottom-0 left-0 right-0 z-40 hidden border-t border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95\"><div class=\"mx-auto flex max-w-3xl items-center justify-between\"><div class=\"flex items-center gap-3\"><span id=\"bulk-count\" class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.select_all"))
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.zero_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 74, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 72, Col: 125}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</button> <button id=\"bulk-deselect-btn\" class=\"text-xs text-gray-500 dark:text-gray-400 hover:underline\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span> <button id=\"bulk-select-all-btn\" class=\"text-xs text-blue-600 dark:text-blue-400 hover:underline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.clear"))
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.select_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 80, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 77, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</button></div><div class=\"flex gap-2\"><button id=\"bulk-fix-btn\" class=\"inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</button> <button id=\"bulk-deselect-btn\" class=\"text-xs text-gray-500 dark:text-gray-400 hover:underline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_selected"))
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.clear"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 88, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 83, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</button> <button id=\"bulk-dismiss-btn\" class=\"inline-flex items-center gap-1.5 rounded-lg bg-gray-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-700 transition-colors\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</button></div><div class=\"flex gap-2\"><button id=\"bulk-fix-btn\" class=\"inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
-			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.dismiss_selected"))
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.fix_selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 94, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 91, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</button></div></div></div></section><aside class=\"min-h-0 lg:w-[35%] lg:overflow-y-auto lg:pl-4 lg:border-l border-gray-200 dark:border-gray-700/50\" style=\"scrollbar-width: thin;\"><div id=\"activity-feed\" hx-get=\"/dashboard/activity\" hx-trigger=\"load, every 10s\" hx-swap=\"innerHTML\"><div><div class=\"h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</button> <button id=\"bulk-dismiss-btn\" class=\"inline-flex items-center gap-1.5 rounded-lg bg-gray-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.dismiss_selected"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 97, Col: 46}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</button></div></div></div></section></div>    <aside id=\"activity-drawer\" class=\"sw-filter-flyout bg-white dark:bg-gray-800\" role=\"region\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.recent_activity"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 112, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" aria-hidden=\"true\" inert><div class=\"sw-filter-flyout-header\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var18 templ.SafeURL
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/activity"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 117, Col: 58}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" class=\"sw-filter-flyout-title inline-flex items-center gap-1.5 text-gray-900 dark:text-gray-100 hover:underline\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "dashboard.recent_activity"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 118, Col: 42}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " <svg class=\"h-3 w-3 opacity-60\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25\"></path></svg></a> <button type=\"button\" class=\"sw-filter-flyout-close\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var20 string
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.close"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/index.templ`, Line: 126, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" onclick=\"swDashboardPanels && swDashboardPanels.close()\"><svg class=\"h-5 w-5\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z\"></path></svg></button></div><div class=\"sw-filter-flyout-body sw-scroll\"><div id=\"activity-feed\" hx-get=\"/dashboard/activity\" hx-trigger=\"sw:activity-drawer-open from:body, sw:activity-drawer-poll from:body\" hx-swap=\"innerHTML\"><div><div class=\"h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for i := 0; i < 6; i++ {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div class=\"rounded-md px-2.5 py-2 animate-pulse\"><div class=\"h-3.5 w-28 bg-gray-200 dark:bg-gray-700 rounded mb-1.5\"></div><div class=\"h-3 w-44 bg-gray-200 dark:bg-gray-700 rounded\"></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"rounded-md px-2.5 py-2 animate-pulse\"><div class=\"h-3.5 w-28 bg-gray-200 dark:bg-gray-700 rounded mb-1.5\"></div><div class=\"h-3 w-44 bg-gray-200 dark:bg-gray-700 rounded\"></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div></div></aside></div>  <script>\n\t\t\t(function() {\n\t\t\t\tvar cols = document.getElementById('dashboard-columns');\n\t\t\t\tif (!cols) return;\n\t\t\t\tfunction setHeight() {\n\t\t\t\t\tif (window.innerWidth >= 1024) {\n\t\t\t\t\t\tvar top = cols.getBoundingClientRect().top;\n\t\t\t\t\t\tcols.style.height = (window.innerHeight - top - 16) + 'px';\n\t\t\t\t\t\tcols.style.overflow = 'hidden';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tcols.style.height = '';\n\t\t\t\t\t\tcols.style.overflow = '';\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tsetHeight();\n\t\t\t\twindow.addEventListener('resize', setHeight);\n\t\t\t})();\n\t\t</script>  <script>\n\t\t\t(function() {\n\t\t\t\t// Fetch last evaluation timestamp and display relative time.\n\t\t\t\tvar bp = (function() {\n\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t})();\n\t\t\t\tfunction updateLastEvaluated() {\n\t\t\t\t\tfetch(bp + '/api/v1/rules/status')\n\t\t\t\t\t\t.then(function(res) { return res.ok ? res.json() : null; })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\t\tif (!el || !data) { if (el) el.textContent = 'Status unavailable'; return; }\n\t\t\t\t\t\t\tif (!data.last_evaluation_at) { el.textContent = 'Never evaluated'; return; }\n\t\t\t\t\t\t\tvar evalTime = new Date(data.last_evaluation_at);\n\t\t\t\t\t\t\tif (isNaN(evalTime.getTime())) { el.textContent = 'Status unavailable'; return; }\n\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - evalTime) / 60000);\n\t\t\t\t\t\t\tvar label;\n\t\t\t\t\t\t\tif (diffMin < 1) label = 'just now';\n\t\t\t\t\t\t\telse if (diffMin < 60) label = diffMin + 'm ago';\n\t\t\t\t\t\t\telse if (diffMin < 1440) { var h = Math.floor(diffMin / 60); label = h + 'h ago'; }\n\t\t\t\t\t\t\telse { var d = Math.floor(diffMin / 1440); label = d + 'd ago'; }\n\t\t\t\t\t\t\tel.textContent = 'Evaluated ' + label;\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\t\tif (el) el.textContent = 'Status unavailable';\n\t\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\tupdateLastEvaluated();\n\t\t\t\t// Re-run after action queue reloads (the element is inside the HTMX fragment)\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Bulk selection\n\t\t\t\tvar queue = document.getElementById('action-queue');\n\t\t\t\tvar bulkBar = document.getElementById('bulk-bar');\n\t\t\t\tvar bulkCount = document.getElementById('bulk-count');\n\t\t\t\tvar bulkDismissBtn = document.getElementById('bulk-dismiss-btn');\n\t\t\t\tvar bulkFixBtn = document.getElementById('bulk-fix-btn');\n\t\t\t\tvar selectAllBtn = document.getElementById('bulk-select-all-btn');\n\t\t\t\tvar deselectBtn = document.getElementById('bulk-deselect-btn');\n\t\t\t\tif (!queue || !bulkBar) return;\n\n\t\t\t\tvar lastChecked = null; // for shift-click range selection\n\n\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t}\n\n\t\t\t\tfunction updateBulkBar() {\n\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\tvar total = queue.querySelectorAll('.bulk-check').length;\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tbulkBar.classList.remove('hidden');\n\t\t\t\t\t\tbulkCount.textContent = pluralize(checked.length, bulkBar.dataset.labelSelectedOne || '1 selected', bulkBar.dataset.labelSelectedOther || '{count} selected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Sync the Select All toggle\n\t\t\t\t\tvar toggle = document.getElementById('select-all-toggle');\n\t\t\t\t\tif (toggle) {\n\t\t\t\t\t\ttoggle.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\ttoggle.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction getCSRF() {\n\t\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);\n\t\t\t\t\treturn match ? decodeURIComponent(match[1]) : '';\n\t\t\t\t}\n\n\t\t\t\tfunction getCheckedIDs() {\n\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\treturn Array.prototype.map.call(checked, function(cb) { return cb.value; });\n\t\t\t\t}\n\n\t\t\t\tfunction setAllChecked(state) {\n\t\t\t\t\tqueue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });\n\t\t\t\t\tupdateBulkBar();\n\t\t\t\t}\n\n\t\t\t\t// Checkbox change with Shift-click range selection\n\t\t\t\tqueue.addEventListener('click', function(e) {\n\t\t\t\t\tvar cb = e.target;\n\t\t\t\t\tif (!cb.classList.contains('bulk-check')) return;\n\t\t\t\t\tif (e.shiftKey && lastChecked && lastChecked !== cb) {\n\t\t\t\t\t\tvar boxes = Array.from(queue.querySelectorAll('.bulk-check'));\n\t\t\t\t\t\tvar start = boxes.indexOf(lastChecked);\n\t\t\t\t\t\tvar end = boxes.indexOf(cb);\n\t\t\t\t\t\tif (start > -1 && end > -1) {\n\t\t\t\t\t\t\tvar lo = Math.min(start, end);\n\t\t\t\t\t\t\tvar hi = Math.max(start, end);\n\t\t\t\t\t\t\tfor (var i = lo; i <= hi; i++) {\n\t\t\t\t\t\t\t\tboxes[i].checked = cb.checked;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tlastChecked = cb;\n\t\t\t\t\tupdateBulkBar();\n\t\t\t\t});\n\n\t\t\t\t// Select All toggle in the header area\n\t\t\t\tqueue.addEventListener('change', function(e) {\n\t\t\t\t\tif (e.target.id === 'select-all-toggle') {\n\t\t\t\t\t\tsetAllChecked(e.target.checked);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (e.target.classList.contains('bulk-check')) updateBulkBar();\n\t\t\t\t});\n\n\t\t\t\t// Bulk bar Select All / Clear buttons\n\t\t\t\tif (selectAllBtn) {\n\t\t\t\t\tselectAllBtn.addEventListener('click', function() { setAllChecked(true); });\n\t\t\t\t}\n\t\t\t\tif (deselectBtn) {\n\t\t\t\t\tdeselectBtn.addEventListener('click', function() { setAllChecked(false); });\n\t\t\t\t}\n\n\t\t\t\tif (bulkDismissBtn) {\n\t\t\t\t\tbulkDismissBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/bulk-dismiss', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast('Dismiss failed (' + res.status + ')');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\twindow.showToast && window.showToast('Network error dismissing violations');\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tif (bulkFixBtn) {\n\t\t\t\t\tbulkFixBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tbulkFixBtn.disabled = true;\n\t\t\t\t\t\tvar total = ids.length, failed = 0;\n\t\t\t\t\t\t// Serialize requests to avoid overloading the fix pipeline.\n\t\t\t\t\t\tfunction fixNext(i) {\n\t\t\t\t\t\t\tif (i >= ids.length) {\n\t\t\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t\t\t\tbulkFixBtn.disabled = false;\n\t\t\t\t\t\t\t\tbulkFixBtn.textContent = bulkBar.dataset.labelFixSelected || 'Fix Selected';\n\t\t\t\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\t\t\t\tvar fixesFailedTpl = pluralize(failed, bulkBar.dataset.labelFixesFailedOne || '1 of {total} fixes failed', bulkBar.dataset.labelFixesFailedOther || '{failed} of {total} fixes failed');\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(fixesFailedTpl.replace('{failed}', failed).replace('{total}', total));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tbulkFixBtn.textContent = (bulkBar.dataset.labelFixingProgress || 'Fixing {current}/{total}...').replace('{current}', i + 1).replace('{total}', total);\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {\n\t\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\t\theaders: { 'X-CSRF-Token': getCSRF() }\n\t\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\t\tif (!res.ok) failed++;\n\t\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t}).finally(function() {\n\t\t\t\t\t\t\t\tfixNext(i + 1);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfixNext(0);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Reload the full action queue after each fix/dismiss so filter chip\n\t\t\t\t// counts, pagination, and empty-state stay in sync.\n\t\t\t\tdocument.body.addEventListener('dashboard:action-resolved', function() {\n\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div></div></div></aside>   <script>\n\t\t\t(function() {\n\t\t\t\tvar FILTER_ID = 'dashboard-filter-flyout';\n\t\t\t\tvar ACTIVITY_ID = 'activity-drawer';\n\t\t\t\tvar FILTER_TRIGGER = 'dashboard-filters-trigger';\n\t\t\t\tvar ACTIVITY_TRIGGER = 'activity-drawer-trigger';\n\n\t\t\t\tfunction panel(id) { return document.getElementById(id); }\n\t\t\t\tfunction isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }\n\n\t\t\t\tfunction openPanel(id, triggerID) {\n\t\t\t\t\tcloseAll();\n\t\t\t\t\tvar el = panel(id);\n\t\t\t\t\tif (!el) return;\n\t\t\t\t\tel.classList.add('sw-filter-flyout--open');\n\t\t\t\t\tel.setAttribute('aria-hidden', 'false');\n\t\t\t\t\tel.removeAttribute('inert');\n\t\t\t\t\tvar trigger = document.getElementById(triggerID);\n\t\t\t\t\tif (trigger) trigger.setAttribute('aria-expanded', 'true');\n\t\t\t\t\tif (id === ACTIVITY_ID) {\n\t\t\t\t\t\tdocument.body.dispatchEvent(new CustomEvent('sw:activity-drawer-open'));\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction closePanel(id, triggerID) {\n\t\t\t\t\tvar el = panel(id);\n\t\t\t\t\tif (!el) return;\n\t\t\t\t\tel.classList.remove('sw-filter-flyout--open');\n\t\t\t\t\tel.setAttribute('aria-hidden', 'true');\n\t\t\t\t\tel.setAttribute('inert', '');\n\t\t\t\t\tvar trigger = document.getElementById(triggerID);\n\t\t\t\t\tif (trigger) trigger.setAttribute('aria-expanded', 'false');\n\t\t\t\t}\n\n\t\t\t\tfunction closeAll() {\n\t\t\t\t\tclosePanel(FILTER_ID, FILTER_TRIGGER);\n\t\t\t\t\tclosePanel(ACTIVITY_ID, ACTIVITY_TRIGGER);\n\t\t\t\t}\n\n\t\t\t\tfunction togglePanel(id, triggerID) {\n\t\t\t\t\tif (isOpen(panel(id))) {\n\t\t\t\t\t\tclosePanel(id, triggerID);\n\t\t\t\t\t} else {\n\t\t\t\t\t\topenPanel(id, triggerID);\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\t// Escape key closes whichever panel is open.\n\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\t\tif (isOpen(panel(FILTER_ID)) || isOpen(panel(ACTIVITY_ID))) closeAll();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\twindow.swDashboardPanels = {\n\t\t\t\t\ttoggleFilters: function() { togglePanel(FILTER_ID, FILTER_TRIGGER); },\n\t\t\t\t\ttoggleActivity: function() { togglePanel(ACTIVITY_ID, ACTIVITY_TRIGGER); },\n\t\t\t\t\tclose: closeAll\n\t\t\t\t};\n\n\t\t\t\t// The filter flyout is rendered inside the #action-queue swap\n\t\t\t\t// target, so clicking a filter chip would otherwise close the\n\t\t\t\t// panel when the fresh HTML is rendered in its closed state.\n\t\t\t\t// Capture the open state before each swap and re-apply it\n\t\t\t\t// after so the panel remains open while filtering.\n\t\t\t\tvar filterWasOpen = false;\n\t\t\t\tdocument.body.addEventListener('htmx:beforeSwap', function(evt) {\n\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\tfilterWasOpen = isOpen(panel(FILTER_ID));\n\t\t\t\t});\n\t\t\t\tdocument.body.addEventListener('htmx:afterSettle', function(evt) {\n\t\t\t\t\tvar target = evt.detail && evt.detail.target;\n\t\t\t\t\tif (!target || target.id !== 'action-queue') return;\n\t\t\t\t\tif (filterWasOpen) openPanel(FILTER_ID, FILTER_TRIGGER);\n\t\t\t\t\tfilterWasOpen = false;\n\t\t\t\t});\n\n\t\t\t\t// Poll the activity feed every 10 seconds while the drawer is\n\t\t\t\t// open. HTMX's event-filter \"every Ns[predicate]\" syntax only\n\t\t\t\t// applies to event triggers, not to the \"every\" trigger itself,\n\t\t\t\t// so we implement the gate in JS and dispatch a custom event\n\t\t\t\t// that the activity feed's hx-trigger listens for.\n\t\t\t\tsetInterval(function() {\n\t\t\t\t\tif (isOpen(panel(ACTIVITY_ID))) {\n\t\t\t\t\t\tdocument.body.dispatchEvent(new CustomEvent('sw:activity-drawer-poll'));\n\t\t\t\t\t}\n\t\t\t\t}, 10000);\n\t\t\t})();\n\t\t</script>  <script>\n\t\t\t(function() {\n\t\t\t\t// Fetch last evaluation timestamp and display relative time.\n\t\t\t\tvar bp = (function() {\n\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\treturn el ? el.content : '';\n\t\t\t\t})();\n\t\t\t\tfunction updateLastEvaluated() {\n\t\t\t\t\tfetch(bp + '/api/v1/rules/status')\n\t\t\t\t\t\t.then(function(res) { return res.ok ? res.json() : null; })\n\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\t\tif (!el || !data) { if (el) el.textContent = 'Status unavailable'; return; }\n\t\t\t\t\t\t\tif (!data.last_evaluation_at) { el.textContent = 'Never evaluated'; return; }\n\t\t\t\t\t\t\tvar evalTime = new Date(data.last_evaluation_at);\n\t\t\t\t\t\t\tif (isNaN(evalTime.getTime())) { el.textContent = 'Status unavailable'; return; }\n\t\t\t\t\t\t\tvar diffMin = Math.floor((Date.now() - evalTime) / 60000);\n\t\t\t\t\t\t\tvar label;\n\t\t\t\t\t\t\tif (diffMin < 1) label = 'just now';\n\t\t\t\t\t\t\telse if (diffMin < 60) label = diffMin + 'm ago';\n\t\t\t\t\t\t\telse if (diffMin < 1440) { var h = Math.floor(diffMin / 60); label = h + 'h ago'; }\n\t\t\t\t\t\t\telse { var d = Math.floor(diffMin / 1440); label = d + 'd ago'; }\n\t\t\t\t\t\t\tel.textContent = 'Evaluated ' + label;\n\t\t\t\t\t\t})\n\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\tvar el = document.getElementById('last-evaluated-text');\n\t\t\t\t\t\t\tif (el) el.textContent = 'Status unavailable';\n\t\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\tupdateLastEvaluated();\n\t\t\t\t// Re-run after action queue reloads (the element is inside the HTMX fragment)\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\tupdateLastEvaluated();\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Bulk selection\n\t\t\t\tvar queue = document.getElementById('action-queue');\n\t\t\t\tvar bulkBar = document.getElementById('bulk-bar');\n\t\t\t\tvar bulkCount = document.getElementById('bulk-count');\n\t\t\t\tvar bulkDismissBtn = document.getElementById('bulk-dismiss-btn');\n\t\t\t\tvar bulkFixBtn = document.getElementById('bulk-fix-btn');\n\t\t\t\tvar selectAllBtn = document.getElementById('bulk-select-all-btn');\n\t\t\t\tvar deselectBtn = document.getElementById('bulk-deselect-btn');\n\t\t\t\tif (!queue || !bulkBar) return;\n\n\t\t\t\tvar lastChecked = null; // for shift-click range selection\n\n\t\t\t\tfunction pluralize(count, one, other) {\n\t\t\t\t\tvar tpl = count === 1 ? one : other;\n\t\t\t\t\treturn tpl.replaceAll('{count}', String(count));\n\t\t\t\t}\n\n\t\t\t\tfunction updateBulkBar() {\n\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\tvar total = queue.querySelectorAll('.bulk-check').length;\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tbulkBar.classList.remove('hidden');\n\t\t\t\t\t\tbulkCount.textContent = pluralize(checked.length, bulkBar.dataset.labelSelectedOne || '1 selected', bulkBar.dataset.labelSelectedOther || '{count} selected');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Sync the Select All toggle\n\t\t\t\t\tvar toggle = document.getElementById('select-all-toggle');\n\t\t\t\t\tif (toggle) {\n\t\t\t\t\t\ttoggle.checked = total > 0 && checked.length === total;\n\t\t\t\t\t\ttoggle.indeterminate = checked.length > 0 && checked.length < total;\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction getCSRF() {\n\t\t\t\t\tvar match = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);\n\t\t\t\t\treturn match ? decodeURIComponent(match[1]) : '';\n\t\t\t\t}\n\n\t\t\t\tfunction getCheckedIDs() {\n\t\t\t\t\tvar checked = queue.querySelectorAll('.bulk-check:checked');\n\t\t\t\t\treturn Array.prototype.map.call(checked, function(cb) { return cb.value; });\n\t\t\t\t}\n\n\t\t\t\tfunction setAllChecked(state) {\n\t\t\t\t\tqueue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });\n\t\t\t\t\tupdateBulkBar();\n\t\t\t\t}\n\n\t\t\t\t// Checkbox change with Shift-click range selection\n\t\t\t\tqueue.addEventListener('click', function(e) {\n\t\t\t\t\tvar cb = e.target;\n\t\t\t\t\tif (!cb.classList.contains('bulk-check')) return;\n\t\t\t\t\tif (e.shiftKey && lastChecked && lastChecked !== cb) {\n\t\t\t\t\t\tvar boxes = Array.from(queue.querySelectorAll('.bulk-check'));\n\t\t\t\t\t\tvar start = boxes.indexOf(lastChecked);\n\t\t\t\t\t\tvar end = boxes.indexOf(cb);\n\t\t\t\t\t\tif (start > -1 && end > -1) {\n\t\t\t\t\t\t\tvar lo = Math.min(start, end);\n\t\t\t\t\t\t\tvar hi = Math.max(start, end);\n\t\t\t\t\t\t\tfor (var i = lo; i <= hi; i++) {\n\t\t\t\t\t\t\t\tboxes[i].checked = cb.checked;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tlastChecked = cb;\n\t\t\t\t\tupdateBulkBar();\n\t\t\t\t});\n\n\t\t\t\t// Select All toggle in the header area\n\t\t\t\tqueue.addEventListener('change', function(e) {\n\t\t\t\t\tif (e.target.id === 'select-all-toggle') {\n\t\t\t\t\t\tsetAllChecked(e.target.checked);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (e.target.classList.contains('bulk-check')) updateBulkBar();\n\t\t\t\t});\n\n\t\t\t\t// Bulk bar Select All / Clear buttons\n\t\t\t\tif (selectAllBtn) {\n\t\t\t\t\tselectAllBtn.addEventListener('click', function() { setAllChecked(true); });\n\t\t\t\t}\n\t\t\t\tif (deselectBtn) {\n\t\t\t\t\tdeselectBtn.addEventListener('click', function() { setAllChecked(false); });\n\t\t\t\t}\n\n\t\t\t\tif (bulkDismissBtn) {\n\t\t\t\t\tbulkDismissBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/bulk-dismiss', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },\n\t\t\t\t\t\t\tbody: JSON.stringify({ids: ids})\n\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\twindow.showToast && window.showToast('Dismiss failed (' + res.status + ')');\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\twindow.showToast && window.showToast('Network error dismissing violations');\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tif (bulkFixBtn) {\n\t\t\t\t\tbulkFixBtn.addEventListener('click', function() {\n\t\t\t\t\t\tvar ids = getCheckedIDs();\n\t\t\t\t\t\tif (ids.length === 0) return;\n\t\t\t\t\t\tbulkFixBtn.disabled = true;\n\t\t\t\t\t\tvar total = ids.length, failed = 0;\n\t\t\t\t\t\t// Serialize requests to avoid overloading the fix pipeline.\n\t\t\t\t\t\tfunction fixNext(i) {\n\t\t\t\t\t\t\tif (i >= ids.length) {\n\t\t\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t\t\t\tbulkFixBtn.disabled = false;\n\t\t\t\t\t\t\t\tbulkFixBtn.textContent = bulkBar.dataset.labelFixSelected || 'Fix Selected';\n\t\t\t\t\t\t\t\tif (failed > 0) {\n\t\t\t\t\t\t\t\t\tvar fixesFailedTpl = pluralize(failed, bulkBar.dataset.labelFixesFailedOne || '1 of {total} fixes failed', bulkBar.dataset.labelFixesFailedOther || '{failed} of {total} fixes failed');\n\t\t\t\t\t\t\t\t\twindow.showToast && window.showToast(fixesFailedTpl.replace('{failed}', failed).replace('{total}', total));\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tbulkFixBtn.textContent = (bulkBar.dataset.labelFixingProgress || 'Fixing {current}/{total}...').replace('{current}', i + 1).replace('{total}', total);\n\t\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {\n\t\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\t\theaders: { 'X-CSRF-Token': getCSRF() }\n\t\t\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\t\t\tif (!res.ok) failed++;\n\t\t\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\t\t\tfailed++;\n\t\t\t\t\t\t\t}).finally(function() {\n\t\t\t\t\t\t\t\tfixNext(i + 1);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\tfixNext(0);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'action-queue') {\n\t\t\t\t\t\tbulkBar.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Reload the full action queue after each fix/dismiss so filter chip\n\t\t\t\t// counts, pagination, and empty-state stay in sync.\n\t\t\t\tdocument.body.addEventListener('dashboard:action-resolved', function() {\n\t\t\t\t\thtmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

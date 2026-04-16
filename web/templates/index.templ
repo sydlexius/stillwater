@@ -1,14 +1,17 @@
 package templates
 
 // IndexPage renders the BLUF dashboard with action queue and activity feed.
-templ IndexPage(assets AssetPaths) {
+// initialQuery is a query-string suffix (e.g. "?severity=warning") that the
+// initial HTMX load of /dashboard/actions picks up so bookmarkable URLs
+// like /?severity=warning open the dashboard with that filter applied.
+templ IndexPage(assets AssetPaths, initialQuery string) {
 	@Layout("Dashboard", assets) {
-		<div class="flex flex-col gap-6 lg:flex-row" id="dashboard-columns">
-			// Left column: Action Queue (~65%)
-			<section class="min-h-0 lg:w-[65%] lg:overflow-y-auto lg:pr-3" style="scrollbar-width: thin;">
+		<div id="dashboard-main">
+			// Action Queue (full width; Activity feed lives in the right-edge drawer).
+			<section>
 				<div
 					id="action-queue"
-					hx-get="/dashboard/actions"
+					hx-get={ "/dashboard/actions" + initialQuery }
 					hx-trigger="load"
 					hx-swap="innerHTML"
 				>
@@ -97,15 +100,45 @@ templ IndexPage(assets AssetPaths) {
 					</div>
 				</div>
 			</section>
-			// Right column: Activity Feed (~35%)
-			<aside class="min-h-0 lg:w-[35%] lg:overflow-y-auto lg:pl-4 lg:border-l border-gray-200 dark:border-gray-700/50" style="scrollbar-width: thin;">
+		</div>
+		// Activity drawer: slides in from the right when the user clicks the
+		// Activity button in the dashboard header. The activity feed only
+		// fetches on first open to avoid work on every page load, and only
+		// polls while the drawer is open.
+		<aside
+			id="activity-drawer"
+			class="sw-filter-flyout bg-white dark:bg-gray-800"
+			role="region"
+			aria-label={ t(ctx, "dashboard.recent_activity") }
+			aria-hidden="true"
+			inert
+		>
+			<div class="sw-filter-flyout-header">
+				<a href={ templ.SafeURL(assets.BasePath + "/activity") } class="sw-filter-flyout-title inline-flex items-center gap-1.5 text-gray-900 dark:text-gray-100 hover:underline">
+					{ t(ctx, "dashboard.recent_activity") }
+					<svg class="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25"></path>
+					</svg>
+				</a>
+				<button
+					type="button"
+					class="sw-filter-flyout-close"
+					aria-label={ t(ctx, "common.close") }
+					onclick="swDashboardPanels && swDashboardPanels.close()"
+				>
+					<svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+						<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
+					</svg>
+				</button>
+			</div>
+			<div class="sw-filter-flyout-body sw-scroll">
 				<div
 					id="activity-feed"
 					hx-get="/dashboard/activity"
-					hx-trigger="load, every 10s"
+					hx-trigger="sw:activity-drawer-open from:body, sw:activity-drawer-poll from:body"
 					hx-swap="innerHTML"
 				>
-					// Loading skeleton
+					// Loading skeleton (shown until the drawer is first opened).
 					<div>
 						<div class="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3"></div>
 						for i := 0; i < 6; i++ {
@@ -116,26 +149,99 @@ templ IndexPage(assets AssetPaths) {
 						}
 					</div>
 				</div>
-			</aside>
-		</div>
-		// Independent column scrolling: pin the dashboard container to viewport height
-		// at desktop width so each column scrolls independently.
+			</div>
+		</aside>
+		// Dashboard panels controller: single mutex for the filter flyout and
+		// activity drawer, plus the initial-load query-param forwarder. Both
+		// panels reuse the sw-filter-flyout CSS for the slide-in animation.
 		<script>
 			(function() {
-				var cols = document.getElementById('dashboard-columns');
-				if (!cols) return;
-				function setHeight() {
-					if (window.innerWidth >= 1024) {
-						var top = cols.getBoundingClientRect().top;
-						cols.style.height = (window.innerHeight - top - 16) + 'px';
-						cols.style.overflow = 'hidden';
-					} else {
-						cols.style.height = '';
-						cols.style.overflow = '';
+				var FILTER_ID = 'dashboard-filter-flyout';
+				var ACTIVITY_ID = 'activity-drawer';
+				var FILTER_TRIGGER = 'dashboard-filters-trigger';
+				var ACTIVITY_TRIGGER = 'activity-drawer-trigger';
+
+				function panel(id) { return document.getElementById(id); }
+				function isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }
+
+				function openPanel(id, triggerID) {
+					closeAll();
+					var el = panel(id);
+					if (!el) return;
+					el.classList.add('sw-filter-flyout--open');
+					el.setAttribute('aria-hidden', 'false');
+					el.removeAttribute('inert');
+					var trigger = document.getElementById(triggerID);
+					if (trigger) trigger.setAttribute('aria-expanded', 'true');
+					if (id === ACTIVITY_ID) {
+						document.body.dispatchEvent(new CustomEvent('sw:activity-drawer-open'));
 					}
 				}
-				setHeight();
-				window.addEventListener('resize', setHeight);
+
+				function closePanel(id, triggerID) {
+					var el = panel(id);
+					if (!el) return;
+					el.classList.remove('sw-filter-flyout--open');
+					el.setAttribute('aria-hidden', 'true');
+					el.setAttribute('inert', '');
+					var trigger = document.getElementById(triggerID);
+					if (trigger) trigger.setAttribute('aria-expanded', 'false');
+				}
+
+				function closeAll() {
+					closePanel(FILTER_ID, FILTER_TRIGGER);
+					closePanel(ACTIVITY_ID, ACTIVITY_TRIGGER);
+				}
+
+				function togglePanel(id, triggerID) {
+					if (isOpen(panel(id))) {
+						closePanel(id, triggerID);
+					} else {
+						openPanel(id, triggerID);
+					}
+				}
+
+				// Escape key closes whichever panel is open.
+				document.addEventListener('keydown', function(e) {
+					if (e.key === 'Escape') {
+						if (isOpen(panel(FILTER_ID)) || isOpen(panel(ACTIVITY_ID))) closeAll();
+					}
+				});
+
+				window.swDashboardPanels = {
+					toggleFilters: function() { togglePanel(FILTER_ID, FILTER_TRIGGER); },
+					toggleActivity: function() { togglePanel(ACTIVITY_ID, ACTIVITY_TRIGGER); },
+					close: closeAll
+				};
+
+				// The filter flyout is rendered inside the #action-queue swap
+				// target, so clicking a filter chip would otherwise close the
+				// panel when the fresh HTML is rendered in its closed state.
+				// Capture the open state before each swap and re-apply it
+				// after so the panel remains open while filtering.
+				var filterWasOpen = false;
+				document.body.addEventListener('htmx:beforeSwap', function(evt) {
+					var target = evt.detail && evt.detail.target;
+					if (!target || target.id !== 'action-queue') return;
+					filterWasOpen = isOpen(panel(FILTER_ID));
+				});
+				document.body.addEventListener('htmx:afterSettle', function(evt) {
+					var target = evt.detail && evt.detail.target;
+					if (!target || target.id !== 'action-queue') return;
+					if (filterWasOpen) openPanel(FILTER_ID, FILTER_TRIGGER);
+					filterWasOpen = false;
+				});
+
+				// Poll the activity feed every 10 seconds while the drawer is
+				// open. HTMX's event-filter "every Ns[predicate]" syntax only
+				// applies to event triggers, not to the "every" trigger itself,
+				// so we implement the gate in JS and dispatch a custom event
+				// that the activity feed's hx-trigger listens for.
+				setInterval(function() {
+					if (isOpen(panel(ACTIVITY_ID))) {
+						document.body.dispatchEvent(new CustomEvent('sw:activity-drawer-poll'));
+					}
+				}, 10000);
 			})();
 		</script>
 		// Last evaluated timestamp + bulk selection JS

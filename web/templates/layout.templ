@@ -389,7 +389,11 @@ templ Layout(title string, assets AssetPaths) {
 							}).then(function() {
 								dismissNow();
 								if (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');
-								if (typeof reloadNotificationsTable === 'function') reloadNotificationsTable();
+								// Reload the dashboard action queue so the reverted violation reappears.
+								var queue = document.getElementById('action-queue');
+								if (queue && typeof htmx !== 'undefined') {
+									htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+								}
 							}).catch(function(err) {
 								dismissNow();
 								if (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));

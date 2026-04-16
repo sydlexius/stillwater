@@ -13,7 +13,6 @@ import (
 
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
-	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // handleListNotifications returns rule violations with optional filtering and sorting.
@@ -269,27 +268,6 @@ func parseNotificationParams(req *http.Request) rule.ViolationListParams {
 	}
 }
 
-// buildNotificationsData creates the template data from params and violations.
-func buildNotificationsData(p rule.ViolationListParams, violations []rule.RuleViolation) templates.NotificationsData {
-	data := templates.NotificationsData{
-		Violations: violations,
-		Sort:       p.Sort,
-		Order:      p.Order,
-		Status:     p.Status,
-		Severity:   p.Severity,
-		Category:   p.Category,
-		RuleID:     p.RuleID,
-		GroupBy:    p.GroupBy,
-	}
-
-	if p.GroupBy != "" {
-		data.Groups = rule.GroupViolations(violations, p.GroupBy)
-		data.Grouped = true
-	}
-
-	return data
-}
-
 // handleApplyViolationCandidate downloads and applies a chosen image candidate.
 // POST /api/v1/notifications/{id}/apply-candidate
 func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.Request) {
@@ -414,7 +392,7 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 // handleNotificationCounts returns active violation counts by severity.
 // GET /api/v1/notifications/counts
 func (r *Router) handleNotificationCounts(w http.ResponseWriter, req *http.Request) {
-	counts, err := r.ruleService.CountActiveViolationsBySeverity(req.Context())
+	counts, err := r.ruleService.CountActiveViolationsBySeverity(req.Context(), rule.ViolationListParams{})
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to count violations")
 		return
@@ -443,7 +421,7 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	counts, err := r.ruleService.CountActiveViolationsBySeverity(ctx)
+	counts, err := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -472,25 +450,4 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 	badge := fmt.Sprintf(`<span class="sw-sidebar-badge-pill">%s</span>`, display)
 	//nolint:errcheck,gosec // display is derived from an integer, no XSS risk
 	fmt.Fprint(w, badge)
-}
-
-// handleNotificationsTable renders the notifications table for HTMX swaps.
-// GET /notifications/table
-func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Request) {
-	p := parseNotificationParams(req)
-
-	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
-	if err != nil {
-		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
-		return
-	}
-
-	if violations == nil {
-		violations = []rule.RuleViolation{}
-	}
-
-	data := buildNotificationsData(p, violations)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.NotificationsTable(data).Render(req.Context(), w)
 }

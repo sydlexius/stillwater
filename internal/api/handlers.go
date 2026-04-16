@@ -1110,7 +1110,30 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	renderTempl(w, req, templates.IndexPage(r.assetsFor(req)))
+	// Forward filter query params into the initial HTMX load so a bookmark
+	// like /?severity=warning opens the dashboard with that filter already
+	// applied. Only known keys are forwarded.
+	initial := buildDashboardInitialQuery(req.URL.Query())
+	renderTempl(w, req, templates.IndexPage(r.assetsFor(req), initial))
+}
+
+// buildDashboardInitialQuery returns the query-string suffix (e.g.
+// "?severity=warning") the dashboard action queue hx-get should use on
+// first load. Returns "" when no known filter keys are present. Unknown
+// keys are discarded so only the dashboard's filter contract reaches
+// /dashboard/actions.
+func buildDashboardInitialQuery(q url.Values) string {
+	keep := []string{"search", "severity", "category", "library", "rule", "fixable"}
+	out := url.Values{}
+	for _, k := range keep {
+		if v := q.Get(k); v != "" {
+			out.Set(k, v)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return "?" + out.Encode()
 }
 
 // handleOnboardingPage serves the first-time setup wizard page.

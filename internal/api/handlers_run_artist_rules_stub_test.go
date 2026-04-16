@@ -165,8 +165,8 @@ func TestStub_RunArtistRules_ViolationsFound_HTMX(t *testing.T) {
 	if !strings.Contains(body, "5 violation(s).") {
 		t.Errorf("HTMX body = %q, want '5 violation(s).'", body)
 	}
-	if !strings.Contains(body, "/notifications") {
-		t.Errorf("HTMX body = %q, want /notifications link", body)
+	if !strings.Contains(body, "/?search=") {
+		t.Errorf("HTMX body = %q, want /?search= dashboard link", body)
 	}
 }
 
