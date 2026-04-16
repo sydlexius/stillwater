@@ -442,7 +442,7 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 		}
 	}
 
-	counts, err := svc.CountActiveViolationsBySeverity(ctx)
+	counts, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity: %v", err)
 	}
@@ -457,10 +457,27 @@ func TestCountActiveViolationsBySeverity(t *testing.T) {
 		t.Errorf("info count = %d, want 1", counts["info"])
 	}
 
+	// Facet self-exclusion: the severity dimension is the one being
+	// counted, so passing p.Severity must NOT restrict the result. If
+	// CountActiveViolationsBySeverity ever starts honoring its own
+	// parameter, the dashboard's severity badges fall out of sync with
+	// the filtered list and none of the other assertions here would
+	// catch it.
+	facet, err := svc.CountActiveViolationsBySeverity(ctx, ViolationListParams{Severity: "error"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity(facet): %v", err)
+	}
+	for _, sev := range []string{"error", "warning", "info"} {
+		if facet[sev] != counts[sev] {
+			t.Errorf("severity facet leaked its own filter: %s count = %d under Severity=error, want %d (unfiltered)",
+				sev, facet[sev], counts[sev])
+		}
+	}
+
 	// With no active violations (empty DB), all counts should be zero.
 	db2 := setupTestDB(t)
 	svc2 := NewService(db2)
-	counts2, err := svc2.CountActiveViolationsBySeverity(ctx)
+	counts2, err := svc2.CountActiveViolationsBySeverity(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsBySeverity (empty): %v", err)
 	}
@@ -1878,7 +1895,7 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 		}
 	}
 
-	counts, err := svc.CountActiveViolationsByCategory(ctx)
+	counts, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByCategory: %v", err)
 	}
@@ -1896,13 +1913,29 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 		t.Errorf("metadata count = %d, want 0", counts["metadata"])
 	}
 
+	// Facet self-exclusion: the category dimension is the one being
+	// counted, so passing p.Category must NOT restrict the result. If
+	// CountActiveViolationsByCategory ever starts honoring its own
+	// parameter, the dashboard's category badges silently fall out of
+	// sync with the filtered list.
+	facet, err := svc.CountActiveViolationsByCategory(ctx, ViolationListParams{Category: "nfo"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory(facet): %v", err)
+	}
+	for _, cat := range []string{"nfo", "image", "metadata"} {
+		if facet[cat] != counts[cat] {
+			t.Errorf("category facet leaked its own filter: %s count = %d under Category=nfo, want %d (unfiltered)",
+				cat, facet[cat], counts[cat])
+		}
+	}
+
 	// Empty DB: all counts should be zero.
 	db2 := setupTestDB(t)
 	svc2 := NewService(db2)
 	if err := svc2.SeedDefaults(ctx); err != nil {
 		t.Fatalf("SeedDefaults (empty): %v", err)
 	}
-	counts2, err := svc2.CountActiveViolationsByCategory(ctx)
+	counts2, err := svc2.CountActiveViolationsByCategory(ctx, ViolationListParams{})
 	if err != nil {
 		t.Fatalf("CountActiveViolationsByCategory (empty): %v", err)
 	}
@@ -1911,4 +1944,318 @@ func TestCountActiveViolationsByCategory(t *testing.T) {
 			t.Errorf("%s count = %d, want 0 (empty DB)", cat, counts2[cat])
 		}
 	}
+}
+
+func TestCountActiveViolationsByRule(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Two nfo-exists, one thumb-exists, one fanart-exists; one dismissed
+	// thumb-exists and one resolved fanart-exists must NOT be counted.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "a2", ArtistName: "A2", Severity: "error", Message: "m2", Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleThumbExists, ArtistID: "a3", ArtistName: "A3", Severity: "warning", Message: "m3", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a4", ArtistName: "A4", Severity: "warning", Message: "m4", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a5", ArtistName: "A5", Severity: "warning", Message: "m5", Status: ViolationStatusDismissed},
+		{RuleID: RuleFanartExists, ArtistID: "a6", ArtistName: "A6", Severity: "warning", Message: "m6", Status: ViolationStatusResolved},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	counts, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByRule: %v", err)
+	}
+
+	got := make(map[string]int, len(counts))
+	for _, c := range counts {
+		got[c.RuleID] = c.Count
+	}
+	if got[RuleNFOExists] != 2 {
+		t.Errorf("%s count = %d, want 2", RuleNFOExists, got[RuleNFOExists])
+	}
+	if got[RuleThumbExists] != 1 {
+		t.Errorf("%s count = %d, want 1", RuleThumbExists, got[RuleThumbExists])
+	}
+	if got[RuleFanartExists] != 1 {
+		t.Errorf("%s count = %d, want 1", RuleFanartExists, got[RuleFanartExists])
+	}
+
+	// Severity filter applied by the facet pattern: only error-severity
+	// violations should remain, so RuleNFOExists drops to its error rows
+	// and the warning rules disappear from the count entirely.
+	filtered, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Severity: "error"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByRule(filter): %v", err)
+	}
+	// Fail fast if the query returned nothing -- an empty slice would
+	// make the per-row loop below vacuously pass and mask a regression.
+	if len(filtered) == 0 {
+		t.Fatal("CountActiveViolationsByRule(Severity=error) returned empty; expected at least one row")
+	}
+	for _, c := range filtered {
+		if c.RuleID != RuleNFOExists {
+			t.Errorf("filtered counts included non-error rule %q", c.RuleID)
+		}
+		if c.Count != 2 {
+			t.Errorf("filtered %s count = %d, want 2", c.RuleID, c.Count)
+		}
+	}
+
+	// Ordering: counts are ordered DESC by count, then ASC by rule_id.
+	// With the mix above, RuleNFOExists (2) must precede any 1-count rule.
+	if len(counts) < 2 {
+		t.Fatalf("expected at least 2 result rows to exercise ordering, got %d", len(counts))
+	}
+	if counts[0].RuleID != RuleNFOExists {
+		t.Errorf("expected first rule to be %s, got %s", RuleNFOExists, counts[0].RuleID)
+	}
+	// Tie-break within equal-count rows: RuleThumbExists and RuleFanartExists
+	// both have Count=1 above, so the slice must order them ascending by
+	// RuleID. Checking every adjacent pair catches a regression in the SQL
+	// `ORDER BY rv.rule_id ASC` tiebreaker that the top-row check would miss.
+	for i := 1; i < len(counts); i++ {
+		if counts[i-1].Count != counts[i].Count {
+			continue
+		}
+		if counts[i-1].RuleID >= counts[i].RuleID {
+			t.Errorf("tied counts not ordered ascending by rule_id: %s (%d) before %s (%d)",
+				counts[i-1].RuleID, counts[i-1].Count, counts[i].RuleID, counts[i].Count)
+		}
+	}
+
+	// Facet exclusion: passing RuleID must NOT shrink the result set, because
+	// the rule dimension is the one being counted. This proves the facet
+	// pattern actually omits its own filter -- the Severity case above only
+	// exercises cross-dimension filtering and would still pass if the rule
+	// facet silently started honoring its own RuleID input.
+	facet, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{RuleID: RuleNFOExists})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByRule(RuleID facet): %v", err)
+	}
+	if len(facet) != len(counts) {
+		t.Errorf("rule facet leaked its own filter: unfiltered len=%d, RuleID-filtered len=%d",
+			len(counts), len(facet))
+	}
+}
+
+func TestCountActiveViolationsByLibrary(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Two libraries so we can assert per-library attribution.
+	for _, lib := range []struct{ id, name string }{{"lib-a", "Library A"}, {"lib-b", "Library B"}} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
+			t.Fatalf("insert library %s: %v", lib.id, err)
+		}
+	}
+	// Artists: two in lib-a, one in lib-b, and one with no library (should
+	// not appear in counts because the handler expects library IDs only).
+	// Only libID is nullable here; ids are always set.
+	for _, a := range []struct {
+		id    string
+		libID sql.NullString
+	}{
+		{"art-a1", sql.NullString{String: "lib-a", Valid: true}},
+		{"art-a2", sql.NullString{String: "lib-a", Valid: true}},
+		{"art-b1", sql.NullString{String: "lib-b", Valid: true}},
+		{"art-none", sql.NullString{}},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id)
+			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id, a.id, a.id, a.id, a.libID); err != nil {
+			t.Fatalf("insert artist %s: %v", a.id, err)
+		}
+	}
+
+	// UpsertViolation dedupes on (rule_id, artist_id), so the dismissed
+	// row below uses a different rule_id from the open rows for the same
+	// artist -- otherwise it would overwrite one of them.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "art-a1", ArtistName: "art-a1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "art-a2", ArtistName: "art-a2", Severity: "error", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "art-b1", ArtistName: "art-b1", Severity: "warning", Message: "m3", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "art-none", ArtistName: "art-none", Severity: "error", Message: "m4", Status: ViolationStatusOpen},
+		// Dismissed: must not be counted.
+		{RuleID: RuleFanartExists, ArtistID: "art-a1", ArtistName: "art-a1", Severity: "warning", Message: "m5", Status: ViolationStatusDismissed},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	counts, err := svc.CountActiveViolationsByLibrary(ctx, ViolationListParams{})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByLibrary: %v", err)
+	}
+	if counts["lib-a"] != 2 {
+		t.Errorf("lib-a count = %d, want 2", counts["lib-a"])
+	}
+	if counts["lib-b"] != 1 {
+		t.Errorf("lib-b count = %d, want 1", counts["lib-b"])
+	}
+	if _, ok := counts[""]; ok {
+		t.Error("NULL library_id must not appear as an empty-string key")
+	}
+
+	// Facet pattern: the library dimension is excluded from its own filter,
+	// so passing LibraryID should not shrink the result set.
+	filtered, err := svc.CountActiveViolationsByLibrary(ctx, ViolationListParams{LibraryID: "lib-a"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByLibrary(filter): %v", err)
+	}
+	if filtered["lib-b"] != 1 {
+		t.Errorf("library facet incorrectly dropped lib-b under LibraryID filter (got %d, want 1)", filtered["lib-b"])
+	}
+}
+
+func TestCountActiveViolationsByFixable(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "a2", ArtistName: "A2", Severity: "error", Message: "m2", Fixable: true, Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleThumbExists, ArtistID: "a3", ArtistName: "A3", Severity: "warning", Message: "m3", Fixable: false, Status: ViolationStatusOpen},
+		// Resolved and dismissed rows are ignored.
+		{RuleID: RuleFanartExists, ArtistID: "a4", ArtistName: "A4", Severity: "warning", Message: "m4", Fixable: true, Status: ViolationStatusResolved},
+		{RuleID: RuleFanartExists, ArtistID: "a5", ArtistName: "A5", Severity: "warning", Message: "m5", Fixable: false, Status: ViolationStatusDismissed},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable: %v", err)
+	}
+	if fixable != 2 {
+		t.Errorf("fixable = %d, want 2", fixable)
+	}
+	if notFixable != 1 {
+		t.Errorf("notFixable = %d, want 1", notFixable)
+	}
+
+	// Facet pattern: filtering by Fixable must NOT restrict the result because
+	// the fixable dimension is omitted from its own filter.
+	fixable2, notFixable2, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{Fixable: "yes"})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable(filter): %v", err)
+	}
+	if fixable2 != fixable || notFixable2 != notFixable {
+		t.Errorf("fixable facet leaked its own filter: got (%d,%d), want (%d,%d)", fixable2, notFixable2, fixable, notFixable)
+	}
+
+	// Empty DB returns (0, 0).
+	db2 := setupTestDB(t)
+	svc2 := NewService(db2)
+	f, nf, err := svc2.CountActiveViolationsByFixable(ctx, ViolationListParams{})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable (empty): %v", err)
+	}
+	if f != 0 || nf != 0 {
+		t.Errorf("empty DB counts = (%d, %d), want (0, 0)", f, nf)
+	}
+}
+
+// TestCountActiveViolations_SearchFilter exercises the `Search` predicate in
+// buildViolationFilter, which every Count*ActiveViolations* query now threads
+// through. If the LIKE clause over (rv.artist_name | rv.message | rv.rule_id)
+// is silently dropped from any of the facet queries, the dashboard's filter
+// counts fall out of sync with the filtered violation list while the other
+// facet tests above keep passing. One test covers every count method because
+// they all share buildViolationFilter.
+func TestCountActiveViolations_SearchFilter(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed distinct searchable text in each row. The unique tokens avoid
+	// collisions with any other string the LIKE sees (rule IDs, default
+	// messages, etc.) so the assertions only succeed when the Search
+	// predicate is actually wired through to the underlying query.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "art-1", ArtistName: "QueryAlpha Artist",
+			Severity: "error", Message: "standard missing-nfo message", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "art-2", ArtistName: "QueryAlpha Artist",
+			Severity: "warning", Message: "standard missing-thumb message", Status: ViolationStatusOpen,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleNFOExists, ArtistID: "art-3", ArtistName: "Unrelated Artist",
+			Severity: "error", Message: "uniqueMessageBeacon for assertion", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "art-4", ArtistName: "Unrelated Other",
+			Severity: "warning", Message: "plain message no match", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	t.Run("artist_name match via CountActiveViolationsByRule", func(t *testing.T) {
+		// "QueryAlpha" appears in art-1 (NFO) and art-2 (Thumb) artist names
+		// but not in art-3 or art-4. Expect exactly those two rule rows.
+		counts, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Search: "QueryAlpha"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByRule(Search=QueryAlpha): %v", err)
+		}
+		got := make(map[string]int, len(counts))
+		for _, c := range counts {
+			got[c.RuleID] = c.Count
+		}
+		if got[RuleNFOExists] != 1 {
+			t.Errorf("%s search-filtered count = %d, want 1", RuleNFOExists, got[RuleNFOExists])
+		}
+		if got[RuleThumbExists] != 1 {
+			t.Errorf("%s search-filtered count = %d, want 1", RuleThumbExists, got[RuleThumbExists])
+		}
+		if _, ok := got[RuleFanartExists]; ok {
+			t.Errorf("%s must not appear under Search=QueryAlpha; got %d", RuleFanartExists, got[RuleFanartExists])
+		}
+	})
+
+	t.Run("message match via CountActiveViolationsByFixable", func(t *testing.T) {
+		// "uniqueMessageBeacon" appears only in art-3's message. That row
+		// was seeded with Fixable=false (the zero value), so the facet
+		// count should return (0, 1) -- one non-fixable match, no fixable.
+		fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{Search: "uniqueMessageBeacon"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByFixable(Search=uniqueMessageBeacon): %v", err)
+		}
+		if fixable != 0 || notFixable != 1 {
+			t.Errorf("search-filtered fixable counts = (%d, %d), want (0, 1)", fixable, notFixable)
+		}
+	})
+
+	t.Run("no match returns empty counts", func(t *testing.T) {
+		// A term present in no field must collapse the result set to empty.
+		// Guards against the LIKE predicate silently matching everything
+		// (e.g. a dropped pattern that accidentally becomes `LIKE '%%'`).
+		counts, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Search: "absolutelyNoMatchToken"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByRule(Search=no-match): %v", err)
+		}
+		if len(counts) != 0 {
+			t.Errorf("expected no rows for no-match search, got %d: %+v", len(counts), counts)
+		}
+	})
 }

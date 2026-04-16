@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -165,8 +166,14 @@ func TestStub_RunArtistRules_ViolationsFound_HTMX(t *testing.T) {
 	if !strings.Contains(body, "5 violation(s).") {
 		t.Errorf("HTMX body = %q, want '5 violation(s).'", body)
 	}
-	if !strings.Contains(body, "/notifications") {
-		t.Errorf("HTMX body = %q, want /notifications link", body)
+	if strings.Contains(body, "/notifications") {
+		t.Errorf("HTMX body = %q, must not link to retired /notifications view", body)
+	}
+	// Require a non-empty search parameter so the fragment actually pre-filters
+	// the dashboard; the prior Contains(body, "/?search=") assertion passed even
+	// on malformed/empty queries.
+	if !regexp.MustCompile(`/\?search=[^"&\s]+`).MatchString(body) {
+		t.Errorf("HTMX body = %q, want dashboard link with non-empty search query", body)
 	}
 }
 

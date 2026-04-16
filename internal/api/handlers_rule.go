@@ -6,6 +6,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strconv"
 	"time"
@@ -243,7 +244,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		var violationsRemaining int
 		if err == nil {
 			violationsAutoFixed = result.FixesSucceeded
-			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
+			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
 			if dbErr != nil {
 				r.logger.Warn("querying active violations for single-rule toast count", "error", dbErr)
 				violationsRemaining = result.ViolationsFound - violationsAutoFixed
@@ -354,7 +355,9 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	notificationsURL := r.basePath + "/notifications"
+	// Dashboard URL pre-filtered to this artist. The dashboard search
+	// matches artist_name via LIKE, so we pass the artist's name.
+	dashboardURL := r.basePath + "/?search=" + url.QueryEscape(a.Name)
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -364,17 +367,17 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		} else {
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) +
-				` violation(s). <a href="` + html.EscapeString(notificationsURL) + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
+				` violation(s). <a href="` + html.EscapeString(dashboardURL) + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View on dashboard</a></div>`
 		}
-		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: notificationsURL is HTML-escaped; fragment contains only static strings and strconv.Itoa output
+		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: dashboardURL is HTML-escaped; fragment contains only static strings and strconv.Itoa output
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"violations_found":  result.ViolationsFound,
-		"notifications_url": notificationsURL,
+		"violations_found": result.ViolationsFound,
+		"dashboard_url":    dashboardURL,
 	})
 }
 
@@ -429,7 +432,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 			violationsFound = result.ViolationsFound
 			violationsAutoFixed = result.FixesSucceeded
 			// Query remaining active violations from DB (badge count).
-			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
+			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx, rule.ViolationListParams{})
 			if dbErr != nil {
 				r.logger.Warn("querying active violations for toast count", "error", dbErr)
 				// Fall back to computed remaining count.

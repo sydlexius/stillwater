@@ -559,7 +559,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(func(w http.ResponseWriter, req *http.Request) {
 		http.Redirect(w, req, r.basePath+"/", http.StatusMovedPermanently)
 	}, authMw))
-	mux.HandleFunc("GET "+bp+"/notifications/table", wrapAuth(r.handleNotificationsTable, authMw))
 
 	// Start the pprof listener on a dedicated localhost port when SW_PPROF=1 or
 	// SW_PPROF=true. Using a separate listener ensures pprof is never reachable

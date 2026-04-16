@@ -124,15 +124,18 @@ type RuleViolation struct {
 
 // ViolationListParams controls filtering, sorting, and grouping of violations.
 type ViolationListParams struct {
-	Status   string // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)
-	Sort     string // "artist_name", "severity", "rule_id", "created_at"
-	Order    string // "asc", "desc"
-	Severity string // filter: "error", "warning", "info"
-	Category string // filter: "nfo", "image", "metadata"
-	RuleID   string // filter by specific rule
-	GroupBy  string // "artist", "rule", "severity", "category", ""
-	Limit    int    // pagination limit; 0 = no limit (backward compatible)
-	Offset   int    // pagination offset
+	Status    string // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)
+	Sort      string // "artist_name", "severity", "rule_id", "created_at"
+	Order     string // "asc", "desc"
+	Severity  string // filter: "error", "warning", "info"
+	Category  string // filter: "nfo", "image", "metadata"
+	RuleID    string // filter by specific rule
+	GroupBy   string // "artist", "rule", "severity", "category", ""
+	Limit     int    // pagination limit; 0 = no limit (backward compatible)
+	Offset    int    // pagination offset
+	Search    string // free-text search across artist_name, message, rule_id
+	LibraryID string // filter by library (via artist join)
+	Fixable   string // filter by fixable: "yes", "no", "" (all)
 }
 
 // ViolationGroup holds a group of violations for grouped display.

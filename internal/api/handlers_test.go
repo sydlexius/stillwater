@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 )
@@ -108,4 +109,74 @@ func TestHandleLogout(t *testing.T) {
 			t.Fatalf("expected HX-Redirect %q, got %q", "/sw/", redirect)
 		}
 	})
+}
+
+func TestBuildDashboardInitialQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		input url.Values
+		want  string
+	}{
+		{
+			name:  "empty query returns empty string",
+			input: url.Values{},
+			want:  "",
+		},
+		{
+			name: "single known key",
+			input: url.Values{
+				"severity": []string{"warning"},
+			},
+			want: "?severity=warning",
+		},
+		{
+			name: "multiple known keys are preserved and encoded",
+			input: url.Values{
+				"search":   []string{"bad artist"},
+				"severity": []string{"error"},
+				"category": []string{"image"},
+			},
+			// url.Values.Encode() sorts keys alphabetically so the output is
+			// deterministic across runs.
+			want: "?category=image&search=bad+artist&severity=error",
+		},
+		{
+			name: "unknown keys are discarded",
+			input: url.Values{
+				"severity": []string{"warning"},
+				"foo":      []string{"bar"},
+				"debug":    []string{"true"},
+			},
+			want: "?severity=warning",
+		},
+		{
+			name: "empty values are skipped",
+			input: url.Values{
+				"severity": []string{""},
+				"category": []string{"image"},
+			},
+			want: "?category=image",
+		},
+		{
+			name: "all six supported keys round-trip",
+			input: url.Values{
+				"search":   []string{"a"},
+				"severity": []string{"b"},
+				"category": []string{"c"},
+				"library":  []string{"d"},
+				"rule":     []string{"e"},
+				"fixable":  []string{"yes"},
+			},
+			want: "?category=c&fixable=yes&library=d&rule=e&search=a&severity=b",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildDashboardInitialQuery(tc.input)
+			if got != tc.want {
+				t.Errorf("buildDashboardInitialQuery(%v) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
 }

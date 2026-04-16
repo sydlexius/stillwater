@@ -8439,7 +8439,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Rules ran successfully; returns violation count and link to notifications view (JSON) or an inline HTML fragment (HTMX)
+          description: Rules ran successfully; returns violation count and a pre-filtered dashboard link (JSON) or an inline HTML fragment (HTMX)
           content:
             application/json:
               schema:
@@ -8448,9 +8448,9 @@ paths:
                   violations_found:
                     type: integer
                     description: Number of violations detected for this artist
-                  notifications_url:
+                  dashboard_url:
                     type: string
-                    description: URL to the notifications page
+                    description: Dashboard URL pre-filtered to this artist's violations
             text/html:
               schema:
                 type: string

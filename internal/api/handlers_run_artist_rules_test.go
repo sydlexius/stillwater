@@ -136,10 +136,12 @@ func TestHandleRunArtistRules_ReturnsJSON(t *testing.T) {
 	if _, ok := resp["violations_found"]; !ok {
 		t.Error("response missing violations_found field")
 	}
-	if got, ok := resp["notifications_url"]; !ok {
-		t.Error("response missing notifications_url field")
-	} else if got != "/notifications" {
-		t.Errorf("notifications_url = %q, want %q", got, "/notifications")
+	// The JSON response now points at the dashboard with a search param
+	// pre-filled for this artist. Matches the HTMX link below.
+	if got, ok := resp["dashboard_url"]; !ok {
+		t.Error("response missing dashboard_url field")
+	} else if gotStr, _ := got.(string); !strings.HasPrefix(gotStr, "/?search=") {
+		t.Errorf("dashboard_url = %q, want prefix %q", gotStr, "/?search=")
 	}
 }
 
@@ -215,8 +217,9 @@ func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
 	if !strings.Contains(body, "violation(s).") {
 		t.Errorf("HTMX body = %q, want violations message with 'violation(s).'", body)
 	}
-	if !strings.Contains(body, "/notifications") {
-		t.Errorf("HTMX body = %q, want /notifications link", body)
+	// Link now points at the dashboard pre-filtered to this artist.
+	if !strings.Contains(body, "/?search=") {
+		t.Errorf("HTMX body = %q, want /?search= dashboard link", body)
 	}
 }
 
@@ -240,11 +243,11 @@ func TestHandleRunArtistRules_BasePath(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	got, ok := resp["notifications_url"]
+	got, ok := resp["dashboard_url"]
 	if !ok {
-		t.Error("response missing notifications_url field")
-	} else if got != "/app/notifications" {
-		t.Errorf("notifications_url = %q, want %q", got, "/app/notifications")
+		t.Error("response missing dashboard_url field")
+	} else if gotStr, _ := got.(string); !strings.HasPrefix(gotStr, "/app/?search=") {
+		t.Errorf("dashboard_url = %q, want prefix %q", gotStr, "/app/?search=")
 	}
 }
 

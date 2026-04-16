@@ -360,3 +360,120 @@ func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
 		t.Errorf("response must not contain health percentage when stats are unavailable; got: %s", body)
 	}
 }
+
+func TestUrlValuesFromFilters(t *testing.T) {
+	tests := []struct {
+		name  string
+		input dashboardFilterParams
+		want  map[string]string // expected single-value per key; absent = key must not be set
+	}{
+		{
+			name:  "empty filters produce empty values",
+			input: dashboardFilterParams{},
+			want:  map[string]string{},
+		},
+		{
+			name: "all fields populated map to their keys",
+			input: dashboardFilterParams{
+				Search:    "indie",
+				Severity:  "error",
+				Category:  "image",
+				LibraryID: "lib-1",
+				RuleID:    "rule-1",
+				Fixable:   "yes",
+			},
+			want: map[string]string{
+				"search":   "indie",
+				"severity": "error",
+				"category": "image",
+				"library":  "lib-1",
+				"rule":     "rule-1",
+				"fixable":  "yes",
+			},
+		},
+		{
+			name: "empty fields are omitted so the URL stays clean",
+			input: dashboardFilterParams{
+				Severity: "warning",
+				Fixable:  "no",
+			},
+			want: map[string]string{
+				"severity": "warning",
+				"fixable":  "no",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := urlValuesFromFilters(tc.input)
+			if len(got) != len(tc.want) {
+				t.Errorf("result size = %d, want %d (got=%v)", len(got), len(tc.want), got)
+			}
+			for k, v := range tc.want {
+				if got.Get(k) != v {
+					t.Errorf("key %q = %q, want %q", k, got.Get(k), v)
+				}
+			}
+			// Keys not in `want` must not appear.
+			for k := range got {
+				if _, ok := tc.want[k]; !ok {
+					t.Errorf("unexpected key %q in result", k)
+				}
+			}
+		})
+	}
+}
+
+func TestDashboardPushURLFromFilters(t *testing.T) {
+	tests := []struct {
+		name     string
+		basePath string
+		input    dashboardFilterParams
+		want     string
+	}{
+		{
+			name:     "no filters at root base path",
+			basePath: "",
+			input:    dashboardFilterParams{},
+			want:     "/",
+		},
+		{
+			name:     "no filters under sub-path base",
+			basePath: "/stillwater",
+			input:    dashboardFilterParams{},
+			want:     "/stillwater/",
+		},
+		{
+			name:     "single filter at root",
+			basePath: "",
+			input:    dashboardFilterParams{Severity: "warning"},
+			want:     "/?severity=warning",
+		},
+		{
+			name:     "single filter under sub-path preserves base",
+			basePath: "/stillwater",
+			input:    dashboardFilterParams{Category: "image"},
+			want:     "/stillwater/?category=image",
+		},
+		{
+			name:     "multi-filter encoding is deterministic",
+			basePath: "",
+			input: dashboardFilterParams{
+				Search:   "bad artist",
+				Severity: "error",
+			},
+			want: "/?search=bad+artist&severity=error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dashboardPushURLFromFilters(tc.basePath, tc.input)
+			if got != tc.want {
+				t.Errorf("dashboardPushURLFromFilters(%q, %+v) = %q, want %q",
+					tc.basePath, tc.input, got, tc.want)
+			}
+		})
+	}
+}
