@@ -12,8 +12,9 @@ import (
 )
 
 // makeNameLanguagePrefChecker returns a Checker that flags artists whose
-// stored Name is in a script that does not match any of the user's preferred
-// metadata languages.
+// stored Name or SortName is in a script that does not match any of the
+// user's preferred metadata languages. Both fields are validated
+// independently so a mismatch on either raises a violation.
 //
 // Detection uses Unicode script analysis (v1): non-Latin vs Latin mismatches
 // are caught reliably. Latin-vs-Latin (e.g. German vs English) is out of
