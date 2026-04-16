@@ -97,6 +97,11 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 // preference list; if the user has explicitly placed "en" earlier, it
 // is tried in that position rather than last.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
+	}
+
 	// Resolve the input ID to an English-wiki title and, when possible, a
 	// Wikidata Q-ID that we can use to look up localized sitelinks.
 	enTitle, qid, err := a.resolveToTitleAndQID(ctx, id)
