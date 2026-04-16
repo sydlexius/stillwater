@@ -424,7 +424,8 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 	progress.Total = len(fixable)
 	progress.mu.Unlock()
 
-	r.runFixAll(req.Context(), fixable, scoped, progress)
+	fixAllCtx := r.injectMetadataLanguages(req.Context())
+	r.runFixAll(fixAllCtx, fixable, scoped, progress)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",

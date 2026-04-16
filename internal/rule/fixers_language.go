@@ -41,10 +41,9 @@ func (f *NameLanguageFixer) CanFix(v *Violation) bool {
 // The orchestrator is invoked with the request context so the MusicBrainz
 // adapter sees the user's language preferences and returns a localized name.
 //
-// Updates to Name and SortName are paired: when the alias has a non-empty
-// SortName different from the canonical, both fields are updated together.
-// When the alias has only a Name (no SortName), only Name is updated and
-// SortName is preserved (the MB adapter applies the same rule).
+// Name and SortName are updated independently: SortName is changed only when
+// the alias supplies a non-empty SortName different from the stored value.
+// Otherwise only Name is updated and SortName is preserved.
 func (f *NameLanguageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
 		return &FixResult{

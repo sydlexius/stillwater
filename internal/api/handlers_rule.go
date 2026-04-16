@@ -155,7 +155,8 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	result, err := r.ruleEngine.Evaluate(req.Context(), a)
+	evalCtx := r.injectMetadataLanguages(req.Context())
+	result, err := r.ruleEngine.Evaluate(evalCtx, a)
 	if err != nil {
 		r.logger.Error("evaluating artist health", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to evaluate artist"})

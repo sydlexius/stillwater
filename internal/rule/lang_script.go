@@ -120,10 +120,10 @@ func scriptMatchesAnyLocale(script string, prefs []string) bool {
 		lang := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
 		allowed, ok := localeScripts[lang]
 		if !ok {
-			// Unmapped locales default to Latin (the most common script
-			// worldwide). This prevents false-positive violations for the
-			// 100+ Latin-script languages not explicitly listed.
-			allowed = []string{scriptLatin}
+			// Unmapped locales are treated as permissive: any script matches.
+			// This avoids false positives for languages not in the map (e.g.
+			// Macedonian, Mongolian, Tajik use Cyrillic but are not listed).
+			return true
 		}
 		for _, s := range allowed {
 			if script == s {

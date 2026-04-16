@@ -36,9 +36,21 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 			return nil
 		}
 
-		script := dominantScript(a.Name)
-		if scriptMatchesAnyLocale(script, langPrefs) {
+		nameScript := dominantScript(a.Name)
+		nameOK := scriptMatchesAnyLocale(nameScript, langPrefs)
+
+		sortScript := dominantScript(a.SortName)
+		sortOK := sortScript == scriptUnknown || scriptMatchesAnyLocale(sortScript, langPrefs)
+
+		if nameOK && sortOK {
 			return nil
+		}
+
+		// Use the mismatched script for the message; prefer Name's script
+		// since it is the primary display field.
+		script := nameScript
+		if nameOK {
+			script = sortScript
 		}
 
 		prefList := strings.Join(langPrefs, ", ")

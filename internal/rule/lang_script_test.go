@@ -56,7 +56,8 @@ func TestScriptMatchesAnyLocale(t *testing.T) {
 		{"unknown always matches", scriptUnknown, []string{"en"}, true},
 		{"second pref matches", scriptCyrillic, []string{"en", "ru"}, true},
 		{"locale tag stripped", scriptLatin, []string{"en-US", "en-GB"}, true},
-		{"unmapped locale defaults to latin", scriptLatin, []string{"xx"}, true},
+		{"unmapped locale is permissive (matches any script)", scriptLatin, []string{"xx"}, true},
+		{"unmapped locale matches cyrillic too", scriptCyrillic, []string{"mk"}, true},
 		{"serbian latin", scriptLatin, []string{"sr"}, true},
 		{"serbian cyrillic", scriptCyrillic, []string{"sr"}, true},
 	}

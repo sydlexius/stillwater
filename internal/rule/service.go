@@ -227,7 +227,7 @@ var defaultRules = []Rule{
 	{
 		ID:             RuleNameLanguagePref,
 		Name:           "Artist name matches preferred language",
-		Description:    "Flags artists whose stored Name or SortName does not match the user's preferred metadata languages when MusicBrainz publishes a primary alias in a higher-priority preferred locale. In manual mode, click Fix to promote the localized alias. In auto mode, the alias is promoted automatically during evaluation.",
+		Description:    "Flags artists whose stored Name or SortName does not match the user's preferred metadata languages. When MusicBrainz provides a preferred-locale alias, the violation is fixable and Fix/auto mode can promote it; otherwise the violation is informational and can be edited manually or dismissed.",
 		Category:       "metadata",
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
