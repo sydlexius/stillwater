@@ -39,21 +39,33 @@ func newTestAdapter(t *testing.T, actionURL, sparqlURL, wikidataAPIURL string) *
 
 func sparqlServerReturning(t *testing.T, articleURL string) *httptest.Server {
 	t.Helper()
+	return sparqlServerReturningWithItem(t, articleURL, "")
+}
+
+// sparqlServerReturningWithItem returns a SPARQL stub that includes both the
+// article URL and the Wikidata item URI (used to derive the Q-ID).
+func sparqlServerReturningWithItem(t *testing.T, articleURL, itemURI string) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
+		// Build the response using a raw JSON literal so the test does not
+		// depend on the exact anonymous struct shape of sparqlResponse.
+		type binding struct {
+			Item    map[string]string `json:"item,omitempty"`
+			Article map[string]string `json:"article,omitempty"`
+		}
+		var bindings []binding
 		if articleURL != "" {
-			resp.Results.Bindings = append(resp.Results.Bindings, struct {
-				Article struct {
-					Value string `json:"value"`
-				} `json:"article"`
-			}{
-				Article: struct {
-					Value string `json:"value"`
-				}{Value: articleURL},
-			})
+			b := binding{Article: map[string]string{"value": articleURL}}
+			if itemURI != "" {
+				b.Item = map[string]string{"value": itemURI}
+			}
+			bindings = append(bindings, b)
+		}
+		payload := map[string]any{
+			"results": map[string]any{"bindings": bindings},
 		}
 		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(payload) //nolint:errcheck
 	}))
 }
 
@@ -747,6 +759,274 @@ func TestGetImages_ReturnsNil(t *testing.T) {
 	}
 	if results != nil {
 		t.Errorf("GetImages: expected nil, got %v", results)
+	}
+}
+
+// --- Language walk tests (issue #967) ---
+
+// langWalkFixture wires up a mock Wikidata entity API + one mock action API
+// per language so the GetArtist language-walk logic can be tested end-to-end.
+type langWalkFixture struct {
+	sparql  *httptest.Server
+	entity  *httptest.Server
+	actions map[string]*httptest.Server // keyed by lang code
+}
+
+func (f *langWalkFixture) close() {
+	if f.sparql != nil {
+		f.sparql.Close()
+	}
+	if f.entity != nil {
+		f.entity.Close()
+	}
+	for _, s := range f.actions {
+		s.Close()
+	}
+}
+
+// newLangWalkAdapter builds an adapter whose actionEndpointForLang rewrites to
+// per-language mock action servers. Because the real actionEndpointForLang only
+// rewrites when the adapter was constructed with the default production
+// endpoint, we install a custom helper via a small subclass approach: we make
+// the default action server route requests based on the Host header the test
+// sets. Simpler: point the adapter's actionEndpoint at a dispatcher that
+// chooses the backend using a `lang` query parameter we inject.
+//
+// We take the simpler route of invoking the adapter with the language-prefix
+// URL directly by teaching actionEndpointForLang via a per-test override: we
+// install the dispatcher as actionEndpoint and give each mock server a path
+// prefix that identifies the lang. The dispatcher reads the request Host or
+// path and proxies accordingly.
+//
+// In practice, the easiest approach is to construct per-language action
+// endpoints with distinct URLs and rely on the custom-endpoint branch of
+// actionEndpointForLang returning a single URL. To allow multiple backends
+// while using the default branch, we instead start one httptest server whose
+// handler dispatches based on a "titles" query containing a lang marker.
+//
+// To keep tests readable we simply run one dispatcher server whose handler
+// looks at an X-Test-Lang header. Since adapter code does not set such a
+// header, we encode the lang into the title by prefixing it ("ja:Title")
+// only in the sitelink response, so the dispatcher can route by title prefix.
+// That works because Wikidata sitelinks are whatever Wikidata says they are,
+// and the adapter passes them verbatim to the action API.
+func buildLangWalkAdapter(t *testing.T, perLangExtracts map[string]string, enTitle, qid string) (*Adapter, *langWalkFixture) {
+	t.Helper()
+	// One dispatcher action server that returns extract based on title prefix.
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("action")
+		title := r.URL.Query().Get("titles")
+		if action == "parse" {
+			title = r.URL.Query().Get("page")
+		}
+		// Determine lang by title prefix "lang::" or default to en for bare enTitle.
+		lang := "en"
+		articleTitle := title
+		if idx := strings.Index(title, "::"); idx > 0 {
+			lang = title[:idx]
+			articleTitle = title[idx+2:]
+		}
+		switch action {
+		case "query":
+			extract := perLangExtracts[lang]
+			resp := extractResponse{}
+			if extract == "__notfound__" {
+				resp.Query.Pages = map[string]extractPage{"-1": {}}
+			} else {
+				resp.Query.Pages = map[string]extractPage{
+					"42": {PageID: 42, Title: articleTitle, Extract: extract},
+				}
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		case "parse":
+			// Return empty wikitext.
+			resp := parseResponse{}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+
+	// Wikidata entity server: return sitelinks keyed by "{lang}wiki".
+	entitySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site := r.URL.Query().Get("sitefilter")
+		resp := wbEntityResponse{Entities: map[string]wbEntity{
+			qid: {Sitelinks: map[string]wbSitelink{}},
+		}}
+		// Only include the sitelink if a lang-specific extract is configured.
+		if strings.HasSuffix(site, "wiki") && site != "" {
+			lang := strings.TrimSuffix(site, "wiki")
+			if _, ok := perLangExtracts[lang]; ok {
+				resp.Entities[qid].Sitelinks[site] = wbSitelink{Title: lang + "::LocalTitle"}
+			}
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+
+	sparqlSrv := sparqlServerReturningWithItem(t,
+		"https://en.wikipedia.org/wiki/"+enTitle,
+		"https://www.wikidata.org/entity/"+qid)
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, entitySrv.URL)
+	return adapter, &langWalkFixture{
+		sparql: sparqlSrv,
+		entity: entitySrv,
+		actions: map[string]*httptest.Server{
+			"dispatcher": actionSrv,
+		},
+	}
+}
+
+func TestGetArtist_LangWalk(t *testing.T) {
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+
+	tests := []struct {
+		name          string
+		prefs         []string
+		extracts      map[string]string // lang -> extract (or "__notfound__" for -1 page)
+		wantBioPrefix string
+		wantErr       bool
+	}{
+		{
+			name:          "hit on first preference",
+			prefs:         []string{"ja", "de", "en"},
+			extracts:      map[string]string{"ja": "Japanese biography.", "en": "English biography."},
+			wantBioPrefix: "Japanese biography",
+		},
+		{
+			name:          "fall through to second preference",
+			prefs:         []string{"ja", "de", "en"},
+			extracts:      map[string]string{"de": "German biography.", "en": "English biography."},
+			wantBioPrefix: "German biography",
+		},
+		{
+			name:          "fall through to English fallback",
+			prefs:         []string{"ja", "de"},
+			extracts:      map[string]string{"en": "English biography."},
+			wantBioPrefix: "English biography",
+		},
+		{
+			name:     "all languages miss",
+			prefs:    []string{"ja", "de"},
+			extracts: map[string]string{"en": "__notfound__"},
+			wantErr:  true,
+		},
+		{
+			name:          "no prefs uses English only",
+			prefs:         nil,
+			extracts:      map[string]string{"en": "English biography."},
+			wantBioPrefix: "English biography",
+		},
+		{
+			name:          "duplicate and empty prefs are normalized",
+			prefs:         []string{"ja-JP", "ja", "", "en-US"},
+			extracts:      map[string]string{"ja": "Japanese biography.", "en": "English biography."},
+			wantBioPrefix: "Japanese biography",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter, fx := buildLangWalkAdapter(t, tt.extracts, "Test_Artist", "Q12345")
+			defer fx.close()
+
+			ctx := context.Background()
+			if tt.prefs != nil {
+				ctx = provider.WithMetadataLanguages(ctx, tt.prefs)
+			}
+			meta, err := adapter.GetArtist(ctx, mbid)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got meta=%+v", meta)
+				}
+				var notFound *provider.ErrNotFound
+				if !errors.As(err, &notFound) {
+					t.Errorf("expected ErrNotFound after walking all languages, got %T: %v", err, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetArtist: %v", err)
+			}
+			if !strings.HasPrefix(meta.Biography, tt.wantBioPrefix) {
+				t.Errorf("Biography = %q, want prefix %q", meta.Biography, tt.wantBioPrefix)
+			}
+		})
+	}
+}
+
+// TestGetArtist_LangWalk_RateLimitedContext verifies that a canceled context
+// mid-walk surfaces as an ErrProviderUnavailable wrapping the cancellation
+// error (the rate limiter returns ctx.Err()).
+func TestGetArtist_LangWalk_RateLimitedContext(t *testing.T) {
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	adapter, fx := buildLangWalkAdapter(t,
+		map[string]string{"en": "English biography."},
+		"Test_Artist", "Q12345")
+	defer fx.close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = provider.WithMetadataLanguages(ctx, []string{"ja", "de", "en"})
+	cancel() // pre-cancel; the first limiter.Wait will return immediately.
+
+	_, err := adapter.GetArtist(ctx, mbid)
+	if err == nil {
+		t.Fatal("expected error from canceled context")
+	}
+	// Either provider.ErrProviderUnavailable (wrapping ctx.Err) or ctx.Err itself is acceptable.
+	if !errors.Is(err, context.Canceled) {
+		var unavail *provider.ErrProviderUnavailable
+		if !errors.As(err, &unavail) {
+			t.Errorf("expected context.Canceled or ErrProviderUnavailable, got %T: %v", err, err)
+		}
+	}
+}
+
+func TestOrderedLanguages(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"nil prefs yields en only", nil, []string{"en"}},
+		{"single non-en adds en fallback", []string{"ja"}, []string{"ja", "en"}},
+		{"explicit en stays sole", []string{"en"}, []string{"en"}},
+		{"prefs preserved in order", []string{"ja", "de", "fr"}, []string{"ja", "de", "fr", "en"}},
+		{"duplicates removed", []string{"ja", "ja", "de"}, []string{"ja", "de", "en"}},
+		{"locale tags trimmed", []string{"ja-JP", "de-DE"}, []string{"ja", "de", "en"}},
+		{"invalid entries skipped", []string{"zzzz", "x", "ja"}, []string{"ja", "en"}},
+		{"whitespace trimmed", []string{"  ja ", "de"}, []string{"ja", "de", "en"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := orderedLanguages(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("orderedLanguages(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("orderedLanguages(%v) = %v, want %v", tt.in, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractQID(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"http://www.wikidata.org/entity/Q44190", "Q44190"},
+		{"https://www.wikidata.org/entity/Q1", "Q1"},
+		{"https://www.wikidata.org/entity/q7", "Q7"},
+		{"", ""},
+		{"https://www.wikidata.org/entity/", ""},
+		{"https://www.wikidata.org/entity/NotAQID", ""},
+	}
+	for _, tt := range tests {
+		if got := extractQID(tt.in); got != tt.want {
+			t.Errorf("extractQID(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
