@@ -2140,3 +2140,89 @@ func TestCountActiveViolationsByFixable(t *testing.T) {
 		t.Errorf("empty DB counts = (%d, %d), want (0, 0)", f, nf)
 	}
 }
+
+// TestCountActiveViolations_SearchFilter exercises the `Search` predicate in
+// buildViolationFilter, which every Count*ActiveViolations* query now threads
+// through. If the LIKE clause over (rv.artist_name | rv.message | rv.rule_id)
+// is silently dropped from any of the facet queries, the dashboard's filter
+// counts fall out of sync with the filtered violation list while the other
+// facet tests above keep passing. One test covers every count method because
+// they all share buildViolationFilter.
+func TestCountActiveViolations_SearchFilter(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed distinct searchable text in each row. The unique tokens avoid
+	// collisions with any other string the LIKE sees (rule IDs, default
+	// messages, etc.) so the assertions only succeed when the Search
+	// predicate is actually wired through to the underlying query.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "art-1", ArtistName: "QueryAlpha Artist",
+			Severity: "error", Message: "standard missing-nfo message", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "art-2", ArtistName: "QueryAlpha Artist",
+			Severity: "warning", Message: "standard missing-thumb message", Status: ViolationStatusOpen,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleNFOExists, ArtistID: "art-3", ArtistName: "Unrelated Artist",
+			Severity: "error", Message: "uniqueMessageBeacon for assertion", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "art-4", ArtistName: "Unrelated Other",
+			Severity: "warning", Message: "plain message no match", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	t.Run("artist_name match via CountActiveViolationsByRule", func(t *testing.T) {
+		// "QueryAlpha" appears in art-1 (NFO) and art-2 (Thumb) artist names
+		// but not in art-3 or art-4. Expect exactly those two rule rows.
+		counts, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Search: "QueryAlpha"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByRule(Search=QueryAlpha): %v", err)
+		}
+		got := make(map[string]int, len(counts))
+		for _, c := range counts {
+			got[c.RuleID] = c.Count
+		}
+		if got[RuleNFOExists] != 1 {
+			t.Errorf("%s search-filtered count = %d, want 1", RuleNFOExists, got[RuleNFOExists])
+		}
+		if got[RuleThumbExists] != 1 {
+			t.Errorf("%s search-filtered count = %d, want 1", RuleThumbExists, got[RuleThumbExists])
+		}
+		if _, ok := got[RuleFanartExists]; ok {
+			t.Errorf("%s must not appear under Search=QueryAlpha; got %d", RuleFanartExists, got[RuleFanartExists])
+		}
+	})
+
+	t.Run("message match via CountActiveViolationsByFixable", func(t *testing.T) {
+		// "uniqueMessageBeacon" appears only in art-3's message. That row
+		// was seeded with Fixable=false (the zero value), so the facet
+		// count should return (0, 1) -- one non-fixable match, no fixable.
+		fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, ViolationListParams{Search: "uniqueMessageBeacon"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByFixable(Search=uniqueMessageBeacon): %v", err)
+		}
+		if fixable != 0 || notFixable != 1 {
+			t.Errorf("search-filtered fixable counts = (%d, %d), want (0, 1)", fixable, notFixable)
+		}
+	})
+
+	t.Run("no match returns empty counts", func(t *testing.T) {
+		// A term present in no field must collapse the result set to empty.
+		// Guards against the LIKE predicate silently matching everything
+		// (e.g. a dropped pattern that accidentally becomes `LIKE '%%'`).
+		counts, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{Search: "absolutelyNoMatchToken"})
+		if err != nil {
+			t.Fatalf("CountActiveViolationsByRule(Search=no-match): %v", err)
+		}
+		if len(counts) != 0 {
+			t.Errorf("expected no rows for no-match search, got %d: %+v", len(counts), counts)
+		}
+	})
+}
