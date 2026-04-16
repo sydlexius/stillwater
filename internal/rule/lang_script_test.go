@@ -60,6 +60,11 @@ func TestScriptMatchesAnyLocale(t *testing.T) {
 		{"unmapped locale matches cyrillic too", scriptCyrillic, []string{"mk"}, true},
 		{"serbian latin", scriptLatin, []string{"sr"}, true},
 		{"serbian cyrillic", scriptCyrillic, []string{"sr"}, true},
+		{"sr-Latn accepts latin only", scriptLatin, []string{"sr-Latn"}, true},
+		{"sr-Latn rejects cyrillic", scriptCyrillic, []string{"sr-Latn"}, false},
+		{"sr-Cyrl accepts cyrillic only", scriptCyrillic, []string{"sr-Cyrl"}, true},
+		{"sr-Cyrl rejects latin", scriptLatin, []string{"sr-Cyrl"}, false},
+		{"zh-Hant with region accepts han", scriptHan, []string{"zh-Hant-TW"}, true},
 	}
 
 	for _, tt := range tests {

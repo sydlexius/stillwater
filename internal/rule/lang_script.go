@@ -113,13 +113,59 @@ var localeScripts = map[string][]string{
 	"th": {scriptThai},
 }
 
+// iso15924ToScript maps ISO 15924 script codes (as used in BCP-47 script
+// subtags like "sr-Latn" or "zh-Hant") to our internal script constants.
+// Only scripts we detect via dominantScript are included.
+var iso15924ToScript = map[string]string{
+	"latn": scriptLatin,
+	"hani": scriptHan,
+	"hans": scriptHan,
+	"hant": scriptHan,
+	"hira": scriptHiragana,
+	"kana": scriptKatakana,
+	"hang": scriptHangul,
+	"kore": scriptHangul,
+	"cyrl": scriptCyrillic,
+	"arab": scriptArabic,
+	"hebr": scriptHebrew,
+	"grek": scriptGreek,
+	"deva": scriptDevanagari,
+	"thai": scriptThai,
+}
+
+// parseBCP47Script extracts the explicit ISO 15924 script subtag from a
+// BCP-47 tag (e.g. "sr-Latn" -> "latn", "zh-Hant-TW" -> "hant"). Returns
+// the empty string when no script subtag is present. The script subtag is
+// always a 4-letter segment; language is 2-3 letters and region is 2
+// letters or 3 digits, so the 4-letter position after the language is
+// unambiguous.
+func parseBCP47Script(tag string) string {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(tag)), "-")
+	for _, p := range parts[1:] {
+		if len(p) == 4 {
+			return p
+		}
+	}
+	return ""
+}
+
 // scriptMatchesAnyLocale returns true when the given script is expected for
-// at least one of the BCP-47 locale tags in prefs.
+// at least one of the BCP-47 locale tags in prefs. Explicit script subtags
+// (sr-Latn, zh-Hant, etc.) are honored directly; otherwise the base language
+// maps through localeScripts.
 func scriptMatchesAnyLocale(script string, prefs []string) bool {
 	if script == scriptUnknown {
 		return true
 	}
 	for _, p := range prefs {
+		// Honor an explicit BCP-47 script subtag first: "sr-Latn" must
+		// mean Latin only, not Serbia's default [cyrillic, latin] set.
+		if sub := parseBCP47Script(p); sub != "" {
+			if mapped, ok := iso15924ToScript[sub]; ok && mapped == script {
+				return true
+			}
+			continue
+		}
 		lang := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
 		allowed, ok := localeScripts[lang]
 		if !ok {

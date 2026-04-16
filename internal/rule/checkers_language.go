@@ -55,7 +55,16 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 
 		prefList := strings.Join(langPrefs, ", ")
 
-		fixable, aliasName, aliasSort := e.lookupPreferredAlias(ctx, a)
+		aliasName, aliasSort := e.lookupPreferredAlias(ctx, a)
+
+		// The violation is fixable only when the alias can repair every
+		// out-of-policy field. If Name is in the wrong script, the alias
+		// must supply a different Name; same for SortName. Otherwise the
+		// Fix button would leave part of the mismatch behind, causing the
+		// violation to reopen on the next evaluation.
+		nameFixable := nameOK || (aliasName != "" && aliasName != a.Name)
+		sortFixable := sortOK || (aliasSort != "" && aliasSort != a.SortName)
+		fixable := nameFixable && sortFixable
 
 		var msg string
 		if fixable {
@@ -95,19 +104,20 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 	}
 }
 
-// lookupPreferredAlias attempts to find a localized alias from MusicBrainz
-// that matches a preferred language. Returns fixable=true with the alias
-// name/sort when one is found. Falls back to fixable=false when MBID is
-// missing, the provider is not wired, or no suitable alias exists.
-func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (fixable bool, aliasName, aliasSort string) {
+// lookupPreferredAlias returns the localized Name and SortName (if any)
+// from MusicBrainz that match the user's language preferences. The caller
+// decides whether each field is fixable by comparing against the stored
+// values. Returns empty strings when the provider is unwired, the MBID is
+// missing, or the lookup fails or times out.
+func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (aliasName, aliasSort string) {
 	if a.MusicBrainzID == "" || e.metadataProvider == nil {
-		return false, "", ""
+		return "", ""
 	}
 
 	// The orchestrator may query multiple providers (MB, Wikipedia, etc.),
 	// which is far heavier than the alias check we need here. Cap the lookup
 	// so evaluation does not block the request for 30+ seconds; degrade to
-	// "unfixable" on timeout rather than hanging.
+	// empty result on timeout rather than hanging.
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -117,21 +127,11 @@ func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (fi
 			slog.String("artist", a.Name),
 			slog.String("mbid", a.MusicBrainzID),
 			slog.String("error", err.Error()))
-		return false, "", ""
+		return "", ""
 	}
 	if fr == nil || fr.Metadata == nil {
-		return false, "", ""
+		return "", ""
 	}
 
-	bestName := strings.TrimSpace(fr.Metadata.Name)
-	bestSort := strings.TrimSpace(fr.Metadata.SortName)
-
-	nameDiff := bestName != "" && bestName != a.Name
-	sortDiff := bestSort != "" && bestSort != a.SortName
-
-	if !nameDiff && !sortDiff {
-		return false, "", ""
-	}
-
-	return true, bestName, bestSort
+	return strings.TrimSpace(fr.Metadata.Name), strings.TrimSpace(fr.Metadata.SortName)
 }

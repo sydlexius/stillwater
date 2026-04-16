@@ -156,10 +156,21 @@ func TestNameLanguagePrefChecker(t *testing.T) {
 			wantSubstr:  "latin script",
 		},
 		{
-			name:   "flags only sort name when alias sort differs",
+			name:   "name and sort both wrong-script; alias repairs only sort -> unfixable",
 			artist: artist.Artist{Name: "\u5c3e\u5d0e\u8c4a", SortName: "\u5c3e\u5d0e\u8c4a", MusicBrainzID: "mbid-8"},
 			stub: &stubMetadataProvider{
 				metadata: &provider.ArtistMetadata{Name: "\u5c3e\u5d0e\u8c4a", SortName: "Ozaki, Yutaka"},
+			},
+			ctx:         provider.WithMetadataLanguages(context.Background(), []string{"en"}),
+			wantViol:    true,
+			wantFixable: false,
+			wantSubstr:  "no localized alias available",
+		},
+		{
+			name:   "name-ok, sort-wrong, alias supplies different sort -> fixable",
+			artist: artist.Artist{Name: "Ozaki Yutaka", SortName: "\u5c3e\u5d0e\u8c4a", MusicBrainzID: "mbid-8b"},
+			stub: &stubMetadataProvider{
+				metadata: &provider.ArtistMetadata{Name: "Ozaki Yutaka", SortName: "Ozaki, Yutaka"},
 			},
 			ctx:         provider.WithMetadataLanguages(context.Background(), []string{"en"}),
 			wantViol:    true,
