@@ -247,7 +247,8 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	r.runBulkAction(req.Context(), body.Action, ids, progress)
+	bulkCtx := r.injectMetadataLanguages(req.Context())
+	r.runBulkAction(bulkCtx, body.Action, ids, progress)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",

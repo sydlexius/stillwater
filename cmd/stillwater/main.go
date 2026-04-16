@@ -200,6 +200,9 @@ func run() error {
 	// images for API-only artists that have no local filesystem path.
 	imageBridge := imagebridge.New(connectionService, artistService, logger)
 	ruleEngine.SetImageFetcher(imageBridge)
+	// Wired below after orchestrator is constructed; this keeps the rule
+	// engine usable during scanner init even though the language-preference
+	// rule will no-op until SetMetadataProvider is called.
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -246,6 +249,10 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
+	// Wire the orchestrator into the rule engine so the name_language_pref
+	// rule can fetch localized aliases for comparison and promotion.
+	ruleEngine.SetMetadataProvider(orchestrator)
+
 	// Initialize scraper configuration and executor
 	scraperService := scraper.NewService(db, logger)
 	if err := scraperService.SeedDefaults(context.Background()); err != nil {
@@ -286,6 +293,7 @@ func run() error {
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(nfoSnapshotService, nfoSettingsService, fsCheck, expectedWrites),
 		rule.NewMetadataFixer(orchestrator, logger),
+		rule.NewNameLanguageFixer(orchestrator, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
 		logoPaddingFixer,

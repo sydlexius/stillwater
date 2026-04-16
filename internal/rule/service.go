@@ -40,6 +40,7 @@ const (
 	RuleBackdropSequencing    = "backdrop_sequencing"
 	RuleBackdropMinCount      = "backdrop_min_count"
 	RuleLogoPadding           = "logo_padding"
+	RuleNameLanguagePref      = "name_language_pref"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -222,6 +223,15 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{ThresholdPercent: 15, TrimMargin: 2, Severity: "info"},
+	},
+	{
+		ID:             RuleNameLanguagePref,
+		Name:           "Artist name matches preferred language",
+		Description:    "Flags artists whose stored Name or SortName does not match the user's preferred metadata languages when MusicBrainz publishes a primary alias in a higher-priority preferred locale. In manual mode, click Fix to promote the localized alias. In auto mode, the alias is promoted automatically during evaluation.",
+		Category:       "metadata",
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
 	},
 }
 

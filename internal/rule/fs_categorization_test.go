@@ -41,6 +41,7 @@ func TestIsFilesystemDependent(t *testing.T) {
 		RuleImageDuplicate,
 		RuleBackdropSequencing,
 		RuleBackdropMinCount,
+		RuleNameLanguagePref,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {
@@ -79,6 +80,7 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		RuleImageDuplicate:        true,
 		RuleBackdropSequencing:    true,
 		RuleBackdropMinCount:      true,
+		RuleNameLanguagePref:      true,
 	}
 
 	for _, r := range defaultRules {
