@@ -12,7 +12,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// MetadataProvider abstracts the subset of provider.Orchestrator that the
+// language-preference rule needs. It is used by the name_language_pref
+// checker to fetch a localized name candidate for comparison against the
+// stored artist Name and SortName. Wired by SetMetadataProvider; when nil
+// the checker degrades to a no-op rather than failing evaluation.
+type MetadataProvider interface {
+	FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
+}
 
 // ruleCacheTTL is how long the in-memory rule list cache is considered fresh.
 // A short TTL (5 s) eliminates the N+1 DB query pattern under concurrent load
@@ -104,6 +114,12 @@ type Engine struct {
 	// have no local filesystem path (API-only imports from Emby/Jellyfin).
 	imageFetcher PlatformImageFetcher
 
+	// metadataProvider is used by the name_language_pref checker and fixer
+	// to fetch the best-matching localized alias for an artist. When nil,
+	// the checker silently no-ops (returns nil violations) so evaluation
+	// remains stable in test or stripped-down environments.
+	metadataProvider MetadataProvider
+
 	// apiImageCacheMu guards apiImageCache.
 	apiImageCacheMu sync.Mutex
 	// apiImageCache stores raw image bytes fetched via the platform API. This
@@ -149,7 +165,24 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
 	e.checkers[RuleBackdropMinCount] = e.makeBackdropMinCountChecker()
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
+	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
 	return e
+}
+
+// SetMetadataProvider attaches a metadata provider (typically the
+// provider.Orchestrator) to the engine. The name_language_pref checker
+// uses it to fetch localized aliases for comparison against the stored
+// artist Name and SortName. Pass nil to disable the rule (its checker
+// will return nil for every artist).
+func (e *Engine) SetMetadataProvider(p MetadataProvider) {
+	e.metadataProvider = p
+}
+
+// MetadataProvider returns the engine's metadata provider, or nil if none
+// is configured. The name_language_pref fixer uses this to perform the
+// alias lookup and promotion.
+func (e *Engine) MetadataProvider() MetadataProvider {
+	return e.metadataProvider
 }
 
 // cachedRules returns the rule list from the in-memory cache when it is still
@@ -323,7 +356,7 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 
 		result.RulesTotal++
 
-		v := checker(a, r.Config)
+		v := checker(ctx, a, r.Config)
 		if v != nil {
 			// Use severity from rule config if the checker did not set it
 			if v.Severity == "" {

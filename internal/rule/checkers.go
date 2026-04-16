@@ -23,7 +23,7 @@ import (
 
 // Checker evaluates a single rule against an artist.
 // Returns a Violation if the rule is not satisfied, or nil if it passes.
-type Checker func(a *artist.Artist, cfg RuleConfig) *Violation
+type Checker func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation
 
 // thumbPatterns matches the scanner's detection patterns for thumbnails.
 var thumbPatterns = []string{
@@ -36,7 +36,7 @@ var fanartPatterns = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backd
 var logoPatterns = []string{"logo.png", "logo-white.png"}
 var bannerPatterns = []string{"banner.jpg", "banner.png"}
 
-func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
+func checkNFOExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.NFOExists {
 		return nil
 	}
@@ -50,7 +50,7 @@ func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkNFOHasMBID(a *artist.Artist, _ RuleConfig) *Violation {
+func checkNFOHasMBID(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.MusicBrainzID != "" {
 		return nil
 	}
@@ -64,7 +64,7 @@ func checkNFOHasMBID(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkThumbExists(a *artist.Artist, _ RuleConfig) *Violation {
+func checkThumbExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.ThumbExists {
 		return nil
 	}
@@ -81,7 +81,7 @@ func checkThumbExists(a *artist.Artist, _ RuleConfig) *Violation {
 // makeThumbSquareChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbSquareChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
@@ -119,7 +119,7 @@ func (e *Engine) makeThumbSquareChecker() Checker {
 // makeThumbMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbMinResChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
@@ -153,7 +153,7 @@ func (e *Engine) makeThumbMinResChecker() Checker {
 	}
 }
 
-func checkFanartExists(a *artist.Artist, _ RuleConfig) *Violation {
+func checkFanartExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.FanartExists {
 		return nil
 	}
@@ -167,7 +167,7 @@ func checkFanartExists(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkLogoExists(a *artist.Artist, _ RuleConfig) *Violation {
+func checkLogoExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.LogoExists {
 		return nil
 	}
@@ -181,7 +181,7 @@ func checkLogoExists(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
+func checkBioExists(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	minLen := cfg.MinLength
 	if minLen == 0 {
 		minLen = 10
@@ -209,7 +209,7 @@ func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
 // makeFanartMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartMinResChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil // fanart_exists handles missing fanart
 		}
@@ -241,7 +241,7 @@ func (e *Engine) makeFanartMinResChecker() Checker {
 // makeFanartAspectChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartAspectChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil
 		}
@@ -275,7 +275,7 @@ func (e *Engine) makeFanartAspectChecker() Checker {
 // makeLogoMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the logo.
 func (e *Engine) makeLogoMinResChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {
 			return nil
 		}
@@ -301,7 +301,7 @@ func (e *Engine) makeLogoMinResChecker() Checker {
 	}
 }
 
-func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
+func checkBannerExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violation {
 	if a.BannerExists {
 		return nil
 	}
@@ -318,7 +318,7 @@ func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
 // makeBannerMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the banner.
 func (e *Engine) makeBannerMinResChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.BannerExists {
 			return nil
 		}
@@ -482,7 +482,7 @@ func (e *Engine) getLogoBoundsFromBytes(data []byte) (content, original goimage.
 // the logo through the platform image fetcher and caches the raw bytes only
 // when a violation is found, so the fixer can consume them.
 func (e *Engine) makeLogoPaddingChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {
 			return nil
 		}
@@ -588,7 +588,7 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 	}
 }
 
-func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
+func checkArtistIDMismatch(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	if a.Path == "" {
 		return nil
 	}
@@ -730,7 +730,7 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 // backdrop3.jpg with no backdrop2.jpg). Gap detection is handled by the
 // backdrop_sequencing rule (#519).
 func (e *Engine) makeExtraneousImagesChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
 			return e.checkExtraneousImagesFromDB(a, cfg)
 		}
@@ -995,7 +995,7 @@ func canonicalDirName(name, articleMode string) string {
 	return name
 }
 
-func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
+func checkDirectoryNameMismatch(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	if a.Path == "" {
 		return nil
 	}
@@ -1036,7 +1036,7 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 // pre-computed dHash values from the artist_images table and compares all
 // pairs using Hamming distance.
 func (e *Engine) makeImageDuplicateChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" || e.db == nil {
 			return nil
 		}
@@ -1113,7 +1113,7 @@ func truncateStr(s string, max int) string {
 	return string(runes[:max]) + "..."
 }
 
-func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
+func checkMetadataQuality(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	// Check biography for known placeholder/junk patterns.
 	// This complements bio_exists (which checks length): a biography that is
 	// "?" passes the length check at minLength=1 but is clearly junk.
@@ -1135,7 +1135,7 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 // backdrop3.jpg exist (gap at 1,2), or backdrop1.jpg exists without
 // backdrop.jpg (wrong starting point), a violation is returned.
 func (e *Engine) makeBackdropSequencingChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
 			return e.checkBackdropSequencingFromDB(a, cfg)
 		}
@@ -1320,7 +1320,7 @@ func (e *Engine) countBackdropsFromDB(artistID string) int {
 // scanning the directory. For API-imported artists (no path), the artist_images
 // table is queried instead.
 func (e *Engine) makeBackdropMinCountChecker() Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		minCount := cfg.MinCount
 		if minCount <= 0 {
 			minCount = 1 // safety default

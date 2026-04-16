@@ -42,7 +42,7 @@ func TestCheckNFOExists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := checkNFOExists(&tt.artist, RuleConfig{})
+			v := checkNFOExists(context.Background(), &tt.artist, RuleConfig{})
 			if (v == nil) != tt.wantNil {
 				t.Errorf("checkNFOExists = %v, wantNil = %v", v, tt.wantNil)
 			}
@@ -78,7 +78,7 @@ func TestCheckNFOHasMBID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := checkNFOHasMBID(&tt.artist, RuleConfig{})
+			v := checkNFOHasMBID(context.Background(), &tt.artist, RuleConfig{})
 			if (v == nil) != tt.wantNil {
 				t.Errorf("checkNFOHasMBID = %v, wantNil = %v", v, tt.wantNil)
 			}
@@ -88,24 +88,24 @@ func TestCheckNFOHasMBID(t *testing.T) {
 
 func TestCheckThumbExists(t *testing.T) {
 	a := artist.Artist{Name: "Test", ThumbExists: true}
-	if v := checkThumbExists(&a, RuleConfig{}); v != nil {
+	if v := checkThumbExists(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for artist with thumb, got %v", v)
 	}
 
 	a.ThumbExists = false
-	if v := checkThumbExists(&a, RuleConfig{}); v == nil {
+	if v := checkThumbExists(context.Background(), &a, RuleConfig{}); v == nil {
 		t.Error("expected violation for artist without thumb")
 	}
 }
 
 func TestCheckFanartExists(t *testing.T) {
 	a := artist.Artist{Name: "Test", FanartExists: true}
-	if v := checkFanartExists(&a, RuleConfig{}); v != nil {
+	if v := checkFanartExists(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for artist with fanart, got %v", v)
 	}
 
 	a.FanartExists = false
-	v := checkFanartExists(&a, RuleConfig{})
+	v := checkFanartExists(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for artist without fanart")
 	}
@@ -116,12 +116,12 @@ func TestCheckFanartExists(t *testing.T) {
 
 func TestCheckLogoExists(t *testing.T) {
 	a := artist.Artist{Name: "Test", LogoExists: true}
-	if v := checkLogoExists(&a, RuleConfig{}); v != nil {
+	if v := checkLogoExists(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for artist with logo, got %v", v)
 	}
 
 	a.LogoExists = false
-	v := checkLogoExists(&a, RuleConfig{})
+	v := checkLogoExists(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for artist without logo")
 	}
@@ -167,7 +167,7 @@ func TestCheckBioExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := artist.Artist{Name: "Test", Biography: tt.bio}
 			cfg := RuleConfig{MinLength: tt.minLen}
-			v := checkBioExists(&a, cfg)
+			v := checkBioExists(context.Background(), &a, cfg)
 			if (v == nil) != tt.wantNil {
 				t.Errorf("checkBioExists = %v, wantNil = %v", v, tt.wantNil)
 			}
@@ -184,7 +184,7 @@ func TestCheckThumbSquare(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
-	v := checker(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v := checker(context.Background(), &a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v != nil {
 		t.Errorf("expected nil for square thumbnail, got %v", v)
 	}
@@ -194,7 +194,7 @@ func TestCheckThumbSquare(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir2, "folder.jpg"), 800, 400)
 
 	a2 := artist.Artist{Name: "Test2", ThumbExists: true, Path: dir2}
-	v2 := checker(&a2, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v2 := checker(context.Background(), &a2, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v2 == nil {
 		t.Error("expected violation for non-square thumbnail")
 	}
@@ -206,7 +206,7 @@ func TestCheckThumbSquare_NoThumb(t *testing.T) {
 
 	// When thumb does not exist, checker should return nil (thumb_exists handles it)
 	a := artist.Artist{Name: "Test", ThumbExists: false}
-	v := checker(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v := checker(context.Background(), &a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v != nil {
 		t.Errorf("expected nil when ThumbExists is false, got %v", v)
 	}
@@ -221,7 +221,7 @@ func TestCheckThumbMinRes(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 1000, 1000)
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
-	v := checker(&a, RuleConfig{MinWidth: 500, MinHeight: 500})
+	v := checker(context.Background(), &a, RuleConfig{MinWidth: 500, MinHeight: 500})
 	if v != nil {
 		t.Errorf("expected nil for high-res thumbnail, got %v", v)
 	}
@@ -231,7 +231,7 @@ func TestCheckThumbMinRes(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir2, "folder.jpg"), 200, 200)
 
 	a2 := artist.Artist{Name: "Test2", ThumbExists: true, Path: dir2}
-	v2 := checker(&a2, RuleConfig{MinWidth: 500, MinHeight: 500})
+	v2 := checker(context.Background(), &a2, RuleConfig{MinWidth: 500, MinHeight: 500})
 	if v2 == nil {
 		t.Error("expected violation for low-res thumbnail")
 	}
@@ -246,7 +246,7 @@ func TestCheckThumbMinRes_DefaultValues(t *testing.T) {
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
 	// Zero config should default to 500x500
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for 600x600 with default min 500, got %v", v)
 	}
@@ -279,7 +279,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 
 	// Missing fanart: skip check
 	a := artist.Artist{Name: "Test", FanartExists: false}
-	if v := checker(&a, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when FanartExists is false, got %v", v)
 	}
 
@@ -287,7 +287,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
-	if v := checker(&a, RuleConfig{MinWidth: 1920, MinHeight: 1080}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{MinWidth: 1920, MinHeight: 1080}); v != nil {
 		t.Errorf("expected nil for 1920x1080 fanart, got %v", v)
 	}
 
@@ -295,7 +295,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 800, 450)
 	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
-	v := checker(&a2, RuleConfig{MinWidth: 1920, MinHeight: 1080})
+	v := checker(context.Background(), &a2, RuleConfig{MinWidth: 1920, MinHeight: 1080})
 	if v == nil {
 		t.Error("expected violation for low-res fanart")
 	}
@@ -307,7 +307,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "fanart.jpg"), 2000, 1200)
 	a3 := artist.Artist{Name: "Test3", FanartExists: true, Path: dir3}
-	if v := checker(&a3, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 2000x1200 with default 1920x1080, got %v", v)
 	}
 }
@@ -318,7 +318,7 @@ func TestCheckFanartAspect(t *testing.T) {
 
 	// Missing fanart: skip
 	a := artist.Artist{Name: "Test", FanartExists: false}
-	if v := checker(&a, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when FanartExists is false, got %v", v)
 	}
 
@@ -326,7 +326,7 @@ func TestCheckFanartAspect(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
-	if v := checker(&a, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1}); v != nil {
 		t.Errorf("expected nil for 16:9 fanart, got %v", v)
 	}
 
@@ -334,7 +334,7 @@ func TestCheckFanartAspect(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 1000, 1000)
 	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
-	v := checker(&a2, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1})
+	v := checker(context.Background(), &a2, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1})
 	if v == nil {
 		t.Error("expected violation for square fanart with 16:9 check")
 	}
@@ -349,7 +349,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 
 	// Missing logo: skip
 	a := artist.Artist{Name: "Test", LogoExists: false}
-	if v := checker(&a, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when LogoExists is false, got %v", v)
 	}
 
@@ -357,7 +357,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "logo.png"), 500, 200)
 	a = artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	if v := checker(&a, RuleConfig{MinWidth: 400}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{MinWidth: 400}); v != nil {
 		t.Errorf("expected nil for 500px logo, got %v", v)
 	}
 
@@ -365,7 +365,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "logo.png"), 200, 100)
 	a2 := artist.Artist{Name: "Test2", LogoExists: true, Path: dir2}
-	v := checker(&a2, RuleConfig{MinWidth: 400})
+	v := checker(context.Background(), &a2, RuleConfig{MinWidth: 400})
 	if v == nil {
 		t.Error("expected violation for 200px logo with 400px minimum")
 	}
@@ -377,19 +377,19 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "logo.png"), 500, 200)
 	a3 := artist.Artist{Name: "Test3", LogoExists: true, Path: dir3}
-	if v := checker(&a3, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 500px with default 400px minimum, got %v", v)
 	}
 }
 
 func TestCheckBannerExists(t *testing.T) {
 	a := artist.Artist{Name: "Test", BannerExists: true}
-	if v := checkBannerExists(&a, RuleConfig{}); v != nil {
+	if v := checkBannerExists(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for artist with banner, got %v", v)
 	}
 
 	a.BannerExists = false
-	v := checkBannerExists(&a, RuleConfig{})
+	v := checkBannerExists(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for artist without banner")
 	}
@@ -407,7 +407,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 
 	// Missing banner: skip
 	a := artist.Artist{Name: "Test", BannerExists: false}
-	if v := checker(&a, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when BannerExists is false, got %v", v)
 	}
 
@@ -415,7 +415,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "banner.jpg"), 1000, 185)
 	a = artist.Artist{Name: "Test", BannerExists: true, Path: dir}
-	if v := checker(&a, RuleConfig{MinWidth: 1000, MinHeight: 185}); v != nil {
+	if v := checker(context.Background(), &a, RuleConfig{MinWidth: 1000, MinHeight: 185}); v != nil {
 		t.Errorf("expected nil for 1000x185 banner, got %v", v)
 	}
 
@@ -423,7 +423,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "banner.jpg"), 500, 100)
 	a2 := artist.Artist{Name: "Test2", BannerExists: true, Path: dir2}
-	v := checker(&a2, RuleConfig{MinWidth: 1000, MinHeight: 185})
+	v := checker(context.Background(), &a2, RuleConfig{MinWidth: 1000, MinHeight: 185})
 	if v == nil {
 		t.Error("expected violation for small banner")
 	}
@@ -435,7 +435,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "banner.jpg"), 1200, 200)
 	a3 := artist.Artist{Name: "Test3", BannerExists: true, Path: dir3}
-	if v := checker(&a3, RuleConfig{}); v != nil {
+	if v := checker(context.Background(), &a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 1200x200 with default 1000x185, got %v", v)
 	}
 }
@@ -453,7 +453,7 @@ func TestCheckExtraneousImages(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{Severity: "warning"})
+	v := checker(context.Background(), &a, RuleConfig{Severity: "warning"})
 	if v == nil {
 		t.Fatal("expected violation for extraneous images")
 	}
@@ -475,7 +475,7 @@ func TestCheckExtraneousImages_NoExtraneous(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for directory with only canonical files, got %v", v)
 	}
@@ -494,7 +494,7 @@ func TestCheckExtraneousImages_NumberedFanart(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil (numbered fanart should be whitelisted), got: %s", v.Message)
 	}
@@ -513,7 +513,7 @@ func TestCheckExtraneousImages_NumberedFanartWithGaps(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil (numbered fanart with gaps should be whitelisted), got: %s", v.Message)
 	}
@@ -532,7 +532,7 @@ func TestCheckExtraneousImages_BackdropNaming(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil (backdrop numbered variants should be whitelisted), got: %s", v.Message)
 	}
@@ -550,7 +550,7 @@ func TestCheckExtraneousImages_NonStandardNameFlagged(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for non-standard 'backdrop_old.jpg'")
 	}
@@ -564,7 +564,7 @@ func TestCheckExtraneousImages_EmptyPath(t *testing.T) {
 	checker := e.makeExtraneousImagesChecker()
 
 	a := artist.Artist{Name: "Test", Path: ""}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for empty path, got %v", v)
 	}
@@ -726,7 +726,7 @@ func TestCheckArtistIDMismatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := checkArtistIDMismatch(&tt.artist, tt.cfg)
+			v := checkArtistIDMismatch(context.Background(), &tt.artist, tt.cfg)
 			if (v == nil) != tt.wantNil {
 				t.Errorf("checkArtistIDMismatch = %v, wantNil = %v", v, tt.wantNil)
 			}
@@ -788,7 +788,7 @@ func TestCheckBackdropSequencing_Contiguous(t *testing.T) {
 	checker := e.makeBackdropSequencingChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for contiguous sequence, got: %s", v.Message)
 	}
@@ -804,7 +804,7 @@ func TestCheckBackdropSequencing_WithGap(t *testing.T) {
 	checker := e.makeBackdropSequencingChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for gap in sequence")
 	}
@@ -827,7 +827,7 @@ func TestCheckBackdropSequencing_NumberedOnlyNoPrimary(t *testing.T) {
 	checker := e.makeBackdropSequencingChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation when primary file is missing and only numbered variants exist")
 	}
@@ -846,7 +846,7 @@ func TestCheckBackdropSequencing_SingleNumberedOnly(t *testing.T) {
 	checker := e.makeBackdropSequencingChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for single numbered file without primary")
 	}
@@ -860,7 +860,7 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 	checker := e.makeBackdropSequencingChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for single fanart file, got: %s", v.Message)
 	}
@@ -925,7 +925,7 @@ func TestCheckBackdropMinCount_Satisfied(t *testing.T) {
 	checker := e.makeBackdropMinCountChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{MinCount: 2})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 2})
 	if v != nil {
 		t.Errorf("expected nil when count meets minimum, got: %s", v.Message)
 	}
@@ -939,7 +939,7 @@ func TestCheckBackdropMinCount_BelowMinimum(t *testing.T) {
 	checker := e.makeBackdropMinCountChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{MinCount: 3})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 3})
 	if v == nil {
 		t.Fatal("expected violation when count is below minimum")
 	}
@@ -958,7 +958,7 @@ func TestCheckBackdropMinCount_NoBackdrops(t *testing.T) {
 	checker := e.makeBackdropMinCountChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{MinCount: 1})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 1})
 	if v == nil {
 		t.Fatal("expected violation when no backdrops exist")
 	}
@@ -975,7 +975,7 @@ func TestCheckBackdropMinCount_DefaultMinCount(t *testing.T) {
 	checker := e.makeBackdropMinCountChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{MinCount: 0})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 0})
 	if v == nil {
 		t.Fatal("expected violation with default min count and no backdrops")
 	}
@@ -991,7 +991,7 @@ func TestCheckBackdropMinCount_ExactlyAtMinimum(t *testing.T) {
 	checker := e.makeBackdropMinCountChecker()
 
 	a := artist.Artist{Name: "Test", Path: dir}
-	v := checker(&a, RuleConfig{MinCount: 3})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 3})
 	if v != nil {
 		t.Errorf("expected nil when count equals minimum, got: %s", v.Message)
 	}
@@ -1040,13 +1040,13 @@ func TestCheckBackdropMinCount_DBPath(t *testing.T) {
 	a := artist.Artist{ID: "a1", Name: "Test DB Path", Path: ""}
 
 	// Should pass: 3 fanart rows >= minCount 2.
-	v := checker(&a, RuleConfig{MinCount: 2})
+	v := checker(context.Background(), &a, RuleConfig{MinCount: 2})
 	if v != nil {
 		t.Errorf("expected nil when DB count meets minimum, got: %s", v.Message)
 	}
 
 	// Should fail: 3 fanart rows < minCount 5.
-	v = checker(&a, RuleConfig{MinCount: 5})
+	v = checker(context.Background(), &a, RuleConfig{MinCount: 5})
 	if v == nil {
 		t.Fatal("expected violation when DB count is below minimum")
 	}
@@ -1066,7 +1066,7 @@ func TestCheckLogoPadding_ExcessPadding(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation for logo with 72% padding")
 	}
@@ -1087,7 +1087,7 @@ func TestCheckLogoPadding_BelowThreshold(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil for logo with 14.5%% padding, got %v", v)
 	}
@@ -1100,7 +1100,7 @@ func TestCheckLogoPadding_NoPadding(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil for logo with no padding, got %v", v)
 	}
@@ -1110,7 +1110,7 @@ func TestCheckLogoPadding_NoLogo(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: false, Path: t.TempDir()}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when logo does not exist, got %v", v)
 	}
@@ -1120,7 +1120,7 @@ func TestCheckLogoPadding_NoPath(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: ""}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when path is empty, got %v", v)
 	}
@@ -1136,7 +1136,7 @@ func TestCheckLogoPadding_DefaultThreshold(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation with default threshold (15%)")
 	}
@@ -1179,7 +1179,7 @@ func TestCheckLogoPadding_JPEGWhitespace(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation for JPEG logo with whitespace padding")
 	}
@@ -1200,7 +1200,7 @@ func TestLogoBoundsCache_HitAfterFirstEval(t *testing.T) {
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
 
 	// First call: cache miss, image is decoded and result stored.
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation on first call")
 	}
@@ -1219,7 +1219,7 @@ func TestLogoBoundsCache_HitAfterFirstEval(t *testing.T) {
 	}
 
 	// Second call: must use cached result (same violation, no re-decode).
-	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v2 := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v2 == nil {
 		t.Fatal("expected violation on second call (from cache)")
 	}
@@ -1252,7 +1252,7 @@ func TestLogoBoundsCache_MtimeInvalidation(t *testing.T) {
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
 
 	// First call: populates the cache.
-	v1 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v1 := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v1 == nil {
 		t.Fatal("expected violation on first call")
 	}
@@ -1280,7 +1280,7 @@ func TestLogoBoundsCache_MtimeInvalidation(t *testing.T) {
 		t.Log("old mtime entry was already evicted (acceptable)")
 	}
 
-	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v2 := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v2 != nil {
 		t.Errorf("expected nil violation after replacing with padding-free PNG, got: %s", v2.Message)
 	}
@@ -1591,7 +1591,7 @@ func TestCheckers_EmptyPath_DBDimensions(t *testing.T) {
 			checker := tt.checker(e)
 			a := tt.artistFn(artistID)
 
-			v := checker(a, tt.cfg)
+			v := checker(context.Background(), a, tt.cfg)
 			if v == nil {
 				t.Fatalf("expected violation for %s with DB dimensions %dx%d and empty Path", tt.ruleID, tt.w, tt.h)
 			}
@@ -1686,7 +1686,7 @@ func TestCheckers_EmptyPath_DBDimensions_Pass(t *testing.T) {
 			checker := tt.checker(e)
 			a := tt.artistFn(artistID)
 
-			v := checker(a, tt.cfg)
+			v := checker(context.Background(), a, tt.cfg)
 			if v != nil {
 				t.Errorf("expected nil (passing rule), got violation: %s", v.Message)
 			}
@@ -1757,7 +1757,7 @@ func TestCheckLogoPadding_APIFetch_ExcessPadding(t *testing.T) {
 	checker := e.makeLogoPaddingChecker()
 
 	a := artist.Artist{ID: "api-001", Name: "API Artist", LogoExists: true, Path: ""}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation for API-fetched logo with 72% padding")
 	}
@@ -1782,7 +1782,7 @@ func TestCheckLogoPadding_APIFetch_BelowThreshold(t *testing.T) {
 	checker := e.makeLogoPaddingChecker()
 
 	a := artist.Artist{ID: "api-002", Name: "API Artist 2", LogoExists: true, Path: ""}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil for API logo with 14.5%% padding, got %v", v)
 	}
@@ -1801,7 +1801,7 @@ func TestCheckLogoPadding_APIFetch_CachesBytes(t *testing.T) {
 	a := artist.Artist{ID: "api-003", Name: "Cache Test", LogoExists: true, Path: ""}
 
 	// First call: fetches from the mock.
-	v1 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v1 := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v1 == nil {
 		t.Fatal("expected violation on first API call")
 	}
@@ -1810,7 +1810,7 @@ func TestCheckLogoPadding_APIFetch_CachesBytes(t *testing.T) {
 	}
 
 	// Second call: should use cached bytes, not fetch again.
-	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v2 := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v2 == nil {
 		t.Fatal("expected violation on second API call (from cache)")
 	}
@@ -1826,7 +1826,7 @@ func TestCheckLogoPadding_APIFetch_FetchError(t *testing.T) {
 	checker := e.makeLogoPaddingChecker()
 
 	a := artist.Artist{ID: "api-004", Name: "Error Artist", LogoExists: true, Path: ""}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when API fetch fails, got %v", v)
 	}
@@ -1837,7 +1837,7 @@ func TestCheckLogoPadding_NoPathNoFetcher(t *testing.T) {
 	e := newTestEngine()
 	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{ID: "nf-001", Name: "No Fetch", LogoExists: true, Path: ""}
-	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(context.Background(), &a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when no path and no fetcher, got %v", v)
 	}
@@ -2144,7 +2144,7 @@ func TestExtraneousImagesChecker_DispatchesToDB(t *testing.T) {
 	e := &Engine{db: db, logger: slog.Default()}
 	checker := e.makeExtraneousImagesChecker()
 	a := artist.Artist{ID: "art-20", Name: "Dispatch Test", Path: ""}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation from DB path when Path is empty")
 	}
@@ -2164,7 +2164,7 @@ func TestBackdropSequencingChecker_DispatchesToDB(t *testing.T) {
 	e := &Engine{db: db, logger: slog.Default()}
 	checker := e.makeBackdropSequencingChecker()
 	a := artist.Artist{ID: "art-21", Name: "Dispatch Test 2", Path: ""}
-	v := checker(&a, RuleConfig{})
+	v := checker(context.Background(), &a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation from DB path when Path is empty")
 	}

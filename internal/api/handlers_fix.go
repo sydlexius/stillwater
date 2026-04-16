@@ -52,7 +52,10 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		pfs = r.capturePreFixState(req.Context(), id)
 	}
 
-	fr, err := r.pipeline.FixViolation(req.Context(), id)
+	// Inject metadata language preferences so language-aware fixers
+	// (e.g. name_language_pref) can promote localized aliases.
+	fixCtx := r.injectMetadataLanguages(req.Context())
+	fr, err := r.pipeline.FixViolation(fixCtx, id)
 	if err != nil {
 		r.logger.Error("fix violation failed", "id", id, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to apply fix")
@@ -421,7 +424,8 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 	progress.Total = len(fixable)
 	progress.mu.Unlock()
 
-	r.runFixAll(req.Context(), fixable, scoped, progress)
+	fixAllCtx := r.injectMetadataLanguages(req.Context())
+	r.runFixAll(fixAllCtx, fixable, scoped, progress)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",

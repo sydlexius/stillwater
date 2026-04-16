@@ -155,7 +155,8 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	result, err := r.ruleEngine.Evaluate(req.Context(), a)
+	evalCtx := r.injectMetadataLanguages(req.Context())
+	result, err := r.ruleEngine.Evaluate(evalCtx, a)
 	if err != nil {
 		r.logger.Error("evaluating artist health", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to evaluate artist"})
@@ -218,8 +219,10 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 	// Run in a background goroutine so the request can return immediately.
 	// WithoutCancel preserves request-scoped values but prevents navigation
-	// cancellation from aborting the pipeline.
-	ctx := context.WithoutCancel(req.Context())
+	// cancellation from aborting the pipeline. Inject metadata language
+	// preferences so language-aware rules (e.g. name_language_pref) see
+	// the user's preferred locales.
+	ctx := r.injectMetadataLanguages(context.WithoutCancel(req.Context()))
 	go func() {
 		defer func() {
 			if rv := recover(); rv != nil {
@@ -336,7 +339,8 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	result, err := r.pipeline.RunForArtist(req.Context(), a)
+	ctx := r.injectMetadataLanguages(req.Context())
+	result, err := r.pipeline.RunForArtist(ctx, a)
 	if err != nil {
 		r.logger.Error("running rules for artist", "artist_id", artistID, "error", err)
 		if req.Header.Get("HX-Request") == "true" {
@@ -398,7 +402,9 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 	}
 	r.ruleRunMu.Unlock()
 
-	ctx := context.WithoutCancel(req.Context())
+	// Inject metadata language preferences so language-aware rules see the
+	// user's preferred locales during background evaluation.
+	ctx := r.injectMetadataLanguages(context.WithoutCancel(req.Context()))
 	go func() {
 		defer func() {
 			if rv := recover(); rv != nil {

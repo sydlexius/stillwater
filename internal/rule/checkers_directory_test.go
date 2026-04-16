@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -92,28 +93,28 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 
 	t.Run("empty path", func(t *testing.T) {
 		a := &artist.Artist{Name: "Test", Path: ""}
-		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfg); v != nil {
 			t.Errorf("expected nil for empty path, got %+v", v)
 		}
 	})
 
 	t.Run("matching", func(t *testing.T) {
 		a := &artist.Artist{Name: "The Beatles", Path: "/music/The Beatles"}
-		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfg); v != nil {
 			t.Errorf("expected nil for matching dir, got %+v", v)
 		}
 	})
 
 	t.Run("case insensitive match", func(t *testing.T) {
 		a := &artist.Artist{Name: "The Beatles", Path: "/music/the beatles"}
-		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfg); v != nil {
 			t.Errorf("expected nil for case-insensitive match, got %+v", v)
 		}
 	})
 
 	t.Run("mismatch", func(t *testing.T) {
 		a := &artist.Artist{Name: "The Beatles", Path: "/music/Beatles"}
-		v := checkDirectoryNameMismatch(a, cfg)
+		v := checkDirectoryNameMismatch(context.Background(), a, cfg)
 		if v == nil {
 			t.Fatal("expected violation for mismatch, got nil")
 		}
@@ -128,7 +129,7 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 	t.Run("suffix mode match", func(t *testing.T) {
 		cfgSuffix := RuleConfig{Severity: "warning", ArticleMode: "suffix"}
 		a := &artist.Artist{Name: "The Beatles", Path: "/music/Beatles, The"}
-		if v := checkDirectoryNameMismatch(a, cfgSuffix); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfgSuffix); v != nil {
 			t.Errorf("expected nil for suffix mode match, got %+v", v)
 		}
 	})
@@ -141,7 +142,7 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 		nfd := "Maria Joa\u0303o Pires" // o + combining tilde
 		nfc := "Maria Jo\u00e3o Pires"  // precomposed o-tilde
 		a := &artist.Artist{Name: nfc, Path: "/music/" + nfd}
-		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfg); v != nil {
 			t.Errorf("expected nil for NFC/NFD equivalent names, got %+v", v)
 		}
 	})
@@ -154,7 +155,7 @@ func TestCheckDirectoryNameMismatch(t *testing.T) {
 		nfdLower := "maria joa\u0303o pires" // lowercase, decomposed
 		nfcUpper := "Maria Jo\u00e3o Pires"  // mixed case, precomposed
 		a := &artist.Artist{Name: nfcUpper, Path: "/music/" + nfdLower}
-		if v := checkDirectoryNameMismatch(a, cfg); v != nil {
+		if v := checkDirectoryNameMismatch(context.Background(), a, cfg); v != nil {
 			t.Errorf("expected nil for NFC/NFD + case equivalent names, got %+v", v)
 		}
 	})
