@@ -69,10 +69,10 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 		var msg string
 		if fixable {
 			switch {
-			case aliasName != a.Name && aliasSort != "" && aliasSort != a.SortName:
+			case !nameOK && !sortOK && strings.TrimSpace(a.SortName) != "":
 				msg = fmt.Sprintf("artist name '%s' (sort '%s') does not match preferred languages [%s]; localized alias '%s' (sort '%s') available",
 					a.Name, a.SortName, prefList, aliasName, aliasSort)
-			case aliasName != a.Name:
+			case !nameOK:
 				msg = fmt.Sprintf("artist name '%s' does not match preferred languages [%s]; localized alias '%s' available",
 					a.Name, prefList, aliasName)
 			default:
