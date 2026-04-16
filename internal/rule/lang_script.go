@@ -58,11 +58,14 @@ func dominantScript(s string) string {
 	if total == 0 {
 		return scriptUnknown
 	}
+	// Iterate scriptTables (fixed order) instead of the counts map (random
+	// order) so mixed-script ties resolve deterministically to the script
+	// listed first in scriptTables.
 	best := scriptUnknown
 	bestN := 0
-	for name, n := range counts {
-		if n > bestN {
-			best = name
+	for _, st := range scriptTables {
+		if n := counts[st.name]; n > bestN {
+			best = st.name
 			bestN = n
 		}
 	}

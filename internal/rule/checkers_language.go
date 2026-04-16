@@ -71,8 +71,17 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 					a.SortName, prefList, aliasSort)
 			}
 		} else {
-			msg = fmt.Sprintf("artist name '%s' is in %s script but preferred languages are [%s]; no localized alias available -- edit manually or dismiss",
-				a.Name, script, prefList)
+			switch {
+			case !nameOK && !sortOK && strings.TrimSpace(a.SortName) != "":
+				msg = fmt.Sprintf("artist name '%s' (sort '%s') does not match preferred languages [%s]; no localized alias available -- edit manually or dismiss",
+					a.Name, a.SortName, prefList)
+			case !nameOK:
+				msg = fmt.Sprintf("artist name '%s' is in %s script but preferred languages are [%s]; no localized alias available -- edit manually or dismiss",
+					a.Name, script, prefList)
+			default:
+				msg = fmt.Sprintf("artist sort name '%s' is in %s script but preferred languages are [%s]; no localized alias available -- edit manually or dismiss",
+					a.SortName, script, prefList)
+			}
 		}
 
 		return &Violation{
