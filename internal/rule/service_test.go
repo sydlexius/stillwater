@@ -2003,15 +2003,19 @@ func TestCountActiveViolationsByLibrary(t *testing.T) {
 	}
 	// Artists: two in lib-a, one in lib-b, and one with no library (should
 	// not appear in counts because the handler expects library IDs only).
-	for _, a := range []struct{ id, libID sql.NullString }{
-		{sql.NullString{String: "art-a1", Valid: true}, sql.NullString{String: "lib-a", Valid: true}},
-		{sql.NullString{String: "art-a2", Valid: true}, sql.NullString{String: "lib-a", Valid: true}},
-		{sql.NullString{String: "art-b1", Valid: true}, sql.NullString{String: "lib-b", Valid: true}},
-		{sql.NullString{String: "art-none", Valid: true}, sql.NullString{}},
+	// Only libID is nullable here; ids are always set.
+	for _, a := range []struct {
+		id    string
+		libID sql.NullString
+	}{
+		{"art-a1", sql.NullString{String: "lib-a", Valid: true}},
+		{"art-a2", sql.NullString{String: "lib-a", Valid: true}},
+		{"art-b1", sql.NullString{String: "lib-b", Valid: true}},
+		{"art-none", sql.NullString{}},
 	} {
 		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id)
-			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id.String, a.id.String, a.id.String, a.id.String, a.libID); err != nil {
-			t.Fatalf("insert artist %s: %v", a.id.String, err)
+			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id, a.id, a.id, a.id, a.libID); err != nil {
+			t.Fatalf("insert artist %s: %v", a.id, err)
 		}
 	}
 

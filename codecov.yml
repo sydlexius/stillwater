@@ -1,9 +1,10 @@
 coverage:
-  patch:
-    default:
-      # Minimum patch coverage required -- fails CI if new lines are under-tested.
-      # Generated template files (*_templ.go) are excluded via the ignore list below.
-      target: 70%
+  status:
+    patch:
+      default:
+        # Minimum patch coverage required -- fails CI if new lines are under-tested.
+        # Generated template files (*_templ.go) are excluded via the ignore list below.
+        target: 70%
 
 ignore:
   # Templ codegen output -- byte-for-byte compiler output, not hand-written.

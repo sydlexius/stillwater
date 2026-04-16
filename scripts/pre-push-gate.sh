@@ -63,8 +63,17 @@ echo "=== Patch coverage ==="
 # Matches codecov.yml's 70% patch threshold. The script approximates the
 # same semantics locally so we catch gaps before push instead of learning
 # about them from a failing codecov check.
-COVER_OUT="$COVER_OUT" BASE="$BASE" PATCH_COVERAGE_THRESHOLD=70 \
-  bash "$SCRIPT_DIR/patch-coverage.sh"
+#
+# patch-coverage.sh uses exit codes 0|1|2 (2 = config error). This wrapper
+# is documented as 0|1, so collapse any non-zero child status to 1. Using
+# an `if` here (rather than calling the script bare under `set -e`) lets
+# us capture the exit code without the shell bailing out first.
+if COVER_OUT="$COVER_OUT" BASE="$BASE" PATCH_COVERAGE_THRESHOLD=70 \
+    bash "$SCRIPT_DIR/patch-coverage.sh"; then
+  :
+else
+  exit 1
+fi
 
 echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."

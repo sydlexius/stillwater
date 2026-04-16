@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # patch-coverage.sh -- compute local patch coverage for changed Go source.
 #
-# Requires bash 4+ (for `mapfile`). On macOS the system /bin/bash is 3.2,
-# so the shebang uses `env bash` to pick up a newer bash from PATH
-# (typically Homebrew's, or Linux's system bash).
+# Written to run under Bash 3.2 (macOS system /bin/bash) as well as Bash
+# 4+. The `env bash` shebang lets PATH pick up a newer bash when one is
+# installed, but the script avoids Bash-4-only builtins (no `mapfile`,
+# no associative arrays) so that `bash scripts/pre-push-gate.sh` -- which
+# invokes a plain `bash` -- works on a stock macOS install.
 #
 # Approximates codecov.yml's patch-coverage semantics:
 #   - The unit is source lines. Each line inside a coverage block is
@@ -64,7 +66,16 @@ if [ -z "$module" ]; then
 fi
 
 # Pathspec: Go sources that are neither templ output nor test files.
-mapfile -t changed < <(git diff "$BASE"..HEAD --name-only --diff-filter=AM \
+# `--diff-filter=AMR` covers Added, Modified, and Renamed files -- the
+# R is essential so a rename+edit (which git reports as R, not M) cannot
+# silently bypass the gate on refactor PRs.
+# The while-read loop is bash-3.2 compatible; `mapfile` is bash 4+ and
+# unavailable on macOS's stock /bin/bash.
+changed=()
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  changed+=("$line")
+done < <(git diff "$BASE"..HEAD --name-only --diff-filter=AMR \
   -- '*.go' ':!*_templ.go' ':!*_test.go' | sort -u)
 
 if [ "${#changed[@]}" -eq 0 ]; then
