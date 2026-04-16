@@ -68,7 +68,13 @@ echo "=== Patch coverage ==="
 # is documented as 0|1, so collapse any non-zero child status to 1. Using
 # an `if` here (rather than calling the script bare under `set -e`) lets
 # us capture the exit code without the shell bailing out first.
-if COVER_OUT="$COVER_OUT" BASE="$BASE" PATCH_COVERAGE_THRESHOLD=70 \
+#
+# BASE is intentionally not forwarded: patch-coverage.sh has its own
+# resolution that errors out if `main` is missing, which is stricter than
+# this script's silent HEAD~1 fallback. Letting the child resolve BASE
+# avoids narrowing patch coverage to only the tip commit on a branch
+# whose base ref isn't reachable.
+if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \
     bash "$SCRIPT_DIR/patch-coverage.sh"; then
   :
 else

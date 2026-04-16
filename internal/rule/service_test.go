@@ -1987,6 +1987,33 @@ func TestCountActiveViolationsByRule(t *testing.T) {
 	if counts[0].RuleID != RuleNFOExists {
 		t.Errorf("expected first rule to be %s, got %s", RuleNFOExists, counts[0].RuleID)
 	}
+	// Tie-break within equal-count rows: RuleThumbExists and RuleFanartExists
+	// both have Count=1 above, so the slice must order them ascending by
+	// RuleID. Checking every adjacent pair catches a regression in the SQL
+	// `ORDER BY rv.rule_id ASC` tiebreaker that the top-row check would miss.
+	for i := 1; i < len(counts); i++ {
+		if counts[i-1].Count != counts[i].Count {
+			continue
+		}
+		if counts[i-1].RuleID >= counts[i].RuleID {
+			t.Errorf("tied counts not ordered ascending by rule_id: %s (%d) before %s (%d)",
+				counts[i-1].RuleID, counts[i-1].Count, counts[i].RuleID, counts[i].Count)
+		}
+	}
+
+	// Facet exclusion: passing RuleID must NOT shrink the result set, because
+	// the rule dimension is the one being counted. This proves the facet
+	// pattern actually omits its own filter -- the Severity case above only
+	// exercises cross-dimension filtering and would still pass if the rule
+	// facet silently started honoring its own RuleID input.
+	facet, err := svc.CountActiveViolationsByRule(ctx, ViolationListParams{RuleID: RuleNFOExists})
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByRule(RuleID facet): %v", err)
+	}
+	if len(facet) != len(counts) {
+		t.Errorf("rule facet leaked its own filter: unfiltered len=%d, RuleID-filtered len=%d",
+			len(counts), len(facet))
+	}
 }
 
 func TestCountActiveViolationsByLibrary(t *testing.T) {

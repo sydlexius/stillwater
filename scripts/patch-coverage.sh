@@ -37,6 +37,15 @@ set -euo pipefail
 COVER_OUT="${COVER_OUT:-coverage.out}"
 THRESHOLD="${PATCH_COVERAGE_THRESHOLD:-70}"
 
+# Validate the threshold up front. awk's numeric coercion quietly maps a
+# non-numeric string (e.g. "foo") to 0, which would turn `p < 0` into
+# false and silently false-pass the gate -- matching the fail-loudly
+# pattern used for BASE and COVER_OUT above.
+if ! awk -v t="$THRESHOLD" 'BEGIN { exit !(t ~ /^[0-9]+(\.[0-9]+)?$/) }'; then
+  echo "patch-coverage: PATCH_COVERAGE_THRESHOLD must be numeric, got: $THRESHOLD" >&2
+  exit 2
+fi
+
 # Resolve BASE. Prefer an explicit env var, otherwise fall back to
 # merge-base with main. Fail loudly if neither produces a usable commit
 # rather than silently comparing against a bogus ref (which would skip
