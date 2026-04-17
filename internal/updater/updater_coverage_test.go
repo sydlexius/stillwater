@@ -70,6 +70,15 @@ func TestRunApplyFetchError(t *testing.T) {
 	}
 
 	waitForApplyDone(t, svc)
+
+	// The goroutine must have landed in StateError after the 500 response.
+	st := svc.Status()
+	if st.State != StateError {
+		t.Errorf("state = %q after fetch error, want %q", st.State, StateError)
+	}
+	if st.Error == "" {
+		t.Error("expected non-empty error message after fetch failure")
+	}
 }
 
 // TestRunApplyNoAssetForPlatform exercises the branch where the release exists
@@ -698,6 +707,9 @@ func TestCheckFetchError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when fetch fails")
 	}
+	if !strings.Contains(err.Error(), "fetching releases") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "fetching releases")
+	}
 }
 
 // TestCheckNoReleases verifies that Check returns a result with UpdateAvailable=false
@@ -720,6 +732,60 @@ func TestCheckNoReleases(t *testing.T) {
 	}
 	if res.UpdateAvailable {
 		t.Error("expected UpdateAvailable=false for empty release list")
+	}
+}
+
+// TestCheckClearsStaleUpdateFlag verifies that a Check run that finds no
+// matching release clears updateAvailable and latestVersion even when a
+// previous check had set them. This prevents /status from advertising a
+// stale update after a channel switch.
+func TestCheckClearsStaleUpdateFlag(t *testing.T) {
+	// Not parallel: buildTestService calls database.Migrate (goose global race).
+
+	// First: serve a release so the service caches updateAvailable=true.
+	releasesWithUpdate := []githubRelease{
+		{TagName: "v999.0.0", Prerelease: false, Draft: false, HTMLURL: "https://example.com/v999"},
+	}
+	positiveBody, _ := json.Marshal(releasesWithUpdate)
+
+	// Second: serve an empty list to simulate no matching release on the new channel.
+	emptyBody, _ := json.Marshal([]githubRelease{})
+
+	serveEmpty := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if serveEmpty {
+			_, _ = w.Write(emptyBody)
+		} else {
+			_, _ = w.Write(positiveBody)
+		}
+	}))
+	defer srv.Close()
+
+	svc := buildTestService(t)
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	// First check: should set updateAvailable.
+	_, err := svc.Check(context.Background())
+	if err != nil {
+		t.Fatalf("first Check: %v", err)
+	}
+	if st := svc.Status(); !st.UpdateAvailable {
+		t.Fatal("expected UpdateAvailable=true after first check")
+	}
+
+	// Second check: no releases -- should clear the stale flag.
+	serveEmpty = true
+	_, err = svc.Check(context.Background())
+	if err != nil {
+		t.Fatalf("second Check: %v", err)
+	}
+	st := svc.Status()
+	if st.UpdateAvailable {
+		t.Error("UpdateAvailable should be false after check returns no releases")
+	}
+	if st.Latest != "" {
+		t.Errorf("Latest = %q, want empty after stale-clear", st.Latest)
 	}
 }
 
@@ -867,6 +933,48 @@ func TestPickLatestStableWithHyphenTag(t *testing.T) {
 	}
 	if got.TagName != "v0.9.6" {
 		t.Errorf("got %q, want v0.9.6", got.TagName)
+	}
+}
+
+// TestPickLatestBackportOrder verifies that pickLatest selects the highest
+// semver even when a backport is published after a newer major release.
+// In a first-match strategy, v1.9.9 (index 0) would win; the correct answer
+// is v2.0.0.
+func TestPickLatestBackportOrder(t *testing.T) {
+	t.Parallel()
+
+	// Simulate GitHub's reverse-chronological list: v1.9.9 (backport) is
+	// listed first because it was published most recently, but v2.0.0 has a
+	// higher semver and should be returned.
+	releases := []githubRelease{
+		{TagName: "v1.9.9", Prerelease: false, Draft: false}, // backport, published last
+		{TagName: "v2.0.0", Prerelease: false, Draft: false}, // original, published first
+	}
+	got := pickLatest(releases, ChannelStable)
+	if got == nil {
+		t.Fatal("expected v2.0.0, got nil")
+	}
+	if got.TagName != "v2.0.0" {
+		t.Errorf("got %q, want v2.0.0 (highest semver)", got.TagName)
+	}
+}
+
+// TestPickLatestBackportOrderPrerelease verifies the same semver-max behavior
+// on the prerelease channel.
+func TestPickLatestBackportOrderPrerelease(t *testing.T) {
+	t.Parallel()
+
+	releases := []githubRelease{
+		{TagName: "v2.1.0-rc.1", Prerelease: true, Draft: false}, // newest by publish date
+		{TagName: "v2.1.0", Prerelease: false, Draft: false},     // older publish date but higher semver (stable > prerelease)
+		{TagName: "v1.9.9", Prerelease: false, Draft: false},
+	}
+	got := pickLatest(releases, ChannelPrerelease)
+	if got == nil {
+		t.Fatal("expected a result, got nil")
+	}
+	if got.TagName != "v2.1.0" {
+		t.Errorf("got %q, want v2.1.0 (highest semver on prerelease channel)", got.TagName)
 	}
 }
 

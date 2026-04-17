@@ -102,7 +102,8 @@ type StatusResult struct {
 	LastChecked     string `json:"last_checked,omitempty"` // RFC 3339
 	IsDocker        bool   `json:"is_docker"`
 	UpdateAvailable bool   `json:"update_available"`
-	Latest          string `json:"latest,omitempty"` // latest version tag from last check
+	Latest          string `json:"latest,omitempty"`      // latest version tag from last check
+	ReleaseURL      string `json:"release_url,omitempty"` // GitHub release page URL
 }
 
 // githubRelease is a subset of the GitHub Releases API response.
@@ -138,6 +139,7 @@ type Service struct {
 	isDocker        bool
 	updateAvailable bool
 	latestVersion   string
+	releaseURL      string // URL to the GitHub release page for the latest version
 
 	// applyRunning guards against concurrent Apply calls. 0 = idle, 1 = running.
 	// Using atomic.Int32 makes the idle-check and the transition to running a
@@ -261,6 +263,7 @@ func (s *Service) Status() StatusResult {
 		IsDocker:        s.isDocker,
 		UpdateAvailable: s.updateAvailable,
 		Latest:          s.latestVersion,
+		ReleaseURL:      s.releaseURL,
 	}
 	if !s.lastChecked.IsZero() {
 		res.LastChecked = s.lastChecked.UTC().Format(time.RFC3339)
@@ -301,6 +304,13 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 
 	latest := pickLatest(releases, cfg.Channel)
 	if latest == nil {
+		// No matching release: clear any stale update flag so /status does not
+		// keep advertising an update that is no longer present on this channel.
+		s.mu.Lock()
+		s.updateAvailable = false
+		s.latestVersion = ""
+		s.releaseURL = ""
+		s.mu.Unlock()
 		return CheckResult{
 			Current:         version.Version,
 			Latest:          version.Version,
@@ -315,6 +325,7 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 	s.lastChecked = time.Now().UTC()
 	s.updateAvailable = available
 	s.latestVersion = latest.TagName
+	s.releaseURL = latest.HTMLURL
 	s.mu.Unlock()
 
 	return CheckResult{
@@ -559,10 +570,15 @@ func (s *Service) setState(st State, progress int, errMsg string) {
 	}
 }
 
-// pickLatest returns the most recent release matching the channel.
-// GitHub returns releases in reverse-chronological order; the first
-// matching entry is used.
+// pickLatest returns the release with the highest semantic version that matches
+// the channel. GitHub returns releases in reverse-chronological order, but
+// backported releases (e.g. v1.9.9 published after v2.0.0) would be wrongly
+// treated as "latest" by a first-match strategy. Scanning all entries and
+// keeping the max semver ensures correctness regardless of publish order.
 func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
+	var best *githubRelease
+	var bestVer semver
+
 	for i := range releases {
 		r := &releases[i]
 		if r.Draft {
@@ -571,6 +587,7 @@ func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 		if !semverRE.MatchString(r.TagName) {
 			continue
 		}
+
 		switch ch {
 		case ChannelStable:
 			// Stable: no prerelease suffix in tag AND GitHub prerelease=false.
@@ -581,13 +598,22 @@ func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 			if strings.ContainsAny(tag, "-") {
 				continue // Has a prerelease suffix like -rc.1
 			}
-			return r
 		case ChannelPrerelease:
-			// Prerelease channel includes stable AND prerelease tags.
-			return r
+			// Prerelease channel includes stable AND prerelease tags; no filtering.
+		default:
+			continue
+		}
+
+		v, err := parseSemver(r.TagName)
+		if err != nil {
+			continue
+		}
+		if best == nil || semverCompare(v, bestVer) > 0 {
+			best = r
+			bestVer = v
 		}
 	}
-	return nil
+	return best
 }
 
 // newerThan returns true when candidate is strictly newer than current.

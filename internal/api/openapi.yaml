@@ -1201,7 +1201,7 @@ components:
           description: Publication timestamp of the latest release (RFC 3339).
     UpdateStatus:
       type: object
-      required: [state, progress, is_docker]
+      required: [state, progress, is_docker, update_available]
       properties:
         state:
           type: string
@@ -1222,6 +1222,15 @@ components:
         is_docker:
           type: boolean
           description: True when running inside a Docker container. Apply is unsupported in this case.
+        update_available:
+          type: boolean
+          description: True when the most recent check found a newer version on the configured channel.
+        latest:
+          type: string
+          description: Tag name of the latest matching release. Empty if no check has succeeded yet.
+        release_url:
+          type: string
+          description: URL to the GitHub release page for the latest version. Absent if no check has succeeded.
     UpdateConfig:
       type: object
       required: [channel, auto_check]
@@ -8084,6 +8093,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while reading updater config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: Updater service not available.
           content:
@@ -8111,7 +8126,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/UpdateConfig"
         "400":
-          description: Invalid channel value.
+          description: Invalid request body or invalid channel value.
           content:
             application/json:
               schema:

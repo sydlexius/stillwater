@@ -5677,6 +5677,26 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 			>
 				{ t(ctx, "settings.updates.last_checked") }: <span id="updates-last-checked">{ data.LastChecked }</span>
 			</div>
+			<!-- Release notes link: shown on initial render when the server already
+			     knows about a newer version, and hydrated by fetchAndPopulateUpdateStatus
+			     when /status returns a non-empty release_url. -->
+			<div
+				id="updates-release-link-row"
+				class={
+					"text-xs",
+					templ.KV("hidden", data.ReleaseURL == ""),
+				}
+			>
+				<a
+					id="updates-release-link"
+					href={ templ.SafeURL(data.ReleaseURL) }
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-blue-500 hover:underline"
+				>
+					{ t(ctx, "settings.updates.release_notes") }
+				</a>
+			</div>
 			<!-- Docker notice -->
 			if data.IsDocker {
 				<div class="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3">
@@ -6020,6 +6040,18 @@ templ updatesTabScript() {
 							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
+					// Hydrate the release-notes link from /status so it is visible
+					// after a page reload or tab re-open without a manual check.
+					var relLinkRow = document.getElementById('updates-release-link-row');
+					var relLink = document.getElementById('updates-release-link');
+					if (relLinkRow && relLink) {
+						if (d.release_url) {
+							relLink.href = d.release_url;
+							relLinkRow.classList.remove('hidden');
+						} else {
+							relLinkRow.classList.add('hidden');
+						}
+					}
 					// If an operation is in progress, show its state and start polling.
 					if (d.state === 'error') {
 						setUpdaterStatus('error', d.error || 'update failed');
@@ -6030,7 +6062,9 @@ templ updatesTabScript() {
 						clearUpdaterStatus();
 					}
 				})
-				.catch(function() {});
+				.catch(function(err) {
+					setUpdaterStatus('error', err.message || 'status failed');
+				});
 			}
 		})();
 	</script>

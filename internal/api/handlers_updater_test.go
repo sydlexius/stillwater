@@ -142,6 +142,12 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)
 	}
+	if st.Progress != 0 {
+		t.Errorf("progress = %d, want 0", st.Progress)
+	}
+	if st.IsDocker {
+		t.Error("is_docker = true, want false")
+	}
 }
 
 func TestHandlePostUpdateApply_Docker(t *testing.T) {
@@ -182,12 +188,17 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 		close(block)
 		// Wait for the goroutine to drain so t.Cleanup DB close does not race.
 		deadline := time.Now().Add(2 * time.Second)
+		drained := false
 		for time.Now().Before(deadline) {
 			st := r.updaterService.Status()
 			if st.State == updater.StateIdle || st.State == updater.StateError {
-				return
+				drained = true
+				break
 			}
 			time.Sleep(10 * time.Millisecond)
+		}
+		if !drained {
+			t.Errorf("timed out waiting for updater worker to drain")
 		}
 	})
 
@@ -202,12 +213,17 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 	// Poll until the goroutine is observed running. Without this, the second
 	// call could race ahead of the first Apply setting applyRunning.
 	deadline := time.Now().Add(1 * time.Second)
+	enteredChecking := false
 	for time.Now().Before(deadline) {
 		st := r.updaterService.Status()
 		if st.State == updater.StateChecking {
+			enteredChecking = true
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	if !enteredChecking {
+		t.Fatal("timed out waiting for updater goroutine to enter StateChecking")
 	}
 
 	// Second apply: should return 409 because the first is still in flight.
@@ -371,6 +387,11 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 	var result map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"current", "latest", "channel", "update_available"} {
+		if _, ok := result[key]; !ok {
+			t.Fatalf("missing required field %q in UpdateCheckResult", key)
+		}
 	}
 	if result["update_available"] != true {
 		t.Errorf("update_available = %v, want true", result["update_available"])
