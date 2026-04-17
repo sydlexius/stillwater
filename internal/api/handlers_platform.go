@@ -457,6 +457,9 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 	if status.LastChecked != "" {
 		data.LastChecked = status.LastChecked
 	}
+	data.UpdateAvailable = status.UpdateAvailable
+	data.LatestVersion = status.Latest
+	data.ReleaseURL = status.ReleaseURL
 
 	return data
 }

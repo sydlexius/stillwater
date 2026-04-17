@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -751,10 +752,12 @@ func TestCheckClearsStaleUpdateFlag(t *testing.T) {
 	// Second: serve an empty list to simulate no matching release on the new channel.
 	emptyBody, _ := json.Marshal([]githubRelease{})
 
-	serveEmpty := false
+	// Use atomic to guard serveEmpty: the test goroutine writes it and the
+	// httptest.Server handler goroutine reads it. A plain bool would be a data race.
+	var serveEmpty atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if serveEmpty {
+		if serveEmpty.Load() {
 			_, _ = w.Write(emptyBody)
 		} else {
 			_, _ = w.Write(positiveBody)
@@ -775,7 +778,7 @@ func TestCheckClearsStaleUpdateFlag(t *testing.T) {
 	}
 
 	// Second check: no releases -- should clear the stale flag.
-	serveEmpty = true
+	serveEmpty.Store(true)
 	_, err = svc.Check(context.Background())
 	if err != nil {
 		t.Fatalf("second Check: %v", err)
