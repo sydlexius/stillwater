@@ -76,8 +76,19 @@ templ violationsTabBadgeOOB(count int) {
 // artistViolationRow renders a single violation row for the per-artist violations tab.
 // It omits the artist name column (redundant on the artist detail page) and the
 // bulk-select checkbox, keeping the UI focused on the violation itself.
+//
+// The data-* attributes carry localized text for the JS handlers (alert
+// messages on fix/dismiss failure). Storing them on the row keeps the
+// strings near their use site and avoids a per-button data-attr explosion.
 templ artistViolationRow(v rule.RuleViolation, artistID string) {
-	<tr id={ "artist-violation-" + v.ID } class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+	<tr
+		id={ "artist-violation-" + v.ID }
+		class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+		data-fix-failed={ t(ctx, "notifications.fix_failed") }
+		data-fix-network={ t(ctx, "notifications.fix_network") }
+		data-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
+		data-dismiss-network={ t(ctx, "notifications.dismiss_network") }
+	>
 		<td class="px-4 py-4 text-sm text-gray-600 dark:text-gray-400">{ v.RuleID }</td>
 		<td class="px-4 py-4 text-sm">
 			<span class={ "inline-block px-2 py-0.5 rounded text-xs font-semibold", severityClass(v.Severity) }>
@@ -120,6 +131,13 @@ templ artistViolationRow(v rule.RuleViolation, artistID string) {
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 
 script artistViolationFix(violationID string, artistID string) {
+	// Localized error strings sourced from data-* on the row, with English
+	// fallback as defense-in-depth (matches the established pattern from
+	// the retired notifications.templ). %s in fix_failed is substituted
+	// with the server-supplied error message.
+	var row = document.getElementById('artist-violation-' + violationID);
+	var fixFailedTpl = (row && row.dataset.fixFailed) || 'Fix failed: %s';
+	var fixNetworkTpl = (row && row.dataset.fixNetwork) || 'Network error applying fix.';
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/fix', {
@@ -141,10 +159,10 @@ script artistViolationFix(violationID string, artistID string) {
 			});
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
-			alert('Fix failed: ' + (data.message || 'Unknown error'));
+			alert(fixFailedTpl.replace('%s', data.message || ''));
 		}
 	}).catch(function(err) {
-		alert('Network error applying fix: ' + err.message);
+		alert(fixNetworkTpl + ' ' + err.message);
 	});
 }
 
@@ -161,6 +179,10 @@ script artistViolationDismiss(violationID string, artistID string) {
 	);
 	var prompt = (btn && btn.dataset.confirm) || 'Dismiss this violation?';
 	if (!confirm(prompt)) return;
+	// Localized error strings sourced from data-* on the row. See artistViolationFix.
+	var row = document.getElementById('artist-violation-' + violationID);
+	var dismissFailed = (row && row.dataset.dismissFailed) || 'Failed to dismiss violation.';
+	var dismissNetwork = (row && row.dataset.dismissNetwork) || 'Network error dismissing violation.';
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/dismiss', {
@@ -176,9 +198,9 @@ script artistViolationDismiss(violationID string, artistID string) {
 			});
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
-			alert('Failed to dismiss violation.');
+			alert(dismissFailed);
 		}
 	}).catch(function() {
-		alert('Network error dismissing violation.');
+		alert(dismissNetwork);
 	});
 }
