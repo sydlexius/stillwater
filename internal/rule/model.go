@@ -130,6 +130,7 @@ type ViolationListParams struct {
 	Severity  string // filter: "error", "warning", "info"
 	Category  string // filter: "nfo", "image", "metadata"
 	RuleID    string // filter by specific rule
+	ArtistID  string // filter by specific artist
 	GroupBy   string // "artist", "rule", "severity", "category", ""
 	Limit     int    // pagination limit; 0 = no limit (backward compatible)
 	Offset    int    // pagination offset

@@ -774,6 +774,12 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, p.RuleID)
 	}
 
+	// Artist ID filter
+	if p.ArtistID != "" {
+		whereClauses = append(whereClauses, "rv.artist_id = ?")
+		args = append(args, p.ArtistID)
+	}
+
 	// Category filter requires joining the rules table
 	if p.Category != "" {
 		needJoin = true
@@ -1065,6 +1071,20 @@ func (s *Service) ResolveViolation(ctx context.Context, id string) error {
 		return fmt.Errorf("resolving violation: %w", err)
 	}
 	return nil
+}
+
+// CountActiveViolationsForArtist returns the count of active (open + pending_choice)
+// violations for a specific artist.
+func (s *Service) CountActiveViolationsForArtist(ctx context.Context, artistID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations
+		WHERE artist_id = ? AND status IN (?, ?)
+	`, artistID, ViolationStatusOpen, ViolationStatusPendingChoice).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting active violations for artist: %w", err)
+	}
+	return count, nil
 }
 
 // CountActiveViolationsBySeverity returns the count of active (open + pending_choice)

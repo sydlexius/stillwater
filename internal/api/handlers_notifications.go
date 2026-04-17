@@ -13,6 +13,7 @@ import (
 
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // handleListNotifications returns rule violations with optional filtering and sorting.
@@ -450,4 +451,46 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 	badge := fmt.Sprintf(`<span class="sw-sidebar-badge-pill">%s</span>`, display)
 	//nolint:errcheck,gosec // display is derived from an integer, no XSS risk
 	fmt.Fprint(w, badge)
+}
+
+// handleArtistViolationsTab renders the per-artist violations tab as an HTMX partial.
+// GET /artists/{id}/violations/tab
+func (r *Router) handleArtistViolationsTab(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeError(w, req, http.StatusBadRequest, "missing artist ID")
+		return
+	}
+
+	if r.ruleService == nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = templates.ArtistViolationsTab(templates.ArtistViolationsTabData{
+			ArtistID: artistID,
+		}).Render(req.Context(), w)
+		return
+	}
+
+	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), rule.ViolationListParams{
+		Status:   "active",
+		ArtistID: artistID,
+		Sort:     "severity",
+		Order:    "desc",
+	})
+	if err != nil {
+		r.logger.Error("listing violations for artist tab", "artist_id", artistID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
+		return
+	}
+
+	if violations == nil {
+		violations = []rule.RuleViolation{}
+	}
+
+	data := templates.ArtistViolationsTabData{
+		ArtistID:   artistID,
+		Violations: violations,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = templates.ArtistViolationsTab(data).Render(req.Context(), w)
 }

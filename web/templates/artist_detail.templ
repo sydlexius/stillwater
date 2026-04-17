@@ -21,10 +21,11 @@ type ArtistDetailData struct {
 	LibraryName        string
 	LibrarySource      string
 	ProfileName        string                   // Active platform profile name for image terminology
-	ActiveTab          string                   // "overview", "images", "providers", "discography", "history" (default: "overview")
+	ActiveTab          string                   // "overview", "images", "providers", "discography", "history", "violations" (default: "overview")
 	Connections        []ArtistDetailConnection // Platform connections with external URLs
 	ShowPlatformDebug  bool                     // Whether to show the Debug tab (from settings)
 	HasDebugConnection bool                     // Whether at least one Emby/Jellyfin connection exists
+	ViolationCount     int                      // Active violation count for the badge on the Violations tab
 }
 
 // ArtistDetailConnection holds connection info for the "View on Platform" links
@@ -409,7 +410,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			}
 			// Tab bar
-			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && data.HasDebugConnection)
+			@artistDetailTabBar(normalizeTab(data.ActiveTab), data.ShowPlatformDebug && data.HasDebugConnection, data.ViolationCount)
 			// Tab panels
 			// -- Overview --
 			<div
@@ -610,6 +611,23 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "artist.loading_history") }</p>
 				</div>
 			</div>
+			// -- Violations --
+			<div
+				id="panel-violations"
+				role="tabpanel"
+				aria-labelledby="tab-violations"
+				data-tab-panel="violations"
+				class={ templ.KV("hidden", normalizeTab(data.ActiveTab) != "violations"), }
+			>
+				<div
+					id={ "artist-violations-tab-" + data.Artist.ID }
+					hx-get={ "/artists/" + data.Artist.ID + "/violations/tab" }
+					hx-trigger="intersect once"
+					hx-swap="innerHTML"
+				>
+					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "common.loading") }</p>
+				</div>
+			</div>
 			// -- Debug --
 			if data.ShowPlatformDebug && data.HasDebugConnection {
 				<div
@@ -645,19 +663,20 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					@fieldProvenanceSection(data.FieldProviders)
 				</div>
 			}
-			@artistDetailTabScript()
+			@artistDetailTabScript(data.Artist.ID)
 		</div>
 	}
 }
 
 // artistDetailTabBar renders the horizontal tab bar for the artist detail page.
-templ artistDetailTabBar(activeTab string, showDebug bool) {
+templ artistDetailTabBar(activeTab string, showDebug bool, violationCount int) {
 	<nav class="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1" role="tablist">
 		@artistDetailTab("overview", t(ctx, "artist.tab_overview"), activeTab)
 		@artistDetailTab("images", t(ctx, "artist.tab_images"), activeTab)
 		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
 		@artistDetailTab("discography", t(ctx, "artist.tab_discography"), activeTab)
 		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
+		@artistDetailTabWithBadge("violations", t(ctx, "artist.tab_violations"), activeTab, violationCount)
 		if showDebug {
 			@artistDetailTab("debug", t(ctx, "artist.tab_debug"), activeTab)
 		}
@@ -683,8 +702,38 @@ templ artistDetailTab(id string, label string, activeTab string) {
 	</button>
 }
 
+// artistDetailTabWithBadge renders a tab button with an optional numeric badge.
+// The badge is shown only when count > 0.
+templ artistDetailTabWithBadge(id string, label string, activeTab string, count int) {
+	<button
+		type="button"
+		role="tab"
+		id={ "tab-" + id }
+		data-tab={ id }
+		aria-controls={ "panel-" + id }
+		class={
+			"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5",
+			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
+			templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", activeTab != id),
+		}
+		aria-selected={ strconv.FormatBool(activeTab == id) }
+		onclick="switchArtistTab(event, this)"
+	>
+		{ label }
+		if count > 0 {
+			<span id={ id + "-tab-badge" } class="inline-flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-semibold min-w-[1.25rem] h-5 px-1.5">
+				{ strconv.Itoa(count) }
+			</span>
+		} else {
+			<span id={ id + "-tab-badge" } class="hidden"></span>
+		}
+	</button>
+}
+
 // artistDetailTabScript handles client-side tab switching with URL updates.
-templ artistDetailTabScript() {
+// It also listens for violation-state changes (fix, dismiss, metadata refresh,
+// run-rules) and refreshes the violations tab content and badge count.
+templ artistDetailTabScript(artistID string) {
 	<script>
 		function switchArtistTab(event, el) {
 			event.preventDefault();
@@ -716,6 +765,63 @@ templ artistDetailTabScript() {
 			history.replaceState(null, '', url);
 		}
 	</script>
+	// Violations tab propagation: refresh content and badge when violation
+	// state changes from any source (fix, dismiss, metadata refresh, SSE).
+	@artistDetailViolationSync(artistID)
+}
+
+// artistDetailViolationSync keeps the violations tab and its badge in sync
+// with violation-state changes. It listens for three event sources:
+//   - dashboard:action-resolved -- fired after fix/dismiss on this or other pages
+//   - htmx:afterSettle on #refresh-panel -- fired after metadata refresh completes
+//   - artist.updated SSE -- fired when the artist is updated server-side
+
+script artistDetailViolationSync(artistID string) {
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+	var tabURL = bp + '/artists/' + artistID + '/violations/tab';
+	var tabTarget = '#violations-content-' + artistID;
+
+	// refreshViolationsTab reloads the violations tab content. The server
+	// response includes an OOB swap for the tab badge, so both update
+	// together in a single round-trip.
+	function refreshViolationsTab() {
+		var target = document.querySelector(tabTarget);
+		if (!target) return;
+		htmx.ajax('GET', tabURL, {target: target, swap: 'outerHTML'});
+	}
+
+	// After fix/dismiss dispatches dashboard:action-resolved.
+	document.body.addEventListener('dashboard:action-resolved', function() {
+		refreshViolationsTab();
+	});
+
+	// After metadata refresh lands in #refresh-panel, violations may have
+	// changed because handleArtistRefresh calls runRulesAfterRefresh.
+	var refreshPanel = document.getElementById('refresh-panel');
+	if (refreshPanel) {
+		refreshPanel.addEventListener('htmx:afterSettle', function() {
+			refreshViolationsTab();
+		});
+	}
+
+	// SSE artist.updated events (e.g. from a scan or background job).
+	// sse.js dispatches CustomEvent("sse:<type>", {detail: data}) on document.
+	document.addEventListener('sse:artist.updated', function(evt) {
+		var data = evt.detail || {};
+		if (!data.artist_id || data.artist_id === artistID) {
+			refreshViolationsTab();
+		}
+	});
+
+	// After the Action menu's Run Rules completes, the server emits
+	// artist:show-violations-tab so the user sees the refreshed list
+	// inline instead of the summary fragment in #refresh-panel. Clicking
+	// the tab button routes through switchArtistTab for URL sync and
+	// panel visibility in one place.
+	document.body.addEventListener('artist:show-violations-tab', function() {
+		var btn = document.getElementById('tab-violations');
+		if (btn) btn.click();
+	});
 }
 
 // ArtistHistorySection renders a collapsible history card that loads its
@@ -1046,7 +1152,7 @@ func isGroupType(artistType string) bool {
 // normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
 func normalizeTab(tab string) string {
 	switch tab {
-	case "overview", "images", "providers", "discography", "history", "debug":
+	case "overview", "images", "providers", "discography", "history", "violations", "debug":
 		return tab
 	default:
 		return "overview"

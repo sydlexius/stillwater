@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -169,11 +168,17 @@ func TestStub_RunArtistRules_ViolationsFound_HTMX(t *testing.T) {
 	if strings.Contains(body, "/notifications") {
 		t.Errorf("HTMX body = %q, must not link to retired /notifications view", body)
 	}
-	// Require a non-empty search parameter so the fragment actually pre-filters
-	// the dashboard; the prior Contains(body, "/?search=") assertion passed even
-	// on malformed/empty queries.
-	if !regexp.MustCompile(`/\?search=[^"&\s]+`).MatchString(body) {
-		t.Errorf("HTMX body = %q, want dashboard link with non-empty search query", body)
+	// The HTMX summary no longer inlines a dashboard link: the response
+	// sets HX-Trigger: artist:show-violations-tab so the artist detail page
+	// switches to the Violations tab inline. Assert the link is absent so a
+	// regression cannot reintroduce two competing navigation targets, and
+	// verify the tab-switch trigger is set.
+	if strings.Contains(body, "/?search=") {
+		t.Errorf("HTMX body still contains dashboard link; expected tab-switch only: %s", body)
+	}
+	wantTrigger := "dashboard:action-resolved, artist:show-violations-tab"
+	if trig := w.Header().Get("HX-Trigger"); trig != wantTrigger {
+		t.Errorf("HX-Trigger = %q, want %q", trig, wantTrigger)
 	}
 }
 

@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -355,8 +354,21 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Dashboard URL pre-filtered to this artist. The dashboard search
-	// matches artist_name via LIKE, so we pass the artist's name.
+	// Run Rules can auto-fix violations, so every caller needs to refresh
+	// any view that tracks violation counts: the artist detail Violations
+	// tab (its listener in artist_detail.templ), the sidebar badge, and
+	// the dashboard action queue.
+	//
+	// artist:show-violations-tab prompts the artist detail page (when that
+	// is the caller) to switch to the Violations tab so the user sees the
+	// refreshed list inline instead of having to navigate away. Pages that
+	// do not listen for it are unaffected.
+	w.Header().Set("HX-Trigger", "dashboard:action-resolved, artist:show-violations-tab")
+
+	// Dashboard URL pre-filtered to this artist, kept in the JSON response
+	// below for non-HTMX clients. The HTMX fragment omits the link because
+	// the artist:show-violations-tab trigger switches the user to the tab
+	// inline, which is more direct than navigating to the dashboard.
 	dashboardURL := r.basePath + "/?search=" + url.QueryEscape(a.Name)
 
 	if req.Header.Get("HX-Request") == "true" {
@@ -366,10 +378,9 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 			fragment = `<div class="text-sm text-green-600 dark:text-green-400">No violations found.</div>`
 		} else {
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
-				strconv.Itoa(result.ViolationsFound) +
-				` violation(s). <a href="` + html.EscapeString(dashboardURL) + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View on dashboard</a></div>`
+				strconv.Itoa(result.ViolationsFound) + ` violation(s).</div>`
 		}
-		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: dashboardURL is HTML-escaped; fragment contains only static strings and strconv.Itoa output
+		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: fragment contains only static strings and strconv.Itoa output
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return
