@@ -107,7 +107,7 @@ templ artistViolationRow(v rule.RuleViolation, artistID string) {
 						data-violation-id={ v.ID }
 						data-artist-id={ artistID }
 						onclick={ artistViolationFix(v.ID, artistID) }
-						aria-label={ fmt.Sprintf("%s for this artist", fixButtonLabel(v.RuleID)) }
+						aria-label={ fmt.Sprintf(t(ctx, "artist.fix_action_aria"), fixButtonLabel(v.RuleID)) }
 						class="font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
 					>
 						{ fixButtonLabel(v.RuleID) }
