@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -129,7 +131,25 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 	result, err := r.settingsIOService.Import(req.Context(), &envelope, passphrase)
 	if err != nil {
 		r.logger.Error("settings import failed", "error", err)
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// Build a safe user-facing message: never expose raw internal errors.
+		// The passphrase/AES-GCM failure is the one case where a specific hint
+		// is more helpful than a generic message; everything else uses a generic
+		// "import failed" string so internal details do not leak to clients.
+		var clientMsg string
+		if errors.Is(err, settingsio.ErrWrongPassphrase) {
+			clientMsg = "Import failed: incorrect passphrase or corrupted backup file"
+		} else {
+			clientMsg = "Import failed: see server logs for details"
+		}
+		// HTMX does not swap on 4xx by default, so return 200 + red HTML fragment
+		// for HX requests -- otherwise the #import-result div stays empty and the
+		// failure is silent.
+		if req.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(clientMsg)) //nolint:errcheck
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": clientMsg})
 		return
 	}
 
@@ -137,9 +157,11 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		w.Header().Set("Content-Type", "text/html")
 		html := fmt.Sprintf(
 			`<div class="text-sm text-green-600 dark:text-green-400">`+
-				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities.`+
+				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities,`+
+				` %d rules, %d scraper configs, %d preferences.`+
 				`</div>`,
 			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
+			result.Rules, result.ScraperConfigs, result.UserPreferences,
 		)
 		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
 		return

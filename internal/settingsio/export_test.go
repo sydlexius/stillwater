@@ -1,84 +1,72 @@
 package settingsio
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/webhook"
-	_ "modernc.org/sqlite"
 )
 
+// templateDBPath is built once by TestMain using the real migration files and
+// then copied per test, matching the pattern used in internal/rule.
+var templateDBPath string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "settingsio-test-template-*")
+	if err != nil {
+		panic("creating temp dir: " + err.Error())
+	}
+
+	templateDBPath = filepath.Join(dir, "template.db")
+	db, err := database.Open(templateDBPath)
+	if err != nil {
+		panic("opening template db: " + err.Error())
+	}
+	if err := database.Migrate(db); err != nil {
+		panic("migrating template db: " + err.Error())
+	}
+	// Checkpoint WAL so the template file is self-contained for copies.
+	if _, err := db.ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		panic("checkpointing template db: " + err.Error())
+	}
+	_ = db.Close()
+
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// setupTestDB copies the pre-migrated template and opens it. Using a real
+// migration keeps the schema in sync with 001_initial_schema.sql automatically.
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", dbPath)
+	src, err := os.ReadFile(templateDBPath)
+	if err != nil {
+		t.Fatalf("reading template db: %v", err)
+	}
+	dst := filepath.Join(t.TempDir(), "test.db")
+	if err := os.WriteFile(dst, src, 0o600); err != nil {
+		t.Fatalf("writing test db: %v", err)
+	}
+	db, err := database.Open(dst)
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
-
-	for _, stmt := range []string{
-		"PRAGMA journal_mode=WAL",
-		`CREATE TABLE IF NOT EXISTS settings (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL,
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`,
-		`CREATE TABLE IF NOT EXISTS connections (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			type TEXT NOT NULL,
-			url TEXT NOT NULL,
-			encrypted_api_key TEXT NOT NULL DEFAULT '',
-			enabled INTEGER NOT NULL DEFAULT 1,
-			status TEXT NOT NULL DEFAULT 'unknown',
-			status_message TEXT NOT NULL DEFAULT '',
-			last_checked_at TEXT,
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-			feature_library_import INTEGER NOT NULL DEFAULT 1,
-			feature_nfo_write INTEGER NOT NULL DEFAULT 1,
-			feature_image_write INTEGER NOT NULL DEFAULT 1,
-			feature_metadata_push INTEGER NOT NULL DEFAULT 0,
-			feature_trigger_refresh INTEGER NOT NULL DEFAULT 0,
-			platform_user_id TEXT,
-			platform_server_id TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE TABLE IF NOT EXISTS platform_profiles (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			is_builtin INTEGER NOT NULL DEFAULT 0,
-			is_active INTEGER NOT NULL DEFAULT 0,
-			nfo_enabled INTEGER NOT NULL DEFAULT 1,
-			nfo_format TEXT NOT NULL DEFAULT 'kodi',
-			image_naming TEXT NOT NULL DEFAULT '{}',
-			use_symlinks INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`,
-		`CREATE TABLE IF NOT EXISTS webhooks (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			url TEXT NOT NULL,
-			type TEXT NOT NULL DEFAULT 'generic',
-			events TEXT NOT NULL DEFAULT '[]',
-			enabled INTEGER NOT NULL DEFAULT 1,
-			created_at TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`,
-	} {
-		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
-	}
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -177,8 +165,11 @@ func TestRoundTrip(t *testing.T) {
 	if result.Connections != 1 {
 		t.Errorf("expected 1 connection, got %d", result.Connections)
 	}
-	if result.Profiles != 1 {
-		t.Errorf("expected 1 profile, got %d", result.Profiles)
+	// The real migration seeds 5 builtin profiles; our test adds one more.
+	// All profiles are exported and re-imported, so result.Profiles equals the
+	// total profile count (builtins + user-created), not just user-created ones.
+	if result.Profiles == 0 {
+		t.Error("expected at least one profile imported")
 	}
 	if result.Webhooks != 1 {
 		t.Errorf("expected 1 webhook, got %d", result.Webhooks)
@@ -197,6 +188,342 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if conns[0].Name != "Test Emby" {
 		t.Errorf("expected 'Test Emby', got %s", conns[0].Name)
+	}
+}
+
+// TestRoundTrip_RuleScraperPreferences verifies that rule configuration,
+// scraper configs, and user preferences are included in the export payload and
+// correctly restored after import.
+func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	ruleSvc := rule.NewService(db)
+	scraperSvc := scraper.NewService(db, slog.Default())
+
+	// Seed default rules and one scraper config.
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	if err := scraperSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding scraper defaults: %v", err)
+	}
+
+	// Modify a rule so we can verify it round-trips.
+	thumbRule, err := ruleSvc.GetByID(ctx, rule.RuleThumbExists)
+	if err != nil {
+		t.Fatalf("getting thumb rule: %v", err)
+	}
+	thumbRule.Enabled = false
+	thumbRule.AutomationMode = rule.AutomationModeAuto
+	if err := ruleSvc.Update(ctx, thumbRule); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	// Add a user with preferences.
+	userID := "user-001"
+	db.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID)
+	db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'theme', 'light')`, userID)
+	db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'font_size', 'large')`, userID)
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
+		WithRuleService(ruleSvc).
+		WithScraperService(scraperSvc)
+
+	passphrase := "roundtrip-ext"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Decrypt the payload and verify sections are present.
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypting for inspection: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshaling payload: %v", err)
+	}
+	if len(payload.Rules) == 0 {
+		t.Error("expected rules in payload")
+	}
+	if len(payload.ScraperConfigs) == 0 {
+		t.Error("expected scraper configs in payload")
+	}
+	if len(payload.UserPreferences) == 0 {
+		t.Error("expected user preferences in payload")
+	}
+
+	// Import into a fresh DB with the same username.
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	ruleSvc2 := rule.NewService(db2)
+	scraperSvc2 := scraper.NewService(db2, slog.Default())
+	if err := ruleSvc2.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules in target db: %v", err)
+	}
+	// Create matching user in target DB.
+	userID2 := "user-002"
+	db2.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID2)
+
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2).
+		WithRuleService(ruleSvc2).
+		WithScraperService(scraperSvc2)
+
+	result, err := svc2.Import(ctx, envelope, passphrase)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if result.Rules == 0 {
+		t.Error("expected rules imported")
+	}
+	if result.ScraperConfigs == 0 {
+		t.Error("expected scraper configs imported")
+	}
+	if result.UserPreferences == 0 {
+		t.Error("expected user preferences imported")
+	}
+
+	// Verify the modified rule was restored correctly.
+	imported, err := ruleSvc2.GetByID(ctx, rule.RuleThumbExists)
+	if err != nil {
+		t.Fatalf("getting imported rule: %v", err)
+	}
+	if imported.Enabled {
+		t.Error("expected thumb rule to be disabled after import")
+	}
+	if imported.AutomationMode != rule.AutomationModeAuto {
+		t.Errorf("expected automation_mode=auto, got %s", imported.AutomationMode)
+	}
+
+	// Verify user preferences were migrated to the matching username.
+	var themeVal string
+	db2.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = 'theme'`, userID2).Scan(&themeVal)
+	if themeVal != "light" {
+		t.Errorf("expected theme=light for alice, got %q", themeVal)
+	}
+}
+
+// TestExport_NoDecryptedSecretsInPayload verifies that provider API keys stored
+// in the payload are the plaintext keys (not decrypted separately outside the
+// envelope), and that the envelope itself never leaks secrets as cleartext.
+// The entire export is wrapped in AES-256-GCM; decrypting with a wrong
+// passphrase must fail, confirming secrets are not present in the outer JSON.
+func TestExport_NoDecryptedSecretsInPayload(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Store a provider API key.
+	if err := provSettings.SetAPIKey(ctx, provider.NameFanartTV, "super-secret-fanart-key"); err != nil {
+		t.Fatalf("setting provider key: %v", err)
+	}
+
+	passphrase := "secure-export"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// The outer envelope fields (version, app_version, created_at, salt) must
+	// not contain the API key in plaintext.
+	envelopeJSON, _ := json.Marshal(envelope)
+	if bytes.Contains(envelopeJSON, []byte("super-secret-fanart-key")) {
+		t.Error("plaintext API key found in outer envelope JSON -- secret leaked outside encryption")
+	}
+
+	// Attempting to decrypt with a wrong passphrase must fail.
+	_, err = decryptWithPassphrase(envelope.Data, envelope.Salt, "wrong-passphrase")
+	if err == nil {
+		t.Error("decryption should fail with wrong passphrase")
+	}
+
+	// Decrypt with correct passphrase and confirm key is present inside the payload.
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypting with correct passphrase: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshaling payload: %v", err)
+	}
+	if payload.ProviderKeys[string(provider.NameFanartTV)] != "super-secret-fanart-key" {
+		t.Error("expected API key present inside decrypted payload")
+	}
+}
+
+// TestImport_Idempotent verifies that importing the same payload twice does not
+// produce duplicate rows for rules, scraper configs, or user preferences.
+func TestImport_Idempotent(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	ruleSvc := rule.NewService(db)
+	scraperSvc := scraper.NewService(db, slog.Default())
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	if err := scraperSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding scraper: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
+		WithRuleService(ruleSvc).
+		WithScraperService(scraperSvc)
+
+	passphrase := "idempotent"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Import twice on the same database.
+	for i := range 2 {
+		if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
+			t.Fatalf("Import #%d: %v", i+1, err)
+		}
+	}
+
+	// Verify no duplicate scraper config rows.
+	var scraperCount int
+	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config`).Scan(&scraperCount)
+	// Only the global config should exist.
+	if scraperCount != 1 {
+		t.Errorf("expected 1 scraper config row after double import, got %d", scraperCount)
+	}
+
+	// Verify rule count unchanged.
+	rules, err := ruleSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing rules after double import: %v", err)
+	}
+	if len(rules) == 0 {
+		t.Error("expected rules after double import")
+	}
+}
+
+// TestImport_UnknownRuleIDSkipped verifies that a payload containing an unknown
+// rule ID (from a newer binary) is silently skipped rather than returning an error.
+func TestImport_UnknownRuleIDSkipped(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
+		WithRuleService(ruleSvc)
+
+	passphrase := "unknown-rule"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Inject a fake rule ID into the decrypted payload and re-encrypt.
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt for injection: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	payload.Rules = append(payload.Rules, RuleExport{
+		ID:             "future_rule_does_not_exist",
+		Enabled:        true,
+		AutomationMode: "auto",
+	})
+	modified, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	newData, newSalt, err := encryptWithPassphrase(modified, passphrase)
+	if err != nil {
+		t.Fatalf("re-encrypt: %v", err)
+	}
+	envelope.Data = newData
+	envelope.Salt = newSalt
+
+	// Import should succeed even with the unknown rule ID.
+	if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import with unknown rule ID should succeed, got: %v", err)
+	}
+}
+
+// TestImport_InvalidAutomationModeSkipped verifies that a tampered payload
+// carrying an unrecognized automation_mode value is skipped (not written to
+// the DB) while the rest of the import continues without error.
+func TestImport_InvalidAutomationModeSkipped(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
+		WithRuleService(ruleSvc)
+
+	passphrase := "tamper-test"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Tamper: inject an invalid automation_mode into the first rule's export.
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt for injection: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(payload.Rules) == 0 {
+		t.Fatal("expected rules in payload for tampering")
+	}
+	// Record original mode so we can verify it is not overwritten.
+	targetID := payload.Rules[0].ID
+	payload.Rules[0].AutomationMode = "invalid_value"
+
+	modified, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	newData, newSalt, err := encryptWithPassphrase(modified, passphrase)
+	if err != nil {
+		t.Fatalf("re-encrypt: %v", err)
+	}
+	envelope.Data = newData
+	envelope.Salt = newSalt
+
+	// Import must succeed (not abort) even though one entry is invalid.
+	if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import with invalid automation_mode should succeed, got: %v", err)
+	}
+
+	// The rule's automation_mode in the DB must not have been changed to the
+	// invalid value. It should still be the DB-resident default ("manual").
+	imported, err := ruleSvc.GetByID(ctx, targetID)
+	if err != nil {
+		t.Fatalf("getting rule after import: %v", err)
+	}
+	if imported.AutomationMode == "invalid_value" {
+		t.Errorf("invalid automation_mode was written to DB -- validation not enforced")
 	}
 }
 

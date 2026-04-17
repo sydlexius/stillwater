@@ -331,8 +331,11 @@ func run() error {
 	// Initialize maintenance service
 	maintenanceService := maintenance.NewService(db, cfg.Database.Path, logger)
 
-	// Initialize settings export/import service
-	settingsIOService := settingsio.NewService(db, providerSettings, connectionService, platformService, webhookService)
+	// Initialize settings export/import service; attach rule and scraper services
+	// so their configurations are included in export/import payloads.
+	settingsIOService := settingsio.NewService(db, providerSettings, connectionService, platformService, webhookService).
+		WithRuleService(ruleService).
+		WithScraperService(scraperService)
 
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{

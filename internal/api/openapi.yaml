@@ -7648,8 +7648,36 @@ paths:
                   data:
                     type: string
                     description: Encrypted settings payload.
+                  summary:
+                    type: object
+                    description: Plaintext section counts for sanity-checking without decryption.
+                    properties:
+                      settings:
+                        type: integer
+                      connections:
+                        type: integer
+                      platform_profiles:
+                        type: integer
+                      webhooks:
+                        type: integer
+                      provider_keys:
+                        type: integer
+                      priorities:
+                        type: integer
+                      rules:
+                        type: integer
+                      scraper_configs:
+                        type: integer
+                      user_preferences:
+                        type: integer
         "400":
           description: Missing passphrase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Settings export service not available
           content:
             application/json:
               schema:
@@ -7708,6 +7736,15 @@ paths:
                   priorities:
                     type: integer
                     description: Number of provider priority entries imported.
+                  rules:
+                    type: integer
+                    description: Number of rule configurations imported.
+                  scraper_configs:
+                    type: integer
+                    description: Number of scraper configuration scopes imported.
+                  user_preferences:
+                    type: integer
+                    description: Number of user preference entries imported.
             text/html:
               schema:
                 type: string
@@ -7719,6 +7756,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "413":
           description: File exceeds 10MB limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Settings import service not available
           content:
             application/json:
               schema:
