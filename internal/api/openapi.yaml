@@ -1214,7 +1214,7 @@ components:
           description: Approximate completion percentage (0-100).
         error:
           type: string
-          description: Error message when state is "error". Empty otherwise.
+          description: Error message when state is "error". Omitted otherwise.
         last_checked:
           type: string
           format: date-time
@@ -8118,6 +8118,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while saving or reading updater config.
           content:
             application/json:
               schema:

@@ -169,6 +169,56 @@ func TestHandlePostUpdateApply_Docker(t *testing.T) {
 	}
 }
 
+// TestHandlePostUpdateApply_AlreadyRunning verifies that the handler maps
+// updater.ErrAlreadyRunning to 409 Conflict. The blocking transport holds the
+// first apply goroutine in flight (so applyRunning stays set) while the second
+// call races through the CAS and returns the sentinel.
+func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	block := make(chan struct{})
+	r.updaterService.SetHTTPClient(&http.Client{Transport: &blockingTransport{block: block}})
+	t.Cleanup(func() {
+		close(block)
+		// Wait for the goroutine to drain so t.Cleanup DB close does not race.
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			st := r.updaterService.Status()
+			if st.State == updater.StateIdle || st.State == updater.StateError {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
+
+	// First apply: should return 202 and hold the goroutine in fetchReleases.
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w1 := httptest.NewRecorder()
+	r.handlePostUpdateApply(w1, req1)
+	if w1.Code != http.StatusAccepted {
+		t.Fatalf("first apply: status = %d, want 202; body: %s", w1.Code, w1.Body.String())
+	}
+
+	// Poll until the goroutine is observed running. Without this, the second
+	// call could race ahead of the first Apply setting applyRunning.
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		st := r.updaterService.Status()
+		if st.State == updater.StateChecking {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Second apply: should return 409 because the first is still in flight.
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w2 := httptest.NewRecorder()
+	r.handlePostUpdateApply(w2, req2)
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("second apply: status = %d, want 409; body: %s", w2.Code, w2.Body.String())
+	}
+}
+
 func TestHandleGetUpdateCheck_NoNetwork(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
@@ -409,3 +459,13 @@ func (t *alwaysFailTransport) RoundTrip(_ *http.Request) (*http.Response, error)
 type unavailableError struct{}
 
 func (e *unavailableError) Error() string { return "network unavailable (test)" }
+
+// blockingTransport holds every request until the block channel is closed.
+// Used to keep an Apply goroutine in flight so the handler's 409 "already
+// running" branch can be exercised deterministically.
+type blockingTransport struct{ block chan struct{} }
+
+func (b *blockingTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
+	<-b.block
+	return nil, &unavailableError{}
+}

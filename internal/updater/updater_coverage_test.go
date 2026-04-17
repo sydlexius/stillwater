@@ -168,9 +168,10 @@ func TestRunApplyChecksumDownloadError(t *testing.T) {
 	}
 }
 
-// TestRunApplyBinaryDownloadError exercises the branch where the binary
-// download fails.
-func TestRunApplyBinaryDownloadError(t *testing.T) {
+// TestRunApplyNoChecksumAsset verifies the fail-closed branch when the release
+// ships no checksums.txt. Without a manifest, the updater has no way to verify
+// the binary and must refuse to install.
+func TestRunApplyNoChecksumAsset(t *testing.T) {
 	// Not parallel: buildTestService calls database.Migrate (goose global race).
 	tagName := "v999.0.0"
 	assetName := binaryAssetName(tagName)
@@ -192,10 +193,120 @@ func TestRunApplyBinaryDownloadError(t *testing.T) {
 	}
 	body, _ := json.Marshal(releases)
 
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	svc := buildTestService(t)
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(context.Background()); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	st := waitForApplyDone(t, svc)
+	if !strings.Contains(st.Error, "checksum asset") || !strings.Contains(st.Error, "not found in release") {
+		t.Errorf("expected 'checksum asset ... not found in release' error, got %q", st.Error)
+	}
+}
+
+// TestRunApplyChecksumMissingAsset verifies the fail-closed branch when the
+// checksums.txt is present but does not list the binary asset we need.
+func TestRunApplyChecksumMissingAsset(t *testing.T) {
+	// Not parallel: buildTestService calls database.Migrate (goose global race).
+	tagName := "v999.0.0"
+	assetName := binaryAssetName(tagName)
+	checksumName := checksumAssetName(tagName)
+	// Checksum file references a different asset name, so parseChecksum
+	// returns the empty string for assetName.
+	checksumContent := []byte("0000000000000000000000000000000000000000000000000000000000000000  other-asset.tar.gz\n")
+
+	releases := []map[string]interface{}{
+		{
+			"tag_name":     tagName,
+			"prerelease":   false,
+			"draft":        false,
+			"html_url":     "https://github.com/example/repo/releases/" + tagName,
+			"published_at": "2030-01-01T00:00:00Z",
+			"assets": []map[string]string{
+				{
+					"name":                 assetName,
+					"browser_download_url": "https://placeholder/binary",
+				},
+				{
+					"name":                 checksumName,
+					"browser_download_url": "https://placeholder/checksums",
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(releases)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/checksums":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(checksumContent)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+		}
+	}))
+	defer srv.Close()
+
+	svc := buildTestService(t)
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(context.Background()); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	st := waitForApplyDone(t, svc)
+	if !strings.Contains(st.Error, "checksum for asset") || !strings.Contains(st.Error, "not found") {
+		t.Errorf("expected 'checksum for asset ... not found' error, got %q", st.Error)
+	}
+}
+
+// TestRunApplyBinaryDownloadError exercises the branch where the binary
+// download fails. Checksum download must succeed (fail-closed policy), so the
+// release ships a valid checksums asset even though the binary URL 410s.
+func TestRunApplyBinaryDownloadError(t *testing.T) {
+	// Not parallel: buildTestService calls database.Migrate (goose global race).
+	tagName := "v999.0.0"
+	assetName := binaryAssetName(tagName)
+	checksumName := checksumAssetName(tagName)
+	checksumContent := []byte("0000000000000000000000000000000000000000000000000000000000000000  " + assetName + "\n")
+
+	releases := []map[string]interface{}{
+		{
+			"tag_name":     tagName,
+			"prerelease":   false,
+			"draft":        false,
+			"html_url":     "https://github.com/example/repo/releases/" + tagName,
+			"published_at": "2030-01-01T00:00:00Z",
+			"assets": []map[string]string{
+				{
+					"name":                 assetName,
+					"browser_download_url": "https://placeholder/binary",
+				},
+				{
+					"name":                 checksumName,
+					"browser_download_url": "https://placeholder/checksums",
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(releases)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/binary":
 			w.WriteHeader(http.StatusGone)
+		case "/checksums":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(checksumContent)
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
@@ -280,13 +391,17 @@ func TestRunApplyChecksumMismatch(t *testing.T) {
 
 // TestRunApplyExtractError exercises the extractBinary failure branch
 // (binary download succeeds but archive is corrupt / missing the binary entry).
+// Checksum verification must succeed so the flow reaches the extract step.
 func TestRunApplyExtractError(t *testing.T) {
 	// Not parallel: buildTestService calls database.Migrate (goose global race).
 	tagName := "v999.0.0"
 	assetName := binaryAssetName(tagName)
+	checksumName := checksumAssetName(tagName)
 
 	// Build a tar.gz that does NOT contain a file named "stillwater".
 	badArchive := buildTarGZ(t, "README.md", []byte("no binary here"))
+	// Compute the real checksum so verification passes and we reach extract.
+	checksumContent := []byte(sha256Hex(badArchive) + "  " + assetName + "\n")
 
 	releases := []map[string]interface{}{
 		{
@@ -300,6 +415,10 @@ func TestRunApplyExtractError(t *testing.T) {
 					"name":                 assetName,
 					"browser_download_url": "https://placeholder/binary",
 				},
+				{
+					"name":                 checksumName,
+					"browser_download_url": "https://placeholder/checksums",
+				},
 			},
 		},
 	}
@@ -310,6 +429,9 @@ func TestRunApplyExtractError(t *testing.T) {
 		case "/binary":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(badArchive)
+		case "/checksums":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(checksumContent)
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)

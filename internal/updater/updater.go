@@ -402,15 +402,23 @@ func (s *Service) runApply(ctx context.Context) {
 		return
 	}
 
-	// Download checksum file first (small, fast).
-	var expectedChecksum string
-	if checksumURL != "" {
-		data, err := s.downloadBytes(ctx, checksumURL)
-		if err != nil {
-			s.setState(StateError, 0, "downloading checksums: "+err.Error())
-			return
-		}
-		expectedChecksum = parseChecksum(data, assetName)
+	// Download the checksum file first (small, fast). Fail closed if the release
+	// does not ship a checksum manifest or the manifest omits our asset: skipping
+	// verification would let a compromised release silently install an unverified
+	// binary, which defeats the purpose of the checksum guarantee.
+	if checksumURL == "" {
+		s.setState(StateError, 0, fmt.Sprintf("checksum asset %q not found in release", checksumName))
+		return
+	}
+	checksumData, err := s.downloadBytes(ctx, checksumURL)
+	if err != nil {
+		s.setState(StateError, 0, "downloading checksums: "+err.Error())
+		return
+	}
+	expectedChecksum := parseChecksum(checksumData, assetName)
+	if expectedChecksum == "" {
+		s.setState(StateError, 0, fmt.Sprintf("checksum for asset %q not found in %q", assetName, checksumName))
+		return
 	}
 
 	s.setState(StateDownloading, 30, "")
@@ -424,15 +432,13 @@ func (s *Service) runApply(ctx context.Context) {
 
 	s.setState(StateDownloading, 70, "")
 
-	// Verify checksum if we have one.
-	if expectedChecksum != "" {
-		actual := sha256Hex(binaryData)
-		if !strings.EqualFold(actual, expectedChecksum) {
-			s.setState(StateError, 0, fmt.Sprintf("checksum mismatch: expected %s, got %s", expectedChecksum, actual))
-			return
-		}
-		s.logger.Info("checksum verified", "asset", assetName, "sha256", actual)
+	// Verify checksum.
+	actual := sha256Hex(binaryData)
+	if !strings.EqualFold(actual, expectedChecksum) {
+		s.setState(StateError, 0, fmt.Sprintf("checksum mismatch: expected %s, got %s", expectedChecksum, actual))
+		return
 	}
+	s.logger.Info("checksum verified", "asset", assetName, "sha256", actual)
 
 	s.setState(StateApplying, 80, "")
 
@@ -469,9 +475,13 @@ func (s *Service) runApply(ctx context.Context) {
 	s.setState(StateIdle, 100, "")
 }
 
-// fetchReleases calls the GitHub Releases API for this repository.
+// fetchReleases calls the GitHub Releases API for this repository. The page
+// size is 100 (GitHub's maximum) so the stable channel still sees the most
+// recent stable release even when many prereleases have been published since.
+// GitHub returns releases in reverse-chronological order; pickLatest scans
+// this slice for the newest entry matching the requested channel.
 func (s *Service) fetchReleases(ctx context.Context) ([]githubRelease, error) {
-	const apiURL = "https://api.github.com/repos/sydlexius/stillwater/releases?per_page=20"
+	const apiURL = "https://api.github.com/repos/sydlexius/stillwater/releases?per_page=100"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)

@@ -5847,25 +5847,47 @@ templ updatesTabScript() {
 				});
 			};
 
+			// updaterPollTimer is the single active poll interval. Only one poller
+			// may run at a time; reopening the Updates tab during an apply would
+			// otherwise stack multiple intervals, each racing to clear state.
+			var updaterPollTimer = null;
+
+			function stopUpdaterPoll() {
+				if (updaterPollTimer !== null) {
+					clearInterval(updaterPollTimer);
+					updaterPollTimer = null;
+				}
+			}
+
 			// pollUpdateStatus polls /api/v1/updates/status until idle or error.
+			// Fails closed on HTTP or parse errors: a 5xx or malformed body stops
+			// the poller and surfaces the failure, otherwise the spinner would
+			// spin indefinitely.
 			function pollUpdateStatus() {
-				var interval = setInterval(function() {
+				if (updaterPollTimer !== null) return;
+				updaterPollTimer = setInterval(function() {
 					fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
-					.then(function(r) { return r.json(); })
+					.then(function(r) {
+						if (!r.ok) return throwFromResponse(r, 'status failed');
+						return r.json();
+					})
 					.then(function(d) {
 						if (d.state === 'idle') {
-							clearInterval(interval);
+							stopUpdaterPoll();
 							clearUpdaterStatus();
 							// Trigger a fresh check to show the new version.
 							checkForUpdates();
 						} else if (d.state === 'error') {
-							clearInterval(interval);
+							stopUpdaterPoll();
 							setUpdaterStatus('error', d.error || 'update failed');
 						} else {
 							setUpdaterStatus(d.state, '');
 						}
 					})
-					.catch(function() { /* ignore transient polling errors */ });
+					.catch(function(err) {
+						stopUpdaterPoll();
+						setUpdaterStatus('error', err.message || 'status failed');
+					});
 				}, 2000);
 			}
 
