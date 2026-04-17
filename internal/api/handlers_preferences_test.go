@@ -1049,18 +1049,6 @@ func TestValidateMetadataLanguages(t *testing.T) {
 	}
 }
 
-func TestIsValidLanguageTag(t *testing.T) {
-	valid := []string{"en", "en-GB", "zh-Hant-TW", "ja", "fr", "eng"}
-	invalid := []string{"", "en@gb", "en gb", "a-", "-en", "toooooolong123456789012345678901234567", "123", "1", "a"}
-
-	for _, s := range valid {
-		if !isValidLanguageTag(s) {
-			t.Errorf("expected %q to be valid", s)
-		}
-	}
-	for _, s := range invalid {
-		if isValidLanguageTag(s) {
-			t.Errorf("expected %q to be invalid", s)
-		}
-	}
-}
+// NOTE: the low-level tag validator has moved to the internal/langpref
+// package and is covered by TestValidate there. The api-package surface
+// we care about here is validateMetadataLanguages, tested above.
