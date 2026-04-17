@@ -1183,7 +1183,10 @@ components:
           example: "v0.9.6"
         latest:
           type: string
-          description: Latest version available on the configured channel.
+          description: >-
+            Latest version available on the configured channel. Empty when the
+            current channel has no matching release (e.g. after switching from
+            a channel with available builds to one without).
           example: "v1.0.0"
         channel:
           type: string
@@ -1194,11 +1197,15 @@ components:
           description: True when latest is strictly newer than current.
         release_url:
           type: string
-          description: URL to the GitHub release page for the latest version.
+          description: >-
+            URL to the GitHub release page for the latest version. Empty/omitted
+            when the check found no matching release on the current channel.
         published_at:
           type: string
           format: date-time
-          description: Publication timestamp of the latest release (RFC 3339).
+          description: >-
+            Publication timestamp of the latest release (RFC 3339). Empty/omitted
+            when the check found no matching release on the current channel.
     UpdateStatus:
       type: object
       required: [state, progress, is_docker, update_available]
@@ -1227,10 +1234,16 @@ components:
           description: True when the most recent check found a newer version on the configured channel.
         latest:
           type: string
-          description: Tag name of the latest matching release. Empty if no check has succeeded yet.
+          description: >-
+            Tag name of the latest matching release. Empty when no check has
+            succeeded yet OR when the most recent successful check found no
+            matching release on the current channel (e.g. after a channel switch).
         release_url:
           type: string
-          description: URL to the GitHub release page for the latest version. Absent if no check has succeeded.
+          description: >-
+            URL to the GitHub release page for the latest version. Absent when no
+            check has succeeded yet OR when the most recent successful check
+            found no matching release on the current channel.
     UpdateConfig:
       type: object
       required: [channel, auto_check]

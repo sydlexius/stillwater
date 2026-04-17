@@ -5829,8 +5829,17 @@ templ updatesTabScript() {
 							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
-					if (data.release_url) {
-						latestEl.innerHTML += ' <a href="' + escHtml(data.release_url) + '" target="_blank" rel="noopener noreferrer" class="ml-2 text-xs text-blue-500 hover:underline">' + escHtml(lblReleaseNotes) + '</a>';
+					// Sync the persistent release-notes row rather than appending a new
+					// anchor on every Check click (which stacked duplicates).
+					var relLinkRow = document.getElementById('updates-release-link-row');
+					var relLink = document.getElementById('updates-release-link');
+					if (relLinkRow && relLink) {
+						if (data.release_url) {
+							relLink.href = data.release_url;
+							relLinkRow.classList.remove('hidden');
+						} else {
+							relLinkRow.classList.add('hidden');
+						}
 					}
 				})
 				.catch(function(err) {
@@ -5996,7 +6005,16 @@ templ updatesTabScript() {
 				});
 			}
 
-			// On tab activation, fetch current status.
+			// Shared hydrator used on DOMContentLoaded and popstate so browser
+			// back/forward navigation also refreshes the panel instead of leaving
+			// stale DOM behind when the user returns to the tab.
+			function hydrateIfUpdatesActive() {
+				var panel = document.querySelector('[data-tab-panel="updates"]');
+				if (panel && !panel.classList.contains('hidden')) {
+					fetchAndPopulateUpdateStatus();
+				}
+			}
+
 			document.addEventListener('DOMContentLoaded', function() {
 				var tabLinks = document.querySelectorAll('[data-tab="updates"]');
 				tabLinks.forEach(function(link) {
@@ -6004,12 +6022,13 @@ templ updatesTabScript() {
 						fetchAndPopulateUpdateStatus();
 					});
 				});
-				// Auto-populate if updates tab is the active tab on load.
-				var panel = document.querySelector('[data-tab-panel="updates"]');
-				if (panel && !panel.classList.contains('hidden')) {
-					fetchAndPopulateUpdateStatus();
-				}
+				hydrateIfUpdatesActive();
 			});
+
+			// popstate fires on browser back/forward. If that navigation leaves
+			// the Updates tab active, rehydrate rather than showing whatever
+			// stale values were in the DOM before the back/forward event.
+			window.addEventListener('popstate', hydrateIfUpdatesActive);
 
 			function fetchAndPopulateUpdateStatus() {
 				fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
@@ -6020,9 +6039,16 @@ templ updatesTabScript() {
 				.then(function(d) {
 					var lcRow = document.getElementById('updates-last-checked-row');
 					var lcEl = document.getElementById('updates-last-checked');
-					if (lcEl && d.last_checked) {
-						lcEl.textContent = d.last_checked;
-						if (lcRow) lcRow.classList.remove('hidden');
+					if (lcEl) {
+						if (d.last_checked) {
+							lcEl.textContent = d.last_checked;
+							if (lcRow) lcRow.classList.remove('hidden');
+						} else {
+							// Clear stale display when the server has no record, e.g. after a
+							// channel switch to one that was never checked.
+							lcEl.textContent = '';
+							if (lcRow) lcRow.classList.add('hidden');
+						}
 					}
 					// Hydrate the latest version and update-available badge from cached status.
 					var latestEl = document.getElementById('updates-latest-version');
@@ -6030,13 +6056,20 @@ templ updatesTabScript() {
 					var i18n = document.getElementById('updates-i18n');
 					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
 					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
-					if (latestEl && d.latest) {
-						if (d.update_available) {
-							latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
-								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
-							if (applyBtn) applyBtn.disabled = false;
+					if (latestEl) {
+						if (d.latest) {
+							if (d.update_available) {
+								latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
+									+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
+								if (applyBtn) applyBtn.disabled = false;
+							} else {
+								latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
+								if (applyBtn) applyBtn.disabled = true;
+							}
 						} else {
-							latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
+							// No matching release on the current channel; clear any stale row
+							// so the UI does not lie after a channel switch to a no-match channel.
+							latestEl.textContent = '';
 							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
