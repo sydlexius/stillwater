@@ -1294,56 +1294,56 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 // selected IDs to /api/v1/artists/bulk-actions.
 templ BulkActionBar(data ArtistListData) {
 	<div
-			id="bulk-action-bar"
-			class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
-			role="toolbar"
-			aria-label={ t(ctx, "artists.bulk.toolbar") }
-			data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
-			data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
-			data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
-			data-i18n-busy={ t(ctx, "artists.bulk.busy") }
-			data-i18n-failed={ t(ctx, "artists.bulk.failed") }
-			data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
-			data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
-			data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
-		>
-			<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-				<input
-					id="bulk-select-all"
-					type="checkbox"
-					class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-					aria-controls="artist-content"
-					aria-label={ t(ctx, "artists.bulk.select_all") }
-				/>
-				<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
-			</label>
-			<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
-				{ t(ctx, "artists.bulk.none_selected") }
-			</span>
-			<div class="ml-auto">
-				<select
-					id="bulk-action-select"
-					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-					disabled
-					aria-label={ t(ctx, "artists.bulk.action_label") }
-				>
-					<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
-					<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
-					<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
-					<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
-					<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
-					<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
-				</select>
-				<button
-					id="bulk-action-apply"
-					type="button"
-					class="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-					disabled
-				>
-					{ t(ctx, "artists.bulk.apply") }
-				</button>
-			</div>
+		id="bulk-action-bar"
+		class="flex flex-wrap items-center gap-3 mb-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2"
+		role="toolbar"
+		aria-label={ t(ctx, "artists.bulk.toolbar") }
+		data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
+		data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
+		data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
+		data-i18n-busy={ t(ctx, "artists.bulk.busy") }
+		data-i18n-failed={ t(ctx, "artists.bulk.failed") }
+		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
+		data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
+		data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
+	>
+		<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+			<input
+				id="bulk-select-all"
+				type="checkbox"
+				class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+				aria-controls="artist-content"
+				aria-label={ t(ctx, "artists.bulk.select_all") }
+			/>
+			<span id="bulk-select-all-label">{ t(ctx, "artists.bulk.select_all") }</span>
+		</label>
+		<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
+			{ t(ctx, "artists.bulk.none_selected") }
+		</span>
+		<div class="ml-auto">
+			<select
+				id="bulk-action-select"
+				class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+				disabled
+				aria-label={ t(ctx, "artists.bulk.action_label") }
+			>
+				<option value="">{ t(ctx, "artists.bulk.choose_action") }</option>
+				<option value="run_rules">{ t(ctx, "artists.bulk.action.run_rules") }</option>
+				<option value="re_identify_auto">{ t(ctx, "artists.bulk.action.re_identify_auto") }</option>
+				<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
+				<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
+				<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
+			</select>
+			<button
+				id="bulk-action-apply"
+				type="button"
+				class="ml-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+				disabled
+			>
+				{ t(ctx, "artists.bulk.apply") }
+			</button>
 		</div>
+	</div>
 }
 
 templ ArtistTable(data ArtistListData) {
@@ -1543,50 +1543,50 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 				/>
 			</label>
 		}
-	<a
-		href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
-		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
-	>
-		<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-			if a.ThumbExists {
-				if a.ThumbPlaceholder != "" {
+		<a
+			href={ templ.SafeURL(basePath() + "/artists/" + a.ID) }
+			class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
+		>
+			<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
+				if a.ThumbExists {
+					if a.ThumbPlaceholder != "" {
+						<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
+					}
+					<img
+						src={ basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
+						alt={ a.Name }
+						loading="lazy"
+						class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+						onerror="this.style.display='none'"
+					/>
+				} else if a.ThumbPlaceholder != "" {
 					<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
+				} else {
+					<div class="h-full w-full flex items-center justify-center">
+						<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
+						</svg>
+					</div>
 				}
-				<img
-					src={ basePath() + "/api/v1/artists/" + a.ID + "/images/thumb/file" }
-					alt={ a.Name }
-					loading="lazy"
-					class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
-					onerror="this.style.display='none'"
-				/>
-			} else if a.ThumbPlaceholder != "" {
-				<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
-			} else {
-				<div class="h-full w-full flex items-center justify-center">
-					<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
-					</svg>
-				</div>
-			}
-			if complianceAvailable(compliance) {
-				<span
-					class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
-					title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-					aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
-					role="img"
-				></span>
-			}
-			@artistCardPlatformBadges(a, sources, platforms)
-		</div>
-		<div class="px-2 py-2">
-			<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
-				{ a.Name }
-			</p>
-			<p class={ "mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore) }>
-				{ fmt.Sprintf("%.0f%%", a.HealthScore) }
-			</p>
-		</div>
-	</a>
+				if complianceAvailable(compliance) {
+					<span
+						class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(ctx, artistCompliance(a.ID, compliance)) }
+						role="img"
+					></span>
+				}
+				@artistCardPlatformBadges(a, sources, platforms)
+			</div>
+			<div class="px-2 py-2">
+				<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
+					{ a.Name }
+				</p>
+				<p class={ "mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore) }>
+					{ fmt.Sprintf("%.0f%%", a.HealthScore) }
+				</p>
+			</div>
+		</a>
 	</div>
 }
 

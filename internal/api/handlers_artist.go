@@ -352,7 +352,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
 	switch activeTab {
-	case "overview", "images", "providers", "history", "debug":
+	case "overview", "images", "providers", "discography", "history", "violations", "debug":
 		// valid tab, keep it
 	default:
 		activeTab = "overview"
@@ -390,6 +390,17 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		activeTab = "overview"
 	}
 
+	// Fetch active violation count for the tab badge.
+	var violationCount int
+	if r.ruleService != nil {
+		vc, vcErr := r.ruleService.CountActiveViolationsForArtist(req.Context(), id)
+		if vcErr != nil {
+			r.logger.Warn("counting violations for artist detail page", "artist_id", id, "error", vcErr)
+		} else {
+			violationCount = vc
+		}
+	}
+
 	data := templates.ArtistDetailData{
 		Artist:             *a,
 		Members:            members,
@@ -402,6 +413,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		Connections:        connections,
 		ShowPlatformDebug:  showPlatformDebug,
 		HasDebugConnection: hasDebugConnection,
+		ViolationCount:     violationCount,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }

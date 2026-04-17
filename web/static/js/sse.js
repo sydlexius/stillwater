@@ -88,6 +88,10 @@
     // Refresh the notification badge count. The badge is loaded via HTMX
     // polling, but we can trigger an immediate refresh after an event.
     refreshNotificationBadge();
+
+    // Dispatch a DOM event so page-specific scripts can react to SSE events
+    // (e.g. the artist detail page refreshes its violations tab).
+    document.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data}));
   }
 
   function refreshNotificationBadge() {

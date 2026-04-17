@@ -217,9 +217,21 @@ func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
 	if !strings.Contains(body, "violation(s).") {
 		t.Errorf("HTMX body = %q, want violations message with 'violation(s).'", body)
 	}
-	// Link now points at the dashboard pre-filtered to this artist.
-	if !strings.Contains(body, "/?search=") {
-		t.Errorf("HTMX body = %q, want /?search= dashboard link", body)
+	// The HTMX summary no longer includes the inline dashboard link; the
+	// artist:show-violations-tab trigger in the response header switches
+	// the caller to the tab directly. Verify the old link is gone so a
+	// regression cannot reintroduce two competing navigation targets.
+	if strings.Contains(body, "/?search=") {
+		t.Errorf("HTMX body still contains dashboard link; expected tab-switch only: %s", body)
+	}
+	// Run Rules can auto-fix violations, so the sidebar/dashboard badge must
+	// refresh and the artist detail page must switch to the Violations tab
+	// so the refreshed list is visible inline. Both events ride the same
+	// HX-Trigger header; pages that do not listen for the tab-switch event
+	// are unaffected.
+	wantTrigger := "dashboard:action-resolved, artist:show-violations-tab"
+	if trig := w.Header().Get("HX-Trigger"); trig != wantTrigger {
+		t.Errorf("HX-Trigger = %q, want %q", trig, wantTrigger)
 	}
 }
 
