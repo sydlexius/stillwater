@@ -147,6 +147,12 @@ func (s *Scheduler) runEnabledRules(ctx context.Context) {
 		"fixes_succeeded", totalResult.FixesSucceeded,
 	)
 
+	// Record lastRunAt before the health snapshot so Status() reflects the
+	// completed evaluation even if the snapshot write is slow or fails.
+	s.mu.Lock()
+	s.lastRunAt = time.Now().UTC()
+	s.mu.Unlock()
+
 	// Record health snapshot after the run completes
 	if s.artistService != nil && s.ruleService != nil {
 		stats, err := s.artistService.GetHealthStats(ctx, "")
@@ -158,8 +164,4 @@ func (s *Scheduler) runEnabledRules(ctx context.Context) {
 			}
 		}
 	}
-
-	s.mu.Lock()
-	s.lastRunAt = time.Now().UTC()
-	s.mu.Unlock()
 }
