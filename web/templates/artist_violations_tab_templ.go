@@ -507,8 +507,8 @@ func artistViolationRow(v rule.RuleViolation, artistID string) templ.Component {
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 func artistViolationFix(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationFix_9908`,
-		Function: `function __templ_artistViolationFix_9908(violationID, artistID){var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+		Name: `__templ_artistViolationFix_b20d`,
+		Function: `function __templ_artistViolationFix_b20d(violationID, artistID){var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/fix', {
 		method: 'POST',
@@ -519,7 +519,11 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 		return resp.json();
 	}).then(function(data) {
 		if (data.status === 'fixed' || data.status === 'dismissed') {
-			htmx.ajax('GET', bp + '/artists/' + artistID + '/violations/tab', {
+			// Root-relative URL: htmx:configRequest in layout.templ prepends
+			// basePath for sub-path deployments, so concatenating bp here
+			// would double-prefix. The fetch() above still needs bp because
+			// fetch is not intercepted by HTMX.
+			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
 				target: '#violations-content-' + artistID,
 				swap: 'outerHTML'
 			});
@@ -531,16 +535,16 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 		alert('Network error applying fix: ' + err.message);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationFix_9908`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_9908`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationFix_b20d`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_b20d`, violationID, artistID),
 	}
 }
 
 // artistViolationDismiss dismisses a violation and refreshes the violations tab.
 func artistViolationDismiss(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationDismiss_b721`,
-		Function: `function __templ_artistViolationDismiss_b721(violationID, artistID){if (!confirm('Dismiss this violation?')) return;
+		Name: `__templ_artistViolationDismiss_58e6`,
+		Function: `function __templ_artistViolationDismiss_58e6(violationID, artistID){if (!confirm('Dismiss this violation?')) return;
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/dismiss', {
@@ -549,7 +553,8 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 		credentials: 'same-origin'
 	}).then(function(resp) {
 		if (resp.ok) {
-			htmx.ajax('GET', bp + '/artists/' + artistID + '/violations/tab', {
+			// Root-relative URL: see artistViolationFix above for rationale.
+			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
 				target: '#violations-content-' + artistID,
 				swap: 'outerHTML'
 			});
@@ -561,8 +566,8 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 		alert('Network error dismissing violation.');
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationDismiss_b721`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_b721`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationDismiss_58e6`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_58e6`, violationID, artistID),
 	}
 }
 

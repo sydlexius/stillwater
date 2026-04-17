@@ -352,7 +352,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	// Read the active tab from query params, defaulting to "overview".
 	activeTab := req.URL.Query().Get("tab")
 	switch activeTab {
-	case "overview", "images", "providers", "history", "violations", "debug":
+	case "overview", "images", "providers", "discography", "history", "violations", "debug":
 		// valid tab, keep it
 	default:
 		activeTab = "overview"

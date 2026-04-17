@@ -130,7 +130,11 @@ script artistViolationFix(violationID string, artistID string) {
 		return resp.json();
 	}).then(function(data) {
 		if (data.status === 'fixed' || data.status === 'dismissed') {
-			htmx.ajax('GET', bp + '/artists/' + artistID + '/violations/tab', {
+			// Root-relative URL: htmx:configRequest in layout.templ prepends
+			// basePath for sub-path deployments, so concatenating bp here
+			// would double-prefix. The fetch() above still needs bp because
+			// fetch is not intercepted by HTMX.
+			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
 				target: '#violations-content-' + artistID,
 				swap: 'outerHTML'
 			});
@@ -155,7 +159,8 @@ script artistViolationDismiss(violationID string, artistID string) {
 		credentials: 'same-origin'
 	}).then(function(resp) {
 		if (resp.ok) {
-			htmx.ajax('GET', bp + '/artists/' + artistID + '/violations/tab', {
+			// Root-relative URL: see artistViolationFix above for rationale.
+			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
 				target: '#violations-content-' + artistID,
 				swap: 'outerHTML'
 			});

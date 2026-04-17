@@ -777,15 +777,23 @@ templ artistDetailTabScript(artistID string) {
 //   - artist.updated SSE -- fired when the artist is updated server-side
 
 script artistDetailViolationSync(artistID string) {
-	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
-	var tabURL = bp + '/artists/' + artistID + '/violations/tab';
-	var tabTarget = '#violations-content-' + artistID;
+	// Root-relative URL: the global htmx:configRequest hook in layout.templ
+	// prepends basePath for sub-path deployments, so concatenating bp here
+	// would double-prefix.
+	var tabURL = '/artists/' + artistID + '/violations/tab';
+	var loadedTarget = '#violations-content-' + artistID;
+	var initialTarget = '#artist-violations-tab-' + artistID;
 
 	// refreshViolationsTab reloads the violations tab content. The server
 	// response includes an OOB swap for the tab badge, so both update
 	// together in a single round-trip.
+	//
+	// Targets the loaded wrapper when the tab has been opened at least
+	// once; otherwise falls back to the lazy-load placeholder so the badge
+	// still refreshes on a fresh page load (the response's OOB badge swap
+	// keeps the tab pill in sync regardless of which target is hit).
 	function refreshViolationsTab() {
-		var target = document.querySelector(tabTarget);
+		var target = document.querySelector(loadedTarget) || document.querySelector(initialTarget);
 		if (!target) return;
 		htmx.ajax('GET', tabURL, {target: target, swap: 'outerHTML'});
 	}
