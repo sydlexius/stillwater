@@ -106,6 +106,7 @@ templ artistViolationRow(v rule.RuleViolation, artistID string) {
 					type="button"
 					data-violation-id={ v.ID }
 					data-artist-id={ artistID }
+					data-confirm={ t(ctx, "notifications.dismiss_confirm") }
 					onclick={ artistViolationDismiss(v.ID, artistID) }
 					class="font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
 				>
@@ -150,7 +151,12 @@ script artistViolationFix(violationID string, artistID string) {
 // artistViolationDismiss dismisses a violation and refreshes the violations tab.
 
 script artistViolationDismiss(violationID string, artistID string) {
-	if (!confirm('Dismiss this violation?')) return;
+	// Localized prompt sourced from the dismiss button's data-confirm attribute
+	// (set in artistViolationRow). Falls back to English if the attribute is
+	// absent so the handler still confirms even on a stale render.
+	var btn = document.querySelector('button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"]');
+	var prompt = (btn && btn.dataset.confirm) || 'Dismiss this violation?';
+	if (!confirm(prompt)) return;
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/dismiss', {
