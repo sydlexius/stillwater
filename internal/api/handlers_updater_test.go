@@ -1,0 +1,391 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/updater"
+)
+
+// testRouterWithUpdater creates a minimal Router with a real updater.Service.
+func testRouterWithUpdater(t *testing.T) *Router {
+	t.Helper()
+
+	dir := t.TempDir()
+	db, err := database.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	updSvc := updater.NewService(db, logger)
+
+	authSvc := auth.NewService(db)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	nfoSnapSvc := nfo.NewSnapshotService(db)
+
+	r := NewRouter(RouterDeps{
+		AuthService:        authSvc,
+		RuleService:        ruleSvc,
+		NFOSnapshotService: nfoSnapSvc,
+		UpdaterService:     updSvc,
+		DB:                 db,
+		Logger:             logger,
+		StaticFS:           os.DirFS("../../web/static"),
+	})
+	return r
+}
+
+func TestHandleGetUpdateConfig_Defaults(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	w := httptest.NewRecorder()
+
+	r.handleGetUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var cfg updater.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Channel != updater.ChannelStable {
+		t.Errorf("channel = %q, want %q", cfg.Channel, updater.ChannelStable)
+	}
+	if cfg.AutoCheck {
+		t.Error("auto_check should default to false")
+	}
+}
+
+func TestHandlePutUpdateConfig_Valid(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"prerelease","auto_check":true}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var cfg updater.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Channel != updater.ChannelPrerelease {
+		t.Errorf("channel = %q, want prerelease", cfg.Channel)
+	}
+	if !cfg.AutoCheck {
+		t.Error("auto_check should be true")
+	}
+}
+
+func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"nightly","auto_check":false}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleGetUpdateStatus_Idle(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+
+	r.handleGetUpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var st updater.StatusResult
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if st.State != updater.StateIdle {
+		t.Errorf("state = %q, want idle", st.State)
+	}
+}
+
+func TestHandlePostUpdateApply_Docker(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	// Replace the updater service with a Docker-mode one.
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dir := t.TempDir()
+	db2, err := database.Open(filepath.Join(dir, "docker.db"))
+	if err != nil {
+		t.Fatalf("opening docker db: %v", err)
+	}
+	if err := database.Migrate(db2); err != nil {
+		t.Fatalf("migrating docker db: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+	r.updaterService = updater.NewDockerService(db2, logger)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w := httptest.NewRecorder()
+
+	r.handlePostUpdateApply(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (docker blocked); body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleGetUpdateCheck_NoNetwork(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	// Override the HTTP client with one that always fails.
+	r.updaterService.SetHTTPClient(&http.Client{
+		Transport: &alwaysFailTransport{},
+	})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/check", nil)
+	w := httptest.NewRecorder()
+
+	r.handleGetUpdateCheck(w, req)
+
+	// Network failure should return 500.
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandlePutUpdateConfig_BadJSON verifies that malformed JSON returns 400.
+func TestHandlePutUpdateConfig_BadJSON(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader("{not valid json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleGetUpdateStatus_ContentType verifies the response is JSON.
+func TestHandleGetUpdateStatus_ContentType(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+
+	r.handleGetUpdateStatus(w, req)
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+}
+
+// TestHandleNilUpdaterService verifies that nil updaterService returns 503 on all endpoints.
+func TestHandleNilUpdaterService(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	r.updaterService = nil
+
+	endpoints := []struct {
+		method  string
+		path    string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{"GET", "/api/v1/updates/check", r.handleGetUpdateCheck},
+		{"GET", "/api/v1/updates/status", r.handleGetUpdateStatus},
+		{"POST", "/api/v1/updates/apply", r.handlePostUpdateApply},
+		{"GET", "/api/v1/updates/config", r.handleGetUpdateConfig},
+		{"PUT", "/api/v1/updates/config", r.handlePutUpdateConfig},
+	}
+
+	for _, ep := range endpoints {
+		req := httptest.NewRequestWithContext(context.Background(), ep.method, ep.path, nil)
+		w := httptest.NewRecorder()
+		ep.handler(w, req)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s %s: status = %d, want 503", ep.method, ep.path, w.Code)
+		}
+	}
+}
+
+// TestHandlePostUpdateApply_NonDocker verifies that a non-Docker, non-in-progress
+// apply starts successfully (async; we don't wait for it to finish).
+func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	// Make the updater's HTTP client immediately fail so the goroutine exits fast.
+	r.updaterService.SetHTTPClient(&http.Client{Transport: &alwaysFailTransport{}})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w := httptest.NewRecorder()
+
+	r.handlePostUpdateApply(w, req)
+
+	// Should return 202 Accepted (async start).
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleCheckWithMockServer verifies the full check path with a mock GitHub server.
+func TestHandleCheckWithMockServer(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	releases := []map[string]interface{}{
+		{
+			"tag_name":     "v999.0.0",
+			"prerelease":   false,
+			"draft":        false,
+			"html_url":     "https://github.com/example/repo/releases/v999.0.0",
+			"published_at": "2026-01-01T00:00:00Z",
+			"assets":       []interface{}{},
+		},
+	}
+	body, _ := json.Marshal(releases)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	r.updaterService.SetHTTPClient(&http.Client{
+		Transport: &rewriteHostTransport{base: srv.URL},
+	})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/check", nil)
+	w := httptest.NewRecorder()
+
+	r.handleGetUpdateCheck(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result["update_available"] != true {
+		t.Errorf("update_available = %v, want true", result["update_available"])
+	}
+	if result["latest"] != "v999.0.0" {
+		t.Errorf("latest = %v, want v999.0.0", result["latest"])
+	}
+}
+
+// TestBuildUpdatesTabData_NilService verifies that buildUpdatesTabData returns
+// sensible defaults when no updater service is wired in.
+func TestBuildUpdatesTabData_NilService(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	r.updaterService = nil
+
+	data := r.buildUpdatesTabData(context.Background())
+
+	if data.Channel != "stable" {
+		t.Errorf("Channel = %q, want \"stable\"", data.Channel)
+	}
+	if data.AutoCheck {
+		t.Error("AutoCheck should default to false")
+	}
+	if data.IsDocker {
+		t.Error("IsDocker should default to false")
+	}
+}
+
+// TestBuildUpdatesTabData_WithService verifies that buildUpdatesTabData reads
+// config values from the updater service.
+func TestBuildUpdatesTabData_WithService(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	// Store a prerelease channel so we can verify it is reflected in the data.
+	if err := r.updaterService.SetConfig(ctx, updater.Config{
+		Channel:   updater.ChannelPrerelease,
+		AutoCheck: true,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	data := r.buildUpdatesTabData(ctx)
+
+	if data.Channel != string(updater.ChannelPrerelease) {
+		t.Errorf("Channel = %q, want %q", data.Channel, updater.ChannelPrerelease)
+	}
+	if !data.AutoCheck {
+		t.Error("AutoCheck should be true after SetConfig")
+	}
+}
+
+// TestNormalizeSettingsSectionUpdates verifies that "updates" is a valid
+// settings section that routes to the updates tab.
+func TestNormalizeSettingsSectionUpdates(t *testing.T) {
+	got := normalizeSettingsSection("updates")
+	if got != "updates" {
+		t.Errorf("normalizeSettingsSection(\"updates\") = %q, want \"updates\"", got)
+	}
+}
+
+// rewriteHostTransport rewrites all request URLs to point at a specific base
+// server. Used in tests to intercept GitHub API calls without DNS overrides.
+type rewriteHostTransport struct {
+	base string
+}
+
+func (t *rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req2 := req.Clone(req.Context())
+	req2.URL.Scheme = "http"
+	host := t.base
+	if len(host) > 7 && host[:7] == "http://" {
+		host = host[7:]
+	}
+	req2.URL.Host = host
+	return http.DefaultTransport.RoundTrip(req2)
+}
+
+// alwaysFailTransport rejects all requests.
+type alwaysFailTransport struct{}
+
+func (t *alwaysFailTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
+	return nil, &unavailableError{}
+}
+
+type unavailableError struct{}
+
+func (e *unavailableError) Error() string { return "network unavailable (test)" }

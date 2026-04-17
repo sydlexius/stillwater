@@ -64,6 +64,19 @@ type SettingsData struct {
 	Scheme                  string   // Detected scheme ("http" or "https") for webhook URL generation.
 	Users                   UsersTabData
 	AuthProviders           AuthProvidersData
+	Updates                 UpdatesTabData
+}
+
+// UpdatesTabData holds the data for the Updates settings tab.
+type UpdatesTabData struct {
+	CurrentVersion  string // Running binary version (from version.Version)
+	Channel         string // "stable" | "prerelease"
+	AutoCheck       bool
+	IsDocker        bool   // When true, hide binary apply controls
+	LastChecked     string // RFC 3339 or empty
+	LatestVersion   string // Latest version from last check (may be empty if not yet checked)
+	UpdateAvailable bool
+	ReleaseURL      string
 }
 
 // inboundWebhookURL builds a pre-populated inbound webhook URL for the given
@@ -119,6 +132,7 @@ func settingsTabs() []settingsTab {
 		{ID: "auth_providers", Label: "settings.tab.auth_providers"},
 		{ID: "maintenance", Label: "settings.tab.maintenance"},
 		{ID: "logs", Label: "settings.tab.logs"},
+		{ID: "updates", Label: "settings.tab.updates"},
 	}
 }
 
@@ -1991,8 +2005,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
+		<!-- Updates tab -->
+		<div
+			data-tab-panel="updates"
+			class={
+				"space-y-6",
+				templ.KV("hidden", data.ActiveTab != "updates"),
+			}
+		>
+			@settingsUpdatesTab(data.Updates, assets.BasePath)
+		</div>
 		</div>
 		@sortableInitScript()
+		@updatesTabScript()
 	}
 }
 
@@ -5590,5 +5615,352 @@ templ apiTokenScript() {
 				alert(err.message);
 			});
 		}
+	</script>
+}
+
+// settingsUpdatesTab renders the Updates tab content.
+templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.title") }</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.description") }</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Version info row -->
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+				<div>
+					<div class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.updates.current_version") }</div>
+					<div class="mt-1 text-sm font-mono text-gray-900 dark:text-gray-100">{ data.CurrentVersion }</div>
+				</div>
+				<div>
+					<div class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.updates.latest_version") }</div>
+					<div
+						id="updates-latest-version"
+						class="mt-1 text-sm font-mono text-gray-900 dark:text-gray-100"
+					>
+						if data.LatestVersion != "" {
+							if data.UpdateAvailable {
+								<span class="text-green-600 dark:text-green-400 font-semibold">{ data.LatestVersion }</span>
+								<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+									{ t(ctx, "settings.updates.update_available") }
+								</span>
+							} else {
+								{ data.LatestVersion }
+								<span class="ml-2 text-gray-400 dark:text-gray-500">{ t(ctx, "settings.updates.up_to_date") }</span>
+							}
+						} else {
+							<span class="text-gray-400 dark:text-gray-500 italic">{ t(ctx, "settings.updates.not_checked") }</span>
+						}
+					</div>
+				</div>
+			</div>
+			if data.LastChecked != "" {
+				<div class="text-xs text-gray-400 dark:text-gray-500">
+					{ t(ctx, "settings.updates.last_checked") }: <span id="updates-last-checked">{ data.LastChecked }</span>
+				</div>
+			}
+			<!-- Docker notice -->
+			if data.IsDocker {
+				<div class="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3">
+					<p class="text-sm text-blue-700 dark:text-blue-300">{ t(ctx, "settings.updates.docker_notice") }</p>
+				</div>
+			}
+			<!-- Status display -->
+			<div
+				id="updates-status-row"
+				class="hidden rounded-md bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 px-4 py-3"
+			>
+				<div class="flex items-center gap-2">
+					<span id="updates-status-spinner" class="hidden animate-spin inline-block w-4 h-4 border-2 border-gray-400 border-t-blue-500 rounded-full" aria-hidden="true"></span>
+					<span id="updates-status-text" class="text-sm text-gray-700 dark:text-gray-300"></span>
+				</div>
+				<div id="updates-error-row" class="hidden mt-1 text-sm text-red-600 dark:text-red-400"></div>
+			</div>
+		</div>
+	</div>
+	<!-- Channel and auto-check settings -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config_title") }</h2>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Channel selector -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.channel") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.channel_desc") }</div>
+				</div>
+				@components.Segmented("updates-channel", "updates_channel",
+					[]components.SegmentOption{
+						{Value: "stable", Label: t(ctx, "settings.updates.channel_stable")},
+						{Value: "prerelease", Label: t(ctx, "settings.updates.channel_prerelease")},
+					},
+					data.Channel,
+				)
+			</div>
+			<!-- Auto-check toggle -->
+			<div class="flex items-center justify-between gap-4">
+				@components.Toggle(
+					"updates-auto-check",
+					"updates_auto_check",
+					data.AutoCheck,
+					t(ctx, "settings.updates.auto_check"),
+					t(ctx, "settings.updates.auto_check_desc"),
+				)
+			</div>
+			<!-- Save button -->
+			<div class="flex justify-end pt-2">
+				<button
+					type="button"
+					onclick="saveUpdaterConfig()"
+					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+				>
+					{ t(ctx, "actions.save") }
+				</button>
+			</div>
+		</div>
+	</div>
+	<!-- Actions -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.actions_title") }</h2>
+		</div>
+		<div class="px-6 py-4 flex flex-wrap gap-3">
+			<button
+				type="button"
+				id="updates-check-btn"
+				onclick="checkForUpdates()"
+				class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+			>
+				{ t(ctx, "settings.updates.check_now") }
+			</button>
+			if !data.IsDocker {
+				<button
+					type="button"
+					id="updates-apply-btn"
+					onclick="applyUpdate()"
+					disabled?={ !data.UpdateAvailable }
+					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+				>
+					{ t(ctx, "settings.updates.apply_update") }
+				</button>
+			}
+		</div>
+	</div>
+}
+
+// updatesTabScript renders the JS for the Updates tab.
+templ updatesTabScript() {
+	<script>
+		(function() {
+			var updBp = '';
+			var updMeta = document.querySelector('meta[name="htmx-base-path"]');
+			if (updMeta && updMeta.content) {
+				updBp = updMeta.content;
+			}
+
+			// checkForUpdates calls the check endpoint and refreshes the UI.
+			window.checkForUpdates = function() {
+				var btn = document.getElementById('updates-check-btn');
+				setUpdaterStatus('checking', '');
+				if (btn) btn.disabled = true;
+
+				fetch(updBp + '/api/v1/updates/check', {
+					method: 'GET',
+					headers: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}
+				})
+				.then(function(resp) {
+					if (!resp.ok) return throwFromResponse(resp, 'check failed');
+					return resp.json();
+				})
+				.then(function(data) {
+					clearUpdaterStatus();
+					var latestEl = document.getElementById('updates-latest-version');
+					var applyBtn = document.getElementById('updates-apply-btn');
+					if (latestEl) {
+						if (data.update_available) {
+							latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(data.latest) + '</span>'
+								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Update available</span>';
+							if (applyBtn) applyBtn.disabled = false;
+						} else {
+							latestEl.innerHTML = escHtml(data.latest) + ' <span class="ml-2 text-gray-400">Up to date</span>';
+							if (applyBtn) applyBtn.disabled = true;
+						}
+					}
+					if (data.release_url) {
+						latestEl.innerHTML += ' <a href="' + escHtml(data.release_url) + '" target="_blank" rel="noopener noreferrer" class="ml-2 text-xs text-blue-500 hover:underline">Release notes</a>';
+					}
+				})
+				.catch(function(err) {
+					setUpdaterStatus('error', err.message);
+				})
+				.finally(function() {
+					if (btn) btn.disabled = false;
+				});
+			};
+
+			// applyUpdate calls the apply endpoint.
+			window.applyUpdate = function() {
+				var btn = document.getElementById('updates-apply-btn');
+				if (btn) btn.disabled = true;
+				setUpdaterStatus('applying', '');
+
+				fetch(updBp + '/api/v1/updates/apply', {
+					method: 'POST',
+					headers: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}
+				})
+				.then(function(resp) {
+					if (resp.status === 422) return throwFromResponse(resp, 'not supported');
+					if (resp.status === 409) return throwFromResponse(resp, 'already in progress');
+					if (!resp.ok) return throwFromResponse(resp, 'apply failed');
+					return resp.json();
+				})
+				.then(function() {
+					setUpdaterStatus('downloading', '');
+					pollUpdateStatus();
+				})
+				.catch(function(err) {
+					setUpdaterStatus('error', err.message);
+					if (btn) btn.disabled = false;
+				});
+			};
+
+			// pollUpdateStatus polls /api/v1/updates/status until idle or error.
+			function pollUpdateStatus() {
+				var interval = setInterval(function() {
+					fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
+					.then(function(r) { return r.json(); })
+					.then(function(d) {
+						if (d.state === 'idle') {
+							clearInterval(interval);
+							clearUpdaterStatus();
+							// Trigger a fresh check to show the new version.
+							checkForUpdates();
+						} else if (d.state === 'error') {
+							clearInterval(interval);
+							setUpdaterStatus('error', d.error || 'update failed');
+						} else {
+							setUpdaterStatus(d.state, '');
+						}
+					})
+					.catch(function() { /* ignore transient polling errors */ });
+				}, 2000);
+			}
+
+			// saveUpdaterConfig persists channel + auto_check.
+			// Read the checked radio, not the first radio, or Save always sends "stable".
+			window.saveUpdaterConfig = function() {
+				var channelEl = document.querySelector('[name="updates_channel"]:checked');
+				var autoEl = document.getElementById('updates-auto-check');
+				var channel = channelEl ? channelEl.value : 'stable';
+				var autoCheck = autoEl ? autoEl.checked : false;
+
+				fetch(updBp + '/api/v1/updates/config', {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': getCSRFToken()
+					},
+					body: JSON.stringify({channel: channel, auto_check: autoCheck})
+				})
+				.then(function(resp) {
+					if (!resp.ok) return throwFromResponse(resp, 'save failed');
+					return resp.json();
+				})
+				.then(function() {
+					setUpdaterStatus('saved', '');
+					setTimeout(clearUpdaterStatus, 2000);
+				})
+				.catch(function(err) {
+					setUpdaterStatus('error', err.message);
+				});
+			};
+
+			function setUpdaterStatus(state, errMsg) {
+				var row = document.getElementById('updates-status-row');
+				var spinner = document.getElementById('updates-status-spinner');
+				var text = document.getElementById('updates-status-text');
+				var errRow = document.getElementById('updates-error-row');
+				if (!row) return;
+
+				row.classList.remove('hidden');
+				if (errMsg) {
+					errRow.textContent = errMsg;
+					errRow.classList.remove('hidden');
+				} else {
+					errRow.classList.add('hidden');
+					errRow.textContent = '';
+				}
+
+				var labels = {
+					checking: 'Checking for updates...',
+					downloading: 'Downloading update...',
+					applying: 'Applying update...',
+					error: 'Update error',
+					saved: 'Settings saved'
+				};
+				text.textContent = labels[state] || state;
+
+				var inProgress = state === 'checking' || state === 'downloading' || state === 'applying';
+				if (spinner) {
+					if (inProgress) spinner.classList.remove('hidden');
+					else spinner.classList.add('hidden');
+				}
+			}
+
+			function clearUpdaterStatus() {
+				var row = document.getElementById('updates-status-row');
+				if (row) row.classList.add('hidden');
+			}
+
+			function escHtml(s) {
+				return String(s)
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;')
+					.replace(/"/g, '&quot;');
+			}
+
+			function getCSRFToken() {
+				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+				return m ? m[1] : '';
+			}
+
+			// Parse a non-ok fetch response's JSON body and throw a useful error,
+			// tolerating non-JSON bodies (e.g. proxy HTML 502s) that would otherwise
+			// crash resp.json() with a SyntaxError before any user-visible message.
+			function throwFromResponse(resp, fallback) {
+				return resp.json().catch(function() { return {}; }).then(function(d) {
+					throw new Error(d.error || fallback || ('HTTP ' + resp.status));
+				});
+			}
+
+			// On tab activation, fetch current status.
+			document.addEventListener('DOMContentLoaded', function() {
+				var tabLinks = document.querySelectorAll('[data-tab="updates"]');
+				tabLinks.forEach(function(link) {
+					link.addEventListener('click', function() {
+						fetchAndPopulateUpdateStatus();
+					});
+				});
+				// Auto-populate if updates tab is the active tab on load.
+				var panel = document.querySelector('[data-tab-panel="updates"]');
+				if (panel && !panel.classList.contains('hidden')) {
+					fetchAndPopulateUpdateStatus();
+				}
+			});
+
+			function fetchAndPopulateUpdateStatus() {
+				fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
+				.then(function(r) { return r.json(); })
+				.then(function(d) {
+					var lcEl = document.getElementById('updates-last-checked');
+					if (lcEl && d.last_checked) {
+						lcEl.textContent = d.last_checked;
+					}
+				})
+				.catch(function() {});
+			}
+		})();
 	</script>
 }

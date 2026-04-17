@@ -1,0 +1,105 @@
+package updater
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// semver holds a parsed semantic version.
+type semver struct {
+	Major      int
+	Minor      int
+	Patch      int
+	PreRelease string // empty for stable, e.g. "rc.1", "beta.2"
+}
+
+// parseSemver parses a version string like "v1.2.3", "1.2.3", "v1.2.3-rc.1".
+func parseSemver(v string) (semver, error) {
+	v = strings.TrimPrefix(v, "v")
+
+	// Split off pre-release suffix.
+	core := v
+	pre := ""
+	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		core = v[:idx]
+		pre = v[idx+1:]
+	}
+
+	parts := strings.SplitN(core, ".", 3)
+	if len(parts) != 3 {
+		return semver{}, fmt.Errorf("invalid semver %q", v)
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid major in %q: %w", v, err)
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid minor in %q: %w", v, err)
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid patch in %q: %w", v, err)
+	}
+
+	return semver{
+		Major:      major,
+		Minor:      minor,
+		Patch:      patch,
+		PreRelease: pre,
+	}, nil
+}
+
+// semverCompare returns:
+//
+//	-1 if a < b
+//	 0 if a == b
+//	+1 if a > b
+//
+// Stable releases (no pre-release) are considered greater than pre-releases
+// at the same version number per the semver spec.
+func semverCompare(a, b semver) int {
+	if a.Major != b.Major {
+		return cmpInt(a.Major, b.Major)
+	}
+	if a.Minor != b.Minor {
+		return cmpInt(a.Minor, b.Minor)
+	}
+	if a.Patch != b.Patch {
+		return cmpInt(a.Patch, b.Patch)
+	}
+
+	// Same numeric version: compare pre-release.
+	// "" (stable) > any pre-release.
+	switch {
+	case a.PreRelease == "" && b.PreRelease == "":
+		return 0
+	case a.PreRelease == "" && b.PreRelease != "":
+		return 1
+	case a.PreRelease != "" && b.PreRelease == "":
+		return -1
+	default:
+		// Both have pre-release: lexicographic comparison is a reasonable
+		// approximation (rc.2 > rc.1, beta.1 < rc.1 alphabetically).
+		if a.PreRelease < b.PreRelease {
+			return -1
+		}
+		if a.PreRelease > b.PreRelease {
+			return 1
+		}
+		return 0
+	}
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}

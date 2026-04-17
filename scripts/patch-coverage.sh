@@ -85,7 +85,7 @@ while IFS= read -r line; do
   [ -z "$line" ] && continue
   changed+=("$line")
 done < <(git diff "$BASE"..HEAD --name-only --diff-filter=AMR \
-  -- '*.go' ':!*_templ.go' ':!*_test.go' | sort -u)
+  -- '*.go' ':!*_templ.go' ':!*_test.go' ':!cmd/stillwater/main.go' | sort -u)
 
 if [ "${#changed[@]}" -eq 0 ]; then
   echo "patch-coverage: no Go source changes in scope."

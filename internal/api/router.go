@@ -29,6 +29,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
+	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -65,6 +66,7 @@ type RouterDeps struct {
 	LogManager         *logging.Manager
 	MaintenanceService *maintenance.Service
 	SettingsIOService  *settingsio.Service
+	UpdaterService     *updater.Service
 	ProbeCache         *watcher.ProbeCache
 	ExpectedWrites     *watcher.ExpectedWrites
 	EventBus           *event.Bus
@@ -110,6 +112,7 @@ type Router struct {
 	logManager         *logging.Manager
 	maintenanceService *maintenance.Service
 	settingsIOService  *settingsio.Service
+	updaterService     *updater.Service
 	probeCache         *watcher.ProbeCache
 	expectedWrites     *watcher.ExpectedWrites
 	eventBus           *event.Bus
@@ -174,6 +177,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logManager:         deps.LogManager,
 		maintenanceService: deps.MaintenanceService,
 		settingsIOService:  deps.SettingsIOService,
+		updaterService:     deps.UpdaterService,
 		probeCache:         deps.ProbeCache,
 		expectedWrites:     deps.ExpectedWrites,
 		eventBus:           deps.EventBus,
@@ -356,6 +360,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// NFO output settings routes (admin only)
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/nfo-output", wrapAuth(middleware.RequireAdmin(r.handleGetNFOOutput), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings/nfo-output", wrapAuth(middleware.RequireAdmin(r.handleUpdateNFOOutput), authMw))
+	// Updater routes (admin only for config and apply; check/status are read-only)
+	mux.HandleFunc("GET "+bp+"/api/v1/updates/check", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateCheck), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/updates/status", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateStatus), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/updates/apply", wrapAuth(middleware.RequireAdmin(r.handlePostUpdateApply), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/updates/config", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateConfig), authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/updates/config", wrapAuth(middleware.RequireAdmin(r.handlePutUpdateConfig), authMw))
 	// Shared-filesystem detection routes (admin only)
 	mux.HandleFunc("GET "+bp+"/api/v1/shared-filesystem/status", wrapAuth(middleware.RequireAdmin(r.handleSharedFilesystemStatus), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/dismiss", wrapAuth(middleware.RequireAdmin(r.handleSharedFilesystemDismiss), authMw))
