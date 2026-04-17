@@ -576,8 +576,8 @@ func artistViolationRow(v rule.RuleViolation, artistID string) templ.Component {
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 func artistViolationFix(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationFix_46ea`,
-		Function: `function __templ_artistViolationFix_46ea(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
+		Name: `__templ_artistViolationFix_cbd3`,
+		Function: `function __templ_artistViolationFix_cbd3(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
 	// fallback as defense-in-depth (matches the established pattern from
 	// the retired notifications.templ). %s in fix_failed is substituted
 	// with the server-supplied error message.
@@ -595,14 +595,10 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 		return resp.json();
 	}).then(function(data) {
 		if (data.status === 'fixed' || data.status === 'dismissed') {
-			// Root-relative URL: htmx:configRequest in layout.templ prepends
-			// basePath for sub-path deployments, so concatenating bp here
-			// would double-prefix. The fetch() above still needs bp because
-			// fetch is not intercepted by HTMX.
-			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
-				target: '#violations-content-' + artistID,
-				swap: 'outerHTML'
-			});
+			// The page-level artistDetailViolationSync listener (in
+			// artist_detail.templ) issues the violations-tab refresh on
+			// this event, so we do NOT call htmx.ajax here -- doing so
+			// would fire two identical GETs back-to-back.
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
 			alert(fixFailedTpl.replace('%s', data.message || ''));
@@ -611,16 +607,16 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 		alert(fixNetworkTpl + ' ' + err.message);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationFix_46ea`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_46ea`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationFix_cbd3`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_cbd3`, violationID, artistID),
 	}
 }
 
 // artistViolationDismiss dismisses a violation and refreshes the violations tab.
 func artistViolationDismiss(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationDismiss_e703`,
-		Function: `function __templ_artistViolationDismiss_e703(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
+		Name: `__templ_artistViolationDismiss_e8c8`,
+		Function: `function __templ_artistViolationDismiss_e8c8(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
 	// (set in artistViolationRow). The [data-confirm] filter is required: the
 	// Fix and Dismiss buttons on a fixable/open row share data-violation-id and
 	// data-artist-id, so a selector without it would return the Fix button
@@ -642,11 +638,7 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 		credentials: 'same-origin'
 	}).then(function(resp) {
 		if (resp.ok) {
-			// Root-relative URL: see artistViolationFix above for rationale.
-			htmx.ajax('GET', '/artists/' + artistID + '/violations/tab', {
-				target: '#violations-content-' + artistID,
-				swap: 'outerHTML'
-			});
+			// Refresh handled by the page-level listener -- see artistViolationFix above.
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
 			alert(dismissFailed);
@@ -655,8 +647,8 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 		alert(dismissNetwork);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationDismiss_e703`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_e703`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationDismiss_e8c8`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_e8c8`, violationID, artistID),
 	}
 }
 
