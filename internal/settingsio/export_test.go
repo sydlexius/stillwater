@@ -232,6 +232,27 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 		t.Fatalf("seeding scraper defaults: %v", err)
 	}
 
+	// Seed a custom non-global scope with distinctive Fields and Overrides so
+	// the round-trip can verify exact field values, not just that the section
+	// has any rows. Importing into a target DB that also has SeedDefaults run
+	// exercises the upsert-by-scope path for the global row at the same time.
+	const customScope = "test-emby"
+	customCfg := &scraper.ScraperConfig{
+		Fields: []scraper.FieldConfig{
+			{Field: scraper.FieldBiography, Primary: provider.NameMusicBrainz, Enabled: true, Category: scraper.CategoryMetadata},
+		},
+		FallbackChains: []scraper.FallbackChain{
+			{Category: scraper.CategoryMetadata, Providers: []provider.ProviderName{provider.NameWikipedia, provider.NameDiscogs}},
+		},
+	}
+	customOverrides := &scraper.Overrides{
+		Fields:         map[scraper.FieldName]bool{scraper.FieldBiography: true},
+		FallbackChains: map[scraper.FieldCategory]bool{scraper.CategoryMetadata: true},
+	}
+	if err := scraperSvc.SaveConfig(ctx, customScope, customCfg, customOverrides); err != nil {
+		t.Fatalf("seeding custom scraper scope: %v", err)
+	}
+
 	// Modify a rule so we can verify it round-trips.
 	thumbRule, err := ruleSvc.GetByID(ctx, rule.RuleThumbExists)
 	if err != nil {
@@ -318,6 +339,78 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 	}
 	if result.UserPreferences == 0 {
 		t.Error("expected user preferences imported")
+	}
+
+	// Verify the custom scraper scope round-tripped with its distinctive
+	// payload intact. Querying the DB directly bypasses GetConfig's merge with
+	// the global scope and proves the persisted row's config_json /
+	// overrides_json carry the seeded values, not just that some scope row
+	// exists.
+	var (
+		importedConfigJSON    string
+		importedOverridesJSON string
+	)
+	if err := db2.QueryRowContext(ctx,
+		`SELECT config_json, overrides_json FROM scraper_config WHERE scope = ?`,
+		customScope,
+	).Scan(&importedConfigJSON, &importedOverridesJSON); err != nil {
+		t.Fatalf("looking up imported custom scraper scope %q: %v", customScope, err)
+	}
+	var importedCustomCfg scraper.ScraperConfig
+	if err := json.Unmarshal([]byte(importedConfigJSON), &importedCustomCfg); err != nil {
+		t.Fatalf("decoding imported custom scraper config_json: %v", err)
+	}
+	var importedCustomOverrides scraper.Overrides
+	if err := json.Unmarshal([]byte(importedOverridesJSON), &importedCustomOverrides); err != nil {
+		t.Fatalf("decoding imported custom scraper overrides_json: %v", err)
+	}
+	// Field assertions: the seeded biography field should be present with the
+	// exact provider/enabled/category values we wrote pre-export.
+	var foundBiography bool
+	for _, f := range importedCustomCfg.Fields {
+		if f.Field == scraper.FieldBiography {
+			foundBiography = true
+			if f.Primary != provider.NameMusicBrainz {
+				t.Errorf("custom scope biography Primary: got %q, want %q", f.Primary, provider.NameMusicBrainz)
+			}
+			if !f.Enabled {
+				t.Error("custom scope biography Enabled: got false, want true")
+			}
+			if f.Category != scraper.CategoryMetadata {
+				t.Errorf("custom scope biography Category: got %q, want %q", f.Category, scraper.CategoryMetadata)
+			}
+		}
+	}
+	if !foundBiography {
+		t.Errorf("custom scope is missing the seeded biography field; got fields: %+v", importedCustomCfg.Fields)
+	}
+	// Fallback chain assertions: order matters since FallbackChains drives
+	// provider precedence.
+	var foundChain bool
+	for _, fc := range importedCustomCfg.FallbackChains {
+		if fc.Category == scraper.CategoryMetadata {
+			foundChain = true
+			want := []provider.ProviderName{provider.NameWikipedia, provider.NameDiscogs}
+			if len(fc.Providers) != len(want) {
+				t.Errorf("custom scope metadata fallback chain length: got %d, want %d", len(fc.Providers), len(want))
+				break
+			}
+			for i, p := range fc.Providers {
+				if p != want[i] {
+					t.Errorf("custom scope metadata fallback chain[%d]: got %q, want %q", i, p, want[i])
+				}
+			}
+		}
+	}
+	if !foundChain {
+		t.Errorf("custom scope is missing the seeded metadata fallback chain; got chains: %+v", importedCustomCfg.FallbackChains)
+	}
+	// Override flags: both override bits we set must survive.
+	if !importedCustomOverrides.Fields[scraper.FieldBiography] {
+		t.Error("custom scope biography Field override flag was lost on round-trip")
+	}
+	if !importedCustomOverrides.FallbackChains[scraper.CategoryMetadata] {
+		t.Error("custom scope metadata FallbackChains override flag was lost on round-trip")
 	}
 
 	// Verify the modified rule was restored correctly.
@@ -571,8 +664,10 @@ func TestImport_InvalidAutomationModeSkipped(t *testing.T) {
 	if len(payload.Rules) == 0 {
 		t.Fatal("expected rules in payload for tampering")
 	}
-	// Record original mode so we can verify it is not overwritten.
+	// Record original mode so we can verify it is not overwritten with the
+	// invalid value (or any other wrong-but-allowed value).
 	targetID := payload.Rules[0].ID
+	originalMode := payload.Rules[0].AutomationMode
 	payload.Rules[0].AutomationMode = "invalid_value"
 
 	modified, err := json.Marshal(payload)
@@ -591,14 +686,16 @@ func TestImport_InvalidAutomationModeSkipped(t *testing.T) {
 		t.Fatalf("Import with invalid automation_mode should succeed, got: %v", err)
 	}
 
-	// The rule's automation_mode in the DB must not have been changed to the
-	// invalid value. It should still be the DB-resident default ("manual").
+	// The rule's automation_mode in the DB must equal the original value the
+	// rule had before tampering. Asserting equality (not just != "invalid_value")
+	// catches the case where validation rejected the bad value but some other
+	// path overwrote the field with "" or another wrong-but-allowed mode.
 	imported, err := ruleSvc.GetByID(ctx, targetID)
 	if err != nil {
 		t.Fatalf("getting rule after import: %v", err)
 	}
-	if imported.AutomationMode == "invalid_value" {
-		t.Errorf("invalid automation_mode was written to DB -- validation not enforced")
+	if imported.AutomationMode != originalMode {
+		t.Errorf("automation_mode drift after tampered import: got %q, want %q (original)", imported.AutomationMode, originalMode)
 	}
 }
 
