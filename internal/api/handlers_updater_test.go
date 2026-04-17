@@ -139,6 +139,17 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	// Contract check: update_available is declared required in UpdateStatus
+	// (openapi.yaml). A typed unmarshal into StatusResult would default the
+	// field to false if the key were missing, silently passing an omission
+	// regression. Re-unmarshal into a raw map and assert key presence.
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal raw status: %v", err)
+	}
+	if _, ok := raw["update_available"]; !ok {
+		t.Fatal(`missing required field "update_available" in UpdateStatus`)
+	}
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)
 	}
@@ -235,7 +246,7 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 	}
 }
 
-func TestHandleGetUpdateCheck_NoNetwork(t *testing.T) {
+func TestHandlePostUpdateCheck_NoNetwork(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
 	// Override the HTTP client with one that always fails.
@@ -243,10 +254,10 @@ func TestHandleGetUpdateCheck_NoNetwork(t *testing.T) {
 		Transport: &alwaysFailTransport{},
 	})
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/check", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/check", nil)
 	w := httptest.NewRecorder()
 
-	r.handleGetUpdateCheck(w, req)
+	r.handlePostUpdateCheck(w, req)
 
 	// Network failure should return 500.
 	if w.Code != http.StatusInternalServerError {
@@ -295,7 +306,7 @@ func TestHandleNilUpdaterService(t *testing.T) {
 		path    string
 		handler func(http.ResponseWriter, *http.Request)
 	}{
-		{"GET", "/api/v1/updates/check", r.handleGetUpdateCheck},
+		{"POST", "/api/v1/updates/check", r.handlePostUpdateCheck},
 		{"GET", "/api/v1/updates/status", r.handleGetUpdateStatus},
 		{"POST", "/api/v1/updates/apply", r.handlePostUpdateApply},
 		{"GET", "/api/v1/updates/config", r.handleGetUpdateConfig},
@@ -378,10 +389,10 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 		Transport: &rewriteHostTransport{base: srv.URL},
 	})
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/check", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/check", nil)
 	w := httptest.NewRecorder()
 
-	r.handleGetUpdateCheck(w, req)
+	r.handlePostUpdateCheck(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())

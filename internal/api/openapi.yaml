@@ -7958,13 +7958,17 @@ paths:
   # --- Self-update ---
 
   /updates/check:
-    get:
+    post:
       tags: [Updates]
       summary: Check for updates
       description: |
         Queries the GitHub Releases API for the latest version on the configured
         channel (stable or prerelease). Returns the current running version, the
         latest available version, and whether an update is available.
+
+        Uses POST rather than GET because the call mutates server-side updater
+        state (`last_checked` timestamp, cached `latest` / `release_url` /
+        `update_available` fields) and is therefore CSRF-protected.
 
         In Docker environments, `update_available` may still be true but
         `POST /updates/apply` will return 422.

@@ -9,9 +9,12 @@ import (
 	"github.com/sydlexius/stillwater/internal/updater"
 )
 
-// handleGetUpdateCheck queries GitHub for the latest release on the configured channel.
-// GET /api/v1/updates/check
-func (r *Router) handleGetUpdateCheck(w http.ResponseWriter, req *http.Request) {
+// handlePostUpdateCheck queries GitHub for the latest release on the configured
+// channel. POST because the call mutates server-side updater state (last_checked
+// timestamp, cached latest/release_url/update_available fields) and is therefore
+// CSRF-protected per the usual unsafe-method middleware path.
+// POST /api/v1/updates/check
+func (r *Router) handlePostUpdateCheck(w http.ResponseWriter, req *http.Request) {
 	if r.updaterService == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "updater service not available"})
 		return

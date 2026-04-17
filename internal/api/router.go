@@ -361,7 +361,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/nfo-output", wrapAuth(middleware.RequireAdmin(r.handleGetNFOOutput), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings/nfo-output", wrapAuth(middleware.RequireAdmin(r.handleUpdateNFOOutput), authMw))
 	// Updater routes (admin only for config and apply; check/status are read-only)
-	mux.HandleFunc("GET "+bp+"/api/v1/updates/check", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateCheck), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/updates/check", wrapAuth(middleware.RequireAdmin(r.handlePostUpdateCheck), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/updates/status", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateStatus), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/updates/apply", wrapAuth(middleware.RequireAdmin(r.handlePostUpdateApply), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/updates/config", wrapAuth(middleware.RequireAdmin(r.handleGetUpdateConfig), authMw))
