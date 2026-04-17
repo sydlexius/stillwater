@@ -3,13 +3,13 @@ package api
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -151,12 +151,12 @@ func normalizePageSize(raw string) string {
 // normalizeMetadataLanguages validates and re-encodes a stored metadata_languages
 // value. Invalid or empty values fall back to MetadataLanguagesDefault. This is
 // the read-path counterpart to validateMetadataLanguages (used on write).
+//
+// Implementation lives in the langpref package; this thin wrapper is kept so
+// existing api-package call sites continue to compile. Prefer
+// langpref.NormalizeJSON in new code.
 func normalizeMetadataLanguages(raw string) string {
-	canonical, ok := validateMetadataLanguages(raw)
-	if !ok {
-		return MetadataLanguagesDefault
-	}
-	return canonical
+	return langpref.NormalizeJSON(raw)
 }
 
 // isMetadataLanguagesKey reports whether key is the metadata_languages preference key.
@@ -169,138 +169,38 @@ func isMetadataLanguagesKey(key string) bool {
 
 // MetadataLanguagesDefault is the default value for the metadata_languages
 // preference when no user preference is stored.
-const MetadataLanguagesDefault = `["en"]`
+//
+// Deprecated: use langpref.DefaultJSON in new code.
+const MetadataLanguagesDefault = langpref.DefaultJSON
 
 // MetadataLanguagesMaxEntries limits how many language tags a user can store.
-const MetadataLanguagesMaxEntries = 20
+//
+// Deprecated: use langpref.MaxEntries in new code.
+const MetadataLanguagesMaxEntries = langpref.MaxEntries
 
 // validateMetadataLanguages checks that raw is a valid JSON array of BCP 47
 // language tags and returns the canonical JSON encoding together with whether
 // the value is valid.
+//
+// Implementation lives in the langpref package; this thin wrapper is kept so
+// existing api-package call sites continue to compile. Prefer
+// langpref.ValidateJSON in new code.
 func validateMetadataLanguages(raw string) (string, bool) {
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+	canonical, _, ok := langpref.ValidateJSON(raw)
+	if !ok {
 		return "", false
 	}
-	if len(tags) == 0 || len(tags) > MetadataLanguagesMaxEntries {
-		return "", false
-	}
-	seen := make(map[string]bool, len(tags))
-	normalized := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		if tag == "" || !isValidLanguageTag(tag) {
-			return "", false
-		}
-		canon := normalizeLanguageTag(tag)
-		lower := strings.ToLower(canon)
-		if seen[lower] {
-			return "", false
-		}
-		seen[lower] = true
-		normalized = append(normalized, canon)
-	}
-	// Re-encode to canonical JSON with normalized casing.
-	canonical, err := json.Marshal(normalized)
-	if err != nil {
-		return "", false
-	}
-	return string(canonical), true
-}
-
-// isValidLanguageTag performs a lightweight check that s looks like a BCP 47
-// language tag (e.g. "en", "en-GB", "zh-Hant-TW"). The primary language subtag
-// must be 2-3 ASCII letters (ISO 639). Subsequent subtags are 1-8 alphanumeric
-// characters separated by hyphens.
-func isValidLanguageTag(s string) bool {
-	// 100-byte cap is a generous upper bound for any valid BCP 47 tag
-	// (including extended/private-use subtags) while still bounding input
-	// at the API boundary.
-	if len(s) == 0 || len(s) > 100 {
-		return false
-	}
-	parts := strings.Split(s, "-")
-	// Primary language subtag: must be 2-3 letters.
-	primary := parts[0]
-	if len(primary) < 2 || len(primary) > 3 {
-		return false
-	}
-	for _, c := range primary {
-		if !isASCIILetter(c) {
-			return false
-		}
-	}
-	// Subsequent subtags: 1-8 ASCII alphanumeric characters.
-	for _, p := range parts[1:] {
-		if len(p) == 0 || len(p) > 8 {
-			return false
-		}
-		for _, c := range p {
-			if !isASCIILetter(c) && !isASCIIDigit(c) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func isASCIILetter(c rune) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-func isASCIIDigit(c rune) bool {
-	return c >= '0' && c <= '9'
-}
-
-// normalizeLanguageTag applies BCP 47 canonical casing: lowercase language,
-// title-case script (4 letters), uppercase region (2 letters).
-// e.g. "EN-gb" -> "en-GB", "zh-hant-tw" -> "zh-Hant-TW".
-// Extension subtags (introduced by a singleton letter like "u" or "t") are
-// preserved verbatim because their internal structure follows different rules.
-func normalizeLanguageTag(tag string) string {
-	parts := strings.Split(tag, "-")
-	// Primary language subtag: always lowercase.
-	parts[0] = strings.ToLower(parts[0])
-	for i := 1; i < len(parts); i++ {
-		p := parts[i]
-		// A single-letter subtag (a-w, y) is a BCP 47 singleton that starts
-		// an extension sequence. Stop applying casing rules from here onward
-		// because extension subtag semantics are extension-defined.
-		if len(p) == 1 && isASCIILetter(rune(p[0])) && p[0] != 'x' && p[0] != 'X' {
-			// Lowercase the singleton itself per convention, keep the rest as-is.
-			parts[i] = strings.ToLower(p)
-			break
-		}
-		// Private-use prefix "x" also stops structural casing.
-		if (p[0] == 'x' || p[0] == 'X') && len(p) == 1 {
-			parts[i] = "x"
-			break
-		}
-		switch {
-		case len(p) == 4:
-			// Script subtag: title-case (e.g. "Hant", "Latn").
-			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
-		case len(p) == 2 && isASCIILetter(rune(p[0])):
-			// Region subtag: uppercase (e.g. "GB", "TW").
-			parts[i] = strings.ToUpper(p)
-		default:
-			// Variant or other subtag: lowercase by convention.
-			parts[i] = strings.ToLower(p)
-		}
-	}
-	return strings.Join(parts, "-")
+	return canonical, true
 }
 
 // parseMetadataLanguages parses a stored metadata_languages JSON string into
 // a slice of language tags. Returns nil on parse failure.
+//
+// Implementation lives in the langpref package; this thin wrapper is kept so
+// existing api-package call sites continue to compile. Prefer langpref.ParseJSON
+// in new code.
 func parseMetadataLanguages(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil
-	}
-	return tags
+	return langpref.ParseJSON(raw)
 }
 
 // injectMetadataLanguages loads the user's metadata_languages preference from
@@ -312,25 +212,18 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	if userID == "" {
 		return ctx
 	}
-
-	var raw string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`,
-		userID, PrefMetadataLanguages).Scan(&raw)
+	// Delegate to the langpref repository, which is the single source of
+	// truth for validation, normalization, and the default fallback.
+	repo := langpref.NewRepository(r.db)
+	langs, err := repo.Get(ctx, userID)
 	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			r.logger.Warn("querying metadata_languages preference, using default",
-				"user_id", userID, "error", err)
-		}
-		raw = MetadataLanguagesDefault
-	}
-
-	// Normalize stored tags so providers always receive canonical, deduplicated,
-	// bounded tags -- even if the DB row predates normalization.
-	normalized := normalizeMetadataLanguages(raw)
-	langs := parseMetadataLanguages(normalized)
-	if len(langs) == 0 {
-		langs = parseMetadataLanguages(MetadataLanguagesDefault)
+		// A Get error only surfaces for unexpected database failures
+		// (missing rows and malformed values both return the default
+		// without error). Log and fall back to the default rather than
+		// failing the request.
+		r.logger.Warn("querying metadata_languages preference, using default",
+			"user_id", userID, "error", err)
+		langs = langpref.DefaultTags()
 	}
 	return provider.WithMetadataLanguages(ctx, langs)
 }
