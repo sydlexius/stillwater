@@ -7678,6 +7678,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error while generating the export (collecting payload, encryption, or marshaling failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: Settings export service not available
           content:

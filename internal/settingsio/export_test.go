@@ -92,9 +92,12 @@ func TestRoundTrip(t *testing.T) {
 
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 
-	// Seed some test data
+	// Seed some test data. Fail fast so a missed seed cannot make the
+	// downstream round-trip assertions fail for the wrong reason.
 	now := time.Now().UTC().Format(time.RFC3339)
-	db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('test.key', 'test.value', ?)`, now)
+	if _, err := db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('test.key', 'test.value', ?)`, now); err != nil {
+		t.Fatalf("seeding settings: %v", err)
+	}
 
 	c := &connection.Connection{
 		Name:    "Test Emby",
@@ -626,7 +629,9 @@ func TestImport_WrongPassphrase(t *testing.T) {
 	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 
-	db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('x', 'y', datetime('now'))`)
+	if _, err := db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('x', 'y', datetime('now'))`); err != nil {
+		t.Fatalf("seeding settings row: %v", err)
+	}
 
 	envelope, err := svc.Export(ctx, "correct-passphrase")
 	if err != nil {
@@ -659,7 +664,9 @@ func TestImport_UpsertNoDuplication(t *testing.T) {
 		APIKey:  "key1",
 		Enabled: true,
 	}
-	connSvc.Create(ctx, c)
+	if err := connSvc.Create(ctx, c); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
 
 	// Export
 	passphrase := "upsert-test"
