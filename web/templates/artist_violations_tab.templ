@@ -152,9 +152,13 @@ script artistViolationFix(violationID string, artistID string) {
 
 script artistViolationDismiss(violationID string, artistID string) {
 	// Localized prompt sourced from the dismiss button's data-confirm attribute
-	// (set in artistViolationRow). Falls back to English if the attribute is
-	// absent so the handler still confirms even on a stale render.
-	var btn = document.querySelector('button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"]');
+	// (set in artistViolationRow). The [data-confirm] filter is required: the
+	// Fix and Dismiss buttons on a fixable/open row share data-violation-id and
+	// data-artist-id, so a selector without it would return the Fix button
+	// first and the localized prompt would silently fall back to English.
+	var btn = document.querySelector(
+		'button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"][data-confirm]'
+	);
 	var prompt = (btn && btn.dataset.confirm) || 'Dismiss this violation?';
 	if (!confirm(prompt)) return;
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;

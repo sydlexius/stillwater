@@ -556,11 +556,15 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 // artistViolationDismiss dismisses a violation and refreshes the violations tab.
 func artistViolationDismiss(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationDismiss_c2b2`,
-		Function: `function __templ_artistViolationDismiss_c2b2(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
-	// (set in artistViolationRow). Falls back to English if the attribute is
-	// absent so the handler still confirms even on a stale render.
-	var btn = document.querySelector('button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"]');
+		Name: `__templ_artistViolationDismiss_862a`,
+		Function: `function __templ_artistViolationDismiss_862a(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
+	// (set in artistViolationRow). The [data-confirm] filter is required: the
+	// Fix and Dismiss buttons on a fixable/open row share data-violation-id and
+	// data-artist-id, so a selector without it would return the Fix button
+	// first and the localized prompt would silently fall back to English.
+	var btn = document.querySelector(
+		'button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"][data-confirm]'
+	);
 	var prompt = (btn && btn.dataset.confirm) || 'Dismiss this violation?';
 	if (!confirm(prompt)) return;
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
@@ -584,8 +588,8 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 		alert('Network error dismissing violation.');
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationDismiss_c2b2`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_c2b2`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationDismiss_862a`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_862a`, violationID, artistID),
 	}
 }
 
