@@ -7749,13 +7749,19 @@ paths:
               schema:
                 type: string
         "400":
-          description: Invalid request or decryption error
+          description: Invalid request or decryption error (wrong passphrase / corrupt envelope / malformed JSON)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "413":
           description: File exceeds 10MB limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error while applying the import (decryption succeeded but persistence failed)
           content:
             application/json:
               schema:

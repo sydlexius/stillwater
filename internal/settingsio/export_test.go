@@ -138,8 +138,8 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 
-	if envelope.Version != "1.0" {
-		t.Errorf("expected version 1.0, got %s", envelope.Version)
+	if envelope.Version != CurrentEnvelopeVersion {
+		t.Errorf("expected version %s, got %s", CurrentEnvelopeVersion, envelope.Version)
 	}
 	if envelope.Data == "" {
 		t.Error("expected non-empty encrypted data")
@@ -170,6 +170,25 @@ func TestRoundTrip(t *testing.T) {
 	// total profile count (builtins + user-created), not just user-created ones.
 	if result.Profiles == 0 {
 		t.Error("expected at least one profile imported")
+	}
+	// Specifically verify the user-created profile survived round-trip --
+	// a nonzero count alone is satisfied by the seeded builtins.
+	importedProfiles, err := platSvc2.List(ctx)
+	if err != nil {
+		t.Fatalf("listing imported profiles: %v", err)
+	}
+	var found *platform.Profile
+	for i := range importedProfiles {
+		if importedProfiles[i].Name == "Test Profile" {
+			found = &importedProfiles[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected imported profiles to include %q, got %d profiles without it", "Test Profile", len(importedProfiles))
+	}
+	if !found.NFOEnabled || found.NFOFormat != "kodi" {
+		t.Errorf("Test Profile fields not preserved: NFOEnabled=%v NFOFormat=%q", found.NFOEnabled, found.NFOFormat)
 	}
 	if result.Webhooks != 1 {
 		t.Errorf("expected 1 webhook, got %d", result.Webhooks)
@@ -359,7 +378,9 @@ func TestExport_NoDecryptedSecretsInPayload(t *testing.T) {
 }
 
 // TestImport_Idempotent verifies that importing the same payload twice does not
-// produce duplicate rows for rules, scraper configs, or user preferences.
+// produce duplicate rows for rules, scraper configs, or user preferences. The
+// test seeds at least one row for each of the three sections so the assertions
+// below are not satisfied by an empty source set.
 func TestImport_Idempotent(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
@@ -374,6 +395,22 @@ func TestImport_Idempotent(t *testing.T) {
 	if err := scraperSvc.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seeding scraper: %v", err)
 	}
+	// Seed a user with two preferences so the user_preferences section is
+	// actually exercised by the round-trip.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO users (id, username, role) VALUES (?, ?, 'operator')`,
+		"u-alice", "alice",
+	); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+	for k, v := range map[string]string{"theme": "dark", "lang": "en"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO user_preferences (user_id, key, value) VALUES (?, ?, ?)`,
+			"u-alice", k, v,
+		); err != nil {
+			t.Fatalf("seeding preference %q: %v", k, err)
+		}
+	}
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
 		WithRuleService(ruleSvc).
@@ -385,28 +422,52 @@ func TestImport_Idempotent(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 
-	// Import twice on the same database.
-	for i := range 2 {
-		if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
-			t.Fatalf("Import #%d: %v", i+1, err)
-		}
+	// Capture the post-first-import counts so the second import can be checked
+	// against a stable baseline rather than against fragile absolute numbers
+	// (rule counts grow as new builtin rules are added in future PRs).
+	if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import #1: %v", err)
+	}
+	baselineRules, err := ruleSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing rules: %v", err)
+	}
+	baselineRuleCount := len(baselineRules)
+	var baselineScraperCount, baselinePrefsCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config`).Scan(&baselineScraperCount); err != nil {
+		t.Fatalf("counting scraper rows: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_preferences`).Scan(&baselinePrefsCount); err != nil {
+		t.Fatalf("counting preference rows: %v", err)
+	}
+	if baselineRuleCount == 0 || baselineScraperCount == 0 || baselinePrefsCount == 0 {
+		t.Fatalf("baseline guard: rules=%d scraper=%d prefs=%d, expected each >0", baselineRuleCount, baselineScraperCount, baselinePrefsCount)
 	}
 
-	// Verify no duplicate scraper config rows.
-	var scraperCount int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config`).Scan(&scraperCount)
-	// Only the global config should exist.
-	if scraperCount != 1 {
-		t.Errorf("expected 1 scraper config row after double import, got %d", scraperCount)
+	// Second import must leave the database identical.
+	if _, err := svc.Import(ctx, envelope, passphrase); err != nil {
+		t.Fatalf("Import #2: %v", err)
 	}
 
-	// Verify rule count unchanged.
 	rules, err := ruleSvc.List(ctx)
 	if err != nil {
 		t.Fatalf("listing rules after double import: %v", err)
 	}
-	if len(rules) == 0 {
-		t.Error("expected rules after double import")
+	if len(rules) != baselineRuleCount {
+		t.Errorf("rule count drift: got %d, baseline %d", len(rules), baselineRuleCount)
+	}
+	var scraperCount, prefsCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config`).Scan(&scraperCount); err != nil {
+		t.Fatalf("counting scraper rows after second import: %v", err)
+	}
+	if scraperCount != baselineScraperCount {
+		t.Errorf("scraper_config drift: got %d, baseline %d", scraperCount, baselineScraperCount)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_preferences`).Scan(&prefsCount); err != nil {
+		t.Fatalf("counting preference rows after second import: %v", err)
+	}
+	if prefsCount != baselinePrefsCount {
+		t.Errorf("user_preferences drift: got %d, baseline %d", prefsCount, baselinePrefsCount)
 	}
 }
 

@@ -23,13 +23,16 @@ import (
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
 // settingsIOTestDeps builds a fresh DB, migrates it, and wires the settingsio
-// service and a minimal Router for handler-level tests.
-func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service) {
+// service and a minimal Router for handler-level tests. The DB is returned so
+// tests can seed rows (e.g. user_preferences) that the service has no public
+// API for.
+func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service, *sql.DB) {
 	t.Helper()
 
 	dbDir := t.TempDir()
@@ -54,8 +57,6 @@ func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service) {
 	platSvc := platform.NewService(db)
 	whSvc := webhook.NewService(db)
 
-	sioSvc := settingsio.NewService(db, provSvc, connSvc, platSvc, whSvc)
-
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	authSvc := auth.NewService(db)
@@ -63,6 +64,16 @@ func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service) {
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
 	}
+	scraperSvc := scraper.NewService(db, logger)
+	if err := scraperSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding scraper: %v", err)
+	}
+
+	// Wire rule + scraper services into settingsio so export/import covers
+	// the new sections that this PR adds (rules, scraper_configs).
+	sioSvc := settingsio.NewService(db, provSvc, connSvc, platSvc, whSvc).
+		WithRuleService(ruleSvc).
+		WithScraperService(scraperSvc)
 
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
@@ -74,7 +85,7 @@ func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service) {
 		StaticFS:           os.DirFS("../../web/static"),
 	})
 
-	return r, sioSvc
+	return r, sioSvc, db
 }
 
 // buildExportedEnvelope exports settings from a fresh DB and returns the JSON
@@ -90,6 +101,29 @@ func buildExportedEnvelope(t *testing.T, svc *settingsio.Service, passphrase str
 		t.Fatalf("marshaling envelope: %v", err)
 	}
 	return b
+}
+
+// seedUserPreferences inserts a user and their preference rows so handler tests
+// can verify that the user_preferences section round-trips through the
+// settingsio export/import pipeline.
+func seedUserPreferences(t *testing.T, db *sql.DB, username string, prefs map[string]string) {
+	t.Helper()
+	ctx := context.Background()
+	userID := "u-" + username
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO users (id, username, role) VALUES (?, ?, 'operator')`,
+		userID, username,
+	); err != nil {
+		t.Fatalf("seeding user %q: %v", username, err)
+	}
+	for k, v := range prefs {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO user_preferences (user_id, key, value) VALUES (?, ?, ?)`,
+			userID, k, v,
+		); err != nil {
+			t.Fatalf("seeding pref %q for %q: %v", k, username, err)
+		}
+	}
 }
 
 // setupTestDBForIO mirrors the pattern in settingsio/export_test.go but returns
@@ -134,7 +168,7 @@ func TestHandleSettingsExport_NilService(t *testing.T) {
 }
 
 func TestHandleSettingsExport_MissingPassphrase(t *testing.T) {
-	router, _ := settingsIOTestDeps(t)
+	router, _, _ := settingsIOTestDeps(t)
 
 	body := `{"passphrase":""}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/export", strings.NewReader(body))
@@ -149,7 +183,14 @@ func TestHandleSettingsExport_MissingPassphrase(t *testing.T) {
 }
 
 func TestHandleSettingsExport_JSON(t *testing.T) {
-	router, _ := settingsIOTestDeps(t)
+	router, _, db := settingsIOTestDeps(t)
+
+	// Seed two preference rows for one user so summary.user_preferences is
+	// pinned to a specific value rather than just non-zero.
+	seedUserPreferences(t, db, "alice", map[string]string{
+		"theme": "dark",
+		"lang":  "en",
+	})
 
 	body := `{"passphrase":"hunter2"}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/export", strings.NewReader(body))
@@ -186,12 +227,23 @@ func TestHandleSettingsExport_JSON(t *testing.T) {
 		t.Error("expected non-empty envelope salt")
 	}
 	if env.Summary == nil {
-		t.Error("expected non-nil envelope summary")
+		t.Fatal("expected non-nil envelope summary")
+	}
+	// Assert specific summary counts so a regression that drops a section from
+	// the response surfaces here, not on a downstream consumer.
+	if env.Summary.Rules == 0 {
+		t.Errorf("Summary.Rules = 0, want >0 (seeded defaults)")
+	}
+	if env.Summary.ScraperConfigs != 1 {
+		t.Errorf("Summary.ScraperConfigs = %d, want 1 (seeded global)", env.Summary.ScraperConfigs)
+	}
+	if env.Summary.UserPreferences != 2 {
+		t.Errorf("Summary.UserPreferences = %d, want 2 (seeded pairs)", env.Summary.UserPreferences)
 	}
 }
 
 func TestHandleSettingsExport_FormEncoded(t *testing.T) {
-	router, _ := settingsIOTestDeps(t)
+	router, _, _ := settingsIOTestDeps(t)
 
 	body := "passphrase=hunter2"
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/export", strings.NewReader(body))
@@ -231,7 +283,7 @@ func TestHandleSettingsImport_NilService(t *testing.T) {
 }
 
 func TestHandleSettingsImport_MissingPassphrase_JSON(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "secret")
 
 	// Send envelope without passphrase
@@ -251,7 +303,7 @@ func TestHandleSettingsImport_MissingPassphrase_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsImport_WrongPassphrase_JSON(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "correct-passphrase")
 
 	body, _ := json.Marshal(map[string]interface{}{
@@ -277,7 +329,7 @@ func TestHandleSettingsImport_WrongPassphrase_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsImport_WrongPassphrase_HTMX(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "correct-passphrase")
 
 	body, _ := json.Marshal(map[string]interface{}{
@@ -305,7 +357,13 @@ func TestHandleSettingsImport_WrongPassphrase_HTMX(t *testing.T) {
 }
 
 func TestHandleSettingsImport_RoundTrip_JSON(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, db := settingsIOTestDeps(t)
+	// Seed two preference pairs and one user before exporting so the import
+	// counters can be checked against known values.
+	seedUserPreferences(t, db, "alice", map[string]string{
+		"theme": "dark",
+		"lang":  "en",
+	})
 	const passphrase = "my-secret"
 	envBytes := buildExportedEnvelope(t, svc, passphrase)
 
@@ -327,10 +385,21 @@ func TestHandleSettingsImport_RoundTrip_JSON(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("decoding result: %v", err)
 	}
+	// Pin the new sections so a regression that drops a counter from the
+	// response surfaces here instead of silently shrinking the import shape.
+	if result.Rules == 0 {
+		t.Errorf("ImportResult.Rules = 0, want >0 (seeded defaults round-trip)")
+	}
+	if result.ScraperConfigs != 1 {
+		t.Errorf("ImportResult.ScraperConfigs = %d, want 1 (seeded global)", result.ScraperConfigs)
+	}
+	if result.UserPreferences != 2 {
+		t.Errorf("ImportResult.UserPreferences = %d, want 2 (seeded pairs)", result.UserPreferences)
+	}
 }
 
 func TestHandleSettingsImport_RoundTrip_HTMX(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, _ := settingsIOTestDeps(t)
 	const passphrase = "my-secret"
 	envBytes := buildExportedEnvelope(t, svc, passphrase)
 
@@ -358,7 +427,7 @@ func TestHandleSettingsImport_RoundTrip_HTMX(t *testing.T) {
 }
 
 func TestHandleSettingsImport_Multipart(t *testing.T) {
-	router, svc := settingsIOTestDeps(t)
+	router, svc, _ := settingsIOTestDeps(t)
 	const passphrase = "multipart-pass"
 	envBytes := buildExportedEnvelope(t, svc, passphrase)
 
@@ -378,7 +447,9 @@ func TestHandleSettingsImport_Multipart(t *testing.T) {
 	if _, err := fw.Write(envBytes); err != nil {
 		t.Fatalf("writing file field: %v", err)
 	}
-	mw.Close()
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/import", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -392,14 +463,16 @@ func TestHandleSettingsImport_Multipart(t *testing.T) {
 }
 
 func TestHandleSettingsImport_Multipart_MissingFile(t *testing.T) {
-	router, _ := settingsIOTestDeps(t)
+	router, _, _ := settingsIOTestDeps(t)
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	if err := mw.WriteField("passphrase", "secret"); err != nil {
 		t.Fatalf("writing passphrase field: %v", err)
 	}
-	mw.Close()
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/import", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -413,7 +486,7 @@ func TestHandleSettingsImport_Multipart_MissingFile(t *testing.T) {
 }
 
 func TestHandleSettingsImport_InvalidJSON(t *testing.T) {
-	router, _ := settingsIOTestDeps(t)
+	router, _, _ := settingsIOTestDeps(t)
 
 	body := `{not valid json`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/import", strings.NewReader(body))

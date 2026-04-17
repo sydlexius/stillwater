@@ -28,11 +28,30 @@ import (
 // pbkdf2Iterations is the OWASP-recommended iteration count for PBKDF2-SHA256.
 const pbkdf2Iterations = 600_000
 
+// CurrentEnvelopeVersion is the version emitted by Export. Bump whenever the
+// Payload schema changes in a way that older binaries cannot safely round-trip.
+//   - "1.0": original format (settings, connections, platform profiles, webhooks,
+//     provider keys, priorities)
+//   - "1.1": adds rules, scraper_configs, user_preferences, plaintext summary
+const CurrentEnvelopeVersion = "1.1"
+
+// supportedEnvelopeVersions lists the envelope versions Import will accept.
+// Older versions are accepted for backward compatibility (their newer fields
+// are simply absent in the payload, which Import handles transparently).
+var supportedEnvelopeVersions = map[string]bool{
+	"1.0": true,
+	"1.1": true,
+}
+
 // ErrWrongPassphrase is returned by Import when the AES-GCM tag verification
 // fails, meaning the supplied passphrase does not match the one used during
 // export. Callers may use errors.Is to distinguish this case from other
 // import errors and surface a human-friendly hint.
 var ErrWrongPassphrase = errors.New("incorrect passphrase or corrupted backup file")
+
+// ErrUnsupportedVersion is returned by Import when the envelope's Version
+// field is not one of the formats this binary knows how to read.
+var ErrUnsupportedVersion = errors.New("unsupported export format version")
 
 // Envelope is the outer JSON wrapper for an exported settings file.
 // Summary is plaintext metadata -- section counts do not reveal secrets
@@ -305,21 +324,23 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	}
 
 	envelope := &Envelope{
-		Version:    "1.0",
+		Version:    CurrentEnvelopeVersion,
 		AppVersion: version.Version,
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		Salt:       salt,
 		Data:       data,
 		Summary: &ImportResult{
-			Settings:        len(payload.Settings),
-			Connections:     len(payload.Connections),
-			Profiles:        len(payload.PlatformProfiles),
-			Webhooks:        len(payload.Webhooks),
-			ProviderKeys:    len(payload.ProviderKeys),
-			Priorities:      len(payload.ProviderPriorities),
-			Rules:           len(payload.Rules),
-			ScraperConfigs:  len(payload.ScraperConfigs),
-			UserPreferences: len(payload.UserPreferences),
+			Settings:       len(payload.Settings),
+			Connections:    len(payload.Connections),
+			Profiles:       len(payload.PlatformProfiles),
+			Webhooks:       len(payload.Webhooks),
+			ProviderKeys:   len(payload.ProviderKeys),
+			Priorities:     len(payload.ProviderPriorities),
+			Rules:          len(payload.Rules),
+			ScraperConfigs: len(payload.ScraperConfigs),
+			// UserPreferences counts total (user, key) pairs so export Summary
+			// matches the counter import increments per upserted row.
+			UserPreferences: countUserPreferences(payload.UserPreferences),
 		},
 	}
 
@@ -331,6 +352,17 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) (*ImportResult, error) {
 	if env.Data == "" {
 		return nil, fmt.Errorf("empty export data")
+	}
+
+	// Reject envelope formats this binary does not understand. An empty Version
+	// is treated as legacy "1.0" so older exports without an explicit field
+	// continue to import.
+	v := env.Version
+	if v == "" {
+		v = "1.0"
+	}
+	if !supportedEnvelopeVersions[v] {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedVersion, env.Version)
 	}
 
 	// Decrypt. Wrap with ErrWrongPassphrase so callers can use errors.Is to
@@ -469,8 +501,13 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 			}
 			existing, err := s.ruleService.GetByID(ctx, re.ID)
 			if err != nil {
-				// Unknown rule ID (newer export, older binary) -- skip.
-				continue
+				// Unknown rule IDs (newer export, older binary) are expected -- skip.
+				// Other errors (DB connection, corruption) must surface instead of
+				// silently dropping rule imports.
+				if errors.Is(err, rule.ErrNotFound) {
+					continue
+				}
+				return nil, fmt.Errorf("looking up rule %q: %w", re.ID, err)
 			}
 			// Validate automation_mode before writing to the DB. A tampered or
 			// stale payload could carry an unrecognized value. Only the two
@@ -540,6 +577,17 @@ func (s *Service) listScraperScopes(ctx context.Context) ([]string, error) {
 	return scopes, rows.Err()
 }
 
+// countUserPreferences returns the total number of (user, key) preference pairs
+// across all exported users. This is what the import counter records per upserted
+// row, so using the same shape keeps export.Summary and import.Result symmetric.
+func countUserPreferences(prefs []UserPrefsExport) int {
+	total := 0
+	for _, up := range prefs {
+		total += len(up.Preferences)
+	}
+	return total
+}
+
 // exportUserPreferences loads all rows from user_preferences joined with users
 // and groups them by username. Password hashes and active session tokens are
 // never included in user preferences; this query only touches the preferences table.
@@ -591,18 +639,16 @@ func (s *Service) importUserPreferences(ctx context.Context, prefs []UserPrefsEx
 		err := s.db.QueryRowContext(ctx,
 			`SELECT id FROM users WHERE username = ?`, up.Username).Scan(&userID)
 		if errors.Is(err, sql.ErrNoRows) {
-			// User does not exist on this instance -- this is expected when
-			// importing across instances with different user sets.
-			slog.Debug("import: skipping preferences for unknown user", "username", up.Username)
+			// User does not exist on this instance -- expected when importing
+			// across instances with different user sets. Warn because an empty
+			// target users table would silently drop every preference.
+			slog.Warn("import: skipping preferences for unknown user", "username", up.Username)
 			continue
 		} else if err != nil {
-			// A real DB error (connection issue, corruption) -- log and continue
-			// so that one bad row does not abort the full import.
-			slog.Error("import: error looking up user for preferences",
-				"username", up.Username,
-				"error", err,
-			)
-			continue
+			// A real DB error (connection issue, corruption) must fail the
+			// import -- silently swallowing it would return success after
+			// dropping preference rows.
+			return fmt.Errorf("looking up user %q for preferences: %w", up.Username, err)
 		}
 		for k, v := range up.Preferences {
 			_, err := s.db.ExecContext(ctx,

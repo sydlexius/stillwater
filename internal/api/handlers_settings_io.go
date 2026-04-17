@@ -135,13 +135,22 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		// The passphrase/AES-GCM failure is the one case where a specific hint
 		// is more helpful than a generic message; everything else uses a generic
 		// "import failed" string so internal details do not leak to clients.
+		// Distinguish client errors (400) from internal apply failures (500) so
+		// monitoring and the client can tell them apart. Wrong passphrase and
+		// unsupported envelope version are both caused by what the client sent.
 		var clientMsg string
-		if errors.Is(err, settingsio.ErrWrongPassphrase) {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, settingsio.ErrWrongPassphrase):
 			clientMsg = "Import failed: incorrect passphrase or corrupted backup file"
-		} else {
+			status = http.StatusBadRequest
+		case errors.Is(err, settingsio.ErrUnsupportedVersion):
+			clientMsg = "Import failed: this backup file uses an unsupported format version"
+			status = http.StatusBadRequest
+		default:
 			clientMsg = "Import failed: see server logs for details"
 		}
-		// HTMX does not swap on 4xx by default, so return 200 + red HTML fragment
+		// HTMX does not swap on non-2xx by default, so return 200 + red HTML fragment
 		// for HX requests -- otherwise the #import-result div stays empty and the
 		// failure is silent.
 		if req.Header.Get("HX-Request") == "true" {
@@ -149,7 +158,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(clientMsg)) //nolint:errcheck
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": clientMsg})
+		writeJSON(w, status, map[string]string{"error": clientMsg})
 		return
 	}
 
