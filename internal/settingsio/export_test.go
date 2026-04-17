@@ -240,11 +240,18 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 		t.Fatalf("updating rule: %v", err)
 	}
 
-	// Add a user with preferences.
+	// Add a user with preferences. Errors here would leave the test asserting
+	// against missing seed data, so fail fast rather than silently continue.
 	userID := "user-001"
-	db.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID)
-	db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'theme', 'light')`, userID)
-	db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'font_size', 'large')`, userID)
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID); err != nil {
+		t.Fatalf("seeding source user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'theme', 'light')`, userID); err != nil {
+		t.Fatalf("seeding theme preference: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, key, value) VALUES (?, 'font_size', 'large')`, userID); err != nil {
+		t.Fatalf("seeding font_size preference: %v", err)
+	}
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).
 		WithRuleService(ruleSvc).
@@ -283,9 +290,13 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 	if err := ruleSvc2.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seeding rules in target db: %v", err)
 	}
-	// Create matching user in target DB.
+	// Create matching user in target DB. Same fail-fast rationale as above:
+	// silently dropping this insert would make the user-preference import
+	// assertions fail for the wrong reason.
 	userID2 := "user-002"
-	db2.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID2)
+	if _, err := db2.ExecContext(ctx, `INSERT INTO users (id, username, display_name) VALUES (?, 'alice', 'Alice')`, userID2); err != nil {
+		t.Fatalf("seeding target user: %v", err)
+	}
 
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2).
 		WithRuleService(ruleSvc2).
