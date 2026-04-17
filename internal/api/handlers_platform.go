@@ -441,8 +441,15 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 	data.IsDocker = r.updaterService.IsDocker()
 
 	cfg, err := r.updaterService.GetConfig(ctx)
-	if err == nil {
-		data.Channel = string(cfg.Channel)
+	if err != nil {
+		r.logger.Warn("loading updater config for settings page", "error", err)
+	} else {
+		switch string(cfg.Channel) {
+		case "stable", "prerelease":
+			data.Channel = string(cfg.Channel)
+		default:
+			data.Channel = "stable"
+		}
 		data.AutoCheck = cfg.AutoCheck
 	}
 

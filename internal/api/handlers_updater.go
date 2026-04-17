@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/updater"
@@ -53,9 +55,16 @@ func (r *Router) handlePostUpdateApply(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	if err := r.updaterService.Apply(req.Context()); err != nil {
-		r.logger.Warn("update apply rejected", "error", err)
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "update already in progress"})
+	// Detach from the request context so the async goroutine is not canceled
+	// when the HTTP response is sent and the request context is canceled.
+	if err := r.updaterService.Apply(context.WithoutCancel(req.Context())); err != nil {
+		if errors.Is(err, updater.ErrAlreadyRunning) {
+			r.logger.Warn("update apply rejected", "error", err)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "update already in progress"})
+			return
+		}
+		r.logger.Error("update apply failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update apply failed"})
 		return
 	}
 

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -434,8 +435,13 @@ func TestNewDockerService(t *testing.T) {
 	}
 	// Build a new docker service using the same db.
 	dir := t.TempDir()
-	db, _ := database.Open(filepath.Join(dir, "d.db"))
-	_ = database.Migrate(db)
+	db, err := database.Open(filepath.Join(dir, "d.db"))
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrating db: %v", err)
+	}
 	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -641,7 +647,7 @@ func waitForIdle(t *testing.T, svc *Service, timeout time.Duration) {
 
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {
-		if !bytes.Contains([]byte(s), []byte(sub)) {
+		if !strings.Contains(s, sub) {
 			return false
 		}
 	}

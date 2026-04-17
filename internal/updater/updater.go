@@ -96,11 +96,13 @@ type CheckResult struct {
 
 // StatusResult is returned by Status.
 type StatusResult struct {
-	State       State  `json:"state"`
-	Progress    int    `json:"progress"` // 0-100 percent
-	Error       string `json:"error,omitempty"`
-	LastChecked string `json:"last_checked,omitempty"` // RFC 3339
-	IsDocker    bool   `json:"is_docker"`
+	State           State  `json:"state"`
+	Progress        int    `json:"progress"` // 0-100 percent
+	Error           string `json:"error,omitempty"`
+	LastChecked     string `json:"last_checked,omitempty"` // RFC 3339
+	IsDocker        bool   `json:"is_docker"`
+	UpdateAvailable bool   `json:"update_available"`
+	Latest          string `json:"latest,omitempty"` // latest version tag from last check
 }
 
 // githubRelease is a subset of the GitHub Releases API response.
@@ -128,12 +130,14 @@ type Service struct {
 	httpClient *http.Client
 	logger     *slog.Logger
 
-	mu          sync.RWMutex
-	state       State
-	progress    int
-	lastErr     string
-	lastChecked time.Time
-	isDocker    bool
+	mu              sync.RWMutex
+	state           State
+	progress        int
+	lastErr         string
+	lastChecked     time.Time
+	isDocker        bool
+	updateAvailable bool
+	latestVersion   string
 
 	// applyRunning guards against concurrent Apply calls. 0 = idle, 1 = running.
 	// Using atomic.Int32 makes the idle-check and the transition to running a
@@ -251,10 +255,12 @@ func (s *Service) Status() StatusResult {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	res := StatusResult{
-		State:    s.state,
-		Progress: s.progress,
-		Error:    s.lastErr,
-		IsDocker: s.isDocker,
+		State:           s.state,
+		Progress:        s.progress,
+		Error:           s.lastErr,
+		IsDocker:        s.isDocker,
+		UpdateAvailable: s.updateAvailable,
+		Latest:          s.latestVersion,
 	}
 	if !s.lastChecked.IsZero() {
 		res.LastChecked = s.lastChecked.UTC().Format(time.RFC3339)
@@ -303,11 +309,14 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 		}, nil
 	}
 
+	available := newerThan(latest.TagName, version.Version)
+
 	s.mu.Lock()
 	s.lastChecked = time.Now().UTC()
+	s.updateAvailable = available
+	s.latestVersion = latest.TagName
 	s.mu.Unlock()
 
-	available := newerThan(latest.TagName, version.Version)
 	return CheckResult{
 		Current:         version.Version,
 		Latest:          latest.TagName,
@@ -339,7 +348,11 @@ func (s *Service) Apply(ctx context.Context) error {
 		return ErrAlreadyRunning
 	}
 
-	go s.runApply(ctx)
+	// Use a background context so the apply goroutine outlives the initiating
+	// HTTP request. The handler already detaches via context.WithoutCancel, but
+	// using context.Background() here makes the intent explicit at the service
+	// layer and avoids any inherited deadline or cancellation from the caller.
+	go s.runApply(context.Background()) //nolint:gosec // G118: intentional -- goroutine must outlive request context
 	return nil
 }
 
@@ -530,11 +543,9 @@ func (s *Service) setState(st State, progress int, errMsg string) {
 	s.state = st
 	s.progress = progress
 	s.lastErr = errMsg
-	if st == StateChecking || st == StateDownloading || st == StateApplying {
-		// Mark last-checked at the start of a check cycle.
-		if st == StateChecking {
-			s.lastChecked = time.Now().UTC()
-		}
+	// Mark last-checked at the start of a check cycle.
+	if st == StateChecking {
+		s.lastChecked = time.Now().UTC()
 	}
 }
 

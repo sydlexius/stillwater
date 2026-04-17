@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -246,7 +247,7 @@ func TestHandleNilUpdaterService(t *testing.T) {
 }
 
 // TestHandlePostUpdateApply_NonDocker verifies that a non-Docker, non-in-progress
-// apply starts successfully (async; we don't wait for it to finish).
+// apply starts successfully and the async goroutine settles before the test exits.
 func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
 	r := testRouterWithUpdater(t)
 	// Make the updater's HTTP client immediately fail so the goroutine exits fast.
@@ -261,6 +262,25 @@ func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
 	}
+
+	// Poll the status endpoint until the background goroutine reaches a terminal
+	// state (idle or error). This prevents t.Cleanup from closing the database
+	// while the goroutine is still running, which would cause flaky failures.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		statusReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+		statusW := httptest.NewRecorder()
+		r.handleGetUpdateStatus(statusW, statusReq)
+
+		var st updater.StatusResult
+		if err := json.NewDecoder(statusW.Body).Decode(&st); err == nil &&
+			(st.State == updater.StateIdle || st.State == updater.StateError) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for updater worker to settle")
 }
 
 // TestHandleCheckWithMockServer verifies the full check path with a mock GitHub server.

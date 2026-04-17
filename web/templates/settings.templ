@@ -5620,6 +5620,20 @@ templ apiTokenScript() {
 
 // settingsUpdatesTab renders the Updates tab content.
 templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
+	// Hidden element carrying translated labels for the updater JS.
+	// The JS reads these via dataset.* rather than embedding raw strings.
+	<div
+		id="updates-i18n"
+		class="hidden"
+		data-checking={ t(ctx, "settings.updates.state_checking") }
+		data-downloading={ t(ctx, "settings.updates.state_downloading") }
+		data-applying={ t(ctx, "settings.updates.state_applying") }
+		data-error={ t(ctx, "settings.updates.state_error") }
+		data-saved={ t(ctx, "settings.updates.state_saved") }
+		data-update-available={ t(ctx, "settings.updates.update_available") }
+		data-up-to-date={ t(ctx, "settings.updates.up_to_date") }
+		data-release-notes={ t(ctx, "settings.updates.release_notes") }
+	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.title") }</h2>
@@ -5654,11 +5668,15 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					</div>
 				</div>
 			</div>
-			if data.LastChecked != "" {
-				<div class="text-xs text-gray-400 dark:text-gray-500">
-					{ t(ctx, "settings.updates.last_checked") }: <span id="updates-last-checked">{ data.LastChecked }</span>
-				</div>
-			}
+			<div
+				id="updates-last-checked-row"
+				class={
+					"text-xs text-gray-400 dark:text-gray-500",
+					templ.KV("hidden", data.LastChecked == ""),
+				}
+			>
+				{ t(ctx, "settings.updates.last_checked") }: <span id="updates-last-checked">{ data.LastChecked }</span>
+			</div>
 			<!-- Docker notice -->
 			if data.IsDocker {
 				<div class="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3">
@@ -5777,18 +5795,22 @@ templ updatesTabScript() {
 					clearUpdaterStatus();
 					var latestEl = document.getElementById('updates-latest-version');
 					var applyBtn = document.getElementById('updates-apply-btn');
+					var i18n = document.getElementById('updates-i18n');
+					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
+					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
+					var lblReleaseNotes = i18n ? i18n.dataset.releaseNotes : 'Release notes';
 					if (latestEl) {
 						if (data.update_available) {
 							latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(data.latest) + '</span>'
-								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Update available</span>';
+								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
 							if (applyBtn) applyBtn.disabled = false;
 						} else {
-							latestEl.innerHTML = escHtml(data.latest) + ' <span class="ml-2 text-gray-400">Up to date</span>';
+							latestEl.innerHTML = escHtml(data.latest) + ' <span class="ml-2 text-gray-400">' + escHtml(lblUpToDate) + '</span>';
 							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
 					if (data.release_url) {
-						latestEl.innerHTML += ' <a href="' + escHtml(data.release_url) + '" target="_blank" rel="noopener noreferrer" class="ml-2 text-xs text-blue-500 hover:underline">Release notes</a>';
+						latestEl.innerHTML += ' <a href="' + escHtml(data.release_url) + '" target="_blank" rel="noopener noreferrer" class="ml-2 text-xs text-blue-500 hover:underline">' + escHtml(lblReleaseNotes) + '</a>';
 					}
 				})
 				.catch(function(err) {
@@ -5892,14 +5914,11 @@ templ updatesTabScript() {
 					errRow.textContent = '';
 				}
 
-				var labels = {
-					checking: 'Checking for updates...',
-					downloading: 'Downloading update...',
-					applying: 'Applying update...',
-					error: 'Update error',
-					saved: 'Settings saved'
-				};
-				text.textContent = labels[state] || state;
+				// Read translated labels from the data-* attributes on the i18n element.
+				var i18n = document.getElementById('updates-i18n');
+				var labels = i18n ? i18n.dataset : {};
+				var label = labels[state] || state;
+				text.textContent = label;
 
 				var inProgress = state === 'checking' || state === 'downloading' || state === 'applying';
 				if (spinner) {
@@ -5952,11 +5971,41 @@ templ updatesTabScript() {
 
 			function fetchAndPopulateUpdateStatus() {
 				fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
-				.then(function(r) { return r.json(); })
+				.then(function(r) {
+					if (!r.ok) return throwFromResponse(r, 'status failed');
+					return r.json();
+				})
 				.then(function(d) {
+					var lcRow = document.getElementById('updates-last-checked-row');
 					var lcEl = document.getElementById('updates-last-checked');
 					if (lcEl && d.last_checked) {
 						lcEl.textContent = d.last_checked;
+						if (lcRow) lcRow.classList.remove('hidden');
+					}
+					// Hydrate the latest version and update-available badge from cached status.
+					var latestEl = document.getElementById('updates-latest-version');
+					var applyBtn = document.getElementById('updates-apply-btn');
+					var i18n = document.getElementById('updates-i18n');
+					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
+					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
+					if (latestEl && d.latest) {
+						if (d.update_available) {
+							latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
+								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
+							if (applyBtn) applyBtn.disabled = false;
+						} else {
+							latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
+							if (applyBtn) applyBtn.disabled = true;
+						}
+					}
+					// If an operation is in progress, show its state and start polling.
+					if (d.state === 'error') {
+						setUpdaterStatus('error', d.error || 'update failed');
+					} else if (d.state && d.state !== 'idle') {
+						setUpdaterStatus(d.state, '');
+						pollUpdateStatus();
+					} else {
+						clearUpdaterStatus();
 					}
 				})
 				.catch(function() {});

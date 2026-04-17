@@ -81,16 +81,50 @@ func semverCompare(a, b semver) int {
 	case a.PreRelease != "" && b.PreRelease == "":
 		return -1
 	default:
-		// Both have pre-release: lexicographic comparison is a reasonable
-		// approximation (rc.2 > rc.1, beta.1 < rc.1 alphabetically).
-		if a.PreRelease < b.PreRelease {
-			return -1
-		}
-		if a.PreRelease > b.PreRelease {
-			return 1
-		}
-		return 0
+		// Both have pre-release: use semver 11.4 identifier-level comparison.
+		return comparePrerelease(a.PreRelease, b.PreRelease)
 	}
+}
+
+// comparePrerelease implements semver spec section 11.4: split on ".",
+// compare pairwise. Numeric identifiers are compared as integers. A numeric
+// identifier has lower precedence than an alphanumeric one. If all shared
+// identifiers are equal, the version with more identifiers has higher
+// precedence (rc.1.1 > rc.1).
+func comparePrerelease(a, b string) int {
+	ap := strings.Split(a, ".")
+	bp := strings.Split(b, ".")
+	n := len(ap)
+	if len(bp) < n {
+		n = len(bp)
+	}
+	for i := 0; i < n; i++ {
+		ai, aErr := strconv.Atoi(ap[i])
+		bi, bErr := strconv.Atoi(bp[i])
+		switch {
+		case aErr == nil && bErr == nil:
+			// Both numeric: compare as integers.
+			if ai != bi {
+				return cmpInt(ai, bi)
+			}
+		case aErr == nil && bErr != nil:
+			// Numeric has lower precedence than alphanumeric (spec 11.4.1).
+			return -1
+		case aErr != nil && bErr == nil:
+			// Alphanumeric has higher precedence than numeric.
+			return 1
+		default:
+			// Both alphanumeric: lexicographic comparison.
+			if ap[i] < bp[i] {
+				return -1
+			}
+			if ap[i] > bp[i] {
+				return 1
+			}
+		}
+	}
+	// All shared identifiers equal: more identifiers means higher precedence.
+	return cmpInt(len(ap), len(bp))
 }
 
 func cmpInt(a, b int) int {

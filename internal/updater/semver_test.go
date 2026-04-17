@@ -46,6 +46,8 @@ func TestSemverCompare(t *testing.T) {
 		{semver{1, 0, 0, ""}, semver{1, 0, 0, "rc.1"}, 1},  // stable > prerelease
 		{semver{1, 0, 0, "rc.1"}, semver{1, 0, 0, ""}, -1}, // prerelease < stable
 		{semver{1, 0, 0, "rc.2"}, semver{1, 0, 0, "rc.1"}, 1},
+		{semver{1, 0, 0, "rc.10"}, semver{1, 0, 0, "rc.2"}, 1},  // numeric: rc.10 > rc.2
+		{semver{1, 0, 0, "rc.2"}, semver{1, 0, 0, "rc.10"}, -1}, // numeric: rc.2 < rc.10
 		{semver{0, 0, 1, ""}, semver{0, 0, 2, ""}, -1},
 		{semver{0, 2, 0, ""}, semver{0, 1, 9, ""}, 1},
 	}

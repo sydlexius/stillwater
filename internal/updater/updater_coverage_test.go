@@ -380,7 +380,10 @@ func TestAtomicReplaceFileWriteSucceeds(t *testing.T) {
 	if err := atomicReplaceFile(target, []byte("new")); err != nil {
 		t.Fatalf("atomicReplaceFile: %v", err)
 	}
-	got, _ := os.ReadFile(target)
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading file after replace: %v", err)
+	}
 	if string(got) != "new" {
 		t.Errorf("content = %q, want new", got)
 	}
