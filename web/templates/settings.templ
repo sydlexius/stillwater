@@ -1675,6 +1675,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</span>
 							</div>
 						</form>
+						<div id="export-result" class="mt-2"></div>
 						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
 							<form
 								hx-post="/api/v1/settings/import"
@@ -2670,8 +2671,34 @@ templ settingsExportScript() {
 				document.body.removeChild(a);
 				URL.revokeObjectURL(url);
 				form.reset();
+				// Read the summary from the downloaded envelope and render a count
+				// readout symmetrical to the import success message.
+				result.blob.text().then(function(text) {
+					try {
+						var env = JSON.parse(text);
+						if (env && env.summary) {
+							var s = env.summary;
+							var out = document.getElementById('export-result');
+							if (out) {
+								out.innerHTML = '<div class="text-sm text-green-600 dark:text-green-400">'
+									+ 'Export complete: ' + s.settings + ' settings, '
+									+ s.connections + ' connections, '
+									+ s.platform_profiles + ' profiles, '
+									+ s.webhooks + ' webhooks, '
+									+ s.provider_keys + ' provider keys, '
+									+ s.priorities + ' priorities, '
+									+ s.rules + ' rules, '
+									+ s.scraper_configs + ' scraper configs, '
+									+ s.user_preferences + ' preferences.'
+									+ '</div>';
+							}
+						}
+					} catch (e) { /* non-JSON or missing summary: stay silent */ }
+				});
 			}).catch(function(err) {
-				alert('Export failed. Please try again.');
+				var out = document.getElementById('export-result');
+				if (out) out.innerHTML = '<div class="text-sm text-red-600 dark:text-red-400">Export failed. Please try again.</div>';
+				else alert('Export failed. Please try again.');
 			}).finally(function() {
 				if (btn) btn.disabled = false;
 				if (spinner) spinner.classList.add('hidden');
