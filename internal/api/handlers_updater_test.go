@@ -145,16 +145,19 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	// Contract check: update_available is declared required in UpdateStatus
-	// (openapi.yaml). A typed unmarshal into StatusResult would default the
-	// field to false if the key were missing, silently passing an omission
-	// regression. Re-unmarshal into a raw map and assert key presence.
+	// Contract check: UpdateStatus declares state, progress, is_docker, and
+	// update_available as required in openapi.yaml. A typed unmarshal into
+	// StatusResult would default each to its Go zero-value if the key were
+	// missing, silently passing an omission regression. Re-unmarshal into a
+	// raw map and assert presence of every required field.
 	var raw map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal raw status: %v", err)
 	}
-	if _, ok := raw["update_available"]; !ok {
-		t.Fatal(`missing required field "update_available" in UpdateStatus`)
+	for _, key := range []string{"state", "progress", "is_docker", "update_available"} {
+		if _, ok := raw[key]; !ok {
+			t.Fatalf("missing required field %q in UpdateStatus", key)
+		}
 	}
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)

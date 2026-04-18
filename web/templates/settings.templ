@@ -6112,7 +6112,15 @@ templ updatesTabScript() {
 						setUpdaterStatus(d.state, '');
 						pollUpdateStatus();
 					} else {
-						clearUpdaterStatus();
+						// Preserve a displayed "saved" toast: saveUpdaterConfig()
+						// calls fetchAndPopulateUpdateStatus() immediately after a
+						// successful save, and /status typically returns state=idle,
+						// which would otherwise wipe the toast before the 2s deferred
+						// clearUpdaterStatusIfState('saved') could run.
+						var row = document.getElementById('updates-status-row');
+						if (!row || row.dataset.updaterState !== 'saved') {
+							clearUpdaterStatus();
+						}
 					}
 				})
 				.catch(function(err) {

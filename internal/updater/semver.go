@@ -18,10 +18,17 @@ type semver struct {
 func parseSemver(v string) (semver, error) {
 	v = strings.TrimPrefix(v, "v")
 
-	// Split off pre-release suffix.
+	// Split off pre-release suffix. Reject a trailing "-" with nothing after
+	// it: otherwise "v1.2.3-" would parse with PreRelease == "" and sort as a
+	// stable release, which is wrong for a malformed tag. The upstream
+	// semverRE gate already rejects this, but parseSemver is callable
+	// in-package (e.g. from tests) and must not silently normalize bad input.
 	core := v
 	pre := ""
 	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		if idx == len(v)-1 {
+			return semver{}, fmt.Errorf("empty prerelease in %q", v)
+		}
 		core = v[:idx]
 		pre = v[idx+1:]
 	}
