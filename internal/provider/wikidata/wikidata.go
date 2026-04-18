@@ -259,8 +259,9 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 // langPrefs is the user's ordered metadata language preference list (BCP 47 tags).
 // The wikibase:label SERVICE is told to try each language in the preference order,
 // falling back through parent subtags and ultimately to English when no match exists.
-// For example, preferences ["ja", "en-GB"] become "ja,en,en" (deduplicated below),
-// which the Wikidata label service resolves by trying "ja" first then "en".
+// For example, preferences ["ja", "en-GB"] become "ja,en-gb,en": "en-GB" is kept
+// as-is, its base "en" is expanded inline, and the trailing "en" fallback is not
+// duplicated. The Wikidata label service resolves by trying each entry left to right.
 func buildArtistQuery(mbid string, langPrefs []string) string {
 	lang := wikidataLangParam(langPrefs)
 	return fmt.Sprintf(`

@@ -248,6 +248,13 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 			wantBio:   "Default bio.",
 		},
 		{
+			name:      "No preferences and empty EN falls back to strBiography",
+			bio:       "Only default bio.",
+			bioEN:     "",
+			langPrefs: nil,
+			wantBio:   "Only default bio.",
+		},
+		{
 			name:      "Regional fallback uses base language in preference order",
 			bio:       "Biographie par défaut.",
 			bioEN:     "English biography.",

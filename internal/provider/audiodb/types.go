@@ -42,7 +42,7 @@ type AudioDBArtist struct {
 	BiographyPT     string `json:"strBiographyPT"`
 	BiographyRU     string `json:"strBiographyRU"`
 	BiographyHU     string `json:"strBiographyHU"`
-	BiographyIL     string `json:"strBiographyIL"`
+	BiographyIL     string `json:"strBiographyIL"` // IL = AudioDB's name for Hebrew (he)
 	BiographyNO     string `json:"strBiographyNO"`
 	BiographySE     string `json:"strBiographySE"`
 	BiographyPL     string `json:"strBiographyPL"`

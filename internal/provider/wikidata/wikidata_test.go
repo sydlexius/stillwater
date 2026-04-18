@@ -409,6 +409,11 @@ func TestWikidataLangParam(t *testing.T) {
 			prefs: []string{"ja", "ja", "en"},
 			want:  "ja,en",
 		},
+		{
+			name:  "empty string entry in slice is skipped",
+			prefs: []string{"", "ja"},
+			want:  "ja,en",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
