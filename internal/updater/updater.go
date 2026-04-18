@@ -40,6 +40,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -183,7 +184,12 @@ func (s *Service) SetDockerForTest(isDocker bool) {
 }
 
 // detectDocker returns true when the process appears to be running inside a
-// Docker container. It checks for the /.dockerenv file and the container env var.
+// Docker (or compatible) container. Minimal base images (distroless,
+// chainguard) may omit /.dockerenv and the conventional env vars, so we fall
+// back to inspecting /proc/1/cgroup for known runtime signatures. Correctness
+// here is a safety floor: a false negative allows Apply to attempt an
+// in-place binary swap inside a container, which the Docker-path guard in
+// handlePostUpdateApply is meant to prevent.
 func detectDocker() bool {
 	// Presence of /.dockerenv is the canonical Docker indicator.
 	if _, err := os.Stat("/.dockerenv"); err == nil {
@@ -196,6 +202,49 @@ func detectDocker() bool {
 	// DOCKER_CONTAINER is a common convention in custom Docker images.
 	if v := os.Getenv("DOCKER_CONTAINER"); v != "" {
 		return true
+	}
+	// Fallback: inspect /proc/1/cgroup on Linux.
+	//
+	// - macOS / Windows: file does not exist. os.IsNotExist -> fall through
+	//   to return false (not a Linux container).
+	// - Linux read succeeds: scan each cgroup path for known runtime markers.
+	//   Match against path segments (not raw substring) so a systemd unit
+	//   named "docker-cleanup.service" in a non-container cgroup does not
+	//   false-positive and block binary-apply on that host.
+	// - Linux read fails for any other reason (EIO, EACCES, restricted /proc
+	//   under AppArmor/SELinux): we cannot confirm *or* deny containerized
+	//   execution. The guard in handlePostUpdateApply uses this signal as a
+	//   safety floor, so the failure-mode bias is toward "block the in-place
+	//   swap." Fail-safe to true so Apply does not proceed on an unknown host.
+	data, err := os.ReadFile("/proc/1/cgroup")
+	if err != nil {
+		// Fail-safe to true on any non-ENOENT error: see block comment above.
+		return !os.IsNotExist(err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		// cgroup v1 lines are "hierarchy-id:controller-list:cgroup-path";
+		// v2 lines are "0::cgroup-path". Either way the cgroup path is the
+		// last colon-separated field, and only that path can legitimately
+		// carry a runtime marker.
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		path := parts[2]
+		for _, marker := range []string{
+			"/docker/",        // cgroup v1 Docker daemon
+			"docker-",         // cgroup v2 systemd scope (e.g. docker-<id>.scope)
+			"/kubepods",       // Kubernetes (kubepods.slice and nested variants)
+			"/containerd",     // containerd namespaces
+			"/cri-containerd", // containerd via CRI (EKS, GKE)
+			"/libpod_parent",  // Podman cgroup v1
+			"libpod-",         // Podman systemd slice
+			"/lxc/",           // LXC
+		} {
+			if strings.Contains(path, marker) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -322,16 +371,21 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 
 	latest := pickLatest(releases, cfg.Channel)
 	if latest == nil {
-		// No matching release: clear any stale update flag so /status does not
-		// keep advertising an update that is no longer present on this channel.
+		// No matching release on this channel: clear cached state and record
+		// the successful check so /status reflects the fresh "no update"
+		// reality rather than a stale prior version. Latest is returned as
+		// the empty string so the CheckResult shape agrees with /status
+		// (which reads back these same cleared fields).
+		now := time.Now().UTC()
 		s.mu.Lock()
+		s.lastChecked = now
 		s.updateAvailable = false
 		s.latestVersion = ""
 		s.releaseURL = ""
 		s.mu.Unlock()
 		return CheckResult{
 			Current:         version.Version,
-			Latest:          version.Version,
+			Latest:          "",
 			Channel:         cfg.Channel,
 			UpdateAvailable: false,
 		}, nil
@@ -711,57 +765,20 @@ func newBytesReader(b []byte) io.Reader {
 	return bytes.NewReader(b)
 }
 
-// atomicReplaceFile replaces target with newContent using a tmp+rename pattern.
-// It preserves the original file permissions.
+// atomicReplaceFile replaces target with newContent using the project-wide
+// tmp/bak/rename helper so binary replacement shares the same durability and
+// backup semantics as every other on-disk write (NFO files, settings exports,
+// image cache). Preserves the original file's mode so the executable bit is
+// retained after the swap.
 //
-// The temp file is created with os.CreateTemp (O_EXCL, unpredictable name) in
-// the same directory as the target. Using a predictable name like "target.new"
-// would allow an attacker to pre-create a symlink and redirect the write to an
-// arbitrary file. CreateTemp sidesteps that by generating an unpredictable name
-// and opening it with O_EXCL so the create fails if the name already exists.
+// Threat model: the binary's parent directory must not be attacker-writable.
+// filesystem.WriteFileAtomic uses a deterministic "<target>.tmp" path, which
+// is adequate because a caller that can plant a symlink at <target>.tmp can
+// already overwrite the target binary directly.
 func atomicReplaceFile(target string, newContent []byte) error {
-	// Preserve permissions of the current binary.
 	fi, err := os.Stat(target)
 	if err != nil {
 		return fmt.Errorf("stat target: %w", err)
 	}
-	perm := fi.Mode()
-
-	// Create the temp file in the same directory as the target so that
-	// os.Rename stays on the same filesystem (cross-device rename would fail).
-	tmp, err := os.CreateTemp(filepath.Dir(target), "stillwater-*.new")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-
-	// If anything goes wrong after this point, clean up the temp file.
-	var writeErr error
-	defer func() {
-		if writeErr != nil {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if err := tmp.Chmod(perm); err != nil {
-		writeErr = err
-		_ = tmp.Close()
-		return fmt.Errorf("setting temp file permissions: %w", err)
-	}
-	if _, err := tmp.Write(newContent); err != nil {
-		writeErr = err
-		_ = tmp.Close()
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		writeErr = err
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-
-	// Rename is atomic on most Unix filesystems (POSIX rename(2) guarantee).
-	if err := os.Rename(tmpPath, target); err != nil {
-		writeErr = err
-		return fmt.Errorf("renaming to target: %w", err)
-	}
-	return nil
+	return filesystem.WriteFileAtomic(target, newContent, fi.Mode())
 }

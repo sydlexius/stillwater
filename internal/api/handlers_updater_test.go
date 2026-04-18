@@ -269,6 +269,11 @@ func TestHandlePostUpdateCheck_NoNetwork(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500; body: %s", w.Code, w.Body.String())
 	}
+	// Contract: raw transport error text must not leak to the client body.
+	// The handler logs the detail via slog and returns a generic message.
+	if body := w.Body.String(); strings.Contains(body, "network unavailable (test)") {
+		t.Fatalf("response leaked raw upstream error: %s", body)
+	}
 }
 
 // TestHandlePutUpdateConfig_BadJSON verifies that malformed JSON returns 400.
@@ -435,6 +440,111 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 	}
 	if current, ok := result["current"].(string); !ok || current == "" {
 		t.Errorf("current = %v, want non-empty string", result["current"])
+	}
+
+	// Contract: a successful /check must write-through to the cached state so
+	// that a subsequent /status reports the same release metadata. Without
+	// this round-trip a regression where Check() returned values but Status()
+	// failed to retain them would silently pass the first assertion block
+	// above, even though the Settings UI depends on /status for re-hydration.
+	statusReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	statusW := httptest.NewRecorder()
+	r.handleGetUpdateStatus(statusW, statusReq)
+	if statusW.Code != http.StatusOK {
+		t.Fatalf("status endpoint = %d, want 200; body: %s", statusW.Code, statusW.Body.String())
+	}
+	var st updater.StatusResult
+	if err := json.Unmarshal(statusW.Body.Bytes(), &st); err != nil {
+		t.Fatalf("unmarshal status: %v", err)
+	}
+	if !st.UpdateAvailable {
+		t.Error("status update_available = false, want true after successful check")
+	}
+	if st.Latest != "v999.0.0" {
+		t.Errorf("status latest = %q, want v999.0.0", st.Latest)
+	}
+	if st.ReleaseURL != "https://github.com/example/repo/releases/v999.0.0" {
+		t.Errorf("status release_url = %q, want fixture URL", st.ReleaseURL)
+	}
+}
+
+// TestHandleCheckWithMockServer_NoMatch verifies that a successful check that
+// produces no matching release on the configured channel clears the cached
+// update metadata and returns an empty Latest in both /check and /status.
+// Based on the OpenAPI contract: UpdateCheckResult.latest may be empty/omitted
+// when the channel has no builds, and /status must agree with /check for this
+// case so the UI cannot render a stale version after a channel switch.
+func TestHandleCheckWithMockServer_NoMatch(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	// A prerelease-only fixture while the configured channel stays at stable
+	// ensures pickLatest finds no match for the current channel.
+	releases := []map[string]interface{}{
+		{
+			"tag_name":     "v999.0.0-rc.1",
+			"prerelease":   true,
+			"draft":        false,
+			"html_url":     "https://github.com/example/repo/releases/v999.0.0-rc.1",
+			"published_at": "2026-01-01T00:00:00Z",
+			"assets":       []interface{}{},
+		},
+	}
+	body, err := json.Marshal(releases)
+	if err != nil {
+		t.Fatalf("marshal releases fixture: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet || !strings.HasSuffix(req.URL.Path, "/releases") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	r.updaterService.SetHTTPClient(&http.Client{
+		Transport: &rewriteHostTransport{base: srv.URL},
+	})
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/check", nil)
+	w := httptest.NewRecorder()
+	r.handlePostUpdateCheck(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("check status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var check map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &check); err != nil {
+		t.Fatalf("unmarshal check: %v", err)
+	}
+	if check["update_available"] != false {
+		t.Errorf("update_available = %v, want false on no-match", check["update_available"])
+	}
+	if latest, _ := check["latest"].(string); latest != "" {
+		t.Errorf("latest = %q, want empty string on no-match", latest)
+	}
+
+	statusReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	statusW := httptest.NewRecorder()
+	r.handleGetUpdateStatus(statusW, statusReq)
+	if statusW.Code != http.StatusOK {
+		t.Fatalf("status endpoint = %d, want 200; body: %s", statusW.Code, statusW.Body.String())
+	}
+	var st updater.StatusResult
+	if err := json.Unmarshal(statusW.Body.Bytes(), &st); err != nil {
+		t.Fatalf("unmarshal status: %v", err)
+	}
+	// Cached state assertions are fail-fast: a regression that leaves one
+	// field stale typically corrupts the others too, and later checks would
+	// produce misleading failure messages in that case.
+	if st.UpdateAvailable {
+		t.Fatal("status update_available = true, want false on no-match")
+	}
+	if st.Latest != "" {
+		t.Fatalf("status latest = %q, want empty string on no-match", st.Latest)
+	}
+	if st.ReleaseURL != "" {
+		t.Fatalf("status release_url = %q, want empty string on no-match", st.ReleaseURL)
 	}
 }
 

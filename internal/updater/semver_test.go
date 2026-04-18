@@ -14,6 +14,14 @@ func TestParseSemver(t *testing.T) {
 		{"v1.0.0-beta.1", semver{1, 0, 0, "beta.1"}, false},
 		{"invalid", semver{}, true},
 		{"1.2", semver{}, true},
+		// Negative components must be rejected even though strconv.Atoi
+		// accepts them. parseSemver is exported within the package, so
+		// callers bypassing the upstream semverRE gate must not produce a
+		// negative-valued semver that would then sort before legitimate
+		// zero-prefixed versions.
+		{"v-1.2.3", semver{}, true},
+		{"v1.-2.3", semver{}, true},
+		{"v1.2.-3", semver{}, true},
 	}
 
 	for _, tc := range cases {

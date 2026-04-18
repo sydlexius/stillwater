@@ -462,10 +462,10 @@ func TestRunApplyExtractError(t *testing.T) {
 	}
 }
 
-// TestRunApplyAtomicReplaceError verifies that atomicReplaceFile returns an
-// error when the target directory is read-only (CreateTemp will fail).
-// This exercises the "replacing binary" branch in runApply indirectly via
-// a direct call to atomicReplaceFile.
+// TestRunApplyAtomicReplaceError verifies that atomicReplaceFile surfaces the
+// underlying tmp-write failure when the target's parent directory is read-only.
+// atomicReplaceFile delegates to filesystem.WriteFileAtomic, which fails at the
+// tmp-file write step under those conditions.
 func TestRunApplyAtomicReplaceError(t *testing.T) {
 	// Not parallel: manipulates filesystem permissions.
 	if runtime.GOOS == "windows" {
@@ -481,7 +481,7 @@ func TestRunApplyAtomicReplaceError(t *testing.T) {
 		t.Fatalf("writing target: %v", err)
 	}
 
-	// Make the directory read-only so CreateTemp fails inside atomicReplaceFile.
+	// Make the directory read-only so the tmp-file write fails.
 	if err := os.Chmod(dir, 0o555); err != nil {
 		t.Fatalf("chmod dir: %v", err)
 	}
@@ -494,8 +494,8 @@ func TestRunApplyAtomicReplaceError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from atomicReplaceFile when dir is read-only")
 	}
-	if !strings.Contains(err.Error(), "creating temp file") {
-		t.Errorf("error should mention 'creating temp file', got %q", err.Error())
+	if !strings.Contains(err.Error(), "temp file") {
+		t.Errorf("error should mention the temp-file write step, got %q", err.Error())
 	}
 }
 

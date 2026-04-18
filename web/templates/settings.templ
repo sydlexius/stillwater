@@ -5922,8 +5922,19 @@ templ updatesTabScript() {
 					return resp.json();
 				})
 				.then(function() {
+					// Channel changes can invalidate the cached latest/release_url
+					// (new channel may have no matching release), so re-hydrate the
+					// updater UI from /status immediately. fetchAndPopulateUpdateStatus
+					// drives last-checked, latest, release-notes row, and the Apply
+					// button through the single /status code path so nothing stays
+					// stale in the DOM. The transient "saved" toast still fires so
+					// the admin gets save confirmation.
 					setUpdaterStatus('saved', '');
-					setTimeout(clearUpdaterStatus, 2000);
+					fetchAndPopulateUpdateStatus();
+					// Deferred clear uses the state-guard helper so a failure
+					// from the /status fetch above (which sets the row to
+					// "error") does not get wiped by this timeout.
+					setTimeout(function() { clearUpdaterStatusIfState('saved'); }, 2000);
 				})
 				.catch(function(err) {
 					setUpdaterStatus('error', err.message);
@@ -5938,6 +5949,11 @@ templ updatesTabScript() {
 				if (!row) return;
 
 				row.classList.remove('hidden');
+				// Record the active state so downstream timeouts can check
+				// whether they still own the DOM before clearing it (prevents
+				// a delayed "saved" cleanup from wiping a subsequent "error"
+				// toast set by a concurrent /status fetch).
+				row.dataset.updaterState = state;
 				if (errMsg) {
 					errRow.textContent = errMsg;
 					errRow.classList.remove('hidden');
@@ -5961,7 +5977,22 @@ templ updatesTabScript() {
 
 			function clearUpdaterStatus() {
 				var row = document.getElementById('updates-status-row');
-				if (row) row.classList.add('hidden');
+				if (row) {
+					row.classList.add('hidden');
+					delete row.dataset.updaterState;
+				}
+			}
+
+			// clearUpdaterStatusIfState clears the status row only when it is
+			// still displaying the expected state. Intended for deferred cleanup
+			// paths (e.g. the "saved" toast) that must not overwrite a status
+			// later set by a concurrent update (like an error from a
+			// post-save /status hydration).
+			function clearUpdaterStatusIfState(expected) {
+				var row = document.getElementById('updates-status-row');
+				if (row && row.dataset.updaterState === expected) {
+					clearUpdaterStatus();
+				}
 			}
 
 			function escHtml(s) {
