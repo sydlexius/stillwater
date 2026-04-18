@@ -93,6 +93,7 @@ func TestScriptSatisfiesLocale(t *testing.T) {
 		{"latin name with en pref", "Hirokazu Asakura", []string{"en"}, true},
 		{"latin name with multi pref including ja", "Hirokazu", []string{"ja", "fr", "en"}, true},
 		{"kanji name with multi pref including ja", "\u5c3e\u5d0e", []string{"ja", "fr", "en"}, true},
+		{"latin name with unmapped locale returns false", "Rammstein", []string{"xx"}, false},
 		{"digits only returns false on unknown", "  123  ", []string{"en"}, false},
 		{"empty prefs returns false", "Rammstein", nil, false},
 		{"empty input returns false", "", []string{"en"}, false},

@@ -189,10 +189,11 @@ func ScriptMatchesAnyLocale(script string, prefs []string) bool {
 
 // ScriptSatisfiesLocale reports whether the dominant script of s is a
 // positive match for at least one locale in prefs. Unlike
-// ScriptMatchesAnyLocale, this returns false for unclassifiable input -- the
-// caller gets a clear "we know the script and it matches" signal, which is
-// what optimizations like alias-fetch skipping need. Empty prefs also
-// returns false so callers never skip work without an explicit preference.
+// ScriptMatchesAnyLocale, this returns false for unclassifiable input and for
+// unmapped locales -- the caller gets a clear "we know the script and it
+// matches" signal, which is what optimizations like alias-fetch skipping
+// need. Empty prefs also returns false so callers never skip work without
+// an explicit preference.
 func ScriptSatisfiesLocale(s string, prefs []string) bool {
 	if len(prefs) == 0 {
 		return false
@@ -201,5 +202,29 @@ func ScriptSatisfiesLocale(s string, prefs []string) bool {
 	if script == ScriptUnknown {
 		return false
 	}
-	return ScriptMatchesAnyLocale(script, prefs)
+	for _, p := range prefs {
+		// Honor an explicit BCP-47 script subtag before falling back to the
+		// language-to-scripts map; "sr-Latn" is Latin only, regardless of
+		// what the localeScripts entry for "sr" would permit.
+		if sub := ParseBCP47Script(p); sub != "" {
+			if mapped, ok := iso15924ToScript[sub]; ok && mapped == script {
+				return true
+			}
+			continue
+		}
+		lang := strings.SplitN(strings.ToLower(strings.TrimSpace(p)), "-", 2)[0]
+		allowed, ok := localeScripts[lang]
+		if !ok {
+			// Unmapped locales give no positive evidence; skip without
+			// claiming a match. This is the strict-mode divergence from
+			// ScriptMatchesAnyLocale's permissive fallback.
+			continue
+		}
+		for _, candidate := range allowed {
+			if script == candidate {
+				return true
+			}
+		}
+	}
+	return false
 }
