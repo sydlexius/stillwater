@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -192,7 +194,7 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 func normalizeSettingsSection(section string) string {
 	switch section {
 	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs":
+		"users", "auth_providers", "maintenance", "logs", "updates":
 		return section
 	default:
 		return "general"
@@ -386,6 +388,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		MetadataLanguages:       metadataLangs,
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
+		Updates:                 r.buildUpdatesTabData(req.Context()),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
@@ -420,4 +423,43 @@ func webhookScheme(baseURL string, req *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+// buildUpdatesTabData assembles the UpdatesTabData for the Settings > Updates tab.
+// It reads the last check result from the updater service when available.
+// If the updater service is nil (e.g. in tests), it returns sensible defaults.
+func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabData {
+	data := templates.UpdatesTabData{
+		CurrentVersion: version.Version,
+		Channel:        "stable",
+	}
+
+	if r.updaterService == nil {
+		return data
+	}
+
+	data.IsDocker = r.updaterService.IsDocker()
+
+	cfg, err := r.updaterService.GetConfig(ctx)
+	if err != nil {
+		r.logger.Warn("loading updater config for settings page", "error", err)
+	} else {
+		switch string(cfg.Channel) {
+		case "stable", "prerelease":
+			data.Channel = string(cfg.Channel)
+		default:
+			data.Channel = "stable"
+		}
+		data.AutoCheck = cfg.AutoCheck
+	}
+
+	status := r.updaterService.Status()
+	if status.LastChecked != "" {
+		data.LastChecked = status.LastChecked
+	}
+	data.UpdateAvailable = status.UpdateAvailable
+	data.LatestVersion = status.Latest
+	data.ReleaseURL = status.ReleaseURL
+
+	return data
 }

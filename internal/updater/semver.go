@@ -1,0 +1,202 @@
+package updater
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// semver holds a parsed semantic version.
+type semver struct {
+	Major      int
+	Minor      int
+	Patch      int
+	PreRelease string // empty for stable, e.g. "rc.1", "beta.2"
+}
+
+// parseSemver parses a version string like "v1.2.3", "1.2.3", "v1.2.3-rc.1".
+func parseSemver(v string) (semver, error) {
+	v = strings.TrimPrefix(v, "v")
+
+	// Split off pre-release suffix. Reject a trailing "-" with nothing after
+	// it: otherwise "v1.2.3-" would parse with PreRelease == "" and sort as a
+	// stable release, which is wrong for a malformed tag. The upstream
+	// semverRE gate already rejects this, but parseSemver is callable
+	// in-package (e.g. from tests) and must not silently normalize bad input.
+	core := v
+	pre := ""
+	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		if idx == len(v)-1 {
+			return semver{}, fmt.Errorf("empty prerelease in %q", v)
+		}
+		core = v[:idx]
+		pre = v[idx+1:]
+	}
+
+	parts := strings.SplitN(core, ".", 3)
+	if len(parts) != 3 {
+		return semver{}, fmt.Errorf("invalid semver %q", v)
+	}
+
+	// SemVer 2.0.0 spec 2 restricts core components to [0-9]+ with no
+	// leading zeros (except bare "0"). isSemverNumeric gates each part
+	// before strconv.Atoi, which would otherwise happily accept signed
+	// ("-1", "+1") and leading-zero ("01") forms and silently normalize
+	// malformed tags. The semverRE gate in pickLatest already filters
+	// these, but parseSemver is callable directly within the package
+	// (e.g. from tests) and must not produce a misleading semver.
+	// Atoi can still fail on overflow for very long digit strings, so
+	// the error branch remains as a second line of defense.
+	if !isSemverNumeric(parts[0]) {
+		return semver{}, fmt.Errorf("invalid major in %q", v)
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid major in %q: %w", v, err)
+	}
+	if !isSemverNumeric(parts[1]) {
+		return semver{}, fmt.Errorf("invalid minor in %q", v)
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid minor in %q: %w", v, err)
+	}
+	if !isSemverNumeric(parts[2]) {
+		return semver{}, fmt.Errorf("invalid patch in %q", v)
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return semver{}, fmt.Errorf("invalid patch in %q: %w", v, err)
+	}
+
+	return semver{
+		Major:      major,
+		Minor:      minor,
+		Patch:      patch,
+		PreRelease: pre,
+	}, nil
+}
+
+// semverCompare returns:
+//
+//	-1 if a < b
+//	 0 if a == b
+//	+1 if a > b
+//
+// Stable releases (no pre-release) are considered greater than pre-releases
+// at the same version number per the semver spec.
+func semverCompare(a, b semver) int {
+	if a.Major != b.Major {
+		return cmpInt(a.Major, b.Major)
+	}
+	if a.Minor != b.Minor {
+		return cmpInt(a.Minor, b.Minor)
+	}
+	if a.Patch != b.Patch {
+		return cmpInt(a.Patch, b.Patch)
+	}
+
+	// Same numeric version: compare pre-release.
+	// "" (stable) > any pre-release.
+	switch {
+	case a.PreRelease == "" && b.PreRelease == "":
+		return 0
+	case a.PreRelease == "" && b.PreRelease != "":
+		return 1
+	case a.PreRelease != "" && b.PreRelease == "":
+		return -1
+	default:
+		// Both have pre-release: use semver 11.4 identifier-level comparison.
+		return comparePrerelease(a.PreRelease, b.PreRelease)
+	}
+}
+
+// comparePrerelease implements semver spec section 11.4: split on ".",
+// compare pairwise. Numeric identifiers are compared as integers. A numeric
+// identifier has lower precedence than an alphanumeric one. If all shared
+// identifiers are equal, the version with more identifiers has higher
+// precedence (rc.1.1 > rc.1).
+//
+// SemVer 2.0.0 restricts numeric identifiers to bare digits [0-9]+, so
+// "-1" and "+1" are alphanumeric (strconv.Atoi would accept both), and
+// "01" is invalid as numeric. We detect digits-only ourselves and fall
+// back to lexicographic comparison for anything else.
+func comparePrerelease(a, b string) int {
+	ap := strings.Split(a, ".")
+	bp := strings.Split(b, ".")
+	n := len(ap)
+	if len(bp) < n {
+		n = len(bp)
+	}
+	for i := 0; i < n; i++ {
+		aNum := isSemverNumeric(ap[i])
+		bNum := isSemverNumeric(bp[i])
+		switch {
+		case aNum && bNum:
+			// Both numeric: compare without integer parsing to avoid silent
+			// overflow misordering for identifiers beyond max int (Atoi
+			// clamps on overflow, which would collapse "9223372036854775807"
+			// and "9223372036854775808" to equal and misrank the release).
+			// SemVer numeric identifiers are digits-only with no leading
+			// zeros, so numeric precedence is equivalent to: shorter length
+			// sorts lower, same length compares lexicographically.
+			if len(ap[i]) != len(bp[i]) {
+				return cmpInt(len(ap[i]), len(bp[i]))
+			}
+			if ap[i] < bp[i] {
+				return -1
+			}
+			if ap[i] > bp[i] {
+				return 1
+			}
+		case aNum && !bNum:
+			// Numeric has lower precedence than alphanumeric (spec 11.4.1).
+			return -1
+		case !aNum && bNum:
+			// Alphanumeric has higher precedence than numeric.
+			return 1
+		default:
+			// Both alphanumeric: lexicographic comparison.
+			if ap[i] < bp[i] {
+				return -1
+			}
+			if ap[i] > bp[i] {
+				return 1
+			}
+		}
+	}
+	// All shared identifiers equal: more identifiers means higher precedence.
+	return cmpInt(len(ap), len(bp))
+}
+
+// isSemverNumeric reports whether s is a valid SemVer numeric identifier:
+// one or more digits, no sign, no leading zeros unless the identifier is
+// exactly "0". Used to decide whether to compare two prerelease identifiers
+// numerically or lexicographically.
+func isSemverNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	// Reject leading zeros per spec 9 (e.g. "01" is not a valid numeric
+	// identifier). Bare "0" is valid.
+	if len(s) > 1 && s[0] == '0' {
+		return false
+	}
+	return true
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}

@@ -1173,6 +1173,90 @@ components:
           type: integer
           format: int64
           description: Total bytes freed by the clear operation.
+    UpdateCheckResult:
+      type: object
+      required: [current, channel, update_available]
+      properties:
+        current:
+          type: string
+          description: Running binary version.
+          example: "v0.9.6"
+        latest:
+          type: string
+          description: >-
+            Latest version available on the configured channel. Empty when the
+            current channel has no matching release (e.g. after switching from
+            a channel with available builds to one without).
+          example: "v1.0.0"
+        channel:
+          type: string
+          enum: [stable, prerelease]
+          description: Release channel used for this check.
+        update_available:
+          type: boolean
+          description: True when latest is strictly newer than current.
+        release_url:
+          type: string
+          description: >-
+            URL to the GitHub release page for the latest version. Empty/omitted
+            when the check found no matching release on the current channel.
+        published_at:
+          type: string
+          format: date-time
+          description: >-
+            Publication timestamp of the latest release (RFC 3339). Empty/omitted
+            when the check found no matching release on the current channel.
+    UpdateStatus:
+      type: object
+      required: [state, progress, is_docker, update_available]
+      properties:
+        state:
+          type: string
+          enum: [idle, checking, downloading, applying, error]
+          description: Current phase of the update lifecycle.
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Approximate completion percentage (0-100).
+        error:
+          type: string
+          description: Error message when state is "error". Omitted otherwise.
+        last_checked:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of the most recent check. Absent if never checked.
+        is_docker:
+          type: boolean
+          description: True when running inside a Docker container. Apply is unsupported in this case.
+        update_available:
+          type: boolean
+          description: True when the most recent check found a newer version on the configured channel.
+        latest:
+          type: string
+          description: >-
+            Tag name of the latest matching release. Empty when no check has
+            succeeded yet OR when the most recent successful check found no
+            matching release on the current channel (e.g. after a channel switch).
+        release_url:
+          type: string
+          description: >-
+            URL to the GitHub release page for the latest version. Absent when no
+            check has succeeded yet OR when the most recent successful check
+            found no matching release on the current channel.
+    UpdateConfig:
+      type: object
+      required: [channel, auto_check]
+      properties:
+        channel:
+          type: string
+          enum: [stable, prerelease]
+          description: >-
+            Release channel to track. "stable" follows non-prerelease semver tags;
+            "prerelease" also includes release candidates and beta builds.
+        auto_check:
+          type: boolean
+          description: When true, the updater periodically checks for new releases in the background.
 
 paths:
   /health:
@@ -7870,6 +7954,218 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CacheClearResult"
+
+  # --- Self-update ---
+
+  /updates/check:
+    post:
+      tags: [Updates]
+      summary: Check for updates
+      description: |
+        Queries the GitHub Releases API for the latest version on the configured
+        channel (stable or prerelease). Returns the current running version, the
+        latest available version, and whether an update is available.
+
+        Uses POST rather than GET because the call mutates server-side updater
+        state (`last_checked` timestamp, cached `latest` / `release_url` /
+        `update_available` fields) and is therefore CSRF-protected.
+
+        In Docker environments, `update_available` may still be true but
+        `POST /updates/apply` will return 422.
+      operationId: checkForUpdates
+      responses:
+        "200":
+          description: Update check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateCheckResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: GitHub API unreachable or returned an error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /updates/status:
+    get:
+      tags: [Updates]
+      summary: Get update status
+      description: |
+        Returns the current state of the update lifecycle:
+        `idle`, `checking`, `downloading`, `applying`, or `error`.
+        Poll this endpoint after `POST /updates/apply` to track progress.
+      operationId: getUpdateStatus
+      responses:
+        "200":
+          description: Current update state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /updates/apply:
+    post:
+      tags: [Updates]
+      summary: Apply update
+      description: |
+        Starts an asynchronous binary self-update. Downloads the latest release
+        asset for the current platform, verifies its SHA256 checksum, and
+        atomically replaces the running binary.
+
+        Returns 202 Accepted immediately. Poll `GET /updates/status` to track
+        progress.
+
+        Returns 422 when running inside a Docker container; re-pull the image
+        instead. Returns 409 when an update is already in progress.
+
+        **Note:** After a successful apply the process must be restarted manually
+        (or via the host process manager) to load the new binary. A future
+        release will add an automatic restart hook.
+      operationId: applyUpdate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "202":
+          description: Update started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Update already in progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Binary update not supported in Docker environments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Unexpected error starting the update.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /updates/config:
+    get:
+      tags: [Updates]
+      summary: Get update configuration
+      description: Returns the current update channel and auto-check preference.
+      operationId: getUpdateConfig
+      responses:
+        "200":
+          description: Current updater config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateConfig"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while reading updater config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Updates]
+      summary: Set update configuration
+      description: |
+        Persists the update channel (`stable` or `prerelease`) and the
+        auto-check toggle. Config is stored in the settings key-value table.
+      operationId: setUpdateConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConfig"
+      responses:
+        "200":
+          description: Updated config (echoed back from DB).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateConfig"
+        "400":
+          description: Invalid request body or invalid channel value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error while saving or reading updater config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # --- Artist field editing ---
 

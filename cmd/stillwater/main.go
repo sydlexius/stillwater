@@ -51,6 +51,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
+	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
@@ -337,6 +338,9 @@ func run() error {
 		WithRuleService(ruleService).
 		WithScraperService(scraperService)
 
+	// Initialize self-update service
+	updaterService := updater.NewService(db, logger)
+
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
@@ -455,6 +459,7 @@ func run() error {
 		LogManager:         logManager,
 		MaintenanceService: maintenanceService,
 		SettingsIOService:  settingsIOService,
+		UpdaterService:     updaterService,
 		ProbeCache:         probeCache,
 		ExpectedWrites:     expectedWrites,
 		EventBus:           eventBus,

@@ -9,3 +9,8 @@ coverage:
 ignore:
   # Templ codegen output -- byte-for-byte compiler output, not hand-written.
   - "**/*_templ.go"
+  # Application entrypoint wiring: run() bootstraps all services and starts the
+  # HTTP server. It is not unit-testable without a full integration test harness.
+  # All extracted helper functions (resetPasswordDB, getDBIntSetting, etc.) are
+  # tested separately in cmd/stillwater/main_test.go.
+  - "cmd/stillwater/main.go"
