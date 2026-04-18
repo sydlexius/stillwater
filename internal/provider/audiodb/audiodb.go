@@ -271,9 +271,25 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string
 
 func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata {
 	// Build a language-to-biography map for preference-based selection.
-	// AudioDB provides strBiography (localized default) and strBiographyEN (English).
+	// AudioDB provides per-language biography fields for a fixed set of languages.
+	// strBiography is the API's own default/locale-specific value; it is used as a
+	// final fallback when no preference-ordered field matches.
 	bioCandidates := map[string]string{
 		"en": art.BiographyEN,
+		"de": art.BiographyDE,
+		"fr": art.BiographyFR,
+		"ja": art.BiographyJA,
+		"zh": art.BiographyCN,
+		"it": art.BiographyIT,
+		"pt": art.BiographyPT,
+		"ru": art.BiographyRU,
+		"hu": art.BiographyHU,
+		"he": art.BiographyIL,
+		"no": art.BiographyNO,
+		"sv": art.BiographySE,
+		"pl": art.BiographyPL,
+		"nl": art.BiographyNL,
+		"es": art.BiographyES,
 	}
 	fallbackBio := firstNonEmpty(art.Biography, art.BiographyEN)
 

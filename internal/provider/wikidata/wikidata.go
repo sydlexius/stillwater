@@ -63,6 +63,9 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 }
 
 // GetArtist fetches metadata for an artist from Wikidata by their MusicBrainz ID.
+// When the caller has set metadata language preferences in the context, the SPARQL
+// query uses those preferences in wikibase:label so that entity labels (artist name,
+// country name, genre name) are returned in the user's preferred language.
 func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
 	// Validate MBID format before interpolating into SPARQL query to prevent injection.
 	if !provider.IsUUID(mbid) {
@@ -76,7 +79,8 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		}
 	}
 
-	query := buildArtistQuery(mbid)
+	langPrefs := provider.MetadataLanguages(ctx)
+	query := buildArtistQuery(mbid, langPrefs)
 	bindings, err := a.executeSPARQL(ctx, query)
 	if err != nil {
 		return nil, err
@@ -251,7 +255,14 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	return sparqlResp.Results.Bindings, nil
 }
 
-func buildArtistQuery(mbid string) string {
+// buildArtistQuery constructs the SPARQL query for an artist identified by MBID.
+// langPrefs is the user's ordered metadata language preference list (BCP 47 tags).
+// The wikibase:label SERVICE is told to try each language in the preference order,
+// falling back through parent subtags and ultimately to English when no match exists.
+// For example, preferences ["ja", "en-GB"] become "ja,en,en" (deduplicated below),
+// which the Wikidata label service resolves by trying "ja" first then "en".
+func buildArtistQuery(mbid string, langPrefs []string) string {
+	lang := wikidataLangParam(langPrefs)
 	return fmt.Sprintf(`
 SELECT ?item ?itemLabel ?inception ?dissolved ?countryLabel ?genreLabel WHERE {
   ?item wdt:P434 "%s" .
@@ -259,8 +270,47 @@ SELECT ?item ?itemLabel ?inception ?dissolved ?countryLabel ?genreLabel WHERE {
   OPTIONAL { ?item wdt:P576 ?dissolved . }
   OPTIONAL { ?item wdt:P495 ?country . }
   OPTIONAL { ?item wdt:P136 ?genre . }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
-}`, mbid)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "%s" . }
+}`, mbid, lang)
+}
+
+// wikidataLangParam builds the comma-separated language string for the
+// wikibase:label SERVICE. Each BCP 47 preference is expanded to include its
+// parent subtag (e.g. "en-GB" adds "en"), and "en" is always appended as the
+// final fallback. Duplicates are removed while preserving order.
+func wikidataLangParam(prefs []string) string {
+	const enFallback = "en"
+	seen := make(map[string]struct{})
+	var out []string
+
+	addLang := func(lang string) {
+		lang = strings.ToLower(strings.TrimSpace(lang))
+		if lang == "" {
+			return
+		}
+		if _, ok := seen[lang]; ok {
+			return
+		}
+		seen[lang] = struct{}{}
+		out = append(out, lang)
+	}
+
+	for _, pref := range prefs {
+		pref = strings.ToLower(strings.TrimSpace(pref))
+		if pref == "" {
+			continue
+		}
+		addLang(pref)
+		// Also add the base language subtag so that "en-GB" falls back to "en"
+		// before reaching the hardcoded "en" at the end.
+		if idx := strings.IndexByte(pref, '-'); idx > 0 {
+			addLang(pref[:idx])
+		}
+	}
+	// "en" is always added last as a final safety net.
+	addLang(enFallback)
+
+	return strings.Join(out, ",")
 }
 
 func mapArtist(mbid string, bindings []SPARQLBinding) *provider.ArtistMetadata {

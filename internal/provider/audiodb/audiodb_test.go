@@ -275,6 +275,207 @@ func TestMapArtist_BiographyLocalization(t *testing.T) {
 	}
 }
 
+func TestMapArtist_BiographyExtendedLanguages(t *testing.T) {
+	// Verify that biography fields beyond EN are selected when the user
+	// prefers those languages. AudioDB provides per-language biography
+	// fields for a set of fixed languages.
+	tests := []struct {
+		name      string
+		art       AudioDBArtist
+		langPrefs []string
+		wantBio   string
+	}{
+		{
+			name: "German preference selects BiographyDE",
+			art: AudioDBArtist{
+				IDArtist:    "1",
+				Artist:      "A",
+				BiographyDE: "Deutsche Biographie.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"de"},
+			wantBio:   "Deutsche Biographie.",
+		},
+		{
+			name: "French preference selects BiographyFR",
+			art: AudioDBArtist{
+				IDArtist:    "2",
+				Artist:      "B",
+				BiographyFR: "Biographie en francais.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"fr"},
+			wantBio:   "Biographie en francais.",
+		},
+		{
+			name: "Japanese preference selects BiographyJA",
+			art: AudioDBArtist{
+				IDArtist:    "3",
+				Artist:      "C",
+				BiographyJA: "日本語バイオグラフィー。",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"ja"},
+			wantBio:   "日本語バイオグラフィー。",
+		},
+		{
+			name: "Chinese preference selects BiographyCN",
+			art: AudioDBArtist{
+				IDArtist:    "4",
+				Artist:      "D",
+				BiographyCN: "中文简介。",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"zh"},
+			wantBio:   "中文简介。",
+		},
+		{
+			name: "Spanish preference selects BiographyES",
+			art: AudioDBArtist{
+				IDArtist:    "5",
+				Artist:      "E",
+				BiographyES: "Biografia en espanol.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"es"},
+			wantBio:   "Biografia en espanol.",
+		},
+		{
+			name: "Russian preference selects BiographyRU",
+			art: AudioDBArtist{
+				IDArtist:    "6",
+				Artist:      "F",
+				BiographyRU: "Биография на русском.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"ru"},
+			wantBio:   "Биография на русском.",
+		},
+		{
+			name: "Italian preference selects BiographyIT",
+			art: AudioDBArtist{
+				IDArtist:    "7",
+				Artist:      "G",
+				BiographyIT: "Biografia in italiano.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"it"},
+			wantBio:   "Biografia in italiano.",
+		},
+		{
+			name: "Portuguese preference selects BiographyPT",
+			art: AudioDBArtist{
+				IDArtist:    "8",
+				Artist:      "H",
+				BiographyPT: "Biografia em portuguese.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"pt"},
+			wantBio:   "Biografia em portuguese.",
+		},
+		{
+			name: "First preference wins when both available",
+			art: AudioDBArtist{
+				IDArtist:    "9",
+				Artist:      "I",
+				BiographyDE: "Deutsche Biographie.",
+				BiographyFR: "Biographie en francais.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"fr", "de", "en"},
+			wantBio:   "Biographie en francais.",
+		},
+		{
+			name: "Falls back to second preference when first empty",
+			art: AudioDBArtist{
+				IDArtist:    "10",
+				Artist:      "J",
+				BiographyDE: "",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"de", "en"},
+			wantBio:   "English biography.",
+		},
+		{
+			name: "Regional tag zh-Hant matches zh (BiographyCN)",
+			art: AudioDBArtist{
+				IDArtist:    "11",
+				Artist:      "K",
+				BiographyCN: "中文简介。",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"zh-Hant"},
+			wantBio:   "中文简介。",
+		},
+		{
+			name: "pt-BR matches pt (BiographyPT)",
+			art: AudioDBArtist{
+				IDArtist:    "12",
+				Artist:      "L",
+				BiographyPT: "Biografia em portuguese.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"pt-BR"},
+			wantBio:   "Biografia em portuguese.",
+		},
+		{
+			name: "Norwegian preference selects BiographyNO",
+			art: AudioDBArtist{
+				IDArtist:    "13",
+				Artist:      "M",
+				BiographyNO: "Norsk biografi.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"no"},
+			wantBio:   "Norsk biografi.",
+		},
+		{
+			name: "Swedish preference selects BiographySE",
+			art: AudioDBArtist{
+				IDArtist:    "14",
+				Artist:      "N",
+				BiographySE: "Svensk biografi.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"sv"},
+			wantBio:   "Svensk biografi.",
+		},
+		{
+			name: "Dutch preference selects BiographyNL",
+			art: AudioDBArtist{
+				IDArtist:    "15",
+				Artist:      "O",
+				BiographyNL: "Nederlandse biografie.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"nl"},
+			wantBio:   "Nederlandse biografie.",
+		},
+		{
+			name: "Polish preference selects BiographyPL",
+			art: AudioDBArtist{
+				IDArtist:    "16",
+				Artist:      "P",
+				BiographyPL: "Polska biografia.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"pl"},
+			wantBio:   "Polska biografia.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			art := tt.art
+			ctx := provider.WithMetadataLanguages(context.Background(), tt.langPrefs)
+			meta := mapArtist(ctx, &art)
+			if meta.Biography != tt.wantBio {
+				t.Errorf("Biography = %q, want %q", meta.Biography, tt.wantBio)
+			}
+		})
+	}
+}
+
 func TestGetArtistNotFound(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)
