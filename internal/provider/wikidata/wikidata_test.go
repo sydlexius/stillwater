@@ -443,12 +443,15 @@ func TestBuildArtistQuery_LanguagePrefsIncluded(t *testing.T) {
 
 func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
 	// Verify that GetArtist passes language preferences into the SPARQL query
-	// by capturing the raw query string the server receives.
+	// by capturing the raw query string the server receives. The captured
+	// string is sent through a buffered channel so the read after GetArtist
+	// is synchronized with the write inside the httptest handler goroutine
+	// (race-detector clean).
 	artistData := loadFixture(t, "artist_radiohead.json")
-	var capturedQuery string
+	queryCh := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/sparql-results+json")
-		capturedQuery = r.URL.Query().Get("query")
+		queryCh <- r.URL.Query().Get("query")
 		_, _ = w.Write(artistData)
 	}))
 	defer srv.Close()
@@ -462,6 +465,8 @@ func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
+
+	capturedQuery := <-queryCh
 
 	// The captured SPARQL query must include the user's language preferences.
 	if !strings.Contains(capturedQuery, "ja") {

@@ -37,11 +37,11 @@ func (e *Engine) makeNameLanguagePrefChecker() Checker {
 			return nil
 		}
 
-		nameScript := dominantScript(a.Name)
-		nameOK := nameScript == scriptUnknown || scriptMatchesAnyLocale(nameScript, langPrefs)
+		nameScript := provider.DominantScript(a.Name)
+		nameOK := nameScript == provider.ScriptUnknown || provider.ScriptMatchesAnyLocale(nameScript, langPrefs)
 
-		sortScript := dominantScript(a.SortName)
-		sortOK := sortScript == scriptUnknown || scriptMatchesAnyLocale(sortScript, langPrefs)
+		sortScript := provider.DominantScript(a.SortName)
+		sortOK := sortScript == provider.ScriptUnknown || provider.ScriptMatchesAnyLocale(sortScript, langPrefs)
 
 		if nameOK && sortOK {
 			return nil

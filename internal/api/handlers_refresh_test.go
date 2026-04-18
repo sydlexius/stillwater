@@ -550,6 +550,106 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 	}
 }
 
+// TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData is the end-to-end
+// guard for the #952 graceful-fallback contract on the refresh path. An artist
+// with user-curated genres/styles/moods must retain those values after a
+// refresh where the provider was queried for those fields but returned no
+// tag data. Without this test, a future refactor that drops the
+// PopulatedFields field from the MergeOptions literal at handlers_refresh.go
+// would silently revert the entire feature.
+func TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	// Seed an artist with pre-existing tag data. addTestArtist gives us genres
+	// by default; we layer styles and moods on top so the preserve contract
+	// exercises all three clearing-semantics list fields.
+	a := addTestArtist(t, artistSvc, "Tag Preserve Artist")
+	a.Styles = []string{"shoegaze"}
+	a.Moods = []string{"dreamy"}
+	a.Biography = "Existing biography written by the user."
+	if err := artistSvc.Update(context.Background(), a); err != nil {
+		t.Fatalf("seeding tags: %v", err)
+	}
+
+	// Stub: provider was queried for all four clearing-semantics fields, but
+	// returned no data for any of them. AttemptedFields contains them;
+	// PopulatedFields does not.
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata:        &provider.ArtistMetadata{},
+			AttemptedFields: []string{"biography", "genres", "styles", "moods"},
+			// PopulatedFields intentionally empty -- the merge layer must
+			// preserve the artist's existing values.
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	if _, err := r.executeRefreshCtx(context.Background(), a); err != nil {
+		t.Fatalf("executeRefreshCtx returned error: %v", err)
+	}
+
+	// Re-fetch from the repo to ensure the preserved values are the persisted
+	// values, not just the in-memory artist struct.
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+
+	if reloaded.Biography != "Existing biography written by the user." {
+		t.Errorf("biography wiped: got %q", reloaded.Biography)
+	}
+	if len(reloaded.Genres) != 1 || reloaded.Genres[0] != "Rock" {
+		t.Errorf("genres wiped: got %v, want [Rock]", reloaded.Genres)
+	}
+	if len(reloaded.Styles) != 1 || reloaded.Styles[0] != "shoegaze" {
+		t.Errorf("styles wiped: got %v, want [shoegaze]", reloaded.Styles)
+	}
+	if len(reloaded.Moods) != 1 || reloaded.Moods[0] != "dreamy" {
+		t.Errorf("moods wiped: got %v, want [dreamy]", reloaded.Moods)
+	}
+}
+
+// TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData is the positive
+// counterpart to TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData.
+// When PopulatedFields does contain a field, the merge is authorized to
+// overwrite the artist's value with the provider's value.
+func TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	a := addTestArtist(t, artistSvc, "Tag Overwrite Artist")
+
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Genres: []string{"alternative"},
+			},
+			AttemptedFields: []string{"genres"},
+			PopulatedFields: []string{"genres"},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	if _, err := r.executeRefreshCtx(context.Background(), a); err != nil {
+		t.Fatalf("executeRefreshCtx returned error: %v", err)
+	}
+
+	reloaded, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+
+	// Merge should replace the seeded "Rock" with the provider's "alternative".
+	if len(reloaded.Genres) != 1 || reloaded.Genres[0] != "alternative" {
+		t.Errorf("genres not overwritten: got %v, want [alternative]", reloaded.Genres)
+	}
+}
+
 // TestApplyProviderName_RespectsLocks verifies that a user pinning the Name
 // or SortName field via the field-lock UI prevents applyProviderName from
 // overwriting it with provider metadata. This path runs separately from

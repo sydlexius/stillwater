@@ -469,6 +469,28 @@ func TestMapArtist_BiographyExtendedLanguages(t *testing.T) {
 			langPrefs: []string{"pl"},
 			wantBio:   "Polska biografia.",
 		},
+		{
+			name: "Hungarian preference selects BiographyHU",
+			art: AudioDBArtist{
+				IDArtist:    "17",
+				Artist:      "Q",
+				BiographyHU: "Magyar \u00e9letrajz.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"hu"},
+			wantBio:   "Magyar \u00e9letrajz.",
+		},
+		{
+			name: "Hebrew preference selects BiographyIL via he",
+			art: AudioDBArtist{
+				IDArtist:    "18",
+				Artist:      "R",
+				BiographyIL: "\u05d1\u05d9\u05d5\u05d2\u05e8\u05e4\u05d9\u05d4 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea.",
+				BiographyEN: "English biography.",
+			},
+			langPrefs: []string{"he"},
+			wantBio:   "\u05d1\u05d9\u05d5\u05d2\u05e8\u05e4\u05d9\u05d4 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea.",
+		},
 	}
 
 	for _, tt := range tests {

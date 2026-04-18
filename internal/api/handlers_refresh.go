@@ -266,6 +266,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 	if u := artist.FetchResultToUpdate(result); u != nil {
 		artist.ApplyMetadata(a, u, artist.OverwriteAttempted, artist.MergeOptions{
 			AttemptedFields:   result.AttemptedFields,
+			PopulatedFields:   result.PopulatedFields,
 			FilterDatesByType: true,
 			Sources:           result.Sources,
 			LockedFields:      a.LockedFields,

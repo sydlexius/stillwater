@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1290,6 +1291,297 @@ func TestLocalizeMembers_RateLimiterIsInvoked(t *testing.T) {
 	// some slack for CI. If the limiter were bypassed this would be ms-scale.
 	if elapsed < 800*time.Millisecond {
 		t.Errorf("expected rate-limited sequential fetch (>=800ms), got %v", elapsed)
+	}
+}
+
+// TestSelectMemberAlias_LegalNameFiltered verifies that aliases tagged
+// Type="Legal name" are excluded at every tier. MusicBrainz uses this type
+// to mark birth/legal names; surfacing them without consent is a privacy
+// concern. See GAMO (3e959bbb) for the real-world case: the JA primary alias
+// is the legal name (蒲生俊貴) and the JA non-primary alias is the stage name
+// (ガモー). Selection must prefer the stage name even though it's non-primary.
+func TestSelectMemberAlias_LegalNameFiltered(t *testing.T) {
+	gamoAliases := []MBAlias{
+		{Name: "\u30ac\u30e2\u30fc", Locale: "ja", Primary: false, Type: "Artist name"},
+		{Name: "\u84b2\u751f\u4fca\u8cb4", Locale: "ja", Primary: true, Type: "Legal name"},
+	}
+	got, ok := selectMemberAlias(gamoAliases, []string{"ja", "fr", "en"})
+	if !ok {
+		t.Fatal("expected an alias to be selected")
+	}
+	if got.Name != "\u30ac\u30e2\u30fc" {
+		t.Errorf("got %q, want JA stage name (\u30ac\u30e2\u30fc) -- legal name should be filtered", got.Name)
+	}
+}
+
+// TestSelectMemberAlias_NonPrimaryFallback verifies tier 2: when no primary
+// alias matches the language preferences, a non-primary locale-matched alias
+// is used. See Terrassy (f5caaf2b): only JA alias is non-primary "Legal name"
+// (filtered out), so this test uses a synthesized non-primary "Artist name"
+// to verify the tier-2 path itself.
+func TestSelectMemberAlias_NonPrimaryFallback(t *testing.T) {
+	aliases := []MBAlias{
+		// EN primary -- would win in old code.
+		{Name: "Stage Name", Locale: "en", Primary: true, Type: "Artist name"},
+		// JA non-primary -- preferred under new tier-2 logic.
+		{Name: "\u30b9\u30c6\u30fc\u30b8", Locale: "ja", Primary: false, Type: "Artist name"},
+	}
+	got, ok := selectMemberAlias(aliases, []string{"ja", "en"})
+	if !ok {
+		t.Fatal("expected an alias to be selected")
+	}
+	if got.Name != "\u30b9\u30c6\u30fc\u30b8" {
+		t.Errorf("got %q, want JA non-primary alias -- tier 2 should pick locale match over primary EN", got.Name)
+	}
+}
+
+// TestSelectMemberAlias_PrimaryStillWinsWhenLocaleMatches verifies that when
+// a primary alias matches the language preferences, tier 2 is not consulted.
+// Tier 2 is strictly a fallback for the no-primary-match case.
+func TestSelectMemberAlias_PrimaryStillWinsWhenLocaleMatches(t *testing.T) {
+	aliases := []MBAlias{
+		{Name: "JA Primary", Locale: "ja", Primary: true, Type: "Artist name"},
+		{Name: "JA Non-Primary", Locale: "ja", Primary: false, Type: "Artist name"},
+	}
+	got, ok := selectMemberAlias(aliases, []string{"ja"})
+	if !ok {
+		t.Fatal("expected an alias to be selected")
+	}
+	if got.Name != "JA Primary" {
+		t.Errorf("got %q, want JA Primary -- primary tier must win when it matches", got.Name)
+	}
+}
+
+// TestSelectMemberAlias_NoMatch verifies that no alias is selected when
+// nothing matches the preferences (after filtering out legal names).
+func TestSelectMemberAlias_NoMatch(t *testing.T) {
+	aliases := []MBAlias{
+		{Name: "Birth Name", Locale: "ja", Primary: true, Type: "Legal name"},
+		{Name: "EN Only", Locale: "en", Primary: true, Type: "Artist name"},
+	}
+	_, ok := selectMemberAlias(aliases, []string{"ja", "fr"})
+	if ok {
+		t.Error("expected no selection: legal name filtered, EN doesn't match [ja, fr]")
+	}
+}
+
+// TestSelectMemberAlias_TiesPreserveFirstSeen verifies the deterministic
+// tie-break for aliases at the same composite score: the first one
+// encountered in the input slice wins. MB sometimes returns multiple
+// JA-locale primary "Artist name" aliases for a single member; pinning
+// "first wins" prevents a future refactor from silently flipping the
+// behavior with a `<=` comparator change.
+func TestSelectMemberAlias_TiesPreserveFirstSeen(t *testing.T) {
+	aliases := []MBAlias{
+		{Name: "First JA Primary", Locale: "ja", Primary: true, Type: "Artist name"},
+		{Name: "Second JA Primary", Locale: "ja", Primary: true, Type: "Artist name"},
+	}
+	got, ok := selectMemberAlias(aliases, []string{"ja"})
+	if !ok {
+		t.Fatal("expected an alias to be selected")
+	}
+	if got.Name != "First JA Primary" {
+		t.Errorf("got %q, want First JA Primary -- ties must resolve to first-seen", got.Name)
+	}
+}
+
+// TestSelectMemberAlias_EmptyTypeIsEligible verifies that aliases with an
+// empty/missing Type field are eligible for selection. MusicBrainz often
+// emits aliases with no type (especially for older entries); the Legal name
+// filter must use case-insensitive equality (not substring) so an empty
+// Type doesn't accidentally match.
+func TestSelectMemberAlias_EmptyTypeIsEligible(t *testing.T) {
+	aliases := []MBAlias{
+		{Name: "Untyped JA Alias", Locale: "ja", Primary: true, Type: ""},
+	}
+	got, ok := selectMemberAlias(aliases, []string{"ja"})
+	if !ok {
+		t.Fatal("expected the untyped alias to be selected")
+	}
+	if got.Name != "Untyped JA Alias" {
+		t.Errorf("got %q, want the untyped alias", got.Name)
+	}
+}
+
+// TestSelectMemberAlias_TopPreferenceRanking verifies that within a single
+// tier, language preference rank determines the winner.
+func TestSelectMemberAlias_TopPreferenceRanking(t *testing.T) {
+	aliases := []MBAlias{
+		{Name: "EN Name", Locale: "en", Primary: true, Type: "Artist name"},
+		{Name: "FR Name", Locale: "fr", Primary: true, Type: "Artist name"},
+		{Name: "JA Name", Locale: "ja", Primary: true, Type: "Artist name"},
+	}
+	got, ok := selectMemberAlias(aliases, []string{"ja", "fr", "en"})
+	if !ok {
+		t.Fatal("expected an alias to be selected")
+	}
+	if got.Name != "JA Name" {
+		t.Errorf("got %q, want JA Name (top pref)", got.Name)
+	}
+}
+
+// TestLocalizeMembers_GAMOScenario reproduces the GAMO (3e959bbb) case from
+// the UAT log. Canonical name is Latin "GAMO"; MB has both a JA primary
+// "Legal name" (蒲生俊貴) and a JA non-primary "Artist name" (ガモー). The fix
+// must promote to the stage name, not the legal name, even though primary
+// would otherwise win.
+func TestLocalizeMembers_GAMOScenario(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"id": "3e959bbb-5fe3-4599-9b78-d8e75ec8e10c",
+			"name": "GAMO",
+			"sort-name": "GAMO",
+			"aliases": [
+				{"name": "\u30ac\u30e2\u30fc", "locale": "ja", "primary": false, "type": "Artist name"},
+				{"name": "\u84b2\u751f\u4fca\u8cb4", "locale": "ja", "primary": true, "type": "Legal name"}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr", "en"})
+	members := []provider.MemberInfo{
+		{MBID: "3e959bbb-5fe3-4599-9b78-d8e75ec8e10c", Name: "GAMO"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja", "fr", "en"}, newMemberAliasCache())
+
+	want := "\u30ac\u30e2\u30fc"
+	if members[0].Name != want {
+		t.Errorf("got %q, want %q (JA stage name, not the JA legal name)", members[0].Name, want)
+	}
+}
+
+// TestLocalizeMembers_TerrassyScenario reproduces the Terrassy (f5caaf2b)
+// case: the only JA alias is a non-primary "Legal name". The Legal name
+// filter takes precedence over the non-primary fallback, so the canonical
+// Latin name must be preserved (no false promotion to a legal name).
+func TestLocalizeMembers_TerrassyScenario(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"id": "f5caaf2b-b162-456d-a617-bf33260ee5ea",
+			"name": "Terrassy",
+			"sort-name": "Terrassy",
+			"aliases": [
+				{"name": "\u5bfa\u5e2b\u5fb9", "locale": "ja", "primary": false, "type": "Legal name"}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr", "en"})
+	members := []provider.MemberInfo{
+		{MBID: "f5caaf2b-b162-456d-a617-bf33260ee5ea", Name: "Terrassy"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja", "fr", "en"}, newMemberAliasCache())
+
+	if members[0].Name != "Terrassy" {
+		t.Errorf("got %q, want %q -- the only JA alias is a Legal name, must not promote", members[0].Name, "Terrassy")
+	}
+}
+
+// TestLocalizeMembers_AsakuraScenario reproduces the 朝倉弘一 (70e53eda) case.
+// Canonical is kanji; only alias is EN primary "Hirokazu Asakura". The
+// script-skip optimization preserves the kanji canonical so we never even
+// reach the alias selection -- which would otherwise have erroneously
+// promoted to the EN name (the bug observed in the original UAT log).
+func TestLocalizeMembers_AsakuraScenario(t *testing.T) {
+	// Server should NOT be hit -- script-skip must fire before any fetch.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected alias fetch for kanji canonical: %s", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr", "en"})
+	members := []provider.MemberInfo{
+		{MBID: "70e53eda-175e-4005-80dc-e86a0d8132b9", Name: "\u671d\u5009\u5f18\u4e00"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja", "fr", "en"}, newMemberAliasCache())
+
+	if members[0].Name != "\u671d\u5009\u5f18\u4e00" {
+		t.Errorf("kanji canonical should be preserved, got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_SkipsFetchWhenCanonicalInPreferredScript verifies the
+// script-skip optimization: when a member's canonical name is already in a
+// script that matches the user's top language preference, no alias fetch is
+// performed. This is the fix for the 1 req/sec rate-limit penalty on
+// Japanese bands where most members already have Japanese-script canonical
+// names.
+func TestLocalizeMembers_SkipsFetchWhenCanonicalInPreferredScript(t *testing.T) {
+	// The test server must never be hit -- if it is, the optimization broke.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected alias fetch for member whose canonical name matches top pref script: %s", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr", "en"})
+
+	members := []provider.MemberInfo{
+		// Kanji -- dominant script Han, matches ja -> skip.
+		{MBID: "mbid-kanji", Name: "\u671d\u5009\u5f18\u4e00"},
+		// Hiragana -- matches ja -> skip.
+		{MBID: "mbid-hiragana", Name: "\u3072\u3089\u304c\u306a"},
+		// Katakana -- matches ja -> skip.
+		{MBID: "mbid-katakana", Name: "\u30c8\u30e0\u30fb\u30e8\u30fc\u30af"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja", "fr", "en"}, newMemberAliasCache())
+
+	// Names should be untouched because we skipped the fetch.
+	wants := []string{"\u671d\u5009\u5f18\u4e00", "\u3072\u3089\u304c\u306a", "\u30c8\u30e0\u30fb\u30e8\u30fc\u30af"}
+	for i, m := range members {
+		if m.Name != wants[i] {
+			t.Errorf("member[%d] name = %q, want %q (should be preserved)", i, m.Name, wants[i])
+		}
+	}
+}
+
+// TestLocalizeMembers_DoesNotSkipWhenCanonicalMatchesOnlySecondaryPref
+// verifies that the optimization keys on the TOP preference only. A Latin
+// name under prefs [ja, fr, en] must still trigger a fetch: Latin matches en
+// and fr, but the user preferred ja, and a JA alias might exist.
+//
+// Hit counting uses sync/atomic so the test goroutine can safely read the
+// counter after localizeMembers returns even when the server handler runs on
+// a different goroutine.
+func TestLocalizeMembers_DoesNotSkipWhenCanonicalMatchesOnlySecondaryPref(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_thom_yorke.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr", "en"})
+
+	// "Thom Yorke" is Latin. Under prefs [ja, fr, en], top pref is ja and
+	// Latin does not match ja -- the fetch must proceed so a Japanese alias
+	// can be discovered.
+	members := []provider.MemberInfo{
+		{MBID: "8bfac288-ccc5-448d-9573-c33ea2aa5c30", Name: "Thom Yorke"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja", "fr", "en"}, newMemberAliasCache())
+
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 fetch (top pref ja doesn't match Latin canonical), got %d", got)
+	}
+	if members[0].Name != "\u30c8\u30e0\u30fb\u30e8\u30fc\u30af" {
+		t.Errorf("expected ja promotion after fetch, got %q", members[0].Name)
 	}
 }
 
