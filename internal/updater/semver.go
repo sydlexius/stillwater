@@ -133,12 +133,21 @@ func comparePrerelease(a, b string) int {
 		bNum := isSemverNumeric(bp[i])
 		switch {
 		case aNum && bNum:
-			// Both numeric: compare as integers. Atoi cannot fail here
-			// because isSemverNumeric already verified digits-only.
-			ai, _ := strconv.Atoi(ap[i])
-			bi, _ := strconv.Atoi(bp[i])
-			if ai != bi {
-				return cmpInt(ai, bi)
+			// Both numeric: compare without integer parsing to avoid silent
+			// overflow misordering for identifiers beyond max int (Atoi
+			// clamps on overflow, which would collapse "9223372036854775807"
+			// and "9223372036854775808" to equal and misrank the release).
+			// SemVer numeric identifiers are digits-only with no leading
+			// zeros, so numeric precedence is equivalent to: shorter length
+			// sorts lower, same length compares lexicographically.
+			if len(ap[i]) != len(bp[i]) {
+				return cmpInt(len(ap[i]), len(bp[i]))
+			}
+			if ap[i] < bp[i] {
+				return -1
+			}
+			if ap[i] > bp[i] {
+				return 1
 			}
 		case aNum && !bNum:
 			// Numeric has lower precedence than alphanumeric (spec 11.4.1).
