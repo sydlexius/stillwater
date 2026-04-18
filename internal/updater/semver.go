@@ -38,31 +38,35 @@ func parseSemver(v string) (semver, error) {
 		return semver{}, fmt.Errorf("invalid semver %q", v)
 	}
 
-	// strconv.Atoi accepts negative integers, so without a range check
-	// "v-1.2.3" would parse to {Major: -1, ...}. The upstream semverRE gate
-	// in pickLatest already rejects such tags, but parseSemver is callable
-	// directly within the package (e.g. from tests) and must not produce a
-	// negative-valued semver that would then sort before legitimate versions.
+	// SemVer 2.0.0 spec 2 restricts core components to [0-9]+ with no
+	// leading zeros (except bare "0"). isSemverNumeric gates each part
+	// before strconv.Atoi, which would otherwise happily accept signed
+	// ("-1", "+1") and leading-zero ("01") forms and silently normalize
+	// malformed tags. The semverRE gate in pickLatest already filters
+	// these, but parseSemver is callable directly within the package
+	// (e.g. from tests) and must not produce a misleading semver.
+	// Atoi can still fail on overflow for very long digit strings, so
+	// the error branch remains as a second line of defense.
+	if !isSemverNumeric(parts[0]) {
+		return semver{}, fmt.Errorf("invalid major in %q", v)
+	}
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return semver{}, fmt.Errorf("invalid major in %q: %w", v, err)
 	}
-	if major < 0 {
-		return semver{}, fmt.Errorf("negative major in %q", v)
+	if !isSemverNumeric(parts[1]) {
+		return semver{}, fmt.Errorf("invalid minor in %q", v)
 	}
 	minor, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return semver{}, fmt.Errorf("invalid minor in %q: %w", v, err)
 	}
-	if minor < 0 {
-		return semver{}, fmt.Errorf("negative minor in %q", v)
+	if !isSemverNumeric(parts[2]) {
+		return semver{}, fmt.Errorf("invalid patch in %q", v)
 	}
 	patch, err := strconv.Atoi(parts[2])
 	if err != nil {
 		return semver{}, fmt.Errorf("invalid patch in %q: %w", v, err)
-	}
-	if patch < 0 {
-		return semver{}, fmt.Errorf("negative patch in %q", v)
 	}
 
 	return semver{

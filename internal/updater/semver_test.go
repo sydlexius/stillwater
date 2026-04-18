@@ -25,6 +25,11 @@ func TestParseSemver(t *testing.T) {
 		// Empty prerelease suffix: "v1.2.3-" must be rejected rather than
 		// normalized to a stable release with PreRelease == "".
 		{"v1.2.3-", semver{}, true},
+		// Leading zeros in core components are forbidden by SemVer spec 2.
+		// The parser must not silently normalize "v01.2.3" to "1.2.3".
+		{"v01.2.3", semver{}, true},
+		{"v1.02.3", semver{}, true},
+		{"v1.2.03", semver{}, true},
 	}
 
 	for _, tc := range cases {
