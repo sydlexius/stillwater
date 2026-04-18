@@ -199,12 +199,17 @@ func TestRoundTrip(t *testing.T) {
 
 	// Verify imported data
 	var testVal string
-	db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'test.key'`).Scan(&testVal)
+	if err := db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'test.key'`).Scan(&testVal); err != nil {
+		t.Fatalf("scanning imported test.key: %v", err)
+	}
 	if testVal != "test.value" {
 		t.Errorf("expected test.value, got %s", testVal)
 	}
 
-	conns, _ := connSvc2.List(ctx)
+	conns, err := connSvc2.List(ctx)
+	if err != nil {
+		t.Fatalf("listing imported connections: %v", err)
+	}
 	if len(conns) != 1 {
 		t.Fatalf("expected 1 connection, got %d", len(conns))
 	}
@@ -427,8 +432,10 @@ func TestRoundTrip_RuleScraperPreferences(t *testing.T) {
 
 	// Verify user preferences were migrated to the matching username.
 	var themeVal string
-	db2.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = 'theme'`, userID2).Scan(&themeVal)
+	if err := db2.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = 'theme'`, userID2).Scan(&themeVal); err != nil {
+		t.Fatalf("scanning theme preference for %s: %v", userID2, err)
+	}
 	if themeVal != "light" {
 		t.Errorf("expected theme=light for alice, got %q", themeVal)
 	}
@@ -779,7 +786,10 @@ func TestImport_UpsertNoDuplication(t *testing.T) {
 	}
 
 	// Verify no duplication
-	conns, _ := connSvc.List(ctx)
+	conns, err := connSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing connections after upsert import: %v", err)
+	}
 	if len(conns) != 1 {
 		t.Errorf("expected 1 connection after upsert, got %d", len(conns))
 	}
