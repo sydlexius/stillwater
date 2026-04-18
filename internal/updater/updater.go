@@ -174,6 +174,14 @@ func (s *Service) SetHTTPClient(c *http.Client) {
 	s.httpClient = c
 }
 
+// SetDockerForTest overrides the auto-detected Docker flag. Intended for
+// testing so suites that cover the non-Docker apply path stay deterministic
+// on containerized CI runners (where /.dockerenv would otherwise force the
+// service into Docker mode).
+func (s *Service) SetDockerForTest(isDocker bool) {
+	s.isDocker = isDocker
+}
+
 // detectDocker returns true when the process appears to be running inside a
 // Docker container. It checks for the /.dockerenv file and the container env var.
 func detectDocker() bool {

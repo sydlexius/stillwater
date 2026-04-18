@@ -1175,7 +1175,7 @@ components:
           description: Total bytes freed by the clear operation.
     UpdateCheckResult:
       type: object
-      required: [current, latest, channel, update_available]
+      required: [current, channel, update_available]
       properties:
         current:
           type: string

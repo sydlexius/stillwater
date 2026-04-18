@@ -5814,36 +5814,13 @@ templ updatesTabScript() {
 					if (!resp.ok) return throwFromResponse(resp, 'check failed');
 					return resp.json();
 				})
-				.then(function(data) {
+				.then(function() {
+					// /check mutates last_checked and the cached release fields, so
+					// re-hydrate from /status to keep every updater DOM node
+					// (last-checked timestamp, latest version badge, release-notes
+					// row, apply button) consistent with a single code path.
 					clearUpdaterStatus();
-					var latestEl = document.getElementById('updates-latest-version');
-					var applyBtn = document.getElementById('updates-apply-btn');
-					var i18n = document.getElementById('updates-i18n');
-					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
-					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
-					var lblReleaseNotes = i18n ? i18n.dataset.releaseNotes : 'Release notes';
-					if (latestEl) {
-						if (data.update_available) {
-							latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(data.latest) + '</span>'
-								+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
-							if (applyBtn) applyBtn.disabled = false;
-						} else {
-							latestEl.innerHTML = escHtml(data.latest) + ' <span class="ml-2 text-gray-400">' + escHtml(lblUpToDate) + '</span>';
-							if (applyBtn) applyBtn.disabled = true;
-						}
-					}
-					// Sync the persistent release-notes row rather than appending a new
-					// anchor on every Check click (which stacked duplicates).
-					var relLinkRow = document.getElementById('updates-release-link-row');
-					var relLink = document.getElementById('updates-release-link');
-					if (relLinkRow && relLink) {
-						if (data.release_url) {
-							relLink.href = data.release_url;
-							relLinkRow.classList.remove('hidden');
-						} else {
-							relLinkRow.classList.add('hidden');
-						}
-					}
+					fetchAndPopulateUpdateStatus();
 				})
 				.catch(function(err) {
 					setUpdaterStatus('error', err.message);

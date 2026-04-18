@@ -36,6 +36,12 @@ func testRouterWithUpdater(t *testing.T) *Router {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	updSvc := updater.NewService(db, logger)
+	// Pin to non-Docker so tests that exercise the apply path are
+	// deterministic on containerized CI (where /.dockerenv would otherwise
+	// flip the service into Docker mode and silently strip coverage).
+	// Tests that specifically cover the Docker path construct their own
+	// service via updater.NewDockerService.
+	updSvc.SetDockerForTest(false)
 
 	authSvc := auth.NewService(db)
 	ruleSvc := rule.NewService(db)
