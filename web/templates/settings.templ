@@ -5633,6 +5633,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 		data-update-available={ t(ctx, "settings.updates.update_available") }
 		data-up-to-date={ t(ctx, "settings.updates.up_to_date") }
 		data-release-notes={ t(ctx, "settings.updates.release_notes") }
+		data-not-checked={ t(ctx, "settings.updates.not_checked") }
 	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -6036,6 +6037,7 @@ templ updatesTabScript() {
 					var i18n = document.getElementById('updates-i18n');
 					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
 					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
+					var lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';
 					if (latestEl) {
 						if (d.latest) {
 							if (d.update_available) {
@@ -6046,9 +6048,16 @@ templ updatesTabScript() {
 								latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
 								if (applyBtn) applyBtn.disabled = true;
 							}
+						} else if (!d.last_checked) {
+							// No check has ever succeeded: keep the server-rendered
+							// "Not checked" placeholder so the first /status hydrate
+							// does not blank it out.
+							latestEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 italic">' + escHtml(lblNotChecked) + '</span>';
+							if (applyBtn) applyBtn.disabled = true;
 						} else {
-							// No matching release on the current channel; clear any stale row
-							// so the UI does not lie after a channel switch to a no-match channel.
+							// Checked, but the current channel has no matching release
+							// (e.g. after switching to a channel with no builds yet).
+							// Leave blank rather than "Not checked" since the check did happen.
 							latestEl.textContent = '';
 							if (applyBtn) applyBtn.disabled = true;
 						}

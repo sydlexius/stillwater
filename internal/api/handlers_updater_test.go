@@ -385,7 +385,18 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 		t.Fatalf("marshal releases fixture: %v", err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Validate the upstream request shape so a regression in the
+		// method or path emitted by fetchReleases fails loudly here
+		// rather than passing via a permissive mock.
+		if req.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !strings.HasSuffix(req.URL.Path, "/releases") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 	}))
@@ -418,6 +429,12 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 	}
 	if result["latest"] != "v999.0.0" {
 		t.Errorf("latest = %v, want v999.0.0", result["latest"])
+	}
+	if got, want := result["channel"], string(updater.ChannelStable); got != want {
+		t.Errorf("channel = %v, want %q", got, want)
+	}
+	if current, ok := result["current"].(string); !ok || current == "" {
+		t.Errorf("current = %v, want non-empty string", result["current"])
 	}
 }
 

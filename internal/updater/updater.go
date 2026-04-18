@@ -244,18 +244,28 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 		autoCheck = "true"
 	}
 
+	// Wrap both writes in a transaction so a mid-loop failure cannot leave
+	// the channel and auto-check settings in a split state.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning updater config transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, kv := range []struct{ k, v string }{
 		{SettingChannel, string(cfg.Channel)},
 		{SettingAutoCheck, autoCheck},
 	} {
-		_, err := s.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-			kv.k, kv.v, now)
-		if err != nil {
+			kv.k, kv.v, now); err != nil {
 			return fmt.Errorf("persisting %q: %w", kv.k, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing updater config: %w", err)
 	}
 	return nil
 }

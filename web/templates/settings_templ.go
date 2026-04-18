@@ -11477,317 +11477,330 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 950, "\"></div><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 950, "\" data-not-checked=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var624 string
-		templ_7745c5c3_Var624, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.title"))
+		templ_7745c5c3_Var624, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5639, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5636, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var624))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 951, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 951, "\"></div><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var625 string
-		templ_7745c5c3_Var625, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.description"))
+		templ_7745c5c3_Var625, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5640, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5640, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var625))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 952, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Version info row --><div class=\"grid grid-cols-1 gap-4 sm:grid-cols-2\"><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 952, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var626 string
-		templ_7745c5c3_Var626, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.current_version"))
+		templ_7745c5c3_Var626, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5646, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5641, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var626))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 953, "</div><div class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 953, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Version info row --><div class=\"grid grid-cols-1 gap-4 sm:grid-cols-2\"><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var627 string
-		templ_7745c5c3_Var627, templ_7745c5c3_Err = templ.JoinStringErrs(data.CurrentVersion)
+		templ_7745c5c3_Var627, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.current_version"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5647, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5647, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var627))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 954, "</div></div><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 954, "</div><div class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var628 string
-		templ_7745c5c3_Var628, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.latest_version"))
+		templ_7745c5c3_Var628, templ_7745c5c3_Err = templ.JoinStringErrs(data.CurrentVersion)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5650, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5648, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var628))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 955, "</div><div id=\"updates-latest-version\" class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 955, "</div></div><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var629 string
+		templ_7745c5c3_Var629, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.latest_version"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5651, Col: 114}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var629))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 956, "</div><div id=\"updates-latest-version\" class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.LatestVersion != "" {
 			if data.UpdateAvailable {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 956, "<span class=\"text-green-600 dark:text-green-400 font-semibold\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var629 string
-				templ_7745c5c3_Var629, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5657, Col: 91}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var629))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 957, "</span> <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 957, "<span class=\"text-green-600 dark:text-green-400 font-semibold\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var630 string
-				templ_7745c5c3_Var630, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
+				templ_7745c5c3_Var630, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5659, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5658, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var630))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 958, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 958, "</span> <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
 				var templ_7745c5c3_Var631 string
-				templ_7745c5c3_Var631, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
+				templ_7745c5c3_Var631, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5662, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5660, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var631))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 959, " <span class=\"ml-2 text-gray-400 dark:text-gray-500\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 959, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+			} else {
 				var templ_7745c5c3_Var632 string
-				templ_7745c5c3_Var632, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
+				templ_7745c5c3_Var632, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5663, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5663, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var632))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 960, "</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 960, " <span class=\"ml-2 text-gray-400 dark:text-gray-500\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var633 string
+				templ_7745c5c3_Var633, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5664, Col: 99}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var633))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 961, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 961, "<span class=\"text-gray-400 dark:text-gray-500 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 962, "<span class=\"text-gray-400 dark:text-gray-500 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var633 string
-			templ_7745c5c3_Var633, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
+			var templ_7745c5c3_Var634 string
+			templ_7745c5c3_Var634, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5666, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5667, Col: 101}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var633))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var634))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 962, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 963, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 963, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 964, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var634 = []any{"text-xs text-gray-400 dark:text-gray-500",
+		var templ_7745c5c3_Var635 = []any{"text-xs text-gray-400 dark:text-gray-500",
 			templ.KV("hidden", data.LastChecked == ""),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var634...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var635...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 964, "<div id=\"updates-last-checked-row\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var635 string
-		templ_7745c5c3_Var635, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var634).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var635))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 965, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 965, "<div id=\"updates-last-checked-row\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var636 string
-		templ_7745c5c3_Var636, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_checked"))
+		templ_7745c5c3_Var636, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var635).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5678, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var636))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 966, ": <span id=\"updates-last-checked\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 966, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var637 string
-		templ_7745c5c3_Var637, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastChecked)
+		templ_7745c5c3_Var637, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_checked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5678, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5679, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var637))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 967, "</span></div><!-- Release notes link: shown on initial render when the server already\n\t\t\t     knows about a newer version, and hydrated by fetchAndPopulateUpdateStatus\n\t\t\t     when /status returns a non-empty release_url. -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 967, ": <span id=\"updates-last-checked\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var638 = []any{"text-xs",
+		var templ_7745c5c3_Var638 string
+		templ_7745c5c3_Var638, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastChecked)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5679, Col: 99}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var638))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 968, "</span></div><!-- Release notes link: shown on initial render when the server already\n\t\t\t     knows about a newer version, and hydrated by fetchAndPopulateUpdateStatus\n\t\t\t     when /status returns a non-empty release_url. -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var639 = []any{"text-xs",
 			templ.KV("hidden", data.ReleaseURL == ""),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var638...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var639...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 968, "<div id=\"updates-release-link-row\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 969, "<div id=\"updates-release-link-row\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var639 string
-		templ_7745c5c3_Var639, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var638).String())
+		var templ_7745c5c3_Var640 string
+		templ_7745c5c3_Var640, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var639).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var639))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 969, "\"><a id=\"updates-release-link\" href=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var640 templ.SafeURL
-		templ_7745c5c3_Var640, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.ReleaseURL))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5692, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var640))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 970, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 970, "\"><a id=\"updates-release-link\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var641 string
-		templ_7745c5c3_Var641, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
+		var templ_7745c5c3_Var641 templ.SafeURL
+		templ_7745c5c3_Var641, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.ReleaseURL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5697, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5693, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var641))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 971, "</a></div><!-- Docker notice -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 971, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var642 string
+		templ_7745c5c3_Var642, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5698, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var642))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 972, "</a></div><!-- Docker notice -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 972, "<div class=\"rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3\"><p class=\"text-sm text-blue-700 dark:text-blue-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 973, "<div class=\"rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3\"><p class=\"text-sm text-blue-700 dark:text-blue-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var642 string
-			templ_7745c5c3_Var642, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.docker_notice"))
+			var templ_7745c5c3_Var643 string
+			templ_7745c5c3_Var643, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.docker_notice"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5703, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5704, Col: 99}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var642))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 973, "</p></div>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var643))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 974, "</p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 974, "<!-- Status display --><div id=\"updates-status-row\" class=\"hidden rounded-md bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 px-4 py-3\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-center gap-2\"><span id=\"updates-status-spinner\" class=\"hidden animate-spin inline-block w-4 h-4 border-2 border-gray-400 border-t-blue-500 rounded-full\" aria-hidden=\"true\"></span> <span id=\"updates-status-text\" class=\"text-sm text-gray-700 dark:text-gray-300\"></span></div><div id=\"updates-error-row\" class=\"hidden mt-1 text-sm text-red-600 dark:text-red-400\" role=\"alert\"></div></div></div></div><!-- Channel and auto-check settings --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var643 string
-		templ_7745c5c3_Var643, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config_title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5725, Col: 111}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var643))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 975, "</h2></div><div class=\"px-6 py-4 space-y-5\"><!-- Channel selector --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 975, "<!-- Status display --><div id=\"updates-status-row\" class=\"hidden rounded-md bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 px-4 py-3\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-center gap-2\"><span id=\"updates-status-spinner\" class=\"hidden animate-spin inline-block w-4 h-4 border-2 border-gray-400 border-t-blue-500 rounded-full\" aria-hidden=\"true\"></span> <span id=\"updates-status-text\" class=\"text-sm text-gray-700 dark:text-gray-300\"></span></div><div id=\"updates-error-row\" class=\"hidden mt-1 text-sm text-red-600 dark:text-red-400\" role=\"alert\"></div></div></div></div><!-- Channel and auto-check settings --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var644 string
-		templ_7745c5c3_Var644, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel"))
+		templ_7745c5c3_Var644, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5731, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5726, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var644))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 976, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 976, "</h2></div><div class=\"px-6 py-4 space-y-5\"><!-- Channel selector --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var645 string
-		templ_7745c5c3_Var645, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel_desc"))
+		templ_7745c5c3_Var645, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5732, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5732, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var645))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 977, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 977, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var646 string
+		templ_7745c5c3_Var646, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel_desc"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5733, Col: 100}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var646))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 978, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11801,7 +11814,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 978, "</div><!-- Auto-check toggle --><div class=\"flex items-center justify-between gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 979, "</div><!-- Auto-check toggle --><div class=\"flex items-center justify-between gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11815,79 +11828,79 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 979, "</div><!-- Save button --><div class=\"flex justify-end pt-2\"><button type=\"button\" onclick=\"saveUpdaterConfig()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var646 string
-		templ_7745c5c3_Var646, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5759, Col: 29}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var646))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 980, "</button></div></div></div><!-- Actions --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 980, "</div><!-- Save button --><div class=\"flex justify-end pt-2\"><button type=\"button\" onclick=\"saveUpdaterConfig()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var647 string
-		templ_7745c5c3_Var647, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.actions_title"))
+		templ_7745c5c3_Var647, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5767, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5760, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var647))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 981, "</h2></div><div class=\"px-6 py-4 flex flex-wrap gap-3\"><button type=\"button\" id=\"updates-check-btn\" onclick=\"checkForUpdates()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 981, "</button></div></div></div><!-- Actions --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var648 string
-		templ_7745c5c3_Var648, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
+		templ_7745c5c3_Var648, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.actions_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5776, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5768, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var648))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 982, "</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 982, "</h2></div><div class=\"px-6 py-4 flex flex-wrap gap-3\"><button type=\"button\" id=\"updates-check-btn\" onclick=\"checkForUpdates()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var649 string
+		templ_7745c5c3_Var649, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5777, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var649))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 983, "</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 983, "<button type=\"button\" id=\"updates-apply-btn\" onclick=\"applyUpdate()\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 984, "<button type=\"button\" id=\"updates-apply-btn\" onclick=\"applyUpdate()\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if !data.UpdateAvailable {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 984, " disabled")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 985, " disabled")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 985, " class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 986, " class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var649 string
-			templ_7745c5c3_Var649, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
+			var templ_7745c5c3_Var650 string
+			templ_7745c5c3_Var650, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5786, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5787, Col: 46}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var649))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var650))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 986, "</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 987, "</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 987, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 988, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11912,12 +11925,12 @@ func updatesTabScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var650 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var650 == nil {
-			templ_7745c5c3_Var650 = templ.NopComponent
+		templ_7745c5c3_Var651 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var651 == nil {
+			templ_7745c5c3_Var651 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 988, "<script>\n\t\t(function() {\n\t\t\tvar updBp = '';\n\t\t\tvar updMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tif (updMeta && updMeta.content) {\n\t\t\t\tupdBp = updMeta.content;\n\t\t\t}\n\n\t\t\t// checkForUpdates calls the check endpoint and refreshes the UI.\n\t\t\twindow.checkForUpdates = function() {\n\t\t\t\tvar btn = document.getElementById('updates-check-btn');\n\t\t\t\tsetUpdaterStatus('checking', '');\n\t\t\t\tif (btn) btn.disabled = true;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/check', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'check failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\t// /check mutates last_checked and the cached release fields, so\n\t\t\t\t\t// re-hydrate from /status to keep every updater DOM node\n\t\t\t\t\t// (last-checked timestamp, latest version badge, release-notes\n\t\t\t\t\t// row, apply button) consistent with a single code path.\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t})\n\t\t\t\t.finally(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// applyUpdate calls the apply endpoint.\n\t\t\twindow.applyUpdate = function() {\n\t\t\t\tvar btn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tsetUpdaterStatus('applying', '');\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/apply', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (resp.status === 422) return throwFromResponse(resp, 'not supported');\n\t\t\t\t\tif (resp.status === 409) return throwFromResponse(resp, 'already in progress');\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'apply failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('downloading', '');\n\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// updaterPollTimer is the single active poll interval. Only one poller\n\t\t\t// may run at a time; reopening the Updates tab during an apply would\n\t\t\t// otherwise stack multiple intervals, each racing to clear state.\n\t\t\tvar updaterPollTimer = null;\n\n\t\t\tfunction stopUpdaterPoll() {\n\t\t\t\tif (updaterPollTimer !== null) {\n\t\t\t\t\tclearInterval(updaterPollTimer);\n\t\t\t\t\tupdaterPollTimer = null;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// pollUpdateStatus polls /api/v1/updates/status until idle or error.\n\t\t\t// Fails closed on HTTP or parse errors: a 5xx or malformed body stops\n\t\t\t// the poller and surfaces the failure, otherwise the spinner would\n\t\t\t// spin indefinitely.\n\t\t\tfunction pollUpdateStatus() {\n\t\t\t\tif (updaterPollTimer !== null) return;\n\t\t\t\tupdaterPollTimer = setInterval(function() {\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t\t.then(function(r) {\n\t\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(d) {\n\t\t\t\t\t\tif (d.state === 'idle') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t\t\t// Trigger a fresh check to show the new version.\n\t\t\t\t\t\t\tcheckForUpdates();\n\t\t\t\t\t\t} else if (d.state === 'error') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t\t});\n\t\t\t\t}, 2000);\n\t\t\t}\n\n\t\t\t// saveUpdaterConfig persists channel + auto_check.\n\t\t\t// Read the checked radio, not the first radio, or Save always sends \"stable\".\n\t\t\twindow.saveUpdaterConfig = function() {\n\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"]:checked');\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tvar channel = channelEl ? channelEl.value : 'stable';\n\t\t\t\tvar autoCheck = autoEl ? autoEl.checked : false;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({channel: channel, auto_check: autoCheck})\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'save failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('saved', '');\n\t\t\t\t\tsetTimeout(clearUpdaterStatus, 2000);\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t});\n\t\t\t};\n\n\t\t\tfunction setUpdaterStatus(state, errMsg) {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tvar spinner = document.getElementById('updates-status-spinner');\n\t\t\t\tvar text = document.getElementById('updates-status-text');\n\t\t\t\tvar errRow = document.getElementById('updates-error-row');\n\t\t\t\tif (!row) return;\n\n\t\t\t\trow.classList.remove('hidden');\n\t\t\t\tif (errMsg) {\n\t\t\t\t\terrRow.textContent = errMsg;\n\t\t\t\t\terrRow.classList.remove('hidden');\n\t\t\t\t} else {\n\t\t\t\t\terrRow.classList.add('hidden');\n\t\t\t\t\terrRow.textContent = '';\n\t\t\t\t}\n\n\t\t\t\t// Read translated labels from the data-* attributes on the i18n element.\n\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\tvar labels = i18n ? i18n.dataset : {};\n\t\t\t\tvar label = labels[state] || state;\n\t\t\t\ttext.textContent = label;\n\n\t\t\t\tvar inProgress = state === 'checking' || state === 'downloading' || state === 'applying';\n\t\t\t\tif (spinner) {\n\t\t\t\t\tif (inProgress) spinner.classList.remove('hidden');\n\t\t\t\t\telse spinner.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction clearUpdaterStatus() {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tif (row) row.classList.add('hidden');\n\t\t\t}\n\n\t\t\tfunction escHtml(s) {\n\t\t\t\treturn String(s)\n\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t.replace(/\"/g, '&quot;');\n\t\t\t}\n\n\t\t\tfunction getCSRFToken() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\n\t\t\t// Parse a non-ok fetch response's JSON body and throw a useful error,\n\t\t\t// tolerating non-JSON bodies (e.g. proxy HTML 502s) that would otherwise\n\t\t\t// crash resp.json() with a SyntaxError before any user-visible message.\n\t\t\tfunction throwFromResponse(resp, fallback) {\n\t\t\t\treturn resp.json().catch(function() { return {}; }).then(function(d) {\n\t\t\t\t\tthrow new Error(d.error || fallback || ('HTTP ' + resp.status));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Shared hydrator used on DOMContentLoaded and popstate so browser\n\t\t\t// back/forward navigation also refreshes the panel instead of leaving\n\t\t\t// stale DOM behind when the user returns to the tab.\n\t\t\tfunction hydrateIfUpdatesActive() {\n\t\t\t\tvar panel = document.querySelector('[data-tab-panel=\"updates\"]');\n\t\t\t\tif (panel && !panel.classList.contains('hidden')) {\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar tabLinks = document.querySelectorAll('[data-tab=\"updates\"]');\n\t\t\t\ttabLinks.forEach(function(link) {\n\t\t\t\t\tlink.addEventListener('click', function() {\n\t\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\thydrateIfUpdatesActive();\n\t\t\t});\n\n\t\t\t// popstate fires on browser back/forward. If that navigation leaves\n\t\t\t// the Updates tab active, rehydrate rather than showing whatever\n\t\t\t// stale values were in the DOM before the back/forward event.\n\t\t\twindow.addEventListener('popstate', hydrateIfUpdatesActive);\n\n\t\t\tfunction fetchAndPopulateUpdateStatus() {\n\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(r) {\n\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\treturn r.json();\n\t\t\t\t})\n\t\t\t\t.then(function(d) {\n\t\t\t\t\tvar lcRow = document.getElementById('updates-last-checked-row');\n\t\t\t\t\tvar lcEl = document.getElementById('updates-last-checked');\n\t\t\t\t\tif (lcEl) {\n\t\t\t\t\t\tif (d.last_checked) {\n\t\t\t\t\t\t\tlcEl.textContent = d.last_checked;\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Clear stale display when the server has no record, e.g. after a\n\t\t\t\t\t\t\t// channel switch to one that was never checked.\n\t\t\t\t\t\t\tlcEl.textContent = '';\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the latest version and update-available badge from cached status.\n\t\t\t\t\tvar latestEl = document.getElementById('updates-latest-version');\n\t\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';\n\t\t\t\t\tvar lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';\n\t\t\t\t\tif (latestEl) {\n\t\t\t\t\t\tif (d.latest) {\n\t\t\t\t\t\t\tif (d.update_available) {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-green-600 dark:text-green-400 font-semibold\">' + escHtml(d.latest) + '</span>'\n\t\t\t\t\t\t\t\t\t+ ' <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">' + escHtml(lblAvailable) + '</span>';\n\t\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = false;\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = escHtml(d.latest) + ' <span class=\"ml-2 text-gray-400 dark:text-gray-500\">' + escHtml(lblUpToDate) + '</span>';\n\t\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// No matching release on the current channel; clear any stale row\n\t\t\t\t\t\t\t// so the UI does not lie after a channel switch to a no-match channel.\n\t\t\t\t\t\t\tlatestEl.textContent = '';\n\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the release-notes link from /status so it is visible\n\t\t\t\t\t// after a page reload or tab re-open without a manual check.\n\t\t\t\t\tvar relLinkRow = document.getElementById('updates-release-link-row');\n\t\t\t\t\tvar relLink = document.getElementById('updates-release-link');\n\t\t\t\t\tif (relLinkRow && relLink) {\n\t\t\t\t\t\tif (d.release_url) {\n\t\t\t\t\t\t\trelLink.href = d.release_url;\n\t\t\t\t\t\t\trelLinkRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trelLinkRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// If an operation is in progress, show its state and start polling.\n\t\t\t\t\tif (d.state === 'error') {\n\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t} else if (d.state && d.state !== 'idle') {\n\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t});\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 989, "<script>\n\t\t(function() {\n\t\t\tvar updBp = '';\n\t\t\tvar updMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tif (updMeta && updMeta.content) {\n\t\t\t\tupdBp = updMeta.content;\n\t\t\t}\n\n\t\t\t// checkForUpdates calls the check endpoint and refreshes the UI.\n\t\t\twindow.checkForUpdates = function() {\n\t\t\t\tvar btn = document.getElementById('updates-check-btn');\n\t\t\t\tsetUpdaterStatus('checking', '');\n\t\t\t\tif (btn) btn.disabled = true;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/check', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'check failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\t// /check mutates last_checked and the cached release fields, so\n\t\t\t\t\t// re-hydrate from /status to keep every updater DOM node\n\t\t\t\t\t// (last-checked timestamp, latest version badge, release-notes\n\t\t\t\t\t// row, apply button) consistent with a single code path.\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t})\n\t\t\t\t.finally(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// applyUpdate calls the apply endpoint.\n\t\t\twindow.applyUpdate = function() {\n\t\t\t\tvar btn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tsetUpdaterStatus('applying', '');\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/apply', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (resp.status === 422) return throwFromResponse(resp, 'not supported');\n\t\t\t\t\tif (resp.status === 409) return throwFromResponse(resp, 'already in progress');\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'apply failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('downloading', '');\n\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// updaterPollTimer is the single active poll interval. Only one poller\n\t\t\t// may run at a time; reopening the Updates tab during an apply would\n\t\t\t// otherwise stack multiple intervals, each racing to clear state.\n\t\t\tvar updaterPollTimer = null;\n\n\t\t\tfunction stopUpdaterPoll() {\n\t\t\t\tif (updaterPollTimer !== null) {\n\t\t\t\t\tclearInterval(updaterPollTimer);\n\t\t\t\t\tupdaterPollTimer = null;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// pollUpdateStatus polls /api/v1/updates/status until idle or error.\n\t\t\t// Fails closed on HTTP or parse errors: a 5xx or malformed body stops\n\t\t\t// the poller and surfaces the failure, otherwise the spinner would\n\t\t\t// spin indefinitely.\n\t\t\tfunction pollUpdateStatus() {\n\t\t\t\tif (updaterPollTimer !== null) return;\n\t\t\t\tupdaterPollTimer = setInterval(function() {\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t\t.then(function(r) {\n\t\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(d) {\n\t\t\t\t\t\tif (d.state === 'idle') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t\t\t// Trigger a fresh check to show the new version.\n\t\t\t\t\t\t\tcheckForUpdates();\n\t\t\t\t\t\t} else if (d.state === 'error') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t\t});\n\t\t\t\t}, 2000);\n\t\t\t}\n\n\t\t\t// saveUpdaterConfig persists channel + auto_check.\n\t\t\t// Read the checked radio, not the first radio, or Save always sends \"stable\".\n\t\t\twindow.saveUpdaterConfig = function() {\n\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"]:checked');\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tvar channel = channelEl ? channelEl.value : 'stable';\n\t\t\t\tvar autoCheck = autoEl ? autoEl.checked : false;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({channel: channel, auto_check: autoCheck})\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'save failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('saved', '');\n\t\t\t\t\tsetTimeout(clearUpdaterStatus, 2000);\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t});\n\t\t\t};\n\n\t\t\tfunction setUpdaterStatus(state, errMsg) {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tvar spinner = document.getElementById('updates-status-spinner');\n\t\t\t\tvar text = document.getElementById('updates-status-text');\n\t\t\t\tvar errRow = document.getElementById('updates-error-row');\n\t\t\t\tif (!row) return;\n\n\t\t\t\trow.classList.remove('hidden');\n\t\t\t\tif (errMsg) {\n\t\t\t\t\terrRow.textContent = errMsg;\n\t\t\t\t\terrRow.classList.remove('hidden');\n\t\t\t\t} else {\n\t\t\t\t\terrRow.classList.add('hidden');\n\t\t\t\t\terrRow.textContent = '';\n\t\t\t\t}\n\n\t\t\t\t// Read translated labels from the data-* attributes on the i18n element.\n\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\tvar labels = i18n ? i18n.dataset : {};\n\t\t\t\tvar label = labels[state] || state;\n\t\t\t\ttext.textContent = label;\n\n\t\t\t\tvar inProgress = state === 'checking' || state === 'downloading' || state === 'applying';\n\t\t\t\tif (spinner) {\n\t\t\t\t\tif (inProgress) spinner.classList.remove('hidden');\n\t\t\t\t\telse spinner.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction clearUpdaterStatus() {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tif (row) row.classList.add('hidden');\n\t\t\t}\n\n\t\t\tfunction escHtml(s) {\n\t\t\t\treturn String(s)\n\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t.replace(/\"/g, '&quot;');\n\t\t\t}\n\n\t\t\tfunction getCSRFToken() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\n\t\t\t// Parse a non-ok fetch response's JSON body and throw a useful error,\n\t\t\t// tolerating non-JSON bodies (e.g. proxy HTML 502s) that would otherwise\n\t\t\t// crash resp.json() with a SyntaxError before any user-visible message.\n\t\t\tfunction throwFromResponse(resp, fallback) {\n\t\t\t\treturn resp.json().catch(function() { return {}; }).then(function(d) {\n\t\t\t\t\tthrow new Error(d.error || fallback || ('HTTP ' + resp.status));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Shared hydrator used on DOMContentLoaded and popstate so browser\n\t\t\t// back/forward navigation also refreshes the panel instead of leaving\n\t\t\t// stale DOM behind when the user returns to the tab.\n\t\t\tfunction hydrateIfUpdatesActive() {\n\t\t\t\tvar panel = document.querySelector('[data-tab-panel=\"updates\"]');\n\t\t\t\tif (panel && !panel.classList.contains('hidden')) {\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar tabLinks = document.querySelectorAll('[data-tab=\"updates\"]');\n\t\t\t\ttabLinks.forEach(function(link) {\n\t\t\t\t\tlink.addEventListener('click', function() {\n\t\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\thydrateIfUpdatesActive();\n\t\t\t});\n\n\t\t\t// popstate fires on browser back/forward. If that navigation leaves\n\t\t\t// the Updates tab active, rehydrate rather than showing whatever\n\t\t\t// stale values were in the DOM before the back/forward event.\n\t\t\twindow.addEventListener('popstate', hydrateIfUpdatesActive);\n\n\t\t\tfunction fetchAndPopulateUpdateStatus() {\n\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(r) {\n\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\treturn r.json();\n\t\t\t\t})\n\t\t\t\t.then(function(d) {\n\t\t\t\t\tvar lcRow = document.getElementById('updates-last-checked-row');\n\t\t\t\t\tvar lcEl = document.getElementById('updates-last-checked');\n\t\t\t\t\tif (lcEl) {\n\t\t\t\t\t\tif (d.last_checked) {\n\t\t\t\t\t\t\tlcEl.textContent = d.last_checked;\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Clear stale display when the server has no record, e.g. after a\n\t\t\t\t\t\t\t// channel switch to one that was never checked.\n\t\t\t\t\t\t\tlcEl.textContent = '';\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the latest version and update-available badge from cached status.\n\t\t\t\t\tvar latestEl = document.getElementById('updates-latest-version');\n\t\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';\n\t\t\t\t\tvar lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';\n\t\t\t\t\tvar lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';\n\t\t\t\t\tif (latestEl) {\n\t\t\t\t\t\tif (d.latest) {\n\t\t\t\t\t\t\tif (d.update_available) {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-green-600 dark:text-green-400 font-semibold\">' + escHtml(d.latest) + '</span>'\n\t\t\t\t\t\t\t\t\t+ ' <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">' + escHtml(lblAvailable) + '</span>';\n\t\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = false;\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = escHtml(d.latest) + ' <span class=\"ml-2 text-gray-400 dark:text-gray-500\">' + escHtml(lblUpToDate) + '</span>';\n\t\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (!d.last_checked) {\n\t\t\t\t\t\t\t// No check has ever succeeded: keep the server-rendered\n\t\t\t\t\t\t\t// \"Not checked\" placeholder so the first /status hydrate\n\t\t\t\t\t\t\t// does not blank it out.\n\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-gray-400 dark:text-gray-500 italic\">' + escHtml(lblNotChecked) + '</span>';\n\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Checked, but the current channel has no matching release\n\t\t\t\t\t\t\t// (e.g. after switching to a channel with no builds yet).\n\t\t\t\t\t\t\t// Leave blank rather than \"Not checked\" since the check did happen.\n\t\t\t\t\t\t\tlatestEl.textContent = '';\n\t\t\t\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the release-notes link from /status so it is visible\n\t\t\t\t\t// after a page reload or tab re-open without a manual check.\n\t\t\t\t\tvar relLinkRow = document.getElementById('updates-release-link-row');\n\t\t\t\t\tvar relLink = document.getElementById('updates-release-link');\n\t\t\t\t\tif (relLinkRow && relLink) {\n\t\t\t\t\t\tif (d.release_url) {\n\t\t\t\t\t\t\trelLink.href = d.release_url;\n\t\t\t\t\t\t\trelLinkRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trelLinkRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// If an operation is in progress, show its state and start polling.\n\t\t\t\t\tif (d.state === 'error') {\n\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t} else if (d.state && d.state !== 'idle') {\n\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t});\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
