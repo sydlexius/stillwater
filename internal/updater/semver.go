@@ -112,6 +112,11 @@ func semverCompare(a, b semver) int {
 // identifier has lower precedence than an alphanumeric one. If all shared
 // identifiers are equal, the version with more identifiers has higher
 // precedence (rc.1.1 > rc.1).
+//
+// SemVer 2.0.0 restricts numeric identifiers to bare digits [0-9]+, so
+// "-1" and "+1" are alphanumeric (strconv.Atoi would accept both), and
+// "01" is invalid as numeric. We detect digits-only ourselves and fall
+// back to lexicographic comparison for anything else.
 func comparePrerelease(a, b string) int {
 	ap := strings.Split(a, ".")
 	bp := strings.Split(b, ".")
@@ -120,18 +125,21 @@ func comparePrerelease(a, b string) int {
 		n = len(bp)
 	}
 	for i := 0; i < n; i++ {
-		ai, aErr := strconv.Atoi(ap[i])
-		bi, bErr := strconv.Atoi(bp[i])
+		aNum := isSemverNumeric(ap[i])
+		bNum := isSemverNumeric(bp[i])
 		switch {
-		case aErr == nil && bErr == nil:
-			// Both numeric: compare as integers.
+		case aNum && bNum:
+			// Both numeric: compare as integers. Atoi cannot fail here
+			// because isSemverNumeric already verified digits-only.
+			ai, _ := strconv.Atoi(ap[i])
+			bi, _ := strconv.Atoi(bp[i])
 			if ai != bi {
 				return cmpInt(ai, bi)
 			}
-		case aErr == nil && bErr != nil:
+		case aNum && !bNum:
 			// Numeric has lower precedence than alphanumeric (spec 11.4.1).
 			return -1
-		case aErr != nil && bErr == nil:
+		case !aNum && bNum:
 			// Alphanumeric has higher precedence than numeric.
 			return 1
 		default:
@@ -146,6 +154,27 @@ func comparePrerelease(a, b string) int {
 	}
 	// All shared identifiers equal: more identifiers means higher precedence.
 	return cmpInt(len(ap), len(bp))
+}
+
+// isSemverNumeric reports whether s is a valid SemVer numeric identifier:
+// one or more digits, no sign, no leading zeros unless the identifier is
+// exactly "0". Used to decide whether to compare two prerelease identifiers
+// numerically or lexicographically.
+func isSemverNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	// Reject leading zeros per spec 9 (e.g. "01" is not a valid numeric
+	// identifier). Bare "0" is valid.
+	if len(s) > 1 && s[0] == '0' {
+		return false
+	}
+	return true
 }
 
 func cmpInt(a, b int) int {

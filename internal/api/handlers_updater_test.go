@@ -111,6 +111,25 @@ func TestHandlePutUpdateConfig_Valid(t *testing.T) {
 	if !cfg.AutoCheck {
 		t.Error("auto_check should be true")
 	}
+
+	// Round-trip through GET to confirm the handler actually persisted the
+	// config rather than merely echoing the request body.
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body: %s", getW.Code, getW.Body.String())
+	}
+	var persisted updater.Config
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal persisted config: %v", err)
+	}
+	if persisted.Channel != updater.ChannelPrerelease {
+		t.Errorf("persisted channel = %q, want %q", persisted.Channel, updater.ChannelPrerelease)
+	}
+	if !persisted.AutoCheck {
+		t.Error("persisted auto_check should be true")
+	}
 }
 
 func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
@@ -167,6 +186,14 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	}
 	if st.IsDocker {
 		t.Error("is_docker = true, want false")
+	}
+	// Lock the idle semantics: update_available must be false on first load,
+	// and error must be omitted outside of state=="error" per openapi.yaml.
+	if st.UpdateAvailable {
+		t.Error("update_available = true, want false for initial idle status")
+	}
+	if _, ok := raw["error"]; ok {
+		t.Fatal(`unexpected field "error" in non-error UpdateStatus`)
 	}
 }
 
@@ -444,6 +471,12 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 	if current, ok := result["current"].(string); !ok || current == "" {
 		t.Errorf("current = %v, want non-empty string", result["current"])
 	}
+	// The Settings tab syncs its release-link row from the /check response
+	// directly, so the URL must be present in the immediate payload rather
+	// than only appearing after a later /status hydrate.
+	if got, want := result["release_url"], "https://github.com/example/repo/releases/v999.0.0"; got != want {
+		t.Errorf("release_url = %v, want %q", got, want)
+	}
 
 	// Contract: a successful /check must write-through to the cached state so
 	// that a subsequent /status reports the same release metadata. Without
@@ -525,6 +558,12 @@ func TestHandleCheckWithMockServer_NoMatch(t *testing.T) {
 	}
 	if latest, _ := check["latest"].(string); latest != "" {
 		t.Errorf("latest = %q, want empty string on no-match", latest)
+	}
+	// Same UI coupling as the success case: the Settings tab clears its
+	// persistent release-link row from the /check response, so the URL
+	// must be cleared here rather than only on the later /status hydrate.
+	if releaseURL, _ := check["release_url"].(string); releaseURL != "" {
+		t.Errorf("release_url = %q, want empty string on no-match", releaseURL)
 	}
 
 	statusReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)

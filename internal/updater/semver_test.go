@@ -45,6 +45,53 @@ func TestParseSemver(t *testing.T) {
 	}
 }
 
+func TestIsSemverNumeric(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"0", true},
+		{"1", true},
+		{"42", true},
+		{"", false},
+		// Signed integers are valid for strconv.Atoi but NOT valid SemVer
+		// numeric identifiers (spec 9 / 11 restrict to [0-9]+). Treating
+		// them as numeric would give "-1" higher precedence than "1" via
+		// integer comparison; treating them as alphanumeric is correct.
+		{"-1", false},
+		{"+1", false},
+		// Leading zeros are invalid per SemVer spec 9, except for bare "0".
+		{"01", false},
+		{"001", false},
+		// Mixed alphanumeric stays alphanumeric.
+		{"rc1", false},
+		{"1a", false},
+	}
+	for _, tc := range cases {
+		if got := isSemverNumeric(tc.input); got != tc.want {
+			t.Errorf("isSemverNumeric(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestComparePrerelease_SemverSpec(t *testing.T) {
+	// Spec-compliant precedence: a numeric identifier sorts lower than an
+	// alphanumeric one, independent of the actual characters. Before the
+	// digits-only fix, "-1" was parsed numerically by strconv.Atoi and
+	// would have sorted lower than "1"; with the fix, "-1" is treated as
+	// alphanumeric and sorts higher than the purely numeric "1".
+	if got := comparePrerelease("rc.1", "rc.-1"); got != -1 {
+		t.Errorf(`comparePrerelease("rc.1", "rc.-1") = %d, want -1 (numeric < alphanumeric)`, got)
+	}
+	if got := comparePrerelease("rc.-1", "rc.1"); got != 1 {
+		t.Errorf(`comparePrerelease("rc.-1", "rc.1") = %d, want 1 (alphanumeric > numeric)`, got)
+	}
+	// Leading-zero identifier is alphanumeric under the spec.
+	if got := comparePrerelease("rc.1", "rc.01"); got != -1 {
+		t.Errorf(`comparePrerelease("rc.1", "rc.01") = %d, want -1 (numeric < alphanumeric leading-zero)`, got)
+	}
+}
+
 func TestSemverCompare(t *testing.T) {
 	cases := []struct {
 		a    semver
