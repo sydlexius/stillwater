@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // ctxKey is the type for context value keys used by the artist package.
@@ -187,6 +188,40 @@ func (s *Service) UpdateHealthScore(ctx context.Context, id string, score float6
 // needing initial health score calculation.
 func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 	return s.artists.ListUnevaluatedIDs(ctx)
+}
+
+// MarkDirty stamps dirty_since for one artist. The rule pipeline picks up
+// artists whose dirty_since is newer than rules_evaluated_at on the next
+// "Run Rules" invocation. See issue #698.
+func (s *Service) MarkDirty(ctx context.Context, id string, ts time.Time) error {
+	return s.artists.MarkDirty(ctx, id, ts)
+}
+
+// MarkAllDirty stamps dirty_since on every non-excluded, non-locked artist.
+// Returns the number of rows affected. Called when a new rule is added so
+// existing artists are scheduled for re-evaluation against it.
+func (s *Service) MarkAllDirty(ctx context.Context, ts time.Time) (int64, error) {
+	return s.artists.MarkAllDirty(ctx, ts)
+}
+
+// MarkRulesEvaluated stamps rules_evaluated_at for one artist after the
+// rule pipeline finishes processing it.
+func (s *Service) MarkRulesEvaluated(ctx context.Context, id string, ts time.Time) error {
+	return s.artists.MarkRulesEvaluated(ctx, id, ts)
+}
+
+// ListDirtyIDs returns IDs of non-excluded, non-locked artists that need
+// rule re-evaluation: those that have never been evaluated, or whose
+// dirty_since is strictly after rules_evaluated_at.
+func (s *Service) ListDirtyIDs(ctx context.Context) ([]string, error) {
+	return s.artists.ListDirtyIDs(ctx)
+}
+
+// CountEligibleArtists returns the number of non-excluded, non-locked
+// artists. Used as the denominator for incremental "Run Rules" progress
+// reporting (e.g. "evaluating 12 of 800 (788 unchanged)").
+func (s *Service) CountEligibleArtists(ctx context.Context) (int, error) {
+	return s.artists.CountEligibleArtists(ctx)
 }
 
 // GetByID retrieves an artist by primary key, including provider IDs and image metadata.

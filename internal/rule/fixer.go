@@ -40,9 +40,44 @@ type FixResult struct {
 	ImageType  string           `json:"-"`                    // image type for provenance recording (matches SavedPath)
 }
 
+// RunScope controls which artists "Run Rules" walks. Incremental (the
+// default for the user-facing button) only re-evaluates artists that have
+// mutated since their last evaluation, which makes the operation near-
+// instant on a stable library. Full re-evaluates every non-excluded,
+// non-locked artist regardless of dirty state -- exposed as the
+// "Re-evaluate All" admin escape hatch (#698).
+type RunScope int
+
+const (
+	// RunScopeIncremental processes only artists that the dirty tracker
+	// flags as changed since their last rules_evaluated_at timestamp.
+	RunScopeIncremental RunScope = iota
+
+	// RunScopeAll processes every eligible artist, mirroring the legacy
+	// behavior. Use sparingly: this is the multi-minute path on large
+	// libraries.
+	RunScopeAll
+)
+
+// String reports a stable label for the scope, suitable for logs and the
+// run-status JSON payload.
+func (s RunScope) String() string {
+	switch s {
+	case RunScopeAll:
+		return "all"
+	case RunScopeIncremental:
+		return "incremental"
+	default:
+		return "incremental"
+	}
+}
+
 // RunResult describes the outcome of running rules against multiple artists.
 type RunResult struct {
 	ArtistsProcessed int         `json:"artists_processed"`
+	ArtistsTotal     int         `json:"artists_total"`
+	ArtistsSkipped   int         `json:"artists_skipped"`
+	Scope            string      `json:"scope"`
 	ViolationsFound  int         `json:"violations_found"`
 	FixesAttempted   int         `json:"fixes_attempted"`
 	FixesSucceeded   int         `json:"fixes_succeeded"`
@@ -56,6 +91,14 @@ type PipelineRunner interface {
 	RunImageRulesForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
 	RunRule(ctx context.Context, ruleID string) (*RunResult, error)
 	RunAll(ctx context.Context) (*RunResult, error)
+	// RunAllScoped is the dirty-aware variant of RunAll. Pass
+	// RunScopeIncremental for the user-facing "Run Rules" button (only
+	// evaluates artists with pending mutations) or RunScopeAll for the
+	// "Re-evaluate All" admin path. RunAll is preserved for callers that
+	// have not been updated and is equivalent to RunAllScoped(ctx, RunScopeAll).
+	RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error)
+	// RunRuleScoped is the dirty-aware variant of RunRule.
+	RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error)
 	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
 }
 
@@ -87,9 +130,19 @@ func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Ser
 	}
 }
 
-// RunRule evaluates a single rule against all non-excluded artists and attempts fixes.
+// RunRule evaluates a single rule against all eligible artists and attempts
+// fixes. Defaults to incremental scope -- only artists flagged as dirty are
+// processed. Callers that need the legacy "every artist" behavior should
+// use RunRuleScoped(ctx, ruleID, RunScopeAll).
 func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, error) {
-	result := &RunResult{}
+	return p.RunRuleScoped(ctx, ruleID, RunScopeIncremental)
+}
+
+// RunRuleScoped evaluates a single rule against artists determined by scope.
+// Returns ArtistsTotal/ArtistsSkipped on the result so the UI can report
+// "evaluating 12 of 800 (788 unchanged)" for the incremental path.
+func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error) {
+	result := &RunResult{Scope: scope.String()}
 
 	// Fetch the rule once to check automation mode for all violations.
 	targetRule, err := p.ruleService.GetByID(ctx, ruleID)
@@ -97,87 +150,47 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 		return nil, fmt.Errorf("getting rule %s: %w", ruleID, err)
 	}
 
-	const pageSize = 200
-	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+	// Capture totals up front so progress reporting always shows the
+	// denominator even when scope=incremental skips most artists.
+	total, totalErr := p.artistService.CountEligibleArtists(ctx)
+	if totalErr != nil {
+		p.logger.Warn("counting eligible artists for run-rule progress", "error", totalErr)
+	}
+	result.ArtistsTotal = total
 
-	for ctx.Err() == nil {
-		page, _, err := p.artistService.List(ctx, params)
+	processArtist := func(a *artist.Artist) bool {
+		var perRuleMetadata bool
+		var perRuleImages []string
+		var perRuleDirty bool
+
+		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
-			return nil, fmt.Errorf("listing artists: %w", err)
-		}
-		if len(page) == 0 {
-			break
+			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+			return false
 		}
 
-		for i := range page {
-			if ctx.Err() != nil {
-				break
-			}
-
-			a := &page[i]
-			if a.IsExcluded || a.Locked {
+		for j := range eval.Violations {
+			v := &eval.Violations[j]
+			if v.RuleID != ruleID {
 				continue
 			}
+			result.ViolationsFound++
 
-			result.ArtistsProcessed++
-			var perRuleMetadata bool
-			var perRuleImages []string
-			var perRuleDirty bool
-
-			eval, err := p.engine.Evaluate(ctx, a)
-			if err != nil {
-				p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-				continue
-			}
-
-			for j := range eval.Violations {
-				v := &eval.Violations[j]
-				if v.RuleID != ruleID {
-					continue
-				}
-				result.ViolationsFound++
-
-				// Manual mode: discover candidates but never auto-apply.
-				// Only invoke fixers that support candidate discovery
-				// without side effects. Side-effect fixers (LogoPaddingFixer,
-				// NFOFixer, ExtraneousImagesFixer) are skipped.
-				if targetRule.AutomationMode == AutomationModeManual {
-					fixer := p.findFixer(v)
-					if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
-						rv := &RuleViolation{
-							RuleID:     v.RuleID,
-							ArtistID:   a.ID,
-							ArtistName: a.Name,
-							Severity:   v.Severity,
-							Message:    v.Message,
-							Fixable:    v.Fixable && fixer != nil,
-							Status:     ViolationStatusOpen,
-						}
-						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-							p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
-						}
-						continue
-					}
-
-					v.Config.DiscoveryOnly = true
-					fr := p.attemptFix(ctx, a, v)
-					result.Results = append(result.Results, *fr)
-					result.FixesAttempted++
-
-					status := ViolationStatusOpen
-					if len(fr.Candidates) > 0 {
-						status = ViolationStatusPendingChoice
-					}
-
+			// Manual mode: discover candidates but never auto-apply.
+			// Only invoke fixers that support candidate discovery
+			// without side effects. Side-effect fixers (LogoPaddingFixer,
+			// NFOFixer, ExtraneousImagesFixer) are skipped.
+			if targetRule.AutomationMode == AutomationModeManual {
+				fixer := p.findFixer(v)
+				if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
 						ArtistName: a.Name,
 						Severity:   v.Severity,
 						Message:    v.Message,
-						Fixable:    true,
-						Status:     status,
-						Candidates: fr.Candidates,
+						Fixable:    v.Fixable && fixer != nil,
+						Status:     ViolationStatusOpen,
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 						p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
@@ -185,40 +198,13 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					continue
 				}
 
-				// Auto mode (default): attempt fix if fixable
-				if !v.Fixable {
-					// Persist unfixable violation as open
-					rv := &RuleViolation{
-						RuleID:     v.RuleID,
-						ArtistID:   a.ID,
-						ArtistName: a.Name,
-						Severity:   v.Severity,
-						Message:    v.Message,
-						Fixable:    false,
-						Status:     ViolationStatusOpen,
-					}
-					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-						p.logger.Warn("persisting unfixable violation", "rule_id", ruleID, "artist", a.Name, "error", err)
-					}
-					continue
-				}
-
+				v.Config.DiscoveryOnly = true
 				fr := p.attemptFix(ctx, a, v)
 				result.Results = append(result.Results, *fr)
 				result.FixesAttempted++
 
-				// Persist violation with appropriate status after fix attempt
 				status := ViolationStatusOpen
-				if fr.Fixed {
-					result.FixesSucceeded++
-					status = ViolationStatusResolved
-					perRuleDirty = true
-					if fr.ImageType != "" {
-						perRuleImages = append(perRuleImages, fr.ImageType)
-					} else {
-						perRuleMetadata = true
-					}
-				} else if len(fr.Candidates) > 0 {
+				if len(fr.Candidates) > 0 {
 					status = ViolationStatusPendingChoice
 				}
 
@@ -232,25 +218,83 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					Status:     status,
 					Candidates: fr.Candidates,
 				}
-				if status == ViolationStatusResolved {
-					now := time.Now().UTC()
-					rv.ResolvedAt = &now
-				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-					p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+					p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
 				}
+				continue
 			}
 
-			// Re-evaluate and persist health score (and any in-memory
-			// changes fixers made) in a single write, then publish.
-			p.updateHealthScore(ctx, a, perRuleDirty)
-			p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
+			// Auto mode (default): attempt fix if fixable
+			if !v.Fixable {
+				rv := &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    false,
+					Status:     ViolationStatusOpen,
+				}
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting unfixable violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+				}
+				continue
+			}
+
+			fr := p.attemptFix(ctx, a, v)
+			result.Results = append(result.Results, *fr)
+			result.FixesAttempted++
+
+			status := ViolationStatusOpen
+			if fr.Fixed {
+				result.FixesSucceeded++
+				status = ViolationStatusResolved
+				perRuleDirty = true
+				if fr.ImageType != "" {
+					perRuleImages = append(perRuleImages, fr.ImageType)
+				} else {
+					perRuleMetadata = true
+				}
+			} else if len(fr.Candidates) > 0 {
+				status = ViolationStatusPendingChoice
+			}
+
+			rv := &RuleViolation{
+				RuleID:     v.RuleID,
+				ArtistID:   a.ID,
+				ArtistName: a.Name,
+				Severity:   v.Severity,
+				Message:    v.Message,
+				Fixable:    true,
+				Status:     status,
+				Candidates: fr.Candidates,
+			}
+			if status == ViolationStatusResolved {
+				now := time.Now().UTC()
+				rv.ResolvedAt = &now
+			}
+			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+				p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+			}
 		}
 
-		if len(page) < pageSize {
-			break
-		}
-		params.Page++
+		// Re-evaluate and persist health score (and any in-memory
+		// changes fixers made) in a single write, then publish.
+		p.updateHealthScore(ctx, a, perRuleDirty)
+		p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
+		return true
+	}
+
+	// Single-rule run does not cover every enabled rule, so leave
+	// rules_evaluated_at untouched. Otherwise running rule A would mark
+	// the artist clean and rule B's RunRule pass would silently skip it.
+	processed, err := p.walkScopedArtists(ctx, scope, false, processArtist)
+	if err != nil {
+		return nil, err
+	}
+	result.ArtistsProcessed = processed
+	if result.ArtistsTotal > processed {
+		result.ArtistsSkipped = result.ArtistsTotal - processed
 	}
 
 	return result, nil
@@ -281,6 +325,10 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	}
 
 	result.ArtistsProcessed = 1
+	// Capture before evaluation for the same race-protection reason as
+	// the multi-artist walker: a concurrent dirty mark must remain
+	// strictly greater than rules_evaluated_at.
+	startedAt := time.Now().UTC()
 
 	var metadataFixed bool
 	var fixedImageTypes []string
@@ -414,104 +462,78 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	// changes fixers made) in a single write, then publish.
 	p.updateHealthScore(ctx, a, artistDirty)
 	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
+	// Stamp rules_evaluated_at only when categoryFilter is empty, i.e.
+	// every enabled rule was considered. Image-only sweeps leave the
+	// timestamp alone so metadata rules still see the artist as dirty.
+	if categoryFilter == "" {
+		p.markArtistEvaluated(ctx, a, startedAt)
+	}
 	return result, nil
 }
 
-// RunAll evaluates all enabled rules against all non-excluded artists and attempts fixes.
+// RunAll evaluates all enabled rules against eligible artists and attempts
+// fixes. Defaults to incremental scope -- only artists flagged as dirty are
+// processed. Use RunAllScoped(ctx, RunScopeAll) for a forced full sweep.
 func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
-	result := &RunResult{}
+	return p.RunAllScoped(ctx, RunScopeIncremental)
+}
 
-	const pageSize = 200
-	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+// RunAllScoped evaluates every enabled rule against the artists determined
+// by scope (incremental or all). The result reports both the number of
+// artists processed and the total eligible count so progress UIs can show
+// "evaluating 12 of 800 (788 unchanged)".
+func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error) {
+	result := &RunResult{Scope: scope.String()}
+
+	total, totalErr := p.artistService.CountEligibleArtists(ctx)
+	if totalErr != nil {
+		p.logger.Warn("counting eligible artists for run-all progress", "error", totalErr)
+	}
+	result.ArtistsTotal = total
 
 	// Cache rule lookups to avoid repeated DB queries across artists.
 	ruleCache := map[string]*Rule{}
 
-	for ctx.Err() == nil {
-		page, _, err := p.artistService.List(ctx, params)
+	processArtist := func(a *artist.Artist) bool {
+		var perArtistMetadata bool
+		var perArtistImages []string
+		var perArtistDirty bool
+
+		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
-			return nil, fmt.Errorf("listing artists: %w", err)
-		}
-		if len(page) == 0 {
-			break
+			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+			return false
 		}
 
-		for i := range page {
-			if ctx.Err() != nil {
-				break
-			}
+		for j := range eval.Violations {
+			v := &eval.Violations[j]
+			result.ViolationsFound++
 
-			a := &page[i]
-			if a.IsExcluded || a.Locked {
-				continue
-			}
-
-			result.ArtistsProcessed++
-			var perArtistMetadata bool
-			var perArtistImages []string
-			var perArtistDirty bool
-
-			eval, err := p.engine.Evaluate(ctx, a)
-			if err != nil {
-				p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-				continue
-			}
-
-			for j := range eval.Violations {
-				v := &eval.Violations[j]
-				result.ViolationsFound++
-
-				// Look up rule to determine automation mode.
-				r, ok := ruleCache[v.RuleID]
-				if !ok {
-					r, err = p.ruleService.GetByID(ctx, v.RuleID)
-					if err != nil {
-						p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-						continue
-					}
-					ruleCache[v.RuleID] = r
+			// Look up rule to determine automation mode.
+			r, ok := ruleCache[v.RuleID]
+			if !ok {
+				r, err = p.ruleService.GetByID(ctx, v.RuleID)
+				if err != nil {
+					p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					continue
 				}
+				ruleCache[v.RuleID] = r
+			}
 
-				// Manual mode: discover candidates but never auto-apply.
-				// Only invoke fixers that support candidate discovery
-				// without side effects.
-				if r.AutomationMode == AutomationModeManual {
-					fixer := p.findFixer(v)
-					if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
-						rv := &RuleViolation{
-							RuleID:     v.RuleID,
-							ArtistID:   a.ID,
-							ArtistName: a.Name,
-							Severity:   v.Severity,
-							Message:    v.Message,
-							Fixable:    v.Fixable && fixer != nil,
-							Status:     ViolationStatusOpen,
-						}
-						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-							p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-						}
-						continue
-					}
-
-					v.Config.DiscoveryOnly = true
-					fr := p.attemptFix(ctx, a, v)
-					result.Results = append(result.Results, *fr)
-					result.FixesAttempted++
-
-					status := ViolationStatusOpen
-					if len(fr.Candidates) > 0 {
-						status = ViolationStatusPendingChoice
-					}
-
+			// Manual mode: discover candidates but never auto-apply.
+			// Only invoke fixers that support candidate discovery
+			// without side effects.
+			if r.AutomationMode == AutomationModeManual {
+				fixer := p.findFixer(v)
+				if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
 						ArtistName: a.Name,
 						Severity:   v.Severity,
 						Message:    v.Message,
-						Fixable:    true,
-						Status:     status,
-						Candidates: fr.Candidates,
+						Fixable:    v.Fixable && fixer != nil,
+						Status:     ViolationStatusOpen,
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 						p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
@@ -519,38 +541,13 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 					continue
 				}
 
-				// Auto mode (default): persist unfixable as open, attempt fix for fixable
-				if !v.Fixable {
-					rv := &RuleViolation{
-						RuleID:     v.RuleID,
-						ArtistID:   a.ID,
-						ArtistName: a.Name,
-						Severity:   v.Severity,
-						Message:    v.Message,
-						Fixable:    false,
-						Status:     ViolationStatusOpen,
-					}
-					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-						p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-					}
-					continue
-				}
-
+				v.Config.DiscoveryOnly = true
 				fr := p.attemptFix(ctx, a, v)
 				result.Results = append(result.Results, *fr)
 				result.FixesAttempted++
 
 				status := ViolationStatusOpen
-				if fr.Fixed {
-					result.FixesSucceeded++
-					status = ViolationStatusResolved
-					perArtistDirty = true
-					if fr.ImageType != "" {
-						perArtistImages = append(perArtistImages, fr.ImageType)
-					} else {
-						perArtistMetadata = true
-					}
-				} else if len(fr.Candidates) > 0 {
+				if len(fr.Candidates) > 0 {
 					status = ViolationStatusPendingChoice
 				}
 
@@ -564,28 +561,199 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 					Status:     status,
 					Candidates: fr.Candidates,
 				}
-				if status == ViolationStatusResolved {
-					now := time.Now().UTC()
-					rv.ResolvedAt = &now
-				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-					p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
 				}
+				continue
 			}
 
-			// Re-evaluate and persist health score (and any in-memory
-			// changes fixers made) in a single write, then publish.
-			p.updateHealthScore(ctx, a, perArtistDirty)
-			p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
+			// Auto mode (default): persist unfixable as open, attempt fix for fixable
+			if !v.Fixable {
+				rv := &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    false,
+					Status:     ViolationStatusOpen,
+				}
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				}
+				continue
+			}
+
+			fr := p.attemptFix(ctx, a, v)
+			result.Results = append(result.Results, *fr)
+			result.FixesAttempted++
+
+			status := ViolationStatusOpen
+			if fr.Fixed {
+				result.FixesSucceeded++
+				status = ViolationStatusResolved
+				perArtistDirty = true
+				if fr.ImageType != "" {
+					perArtistImages = append(perArtistImages, fr.ImageType)
+				} else {
+					perArtistMetadata = true
+				}
+			} else if len(fr.Candidates) > 0 {
+				status = ViolationStatusPendingChoice
+			}
+
+			rv := &RuleViolation{
+				RuleID:     v.RuleID,
+				ArtistID:   a.ID,
+				ArtistName: a.Name,
+				Severity:   v.Severity,
+				Message:    v.Message,
+				Fixable:    true,
+				Status:     status,
+				Candidates: fr.Candidates,
+			}
+			if status == ViolationStatusResolved {
+				now := time.Now().UTC()
+				rv.ResolvedAt = &now
+			}
+			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+				p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+			}
 		}
 
+		// Re-evaluate and persist health score (and any in-memory
+		// changes fixers made) in a single write, then publish.
+		p.updateHealthScore(ctx, a, perArtistDirty)
+		p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
+		return true
+	}
+
+	// RunAll covers every enabled rule, so it owns rules_evaluated_at:
+	// after this pass the artist is fully up-to-date and falls out of
+	// the dirty set until the next mutation.
+	processed, err := p.walkScopedArtists(ctx, scope, true, processArtist)
+	if err != nil {
+		return nil, err
+	}
+	result.ArtistsProcessed = processed
+	if result.ArtistsTotal > processed {
+		result.ArtistsSkipped = result.ArtistsTotal - processed
+	}
+
+	return result, nil
+}
+
+// walkScopedArtists invokes fn for every artist that matches the requested
+// scope. When markEvaluated is true, rules_evaluated_at is stamped after
+// each artist so they fall out of the dirty set on the next incremental
+// pass. RunRuleScoped passes false because a single-rule sweep does not
+// evaluate every rule and should not claim the artist is fully up-to-date;
+// RunAllScoped passes true because it does cover every enabled rule.
+//
+// For scope=incremental, the dirty list is queried up front in a single
+// SQL call -- the dirty filter index keeps this fast even when zero artists
+// are dirty. For scope=all, the existing paginated List walk is preserved
+// so memory usage stays bounded on large libraries.
+//
+// rules_evaluated_at is stamped with the artist's per-iteration start time
+// (captured before fn runs), not time.Now() after fn returns. This protects
+// against a race where an ArtistUpdated event arrives mid-process: the
+// async DirtySubscriber stamps dirty_since with a "now" timestamp that
+// must remain strictly greater than rules_evaluated_at, so the artist
+// stays in the dirty set on the next pass and the in-flight mutation is
+// not silently dropped.
+// fn returns true when the artist was successfully evaluated and false when
+// it was skipped (e.g. engine.Evaluate returned an error). The walker only
+// stamps rules_evaluated_at when fn returns true; a failed evaluation must
+// leave the artist in the dirty set so the next pass retries it. This is
+// the protection against silent data loss flagged in the #698 review:
+// without the bool return, a transient DB error during evaluation would
+// stamp the artist as evaluated and the violation would be hidden until the
+// next mutation.
+//
+// processed counts artists fn was actually invoked on (regardless of return
+// value), since both successes and failures consumed pipeline work.
+func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEvaluated bool, fn func(a *artist.Artist) bool) (int, error) {
+	if scope == RunScopeIncremental {
+		ids, err := p.artistService.ListDirtyIDs(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("listing dirty artists: %w", err)
+		}
+		processed := 0
+		for _, id := range ids {
+			if ctx.Err() != nil {
+				return processed, ctx.Err()
+			}
+			a, err := p.artistService.GetByID(ctx, id)
+			if err != nil {
+				p.logger.Warn("loading dirty artist", "artist_id", id, "error", err)
+				continue
+			}
+			// The dirty list filter excludes locked/excluded already, but
+			// the row state may have changed between query and load.
+			if a.IsExcluded || a.Locked {
+				continue
+			}
+			startedAt := time.Now().UTC()
+			ok := fn(a)
+			processed++
+			if markEvaluated && ok {
+				p.markArtistEvaluated(ctx, a, startedAt)
+			}
+		}
+		return processed, nil
+	}
+
+	// scope=all: paginated walk over every artist, identical to the legacy path.
+	const pageSize = 200
+	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+	processed := 0
+	for ctx.Err() == nil {
+		page, _, err := p.artistService.List(ctx, params)
+		if err != nil {
+			return processed, fmt.Errorf("listing artists: %w", err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for i := range page {
+			if ctx.Err() != nil {
+				break
+			}
+			a := &page[i]
+			if a.IsExcluded || a.Locked {
+				continue
+			}
+			startedAt := time.Now().UTC()
+			ok := fn(a)
+			processed++
+			if markEvaluated && ok {
+				p.markArtistEvaluated(ctx, a, startedAt)
+			}
+		}
 		if len(page) < pageSize {
 			break
 		}
 		params.Page++
 	}
+	// Propagate ctx.Err() if the walk exited because of cancellation so
+	// callers can distinguish a partial run from a clean completion.
+	return processed, ctx.Err()
+}
 
-	return result, nil
+// markArtistEvaluated stamps rules_evaluated_at on the artist after a
+// successful pass through the pipeline. Pass the per-iteration start time
+// so a concurrent dirty mark (event-driven) stays > rules_evaluated_at and
+// is preserved for the next pass. Errors are logged but never propagated:
+// the artist will simply remain in the dirty set and be re-evaluated next
+// time, which is the safe failure mode.
+func (p *Pipeline) markArtistEvaluated(ctx context.Context, a *artist.Artist, startedAt time.Time) {
+	if err := p.artistService.MarkRulesEvaluated(ctx, a.ID, startedAt); err != nil {
+		p.logger.Warn("marking artist rules-evaluated",
+			"artist_id", a.ID,
+			"artist", a.Name,
+			"error", err)
+	}
 }
 
 // FixViolation applies the recommended fix for a single persisted violation.

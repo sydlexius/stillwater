@@ -13,7 +13,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists,
-	health_score, health_evaluated_at, is_excluded, exclusion_reason, is_classical,
+	health_score, health_evaluated_at, dirty_since, rules_evaluated_at, is_excluded, exclusion_reason, is_classical,
 	locked, lock_source, locked_at, locked_fields,
 	metadata_sources,
 	last_scanned_at, created_at, updated_at`
@@ -37,6 +37,8 @@ type scannedArtist struct {
 	libraryID         sql.NullString
 	metadataSources   string
 	healthEvaluatedAt sql.NullString
+	dirtySince        sql.NullString
+	rulesEvaluatedAt  sql.NullString
 	lastScannedAt     sql.NullString
 	nfo               int
 	isExcluded        int
@@ -55,7 +57,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.libraryID, &s.nfo,
-		&s.a.HealthScore, &s.healthEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
+		&s.a.HealthScore, &s.healthEvaluatedAt, &s.dirtySince, &s.rulesEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
 		&s.locked, &s.a.LockSource, &s.lockedAt, &s.lockedFields,
 		&s.metadataSources,
 		&s.lastScannedAt,
@@ -75,6 +77,14 @@ func (s *scannedArtist) apply() {
 	if s.healthEvaluatedAt.Valid {
 		t := dbutil.ParseTime(s.healthEvaluatedAt.String)
 		s.a.HealthEvaluatedAt = &t
+	}
+	if s.dirtySince.Valid {
+		t := dbutil.ParseTime(s.dirtySince.String)
+		s.a.DirtySince = &t
+	}
+	if s.rulesEvaluatedAt.Valid {
+		t := dbutil.ParseTime(s.rulesEvaluatedAt.String)
+		s.a.RulesEvaluatedAt = &t
 	}
 	s.a.IsExcluded = s.isExcluded == 1
 	s.a.IsClassical = s.isClassical == 1

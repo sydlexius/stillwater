@@ -304,6 +304,19 @@ templ Layout(title string, assets AssetPaths) {
 						enqueueToast('warning', msg, 8000);
 					};
 
+					// showStickyToast renders a success toast that stays up until
+					// the user dismisses it with the close button. Use for run
+					// outcomes that summarise work the user is likely to reference
+					// (e.g. the Run Rules incremental summary, #698). Returns an
+					// object exposing dismiss() so callers can collapse a prior
+					// sticky before replacing it on a new run.
+					window.showStickyToast = function(msg) {
+						var entry = enqueueToast('success', msg, 0);
+						return {
+							dismiss: function() { dismissToast(entry); }
+						};
+					};
+
 					// showUndoToast: success-like toast with an Undo button and countdown.
 					// Not subject to grouping (each undo action is unique).
 					window.showUndoToast = function(msg, undoID, undoSeconds, csrfToken) {

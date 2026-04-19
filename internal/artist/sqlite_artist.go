@@ -258,6 +258,11 @@ func (r *sqliteArtistRepo) Count(ctx context.Context, params CountParams) (int, 
 func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	a.UpdatedAt = time.Now().UTC()
 
+	// dirty_since and rules_evaluated_at are intentionally excluded from this
+	// UPDATE: they are owned by MarkDirty/MarkRulesEvaluated and racing with
+	// concurrent event-driven dirty marks would silently lose mutations.
+	// The Artist struct still carries these fields for read-side consumers,
+	// but write-side ownership lives in the targeted helpers (#698).
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE artists SET
 			name = ?, sort_name = ?, type = ?, gender = ?, disambiguation = ?,

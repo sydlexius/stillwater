@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -278,6 +279,10 @@ const snapshotThrottleTTL = 60 * time.Second
 type Service struct {
 	db *sql.DB
 
+	// logger is the package logger; defaults to slog.Default() and can be
+	// overridden via WithLogger for tests that want to capture output.
+	logger *slog.Logger
+
 	// snapshotMu guards lastSnapshotAt to ensure at most one snapshot is
 	// recorded per throttle window across concurrent handler goroutines.
 	snapshotMu     sync.Mutex
@@ -290,12 +295,35 @@ type Service struct {
 
 // NewService creates a rule service.
 func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:     db,
+		logger: slog.Default(),
+	}
 }
 
-// SeedDefaults inserts built-in rules and updates their name and description on conflict.
-// The enabled state, automation_mode, and config of existing rules are never overwritten,
-// so user customisations are preserved across upgrades.
+// WithLogger attaches a logger for the rule service. Defaults to slog.Default()
+// when not set. Useful for tests that want to capture log output.
+func (s *Service) WithLogger(logger *slog.Logger) *Service {
+	if logger != nil {
+		s.logger = logger
+	}
+	return s
+}
+
+// SeedDefaults inserts built-in rules and refreshes their cosmetic fields
+// (name, description) on existing rows so upgraded installs pick up improved
+// copy. User-customisable columns (enabled, automation_mode, config) are
+// preserved across upgrades.
+//
+// IMPORTANT: the cosmetic refresh deliberately does NOT bump rules.updated_at.
+// The dirty-tracking query in artist.ListDirtyIDs treats rules.updated_at as
+// the signal "this rule's evaluation outcomes might have changed", and a
+// startup-time copy refresh has no effect on outcomes. Bumping updated_at
+// here would invalidate every artist's rules_evaluated_at on every restart
+// and force a full library re-evaluation on the next Run Rules pass.
+//
+// Newly inserted rules naturally have updated_at = now, which is the correct
+// signal for the dirty-tracking query to schedule them on the next pass.
 func (s *Service) SeedDefaults(ctx context.Context) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, r := range defaultRules {
@@ -303,19 +331,30 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 		if autoMode == "" {
 			autoMode = "auto"
 		}
-		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		// INSERT OR IGNORE: a brand-new rule gets created_at = updated_at = now
+		// (and the dirty-tracking JOIN in ListDirtyIDs will pick it up via
+		// updated_at > artists.rules_evaluated_at). Existing rules are not
+		// touched here; the cosmetic UPDATE below handles those.
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				name        = excluded.name,
-				description = excluded.description,
-				updated_at  = excluded.updated_at
 		`, r.ID, r.Name, r.Description, r.Category, dbutil.BoolToInt(r.Enabled),
-			autoMode, MarshalConfig(r.Config), now, now)
-		if err != nil {
+			autoMode, MarshalConfig(r.Config), now, now); err != nil {
 			return fmt.Errorf("seeding rule %s: %w", r.ID, err)
 		}
+
+		// Cosmetic refresh: name + description only, NO updated_at bump
+		// (see function doc for why). Skips the write entirely when the
+		// stored values already match so SQLite avoids a needless write.
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE rules
+			SET name = ?, description = ?
+			WHERE id = ? AND (name != ? OR description != ?)
+		`, r.Name, r.Description, r.ID, r.Name, r.Description); err != nil {
+			return fmt.Errorf("refreshing rule metadata for %s: %w", r.ID, err)
+		}
 	}
+
 	// Migrate deprecated logo_trimmable rule: dismiss any open violations
 	// and delete the rule definition so it no longer appears in the UI.
 	if err := s.migrateDeprecatedRule(ctx, ruleLogoTrimmableDeprecated); err != nil {
@@ -389,6 +428,14 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 }
 
 // Update modifies a rule's enabled state, automation mode, and config.
+//
+// The bumped rules.updated_at is the dirty-tracking signal: artist.ListDirtyIDs
+// JOINs against rules WHERE enabled = 1 AND updated_at > rules_evaluated_at,
+// so any enabled-rule update naturally schedules every affected artist for
+// re-evaluation on the next pass. Disabling a rule (enabled = 0) does NOT
+// schedule re-evaluation because the JOIN filters out disabled rules -- the
+// remaining enabled rules' outcomes are unchanged by the disable, so a full
+// library walk would be wasted work.
 func (s *Service) Update(ctx context.Context, r *Rule) error {
 	r.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `

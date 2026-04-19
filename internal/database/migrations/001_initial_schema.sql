@@ -171,6 +171,14 @@ CREATE TABLE IF NOT EXISTS artists (
     nfo_exists INTEGER NOT NULL DEFAULT 0,
     health_score REAL NOT NULL DEFAULT 0.0,
     health_evaluated_at TEXT DEFAULT NULL,
+    -- Incremental rule evaluation tracking (issue #698).
+    -- dirty_since records when the artist last had a mutation that may have
+    -- invalidated rule outcomes; rules_evaluated_at records when rules were
+    -- last evaluated for this artist. The "Run Rules" path picks artists
+    -- where dirty_since > rules_evaluated_at OR rules_evaluated_at IS NULL,
+    -- so the full library is only walked when many artists have changed.
+    dirty_since TEXT DEFAULT NULL,
+    rules_evaluated_at TEXT DEFAULT NULL,
     is_excluded INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT NOT NULL DEFAULT '',
     is_classical INTEGER NOT NULL DEFAULT 0,
@@ -191,6 +199,10 @@ CREATE INDEX idx_artists_name ON artists(name);
 CREATE INDEX idx_artists_path ON artists(path);
 CREATE INDEX idx_artists_library_id ON artists(library_id);
 CREATE INDEX idx_artists_locked ON artists(locked);
+-- Supports the "dirty artist" scan used by incremental Run Rules (issue #698).
+-- The composite index lets SQLite resolve the WHERE clause without scanning
+-- the full table when only a small slice of artists have changed.
+CREATE INDEX idx_artists_dirty_eval ON artists(dirty_since, rules_evaluated_at);
 
 -- =============================================================================
 -- Artist relationships (normalized)

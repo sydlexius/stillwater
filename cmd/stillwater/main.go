@@ -190,8 +190,12 @@ func run() error {
 	platformService := platform.NewService(db)
 	connectionService := connection.NewService(db, encryptor)
 
-	// Initialize rule engine
-	ruleService := rule.NewService(db)
+	// Initialize rule engine. The logger is attached so rule-service
+	// diagnostics use the same destination as the rest of the app.
+	// Dirty-tracking for incremental Run Rules (#698) is implemented via
+	// a JOIN in artist.ListDirtyIDs against rules.updated_at, so the rule
+	// service does not need an artist service handle for that side-effect.
+	ruleService := rule.NewService(db).WithLogger(logger)
 	if err := ruleService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
@@ -376,6 +380,11 @@ func run() error {
 	// shutdown context is created (below).
 	healthSub := rule.NewHealthSubscriber(ruleEngine, artistService, logger)
 	eventBus.Subscribe(event.ArtistUpdated, healthSub.HandleEvent)
+
+	// Dirty subscriber: marks artists dirty on mutations so the next
+	// incremental "Run Rules" pass re-evaluates only what changed (#698).
+	dirtySub := rule.NewDirtySubscriber(artistService, logger)
+	eventBus.Subscribe(event.ArtistUpdated, dirtySub.HandleEvent)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),

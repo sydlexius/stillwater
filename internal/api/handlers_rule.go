@@ -17,8 +17,11 @@ import (
 // ruleRunStatus tracks the state of an async run-all-rules operation.
 type ruleRunStatus struct {
 	Running             bool      `json:"running"`
-	Status              string    `json:"status"` // idle, running, completed, failed
+	Status              string    `json:"status"`          // idle, running, completed, failed
+	Scope               string    `json:"scope,omitempty"` // incremental or all (#698)
 	ArtistsProcessed    int       `json:"artists_processed"`
+	ArtistsTotal        int       `json:"artists_total"`             // eligible artist count (#698)
+	ArtistsSkipped      int       `json:"artists_skipped,omitempty"` // ArtistsTotal - ArtistsProcessed (#698)
 	ViolationsFound     int       `json:"violations_found"`
 	ViolationsAutoFixed int       `json:"violations_auto_fixed"`
 	ViolationsRemaining int       `json:"violations_remaining"`
@@ -27,6 +30,20 @@ type ruleRunStatus struct {
 	StartedAt           time.Time `json:"started_at,omitempty"`
 	CompletedAt         time.Time `json:"completed_at,omitempty"`
 	Error               string    `json:"error,omitempty"`
+}
+
+// parseRunScope reads the scope query parameter and resolves it to a
+// rule.RunScope. The default is incremental (#698): only artists with
+// pending mutations are evaluated, which is what the user-facing "Run
+// Rules" button now triggers. Pass scope=all to force a full sweep --
+// this is the "Re-evaluate All" admin escape hatch.
+func parseRunScope(req *http.Request) rule.RunScope {
+	switch req.URL.Query().Get("scope") {
+	case "all", "full":
+		return rule.RunScopeAll
+	default:
+		return rule.RunScopeIncremental
+	}
 }
 
 // handleListRules returns all rules as JSON. Each rule includes a
@@ -204,6 +221,8 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Reject if a run (single or all) is already in progress.
+	scope := parseRunScope(req)
+
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
 		r.ruleRunMu.Unlock()
@@ -213,6 +232,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	r.ruleRun = &ruleRunStatus{
 		Running:   true,
 		Status:    "running",
+		Scope:     scope.String(),
 		StartedAt: time.Now().UTC(),
 	}
 	r.ruleRunMu.Unlock()
@@ -236,7 +256,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 			}
 		}()
 
-		result, err := r.pipeline.RunRule(ctx, ruleID)
+		result, err := r.pipeline.RunRuleScoped(ctx, ruleID, scope)
 
 		// Compute violation counts outside the mutex (same pattern as run-all).
 		var violationsAutoFixed int
@@ -279,6 +299,9 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
+		r.ruleRun.ArtistsTotal = result.ArtistsTotal
+		r.ruleRun.ArtistsSkipped = result.ArtistsSkipped
+		r.ruleRun.Scope = result.Scope
 		r.ruleRun.ViolationsFound = result.ViolationsFound
 		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
 		r.ruleRun.ViolationsRemaining = violationsRemaining
@@ -290,6 +313,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status":  "running",
 		"rule_id": ruleID,
+		"scope":   scope.String(),
 	})
 }
 
@@ -403,6 +427,8 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	scope := parseRunScope(req)
+
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
 		r.ruleRunMu.Unlock()
@@ -412,6 +438,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 	r.ruleRun = &ruleRunStatus{
 		Running:   true,
 		Status:    "running",
+		Scope:     scope.String(),
 		StartedAt: time.Now().UTC(),
 	}
 	r.ruleRunMu.Unlock()
@@ -432,7 +459,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 			}
 		}()
 
-		result, err := r.pipeline.RunAll(ctx)
+		result, err := r.pipeline.RunAllScoped(ctx, scope)
 
 		// Compute violation counts outside the mutex to avoid blocking status polls.
 		// Check err first -- RunAll returns nil result on error paths.
@@ -480,6 +507,9 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
+		r.ruleRun.ArtistsTotal = result.ArtistsTotal
+		r.ruleRun.ArtistsSkipped = result.ArtistsSkipped
+		r.ruleRun.Scope = result.Scope
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
 		r.ruleRun.ViolationsFound = violationsFound
