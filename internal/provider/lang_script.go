@@ -205,6 +205,46 @@ func ScriptMatchesAnyLocale(script string, prefs []string) bool {
 	return false
 }
 
+// LocaleExpectsOnlyNonLatinScript reports whether the BCP-47 tag's expected
+// script set excludes Latin. This is the condition under which an
+// "already-in-preferred-script" optimization can safely skip work: if the
+// pref could also be satisfied by a Latin-form alias, skipping loses the
+// chance to promote typography/spelling/capitalization refinements that the
+// alias provides.
+//
+// The rule: a tag returns true iff its resolved script set (from an explicit
+// BCP-47 script subtag when present, else from the base language's entry in
+// localeScripts) is both non-empty and contains no Latin script. Empty,
+// unmapped, and Latin-containing tags return false. The "unmapped returns
+// false" default is deliberately conservative: without positive evidence
+// that the pref excludes Latin, we do not authorize a Latin-canonical skip.
+func LocaleExpectsOnlyNonLatinScript(tag string) bool {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return false
+	}
+	// Explicit BCP-47 script subtag wins, consistent with the precedence in
+	// ScriptMatchesAnyLocale and ScriptSatisfiesLocale.
+	if sub := ParseBCP47Script(tag); sub != "" {
+		mapped, ok := iso15924ToScript[sub]
+		if !ok {
+			return false
+		}
+		return mapped != ScriptLatin
+	}
+	lang := strings.SplitN(strings.ToLower(tag), "-", 2)[0]
+	allowed, ok := localeScripts[lang]
+	if !ok {
+		return false
+	}
+	for _, s := range allowed {
+		if s == ScriptLatin {
+			return false
+		}
+	}
+	return true
+}
+
 // ScriptSatisfiesLocale reports whether the dominant script of s is a
 // positive match for at least one locale in prefs. Unlike
 // ScriptMatchesAnyLocale, this returns false for unclassifiable input and for

@@ -159,14 +159,18 @@ func newMemberAliasCache() *memberAliasCache {
 // are resolved in sequence.
 //
 // Optimization: when a member's canonical name is already in a script
-// satisfying the user's TOP language preference, the alias fetch is skipped.
-// Matching only the first preference (not the full list) preserves the
-// opportunity to promote a higher-preference alias when the canonical name
-// happens to match a secondary preference. For a band whose roster mostly
-// shares the canonical-name script with the top preference (a Japanese band
-// under a [ja, ...] preference, for example), this skips most members and
-// brings the 1 req/sec rate-limited per-refresh cost down by roughly the
-// same proportion.
+// satisfying the user's TOP language preference AND that preference expects
+// only non-Latin scripts, the alias fetch is skipped. The non-Latin gate is
+// required because Latin-family prefs (en, es, de, fr, sr, ...) can still
+// benefit from alias promotion even when the canonical is already Latin:
+// MusicBrainz aliases carry typography, capitalization, and spelling
+// refinements that a Latin-form canonical may lack (issue #1137). Matching
+// only the first preference (not the full list) preserves the opportunity to
+// promote a higher-preference alias when the canonical happens to match a
+// secondary preference. For a band whose roster mostly shares the
+// canonical-name script with a non-Latin top preference (a Japanese band
+// under a [ja, ...] preference, for example), this still skips most members
+// and preserves the 1 req/sec rate-limit win the optimization was built for.
 func (a *Adapter) localizeMembers(ctx context.Context, members []provider.MemberInfo, langPrefs []string, cache *memberAliasCache) {
 	topPref := ""
 	if len(langPrefs) > 0 {
@@ -181,11 +185,14 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 		}
 
 		// Skip alias fetch when the canonical name is already in a script
-		// that matches the user's top language preference. ScriptSatisfiesLocale
-		// returns false for unknown scripts and empty preferences, so we only
-		// skip when we have positive evidence of a match.
-		if topPref != "" && provider.ScriptSatisfiesLocale(m.Name, []string{topPref}) {
-			a.logger.Debug("skipping member alias fetch (canonical already in preferred script)",
+		// that matches the user's top language preference AND that preference
+		// is non-Latin-only. The LocaleExpectsOnlyNonLatinScript guard keeps
+		// Latin-family prefs out of the skip path so typography/spelling
+		// refinements in Latin aliases can still be promoted (#1137).
+		if topPref != "" &&
+			provider.LocaleExpectsOnlyNonLatinScript(topPref) &&
+			provider.ScriptSatisfiesLocale(m.Name, []string{topPref}) {
+			a.logger.Debug("skipping member alias fetch (canonical already in preferred non-Latin script)",
 				slog.String("member_mbid", mbid),
 				slog.String("member_name", m.Name),
 				slog.String("top_pref", topPref))
