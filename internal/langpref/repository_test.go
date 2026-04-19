@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -402,6 +403,25 @@ func TestRepository_Delete_EmptyUserIDRejected(t *testing.T) {
 	repo := NewRepository(setupTestDB(t))
 	if err := repo.Delete(context.Background(), ""); err == nil {
 		t.Error("Delete with empty user id: expected error, got nil")
+	}
+}
+
+// TestRepository_Delete_WrapsDBError verifies the error path in Delete:
+// the DB Exec failure is wrapped with "langpref: deleting preference for
+// user ..." so callers can identify the operation in logs without
+// unwrapping. Simulated by closing the underlying DB before the call.
+func TestRepository_Delete_WrapsDBError(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewRepository(db)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+	err := repo.Delete(context.Background(), "user-1")
+	if err == nil {
+		t.Fatal("Delete against closed db: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "deleting preference for user user-1") {
+		t.Errorf("Delete error = %q, want it to mention the user id and operation", err.Error())
 	}
 }
 

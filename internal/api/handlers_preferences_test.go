@@ -968,6 +968,36 @@ func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 	}
 }
 
+// TestMetadataLanguagesPref_EmptyArray_DeleteFailure covers the handler's
+// error branch for the empty-array / reset-to-default path. Simulating a
+// DB failure via db.Close() is enough to exercise the write path: the
+// langpref.Delete call returns a wrapped error and the handler must
+// respond 500 rather than silently 200ing.
+func TestMetadataLanguagesPref_EmptyArray_DeleteFailure(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db for error injection: %v", err)
+	}
+
+	body := `{"value":"[]"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("empty-array PUT with broken db: expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if resp["error"] == "" {
+		t.Errorf("expected error message in response, got %v", resp)
+	}
+}
+
 func TestMetadataLanguagesPref_EmptyArrayResetsToDefault(t *testing.T) {
 	r, _, userID := testRouterWithAuth(t)
 

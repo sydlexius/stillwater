@@ -52,3 +52,32 @@ func TestInboundWebhookURL(t *testing.T) {
 		})
 	}
 }
+
+// TestMetadataLanguagesJSON_PreservesEmpty locks in the invariant the
+// Providers tab JS depends on: when the user has no stored preference (or
+// has explicitly cleared it via the Clear UI), the template renders
+// `data-languages="[]"` rather than coercing back to the default `["en"]`.
+// Coercion would silently re-render an English pill after a reset and
+// contradict what the user just did. See issue #1138.
+func TestMetadataLanguagesJSON_PreservesEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  string
+	}{
+		{"nil slice preserves empty", nil, `[]`},
+		{"empty slice preserves empty", []string{}, `[]`},
+		{"single language serializes normally", []string{"en"}, `["en"]`},
+		{"multiple languages preserve order", []string{"en-US", "en-GB", "en"}, `["en-US","en-GB","en"]`},
+		{"non-Latin tag marshals unchanged", []string{"ja"}, `["ja"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := SettingsData{MetadataLanguages: tt.input}
+			got := d.metadataLanguagesJSON()
+			if got != tt.want {
+				t.Errorf("metadataLanguagesJSON() with %v = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

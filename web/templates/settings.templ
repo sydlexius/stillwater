@@ -102,13 +102,21 @@ func (d SettingsData) inboundWebhookURL(platform string) string {
 
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
 // suitable for embedding in a data attribute.
+//
+// Empty slices are preserved as "[]" rather than coerced to the default.
+// This is load-bearing: the Providers tab JS treats "[]" as the explicit
+// "no languages set, using default: English" state (issue #1138). Coercing
+// back to ["en"] here would silently re-render an English pill after a
+// user's explicit reset-to-default action, contradicting what they just did.
+// On JSON marshal failure we fall back to "[]" for the same reason: it is
+// the safer no-op than fabricating an opinion on the user's behalf.
 func (d SettingsData) metadataLanguagesJSON() string {
 	if len(d.MetadataLanguages) == 0 {
-		return `["en"]`
+		return `[]`
 	}
 	b, err := json.Marshal(d.MetadataLanguages)
 	if err != nil {
-		return `["en"]`
+		return `[]`
 	}
 	return string(b)
 }
