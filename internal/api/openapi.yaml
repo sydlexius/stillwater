@@ -397,8 +397,10 @@ components:
         rule_id:
           type: string
           description: >
-            Set only for single-rule acknowledgments (POST /rules/{id}/run
-            202). Omitted for full-sweep responses.
+            Present for single-rule runs: both the POST /rules/{id}/run 202
+            acknowledgment and any GET /rules/run-all/status snapshot while a
+            single-rule run is in flight. Omitted for full-sweep (run-all)
+            responses.
         artists_processed:
           type: integer
           description: Number of artists actually evaluated during this run.
