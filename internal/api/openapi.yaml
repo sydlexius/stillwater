@@ -394,6 +394,11 @@ components:
             the user-facing Run Rules button) re-evaluates only artists
             flagged dirty since their last evaluation. "all" forces a
             full sweep -- the "Re-evaluate All" admin escape hatch.
+        rule_id:
+          type: string
+          description: >
+            Set only for single-rule acknowledgments (POST /rules/{id}/run
+            202). Omitted for full-sweep responses.
         artists_processed:
           type: integer
           description: Number of artists actually evaluated during this run.
@@ -407,7 +412,8 @@ components:
           type: integer
           description: >
             Eligible artists not processed by this run (artists_total minus
-            artists_processed). Always zero for scope=all.
+            artists_processed). May be omitted when zero. When present,
+            this is always zero for scope=all.
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation
@@ -3798,19 +3804,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [running]
-                    description: Acknowledgment that the rule run was started.
-                  rule_id:
-                    type: string
-                    description: ID of the rule being evaluated.
-                  scope:
-                    type: string
-                    enum: [incremental, all]
-                    description: Resolved scope this run targets.
+                $ref: "#/components/schemas/RuleRunStatus"
+        "400":
+          description: Invalid scope query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Rule not found
           content:

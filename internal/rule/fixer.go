@@ -696,9 +696,17 @@ func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEv
 			}
 			startedAt := time.Now().UTC()
 			ok := fn(a)
-			processed++
-			if markEvaluated && ok {
-				p.markArtistEvaluated(ctx, a, startedAt)
+			// Only count + stamp artists that actually completed
+			// evaluation. A false return means fn bailed (engine
+			// error) and intentionally left the artist dirty for
+			// retry; counting it as processed would over-report in
+			// the "evaluated X of Y (Z unchanged)" summary and
+			// stamping rules_evaluated_at would hide the next run.
+			if ok {
+				processed++
+				if markEvaluated {
+					p.markArtistEvaluated(ctx, a, startedAt)
+				}
 			}
 		}
 		return processed, nil
@@ -726,9 +734,14 @@ func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEv
 			}
 			startedAt := time.Now().UTC()
 			ok := fn(a)
-			processed++
-			if markEvaluated && ok {
-				p.markArtistEvaluated(ctx, a, startedAt)
+			// See the scope=incremental branch above: failed
+			// evaluations must not count toward processed nor get
+			// their rules_evaluated_at stamped.
+			if ok {
+				processed++
+				if markEvaluated {
+					p.markArtistEvaluated(ctx, a, startedAt)
+				}
 			}
 		}
 		if len(page) < pageSize {

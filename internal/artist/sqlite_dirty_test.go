@@ -149,13 +149,26 @@ func TestMarkAllDirty_StampsEligibleArtists(t *testing.T) {
 		t.Fatalf("creating excluded: %v", err)
 	}
 
+	// Also seed a locked artist so the rows-affected check guards the full
+	// eligibility predicate (is_excluded = 0 AND locked = 0), not just the
+	// excluded half. Without this, a regression that stamps locked rows
+	// would still pass the downstream ListDirtyIDs assertion because
+	// ListDirtyIDs itself filters locked artists out.
+	locked := testArtist("Locked", "/music/locked")
+	locked.Locked = true
+	lockedNow := time.Now().UTC()
+	locked.LockedAt = &lockedNow
+	if err := svc.Create(ctx, locked); err != nil {
+		t.Fatalf("creating locked: %v", err)
+	}
+
 	// Use a clearly later timestamp to ensure dirty_since > rules_evaluated_at.
 	n, err := svc.MarkAllDirty(ctx, time.Now().UTC().Add(time.Second))
 	if err != nil {
 		t.Fatalf("MarkAllDirty: %v", err)
 	}
 	if n != 3 {
-		t.Fatalf("MarkAllDirty rows affected = %d, want 3 (A, B, C only)", n)
+		t.Fatalf("MarkAllDirty rows affected = %d, want 3 (A, B, C only; excluded + locked skipped)", n)
 	}
 
 	ids, err := svc.ListDirtyIDs(ctx)

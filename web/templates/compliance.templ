@@ -663,7 +663,11 @@ templ runRulesScript() {
 					showRunRulesConfirm(bp, count, scope);
 				})
 				.catch(function() {
-					showRunRulesConfirm(bp, 0);
+					// Preserve the requested scope on estimate failure; a
+					// dropped scope would silently downgrade Re-evaluate
+					// All to incremental on any transient /reports/health
+					// hiccup.
+					showRunRulesConfirm(bp, 0, scope);
 				});
 		}
 

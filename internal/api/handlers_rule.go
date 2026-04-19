@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,11 +15,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// ruleRunStatus tracks the state of an async run-all-rules operation.
+// ruleRunStatus tracks the state of an async rule-run operation, shared
+// between POST /rules/run-all and POST /rules/{id}/run. Single-rule runs
+// populate RuleID so the 202 response identifies which rule is running.
 type ruleRunStatus struct {
 	Running             bool      `json:"running"`
-	Status              string    `json:"status"`          // idle, running, completed, failed
-	Scope               string    `json:"scope,omitempty"` // incremental or all (#698)
+	Status              string    `json:"status"`            // idle, running, completed, failed
+	Scope               string    `json:"scope,omitempty"`   // incremental or all (#698)
+	RuleID              string    `json:"rule_id,omitempty"` // set for single-rule runs only
 	ArtistsProcessed    int       `json:"artists_processed"`
 	ArtistsTotal        int       `json:"artists_total"`             // eligible artist count (#698)
 	ArtistsSkipped      int       `json:"artists_skipped,omitempty"` // ArtistsTotal - ArtistsProcessed (#698)
@@ -33,17 +37,38 @@ type ruleRunStatus struct {
 }
 
 // parseRunScope reads the scope query parameter and resolves it to a
-// rule.RunScope. The default is incremental (#698): only artists with
-// pending mutations are evaluated, which is what the user-facing "Run
-// Rules" button now triggers. Pass scope=all to force a full sweep --
-// this is the "Re-evaluate All" admin escape hatch.
-func parseRunScope(req *http.Request) rule.RunScope {
+// rule.RunScope. An absent or empty value defaults to incremental
+// (#698: only artists with pending mutations are evaluated), matching
+// the user-facing "Run Rules" button. "all" forces a full sweep --
+// the "Re-evaluate All" admin escape hatch.
+//
+// Unknown values are rejected so a caller typo (e.g. "?scope=al") does
+// not silently downgrade a full re-evaluation request to incremental.
+// Callers propagate the error as HTTP 400.
+func parseRunScope(req *http.Request) (rule.RunScope, error) {
 	switch req.URL.Query().Get("scope") {
-	case "all", "full":
-		return rule.RunScopeAll
+	case "", "incremental":
+		return rule.RunScopeIncremental, nil
+	case "all":
+		return rule.RunScopeAll, nil
 	default:
-		return rule.RunScopeIncremental
+		return rule.RunScopeIncremental, fmt.Errorf("invalid scope %q: must be incremental or all", req.URL.Query().Get("scope"))
 	}
+}
+
+// eligibleArtistsTotal returns the in-flight denominator for progress
+// reporting. A failure is logged and zero is returned; the in-flight
+// status then omits the total rather than blocking the run.
+func (r *Router) eligibleArtistsTotal(ctx context.Context) int {
+	if r.artistService == nil {
+		return 0
+	}
+	n, err := r.artistService.CountEligibleArtists(ctx)
+	if err != nil {
+		r.logger.Warn("counting eligible artists for run status", "error", err)
+		return 0
+	}
+	return n
 }
 
 // handleListRules returns all rules as JSON. Each rule includes a
@@ -220,9 +245,20 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Reject if a run (single or all) is already in progress.
-	scope := parseRunScope(req)
+	scope, err := parseRunScope(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
+	// Capture the eligible denominator up front so /rules/run-all/status
+	// can drive the "evaluating X of Y artists (Z unchanged)" UI while
+	// the run is in-flight. artists_processed starts at zero and ticks
+	// up via the per-artist callback path; artists_skipped is still
+	// only meaningful at completion (depends on processed).
+	total := r.eligibleArtistsTotal(req.Context())
+
+	// Reject if a run (single or all) is already in progress.
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
 		r.ruleRunMu.Unlock()
@@ -230,10 +266,12 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	r.ruleRun = &ruleRunStatus{
-		Running:   true,
-		Status:    "running",
-		Scope:     scope.String(),
-		StartedAt: time.Now().UTC(),
+		Running:      true,
+		Status:       "running",
+		Scope:        scope.String(),
+		ArtistsTotal: total,
+		RuleID:       ruleID,
+		StartedAt:    time.Now().UTC(),
 	}
 	r.ruleRunMu.Unlock()
 
@@ -310,11 +348,13 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRunMu.Unlock()
 	}()
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":  "running",
-		"rule_id": ruleID,
-		"scope":   scope.String(),
-	})
+	// Return the same RuleRunStatus shape that run-all uses so clients
+	// can share a single response schema for async rule acknowledgments.
+	// RuleID identifies which rule this 202 is for.
+	r.ruleRunMu.Lock()
+	ack := *r.ruleRun
+	r.ruleRunMu.Unlock()
+	writeJSON(w, http.StatusAccepted, &ack)
 }
 
 // handleRunArtistRules runs all enabled rules scoped to a single artist.
@@ -427,7 +467,15 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	scope := parseRunScope(req)
+	scope, err := parseRunScope(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// See handleRunRule: capture totals up front so in-flight status
+	// polls can drive the progress UI before the pipeline returns.
+	total := r.eligibleArtistsTotal(req.Context())
 
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
@@ -436,10 +484,11 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	r.ruleRun = &ruleRunStatus{
-		Running:   true,
-		Status:    "running",
-		Scope:     scope.String(),
-		StartedAt: time.Now().UTC(),
+		Running:      true,
+		Status:       "running",
+		Scope:        scope.String(),
+		ArtistsTotal: total,
+		StartedAt:    time.Now().UTC(),
 	}
 	r.ruleRunMu.Unlock()
 

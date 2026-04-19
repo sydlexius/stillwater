@@ -45,9 +45,13 @@ func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 		t.Fatalf("artist should be clean before rule update, got %v", cleanIDs)
 	}
 
-	// Update an enabled rule. The JOIN in ListDirtyIDs filters on
-	// enabled = 1 AND updated_at > artists.rules_evaluated_at, so the
-	// freshly bumped rules.updated_at must resurface the artist.
+	// Update an enabled rule with a real field mutation. The JOIN in
+	// ListDirtyIDs filters on enabled = 1 AND updated_at > artists.
+	// rules_evaluated_at, so the freshly bumped rules.updated_at must
+	// resurface the artist. We mutate AutomationMode rather than leaving
+	// r unchanged so the assertion is "a real rule mutation dirties
+	// artists" rather than "a no-op save still bumps updated_at", which
+	// would be a false green if Update ever became no-op-aware.
 	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
@@ -57,6 +61,11 @@ func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 		// both before and after the update (disable-then-update would
 		// leave the JOIN's enabled=1 filter excluding the row).
 		t.Skipf("RuleNFOExists default disabled; test assumes an enabled default rule")
+	}
+	if r.AutomationMode == AutomationModeAuto {
+		r.AutomationMode = AutomationModeManual
+	} else {
+		r.AutomationMode = AutomationModeAuto
 	}
 	time.Sleep(time.Second)
 	if err := ruleSvc.Update(ctx, r); err != nil {
