@@ -277,6 +277,31 @@ func TestRepository_EffectiveForBackground_PicksProtectedAdmin(t *testing.T) {
 	}
 }
 
+func TestRepository_EffectiveForBackground_ProtectedWinsAtSameAge(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	// Same created_at: is_protected must break the tie in favor of the
+	// protected admin. This is the "protected breaks ties" case for
+	// deployments where multiple admins were created in the same tick.
+	insertUser(t, db, "u-plain", "alice", "administrator", 1, 0, "2026-01-01T00:00:00Z")
+	insertUser(t, db, "u-protected", "bootstrap", "administrator", 1, 1, "2026-01-01T00:00:00Z")
+
+	if err := repo.Set(ctx, "u-plain", []string{"fr"}); err != nil {
+		t.Fatalf("Set u-plain: %v", err)
+	}
+	if err := repo.Set(ctx, "u-protected", []string{"ja"}); err != nil {
+		t.Fatalf("Set u-protected: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	want := []string{"ja"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveForBackground with tied created_at = %v, want protected admin's prefs %v", got, want)
+	}
+}
+
 func TestRepository_EffectiveForBackground_OldestAdminWhenNoneProtected(t *testing.T) {
 	db := setupTestDBWithUsers(t)
 	repo := NewRepository(db)

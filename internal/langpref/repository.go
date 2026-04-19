@@ -102,9 +102,12 @@ func (r *Repository) Set(ctx context.Context, userID string, tags []string) erro
 // (e.g. the rule scheduler) should use when no HTTP user session is in
 // scope. The strategy is deterministic and small:
 //
-//  1. Pick the oldest active administrator. Protected administrators
-//     (bootstrap accounts that cannot be deactivated) win ties -- in a
-//     single-admin self-hosted deployment this is always the operator.
+//  1. Pick the primary active administrator. A protected administrator
+//     (the bootstrap account -- marked is_protected=1 because it cannot
+//     be deactivated or role-changed) always wins, regardless of age; in
+//     a self-hosted deployment this is the operator running the instance.
+//     Non-protected admins are broken down by oldest created_at, then by
+//     id for deterministic ties.
 //  2. Return that user's stored preferences via Get, which falls back to
 //     DefaultTags() when the row is absent or malformed.
 //  3. If no administrator row exists (fresh database, before bootstrap),
