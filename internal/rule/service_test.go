@@ -234,6 +234,121 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+// TestUpdate_DisabledClearsActiveViolations verifies the cleanup branch added
+// in round 2: when a rule flips to enabled=false, open and pending_choice
+// violations for that rule are deleted so they stop showing up as "needs
+// attention" rows now that the rule no longer re-evaluates the library.
+// Historical dismissed/resolved rows must be left alone.
+func TestUpdate_DisabledClearsActiveViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed violations in all four status values for the target rule, plus a
+	// sibling rule whose violations must be untouched by the cleanup.
+	ruleID := RuleNFOExists
+	otherID := RuleFanartExists
+	for _, v := range []*RuleViolation{
+		{RuleID: ruleID, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "open", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: ruleID, ArtistID: "a2", ArtistName: "A2", Severity: "error", Message: "pending", Fixable: true, Status: ViolationStatusPendingChoice},
+		{RuleID: ruleID, ArtistID: "a3", ArtistName: "A3", Severity: "error", Message: "resolved", Fixable: true, Status: ViolationStatusResolved},
+		{RuleID: ruleID, ArtistID: "a4", ArtistName: "A4", Severity: "error", Message: "dismissed", Fixable: true, Status: ViolationStatusDismissed},
+		{RuleID: otherID, ArtistID: "a5", ArtistName: "A5", Severity: "warning", Message: "sibling open", Fixable: true, Status: ViolationStatusOpen},
+	} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation(%s,%s): %v", v.RuleID, v.ArtistID, err)
+		}
+	}
+
+	r, err := svc.GetByID(ctx, ruleID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	r.Enabled = false
+	if err := svc.Update(ctx, r); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Query each status bucket directly to verify the cleanup boundary.
+	countByStatus := func(rid, status string) int {
+		t.Helper()
+		var n int
+		err := db.QueryRow(
+			`SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND status = ?`,
+			rid, status,
+		).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting %s rows for %s: %v", status, rid, err)
+		}
+		return n
+	}
+
+	if got := countByStatus(ruleID, ViolationStatusOpen); got != 0 {
+		t.Errorf("open rows for disabled rule = %d, want 0", got)
+	}
+	if got := countByStatus(ruleID, ViolationStatusPendingChoice); got != 0 {
+		t.Errorf("pending_choice rows for disabled rule = %d, want 0", got)
+	}
+	// Historical rows must survive the disable.
+	if got := countByStatus(ruleID, ViolationStatusResolved); got != 1 {
+		t.Errorf("resolved rows for disabled rule = %d, want 1 (history must survive)", got)
+	}
+	if got := countByStatus(ruleID, ViolationStatusDismissed); got != 1 {
+		t.Errorf("dismissed rows for disabled rule = %d, want 1 (history must survive)", got)
+	}
+	// Sibling rule must be untouched by the cleanup.
+	if got := countByStatus(otherID, ViolationStatusOpen); got != 1 {
+		t.Errorf("sibling rule open rows = %d, want 1 (cleanup should be rule-scoped)", got)
+	}
+}
+
+// TestUpdate_EnabledLeavesActiveViolations is the negative companion: the
+// cleanup must only fire on disable, never on a plain enabled=true update
+// (e.g. config or automation_mode edits that keep the rule active).
+func TestUpdate_EnabledLeavesActiveViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	ruleID := RuleNFOExists
+	v := &RuleViolation{
+		RuleID: ruleID, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "open", Fixable: true, Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	r, err := svc.GetByID(ctx, ruleID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	// Change automation_mode but keep Enabled=true. Cleanup must not fire.
+	r.AutomationMode = AutomationModeManual
+	if err := svc.Update(ctx, r); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND status = ?`,
+		ruleID, ViolationStatusOpen,
+	).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("open rows after enabled-update = %d, want 1", n)
+	}
+}
+
 func TestRecordHealthSnapshot(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

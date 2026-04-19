@@ -200,6 +200,17 @@ templ Layout(title string, assets AssetPaths) {
 					}
 
 					function dismissToast(entry) {
+						// Queued toasts have not been appended to the DOM yet,
+						// so the fade-out path below would leak them: when
+						// capacity opens up, removeFromVisible would still
+						// promote the queued entry and show a toast the caller
+						// already asked to drop. Splice them out of the queue
+						// directly and we are done.
+						var qIdx = queue.indexOf(entry);
+						if (qIdx !== -1) {
+							queue.splice(qIdx, 1);
+							return;
+						}
 						if (entry.dismissTimer) clearTimeout(entry.dismissTimer);
 						if (entry.ticker) clearInterval(entry.ticker);
 						entry.el.style.opacity = '0';
@@ -229,6 +240,7 @@ templ Layout(title string, assets AssetPaths) {
 							case 'warning':
 								return 'border-l-4 border-l-amber-500 text-amber-800 dark:text-amber-200';
 							case 'success':
+							case 'sticky-success':
 								return 'border-l-4 border-l-emerald-500 text-emerald-800 dark:text-emerald-200';
 							case 'undo':
 								return 'border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200';
@@ -302,6 +314,28 @@ templ Layout(title string, assets AssetPaths) {
 					};
 					window.showWarningToast = function(msg) {
 						enqueueToast('warning', msg, 8000);
+					};
+
+					// showStickyToast renders a success toast that stays up until
+					// the user dismisses it with the close button. Use for run
+					// outcomes that summarise work the user is likely to reference
+					// (e.g. the Run Rules incremental summary, #698). Returns an
+					// object exposing dismiss() so callers can collapse a prior
+					// sticky before replacing it on a new run.
+					//
+					// Uses a distinct 'sticky-success' type so findGroupable does
+					// not collapse a sticky into a prior showSuccessToast('same msg')
+					// within the 2s grouping window. Sharing the 'success' key would
+					// let enqueueToast hit the group-update branch, clear the sticky
+					// autoDismissMs=0 intent, and reset the dismiss timer to the
+					// previous entry's 5s -- so the "persistent" summary would
+					// disappear immediately. colorClasses() maps sticky-success to
+					// the same emerald styling as success.
+					window.showStickyToast = function(msg) {
+						var entry = enqueueToast('sticky-success', msg, 0);
+						return {
+							dismiss: function() { dismissToast(entry); }
+						};
 					};
 
 					// showUndoToast: success-like toast with an Undo button and countdown.

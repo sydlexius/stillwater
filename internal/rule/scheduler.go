@@ -151,10 +151,10 @@ func (s *Scheduler) Status() SchedulerStatus {
 func (s *Scheduler) runEnabledRules(ctx context.Context) {
 	s.logger.Info("rule scheduler running evaluation")
 
-	// Inject language preferences for language-aware rules. The HTTP path
-	// populates these from middleware.UserIDFromContext, which is not
-	// available on the background-job path; a provider callback closes
-	// the gap so scheduled ticks honor the same preferences.
+	// Inject language preferences for language-aware rules (#1139). The
+	// HTTP path populates these from middleware.UserIDFromContext, which
+	// is not available on the background-job path; a provider callback
+	// closes the gap so scheduled ticks honor the same preferences.
 	s.langPrefsMu.RLock()
 	provideLangs := s.langPrefs
 	s.langPrefsMu.RUnlock()
@@ -166,37 +166,31 @@ func (s *Scheduler) runEnabledRules(ctx context.Context) {
 		}
 	}
 
-	rules, err := s.ruleService.List(ctx)
+	// Scheduled runs are the dirty tracker's safety net: they walk the
+	// full library so a new rule definition added between runs still
+	// fires even on never-mutated artists. We dispatch through
+	// RunAllScoped(RunScopeAll) rather than looping RunRuleScoped per
+	// rule for two reasons specific to #698:
+	//
+	//   1. RunAllScoped stamps rules_evaluated_at on every artist it
+	//      processes. RunRuleScoped intentionally does not (a single-
+	//      rule sweep is not a full evaluation). Looping RunRuleScoped
+	//      would therefore leave the dirty set un-cleared after each
+	//      scheduled pass, which defeats the whole incremental win:
+	//      the next user click would still re-evaluate everything.
+	//   2. RunAllScoped caches rule lookups across artists, making the
+	//      aggregate cheaper than N separate per-rule sweeps.
+	result, err := s.pipeline.RunAllScoped(ctx, RunScopeAll)
 	if err != nil {
-		s.logger.Error("scheduled rule evaluation: listing rules", "error", err)
+		s.logger.Error("scheduled rule evaluation failed", "error", err)
 		return
 	}
 
-	var totalResult RunResult
-	for _, r := range rules {
-		if ctx.Err() != nil {
-			break
-		}
-		if !r.Enabled {
-			continue
-		}
-
-		result, err := s.pipeline.RunRule(ctx, r.ID)
-		if err != nil {
-			s.logger.Error("scheduled rule evaluation failed", "rule_id", r.ID, "error", err)
-			continue
-		}
-		totalResult.ArtistsProcessed += result.ArtistsProcessed
-		totalResult.ViolationsFound += result.ViolationsFound
-		totalResult.FixesAttempted += result.FixesAttempted
-		totalResult.FixesSucceeded += result.FixesSucceeded
-	}
-
 	s.logger.Info("scheduled rule evaluation complete",
-		"artists_processed", totalResult.ArtistsProcessed,
-		"violations_found", totalResult.ViolationsFound,
-		"fixes_attempted", totalResult.FixesAttempted,
-		"fixes_succeeded", totalResult.FixesSucceeded,
+		"artists_processed", result.ArtistsProcessed,
+		"violations_found", result.ViolationsFound,
+		"fixes_attempted", result.FixesAttempted,
+		"fixes_succeeded", result.FixesSucceeded,
 	)
 
 	// Record lastRunAt before the health snapshot so Status() reflects the

@@ -114,42 +114,61 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{ t(ctx, "report.subtitle") }
 					</p>
 				</div>
-				<button
-					id="run-rules-btn"
-					type="button"
-					onclick="confirmAndRunRules()"
-					aria-controls="confirm-modal"
-					aria-haspopup="dialog"
-					data-label-run={ t(ctx, "report.run_rules") }
-					data-label-running={ t(ctx, "report.running") }
-					data-toast-started={ t(ctx, "report.rule_evaluation_started") }
-					data-toast-already-running={ t(ctx, "report.already_running") }
-					data-toast-failed-start={ t(ctx, "report.failed_to_start") }
-					data-toast-failed-start-evaluation={ t(ctx, "report.failed_to_start_evaluation") }
-					data-toast-evaluation-failed={ t(ctx, "report.rule_evaluation_failed") }
-					data-toast-idle={ t(ctx, "report.rule_evaluation_idle") }
-					data-toast-status-http-error={ t(ctx, "report.rule_status_http_error") }
-					data-toast-status-network-error={ t(ctx, "report.rule_status_network_error") }
-					data-msg-no-violations={ t(ctx, "report.violations_none") }
-					data-msg-all-auto-fixed={ t(ctx, "report.violations_all_auto_fixed") }
-					data-msg-violations-found={ t(ctx, "report.violations_found") }
-					data-msg-violations-found-auto-fixed={ t(ctx, "report.violations_found_auto_fixed") }
-					data-confirm-title={ t(ctx, "report.confirm_run_title") }
-					data-confirm-body={ t(ctx, "report.confirm_run_body") }
-					data-confirm-body-estimate={ t(ctx, "report.confirm_run_body_estimate") }
-					data-confirm-accept={ t(ctx, "report.confirm_run_accept") }
-					data-confirm-minute-one={ t(ctx, "report.confirm_minute.one") }
-					data-confirm-minute-other={ t(ctx, "report.confirm_minute.other") }
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					<span id="run-rules-spinner" class="hidden">
-						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-						</svg>
-					</span>
-					<span id="run-rules-label">{ t(ctx, "report.run_rules") }</span>
-				</button>
+				<div class="flex flex-wrap items-center gap-2">
+					<button
+						id="run-rules-btn"
+						type="button"
+						onclick="confirmAndRunRules('incremental')"
+						aria-controls="confirm-modal"
+						aria-haspopup="dialog"
+						data-label-run={ t(ctx, "report.run_rules") }
+						data-label-running={ t(ctx, "report.running") }
+						data-toast-started={ t(ctx, "report.rule_evaluation_started") }
+						data-toast-already-running={ t(ctx, "report.already_running") }
+						data-toast-failed-start={ t(ctx, "report.failed_to_start") }
+						data-toast-failed-start-evaluation={ t(ctx, "report.failed_to_start_evaluation") }
+						data-toast-evaluation-failed={ t(ctx, "report.rule_evaluation_failed") }
+						data-toast-idle={ t(ctx, "report.rule_evaluation_idle") }
+						data-toast-status-http-error={ t(ctx, "report.rule_status_http_error") }
+						data-toast-status-network-error={ t(ctx, "report.rule_status_network_error") }
+						data-msg-no-violations={ t(ctx, "report.violations_none") }
+						data-msg-all-auto-fixed={ t(ctx, "report.violations_all_auto_fixed") }
+						data-msg-violations-found={ t(ctx, "report.violations_found") }
+						data-msg-violations-found-auto-fixed={ t(ctx, "report.violations_found_auto_fixed") }
+						data-confirm-title={ t(ctx, "report.confirm_run_title") }
+						data-confirm-body={ t(ctx, "report.confirm_run_body") }
+						data-confirm-body-estimate={ t(ctx, "report.confirm_run_body_estimate") }
+						data-confirm-accept={ t(ctx, "report.confirm_run_accept") }
+						data-confirm-minute-one={ t(ctx, "report.confirm_minute.one") }
+						data-confirm-minute-other={ t(ctx, "report.confirm_minute.other") }
+						data-confirm-all-title={ t(ctx, "report.confirm_run_all_title") }
+						data-confirm-all-body={ t(ctx, "report.confirm_run_all_body") }
+						data-confirm-all-body-estimate={ t(ctx, "report.confirm_run_all_body_estimate") }
+						data-confirm-all-accept={ t(ctx, "report.confirm_run_all_accept") }
+						data-msg-evaluated-summary={ t(ctx, "report.evaluated_summary") }
+						data-msg-evaluated-summary-all={ t(ctx, "report.evaluated_summary_all") }
+						class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<span id="run-rules-spinner" class="hidden">
+							<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+						</span>
+						<span id="run-rules-label">{ t(ctx, "report.run_rules") }</span>
+					</button>
+					<button
+						id="run-rules-all-btn"
+						type="button"
+						onclick="confirmAndRunRules('all')"
+						title={ t(ctx, "report.run_rules_all_tooltip") }
+						aria-controls="confirm-modal"
+						aria-haspopup="dialog"
+						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{ t(ctx, "report.run_rules_all") }
+					</button>
+				</div>
 			</div>
 			<!-- Library summary section (lazy-loaded) -->
 			<div
@@ -619,7 +638,10 @@ templ runRulesScript() {
 	<script>
 		// confirmAndRunRules fetches the artist count, then shows a confirmation
 		// modal with the estimated duration before starting rule evaluation.
-		function confirmAndRunRules() {
+		// scope is "incremental" (default Run Rules, #698) or "all"
+		// (Re-evaluate All admin escape hatch).
+		function confirmAndRunRules(scope) {
+			scope = (scope === 'all') ? 'all' : 'incremental';
 			var bp = (function() {
 				var el = document.querySelector('meta[name="htmx-base-path"]');
 				return el ? el.content : '';
@@ -630,7 +652,7 @@ templ runRulesScript() {
 				.then(function(res) {
 					if (!res.ok) {
 						// If we cannot determine the count, proceed without estimate.
-						showRunRulesConfirm(bp, 0);
+						showRunRulesConfirm(bp, 0, scope);
 						return;
 					}
 					return res.json();
@@ -638,16 +660,30 @@ templ runRulesScript() {
 				.then(function(data) {
 					if (!data) return;
 					var count = (data && data.total_artists) ? data.total_artists : 0;
-					showRunRulesConfirm(bp, count);
+					showRunRulesConfirm(bp, count, scope);
 				})
 				.catch(function() {
-					showRunRulesConfirm(bp, 0);
+					// Preserve the requested scope on estimate failure; a
+					// dropped scope would silently downgrade Re-evaluate
+					// All to incremental on any transient /reports/health
+					// hiccup.
+					showRunRulesConfirm(bp, 0, scope);
 				});
 		}
 
-		function showRunRulesConfirm(bp, artistCount) {
+		function showRunRulesConfirm(bp, artistCount, scope) {
 			var btn = document.getElementById('run-rules-btn');
 			var ds = btn ? btn.dataset : {};
+			var isAll = scope === 'all';
+			// scope=all uses the stronger warning copy pulled from the
+			// confirm-all-* data attributes. scope=incremental keeps the
+			// familiar Run Rules copy.
+			var bodyTemplate = isAll
+				? (ds.confirmAllBody || 'Force a full re-evaluation of every eligible artist.')
+				: (ds.confirmBody || 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');
+			var estimateTemplate = isAll
+				? (ds.confirmAllBodyEstimate || bodyTemplate)
+				: (ds.confirmBodyEstimate || 'This will evaluate rules for <strong>{artists}</strong> artists and may take approximately <strong>{duration}</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.');
 			var message;
 			if (artistCount > 0) {
 				var minutes = Math.ceil(artistCount * 0.05 / 60);
@@ -655,40 +691,58 @@ templ runRulesScript() {
 				var minuteLabel = (minutes === 1)
 					? (ds.confirmMinuteOne || '{count} minute').replace('{count}', minutes)
 					: (ds.confirmMinuteOther || '{count} minutes').replace('{count}', minutes);
-				message = (ds.confirmBodyEstimate || 'This will evaluate rules for <strong>{artists}</strong> artists and may take approximately <strong>{duration}</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.')
+				message = estimateTemplate
 					.replace('{artists}', artistCount)
 					.replace('{duration}', minuteLabel);
 			} else {
-				message = ds.confirmBody || 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
+				message = bodyTemplate;
 			}
 
 			// Pass customizations via opts so the modal resets them in hideModal.
 			// No pre-mutation of the shared modal DOM is needed.
 			window.showConfirmDialog(message, 'run_rules', function() {
-				startRuleRun(bp);
+				startRuleRun(bp, scope);
 			}, {
 				html: true,
-				title: ds.confirmTitle || 'Run Rules',
-				acceptText: ds.confirmAccept || 'Start',
+				title: isAll ? (ds.confirmAllTitle || 'Re-evaluate all artists?') : (ds.confirmTitle || 'Run Rules'),
+				acceptText: isAll ? (ds.confirmAllAccept || 'Re-evaluate All') : (ds.confirmAccept || 'Start'),
 				acceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
 			});
 		}
 
-		function startRuleRun(bp) {
+		// lastRunStickyToast holds the sticky summary toast from the most
+		// recent Run Rules completion (#698). We dismiss it at the start
+		// of the next run so two summaries never sit in the toast stack at
+		// the same time.
+		var lastRunStickyToast = null;
+
+		function startRuleRun(bp, scope) {
 			var btn = document.getElementById('run-rules-btn');
+			var allBtn = document.getElementById('run-rules-all-btn');
 			var spinner = document.getElementById('run-rules-spinner');
 			var label = document.getElementById('run-rules-label');
 
 			if (btn) btn.disabled = true;
+			if (allBtn) allBtn.disabled = true;
 			if (spinner) spinner.classList.remove('hidden');
 			if (label) label.textContent = (btn && btn.dataset.labelRunning) || 'Running...';
+			// Dismiss any prior sticky summary so the next run owns the
+			// toast stack; it will be replaced on completion. Guard the
+			// dismiss call because a throwing showStickyToast on the
+			// previous run may have left lastRunStickyToast unassigned
+			// or without a dismiss handle.
+			if (lastRunStickyToast && typeof lastRunStickyToast.dismiss === 'function') {
+				try { lastRunStickyToast.dismiss(); } catch (e) { /* ignore */ }
+			}
+			lastRunStickyToast = null;
 
 			var csrfVal = (function() {
 				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
 				return m ? m[1] : '';
 			})();
 
-			fetch(bp + '/api/v1/rules/run-all', {
+			var url = bp + '/api/v1/rules/run-all' + (scope === 'all' ? '?scope=all' : '');
+			fetch(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -718,19 +772,39 @@ templ runRulesScript() {
 			pollAsyncStatus(bp + '/api/v1/rules/run-all/status', {
 				onData: function(data) {
 					if (data.status === 'completed') {
-						var msg;
+						// Combine the incremental summary (#698) with the
+						// violation outcome into a single persistent toast
+						// so the user has one dismissable record of the run,
+						// not a transient toast plus a caption card.
+						var summary = buildRunSummary(data);
+						var outcome;
 						if (data.violations_found === 0) {
-							msg = (btn && btn.dataset.msgNoViolations) || 'No violations found';
+							outcome = (btn && btn.dataset.msgNoViolations) || 'No violations found';
 						} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {
-							msg = ((btn && btn.dataset.msgAllAutoFixed) || 'Found {found} violations, all auto-fixed').replace('{found}', data.violations_found);
+							outcome = ((btn && btn.dataset.msgAllAutoFixed) || 'Found {found} violations, all auto-fixed').replace('{found}', data.violations_found);
 						} else if (data.violations_auto_fixed > 0) {
-							msg = ((btn && btn.dataset.msgViolationsFoundAutoFixed) || 'Found {found} violations ({autoFixed} auto-fixed, {remaining} remaining)')
+							outcome = ((btn && btn.dataset.msgViolationsFoundAutoFixed) || 'Found {found} violations ({autoFixed} auto-fixed, {remaining} remaining)')
 								.replace('{found}', data.violations_found).replace('{autoFixed}', data.violations_auto_fixed).replace('{remaining}', data.violations_remaining);
 						} else {
-							msg = ((btn && btn.dataset.msgViolationsFound) || 'Found {found} violations ({remaining} remaining)')
+							outcome = ((btn && btn.dataset.msgViolationsFound) || 'Found {found} violations ({remaining} remaining)')
 								.replace('{found}', data.violations_found).replace('{remaining}', data.violations_remaining);
 						}
-						showSuccessToast(msg);
+						var fullMsg = summary ? (summary + ' ' + outcome) : outcome;
+						// Prefer the sticky toast so the summary persists
+						// until the user dismisses it, but fall back to
+						// the transient success toast if the sticky
+						// helper is unavailable or throws (e.g. the
+						// toast container is missing from the DOM).
+						try {
+							if (typeof window.showStickyToast === 'function') {
+								lastRunStickyToast = window.showStickyToast(fullMsg);
+							} else {
+								showSuccessToast(fullMsg);
+							}
+						} catch (e) {
+							lastRunStickyToast = null;
+							showSuccessToast(fullMsg);
+						}
 						resetRuleButton();
 						// Refresh health summary and compliance table if present.
 						if (document.getElementById('health-summary')) {
@@ -767,11 +841,36 @@ templ runRulesScript() {
 
 		function resetRuleButton() {
 			var btn = document.getElementById('run-rules-btn');
+			var allBtn = document.getElementById('run-rules-all-btn');
 			var spinner = document.getElementById('run-rules-spinner');
 			var label = document.getElementById('run-rules-label');
 			if (btn) btn.disabled = false;
+			if (allBtn) allBtn.disabled = false;
 			if (spinner) spinner.classList.add('hidden');
 			if (label) label.textContent = (btn && btn.dataset.labelRun) || 'Run Rules';
+		}
+
+		// buildRunSummary returns the incremental-benefit sentence for
+		// the dirty tracker (#698): "Evaluated {processed} of {total}
+		// artists ({skipped} unchanged)." for scope=incremental, or
+		// "Evaluated all {total} artists." for scope=all. Returns an
+		// empty string when totals are missing so the caller can render
+		// the outcome alone.
+		function buildRunSummary(data) {
+			var total = data.artists_total || 0;
+			if (total <= 0) return '';
+			var btn = document.getElementById('run-rules-btn');
+			var ds = btn ? btn.dataset : {};
+			if (data.scope === 'all') {
+				return (ds.msgEvaluatedSummaryAll || 'Evaluated all {total} artists.')
+					.replace('{total}', total);
+			}
+			var processed = data.artists_processed || 0;
+			var skipped = data.artists_skipped || 0;
+			return (ds.msgEvaluatedSummary || 'Evaluated {processed} of {total} artists ({skipped} unchanged).')
+				.replace('{processed}', processed)
+				.replace('{total}', total)
+				.replace('{skipped}', skipped);
 		}
 	</script>
 }

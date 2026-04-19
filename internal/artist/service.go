@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // ctxKey is the type for context value keys used by the artist package.
@@ -189,6 +190,55 @@ func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 	return s.artists.ListUnevaluatedIDs(ctx)
 }
 
+// MarkDirty stamps dirty_since for one artist. The rule pipeline picks up
+// artists whose dirty_since is newer than rules_evaluated_at on the next
+// "Run Rules" invocation. See issue #698.
+func (s *Service) MarkDirty(ctx context.Context, id string, ts time.Time) error {
+	return s.artists.MarkDirty(ctx, id, ts)
+}
+
+// markDirtyBestEffort stamps dirty_since with the current UTC time and
+// warn-logs any failure instead of propagating it. Called after every
+// successful artist mutation (Update, UpdateField, ClearField) so the rule
+// pipeline sees the change even when the ArtistUpdated event bus notification
+// is dropped under backpressure. The best-effort contract is deliberate:
+// the artist row has already been written, and the DirtySubscriber is still
+// a secondary signal; failing the caller because of a dirty-mark write
+// would invert error semantics relative to the main write.
+func (s *Service) markDirtyBestEffort(ctx context.Context, id string) {
+	if err := s.artists.MarkDirty(ctx, id, time.Now().UTC()); err != nil {
+		slog.Warn("marking artist dirty after mutation",
+			"artist_id", id, "error", err)
+	}
+}
+
+// MarkAllDirty stamps dirty_since on every non-excluded, non-locked artist.
+// Returns the number of rows affected. Called when a new rule is added so
+// existing artists are scheduled for re-evaluation against it.
+func (s *Service) MarkAllDirty(ctx context.Context, ts time.Time) (int64, error) {
+	return s.artists.MarkAllDirty(ctx, ts)
+}
+
+// MarkRulesEvaluated stamps rules_evaluated_at for one artist after the
+// rule pipeline finishes processing it.
+func (s *Service) MarkRulesEvaluated(ctx context.Context, id string, ts time.Time) error {
+	return s.artists.MarkRulesEvaluated(ctx, id, ts)
+}
+
+// ListDirtyIDs returns IDs of non-excluded, non-locked artists that need
+// rule re-evaluation: those that have never been evaluated, or whose
+// dirty_since is strictly after rules_evaluated_at.
+func (s *Service) ListDirtyIDs(ctx context.Context) ([]string, error) {
+	return s.artists.ListDirtyIDs(ctx)
+}
+
+// CountEligibleArtists returns the number of non-excluded, non-locked
+// artists. Used as the denominator for incremental "Run Rules" progress
+// reporting (e.g. "evaluating 12 of 800 (788 unchanged)").
+func (s *Service) CountEligibleArtists(ctx context.Context) (int, error) {
+	return s.artists.CountEligibleArtists(ctx)
+}
+
 // GetByID retrieves an artist by primary key, including provider IDs and image metadata.
 func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	a, err := s.artists.GetByID(ctx, id)
@@ -329,6 +379,12 @@ func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
 // In practice this is acceptable because the normalized tables use
 // delete-then-insert which is idempotent, and the next Update call will retry.
 //
+// Update (along with UpdateField and ClearField) calls markDirtyBestEffort
+// after the write succeeds so the rule pipeline sees the mutation even when
+// the ArtistUpdated event bus notification is dropped under backpressure.
+// The event-bus DirtySubscriber remains as a secondary signal for mutation
+// paths that bypass Service entirely (watcher, bulk_executor, image bridge).
+//
 // When a HistoryService is attached, Update diffs every trackable field
 // between the old and new artist values and records a MetadataChange for
 // each field that changed. History recording is best-effort: failures are
@@ -351,6 +407,8 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 	if err := s.artists.Update(ctx, a); err != nil {
 		return err
 	}
+
+	s.markDirtyBestEffort(ctx, a.ID)
 
 	// Record field-level changes after the successful update.
 	if s.history != nil && old != nil {
@@ -441,6 +499,8 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 		return err
 	}
 
+	s.markDirtyBestEffort(ctx, id)
+
 	// Record the change by comparing normalized representations. Re-fetch
 	// after the mutation so both old and new use FieldValueFromArtist, avoiding
 	// format mismatches for slice fields (e.g. "Rock, Alternative" vs "Rock,Alternative").
@@ -485,6 +545,8 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 	if err := s.artists.ClearField(ctx, id, field); err != nil {
 		return err
 	}
+
+	s.markDirtyBestEffort(ctx, id)
 
 	// Record the change only if the field was non-empty before clearing.
 	// Use FieldValueFromArtist on the post-clear state for consistent representation.

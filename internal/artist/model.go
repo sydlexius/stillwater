@@ -13,53 +13,60 @@ var ErrNotFound = errors.New("artist not found")
 
 // Artist represents a music artist or group with full metadata.
 type Artist struct {
-	ID                  string            `json:"id"`
-	Name                string            `json:"name"`
-	SortName            string            `json:"sort_name"`
-	Type                string            `json:"type"`
-	Gender              string            `json:"gender"`
-	Disambiguation      string            `json:"disambiguation"`
-	MusicBrainzID       string            `json:"musicbrainz_id"`
-	AudioDBID           string            `json:"audiodb_id"`
-	DiscogsID           string            `json:"discogs_id"`
-	WikidataID          string            `json:"wikidata_id"`
-	DeezerID            string            `json:"deezer_id"`
-	SpotifyID           string            `json:"spotify_id"`
-	Genres              []string          `json:"genres"`
-	Styles              []string          `json:"styles"`
-	Moods               []string          `json:"moods"`
-	YearsActive         string            `json:"years_active"`
-	Born                string            `json:"born"`
-	Formed              string            `json:"formed"`
-	Died                string            `json:"died"`
-	Disbanded           string            `json:"disbanded"`
-	Biography           string            `json:"biography"`
-	Path                string            `json:"path"`
-	LibraryID           string            `json:"library_id"`
-	NFOExists           bool              `json:"nfo_exists"`
-	ThumbExists         bool              `json:"thumb_exists"`
-	FanartExists        bool              `json:"fanart_exists"`
-	FanartCount         int               `json:"fanart_count"`
-	LogoExists          bool              `json:"logo_exists"`
-	BannerExists        bool              `json:"banner_exists"`
-	ThumbLowRes         bool              `json:"thumb_low_res"`
-	FanartLowRes        bool              `json:"fanart_low_res"`
-	LogoLowRes          bool              `json:"logo_low_res"`
-	BannerLowRes        bool              `json:"banner_low_res"`
-	ThumbPlaceholder    string            `json:"thumb_placeholder,omitempty"`
-	FanartPlaceholder   string            `json:"fanart_placeholder,omitempty"`
-	LogoPlaceholder     string            `json:"logo_placeholder,omitempty"`
-	BannerPlaceholder   string            `json:"banner_placeholder,omitempty"`
-	ThumbWidth          int               `json:"thumb_width,omitempty"`
-	ThumbHeight         int               `json:"thumb_height,omitempty"`
-	FanartWidth         int               `json:"fanart_width,omitempty"`
-	FanartHeight        int               `json:"fanart_height,omitempty"`
-	LogoWidth           int               `json:"logo_width,omitempty"`
-	LogoHeight          int               `json:"logo_height,omitempty"`
-	BannerWidth         int               `json:"banner_width,omitempty"`
-	BannerHeight        int               `json:"banner_height,omitempty"`
-	HealthScore         float64           `json:"health_score"`
-	HealthEvaluatedAt   *time.Time        `json:"health_evaluated_at,omitempty"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	SortName          string     `json:"sort_name"`
+	Type              string     `json:"type"`
+	Gender            string     `json:"gender"`
+	Disambiguation    string     `json:"disambiguation"`
+	MusicBrainzID     string     `json:"musicbrainz_id"`
+	AudioDBID         string     `json:"audiodb_id"`
+	DiscogsID         string     `json:"discogs_id"`
+	WikidataID        string     `json:"wikidata_id"`
+	DeezerID          string     `json:"deezer_id"`
+	SpotifyID         string     `json:"spotify_id"`
+	Genres            []string   `json:"genres"`
+	Styles            []string   `json:"styles"`
+	Moods             []string   `json:"moods"`
+	YearsActive       string     `json:"years_active"`
+	Born              string     `json:"born"`
+	Formed            string     `json:"formed"`
+	Died              string     `json:"died"`
+	Disbanded         string     `json:"disbanded"`
+	Biography         string     `json:"biography"`
+	Path              string     `json:"path"`
+	LibraryID         string     `json:"library_id"`
+	NFOExists         bool       `json:"nfo_exists"`
+	ThumbExists       bool       `json:"thumb_exists"`
+	FanartExists      bool       `json:"fanart_exists"`
+	FanartCount       int        `json:"fanart_count"`
+	LogoExists        bool       `json:"logo_exists"`
+	BannerExists      bool       `json:"banner_exists"`
+	ThumbLowRes       bool       `json:"thumb_low_res"`
+	FanartLowRes      bool       `json:"fanart_low_res"`
+	LogoLowRes        bool       `json:"logo_low_res"`
+	BannerLowRes      bool       `json:"banner_low_res"`
+	ThumbPlaceholder  string     `json:"thumb_placeholder,omitempty"`
+	FanartPlaceholder string     `json:"fanart_placeholder,omitempty"`
+	LogoPlaceholder   string     `json:"logo_placeholder,omitempty"`
+	BannerPlaceholder string     `json:"banner_placeholder,omitempty"`
+	ThumbWidth        int        `json:"thumb_width,omitempty"`
+	ThumbHeight       int        `json:"thumb_height,omitempty"`
+	FanartWidth       int        `json:"fanart_width,omitempty"`
+	FanartHeight      int        `json:"fanart_height,omitempty"`
+	LogoWidth         int        `json:"logo_width,omitempty"`
+	LogoHeight        int        `json:"logo_height,omitempty"`
+	BannerWidth       int        `json:"banner_width,omitempty"`
+	BannerHeight      int        `json:"banner_height,omitempty"`
+	HealthScore       float64    `json:"health_score"`
+	HealthEvaluatedAt *time.Time `json:"health_evaluated_at,omitempty"`
+	// DirtySince is set whenever the artist mutates in a way that may
+	// invalidate rule outcomes. RulesEvaluatedAt is set after rules are
+	// re-evaluated for the artist. Together they drive the incremental
+	// "Run Rules" path: an artist is dirty when DirtySince is after
+	// RulesEvaluatedAt, or when RulesEvaluatedAt is nil. See issue #698.
+	DirtySince          *time.Time        `json:"dirty_since,omitempty"`
+	RulesEvaluatedAt    *time.Time        `json:"rules_evaluated_at,omitempty"`
 	IsExcluded          bool              `json:"is_excluded"`
 	ExclusionReason     string            `json:"exclusion_reason,omitempty"`
 	IsClassical         bool              `json:"is_classical"`

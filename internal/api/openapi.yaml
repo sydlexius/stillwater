@@ -386,9 +386,40 @@ components:
           type: string
           enum: [idle, running, completed, failed]
           description: Current state of the rule run.
+        scope:
+          type: string
+          enum: [incremental, all]
+          description: >
+            Which artists this run targeted. "incremental" (the default for
+            the user-facing Run Rules button) re-evaluates only artists
+            flagged dirty since their last evaluation. "all" forces a
+            full sweep -- the "Re-evaluate All" admin escape hatch.
+        rule_id:
+          type: string
+          description: >
+            Present for single-rule runs: both the POST /rules/{id}/run 202
+            acknowledgment and any GET /rules/run-all/status snapshot while a
+            single-rule run is in flight. Omitted for full-sweep (run-all)
+            responses.
         artists_processed:
           type: integer
-          description: Number of artists evaluated so far.
+          description: Number of artists actually evaluated during this run.
+        artists_total:
+          type: integer
+          description: >
+            Total number of eligible (non-excluded, non-locked) artists in
+            the catalog at run start. Lets the UI render
+            "evaluating N of M (M-N unchanged)" for incremental scope.
+        artists_skipped:
+          type: integer
+          description: >
+            Eligible artists not processed by this run because they were
+            clean (rules_evaluated_at already covered their dirty_since).
+            May be omitted when zero (the `omitempty` contract). When
+            present, this counts skipped-because-clean artists for
+            scope=incremental; for scope=all it is zero -- the field is
+            only populated on incremental runs, so a partial failure on
+            a full sweep is not misread as "unchanged".
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation
@@ -3749,10 +3780,13 @@ paths:
   /rules/{id}/run:
     post:
       tags: [Rules]
-      summary: Start async evaluation of a single rule against all artists
+      summary: Start async evaluation of a single rule
       description: >
         Launches rule evaluation in a background goroutine and returns immediately.
         Shares the status slot with run-all; poll GET /rules/run-all/status for progress.
+        Defaults to incremental scope (only artists flagged dirty since their last
+        evaluation are processed). Pass scope=all to force evaluation against every
+        eligible artist.
       operationId: runRule
       parameters:
         - name: id
@@ -3760,21 +3794,30 @@ paths:
           required: true
           schema:
             type: string
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [incremental, all]
+            default: incremental
+          description: >
+            Which artists to evaluate. Defaults to "incremental" (only artists
+            flagged dirty since their last evaluation). "all" is the admin
+            "Re-evaluate All" path that forces a full sweep.
       responses:
         "202":
           description: Rule evaluation started
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [running]
-                    description: Acknowledgment that the rule run was started.
-                  rule_id:
-                    type: string
-                    description: ID of the rule being evaluated.
+                $ref: "#/components/schemas/RuleRunStatus"
+        "400":
+          description: Invalid scope query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Rule not found
           content:
@@ -3805,9 +3848,23 @@ paths:
       tags: [Rules]
       summary: Run all enabled rules (async)
       description: >
-        Starts an asynchronous run of all enabled rules against all artists.
+        Starts an asynchronous run of all enabled rules.
         Returns 202 immediately; poll GET /rules/run-all/status for completion status.
+        Defaults to incremental scope (only artists flagged dirty since their last
+        evaluation are processed). Pass scope=all for the "Re-evaluate All" admin
+        sweep that re-evaluates every eligible artist.
       operationId: runAllRules
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [incremental, all]
+            default: incremental
+          description: >
+            Which artists to evaluate. Defaults to "incremental" (only artists
+            flagged dirty since their last evaluation). "all" forces a full sweep.
       responses:
         "202":
           description: Run started
@@ -3815,6 +3872,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuleRunStatus"
+        "400":
+          description: Invalid scope query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: A run is already in progress
           content:

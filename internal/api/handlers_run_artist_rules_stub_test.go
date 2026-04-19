@@ -50,7 +50,18 @@ func (s *stubPipeline) RunRule(ctx context.Context, ruleID string) (*rule.RunRes
 	return &rule.RunResult{}, nil
 }
 
+func (s *stubPipeline) RunRuleScoped(ctx context.Context, ruleID string, _ rule.RunScope) (*rule.RunResult, error) {
+	if s.runRuleFn != nil {
+		return s.runRuleFn(ctx, ruleID)
+	}
+	return &rule.RunResult{}, nil
+}
+
 func (s *stubPipeline) RunAll(_ context.Context) (*rule.RunResult, error) {
+	return &rule.RunResult{}, nil
+}
+
+func (s *stubPipeline) RunAllScoped(_ context.Context, _ rule.RunScope) (*rule.RunResult, error) {
 	return &rule.RunResult{}, nil
 }
 

@@ -1,6 +1,9 @@
 package artist
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository defines core artist CRUD operations.
 type Repository interface {
@@ -42,6 +45,29 @@ type Repository interface {
 	// ListUnevaluatedIDs returns IDs of non-excluded artists that have never been evaluated
 	// (health_evaluated_at IS NULL).
 	ListUnevaluatedIDs(ctx context.Context) ([]string, error)
+
+	// MarkDirty stamps dirty_since for one artist. Used by the rule dirty
+	// tracker to flag mutated artists for incremental re-evaluation.
+	MarkDirty(ctx context.Context, id string, ts time.Time) error
+
+	// MarkAllDirty stamps dirty_since on every non-excluded, non-locked
+	// artist. Returns the number of rows affected. Called when a new rule
+	// is added so existing artists are re-evaluated against it.
+	MarkAllDirty(ctx context.Context, ts time.Time) (int64, error)
+
+	// MarkRulesEvaluated stamps rules_evaluated_at for one artist after
+	// the rule pipeline finishes processing it.
+	MarkRulesEvaluated(ctx context.Context, id string, ts time.Time) error
+
+	// ListDirtyIDs returns IDs of artists that need rule re-evaluation
+	// (rules_evaluated_at IS NULL or dirty_since > rules_evaluated_at),
+	// excluding excluded and locked artists.
+	ListDirtyIDs(ctx context.Context) ([]string, error)
+
+	// CountEligibleArtists returns the number of non-excluded, non-locked
+	// artists in the catalog -- the denominator for incremental Run Rules
+	// progress reporting.
+	CountEligibleArtists(ctx context.Context) (int, error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.
