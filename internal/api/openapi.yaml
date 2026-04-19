@@ -3800,8 +3800,9 @@ paths:
             enum: [incremental, all]
             default: incremental
           description: >
-            Which artists to evaluate. Defaults to "incremental" (only dirty
-            artists). "all" is the admin "Re-evaluate All" path.
+            Which artists to evaluate. Defaults to "incremental" (only artists
+            flagged dirty since their last evaluation). "all" is the admin
+            "Re-evaluate All" path that forces a full sweep.
       responses:
         "202":
           description: Rule evaluation started

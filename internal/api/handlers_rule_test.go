@@ -299,6 +299,20 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 	if body["scope"] != "incremental" {
 		t.Errorf("scope = %v, want incremental (default)", body["scope"])
 	}
+	// Full RuleRunStatus contract: artists_processed and artists_total are
+	// always present; artists_skipped is optional (omitempty) but if present
+	// must be numeric. Guards against silent field drops on the 202 payload.
+	if _, ok := body["artists_processed"]; !ok {
+		t.Error("response missing artists_processed")
+	}
+	if _, ok := body["artists_total"]; !ok {
+		t.Error("response missing artists_total")
+	}
+	if v, ok := body["artists_skipped"]; ok {
+		if _, numeric := v.(float64); !numeric {
+			t.Errorf("artists_skipped type = %T, want number when present", v)
+		}
+	}
 }
 
 // TestHandleRunAllRules_409WhenAlreadyRunning exercises the ruleRunMu gate on
@@ -306,6 +320,11 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 // second call must observe r.ruleRun.Running == true and return 409.
 func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 	blockCh := make(chan struct{})
+	// Register cleanup immediately so a later t.Fatalf cannot strand the
+	// blocked goroutine. Closing an already-closed channel panics, so this
+	// must only run once -- t.Cleanup is guaranteed to fire exactly once per
+	// registration and close(blockCh) at the bottom of the test is removed.
+	t.Cleanup(func() { close(blockCh) })
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
 			<-blockCh
@@ -331,8 +350,6 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 	if w2.Code != http.StatusConflict {
 		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
 	}
-
-	close(blockCh)
 }
 
 // blockingStubPipeline wraps stubPipeline with a RunAllScoped that blocks on a
