@@ -7,7 +7,20 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// LangPrefProvider supplies the ordered metadata-language preference list
+// to inject into scheduled rule evaluations. Background jobs have no HTTP
+// session and cannot go through the router's per-user injection path, so
+// the scheduler queries this callback once per tick and wraps the tick
+// context via provider.WithMetadataLanguages.
+//
+// Returning nil or an empty slice leaves the context untouched (the rule
+// will see no preferences and, for language-aware rules, skip). Callers
+// that want a safe default should return langpref.DefaultTags() rather
+// than nil.
+type LangPrefProvider func(context.Context) []string
 
 // SchedulerStatus holds scheduler state fields. The handler adds
 // scheduler_enabled before writing the JSON response.
@@ -31,6 +44,14 @@ type Scheduler struct {
 	mu         sync.RWMutex
 	lastRunAt  time.Time
 	nextTickAt time.Time
+
+	// langPrefs is optional. When set, the scheduler invokes it once per
+	// tick and wraps the tick context with the returned preferences so
+	// language-aware rules see the same metadata preferences as they would
+	// on the HTTP-scoped (per-user) path. Guarded by langPrefsMu so
+	// SetLangPrefProvider is race-safe alongside a running scheduler.
+	langPrefsMu sync.RWMutex
+	langPrefs   LangPrefProvider
 }
 
 // NewScheduler creates a rule scheduler. The artistService may be nil if
@@ -81,6 +102,22 @@ func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// SetLangPrefProvider registers a callback invoked once per scheduled tick
+// whose result is injected into the tick context via
+// provider.WithMetadataLanguages. Pass nil to disable injection. Safe to
+// call before or after Start.
+//
+// Without a provider, the scheduler passes its tick context through to
+// pipeline.RunRule unchanged; language-aware rules (e.g. name_language_pref)
+// observe an empty preference list and skip. That matches the pre-#1136
+// behavior so the opt-in can be rolled out without breaking existing
+// deployments.
+func (s *Scheduler) SetLangPrefProvider(fn LangPrefProvider) {
+	s.langPrefsMu.Lock()
+	s.langPrefs = fn
+	s.langPrefsMu.Unlock()
+}
+
 // Reset restarts the scheduler timer. Call this after a manual rule run
 // so the next scheduled tick starts a full interval from now.
 func (s *Scheduler) Reset() {
@@ -113,6 +150,21 @@ func (s *Scheduler) Status() SchedulerStatus {
 
 func (s *Scheduler) runEnabledRules(ctx context.Context) {
 	s.logger.Info("rule scheduler running evaluation")
+
+	// Inject language preferences for language-aware rules. The HTTP path
+	// populates these from middleware.UserIDFromContext, which is not
+	// available on the background-job path; a provider callback closes
+	// the gap so scheduled ticks honor the same preferences.
+	s.langPrefsMu.RLock()
+	provideLangs := s.langPrefs
+	s.langPrefsMu.RUnlock()
+	if provideLangs != nil {
+		if prefs := provideLangs(ctx); len(prefs) > 0 {
+			ctx = provider.WithMetadataLanguages(ctx, prefs)
+			s.logger.Debug("scheduled evaluation using language preferences",
+				slog.Any("langs", prefs))
+		}
+	}
 
 	rules, err := s.ruleService.List(ctx)
 	if err != nil {

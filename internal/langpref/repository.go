@@ -98,6 +98,43 @@ func (r *Repository) Set(ctx context.Context, userID string, tags []string) erro
 	return nil
 }
 
+// EffectiveForBackground returns the preference list that background jobs
+// (e.g. the rule scheduler) should use when no HTTP user session is in
+// scope. The strategy is deterministic and small:
+//
+//  1. Pick the primary active administrator. A protected administrator
+//     (the bootstrap account -- marked is_protected=1 because it cannot
+//     be deactivated or role-changed) always wins, regardless of age; in
+//     a self-hosted deployment this is the operator running the instance.
+//     Non-protected admins are broken down by oldest created_at, then by
+//     id for deterministic ties.
+//  2. Return that user's stored preferences via Get, which falls back to
+//     DefaultTags() when the row is absent or malformed.
+//  3. If no administrator row exists (fresh database, before bootstrap),
+//     return DefaultTags().
+//
+// A DB error returning the candidate user row is not fatal: the function
+// falls back to DefaultTags() so a transient failure never stalls a
+// scheduled rule evaluation. The same is true of Get errors on the found
+// user.
+func (r *Repository) EffectiveForBackground(ctx context.Context) []string {
+	var userID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM users
+		WHERE role = 'administrator' AND is_active = 1
+		ORDER BY is_protected DESC, created_at ASC, id ASC
+		LIMIT 1
+	`).Scan(&userID)
+	if err != nil || userID == "" {
+		return DefaultTags()
+	}
+	prefs, err := r.Get(ctx, userID)
+	if err != nil || len(prefs) == 0 {
+		return DefaultTags()
+	}
+	return prefs
+}
+
 // GetRaw returns the raw JSON value stored for userID, or DefaultJSON
 // when no row exists or the stored value is malformed. This is the
 // JSON-string counterpart to Get. It is convenient for HTTP handlers

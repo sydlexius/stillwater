@@ -212,6 +212,165 @@ func TestRepository_GetRaw_NormalizesStored(t *testing.T) {
 	}
 }
 
+// setupTestDBWithUsers extends setupTestDB with a users table matching the
+// production shape needed by EffectiveForBackground. Kept in-file so the
+// existing setupTestDB stays a minimal fixture for the rest of the suite.
+func setupTestDBWithUsers(t *testing.T) *sql.DB {
+	t.Helper()
+	db := setupTestDB(t)
+	_, err := db.ExecContext(context.Background(), `
+		CREATE TABLE IF NOT EXISTS users (
+			id            TEXT PRIMARY KEY,
+			username      TEXT NOT NULL UNIQUE,
+			role          TEXT NOT NULL DEFAULT 'operator',
+			is_active     INTEGER NOT NULL DEFAULT 1,
+			is_protected  INTEGER NOT NULL DEFAULT 0,
+			created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+		)
+	`)
+	if err != nil {
+		t.Fatalf("creating users table: %v", err)
+	}
+	return db
+}
+
+func insertUser(t *testing.T, db *sql.DB, id, username, role string, active, protected int, createdAt string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO users (id, username, role, is_active, is_protected, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		id, username, role, active, protected, createdAt)
+	if err != nil {
+		t.Fatalf("inserting user %s: %v", username, err)
+	}
+}
+
+func TestRepository_EffectiveForBackground_NoUsers(t *testing.T) {
+	repo := NewRepository(setupTestDBWithUsers(t))
+	got := repo.EffectiveForBackground(context.Background())
+	if !reflect.DeepEqual(got, DefaultTags()) {
+		t.Errorf("EffectiveForBackground with no users = %v, want %v", got, DefaultTags())
+	}
+}
+
+func TestRepository_EffectiveForBackground_PicksProtectedAdmin(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	// Non-protected admin created first, protected admin created later.
+	// Protected wins regardless of created_at order.
+	insertUser(t, db, "u-first", "earlyadmin", "administrator", 1, 0, "2026-01-01T00:00:00Z")
+	insertUser(t, db, "u-protected", "bootstrap", "administrator", 1, 1, "2026-03-01T00:00:00Z")
+
+	if err := repo.Set(ctx, "u-first", []string{"fr"}); err != nil {
+		t.Fatalf("Set u-first: %v", err)
+	}
+	if err := repo.Set(ctx, "u-protected", []string{"en-US", "en-GB", "en"}); err != nil {
+		t.Fatalf("Set u-protected: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	want := []string{"en-US", "en-GB", "en"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveForBackground = %v, want protected admin's prefs %v", got, want)
+	}
+}
+
+func TestRepository_EffectiveForBackground_ProtectedWinsAtSameAge(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	// Same created_at: is_protected must break the tie in favor of the
+	// protected admin. This is the "protected breaks ties" case for
+	// deployments where multiple admins were created in the same tick.
+	insertUser(t, db, "u-plain", "alice", "administrator", 1, 0, "2026-01-01T00:00:00Z")
+	insertUser(t, db, "u-protected", "bootstrap", "administrator", 1, 1, "2026-01-01T00:00:00Z")
+
+	if err := repo.Set(ctx, "u-plain", []string{"fr"}); err != nil {
+		t.Fatalf("Set u-plain: %v", err)
+	}
+	if err := repo.Set(ctx, "u-protected", []string{"ja"}); err != nil {
+		t.Fatalf("Set u-protected: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	want := []string{"ja"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveForBackground with tied created_at = %v, want protected admin's prefs %v", got, want)
+	}
+}
+
+func TestRepository_EffectiveForBackground_OldestAdminWhenNoneProtected(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	insertUser(t, db, "u-old", "alice", "administrator", 1, 0, "2026-01-15T00:00:00Z")
+	insertUser(t, db, "u-new", "bob", "administrator", 1, 0, "2026-02-15T00:00:00Z")
+
+	if err := repo.Set(ctx, "u-old", []string{"ja"}); err != nil {
+		t.Fatalf("Set u-old: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	want := []string{"ja"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveForBackground = %v, want oldest admin's prefs %v", got, want)
+	}
+}
+
+func TestRepository_EffectiveForBackground_SkipsInactiveAdmins(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	insertUser(t, db, "u-deactivated", "retired", "administrator", 0, 0, "2026-01-01T00:00:00Z")
+	insertUser(t, db, "u-active", "current", "administrator", 1, 0, "2026-02-01T00:00:00Z")
+
+	if err := repo.Set(ctx, "u-deactivated", []string{"fr"}); err != nil {
+		t.Fatalf("Set u-deactivated: %v", err)
+	}
+	if err := repo.Set(ctx, "u-active", []string{"de"}); err != nil {
+		t.Fatalf("Set u-active: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	want := []string{"de"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EffectiveForBackground = %v, want active admin's prefs %v", got, want)
+	}
+}
+
+func TestRepository_EffectiveForBackground_SkipsOperators(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	insertUser(t, db, "u-op", "operator", "operator", 1, 0, "2026-01-01T00:00:00Z")
+	if err := repo.Set(ctx, "u-op", []string{"zh"}); err != nil {
+		t.Fatalf("Set u-op: %v", err)
+	}
+
+	got := repo.EffectiveForBackground(ctx)
+	if !reflect.DeepEqual(got, DefaultTags()) {
+		t.Errorf("EffectiveForBackground = %v, want default %v (operators are not admins)", got, DefaultTags())
+	}
+}
+
+func TestRepository_EffectiveForBackground_AdminWithoutStoredPrefs_ReturnsDefault(t *testing.T) {
+	db := setupTestDBWithUsers(t)
+	repo := NewRepository(db)
+
+	insertUser(t, db, "u-admin", "admin", "administrator", 1, 1, "2026-01-01T00:00:00Z")
+
+	got := repo.EffectiveForBackground(context.Background())
+	if !reflect.DeepEqual(got, DefaultTags()) {
+		t.Errorf("EffectiveForBackground = %v, want %v (admin has no stored prefs)", got, DefaultTags())
+	}
+}
+
 func TestRepository_MultipleUsersIsolated(t *testing.T) {
 	repo := NewRepository(setupTestDB(t))
 	ctx := context.Background()

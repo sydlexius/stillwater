@@ -3,11 +3,54 @@ package rule
 import (
 	"context"
 	"log/slog"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// fakePipelineRunner captures the context passed to RunRule so tests can
+// assert that language preferences were injected before rule evaluation.
+// Other PipelineRunner methods are no-op stubs -- the scheduler only calls
+// RunRule.
+type fakePipelineRunner struct {
+	mu     sync.Mutex
+	ctxSeq []context.Context
+}
+
+func (f *fakePipelineRunner) RunRule(ctx context.Context, _ string) (*RunResult, error) {
+	f.mu.Lock()
+	f.ctxSeq = append(f.ctxSeq, ctx)
+	f.mu.Unlock()
+	return &RunResult{}, nil
+}
+
+func (f *fakePipelineRunner) RunForArtist(_ context.Context, _ *artist.Artist) (*RunResult, error) {
+	return &RunResult{}, nil
+}
+
+func (f *fakePipelineRunner) RunImageRulesForArtist(_ context.Context, _ *artist.Artist) (*RunResult, error) {
+	return &RunResult{}, nil
+}
+
+func (f *fakePipelineRunner) RunAll(_ context.Context) (*RunResult, error) {
+	return &RunResult{}, nil
+}
+
+func (f *fakePipelineRunner) FixViolation(_ context.Context, _ string) (*FixResult, error) {
+	return &FixResult{}, nil
+}
+
+func (f *fakePipelineRunner) capturedContexts() []context.Context {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]context.Context, len(f.ctxSeq))
+	copy(out, f.ctxSeq)
+	return out
+}
 
 func TestScheduler_Reset(t *testing.T) {
 	db := setupTestDB(t)
@@ -138,6 +181,123 @@ func TestScheduler_ContextCancellation(t *testing.T) {
 		// ok
 	case <-time.After(2 * time.Second):
 		t.Fatal("scheduler did not stop promptly on context cancellation")
+	}
+}
+
+func TestScheduler_SetLangPrefProvider_InjectsIntoRunRuleCtx(t *testing.T) {
+	db := setupTestDB(t)
+	ruleSvc := NewService(db)
+	logger := slog.Default()
+
+	// Seed a single enabled rule so runEnabledRules has something to
+	// iterate. The PipelineRunner is a fake that only records the ctx it
+	// receives, so the rule's config never executes.
+	ctxInsert := context.Background()
+	// The template DB ships with seeded system rules. Clear them so the
+	// only enabled rule this tick sees is the one we insert, which keeps
+	// assertions (single RunRule invocation) tight.
+	if _, err := db.ExecContext(ctxInsert, `DELETE FROM rules`); err != nil {
+		t.Fatalf("clearing seeded rules: %v", err)
+	}
+	if _, err := db.ExecContext(ctxInsert, `
+		INSERT INTO rules (id, name, description, category, enabled)
+		VALUES (?, ?, ?, ?, 1)
+	`, "test-rule", "test", "", "metadata"); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+
+	fake := &fakePipelineRunner{}
+	sched := NewScheduler(fake, ruleSvc, nil, logger)
+
+	want := []string{"en-US", "en-GB", "en"}
+	var providerCalls int
+	sched.SetLangPrefProvider(func(context.Context) []string {
+		providerCalls++
+		return want
+	})
+
+	sched.runEnabledRules(context.Background())
+
+	if providerCalls != 1 {
+		t.Errorf("LangPrefProvider calls = %d, want 1 per tick", providerCalls)
+	}
+
+	captured := fake.capturedContexts()
+	if len(captured) != 1 {
+		t.Fatalf("pipeline RunRule invocations = %d, want 1", len(captured))
+	}
+	got := provider.MetadataLanguages(captured[0])
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ctx lang prefs = %v, want %v", got, want)
+	}
+}
+
+func TestScheduler_NoLangPrefProvider_CtxLeftUnchanged(t *testing.T) {
+	db := setupTestDB(t)
+	ruleSvc := NewService(db)
+	logger := slog.Default()
+
+	ctxInsert := context.Background()
+	// The template DB ships with seeded system rules. Clear them so the
+	// only enabled rule this tick sees is the one we insert, which keeps
+	// assertions (single RunRule invocation) tight.
+	if _, err := db.ExecContext(ctxInsert, `DELETE FROM rules`); err != nil {
+		t.Fatalf("clearing seeded rules: %v", err)
+	}
+	if _, err := db.ExecContext(ctxInsert, `
+		INSERT INTO rules (id, name, description, category, enabled)
+		VALUES (?, ?, ?, ?, 1)
+	`, "test-rule", "test", "", "metadata"); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+
+	fake := &fakePipelineRunner{}
+	sched := NewScheduler(fake, ruleSvc, nil, logger)
+	// Do not call SetLangPrefProvider: the scheduler must behave as
+	// pre-#1136 (no injection) so existing deployments keep working.
+
+	sched.runEnabledRules(context.Background())
+
+	captured := fake.capturedContexts()
+	if len(captured) != 1 {
+		t.Fatalf("pipeline RunRule invocations = %d, want 1", len(captured))
+	}
+	if got := provider.MetadataLanguages(captured[0]); got != nil {
+		t.Errorf("ctx lang prefs = %v, want nil (no provider set)", got)
+	}
+}
+
+func TestScheduler_LangPrefProvider_EmptySliceDoesNotInject(t *testing.T) {
+	db := setupTestDB(t)
+	ruleSvc := NewService(db)
+	logger := slog.Default()
+
+	ctxInsert := context.Background()
+	// The template DB ships with seeded system rules. Clear them so the
+	// only enabled rule this tick sees is the one we insert, which keeps
+	// assertions (single RunRule invocation) tight.
+	if _, err := db.ExecContext(ctxInsert, `DELETE FROM rules`); err != nil {
+		t.Fatalf("clearing seeded rules: %v", err)
+	}
+	if _, err := db.ExecContext(ctxInsert, `
+		INSERT INTO rules (id, name, description, category, enabled)
+		VALUES (?, ?, ?, ?, 1)
+	`, "test-rule", "test", "", "metadata"); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+
+	fake := &fakePipelineRunner{}
+	sched := NewScheduler(fake, ruleSvc, nil, logger)
+	sched.SetLangPrefProvider(func(context.Context) []string { return nil })
+
+	sched.runEnabledRules(context.Background())
+
+	captured := fake.capturedContexts()
+	if len(captured) != 1 {
+		t.Fatalf("pipeline RunRule invocations = %d, want 1", len(captured))
+	}
+	if got := provider.MetadataLanguages(captured[0]); got != nil {
+		t.Errorf("ctx lang prefs = %v, want nil for empty provider result", got)
 	}
 }
 

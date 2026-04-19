@@ -28,6 +28,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/imagebridge"
+	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/maintenance"
@@ -417,6 +418,15 @@ func run() error {
 		}
 		if ruleScheduleMinutes >= 5 {
 			ruleScheduler = rule.NewScheduler(pipeline, ruleService, artistService, logger)
+			// Supply language preferences to scheduled rule evaluations.
+			// The HTTP-scoped injector (Router.injectMetadataLanguages)
+			// cannot run here because there is no user session in scope;
+			// the langpref repository picks the primary administrator's
+			// preferences so language-aware rules (e.g. name_language_pref)
+			// evaluate against the operator's configuration on the
+			// scheduled path too. See issue #1136.
+			langprefRepo := langpref.NewRepository(db)
+			ruleScheduler.SetLangPrefProvider(langprefRepo.EffectiveForBackground)
 		} else if ruleScheduleMinutes > 0 && ruleScheduleMinutes < 5 {
 			logger.Warn("rule scheduler interval too short (minimum 5 minutes); scheduler not started",
 				"minutes", ruleScheduleMinutes)
