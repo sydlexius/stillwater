@@ -71,6 +71,13 @@ func (r *sqliteArtistRepo) MarkRulesEvaluated(ctx context.Context, id string, ts
 //     JOIN filters on enabled = 1, so disabled rule updates do not surface).
 //   - No extra write amplification on rule edits.
 //
+// Timestamp columns are normalized via datetime() before comparison. The
+// schema defaults rules.updated_at to datetime('now') (space-separated), while
+// artists.rules_evaluated_at and dirty_since are stamped with RFC3339 (T-separated).
+// A raw TEXT comparison would sort "2026-04-18 12:00:00" below "2026-04-18T00:00:00Z"
+// and same-day rule edits on seeded rows would fail to re-dirty already-evaluated
+// artists. datetime() canonicalizes both sides for a chronological comparison.
+//
 // Sorted by name for stable progress reporting. Locked artists are excluded
 // because the pipeline skips them; including them would inflate progress counters.
 func (r *sqliteArtistRepo) ListDirtyIDs(ctx context.Context) ([]string, error) {
@@ -80,11 +87,11 @@ func (r *sqliteArtistRepo) ListDirtyIDs(ctx context.Context) ([]string, error) {
 		  AND locked = 0
 		  AND (
 		    rules_evaluated_at IS NULL
-		    OR (dirty_since IS NOT NULL AND dirty_since > rules_evaluated_at)
+		    OR (dirty_since IS NOT NULL AND datetime(dirty_since) > datetime(rules_evaluated_at))
 		    OR EXISTS (
 		      SELECT 1 FROM rules
 		      WHERE enabled = 1
-		        AND updated_at > artists.rules_evaluated_at
+		        AND datetime(updated_at) > datetime(artists.rules_evaluated_at)
 		    )
 		  )
 		ORDER BY name`)

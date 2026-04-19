@@ -364,6 +364,14 @@ func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
 // In practice this is acceptable because the normalized tables use
 // delete-then-insert which is idempotent, and the next Update call will retry.
 //
+// Update also synchronously stamps dirty_since so the rule pipeline picks
+// the artist up on the next incremental pass. The event-bus DirtySubscriber
+// (#698) remains as a belt-and-suspenders signal for non-Service.Update
+// mutation paths (watcher events, bulk_executor, image bridge writes), but
+// correctness here does not depend on the bus -- the bus is best-effort
+// and drops under backpressure, which would otherwise leave an Update-mutated
+// artist stuck looking clean until the next mutation or full sweep.
+//
 // When a HistoryService is attached, Update diffs every trackable field
 // between the old and new artist values and records a MetadataChange for
 // each field that changed. History recording is best-effort: failures are
@@ -385,6 +393,18 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 
 	if err := s.artists.Update(ctx, a); err != nil {
 		return err
+	}
+
+	// Synchronously mark dirty so the rule pipeline sees the mutation even
+	// when the event bus drops the ArtistUpdated notification. A MarkDirty
+	// failure here is warn-logged rather than returned: the artist row has
+	// already been written, and the DirtySubscriber still fires as a
+	// secondary signal. Treating this as fatal would either mask the
+	// successful Update from the caller or force a cascade of rollbacks
+	// that dirty_since is not worth.
+	if err := s.artists.MarkDirty(ctx, a.ID, time.Now().UTC()); err != nil {
+		slog.Warn("marking artist dirty after update",
+			"artist_id", a.ID, "error", err)
 	}
 
 	// Record field-level changes after the successful update.

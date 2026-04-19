@@ -151,9 +151,19 @@ func TestScheduler_StampsRulesEvaluated(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go sched.Start(ctx, 50*time.Millisecond)
+	// cancel() only signals the scheduler loop to exit; it does not wait
+	// for the in-flight tick to finish. If we called ListDirtyIDs before
+	// RunAllScoped stamped rules_evaluated_at, the test would flake on
+	// slower CI. Block on a done channel that Start closes when it returns
+	// so the assertion runs against a fully-settled DB state.
+	done := make(chan struct{})
+	go func() {
+		sched.Start(ctx, 50*time.Millisecond)
+		close(done)
+	}()
 	time.Sleep(300 * time.Millisecond)
 	cancel()
+	<-done
 
 	ids, err := artistSvc.ListDirtyIDs(context.Background())
 	if err != nil {

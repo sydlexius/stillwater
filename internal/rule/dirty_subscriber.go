@@ -21,6 +21,17 @@ const dirtyMarkTimeout = 5 * time.Second
 // to recompute scores; DirtySubscriber consumes mutations to schedule
 // rule re-evaluation.
 //
+// Correctness note: the event bus is best-effort and drops events when its
+// buffer is full. artist.Service.Update therefore marks dirty
+// synchronously in its own write path (#698 follow-up) so Update-driven
+// mutations cannot be masked by a dropped event. DirtySubscriber is the
+// secondary signal for mutation paths that bypass Service.Update (the
+// filesystem watcher, bulk_executor, image bridge writes, etc.); those
+// paths publish an ArtistUpdated event and rely on this subscriber to
+// stamp dirty_since. Losing one of those events is still possible under
+// heavy backpressure, but the resulting staleness is bounded by the next
+// mutation through Service.Update or the "Re-evaluate All" escape hatch.
+//
 // Unlike HealthSubscriber there is no debounce: a single SQL UPDATE per
 // event is cheap, and over-stamping dirty_since (e.g. multiple events for
 // the same artist) is a no-op for correctness because the timestamp only

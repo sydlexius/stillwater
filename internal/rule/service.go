@@ -436,6 +436,13 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 // schedule re-evaluation because the JOIN filters out disabled rules -- the
 // remaining enabled rules' outcomes are unchanged by the disable, so a full
 // library walk would be wasted work.
+//
+// When a rule is disabled, active violations for that rule are deleted so
+// they stop counting against compliance scores. Without this cleanup the
+// violation rows would persist indefinitely -- the rule no longer runs, so
+// nothing would ever mark them resolved. Historical dismissed/resolved
+// rows are left alone; only open and pending_choice violations (the ones
+// still surfacing in the UI as "needs attention") are removed.
 func (s *Service) Update(ctx context.Context, r *Rule) error {
 	r.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
@@ -444,6 +451,15 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 		r.UpdatedAt.Format(time.RFC3339), r.ID)
 	if err != nil {
 		return fmt.Errorf("updating rule: %w", err)
+	}
+
+	if !r.Enabled {
+		if _, cleanupErr := s.db.ExecContext(ctx,
+			`DELETE FROM rule_violations WHERE rule_id = ? AND status IN (?, ?)`,
+			r.ID, ViolationStatusOpen, ViolationStatusPendingChoice,
+		); cleanupErr != nil {
+			return fmt.Errorf("cleaning up violations after disable: %w", cleanupErr)
+		}
 	}
 	return nil
 }

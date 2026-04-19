@@ -73,10 +73,14 @@ func (s RunScope) String() string {
 }
 
 // RunResult describes the outcome of running rules against multiple artists.
+// ArtistsSkipped is the "unchanged" denominator exposed to incremental runs
+// ("evaluating X of Y (Z unchanged)"); it is only populated for
+// RunScopeIncremental and uses omitempty so scope=all responses do not
+// mislabel failed evaluations as "skipped".
 type RunResult struct {
 	ArtistsProcessed int         `json:"artists_processed"`
 	ArtistsTotal     int         `json:"artists_total"`
-	ArtistsSkipped   int         `json:"artists_skipped"`
+	ArtistsSkipped   int         `json:"artists_skipped,omitempty"`
 	Scope            string      `json:"scope"`
 	ViolationsFound  int         `json:"violations_found"`
 	FixesAttempted   int         `json:"fixes_attempted"`
@@ -95,7 +99,8 @@ type PipelineRunner interface {
 	// RunScopeIncremental for the user-facing "Run Rules" button (only
 	// evaluates artists with pending mutations) or RunScopeAll for the
 	// "Re-evaluate All" admin path. RunAll is preserved for callers that
-	// have not been updated and is equivalent to RunAllScoped(ctx, RunScopeAll).
+	// have not been updated and delegates to RunAllScoped(ctx, RunScopeIncremental)
+	// to match the user-facing default.
 	RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error)
 	// RunRuleScoped is the dirty-aware variant of RunRule.
 	RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error)
@@ -162,6 +167,11 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		var perRuleMetadata bool
 		var perRuleImages []string
 		var perRuleDirty bool
+		// persistOK tracks whether every violation/health write for this
+		// artist reached the DB. A single transient failure is enough to
+		// leave the artist dirty for retry; silently stamping it clean
+		// would hide the dropped violation until the next mutation.
+		persistOK := true
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
@@ -194,6 +204,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 						p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+						persistOK = false
 					}
 					continue
 				}
@@ -220,6 +231,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+					persistOK = false
 				}
 				continue
 			}
@@ -237,6 +249,7 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting unfixable violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+					persistOK = false
 				}
 				continue
 			}
@@ -275,14 +288,17 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+				persistOK = false
 			}
 		}
 
 		// Re-evaluate and persist health score (and any in-memory
 		// changes fixers made) in a single write, then publish.
-		p.updateHealthScore(ctx, a, perRuleDirty)
+		if !p.updateHealthScore(ctx, a, perRuleDirty) {
+			persistOK = false
+		}
 		p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
-		return true
+		return persistOK
 	}
 
 	// Single-rule run does not cover every enabled rule, so leave
@@ -293,7 +309,11 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		return nil, err
 	}
 	result.ArtistsProcessed = processed
-	if result.ArtistsTotal > processed {
+	// artists_skipped represents "unchanged" artists on an incremental run.
+	// For scope=all the denominator equals the processed set (plus failures),
+	// and reporting Total-Processed would mislabel failed evaluations as
+	// skipped. Leave the field zero (omitempty hides it) in that case.
+	if scope == RunScopeIncremental && result.ArtistsTotal > processed {
 		result.ArtistsSkipped = result.ArtistsTotal - processed
 	}
 
@@ -333,6 +353,10 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	var metadataFixed bool
 	var fixedImageTypes []string
 	var artistDirty bool // tracks whether the artist model was modified by a fixer
+	// persistOK gates the per-artist rules_evaluated_at stamp the same way
+	// the multi-artist walker does: any violation/health write failure must
+	// leave the artist dirty so the next pass retries.
+	persistOK := true
 
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
@@ -355,6 +379,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			r, err = p.ruleService.GetByID(ctx, v.RuleID)
 			if err != nil {
 				p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				persistOK = false
 				continue
 			}
 			ruleCache[v.RuleID] = r
@@ -374,6 +399,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
 				}
 				continue
 			}
@@ -400,6 +426,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				persistOK = false
 			}
 			continue
 		}
@@ -417,6 +444,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				persistOK = false
 			}
 			continue
 		}
@@ -455,17 +483,22 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 		}
 		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 			p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+			persistOK = false
 		}
 	}
 
 	// Re-evaluate and persist health score (and any in-memory
 	// changes fixers made) in a single write, then publish.
-	p.updateHealthScore(ctx, a, artistDirty)
+	if !p.updateHealthScore(ctx, a, artistDirty) {
+		persistOK = false
+	}
 	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
-	// Stamp rules_evaluated_at only when categoryFilter is empty, i.e.
-	// every enabled rule was considered. Image-only sweeps leave the
-	// timestamp alone so metadata rules still see the artist as dirty.
-	if categoryFilter == "" {
+	// Stamp rules_evaluated_at only when categoryFilter is empty (every
+	// enabled rule was considered) AND every persistence step succeeded.
+	// A transient write failure must keep the artist dirty so the next
+	// pass retries; stamping it clean would hide the dropped state until
+	// the next mutation.
+	if categoryFilter == "" && persistOK {
 		p.markArtistEvaluated(ctx, a, startedAt)
 	}
 	return result, nil
@@ -498,6 +531,11 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		var perArtistMetadata bool
 		var perArtistImages []string
 		var perArtistDirty bool
+		// See RunRuleScoped's processArtist: persistOK gates the
+		// rules_evaluated_at stamp so a transient DB failure keeps the
+		// artist in the dirty set for retry instead of masking dropped
+		// violations until the next mutation.
+		persistOK := true
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
@@ -515,6 +553,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				r, err = p.ruleService.GetByID(ctx, v.RuleID)
 				if err != nil {
 					p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
 					continue
 				}
 				ruleCache[v.RuleID] = r
@@ -537,6 +576,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 						p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+						persistOK = false
 					}
 					continue
 				}
@@ -563,6 +603,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
 				}
 				continue
 			}
@@ -580,6 +621,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 					p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
 				}
 				continue
 			}
@@ -618,14 +660,17 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				persistOK = false
 			}
 		}
 
 		// Re-evaluate and persist health score (and any in-memory
 		// changes fixers made) in a single write, then publish.
-		p.updateHealthScore(ctx, a, perArtistDirty)
+		if !p.updateHealthScore(ctx, a, perArtistDirty) {
+			persistOK = false
+		}
 		p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
-		return true
+		return persistOK
 	}
 
 	// RunAll covers every enabled rule, so it owns rules_evaluated_at:
@@ -636,7 +681,9 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		return nil, err
 	}
 	result.ArtistsProcessed = processed
-	if result.ArtistsTotal > processed {
+	// See RunRuleScoped for why artists_skipped is only computed for
+	// scope=incremental.
+	if scope == RunScopeIncremental && result.ArtistsTotal > processed {
 		result.ArtistsSkipped = result.ArtistsTotal - processed
 	}
 
@@ -662,14 +709,15 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 // must remain strictly greater than rules_evaluated_at, so the artist
 // stays in the dirty set on the next pass and the in-flight mutation is
 // not silently dropped.
-// fn returns true when the artist was successfully evaluated and false when
-// it was skipped (e.g. engine.Evaluate returned an error). The walker only
-// stamps rules_evaluated_at when fn returns true; a failed evaluation must
-// leave the artist in the dirty set so the next pass retries it. This is
+// fn returns true only when the whole artist pass persisted cleanly:
+// engine.Evaluate succeeded AND every violation upsert AND the trailing
+// artist Update reached the DB. A false return means anything from the
+// evaluate/upsert/update chain warn-logged a failure, and the walker then
+// leaves the artist in the dirty set so the next pass retries. This is
 // the protection against silent data loss flagged in the #698 review:
-// without the bool return, a transient DB error during evaluation would
-// stamp the artist as evaluated and the violation would be hidden until the
-// next mutation.
+// without the stricter bool, a transient DB error on a later step would
+// stamp the artist as evaluated and the dropped violation (or stale health
+// score) would be hidden until the next mutation.
 //
 // processed counts artists fn was actually invoked on (regardless of return
 // value), since both successes and failures consumed pipeline work.
@@ -952,15 +1000,22 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 	}
 }
 
-// updateHealthScore re-evaluates the artist and persists the score.
+// updateHealthScore re-evaluates the artist and persists the score. Returns
+// true when the artist row reached the DB cleanly, false when the Update
+// failed or was intentionally skipped. The walker uses the bool to decide
+// whether to stamp rules_evaluated_at: a failed persist must leave the
+// artist in the dirty set so the next pass retries.
+//
 // When mustPersist is true, the artist is persisted even if health
-// evaluation fails, to flush in-memory changes made by fixers.
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) {
+// evaluation fails, to flush in-memory changes made by fixers. In that
+// case the caller relies on the returned bool to detect the transient
+// persist failure.
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) bool {
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
 		if !mustPersist {
-			return
+			return false
 		}
 	} else {
 		a.HealthScore = eval.HealthScore
@@ -969,5 +1024,7 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 	}
 	if err := p.artistService.Update(ctx, a); err != nil {
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
+		return false
 	}
+	return true
 }

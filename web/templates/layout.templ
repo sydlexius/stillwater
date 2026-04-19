@@ -200,6 +200,17 @@ templ Layout(title string, assets AssetPaths) {
 					}
 
 					function dismissToast(entry) {
+						// Queued toasts have not been appended to the DOM yet,
+						// so the fade-out path below would leak them: when
+						// capacity opens up, removeFromVisible would still
+						// promote the queued entry and show a toast the caller
+						// already asked to drop. Splice them out of the queue
+						// directly and we are done.
+						var qIdx = queue.indexOf(entry);
+						if (qIdx !== -1) {
+							queue.splice(qIdx, 1);
+							return;
+						}
 						if (entry.dismissTimer) clearTimeout(entry.dismissTimer);
 						if (entry.ticker) clearInterval(entry.ticker);
 						entry.el.style.opacity = '0';

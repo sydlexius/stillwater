@@ -411,9 +411,11 @@ components:
         artists_skipped:
           type: integer
           description: >
-            Eligible artists not processed by this run (artists_total minus
-            artists_processed). May be omitted when zero. When present,
-            this is always zero for scope=all.
+            Eligible artists not processed by this run because they were
+            clean (rules_evaluated_at already covered their dirty_since).
+            Populated only for scope=incremental; omitted entirely for
+            scope=all responses so a partial failure on a full sweep is
+            not misread as "unchanged".
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation
@@ -3856,8 +3858,8 @@ paths:
             enum: [incremental, all]
             default: incremental
           description: >
-            Which artists to evaluate. Defaults to "incremental" (only dirty
-            artists since the last run). "all" forces a full sweep.
+            Which artists to evaluate. Defaults to "incremental" (only artists
+            flagged dirty since their last evaluation). "all" forces a full sweep.
       responses:
         "202":
           description: Run started
@@ -3865,6 +3867,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RuleRunStatus"
+        "400":
+          description: Invalid scope query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: A run is already in progress
           content:

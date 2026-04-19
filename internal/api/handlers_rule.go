@@ -247,7 +247,8 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 	scope, err := parseRunScope(req)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		r.logger.Warn("invalid scope query on run-rule", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scope parameter"})
 		return
 	}
 
@@ -469,7 +470,8 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 	scope, err := parseRunScope(req)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		r.logger.Warn("invalid scope query on run-all", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scope parameter"})
 		return
 	}
 
