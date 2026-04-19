@@ -993,8 +993,8 @@ func TestMetadataLanguagesPref_EmptyArray_DeleteFailure(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding error response: %v", err)
 	}
-	if resp["error"] == "" {
-		t.Errorf("expected error message in response, got %v", resp)
+	if resp["error"] != "internal error" {
+		t.Errorf("expected sanitized error %q, got %q", "internal error", resp["error"])
 	}
 }
 
