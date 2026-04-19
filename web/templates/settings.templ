@@ -102,13 +102,21 @@ func (d SettingsData) inboundWebhookURL(platform string) string {
 
 // metadataLanguagesJSON returns the MetadataLanguages slice as a JSON string
 // suitable for embedding in a data attribute.
+//
+// Empty slices are preserved as "[]" rather than coerced to the default.
+// This is load-bearing: the Providers tab JS treats "[]" as the explicit
+// "no languages set, using default: English" state (issue #1138). Coercing
+// back to ["en"] here would silently re-render an English pill after a
+// user's explicit reset-to-default action, contradicting what they just did.
+// On JSON marshal failure we fall back to "[]" for the same reason: it is
+// the safer no-op than fabricating an opinion on the user's behalf.
 func (d SettingsData) metadataLanguagesJSON() string {
 	if len(d.MetadataLanguages) == 0 {
-		return `["en"]`
+		return `[]`
 	}
 	b, err := json.Marshal(d.MetadataLanguages)
 	if err != nil {
-		return `["en"]`
+		return `[]`
 	}
 	return string(b)
 }
@@ -849,6 +857,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								data-aria-list-label={ t(ctx, "settings.metadata_languages.aria_list_label") }
 								data-aria-pill-hint={ t(ctx, "settings.metadata_languages.aria_pill_hint") }
 								data-aria-pill-label={ t(ctx, "settings.metadata_languages.aria_pill_label") }
+								data-default-hint={ t(ctx, "settings.metadata_languages.default_hint") }
 							>
 								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
 									<!-- Pills rendered by JS from data-languages -->
@@ -3699,6 +3708,31 @@ templ metadataLanguagesScript() {
 
 			function renderPills() {
 				pillBox.innerHTML = '';
+
+				// Empty state: user cleared all pills. Render a visible
+				// "Using default: English" hint instead of silently
+				// re-inserting ['en']. The server treats [] as an explicit
+				// unset -- the row is deleted and subsequent reads return
+				// the default. See issue #1138.
+				//
+				// Strip role="list" and aria-label in this branch: a
+				// container advertised as a list whose only child is a
+				// role="status" span (no listitem children) is invalid
+				// ARIA. The list semantics are re-applied below when
+				// actual pills are rendered.
+				if (langs.length === 0) {
+					pillBox.removeAttribute('role');
+					pillBox.removeAttribute('aria-label');
+					var hint = document.createElement('span');
+					hint.className = 'text-sm italic text-gray-500 dark:text-gray-400 px-2 py-1';
+					hint.setAttribute('role', 'status');
+					hint.setAttribute('aria-live', 'polite');
+					hint.textContent = container.getAttribute('data-default-hint')
+						|| 'No languages set. Using default: English. Search above to add languages.';
+					pillBox.appendChild(hint);
+					return;
+				}
+
 				pillBox.setAttribute('role', 'list');
 				pillBox.setAttribute('aria-label', container.getAttribute('data-aria-list-label') || 'Language priority order');
 				langs.forEach(function (code, idx) {
@@ -3745,13 +3779,19 @@ templ metadataLanguagesScript() {
 							e.preventDefault();
 							var previous = langs.slice();
 							langs.splice(pillIdx, 1);
-							if (langs.length === 0) langs = ['en'];
 							renderPills();
 							saveLangs(previous);
-							// Focus the pill at the same index or the last one.
-							var focusIdx = Math.min(pillIdx, langs.length - 1);
-							var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
-							if (next) next.focus();
+							// Focus the pill at the same index or the last
+							// one. If langs is now empty, move focus to the
+							// search input so keyboard users can immediately
+							// add a language without re-tabbing.
+							if (langs.length === 0) {
+								if (input) input.focus();
+							} else {
+								var focusIdx = Math.min(pillIdx, langs.length - 1);
+								var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
+								if (next) next.focus();
+							}
 						}
 					});
 
@@ -3765,7 +3805,6 @@ templ metadataLanguagesScript() {
 						var previous = langs.slice();
 						var removeIdx = langs.indexOf(code);
 						if (removeIdx >= 0) langs.splice(removeIdx, 1);
-						if (langs.length === 0) langs = ['en'];
 						renderPills();
 						saveLangs(previous);
 					});

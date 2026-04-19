@@ -338,7 +338,19 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Load metadata language preferences for the Providers tab.
-	metadataLangs := parseMetadataLanguages(MetadataLanguagesDefault)
+	//
+	// When the user has no stored row (never set, or explicitly reset via
+	// the Clear button -- see issue #1138), we intentionally pass nil to
+	// the template rather than the default ["en"]. The template's
+	// metadataLanguagesJSON() emits "[]" for empty slices, which the
+	// Providers tab JS interprets as the "using default: English" empty
+	// state. Coercing to ["en"] here would silently re-render an English
+	// pill after a user's explicit reset, contradicting their action.
+	//
+	// Downstream metadata lookups are not affected: injectMetadataLanguages
+	// reads the preference independently via langpref.Repository.Get, which
+	// still falls back to langpref.DefaultTags() on the no-row case.
+	var metadataLangs []string
 	if userID != "" {
 		var rawLangs string
 		langErr := r.db.QueryRowContext(req.Context(),
@@ -346,9 +358,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 			userID, PrefMetadataLanguages).Scan(&rawLangs)
 		switch {
 		case langErr == nil:
-			if parsed := parseMetadataLanguages(normalizeMetadataLanguages(rawLangs)); parsed != nil {
-				metadataLangs = parsed
-			}
+			metadataLangs = parseMetadataLanguages(normalizeMetadataLanguages(rawLangs))
 		case !errors.Is(langErr, sql.ErrNoRows):
 			r.logger.Warn("querying metadata_languages for settings page",
 				"user_id", userID, "error", langErr)

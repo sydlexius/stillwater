@@ -1080,6 +1080,7 @@
   "settings.metadata_languages.aria_list_label": "Language priority order",
   "settings.metadata_languages.aria_pill_hint": "use arrow keys to reorder",
   "settings.metadata_languages.aria_pill_label": "{name}, position {pos} of {total}, {hint}",
+  "settings.metadata_languages.default_hint": "No languages set. Using default: English. Search above to add languages.",
   "settings.auth.admin_groups": "Administrator Groups",
   "settings.auth.admin_groups_aria": "OIDC group claims that grant Administrator role (comma-separated)",
   "settings.auth.admin_groups_hint": "OIDC group claims that grant Administrator role (comma-separated)",
