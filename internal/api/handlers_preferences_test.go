@@ -943,7 +943,9 @@ func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 		value string
 	}{
 		{"not json", `not json`},
-		{"empty array", `[]`},
+		// Empty array is accepted as an explicit "unset to default"
+		// signal (see TestMetadataLanguagesPref_EmptyArrayResetsToDefault)
+		// and is therefore no longer in this "rejects" list. See #1138.
 		{"too many entries", `["en","fr","de","es","it","pt","ja","ko","zh","ru","nl","sv","no","da","fi","pl","tr","ar","he","cs","hu"]`},
 		{"empty string tag", `["en",""]`},
 		{"invalid chars", `["en@GB"]`},
@@ -963,6 +965,57 @@ func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 				t.Errorf("expected 400 for %q, got %d: %s", tc.value, w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestMetadataLanguagesPref_EmptyArrayResetsToDefault(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	// Seed a non-default preference first so we can observe the delete.
+	body := `{"value":"[\"ja\",\"en\"]"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("seed PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Clear via empty array. Per #1138, the handler deletes the row and
+	// echoes "[]" so the UI can keep showing its "using default" state.
+	body = `{"value":"[]"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/preferences/metadata_languages", strings.NewReader(body))
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding clear PUT response: %v", err)
+	}
+	if resp["value"] != "[]" {
+		t.Errorf("clear PUT response value = %q, want %q (handler echoes empty intent)", resp["value"], "[]")
+	}
+
+	// Follow-up GET must return the default: with no row, the read
+	// path falls back to langpref.DefaultJSON.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/metadata_languages", nil)
+	req.SetPathValue("key", "metadata_languages")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if resp["value"] != `["en"]` {
+		t.Errorf("GET after clear = %q, want %q (default fallback)", resp["value"], `["en"]`)
 	}
 }
 

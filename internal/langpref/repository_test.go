@@ -371,6 +371,64 @@ func TestRepository_EffectiveForBackground_AdminWithoutStoredPrefs_ReturnsDefaul
 	}
 }
 
+func TestRepository_Delete_RemovesRow(t *testing.T) {
+	repo := NewRepository(setupTestDB(t))
+	ctx := context.Background()
+	userID := "user-1"
+
+	if err := repo.Set(ctx, userID, []string{"ja", "en"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := repo.Delete(ctx, userID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	got, err := repo.Get(ctx, userID)
+	if err != nil {
+		t.Fatalf("Get after Delete: %v", err)
+	}
+	if !reflect.DeepEqual(got, DefaultTags()) {
+		t.Errorf("Get after Delete = %v, want %v (default)", got, DefaultTags())
+	}
+}
+
+func TestRepository_Delete_NoRowIsNotAnError(t *testing.T) {
+	repo := NewRepository(setupTestDB(t))
+	if err := repo.Delete(context.Background(), "never-existed"); err != nil {
+		t.Errorf("Delete on missing row: got err %v, want nil (SQL DELETE is a no-op on zero matches)", err)
+	}
+}
+
+func TestRepository_Delete_EmptyUserIDRejected(t *testing.T) {
+	repo := NewRepository(setupTestDB(t))
+	if err := repo.Delete(context.Background(), ""); err == nil {
+		t.Error("Delete with empty user id: expected error, got nil")
+	}
+}
+
+func TestRepository_Delete_IsolatedFromOtherUsers(t *testing.T) {
+	repo := NewRepository(setupTestDB(t))
+	ctx := context.Background()
+
+	if err := repo.Set(ctx, "alice", []string{"fr"}); err != nil {
+		t.Fatalf("Set alice: %v", err)
+	}
+	if err := repo.Set(ctx, "bob", []string{"de"}); err != nil {
+		t.Fatalf("Set bob: %v", err)
+	}
+	if err := repo.Delete(ctx, "alice"); err != nil {
+		t.Fatalf("Delete alice: %v", err)
+	}
+
+	// Bob's row must be untouched.
+	bob, err := repo.Get(ctx, "bob")
+	if err != nil {
+		t.Fatalf("Get bob: %v", err)
+	}
+	if !reflect.DeepEqual(bob, []string{"de"}) {
+		t.Errorf("bob after deleting alice = %v, want [de] (delete must not be cross-user)", bob)
+	}
+}
+
 func TestRepository_MultipleUsersIsolated(t *testing.T) {
 	repo := NewRepository(setupTestDB(t))
 	ctx := context.Background()

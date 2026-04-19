@@ -98,6 +98,30 @@ func (r *Repository) Set(ctx context.Context, userID string, tags []string) erro
 	return nil
 }
 
+// Delete removes the stored preference row for userID. Subsequent Get
+// calls fall back to DefaultTags(), mirroring the "no row" semantics used
+// throughout the preferences layer.
+//
+// This is the explicit "unset to default" signal for callers (e.g. the UI
+// when a user clears all language pills). Treating it as a separate
+// operation lets Validate keep rejecting empty lists on writes, which is
+// the right guard for accidental resets via a misbehaving client.
+//
+// An empty userID is rejected to prevent the query from matching every
+// row of the given key.
+func (r *Repository) Delete(ctx context.Context, userID string) error {
+	if userID == "" {
+		return fmt.Errorf("langpref: user id is required")
+	}
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM user_preferences WHERE user_id = ? AND key = ?`,
+		userID, PreferenceKey)
+	if err != nil {
+		return fmt.Errorf("langpref: deleting preference for user %s: %w", userID, err)
+	}
+	return nil
+}
+
 // EffectiveForBackground returns the preference list that background jobs
 // (e.g. the rule scheduler) should use when no HTTP user session is in
 // scope. The strategy is deterministic and small:

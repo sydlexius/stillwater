@@ -500,6 +500,26 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 			body.Value = strconv.Itoa(n)
 		}
 	case metaLangKey:
+		// An empty array is the explicit "reset to default" signal from
+		// the UI: delete the row so the read path falls back to
+		// langpref.DefaultTags() rather than silently substituting "en"
+		// and losing the user's intent. See issue #1138.
+		if trimmed := strings.TrimSpace(body.Value); trimmed == "[]" {
+			repo := langpref.NewRepository(r.db)
+			if err := repo.Delete(req.Context(), userID); err != nil {
+				r.logger.Error("deleting metadata_languages preference", "user_id", userID, "error", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+				return
+			}
+			// Echo the empty array the client sent so the UI can stay in
+			// its visible "using default" state for the rest of the
+			// session. GetRaw will return DefaultJSON on a later page
+			// load -- that is a deliberate ambiguity: we do not remember
+			// the difference between "never set" and "explicitly cleared"
+			// across reloads, and the render path handles either case.
+			writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": "[]"})
+			return
+		}
 		canonical, ok := validateMetadataLanguages(body.Value)
 		valid = ok
 		if valid {

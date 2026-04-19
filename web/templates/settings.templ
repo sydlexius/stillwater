@@ -849,6 +849,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								data-aria-list-label={ t(ctx, "settings.metadata_languages.aria_list_label") }
 								data-aria-pill-hint={ t(ctx, "settings.metadata_languages.aria_pill_hint") }
 								data-aria-pill-label={ t(ctx, "settings.metadata_languages.aria_pill_label") }
+								data-default-hint={ t(ctx, "settings.metadata_languages.default_hint") }
 							>
 								<div id="metadata-lang-pills" class="flex flex-wrap gap-2 min-h-[2.5rem] p-2 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
 									<!-- Pills rendered by JS from data-languages -->
@@ -3701,6 +3702,23 @@ templ metadataLanguagesScript() {
 				pillBox.innerHTML = '';
 				pillBox.setAttribute('role', 'list');
 				pillBox.setAttribute('aria-label', container.getAttribute('data-aria-list-label') || 'Language priority order');
+
+				// Empty state: user cleared all pills. Render a visible
+				// "Using default: English" hint instead of silently
+				// re-inserting ['en']. The server treats [] as an explicit
+				// unset -- the row is deleted and subsequent reads return
+				// the default. See issue #1138.
+				if (langs.length === 0) {
+					var hint = document.createElement('span');
+					hint.className = 'text-sm italic text-gray-500 dark:text-gray-400 px-2 py-1';
+					hint.setAttribute('role', 'status');
+					hint.setAttribute('aria-live', 'polite');
+					hint.textContent = container.getAttribute('data-default-hint')
+						|| 'No languages set. Using default: English. Search above to add languages.';
+					pillBox.appendChild(hint);
+					return;
+				}
+
 				langs.forEach(function (code, idx) {
 					var pill = document.createElement('span');
 					pill.className = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -3745,13 +3763,19 @@ templ metadataLanguagesScript() {
 							e.preventDefault();
 							var previous = langs.slice();
 							langs.splice(pillIdx, 1);
-							if (langs.length === 0) langs = ['en'];
 							renderPills();
 							saveLangs(previous);
-							// Focus the pill at the same index or the last one.
-							var focusIdx = Math.min(pillIdx, langs.length - 1);
-							var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
-							if (next) next.focus();
+							// Focus the pill at the same index or the last
+							// one. If langs is now empty, move focus to the
+							// search input so keyboard users can immediately
+							// add a language without re-tabbing.
+							if (langs.length === 0) {
+								if (input) input.focus();
+							} else {
+								var focusIdx = Math.min(pillIdx, langs.length - 1);
+								var next = pillBox.querySelector('[data-idx="' + focusIdx + '"]');
+								if (next) next.focus();
+							}
 						}
 					});
 
@@ -3765,7 +3789,6 @@ templ metadataLanguagesScript() {
 						var previous = langs.slice();
 						var removeIdx = langs.indexOf(code);
 						if (removeIdx >= 0) langs.splice(removeIdx, 1);
-						if (langs.length === 0) langs = ['en'];
 						renderPills();
 						saveLangs(previous);
 					});
