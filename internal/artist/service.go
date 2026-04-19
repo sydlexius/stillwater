@@ -197,6 +197,21 @@ func (s *Service) MarkDirty(ctx context.Context, id string, ts time.Time) error 
 	return s.artists.MarkDirty(ctx, id, ts)
 }
 
+// markDirtyBestEffort stamps dirty_since with the current UTC time and
+// warn-logs any failure instead of propagating it. Called after every
+// successful artist mutation (Update, UpdateField, ClearField) so the rule
+// pipeline sees the change even when the ArtistUpdated event bus notification
+// is dropped under backpressure. The best-effort contract is deliberate:
+// the artist row has already been written, and the DirtySubscriber is still
+// a secondary signal; failing the caller because of a dirty-mark write
+// would invert error semantics relative to the main write.
+func (s *Service) markDirtyBestEffort(ctx context.Context, id string) {
+	if err := s.artists.MarkDirty(ctx, id, time.Now().UTC()); err != nil {
+		slog.Warn("marking artist dirty after mutation",
+			"artist_id", id, "error", err)
+	}
+}
+
 // MarkAllDirty stamps dirty_since on every non-excluded, non-locked artist.
 // Returns the number of rows affected. Called when a new rule is added so
 // existing artists are scheduled for re-evaluation against it.
@@ -364,13 +379,11 @@ func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
 // In practice this is acceptable because the normalized tables use
 // delete-then-insert which is idempotent, and the next Update call will retry.
 //
-// Update also synchronously stamps dirty_since so the rule pipeline picks
-// the artist up on the next incremental pass. The event-bus DirtySubscriber
-// (#698) remains as a belt-and-suspenders signal for non-Service.Update
-// mutation paths (watcher events, bulk_executor, image bridge writes), but
-// correctness here does not depend on the bus -- the bus is best-effort
-// and drops under backpressure, which would otherwise leave an Update-mutated
-// artist stuck looking clean until the next mutation or full sweep.
+// Update (along with UpdateField and ClearField) calls markDirtyBestEffort
+// after the write succeeds so the rule pipeline sees the mutation even when
+// the ArtistUpdated event bus notification is dropped under backpressure.
+// The event-bus DirtySubscriber remains as a secondary signal for mutation
+// paths that bypass Service entirely (watcher, bulk_executor, image bridge).
 //
 // When a HistoryService is attached, Update diffs every trackable field
 // between the old and new artist values and records a MetadataChange for
@@ -395,17 +408,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		return err
 	}
 
-	// Synchronously mark dirty so the rule pipeline sees the mutation even
-	// when the event bus drops the ArtistUpdated notification. A MarkDirty
-	// failure here is warn-logged rather than returned: the artist row has
-	// already been written, and the DirtySubscriber still fires as a
-	// secondary signal. Treating this as fatal would either mask the
-	// successful Update from the caller or force a cascade of rollbacks
-	// that dirty_since is not worth.
-	if err := s.artists.MarkDirty(ctx, a.ID, time.Now().UTC()); err != nil {
-		slog.Warn("marking artist dirty after update",
-			"artist_id", a.ID, "error", err)
-	}
+	s.markDirtyBestEffort(ctx, a.ID)
 
 	// Record field-level changes after the successful update.
 	if s.history != nil && old != nil {
@@ -496,6 +499,8 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 		return err
 	}
 
+	s.markDirtyBestEffort(ctx, id)
+
 	// Record the change by comparing normalized representations. Re-fetch
 	// after the mutation so both old and new use FieldValueFromArtist, avoiding
 	// format mismatches for slice fields (e.g. "Rock, Alternative" vs "Rock,Alternative").
@@ -540,6 +545,8 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 	if err := s.artists.ClearField(ctx, id, field); err != nil {
 		return err
 	}
+
+	s.markDirtyBestEffort(ctx, id)
 
 	// Record the change only if the field was non-empty before clearing.
 	// Use FieldValueFromArtist on the post-clear state for consistent representation.

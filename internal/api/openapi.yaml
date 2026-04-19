@@ -413,9 +413,11 @@ components:
           description: >
             Eligible artists not processed by this run because they were
             clean (rules_evaluated_at already covered their dirty_since).
-            Populated only for scope=incremental; omitted entirely for
-            scope=all responses so a partial failure on a full sweep is
-            not misread as "unchanged".
+            May be omitted when zero (the `omitempty` contract). When
+            present, this counts skipped-because-clean artists for
+            scope=incremental; for scope=all it is zero -- the field is
+            only populated on incremental runs, so a partial failure on
+            a full sweep is not misread as "unchanged".
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation

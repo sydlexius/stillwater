@@ -240,6 +240,7 @@ templ Layout(title string, assets AssetPaths) {
 							case 'warning':
 								return 'border-l-4 border-l-amber-500 text-amber-800 dark:text-amber-200';
 							case 'success':
+							case 'sticky-success':
 								return 'border-l-4 border-l-emerald-500 text-emerald-800 dark:text-emerald-200';
 							case 'undo':
 								return 'border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200';
@@ -321,8 +322,17 @@ templ Layout(title string, assets AssetPaths) {
 					// (e.g. the Run Rules incremental summary, #698). Returns an
 					// object exposing dismiss() so callers can collapse a prior
 					// sticky before replacing it on a new run.
+					//
+					// Uses a distinct 'sticky-success' type so findGroupable does
+					// not collapse a sticky into a prior showSuccessToast('same msg')
+					// within the 2s grouping window. Sharing the 'success' key would
+					// let enqueueToast hit the group-update branch, clear the sticky
+					// autoDismissMs=0 intent, and reset the dismiss timer to the
+					// previous entry's 5s -- so the "persistent" summary would
+					// disappear immediately. colorClasses() maps sticky-success to
+					// the same emerald styling as success.
 					window.showStickyToast = function(msg) {
-						var entry = enqueueToast('success', msg, 0);
+						var entry = enqueueToast('sticky-success', msg, 0);
 						return {
 							dismiss: function() { dismissToast(entry); }
 						};

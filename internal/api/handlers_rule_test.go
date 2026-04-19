@@ -220,6 +220,133 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 	close(blockCh)
 }
 
+// TestHandleRunRule_InvalidScope400 exercises the parseRunScope error path on
+// POST /rules/{id}/run. The handler must warn-log the raw error and return a
+// generic 400 without echoing the bad input back to the client. Covers the
+// scope-validation branch added for #698.
+func TestHandleRunRule_InvalidScope400(t *testing.T) {
+	r, _, ruleSvc := testRouterWithPipelineFull(t)
+	ruleID := firstRuleID(t, ruleSvc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run?scope=xyz", nil)
+	req.SetPathValue("id", ruleID)
+	w := httptest.NewRecorder()
+
+	r.handleRunRule(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	requireErrorBody(t, w, "invalid scope parameter")
+}
+
+// TestHandleRunAllRules_NilPipeline503 exercises the early-return path when
+// the pipeline is not wired. Distinct from the single-rule run because
+// handleRunAllRules has its own pipeline-nil check.
+func TestHandleRunAllRules_NilPipeline503(t *testing.T) {
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w := httptest.NewRecorder()
+
+	r.handleRunAllRules(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusServiceUnavailable, w.Body.String())
+	}
+	requireErrorBody(t, w, "rule pipeline not configured")
+}
+
+// TestHandleRunAllRules_InvalidScope400 covers the 400 branch added to
+// POST /rules/run-all so the spec's new 400 response is backed by the
+// implementation.
+func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
+	r, _, _ := testRouterWithPipelineFull(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all?scope=xyz", nil)
+	w := httptest.NewRecorder()
+
+	r.handleRunAllRules(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	requireErrorBody(t, w, "invalid scope parameter")
+}
+
+// TestHandleRunAllRules_Returns202 covers the happy-path acknowledgment on
+// POST /rules/run-all. Uses the stub pipeline so the background goroutine
+// returns immediately and the test does not race on real evaluation work.
+func TestHandleRunAllRules_Returns202(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w := httptest.NewRecorder()
+
+	r.handleRunAllRules(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if body["status"] != "running" {
+		t.Errorf("status = %v, want running", body["status"])
+	}
+	if body["scope"] != "incremental" {
+		t.Errorf("scope = %v, want incremental (default)", body["scope"])
+	}
+}
+
+// TestHandleRunAllRules_409WhenAlreadyRunning exercises the ruleRunMu gate on
+// POST /rules/run-all. A blocking stub keeps the first run in-progress so the
+// second call must observe r.ruleRun.Running == true and return 409.
+func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
+	blockCh := make(chan struct{})
+	stub := &stubPipeline{
+		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
+			<-blockCh
+			return &rule.RunResult{}, nil
+		},
+	}
+	// Wrap RunAllScoped too so the goroutine blocks instead of returning fast.
+	stub2 := &blockingStubPipeline{stubPipeline: *stub, block: blockCh}
+	r, _ := testRouterWithStubPipeline(t, &stub2.stubPipeline)
+	// Swap the pipeline to the blocking variant so handleRunAllRules waits.
+	r.pipeline = stub2
+
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w1 := httptest.NewRecorder()
+	r.handleRunAllRules(w1, req1)
+	if w1.Code != http.StatusAccepted {
+		t.Fatalf("first run: status = %d, want %d", w1.Code, http.StatusAccepted)
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
+	w2 := httptest.NewRecorder()
+	r.handleRunAllRules(w2, req2)
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
+	}
+
+	close(blockCh)
+}
+
+// blockingStubPipeline wraps stubPipeline with a RunAllScoped that blocks on a
+// channel until the test releases it. Used by the 409 test above.
+type blockingStubPipeline struct {
+	stubPipeline
+	block chan struct{}
+}
+
+func (b *blockingStubPipeline) RunAllScoped(_ context.Context, _ rule.RunScope) (*rule.RunResult, error) {
+	<-b.block
+	return &rule.RunResult{}, nil
+}
+
 func TestHandleEvaluateArtist_NotFound(t *testing.T) {
 	r, _ := testRouter(t)
 
