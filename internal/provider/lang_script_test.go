@@ -65,6 +65,16 @@ func TestScriptMatchesAnyLocale(t *testing.T) {
 		{"sr-Cyrl accepts cyrillic only", ScriptCyrillic, []string{"sr-Cyrl"}, true},
 		{"sr-Cyrl rejects latin", ScriptLatin, []string{"sr-Cyrl"}, false},
 		{"zh-Hant with region accepts han", ScriptHan, []string{"zh-Hant-TW"}, true},
+		// A 4-char variant subtag (digit-led) is not a script; the loop
+		// must fall through to the base-language lookup, matching Latin
+		// from "de". Regression: pre-fix ParseBCP47Script returned "1901"
+		// and the caller short-circuited via continue, producing false.
+		{"de-1901 variant falls back to base", ScriptLatin, []string{"de-1901"}, true},
+		// Private-use prefix "x" in position 1: returns no script and
+		// the base "ja" is consulted. Latin does not satisfy ja.
+		{"ja-x-latn rejects latin", ScriptLatin, []string{"ja-x-latn"}, false},
+		// Same shape but with kanji satisfies ja via the base language.
+		{"ja-x-latn accepts han via base", ScriptHan, []string{"ja-x-latn"}, true},
 	}
 
 	for _, tt := range tests {
@@ -72,6 +82,40 @@ func TestScriptMatchesAnyLocale(t *testing.T) {
 			got := ScriptMatchesAnyLocale(tt.script, tt.prefs)
 			if got != tt.want {
 				t.Errorf("ScriptMatchesAnyLocale(%q, %v) = %v, want %v", tt.script, tt.prefs, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseBCP47Script locks in the RFC 5646 position + alpha-shape
+// constraints on script subtag extraction. Indirect coverage through
+// ScriptMatchesAnyLocale / ScriptSatisfiesLocale is not enough because
+// those tests only observe the end-to-end boolean; a buggy parser that
+// returns an invalid 4-char segment would still produce the correct
+// downstream result in most cases thanks to iso15924ToScript filtering.
+func TestParseBCP47Script(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want string
+	}{
+		{"sr-Latn", "latn"},
+		{"zh-Hant-TW", "hant"},
+		{"zh-hant-tw", "hant"},
+		{"en", ""},
+		{"en-US", ""},
+		{"", ""},
+		{"de-1901", ""},         // variant with leading digit, not a script
+		{"ja-x-latn", ""},       // "x" in position 1 is a private-use singleton
+		{"en-US-Latn", ""},      // script cannot follow region per RFC 5646
+		{"de-DE-1901", ""},      // region in position 1, variant at position 2
+		{"und-Latn", "latn"},    // undetermined-language + script is valid
+		{"  sr-Latn  ", "latn"}, // whitespace trimmed, case lowered
+		{"SR-LATN", "latn"},     // uppercase input normalizes to lowercase
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			if got := ParseBCP47Script(tt.tag); got != tt.want {
+				t.Errorf("ParseBCP47Script(%q) = %q, want %q", tt.tag, got, tt.want)
 			}
 		})
 	}

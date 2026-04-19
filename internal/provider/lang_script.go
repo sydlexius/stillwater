@@ -138,18 +138,36 @@ var iso15924ToScript = map[string]string{
 
 // ParseBCP47Script extracts the explicit ISO 15924 script subtag from a
 // BCP-47 tag (e.g. "sr-Latn" -> "latn", "zh-Hant-TW" -> "hant"). Returns
-// the empty string when no script subtag is present. The script subtag is
-// always a 4-letter segment; language is 2-3 letters and region is 2
-// letters or 3 digits, so the 4-letter position after the language is
-// unambiguous.
+// the empty string when no script subtag is present.
+//
+// Per RFC 5646, the script subtag has two defining properties:
+//
+//  1. Position: it must immediately follow the language/extlang subtag.
+//     A 4-character segment later in the tag is a region (rare) or a
+//     variant, not a script.
+//  2. Shape: it must be exactly 4 alphabetic characters. A 4-digit-or-
+//     leading-digit variant like "1901" (in "de-1901", the 1901 German
+//     orthography variant) is position-1-valid but is NOT a script.
+//
+// Enforcing both together means callers that fall back to the base
+// language on empty result (ScriptMatchesAnyLocale, ScriptSatisfiesLocale)
+// correctly handle tags with variants, private-use subtags ("ja-x-latn"),
+// or extensions without a phantom script match short-circuiting the loop.
 func ParseBCP47Script(tag string) string {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(tag)), "-")
-	for _, p := range parts[1:] {
-		if len(p) == 4 {
-			return p
+	if len(parts) < 2 {
+		return ""
+	}
+	p := parts[1]
+	if len(p) != 4 {
+		return ""
+	}
+	for _, c := range p {
+		if c < 'a' || c > 'z' {
+			return ""
 		}
 	}
-	return ""
+	return p
 }
 
 // ScriptMatchesAnyLocale returns true when the given script is expected for
