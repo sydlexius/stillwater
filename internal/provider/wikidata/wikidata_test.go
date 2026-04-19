@@ -363,6 +363,120 @@ func TestGetImagesInvalidMBID(t *testing.T) {
 	}
 }
 
+func TestWikidataLangParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		prefs []string
+		want  string
+	}{
+		{
+			name:  "empty prefs returns en",
+			prefs: nil,
+			want:  "en",
+		},
+		{
+			name:  "single simple tag",
+			prefs: []string{"ja"},
+			want:  "ja,en",
+		},
+		{
+			name:  "regional tag expands to base then en",
+			prefs: []string{"en-GB"},
+			want:  "en-gb,en",
+		},
+		{
+			name:  "multiple tags with deduplication",
+			prefs: []string{"ja", "en-GB", "fr"},
+			want:  "ja,en-gb,en,fr",
+		},
+		{
+			name:  "en already in prefs not duplicated",
+			prefs: []string{"en"},
+			want:  "en",
+		},
+		{
+			name:  "en-GB expands base en, final en not duplicated",
+			prefs: []string{"fr", "en-GB"},
+			want:  "fr,en-gb,en",
+		},
+		{
+			name:  "zh-Hant expands to zh",
+			prefs: []string{"zh-Hant"},
+			want:  "zh-hant,zh,en",
+		},
+		{
+			name:  "duplicate prefs deduplicated",
+			prefs: []string{"ja", "ja", "en"},
+			want:  "ja,en",
+		},
+		{
+			name:  "empty string entry in slice is skipped",
+			prefs: []string{"", "ja"},
+			want:  "ja,en",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wikidataLangParam(tt.prefs)
+			if got != tt.want {
+				t.Errorf("wikidataLangParam(%v) = %q, want %q", tt.prefs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildArtistQuery_LanguagePrefsIncluded(t *testing.T) {
+	// When language preferences are set, the SPARQL query must include them in the
+	// wikibase:language parameter. The MBID must not appear in the language string.
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	prefs := []string{"ja", "en-GB"}
+	query := buildArtistQuery(mbid, prefs)
+	// The query must reference the MBID.
+	if !strings.Contains(query, mbid) {
+		t.Errorf("query does not contain MBID %s", mbid)
+	}
+	// The wikibase:language param should include user prefs and fallback en.
+	if !strings.Contains(query, `"ja,en-gb,en"`) {
+		t.Errorf("query wikibase:language does not contain expected lang param; query:\n%s", query)
+	}
+}
+
+func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
+	// Verify that GetArtist passes language preferences into the SPARQL query
+	// by capturing the raw query string the server receives. The captured
+	// string is sent through a buffered channel so the read after GetArtist
+	// is synchronized with the write inside the httptest handler goroutine
+	// (race-detector clean).
+	artistData := loadFixture(t, "artist_radiohead.json")
+	queryCh := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		queryCh <- r.URL.Query().Get("query")
+		_, _ = w.Write(artistData)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr"})
+	_, err := a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	capturedQuery := <-queryCh
+
+	// The captured SPARQL query must include the user's language preferences.
+	if !strings.Contains(capturedQuery, "ja") {
+		t.Errorf("SPARQL query does not include 'ja' lang preference; query: %s", capturedQuery)
+	}
+	if !strings.Contains(capturedQuery, "fr") {
+		t.Errorf("SPARQL query does not include 'fr' lang preference; query: %s", capturedQuery)
+	}
+}
+
 func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	// SPARQL returns valid image filenames but the Commons endpoint returns
 	// HTTP 500 for all requests. GetImages should return ErrProviderUnavailable.

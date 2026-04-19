@@ -151,6 +151,113 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 	}
 }
 
+// TestExecutorPopulatedFields_DistinguishesAttemptedFromPopulated verifies the
+// scraper-side half of the #952 graceful-fallback contract: when a provider
+// is queried for a field but returns no data (ErrNotFound), the field is
+// recorded in AttemptedFields but NOT in PopulatedFields, so the merge layer
+// preserves any pre-existing user-curated value rather than wiping it.
+//
+// This is the scraper-path counterpart to TestOrchestratorPopulatedFieldsTracking.
+// Without coverage here, a future regression that wires the wrong condition
+// (e.g. tracking on fr.Queried instead of fr.Provider != "") would silently
+// re-introduce the bio/tag-wipe bug for scraper-driven refreshes.
+func TestExecutorPopulatedFields_DistinguishesAttemptedFromPopulated(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// AudioDB returns ErrNotFound -- queried, no data.
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*provider.ArtistMetadata, error) {
+			return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: id}
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldStyles, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	contains := func(haystack []string, needle string) bool {
+		for _, s := range haystack {
+			if s == needle {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !contains(result.AttemptedFields, string(FieldStyles)) {
+		t.Errorf("expected %q in AttemptedFields (provider was queried), got %v", FieldStyles, result.AttemptedFields)
+	}
+	if contains(result.PopulatedFields, string(FieldStyles)) {
+		t.Errorf("expected %q NOT in PopulatedFields (no data returned), got %v", FieldStyles, result.PopulatedFields)
+	}
+}
+
+// TestExecutorPopulatedFields_RecordsFieldWhenProviderReturnsData verifies the
+// positive case: when a provider returns data, the field is recorded in
+// PopulatedFields. Authorizes the merge layer to overwrite.
+func TestExecutorPopulatedFields_RecordsFieldWhenProviderReturnsData(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist", Styles: []string{"shoegaze"}}, nil
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldStyles, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	contains := func(haystack []string, needle string) bool {
+		for _, s := range haystack {
+			if s == needle {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !contains(result.PopulatedFields, string(FieldStyles)) {
+		t.Errorf("expected %q in PopulatedFields (data was returned), got %v", FieldStyles, result.PopulatedFields)
+	}
+}
+
 // TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted verifies that when
 // GetArtist succeeds but GetImages returns a transient error (e.g. timeout),
 // the image field is NOT added to AttemptedFields. This prevents callers from

@@ -59,7 +59,17 @@ type FetchResult struct {
 	Sources            []FieldSource   `json:"sources"`
 	Errors             []string        `json:"errors"`
 	AttemptedProviders []ProviderName  `json:"attempted_providers,omitempty"`
-	AttemptedFields    []string        `json:"attempted_fields,omitempty"`
+	// AttemptedFields lists fields the orchestrator queried a provider for,
+	// regardless of whether any provider returned data. Useful for telemetry
+	// and "we tried these" UI signals.
+	AttemptedFields []string `json:"attempted_fields,omitempty"`
+	// PopulatedFields lists fields where at least one provider actually
+	// returned data that was merged into Metadata. Subset of AttemptedFields.
+	// Used by the refresh merge path to distinguish "attempted but empty"
+	// (preserve existing value) from "attempted and populated" (overwrite).
+	// This is the mechanism for #952's graceful-fallback contract: an empty
+	// localized lookup must not clobber pre-existing data.
+	PopulatedFields []string `json:"populated_fields,omitempty"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -132,6 +142,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 	for _, pri := range priorities {
 		queried := false
+		// fieldPopulated tracks whether THIS priority iteration produced any
+		// applied data, so a field that was populated in a previous iteration
+		// (in case the priority list ever lists the same field twice) is not
+		// falsely re-credited here. Reset each iteration.
+		fieldPopulated := false
 		isImageField := isImageFieldName(pri.Field)
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
@@ -165,6 +180,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 			queried = true
 			if applyField(result, pri.Field, pr, provName) {
+				fieldPopulated = true
 				// For image fields and aggregated tag fields (genres/styles/moods),
 				// continue collecting candidates from all providers instead of
 				// stopping at the first match. Text fields use first-match-wins
@@ -176,6 +192,9 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		}
 		if queried {
 			result.AttemptedFields = append(result.AttemptedFields, pri.Field)
+			if fieldPopulated {
+				result.PopulatedFields = append(result.PopulatedFields, pri.Field)
+			}
 		}
 	}
 

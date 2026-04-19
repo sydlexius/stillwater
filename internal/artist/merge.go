@@ -11,8 +11,10 @@ import (
 type MergeStrategy int
 
 const (
-	// OverwriteAttempted overwrites fields that were attempted by providers.
-	// Un-attempted fields are untouched. Attempted fields can be cleared.
+	// OverwriteAttempted overwrites fields that were attempted AND populated
+	// by providers. Un-attempted fields are untouched. Attempted-but-empty
+	// fields are also untouched so a localized lookup with no match preserves
+	// pre-existing data (#952 graceful fallback).
 	// Type/Gender/YearsActive use non-empty overwrite (never cleared).
 	// Provider IDs use fill-empty semantics (never overwrite existing IDs).
 	OverwriteAttempted MergeStrategy = iota
@@ -35,7 +37,9 @@ const (
 
 // MetadataUpdate holds incoming metadata fields to merge into an Artist.
 // Zero values mean "not provided" for FillEmpty and NFOImport strategies.
-// For OverwriteAttempted, zero values in attempted fields clear the field.
+// For OverwriteAttempted, zero values are not authorized to clear: only
+// fields listed in MergeOptions.PopulatedFields are eligible for overwrite,
+// and PopulatedFields only contains fields where a provider returned data.
 type MetadataUpdate struct {
 	Name           string
 	SortName       string
@@ -64,6 +68,14 @@ type MergeOptions struct {
 	// AttemptedFields lists which fields the provider tried to fetch.
 	// Only used by OverwriteAttempted. Un-attempted fields are untouched.
 	AttemptedFields []string
+
+	// PopulatedFields lists which fields actually had data returned by at
+	// least one provider. Subset of AttemptedFields. Only used by
+	// OverwriteAttempted: clear-on-empty semantics for biography, tag lists,
+	// and date fields require both attempted AND populated. This is the
+	// graceful-fallback contract from #952 -- a localized lookup that returns
+	// nothing must not clobber pre-existing values on the artist.
+	PopulatedFields []string
 
 	// FilterDatesByType clears semantically inappropriate date fields after
 	// merging (e.g., formed/disbanded for solo artists). Typically true for
@@ -124,7 +136,7 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 
 	switch strategy {
 	case OverwriteAttempted:
-		changed = applyOverwriteAttempted(a, u, opts.AttemptedFields, locked)
+		changed = applyOverwriteAttempted(a, u, opts.AttemptedFields, opts.PopulatedFields, locked)
 	case FillEmpty:
 		changed = applyFillEmpty(a, u, locked)
 	case NFOImport:
@@ -182,37 +194,52 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 // disambiguation/yearsActive, and fill-empty for provider IDs. Name and
 // SortName are never touched (handled separately in handler code so the user's
 // chosen display name is not overwritten mid-refresh).
-func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []string, locked map[string]struct{}) bool {
+//
+// Fields with clearing semantics (biography, genres, styles, moods, dates)
+// require BOTH attempted AND populated to be authorized for overwrite. An
+// attempted-but-not-populated field is left untouched so that an empty
+// localized lookup does not clobber pre-existing data (#952 graceful fallback).
+func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields, populatedFields []string, locked map[string]struct{}) bool {
 	attempted := make(map[string]bool, len(attemptedFields))
 	for _, f := range attemptedFields {
 		attempted[f] = true
 	}
+	populated := make(map[string]bool, len(populatedFields))
+	for _, f := range populatedFields {
+		populated[f] = true
+	}
 
 	changed := false
 
-	// Attempted metadata fields: overwrite (including clearing). Skip locked.
-	if attempted["biography"] && !isLocked(locked, "biography") {
+	// Authorize a clearing-semantics overwrite only when both attempted and
+	// populated. Attempted-only means "we asked but got nothing" -- preserving
+	// the existing value is the graceful-fallback behavior #952 requires.
+	canOverwrite := func(field string) bool {
+		return attempted[field] && populated[field] && !isLocked(locked, field)
+	}
+
+	if canOverwrite("biography") {
 		changed = setString(&a.Biography, u.Biography) || changed
 	}
-	if attempted["genres"] && !isLocked(locked, "genres") {
+	if canOverwrite("genres") {
 		changed = setSlice(&a.Genres, u.Genres) || changed
 	}
-	if attempted["styles"] && !isLocked(locked, "styles") {
+	if canOverwrite("styles") {
 		changed = setSlice(&a.Styles, u.Styles) || changed
 	}
-	if attempted["moods"] && !isLocked(locked, "moods") {
+	if canOverwrite("moods") {
 		changed = setSlice(&a.Moods, u.Moods) || changed
 	}
-	if attempted["formed"] && !isLocked(locked, "formed") {
+	if canOverwrite("formed") {
 		changed = setString(&a.Formed, u.Formed) || changed
 	}
-	if attempted["born"] && !isLocked(locked, "born") {
+	if canOverwrite("born") {
 		changed = setString(&a.Born, u.Born) || changed
 	}
-	if attempted["died"] && !isLocked(locked, "died") {
+	if canOverwrite("died") {
 		changed = setString(&a.Died, u.Died) || changed
 	}
-	if attempted["disbanded"] && !isLocked(locked, "disbanded") {
+	if canOverwrite("disbanded") {
 		changed = setString(&a.Disbanded, u.Disbanded) || changed
 	}
 

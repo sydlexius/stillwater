@@ -92,6 +92,9 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		}
 
 		if fr.Provider != "" {
+			// scrapeField only sets fr.Provider when applyFieldValue returned
+			// true, so this is the executor-side signal for "data merged".
+			result.PopulatedFields = append(result.PopulatedFields, string(fr.Field))
 			selectedProviders[fr.Provider] = true
 			result.Sources = append(result.Sources, provider.FieldSource{
 				Field:    string(fr.Field),

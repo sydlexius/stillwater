@@ -2137,3 +2137,128 @@ func TestScrubSensitiveParams(t *testing.T) {
 		})
 	}
 }
+
+// TestOrchestratorPopulatedFieldsTracking verifies that PopulatedFields
+// distinguishes "queried with data" from "queried with empty result". This
+// signal is the gate that prevents the refresh merge from wiping pre-existing
+// values when a localized provider lookup returns nothing (#952 graceful
+// fallback).
+func TestOrchestratorPopulatedFieldsTracking(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// MusicBrainz returns a name and genres but no biography (genres populated;
+	// biography queried but excluded by IsExcludedForField anyway, see fallback).
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:   "Test Artist",
+				Genres: []string{"rock"},
+			}, nil
+		},
+	})
+	// AudioDB succeeds at GetArtist but returns no biography, no styles, no
+	// moods. The orchestrator queries it (so styles/moods are attempted) but
+	// nothing comes back (so they must NOT appear in PopulatedFields).
+	if err := settings.SetAPIKey(context.Background(), NameAudioDB, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	contains := func(haystack []string, needle string) bool {
+		for _, s := range haystack {
+			if s == needle {
+				return true
+			}
+		}
+		return false
+	}
+
+	// "genres" must be both attempted AND populated (MusicBrainz returned data).
+	if !contains(result.AttemptedFields, "genres") {
+		t.Errorf("expected 'genres' in AttemptedFields, got %v", result.AttemptedFields)
+	}
+	if !contains(result.PopulatedFields, "genres") {
+		t.Errorf("expected 'genres' in PopulatedFields (MusicBrainz returned data), got %v", result.PopulatedFields)
+	}
+
+	// "styles" / "moods" must be attempted (AudioDB was queried) but NOT
+	// populated (AudioDB returned an empty struct). This is the bug fix: the
+	// merge layer uses the populated set to decide whether to overwrite, so
+	// excluding these fields from PopulatedFields preserves any pre-existing
+	// styles/moods on the artist record.
+	for _, field := range []string{"styles", "moods"} {
+		if !contains(result.AttemptedFields, field) {
+			t.Errorf("expected %q in AttemptedFields (provider was queried), got %v", field, result.AttemptedFields)
+		}
+		if contains(result.PopulatedFields, field) {
+			t.Errorf("expected %q NOT in PopulatedFields (no data returned), got %v", field, result.PopulatedFields)
+		}
+	}
+}
+
+// TestOrchestratorPopulatedFields_DedupAcrossProviders verifies that an
+// aggregated field (genres/styles/moods) populated by multiple providers in
+// the same priority iteration appears in PopulatedFields exactly once. The
+// per-iteration scope guards against a future regression that would replace
+// the bool with an append (which would emit duplicate entries) -- the
+// downstream merge layer treats PopulatedFields as a set, so duplicates
+// would still work today, but the contract is single-entry.
+func TestOrchestratorPopulatedFields_DedupAcrossProviders(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Both providers return genres for the same field; the genres aggregator
+	// in applyField should be invoked twice but the field should be recorded
+	// in PopulatedFields exactly once.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "X", Genres: []string{"rock"}}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameLastFM,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "X", Genres: []string{"alternative"}}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "X", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	count := 0
+	for _, f := range result.PopulatedFields {
+		if f == "genres" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 'genres' entry in PopulatedFields, got %d (full list: %v)", count, result.PopulatedFields)
+	}
+	// Sanity: aggregation actually happened.
+	if len(result.Metadata.Genres) < 2 {
+		t.Errorf("expected genres aggregated across both providers, got %v", result.Metadata.Genres)
+	}
+}

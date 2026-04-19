@@ -30,8 +30,24 @@ type AudioDBArtist struct {
 	Genre           string `json:"strGenre"`
 	Style           string `json:"strStyle"`
 	Mood            string `json:"strMood"`
+	// Biography is the API's default/localized field (strBiography). The per-language
+	// fields (strBiographyEN, strBiographyDE, etc.) allow preference-ordered selection.
 	Biography       string `json:"strBiography"`
 	BiographyEN     string `json:"strBiographyEN"`
+	BiographyDE     string `json:"strBiographyDE"`
+	BiographyFR     string `json:"strBiographyFR"`
+	BiographyJA     string `json:"strBiographyJA"`
+	BiographyCN     string `json:"strBiographyCN"`
+	BiographyIT     string `json:"strBiographyIT"`
+	BiographyPT     string `json:"strBiographyPT"`
+	BiographyRU     string `json:"strBiographyRU"`
+	BiographyHU     string `json:"strBiographyHU"`
+	BiographyIL     string `json:"strBiographyIL"` // IL = AudioDB's name for Hebrew (he)
+	BiographyNO     string `json:"strBiographyNO"`
+	BiographySE     string `json:"strBiographySE"`
+	BiographyPL     string `json:"strBiographyPL"`
+	BiographyNL     string `json:"strBiographyNL"`
+	BiographyES     string `json:"strBiographyES"`
 	Gender          string `json:"strGender"`
 	Country         string `json:"strCountry"`
 	FormedYear      string `json:"intFormedYear"`

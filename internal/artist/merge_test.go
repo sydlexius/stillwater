@@ -35,6 +35,7 @@ func TestOverwriteAttempted_OverwritesAttemptedFields(t *testing.T) {
 	u := &MetadataUpdate{Biography: "new bio", Born: "1980", Genres: []string{"rock"}}
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 		AttemptedFields: []string{"biography", "born", "genres"},
+		PopulatedFields: []string{"biography", "born", "genres"},
 	})
 	if !changed {
 		t.Error("expected change")
@@ -50,20 +51,26 @@ func TestOverwriteAttempted_OverwritesAttemptedFields(t *testing.T) {
 	}
 }
 
-func TestOverwriteAttempted_ClearsEmptyAttemptedFields(t *testing.T) {
+// TestOverwriteAttempted_PreservesAttemptedButUnpopulatedFields verifies the
+// #952 graceful-fallback contract: a field that the orchestrator queried but
+// for which no provider returned data must NOT clobber the existing value on
+// the artist. PopulatedFields is the gate that distinguishes "we asked and got
+// nothing" (preserve) from "we asked and got data" (overwrite).
+func TestOverwriteAttempted_PreservesAttemptedButUnpopulatedFields(t *testing.T) {
 	a := &Artist{Biography: "old bio", Genres: []string{"jazz"}}
-	u := &MetadataUpdate{} // empty values for attempted fields = clear
+	u := &MetadataUpdate{} // attempted but no provider returned data
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 		AttemptedFields: []string{"biography", "genres"},
+		// PopulatedFields intentionally empty
 	})
-	if !changed {
-		t.Error("expected change")
+	if changed {
+		t.Error("expected no change when nothing was populated")
 	}
-	if a.Biography != "" {
-		t.Errorf("biography should be cleared, got %q", a.Biography)
+	if a.Biography != "old bio" {
+		t.Errorf("biography should be preserved, got %q", a.Biography)
 	}
-	if a.Genres != nil {
-		t.Errorf("genres should be nil, got %v", a.Genres)
+	if len(a.Genres) != 1 || a.Genres[0] != "jazz" {
+		t.Errorf("genres should be preserved, got %v", a.Genres)
 	}
 }
 
@@ -201,6 +208,7 @@ func TestOverwriteAttempted_FilterDatesByType(t *testing.T) {
 			u := &MetadataUpdate{Born: "1970", Formed: "1980", Died: "2020", Disbanded: "2000"}
 			ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 				AttemptedFields:   []string{"born", "formed", "died", "disbanded"},
+				PopulatedFields:   []string{"born", "formed", "died", "disbanded"},
 				FilterDatesByType: true,
 			})
 			if a.Born != tt.wantBorn {
@@ -224,6 +232,7 @@ func TestOverwriteAttempted_Sources(t *testing.T) {
 	u := &MetadataUpdate{Biography: "bio"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 		AttemptedFields: []string{"biography"},
+		PopulatedFields: []string{"biography"},
 		Sources: []provider.FieldSource{
 			{Field: "biography", Provider: provider.NameMusicBrainz},
 			{Field: "genres", Provider: provider.NameAudioDB},
@@ -240,6 +249,69 @@ func TestOverwriteAttempted_Sources(t *testing.T) {
 	}
 }
 
+// TestOverwriteAttempted_GracefulFallbackPreservesExistingTags reproduces the
+// UAT scenario for #1118: with metadata language preferences set to JA/FR/EN,
+// providers may successfully respond but return empty tag lists for an artist
+// without localized data. The artist's existing styles/moods/genres must be
+// preserved; an attempted-but-empty merge that wipes them violates #952's
+// graceful-fallback acceptance criterion.
+func TestOverwriteAttempted_GracefulFallbackPreservesExistingTags(t *testing.T) {
+	a := &Artist{
+		Biography: "existing biography",
+		Genres:    []string{"rock", "indie"},
+		Styles:    []string{"shoegaze"},
+		Moods:     []string{"dreamy"},
+	}
+	u := &MetadataUpdate{} // providers responded; none had data for these fields
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		// Every tag-bearing field was queried.
+		AttemptedFields: []string{"biography", "genres", "styles", "moods"},
+		// PopulatedFields intentionally empty: no provider returned data.
+	})
+	if changed {
+		t.Error("expected no change when nothing was populated")
+	}
+	if a.Biography != "existing biography" {
+		t.Errorf("biography was wiped: got %q, want %q", a.Biography, "existing biography")
+	}
+	if len(a.Genres) != 2 || a.Genres[0] != "rock" || a.Genres[1] != "indie" {
+		t.Errorf("genres were wiped: got %v, want [rock indie]", a.Genres)
+	}
+	if len(a.Styles) != 1 || a.Styles[0] != "shoegaze" {
+		t.Errorf("styles were wiped: got %v, want [shoegaze]", a.Styles)
+	}
+	if len(a.Moods) != 1 || a.Moods[0] != "dreamy" {
+		t.Errorf("moods were wiped: got %v, want [dreamy]", a.Moods)
+	}
+}
+
+// TestOverwriteAttempted_PartialPopulationOverwritesOnlyPopulated verifies the
+// mixed case: some fields had a provider returning data (overwrite), others
+// were queried with no data (preserve).
+func TestOverwriteAttempted_PartialPopulationOverwritesOnlyPopulated(t *testing.T) {
+	a := &Artist{
+		Biography: "existing biography",
+		Genres:    []string{"jazz"},
+	}
+	u := &MetadataUpdate{
+		Biography: "new biography",
+		// Genres intentionally empty in update -- provider returned no genres
+	}
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"biography", "genres"},
+		PopulatedFields: []string{"biography"}, // only biography came back populated
+	})
+	if !changed {
+		t.Error("expected change for biography overwrite")
+	}
+	if a.Biography != "new biography" {
+		t.Errorf("biography = %q, want %q", a.Biography, "new biography")
+	}
+	if len(a.Genres) != 1 || a.Genres[0] != "jazz" {
+		t.Errorf("genres should be preserved: got %v, want [jazz]", a.Genres)
+	}
+}
+
 func TestOverwriteAttempted_AllAttemptedSliceFields(t *testing.T) {
 	a := &Artist{}
 	u := &MetadataUpdate{
@@ -248,6 +320,7 @@ func TestOverwriteAttempted_AllAttemptedSliceFields(t *testing.T) {
 	}
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 		AttemptedFields: []string{"styles", "moods"},
+		PopulatedFields: []string{"styles", "moods"},
 	})
 	if !changed {
 		t.Error("expected change")
@@ -663,6 +736,7 @@ func TestApplyMetadata_OverwriteAttempted_SkipsLockedFields(t *testing.T) {
 	u := &MetadataUpdate{Biography: "overwrite", Born: "1980", Genres: []string{"rock"}}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
 		AttemptedFields: []string{"biography", "born", "genres"},
+		PopulatedFields: []string{"biography", "born", "genres"},
 		LockedFields:    []string{"biography", "genres"},
 	})
 	if a.Biography != "keep me" {

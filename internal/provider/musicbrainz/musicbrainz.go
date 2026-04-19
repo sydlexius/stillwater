@@ -152,16 +152,43 @@ func newMemberAliasCache() *memberAliasCache {
 	return &memberAliasCache{entries: make(map[string][]MBAlias)}
 }
 
-// localizeMembers promotes each member's name to its best-matching primary
-// alias for the configured language preferences. Members without an MBID, or
-// whose alias fetch fails, retain their canonical name. The shared rate
-// limiter ensures MusicBrainz's 1 req/sec policy is honored even when many
-// members are resolved in sequence.
+// localizeMembers promotes each member's name to its best-matching alias for
+// the configured language preferences. Members without an MBID, or whose
+// alias fetch fails, retain their canonical name. The shared rate limiter
+// ensures MusicBrainz's 1 req/sec policy is honored even when many members
+// are resolved in sequence.
+//
+// Optimization: when a member's canonical name is already in a script
+// satisfying the user's TOP language preference, the alias fetch is skipped.
+// Matching only the first preference (not the full list) preserves the
+// opportunity to promote a higher-preference alias when the canonical name
+// happens to match a secondary preference. For a band whose roster mostly
+// shares the canonical-name script with the top preference (a Japanese band
+// under a [ja, ...] preference, for example), this skips most members and
+// brings the 1 req/sec rate-limited per-refresh cost down by roughly the
+// same proportion.
 func (a *Adapter) localizeMembers(ctx context.Context, members []provider.MemberInfo, langPrefs []string, cache *memberAliasCache) {
+	topPref := ""
+	if len(langPrefs) > 0 {
+		topPref = langPrefs[0]
+	}
+
 	for i := range members {
 		m := &members[i]
 		mbid := m.MBID
 		if mbid == "" {
+			continue
+		}
+
+		// Skip alias fetch when the canonical name is already in a script
+		// that matches the user's top language preference. ScriptSatisfiesLocale
+		// returns false for unknown scripts and empty preferences, so we only
+		// skip when we have positive evidence of a match.
+		if topPref != "" && provider.ScriptSatisfiesLocale(m.Name, []string{topPref}) {
+			a.logger.Debug("skipping member alias fetch (canonical already in preferred script)",
+				slog.String("member_mbid", mbid),
+				slog.String("member_name", m.Name),
+				slog.String("top_pref", topPref))
 			continue
 		}
 
@@ -182,23 +209,8 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 			aliases = fetched
 		}
 
-		if len(aliases) == 0 {
-			continue
-		}
-
-		bestScore := -1
-		var bestAlias MBAlias
-		for _, al := range aliases {
-			if al.Name == "" || !al.Primary {
-				continue
-			}
-			score := provider.MatchLanguagePreference(al.Locale, langPrefs)
-			if score >= 0 && (bestScore < 0 || score < bestScore) {
-				bestScore = score
-				bestAlias = al
-			}
-		}
-		if bestScore < 0 {
+		bestAlias, ok := selectMemberAlias(aliases, langPrefs)
+		if !ok {
 			continue
 		}
 		promoted := normalizeHyphens(bestAlias.Name)
@@ -208,9 +220,71 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 		a.logger.Debug("promoting localized member name",
 			slog.String("from", m.Name),
 			slog.String("to", promoted),
-			slog.String("locale", bestAlias.Locale))
+			slog.String("locale", bestAlias.Locale),
+			slog.String("type", bestAlias.Type),
+			slog.Bool("primary", bestAlias.Primary))
 		m.Name = promoted
 	}
+}
+
+// selectMemberAlias picks the alias that should replace a member's canonical
+// name based on the user's language preferences. Returns the zero value and
+// false when no alias is a valid promotion target.
+//
+// Selection rules:
+//
+//  1. "Legal name" aliases are excluded. MusicBrainz uses this type to
+//     distinguish birth/legal names from stage names; surfacing them without
+//     explicit user consent is a privacy concern and they are rarely the
+//     intended localization target. Observed during #952 UAT on GAMO
+//     (3e959bbb): JA primary "Legal name" (蒲生俊貴) coexists with a JA
+//     non-primary "Artist name" (ガモー); the stage name is the desired
+//     localization, not the legal name.
+//
+//  2. Composite score, lower is better. Locale-rank dominates; primary
+//     status only breaks ties between aliases at the same locale rank:
+//
+//     score = locale_rank * 2 + (0 if primary else 1)
+//
+//     where locale_rank is the integer returned by
+//     provider.MatchLanguagePreference (see that function for exact-vs-base
+//     semantics). The doubling reserves the low bit for the primary flag so
+//     a primary alias always beats a non-primary one at the same locale
+//     rank, while a top-pref non-primary still outranks a second-pref
+//     primary -- honoring the user's language ordering even when MB tagged
+//     the locale-matched alias as non-primary.
+//
+// Aliases with no locale, an unmapped locale, or an empty Name are skipped
+// (locale_rank < 0). Ties at the same final score resolve to the first
+// alias encountered, preserving caller-visible determinism for a given
+// MB response order.
+func selectMemberAlias(aliases []MBAlias, langPrefs []string) (MBAlias, bool) {
+	bestScore := -1
+	var best MBAlias
+	for _, al := range aliases {
+		if al.Name == "" {
+			continue
+		}
+		if strings.EqualFold(al.Type, "Legal name") {
+			continue
+		}
+		rank := provider.MatchLanguagePreference(al.Locale, langPrefs)
+		if rank < 0 {
+			continue
+		}
+		score := rank * 2
+		if !al.Primary {
+			score++
+		}
+		if bestScore < 0 || score < bestScore {
+			bestScore = score
+			best = al
+		}
+	}
+	if bestScore < 0 {
+		return MBAlias{}, false
+	}
+	return best, true
 }
 
 // fetchMemberAliases retrieves only the alias list for a given member MBID.
