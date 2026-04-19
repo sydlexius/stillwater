@@ -1,0 +1,15 @@
+{
+  "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "type": "Person",
+  "name": "NARGO",
+  "sort-name": "NARGO",
+  "aliases": [
+    {
+      "name": "Nargo",
+      "sort-name": "Nargo",
+      "type": "Artist name",
+      "locale": "en",
+      "primary": true
+    }
+  ]
+}

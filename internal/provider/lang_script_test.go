@@ -151,3 +151,71 @@ func TestScriptSatisfiesLocale(t *testing.T) {
 		})
 	}
 }
+
+func TestLocaleExpectsOnlyNonLatinScript(t *testing.T) {
+	tests := []struct {
+		name string
+		tag  string
+		want bool
+	}{
+		// Latin-family locales: Latin is expected, so a Latin alias can still
+		// improve the canonical. Skip must NOT be authorized.
+		{"english base", "en", false},
+		{"english region", "en-US", false},
+		{"german", "de", false},
+		{"french", "fr", false},
+		{"spanish", "es", false},
+
+		// Non-Latin-only locales: skip IS authorized.
+		{"japanese", "ja", true},
+		{"japanese region", "ja-JP", true},
+		{"chinese", "zh", true},
+		{"korean", "ko", true},
+		{"russian", "ru", true},
+		{"arabic", "ar", true},
+		{"hebrew", "he", true},
+		{"greek", "el", true},
+		{"hindi", "hi", true},
+		{"thai", "th", true},
+
+		// Mixed-script locale: Latin IS in the allowed set, so skip is NOT
+		// authorized (conservative fetch protects typography improvements).
+		{"serbian mixed", "sr", false},
+
+		// Explicit BCP-47 script subtag takes precedence over base language.
+		{"serbian latin subtag", "sr-Latn", false},
+		{"serbian cyrillic subtag", "sr-Cyrl", true},
+		{"chinese traditional subtag", "zh-Hant", true},
+		{"chinese simplified subtag", "zh-Hans", true},
+		{"english explicit latin subtag", "en-Latn", false},
+
+		// Empty and unmapped inputs return false (no positive evidence).
+		{"empty tag", "", false},
+		{"whitespace only", "   ", false},
+		{"unmapped locale", "xx", false},
+		{"unmapped with region", "xx-YY", false},
+
+		// Script subtag that is not 4 alpha chars is ignored (per
+		// ParseBCP47Script contract). "de-1901" falls through to base "de"
+		// which is Latin -> false.
+		{"german variant 1901", "de-1901", false},
+
+		// Unmapped script subtag (exists in BCP-47 but not in our
+		// iso15924ToScript table). Conservative: return false.
+		{"unmapped script subtag", "en-Zzzz", false},
+
+		// Case normalization: base-language branch lowercases before map
+		// lookup, so uppercase input must resolve identically to lowercase.
+		{"uppercase japanese base", "JA", true},
+		{"uppercase english region", "EN-US", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LocaleExpectsOnlyNonLatinScript(tt.tag)
+			if got != tt.want {
+				t.Errorf("LocaleExpectsOnlyNonLatinScript(%q) = %v, want %v", tt.tag, got, tt.want)
+			}
+		})
+	}
+}

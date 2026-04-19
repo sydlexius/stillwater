@@ -1585,6 +1585,74 @@ func TestLocalizeMembers_DoesNotSkipWhenCanonicalMatchesOnlySecondaryPref(t *tes
 	}
 }
 
+// TestLocalizeMembers_PromotesLatinAliasUnderLatinPref is the #1137 regression
+// witness. Before the fix, the script-skip optimization fired whenever the
+// canonical name's script matched the top pref's expected script -- which
+// incorrectly included Latin-canonical members under a Latin-family top pref
+// (e.g. Tokyo Ska Paradise Orchestra's "NARGO" under ["en"]). The skip
+// suppressed the alias fetch, so typography/spelling/capitalization
+// refinements available in MusicBrainz en-locale aliases were never promoted.
+//
+// The fix gates the skip on LocaleExpectsOnlyNonLatinScript(topPref): under a
+// Latin-family pref, a Latin alias can still meaningfully improve the name, so
+// the fetch must proceed.
+func TestLocalizeMembers_PromotesLatinAliasUnderLatinPref(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_nargo.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+
+	members := []provider.MemberInfo{
+		{MBID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Name: "NARGO"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"en"}, newMemberAliasCache())
+
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 fetch (en pref must not skip Latin-canonical fetch), got %d", got)
+	}
+	if members[0].Name != "Nargo" {
+		t.Errorf("expected en primary alias promotion, got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_EmptyLangPrefsStillFetches verifies that an empty
+// langPrefs slice keeps localizeMembers on the safe path: topPref defaults to
+// "", the skip guard's topPref != "" check fails, and the alias fetch
+// proceeds. This protects against a future refactor that replaces the guarded
+// init with an unguarded langPrefs[0] index, which would panic on an empty
+// slice. selectMemberAlias returns false under nil prefs so no promotion
+// occurs, but the fetch still runs to exercise the alias-cache plumbing.
+func TestLocalizeMembers_EmptyLangPrefsStillFetches(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_nargo.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	members := []provider.MemberInfo{
+		{MBID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Name: "NARGO"},
+	}
+
+	a.localizeMembers(context.Background(), members, []string{}, newMemberAliasCache())
+
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 fetch (empty prefs must not trigger skip), got %d", got)
+	}
+	if members[0].Name != "NARGO" {
+		t.Errorf("expected canonical preserved (no promotion under empty prefs), got %q", members[0].Name)
+	}
+}
+
 // TestLocalizeMembers_PreservesNonMBIDMembers asserts that members without
 // an MBID (user-added entries that have not been matched to MusicBrainz)
 // keep whatever name they arrived with. Localization only runs for members
