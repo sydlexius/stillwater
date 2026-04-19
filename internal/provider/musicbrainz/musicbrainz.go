@@ -141,15 +141,23 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 	return meta, nil
 }
 
+// memberAliasLookup is the per-member data we need from a MusicBrainz artist
+// lookup for localization: the alias list (for tagged-alias promotion) and
+// the sort-name (for romanization fallback when no alias wins).
+type memberAliasLookup struct {
+	aliases  []MBAlias
+	sortName string
+}
+
 // memberAliasCache is an in-memory, per-request cache of member MBID to
-// fetched aliases. It avoids refetching the same member when the same MBID
+// lookup results. It avoids refetching the same member when the same MBID
 // appears across multiple code paths during a single artist refresh.
 type memberAliasCache struct {
-	entries map[string][]MBAlias
+	entries map[string]memberAliasLookup
 }
 
 func newMemberAliasCache() *memberAliasCache {
-	return &memberAliasCache{entries: make(map[string][]MBAlias)}
+	return &memberAliasCache{entries: make(map[string]memberAliasLookup)}
 }
 
 // localizeMembers promotes each member's name to its best-matching alias for
@@ -199,7 +207,7 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 			continue
 		}
 
-		aliases, cached := cache.entries[mbid]
+		lookup, cached := cache.entries[mbid]
 		if !cached {
 			fetched, err := a.fetchMemberAliases(ctx, mbid)
 			if err != nil {
@@ -207,30 +215,70 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 					slog.String("member_mbid", mbid),
 					slog.String("member_name", m.Name),
 					slog.Any("err", err))
-				// Cache the failure as an empty slice so repeated members with
-				// the same MBID do not trigger redundant fetches.
-				cache.entries[mbid] = nil
+				// Cache the failure as a zero-value lookup so repeated members
+				// with the same MBID do not trigger redundant fetches.
+				cache.entries[mbid] = memberAliasLookup{}
 				continue
 			}
 			cache.entries[mbid] = fetched
-			aliases = fetched
+			lookup = fetched
 		}
 
-		bestAlias, ok := selectMemberAlias(aliases, langPrefs)
-		if !ok {
-			continue
+		// Try tagged-alias promotion first: a curator-added alias (especially a
+		// primary one) carries stronger intent than a sort-name heuristic.
+		if bestAlias, ok := selectMemberAlias(lookup.aliases, langPrefs); ok {
+			promoted := normalizeHyphens(bestAlias.Name)
+			if promoted != "" && promoted != m.Name {
+				a.logger.Debug("promoting localized member name",
+					slog.String("from", m.Name),
+					slog.String("to", promoted),
+					slog.String("locale", bestAlias.Locale),
+					slog.String("type", bestAlias.Type),
+					slog.Bool("primary", bestAlias.Primary))
+				m.Name = promoted
+				continue
+			}
 		}
-		promoted := normalizeHyphens(bestAlias.Name)
-		if promoted == "" || promoted == m.Name {
-			continue
+
+		// Fall back to the MB sort-name when no alias wins. MusicBrainz
+		// stores the curator-canonical romanization in sort-name for
+		// non-Latin artists even when they do not carry an explicit en
+		// alias (the common case: most Japanese band rosters on MB).
+		// Gating (all six must hold; every one prevents a specific
+		// false-positive promotion):
+		//   1. a top language preference must be set -- without one we
+		//      have no basis for choosing a script,
+		//   2. sort-name must be non-empty -- an empty MB sort-name carries
+		//      no signal,
+		//   3. canonical must be in a non-Latin script -- reversing a
+		//      Latin-to-Latin sort-name would just flip first/last for
+		//      Western artists (e.g. "Chris Martin" -> "Chris Martin"),
+		//   4. canonical script must not be Unknown -- DominantScript
+		//      returns Unknown for ambiguous/degenerate inputs, where a
+		//      best-guess promotion would be unsafe,
+		//   5. sort-name must itself be in Latin script -- MB occasionally
+		//      stores a non-Latin sort-name (e.g. "姓, 名"), in which case
+		//      the reversal heuristic does not produce a Latin result, and
+		//   6. the top pref must accept Latin -- rules out ja, zh, ko, etc.
+		//      where the user explicitly asked for the non-Latin form.
+		if topPref != "" && lookup.sortName != "" {
+			canonicalScript := provider.DominantScript(m.Name)
+			sortScript := provider.DominantScript(lookup.sortName)
+			if canonicalScript != provider.ScriptLatin &&
+				canonicalScript != provider.ScriptUnknown &&
+				sortScript == provider.ScriptLatin &&
+				provider.ScriptSatisfiesLocale(lookup.sortName, []string{topPref}) {
+				candidate := normalizeHyphens(romanizeFromSortName(lookup.sortName))
+				if candidate != "" && candidate != m.Name {
+					a.logger.Debug("promoting member name from MB sort-name",
+						slog.String("from", m.Name),
+						slog.String("to", candidate),
+						slog.String("sort_name", lookup.sortName),
+						slog.String("top_pref", topPref))
+					m.Name = candidate
+				}
+			}
 		}
-		a.logger.Debug("promoting localized member name",
-			slog.String("from", m.Name),
-			slog.String("to", promoted),
-			slog.String("locale", bestAlias.Locale),
-			slog.String("type", bestAlias.Type),
-			slog.Bool("primary", bestAlias.Primary))
-		m.Name = promoted
 	}
 }
 
@@ -294,10 +342,14 @@ func selectMemberAlias(aliases []MBAlias, langPrefs []string) (MBAlias, bool) {
 	return best, true
 }
 
-// fetchMemberAliases retrieves only the alias list for a given member MBID.
-// Uses the shared rate-limited doRequest path so the MusicBrainz 1 req/sec
-// policy is enforced across all provider traffic.
-func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) ([]MBAlias, error) {
+// fetchMemberAliases retrieves the alias list and sort-name for a given
+// member MBID. Uses the shared rate-limited doRequest path so the
+// MusicBrainz 1 req/sec policy is enforced across all provider traffic.
+// Returns sort-name alongside aliases so localizeMembers can fall back to
+// the MB-published romanization for non-Latin canonical names when no
+// tagged alias is available (many MB artists have a Latin sort-name but no
+// explicit en alias).
+func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) (memberAliasLookup, error) {
 	params := url.Values{
 		"inc": {"aliases"},
 		"fmt": {"json"},
@@ -309,14 +361,43 @@ func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) ([]MBAlia
 
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
-		return nil, err
+		return memberAliasLookup{}, err
 	}
 
 	var resp MBArtist
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("parsing member alias response: %w", err)
+		return memberAliasLookup{}, fmt.Errorf("parsing member alias response: %w", err)
 	}
-	return resp.Aliases, nil
+	return memberAliasLookup{aliases: resp.Aliases, sortName: resp.SortName}, nil
+}
+
+// romanizeFromSortName reverses a MusicBrainz sort-name from the curator
+// convention "Family, Given" to the display convention "Given Family".
+// MusicBrainz stores sort-name as the curator's canonical sort form; for
+// Japanese, Chinese, Korean, and other non-Latin-script artists it is
+// almost always a Latin romanization even when no en alias exists. This
+// lets us surface a usable Latin display name for Latin-family prefs
+// without requiring every MB entry to carry a dedicated alias.
+//
+// Single-token sort-names (no comma) and malformed inputs are returned
+// unchanged. Extra commas (rare: corporate names, disambiguations) cause
+// the function to bail and return the original so we never produce garbage
+// from a best-guess reversal.
+func romanizeFromSortName(sortName string) string {
+	trimmed := strings.TrimSpace(sortName)
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Split(trimmed, ",")
+	if len(parts) != 2 {
+		return trimmed
+	}
+	family := strings.TrimSpace(parts[0])
+	given := strings.TrimSpace(parts[1])
+	if family == "" || given == "" {
+		return trimmed
+	}
+	return given + " " + family
 }
 
 // GetImages returns nil since MusicBrainz does not host artist images.

@@ -202,6 +202,22 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	// populated from earlier per-provider enrichment).
 	extractProviderIDsFromURLs(result.Metadata)
 
+	// MusicBrainz is authoritative for artist Name and SortName: it owns the
+	// MBID and applies language-aware alias promotion inline on its meta.Name.
+	// The first-provider-wins merge in applyField would otherwise let an
+	// earlier-iterated provider (e.g. wikipedia during the biography field)
+	// lock in the canonical form, blocking MB's promoted value. Overwrite here
+	// so the language preference is honored. Mirrors the pattern in
+	// internal/scraper/executor.go's MB-authoritative override.
+	if mbResult, ok := cache[NameMusicBrainz]; ok && mbResult.err == nil && mbResult.meta != nil {
+		if mbResult.meta.Name != "" {
+			result.Metadata.Name = mbResult.meta.Name
+		}
+		if mbResult.meta.SortName != "" {
+			result.Metadata.SortName = mbResult.meta.SortName
+		}
+	}
+
 	// Record which providers were successfully queried so callers can update
 	// per-provider fetch timestamps on the artist record. Providers with
 	// transient errors (timeouts, 5xx) are excluded to avoid hiding outages

@@ -507,13 +507,22 @@ func run() error {
 		}
 	}()
 
-	// Create HTTP server
+	// Create HTTP server.
+	//
+	// WriteTimeout must accommodate the full refresh response, including OOB
+	// HTMX fragments. A metadata refresh for a group artist with language
+	// preferences can run 30-60+ seconds: MusicBrainz's 1 req/sec rate limit
+	// means each member's alias fetch is one real second, so a ~20-member
+	// Japanese band under [ja, en] preferences exceeds 30s. A too-tight
+	// timeout kills the OOB stream after the status line is written, leaving
+	// the HTMX UI stuck on "Fetching Metadata..." even though the DB was
+	// updated successfully.
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router.Handler(ctx),
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 180 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

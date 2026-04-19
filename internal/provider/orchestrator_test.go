@@ -137,6 +137,137 @@ func TestOrchestratorFallback(t *testing.T) {
 	}
 }
 
+// TestFetchMetadata_MBNameAuthoritative verifies that MusicBrainz's Name and
+// SortName win even when an earlier-iterated provider (e.g. wikipedia during
+// the biography field) has already populated result.Metadata.Name via the
+// first-provider-wins merge in applyField. MusicBrainz is the only provider
+// that applies language-aware alias promotion to Name, so its value must
+// survive when a user has metadata language preferences set; otherwise the
+// canonical (un-promoted) form from another provider locks in first and the
+// user-requested localized display name is silently dropped.
+func TestFetchMetadata_MBNameAuthoritative(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Wikipedia: fires first via the default biography priority and returns
+	// the canonical (un-promoted) Name. In production this is what happens
+	// when the user's artist record holds a non-Latin canonical name -- the
+	// wikipedia adapter reads it from the input and echoes it back.
+	registry.Register(&mockProvider{
+		name: NameWikipedia,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Canonical Name",
+				Biography: "About the artist.",
+			}, nil
+		},
+	})
+	// MusicBrainz: returns the promoted Latin Name (mirrors what the MB
+	// adapter's internal language-aware alias promotion produces when the
+	// user has Latin-family prefs and MB has a matching alias).
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:     "Promoted Name",
+				SortName: "Promoted Sort",
+				Genres:   []string{"rock"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Canonical Name", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if result.Metadata.Name != "Promoted Name" {
+		t.Errorf("expected MB's Name to override earlier provider's Name, got %q", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "Promoted Sort" {
+		t.Errorf("expected MB's SortName to override, got %q", result.Metadata.SortName)
+	}
+}
+
+// TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber verifies the
+// override respects empty values: when MusicBrainz returns an empty Name
+// (error, not-found, or just no data), a Name already set by another
+// provider survives. Without this guard the override would erase a perfectly
+// good name on any refresh where MB is unreachable.
+func TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name: NameWikipedia,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Wikipedia Name",
+				Biography: "About the artist.",
+			}, nil
+		},
+	})
+	// MusicBrainz returns nothing (empty struct), simulating a provider that
+	// was queried successfully but had no data to contribute for Name.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Genres: []string{"rock"}}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if result.Metadata.Name != "Wikipedia Name" {
+		t.Errorf("expected wikipedia Name preserved when MB has none, got %q", result.Metadata.Name)
+	}
+}
+
+// TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber verifies the
+// override respects provider errors: when MB returns an error (timeout, 5xx,
+// unreachable), its cached providerResult has err != nil and the override
+// must short-circuit, preserving a Name set by another provider. Without
+// this guard a transient MB outage would erase the artist's Name on every
+// affected refresh.
+func TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name: NameWikipedia,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Wikipedia Name",
+				Biography: "About the artist.",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, fmt.Errorf("musicbrainz timeout")
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if result.Metadata.Name != "Wikipedia Name" {
+		t.Errorf("expected wikipedia Name preserved on MB error, got %q", result.Metadata.Name)
+	}
+}
+
 // TestOrchestratorTagAggregation verifies that genres and moods are accumulated
 // across all providers with canonical spelling normalization and deduplication,
 // rather than stopping at the first provider with data.

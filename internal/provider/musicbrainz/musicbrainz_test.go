@@ -1653,6 +1653,152 @@ func TestLocalizeMembers_EmptyLangPrefsStillFetches(t *testing.T) {
 	}
 }
 
+// TestLocalizeMembers_SortNameFallback exercises the romanization fallback:
+// when no tagged alias wins AND the canonical is in a non-Latin script AND
+// the MB sort-name is Latin AND the user's top pref accepts Latin, the
+// promoted display name is derived from the sort-name (reversed from MB's
+// "Family, Given" convention to "Given Family" display form). This covers
+// the common TSPO-style case where MB has a romanization in sort-name but
+// no dedicated en alias.
+func TestLocalizeMembers_SortNameFallback(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_aoki.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+
+	members := []provider.MemberInfo{
+		{MBID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Name: "\u9752\u6728\u9054\u4e4b"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"en"}, newMemberAliasCache())
+
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 fetch, got %d", got)
+	}
+	if members[0].Name != "Tatsuyuki Aoki" {
+		t.Errorf("expected sort-name reversal to \"Tatsuyuki Aoki\", got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_SortNameFallbackSkippedUnderNonLatinPref verifies the
+// inverse gate: when the user's top pref is non-Latin (ja, zh, ko, ...), a
+// Latin sort-name must NOT be promoted over a non-Latin canonical. The user
+// asked for Japanese, so Japanese is what they get even if MB has a
+// romanization they could read.
+func TestLocalizeMembers_SortNameFallbackSkippedUnderNonLatinPref(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_aoki.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+
+	canonical := "\u9752\u6728\u9054\u4e4b"
+	members := []provider.MemberInfo{
+		{MBID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Name: canonical},
+	}
+
+	a.localizeMembers(ctx, members, []string{"ja"}, newMemberAliasCache())
+
+	if members[0].Name != canonical {
+		t.Errorf("expected canonical preserved under ja pref, got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_SortNameFallbackFiresUnderMixedScriptPref witnesses
+// the sr (Serbian) mixed-script case: Serbian allows both Cyrillic and Latin
+// by default (localeScripts["sr"] = {Cyrillic, Latin}), so a Cyrillic
+// canonical + Latin sort-name under [sr] pref satisfies all six gating
+// conditions and promotes via reversal. This is the intended behavior --
+// under a mixed-script pref the user has indicated they accept Latin output.
+// Locking it in protects against a future LocaleExpectsOnlyNonLatinScript or
+// ScriptSatisfiesLocale change silently flipping semantics for mixed-script
+// locales.
+func TestLocalizeMembers_SortNameFallbackFiresUnderMixedScriptPref(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_cyrillic.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"sr"})
+
+	canonical := "\u041f\u0435\u0442\u0440\u043e\u0432\u0438\u045b"
+	members := []provider.MemberInfo{
+		{MBID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Name: canonical},
+	}
+
+	a.localizeMembers(ctx, members, []string{"sr"}, newMemberAliasCache())
+
+	if members[0].Name != "Marko Petrovic" {
+		t.Errorf("expected sr mixed-script pref to promote Latin sort-name, got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_SortNameFallbackNotAppliedToLatinCanonical verifies
+// the canonical-script gate: the reversal is a no-op for Latin canonicals
+// (where it would just flip first/last name for Western artists). Skipping
+// this case is the reason the fallback only fires for non-Latin canonicals.
+func TestLocalizeMembers_SortNameFallbackNotAppliedToLatinCanonical(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"cccccccc-cccc-cccc-cccc-cccccccccccc","type":"Person","name":"Chris Martin","sort-name":"Martin, Chris","aliases":[]}`))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+
+	members := []provider.MemberInfo{
+		{MBID: "cccccccc-cccc-cccc-cccc-cccccccccccc", Name: "Chris Martin"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"en"}, newMemberAliasCache())
+
+	if members[0].Name != "Chris Martin" {
+		t.Errorf("expected Latin canonical untouched by sort-name fallback, got %q", members[0].Name)
+	}
+}
+
+// TestRomanizeFromSortName exercises the MusicBrainz sort-name reversal
+// helper. MB stores sort-name as "Family, Given"; display form is
+// "Given Family". Edge cases: no comma, empty, whitespace, multi-comma
+// (rare disambiguation or corporate sort forms) must not be mangled.
+func TestRomanizeFromSortName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"standard two-part", "Aoki, Tatsuyuki", "Tatsuyuki Aoki"},
+		{"whitespace around tokens", "  Yorke,   Thom  ", "Thom Yorke"},
+		{"single token (solo name)", "Madonna", "Madonna"},
+		{"empty", "", ""},
+		{"whitespace only", "   ", ""},
+		{"multi-comma returns original", "Smith, Jr., John", "Smith, Jr., John"},
+		{"empty family", ", Given", ", Given"},
+		{"empty given", "Family,", "Family,"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := romanizeFromSortName(tt.in)
+			if got != tt.want {
+				t.Errorf("romanizeFromSortName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestLocalizeMembers_PreservesNonMBIDMembers asserts that members without
 // an MBID (user-added entries that have not been matched to MusicBrainz)
 // keep whatever name they arrived with. Localization only runs for members
