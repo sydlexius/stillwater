@@ -272,3 +272,91 @@ func TestUpdate_DoesNotClobberDirtyTracking(t *testing.T) {
 		t.Fatalf("ListDirtyIDs after Update = %v, want [%s]", ids, a.ID)
 	}
 }
+
+// TestUpdateAfterRuleEvaluation_DoesNotStampDirty pins the invariant that
+// the rule pipeline's self-writeback path must not re-mark the artist dirty.
+// If this regressed to calling markDirtyBestEffort, dirty_since would land
+// one wall-clock second after the walker's startedAt on RFC3339 boundaries
+// and the artist would re-appear in ListDirtyIDs immediately, flaking the
+// scheduled sweep.
+func TestUpdateAfterRuleEvaluation_DoesNotStampDirty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Post-Evaluation", "/music/post-eval")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Simulate the walker having just stamped rules_evaluated_at; the
+	// artist is clean and must stay clean across the pipeline's own
+	// health-score writeback.
+	evalAt := time.Now().UTC()
+	if err := svc.MarkRulesEvaluated(ctx, a.ID, evalAt); err != nil {
+		t.Fatalf("MarkRulesEvaluated: %v", err)
+	}
+
+	loaded, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	loaded.Biography = "health-score writeback"
+	if err := svc.UpdateAfterRuleEvaluation(ctx, loaded); err != nil {
+		t.Fatalf("UpdateAfterRuleEvaluation: %v", err)
+	}
+
+	reread, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after UpdateAfterRuleEvaluation: %v", err)
+	}
+	if reread.DirtySince != nil {
+		t.Fatalf("dirty_since = %v, want nil (UpdateAfterRuleEvaluation must not stamp)", reread.DirtySince)
+	}
+	if reread.Biography != "health-score writeback" {
+		t.Fatalf("Biography = %q, want the written value (Update body must still run)", reread.Biography)
+	}
+
+	ids, err := svc.ListDirtyIDs(ctx)
+	if err != nil {
+		t.Fatalf("ListDirtyIDs: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("ListDirtyIDs = %v, want []; UpdateAfterRuleEvaluation must not re-dirty the artist", ids)
+	}
+}
+
+// TestUpdate_DoesStampDirty is the companion to the test above: a regular
+// Update must stamp dirty_since so external mutations (API handlers,
+// scanners, bulk executor) still schedule a re-evaluation. Together these
+// two tests pin the boundary between external and self-writeback paths.
+func TestUpdate_DoesStampDirty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("External Mutation", "/music/external")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.MarkRulesEvaluated(ctx, a.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("MarkRulesEvaluated: %v", err)
+	}
+
+	loaded, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	loaded.Biography = "external write"
+	if err := svc.Update(ctx, loaded); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	reread, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Update: %v", err)
+	}
+	if reread.DirtySince == nil {
+		t.Fatalf("dirty_since was not stamped by Update; external mutations must re-schedule evaluation")
+	}
+}

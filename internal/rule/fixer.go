@@ -1022,7 +1022,13 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 		now := time.Now().UTC()
 		a.HealthEvaluatedAt = &now
 	}
-	if err := p.artistService.Update(ctx, a); err != nil {
+	// UpdateAfterRuleEvaluation (not Update) so the pipeline's own writeback
+	// does not stamp dirty_since. The walker is about to stamp
+	// rules_evaluated_at with startedAt, and a regular Update would race
+	// that stamp at second-precision boundaries (see service.go docs and
+	// #698 follow-up: the scheduler test flaked on CI when dirty_since
+	// happened to round into the next second after startedAt).
+	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 		return false
 	}
