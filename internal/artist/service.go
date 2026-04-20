@@ -390,6 +390,30 @@ func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
 // each field that changed. History recording is best-effort: failures are
 // logged but do not cause the update to fail.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
+	return s.update(ctx, a, true)
+}
+
+// UpdateAfterRuleEvaluation persists the artist without stamping dirty_since.
+// Intended for the rule pipeline's own writeback (health score, fixer-applied
+// fields) at the end of an evaluation pass: the pipeline is about to stamp
+// rules_evaluated_at and the artist is by definition freshly evaluated, so
+// marking it dirty would race the stamp.
+//
+// Concretely, both dirty_since and rules_evaluated_at are stored via
+// time.RFC3339 (second precision). The walker captures startedAt before fn
+// runs and uses it as the stamp. If markDirtyBestEffort inside a regular
+// Update happened to cross a wall-clock second boundary relative to
+// startedAt, dirty_since would land one second after rules_evaluated_at and
+// the artist would re-appear in ListDirtyIDs immediately, flaking the next
+// scheduled sweep. Skipping the dirty mark on the pipeline's self-writeback
+// closes that race without weakening the protection for external mutations:
+// those still go through Update (or the event bus DirtySubscriber) and get
+// dirty_since stamped normally.
+func (s *Service) UpdateAfterRuleEvaluation(ctx context.Context, a *Artist) error {
+	return s.update(ctx, a, false)
+}
+
+func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	// Snapshot the old state before writing, so we can diff after the update.
 	var old *Artist
 	if s.history != nil {
@@ -408,7 +432,9 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		return err
 	}
 
-	s.markDirtyBestEffort(ctx, a.ID)
+	if markDirty {
+		s.markDirtyBestEffort(ctx, a.ID)
+	}
 
 	// Record field-level changes after the successful update.
 	if s.history != nil && old != nil {
