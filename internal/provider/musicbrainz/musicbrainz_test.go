@@ -1771,29 +1771,34 @@ func TestLocalizeMembers_SortNameFallbackNotAppliedToLatinCanonical(t *testing.T
 
 // TestRomanizeFromSortName exercises the MusicBrainz sort-name reversal
 // helper. MB stores sort-name as "Family, Given"; display form is
-// "Given Family". Edge cases: no comma, empty, whitespace, multi-comma
-// (rare disambiguation or corporate sort forms) must not be mangled.
+// "Given Family". Only well-formed two-part sort-names return ok=true;
+// empty, whitespace-only, single-token, multi-comma, and partial inputs
+// return ("", false) so the caller can treat them as "no fallback
+// available" instead of promoting a raw sort-form like "Family," or
+// "Smith, Jr., John" into a display name.
 func TestRomanizeFromSortName(t *testing.T) {
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name   string
+		in     string
+		want   string
+		wantOK bool
 	}{
-		{"standard two-part", "Aoki, Tatsuyuki", "Tatsuyuki Aoki"},
-		{"whitespace around tokens", "  Yorke,   Thom  ", "Thom Yorke"},
-		{"single token (solo name)", "Madonna", "Madonna"},
-		{"empty", "", ""},
-		{"whitespace only", "   ", ""},
-		{"multi-comma returns original", "Smith, Jr., John", "Smith, Jr., John"},
-		{"empty family", ", Given", ", Given"},
-		{"empty given", "Family,", "Family,"},
+		{"standard two-part", "Aoki, Tatsuyuki", "Tatsuyuki Aoki", true},
+		{"whitespace around tokens", "  Yorke,   Thom  ", "Thom Yorke", true},
+		{"single token rejected", "Madonna", "", false},
+		{"empty rejected", "", "", false},
+		{"whitespace only rejected", "   ", "", false},
+		{"multi-comma rejected", "Smith, Jr., John", "", false},
+		{"empty family rejected", ", Given", "", false},
+		{"empty given rejected", "Family,", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := romanizeFromSortName(tt.in)
-			if got != tt.want {
-				t.Errorf("romanizeFromSortName(%q) = %q, want %q", tt.in, got, tt.want)
+			got, ok := romanizeFromSortName(tt.in)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("romanizeFromSortName(%q) = (%q, %v), want (%q, %v)",
+					tt.in, got, ok, tt.want, tt.wantOK)
 			}
 		})
 	}

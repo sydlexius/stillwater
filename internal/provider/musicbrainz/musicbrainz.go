@@ -268,8 +268,9 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 				canonicalScript != provider.ScriptUnknown &&
 				sortScript == provider.ScriptLatin &&
 				provider.ScriptSatisfiesLocale(lookup.sortName, []string{topPref}) {
-				candidate := normalizeHyphens(romanizeFromSortName(lookup.sortName))
-				if candidate != "" && candidate != m.Name {
+				reversed, ok := romanizeFromSortName(lookup.sortName)
+				candidate := normalizeHyphens(reversed)
+				if ok && candidate != "" && candidate != m.Name {
 					a.logger.Debug("promoting member name from MB sort-name",
 						slog.String("from", m.Name),
 						slog.String("to", candidate),
@@ -379,25 +380,27 @@ func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) (memberAl
 // lets us surface a usable Latin display name for Latin-family prefs
 // without requiring every MB entry to carry a dedicated alias.
 //
-// Single-token sort-names (no comma) and malformed inputs are returned
-// unchanged. Extra commas (rare: corporate names, disambiguations) cause
-// the function to bail and return the original so we never produce garbage
-// from a best-guess reversal.
-func romanizeFromSortName(sortName string) string {
+// Returns (reversed, true) only when the sort-name is a well-formed
+// two-part "Family, Given" with both parts non-empty. Any other shape
+// (empty, whitespace-only, single token, multi-comma, missing family or
+// given) returns ("", false) so the caller can treat malformed inputs as
+// "no fallback available" rather than promoting a raw sort-form like
+// "Smith, Jr., John" or "Family," into a display name.
+func romanizeFromSortName(sortName string) (string, bool) {
 	trimmed := strings.TrimSpace(sortName)
 	if trimmed == "" {
-		return ""
+		return "", false
 	}
 	parts := strings.Split(trimmed, ",")
 	if len(parts) != 2 {
-		return trimmed
+		return "", false
 	}
 	family := strings.TrimSpace(parts[0])
 	given := strings.TrimSpace(parts[1])
 	if family == "" || given == "" {
-		return trimmed
+		return "", false
 	}
-	return given + " " + family
+	return given + " " + family, true
 }
 
 // GetImages returns nil since MusicBrainz does not host artist images.
