@@ -50,7 +50,7 @@ Static assets (CSS, JavaScript, fonts, images) are embedded in the binary. No ad
 
 #### Nightly builds
 
-A dated nightly release (`nightly-YYYYMMDD`) is published from `main` every day there are new commits, and is the default target for the in-app updater's nightly channel. Nightly builds are intended for testers and are not recommended for production use.
+A dated nightly release (`nightly-YYYYMMDD`) is published from `main` every day there are new commits. These builds are intended for testers and are available for manual download only; in-app updater support for a nightly channel is tracked in #1111. Nightly builds are not recommended for production use.
 
 ### Docker Run
 
