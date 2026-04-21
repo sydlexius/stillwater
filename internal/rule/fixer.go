@@ -1131,6 +1131,11 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 // persist failure.
 func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) (*EvaluationResult, bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
+	// authoritative is only true when the post-fix evaluation succeeded;
+	// returning true after a failed Evaluate would let callers stamp
+	// rules_evaluated_at and treat the run as clean even though eval is nil
+	// and no pass rows can be written this pass.
+	authoritative := err == nil
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
 		if !mustPersist {
@@ -1151,5 +1156,5 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
 		return eval, false
 	}
-	return eval, true
+	return eval, authoritative
 }

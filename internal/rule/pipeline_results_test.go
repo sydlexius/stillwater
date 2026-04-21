@@ -36,6 +36,9 @@ func disableAllRulesExcept(t *testing.T, db *sql.DB, keep ...string) {
 			toDisable = append(toDisable, id)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating rules: %v", err)
+	}
 	for _, id := range toDisable {
 		if _, err := db.ExecContext(context.Background(),
 			`UPDATE rules SET enabled = 0 WHERE id = ?`, id); err != nil {

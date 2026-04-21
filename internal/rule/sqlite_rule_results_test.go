@@ -449,7 +449,10 @@ func TestGetRuleResultCounts(t *testing.T) {
 		t.Fatalf("fail a2/rB: %v", err)
 	}
 
-	counts, err := svc.GetRuleResultCounts(ctx, []string{"a1", "a2"})
+	// "missing" is included in the input slice so we actually exercise the
+	// requested-but-unknown-artist path: the map lookup alone would just
+	// return Go's zero-value whether or not the service supports it.
+	counts, err := svc.GetRuleResultCounts(ctx, []string{"a1", "a2", "missing"})
 	if err != nil {
 		t.Fatalf("GetRuleResultCounts: %v", err)
 	}
@@ -461,6 +464,9 @@ func TestGetRuleResultCounts(t *testing.T) {
 	}
 
 	// Unknown artist id returns the zero-value count rather than an error.
+	// The current implementation omits keys that have no rule_result rows,
+	// so we assert on the map lookup's zero-value (Go semantics) rather
+	// than on key presence.
 	if got := counts["missing"]; got.Passed != 0 || got.Evaluated != 0 {
 		t.Errorf("missing counts = %+v, want zero", got)
 	}
