@@ -184,6 +184,13 @@ func (h *HealthSubscriber) processPending(ctx context.Context) {
 
 // evaluateArtist loads an artist by ID, runs the rule engine, and persists
 // the updated health score. Errors are logged but not propagated.
+//
+// Issue #699: this is the only evaluation path outside the pipeline that
+// should own per-rule result persistence. After Evaluate returns we write
+// passed=1 rule_results rows for every rule that passed. Failing rules are
+// NOT written here: fails land transactionally via the paired UpsertViolation
+// call performed by the pipeline, so the health subscriber must not
+// duplicate that write (it does not know the violation_id).
 func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) {
 	a, err := h.artistService.GetByID(ctx, artistID)
 	if err != nil {
@@ -191,6 +198,7 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 		return
 	}
 
+	evaluatedAt := time.Now().UTC()
 	result, err := h.engine.Evaluate(ctx, a)
 	if err != nil {
 		h.logger.Warn("health subscriber: evaluating artist", "artist_id", artistID, "artist", a.Name, "error", err)
@@ -199,5 +207,25 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 
 	if err := h.artistService.UpdateHealthScore(ctx, artistID, result.HealthScore); err != nil {
 		h.logger.Warn("health subscriber: persisting health score", "artist_id", artistID, "artist", a.Name, "error", err)
+	}
+
+	// Issue #699: write pass rows for rules the artist satisfies. Skip
+	// rules that produced a violation; those are persisted by the pipeline
+	// path that calls UpsertViolation (which writes the sibling fail row
+	// transactionally).
+	if h.engine.service != nil {
+		violated := make(map[string]struct{}, len(result.Violations))
+		for i := range result.Violations {
+			violated[result.Violations[i].RuleID] = struct{}{}
+		}
+		for _, rid := range result.RulesConsidered {
+			if _, bad := violated[rid]; bad {
+				continue
+			}
+			if err := h.engine.service.UpsertRuleResultPass(ctx, artistID, rid, evaluatedAt); err != nil {
+				h.logger.Warn("health subscriber: persisting pass result",
+					"artist_id", artistID, "artist", a.Name, "rule_id", rid, "error", err)
+			}
+		}
 	}
 }

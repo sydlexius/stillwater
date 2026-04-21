@@ -47,6 +47,47 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensuring connection columns: %w", err)
 	}
 
+	// Issue #699: seed rule_results rows for every open / pending_choice
+	// violation already in the database. Without this, pre-existing
+	// violations would have a missing first_failed_at until the next
+	// pipeline pass re-evaluated the artist, losing the "how long has
+	// this been broken" signal. INSERT OR IGNORE makes this idempotent
+	// on every startup: once a (artist_id, rule_id) row exists, repeat
+	// runs are cheap no-ops.
+	if err := backfillRuleResultsFromViolations(db); err != nil {
+		return fmt.Errorf("backfilling rule_results from violations: %w", err)
+	}
+
+	return nil
+}
+
+// backfillRuleResultsFromViolations seeds rule_results rows for every
+// currently-active violation (open or pending_choice) that does not already
+// have a row. Historical dismissed / resolved violations are skipped: they
+// are no longer authoritative outcomes, and the next Run Rules pass will
+// fill in fresh pass/fail rows via the pipeline's UpsertRuleResultPass and
+// the transactional UpsertViolation writes.
+//
+// The INSERT carries rule_violations.created_at into first_failed_at so the
+// "how long has this been broken" signal survives the backfill, rather than
+// resetting to "now" and losing history.
+func backfillRuleResultsFromViolations(db *sql.DB) error {
+	ctx := context.Background()
+	// Use INSERT OR IGNORE so re-running Migrate is a no-op once the rows
+	// exist. The PRIMARY KEY (artist_id, rule_id) enforces idempotency.
+	_, err := db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO rule_results (
+			artist_id, rule_id, passed, violation_id, evaluated_at,
+			violation_message, first_failed_at
+		)
+		SELECT
+			artist_id, rule_id, 0, id, updated_at, message, created_at
+		FROM rule_violations
+		WHERE status IN ('open', 'pending_choice')
+	`)
+	if err != nil {
+		return fmt.Errorf("inserting rule_results backfill rows: %w", err)
+	}
 	return nil
 }
 

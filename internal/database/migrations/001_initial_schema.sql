@@ -356,6 +356,29 @@ CREATE INDEX idx_rule_violations_status ON rule_violations(status);
 CREATE INDEX idx_rule_violations_created_at ON rule_violations(created_at);
 CREATE INDEX idx_rule_violations_resolved_at ON rule_violations(resolved_at);
 
+-- Per-(artist, rule) evaluation outcome row (issue #699). rule_violations only
+-- records failures; rule_results records every evaluation so reports can
+-- answer "how many rules does artist X pass?" without re-running Evaluate.
+-- Rows are upserted by the pipeline (fixer.go processArtist) and the
+-- health subscriber's evaluateArtist path. On disable or rule delete the
+-- rows are purged; violation rows link back here via violation_id so a
+-- deleted violation clears the link without nuking the pass/fail history.
+CREATE TABLE IF NOT EXISTS rule_results (
+    artist_id         TEXT    NOT NULL REFERENCES artists(id)           ON DELETE CASCADE,
+    rule_id           TEXT    NOT NULL REFERENCES rules(id)             ON DELETE CASCADE,
+    passed            INTEGER NOT NULL DEFAULT 0,
+    violation_id      TEXT             REFERENCES rule_violations(id)   ON DELETE SET NULL,
+    evaluated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    violation_message TEXT,
+    first_failed_at   TEXT,
+    last_passed_at    TEXT,
+    PRIMARY KEY (artist_id, rule_id)
+);
+CREATE INDEX idx_rule_results_rule_id      ON rule_results(rule_id);
+CREATE INDEX idx_rule_results_artist_id    ON rule_results(artist_id);
+CREATE INDEX idx_rule_results_passed       ON rule_results(passed);
+CREATE INDEX idx_rule_results_evaluated_at ON rule_results(evaluated_at);
+
 -- =============================================================================
 -- Health tracking
 -- =============================================================================
@@ -511,6 +534,7 @@ VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical im
 DROP TABLE IF EXISTS user_preferences;
 DROP TABLE IF EXISTS bulk_job_items;
 DROP TABLE IF EXISTS bulk_jobs;
+DROP TABLE IF EXISTS rule_results;
 DROP TABLE IF EXISTS rule_violations;
 DROP TABLE IF EXISTS rules;
 DROP TABLE IF EXISTS health_history;

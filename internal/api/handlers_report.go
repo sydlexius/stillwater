@@ -275,16 +275,30 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Issue #699: batch-load per-artist pass/fail counts from rule_results.
+	// A failure here is logged but non-fatal: the compliance grid still
+	// renders with violation data, and the new counts fall back to zero so
+	// the UI is not blocked when rule_results is empty (fresh install, or
+	// an artist whose first Run Rules pass has not finished).
+	resultCounts, rcErr := r.ruleService.GetRuleResultCounts(ctx, ids)
+	if rcErr != nil {
+		r.logger.Warn("loading rule_result counts for compliance report", "error", rcErr)
+		resultCounts = map[string]rule.RuleResultCount{}
+	}
+
 	rows := make([]templates.ComplianceRow, len(artists))
 	for i, a := range artists {
 		vs := violations[a.ID]
 		if vs == nil {
 			vs = make([]rule.Violation, 0)
 		}
+		counts := resultCounts[a.ID]
 		rows[i] = templates.ComplianceRow{
-			Artist:      a,
-			HealthScore: a.HealthScore,
-			Violations:  vs,
+			Artist:              a,
+			HealthScore:         a.HealthScore,
+			Violations:          vs,
+			RulesPassedCount:    counts.Passed,
+			RulesEvaluatedCount: counts.Evaluated,
 		}
 	}
 

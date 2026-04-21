@@ -172,11 +172,24 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		// leave the artist dirty for retry; silently stamping it clean
 		// would hide the dropped violation until the next mutation.
 		persistOK := true
+		// startedAt is captured before evaluation so every rule_results
+		// row written during this pass shares a timestamp (issue #699).
+		startedAt := time.Now().UTC()
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
 			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
 			return false
+		}
+
+		// Track which rules produced violations so the pass-side
+		// UpsertRuleResultPass call below skips them (they are handled
+		// transactionally by UpsertViolation).
+		violated := make(map[string]struct{}, len(eval.Violations))
+		for j := range eval.Violations {
+			if eval.Violations[j].RuleID == ruleID {
+				violated[eval.Violations[j].RuleID] = struct{}{}
+			}
 		}
 
 		for j := range eval.Violations {
@@ -292,6 +305,14 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			}
 		}
 
+		// Issue #699: persist the pass row when the single rule we ran
+		// was actually considered for this artist (enabled, not skipped
+		// by filesystem-missing gating) and produced no violation.
+		passFilter := func(rid string) bool { return rid == ruleID }
+		if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, passFilter) {
+			persistOK = false
+		}
+
 		// Re-evaluate and persist health score (and any in-memory
 		// changes fixers made) in a single write, then publish.
 		if !p.updateHealthScore(ctx, a, perRuleDirty) {
@@ -365,6 +386,13 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 
 	// Cache rule lookups to avoid repeated DB queries.
 	ruleCache := map[string]*Rule{}
+
+	// Track which rules produced violations so the pass-side write below
+	// only writes pass rows for rules that actually passed (issue #699).
+	violated := make(map[string]struct{}, len(eval.Violations))
+	for j := range eval.Violations {
+		violated[eval.Violations[j].RuleID] = struct{}{}
+	}
 
 	for j := range eval.Violations {
 		v := &eval.Violations[j]
@@ -487,6 +515,33 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 		}
 	}
 
+	// Issue #699: persist pass rows for every rule that was considered
+	// but did not produce a violation. When categoryFilter is set we only
+	// mirror the category into rule_results so RunImageRulesForArtist does
+	// not claim the artist "passes" metadata rules it never actually ran.
+	var passFilter func(rid string) bool
+	if categoryFilter != "" {
+		passFilter = func(rid string) bool {
+			r, ok := ruleCache[rid]
+			if !ok {
+				// Not cached means no violation used this rule lookup;
+				// fall back to a direct fetch so we respect the filter.
+				fetched, err := p.ruleService.GetByID(ctx, rid)
+				if err != nil {
+					p.logger.Warn("fetching rule for pass filter",
+						"rule_id", rid, "artist", a.Name, "error", err)
+					return false
+				}
+				ruleCache[rid] = fetched
+				r = fetched
+			}
+			return r.Category == categoryFilter
+		}
+	}
+	if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, passFilter) {
+		persistOK = false
+	}
+
 	// Re-evaluate and persist health score (and any in-memory
 	// changes fixers made) in a single write, then publish.
 	if !p.updateHealthScore(ctx, a, artistDirty) {
@@ -536,11 +591,21 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		// artist in the dirty set for retry instead of masking dropped
 		// violations until the next mutation.
 		persistOK := true
+		// startedAt captured pre-Evaluate so every rule_results pass row
+		// written during this pass shares a timestamp (issue #699).
+		startedAt := time.Now().UTC()
 
 		eval, err := p.engine.Evaluate(ctx, a)
 		if err != nil {
 			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
 			return false
+		}
+
+		// Track which rules produced violations so the pass-side write
+		// below skips them (fails are handled by UpsertViolation).
+		violated := make(map[string]struct{}, len(eval.Violations))
+		for j := range eval.Violations {
+			violated[eval.Violations[j].RuleID] = struct{}{}
 		}
 
 		for j := range eval.Violations {
@@ -662,6 +727,13 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
 				persistOK = false
 			}
+		}
+
+		// Issue #699: RunAllScoped evaluates every enabled rule, so every
+		// non-violated rule in eval.RulesConsidered is a legitimate pass
+		// and gets a passed=1 rule_results row.
+		if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, nil) {
+			persistOK = false
 		}
 
 		// Re-evaluate and persist health score (and any in-memory
@@ -922,6 +994,45 @@ func (p *Pipeline) ClearRuleCache() {
 	p.ruleCacheMu.Lock()
 	p.ruleCache = nil
 	p.ruleCacheMu.Unlock()
+}
+
+// persistPassResults writes a passed=1 rule_results row for every rule the
+// engine considered that did not appear in the violation set. The pipeline
+// owns this write (not Engine.Evaluate) because only the pipeline knows when
+// an evaluation is authoritative enough to persist outcomes; browse-path GET
+// evaluations (handleEvaluateArtist) must not double as writers. Issue #699
+// slice 1.
+//
+// consideredFilter is applied before the violation diff so single-rule runs
+// (RunRule / RunRuleScoped) only write pass rows for the specific rule they
+// evaluated, not for every rule the engine happened to consider.
+//
+// Returns true when every pass write succeeded. Failures are warn-logged and
+// fold into the caller's persistOK flag so the artist stays dirty and the
+// next pass retries, mirroring how violation-write failures are handled.
+func (p *Pipeline) persistPassResults(
+	ctx context.Context,
+	a *artist.Artist,
+	rulesConsidered []string,
+	violated map[string]struct{},
+	evaluatedAt time.Time,
+	consideredFilter func(ruleID string) bool,
+) bool {
+	ok := true
+	for _, rid := range rulesConsidered {
+		if consideredFilter != nil && !consideredFilter(rid) {
+			continue
+		}
+		if _, isViolation := violated[rid]; isViolation {
+			continue
+		}
+		if err := p.ruleService.UpsertRuleResultPass(ctx, a.ID, rid, evaluatedAt); err != nil {
+			p.logger.Warn("persisting pass result",
+				"rule_id", rid, "artist", a.Name, "error", err)
+			ok = false
+		}
+	}
+	return ok
 }
 
 // findFixer returns the first registered fixer that can handle the violation, or nil.
