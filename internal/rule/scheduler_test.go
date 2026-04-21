@@ -151,17 +151,27 @@ func TestScheduler_StampsRulesEvaluated(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// cancel() only signals the scheduler loop to exit; it does not wait
-	// for the in-flight tick to finish. If we called ListDirtyIDs before
-	// RunAllScoped stamped rules_evaluated_at, the test would flake on
-	// slower CI. Block on a done channel that Start closes when it returns
-	// so the assertion runs against a fully-settled DB state.
+	// Wait for at least one tick to *complete successfully* before
+	// canceling. A fixed-duration sleep races cancel() against the
+	// in-flight tick: on slower CI the first tick can still be mid-sweep
+	// when cancel fires, leaving the second artist unstamped and failing
+	// the dirty-count assertion. scheduler.Status().LastEvaluationAt is
+	// set only after RunAllScoped returns without a context error, which
+	// guarantees every eligible artist was walked and stamped.
 	done := make(chan struct{})
 	go func() {
 		sched.Start(ctx, 50*time.Millisecond)
 		close(done)
 	}()
-	time.Sleep(300 * time.Millisecond)
+	deadline := time.Now().Add(10 * time.Second)
+	for sched.Status().LastEvaluationAt == nil {
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatal("scheduler did not complete a full tick within 10s")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	cancel()
 	<-done
 
