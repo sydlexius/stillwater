@@ -281,6 +281,12 @@ func run() error {
 	// it when that filtering is enabled. Must be created before consumers.
 	expectedWrites := watcher.NewExpectedWrites()
 
+	// Derive the image cache directory once so the publisher, API router, and
+	// maintenance service all agree on where cached artist images live. If
+	// this convention ever becomes user-configurable, it only has to change
+	// here.
+	imageCacheDir := filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images")
+
 	// Create the publisher before the pipeline so it can be injected.
 	publisher := publish.New(publish.Deps{
 		ArtistService:      artistService,
@@ -289,7 +295,7 @@ func run() error {
 		NFOSettingsService: nfoSettingsService,
 		PlatformService:    platformService,
 		ExpectedWrites:     expectedWrites,
-		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
+		ImageCacheDir:      imageCacheDir,
 		Logger:             logger,
 	})
 
@@ -335,7 +341,7 @@ func run() error {
 	}
 
 	// Initialize maintenance service
-	maintenanceService := maintenance.NewService(db, cfg.Database.Path, logger)
+	maintenanceService := maintenance.NewService(db, cfg.Database.Path, imageCacheDir, logger)
 
 	// Initialize settings export/import service; attach rule and scraper services
 	// so their configurations are included in export/import payloads.
@@ -487,7 +493,7 @@ func run() error {
 		BasePath:           cfg.Server.BasePath,
 		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
 		StaticFS:           static.FS,
-		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
+		ImageCacheDir:      imageCacheDir,
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,
 		I18nBundle:         i18nBundle,
@@ -550,6 +556,18 @@ func run() error {
 		if maintEnabled {
 			go maintenanceService.StartScheduler(ctx, time.Duration(maintHours)*time.Hour)
 		}
+	}
+
+	// Start proactive exists_flag consistency scanner (default: every 1 hour).
+	// Reads interval from settings; falls back to 1h to guard against restart loops.
+	// startupDelay gives DB migrations and health bootstrap a chance to settle
+	// before the scanner walks artist_images.
+	{
+		existsFlagHours := getDBIntSetting(db, "exists_flag_scan.interval_hours", 1)
+		if existsFlagHours <= 0 {
+			existsFlagHours = 1
+		}
+		go maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
 
 	// Start session cleanup goroutine

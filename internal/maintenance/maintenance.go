@@ -3,10 +3,15 @@ package maintenance
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
+
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // Status holds database maintenance status information.
@@ -28,18 +33,42 @@ type ScheduleConfig struct {
 
 // Service provides database maintenance operations.
 type Service struct {
-	db     *sql.DB
-	dbPath string
-	logger *slog.Logger
+	db            *sql.DB
+	dbPath        string
+	imageCacheDir string
+	logger        *slog.Logger
 }
 
-// NewService creates a maintenance service.
-func NewService(db *sql.DB, dbPath string, logger *slog.Logger) *Service {
+// NewService creates a maintenance service. imageCacheDir is the directory
+// where platform-sourced artist images are cached for artists without a
+// filesystem path. It is derived once in cmd/stillwater/main.go and shared
+// with publish.New and api.NewRouter so all three consumers agree on where
+// cached images live -- passing a different value here would silently diverge
+// the scanner from the writers.
+func NewService(db *sql.DB, dbPath string, imageCacheDir string, logger *slog.Logger) *Service {
 	return &Service{
-		db:     db,
-		dbPath: dbPath,
-		logger: logger.With(slog.String("component", "maintenance")),
+		db:            db,
+		dbPath:        dbPath,
+		imageCacheDir: imageCacheDir,
+		logger:        logger.With(slog.String("component", "maintenance")),
 	}
+}
+
+// artistImageDir returns the directory where images for an artist are stored,
+// using the same resolution as Router.imageDir (internal/api/handlers_image.go)
+// and Publisher.ImageDir (internal/publish/publisher.go): prefer the artist's
+// library path, otherwise fall back to <imageCacheDir>/<artistID>. Returns ""
+// when neither resolves; the scanner treats that as "cannot verify" and skips
+// the row rather than clearing, so a misconfigured cache dir does not wipe
+// flags for every cache-only artist.
+func (s *Service) artistImageDir(artistPath, artistID string) string {
+	if artistPath != "" {
+		return artistPath
+	}
+	if s.imageCacheDir != "" && artistID != "" {
+		return filepath.Join(s.imageCacheDir, artistID)
+	}
+	return ""
 }
 
 // Status returns current database maintenance status.
@@ -113,6 +142,158 @@ func (s *Service) Vacuum(ctx context.Context) error {
 	}
 	s.logger.Info("vacuum complete")
 	return nil
+}
+
+// ScanExistsFlags walks all artist_images rows where exists_flag=1, checks
+// each row's image directory on disk, and clears the flag for rows whose
+// files have genuinely vanished. Rows where the directory cannot be examined
+// reliably (permission denied, I/O error, stale NFS handle, unresolvable
+// path) are skipped rather than cleared, so a transient filesystem flake
+// cannot wipe flags for thousands of artists at once.
+//
+// The scan uses the default image naming patterns. It is intentionally
+// conservative: it only clears a flag when the directory is confirmed
+// reachable AND none of the naming-pattern candidates exist under it.
+func (s *Service) ScanExistsFlags(ctx context.Context) error {
+	// Query all rows where exists_flag=1, joining artists to get the path and ID
+	// so we can reconstruct the image directory without an external dependency.
+	// Close errors on read-only cursors are not actionable -- the query is
+	// already done by the time we close -- so we suppress the lint here.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ai.artist_id, ai.image_type, ai.slot_index, a.path
+		FROM artist_images ai
+		JOIN artists a ON ai.artist_id = a.id
+		WHERE ai.exists_flag = 1`)
+	if err != nil {
+		return fmt.Errorf("querying exists_flag rows: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor, no actionable close error
+
+	type staleRow struct {
+		artistID  string
+		imageType string
+		slotIndex int
+	}
+	// Drain the cursor into a slice before issuing any update statement.
+	// modernc.org/sqlite uses a single-writer pool, so holding this SELECT
+	// cursor open while executing writes on the same *sql.DB would serialize
+	// badly (or deadlock in pathological cases). Two-phase is not an
+	// optimization here; it is a correctness requirement under the pure-Go
+	// driver.
+	var stale []staleRow
+	checked, skipped := 0, 0
+
+	for rows.Next() {
+		var artistID, imageType, artistPath string
+		var slotIndex int
+		if err := rows.Scan(&artistID, &imageType, &slotIndex, &artistPath); err != nil {
+			return fmt.Errorf("scanning exists_flag row: %w", err)
+		}
+		checked++
+
+		dir := s.artistImageDir(artistPath, artistID)
+		if dir == "" {
+			// No resolvable path and no cache-dir fallback (misconfigured or
+			// both inputs empty). Can't verify either way -- skip rather than
+			// clear, so configuration gaps do not corrupt flags.
+			s.logger.Warn("exists_flag scan: unresolvable image dir, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType))
+			skipped++
+			continue
+		}
+
+		// Stat the directory before asking FindExistingImage to probe files
+		// inside it. FindExistingImage collapses any stat error to "not found",
+		// so without this guard a permission-denied directory or an unmounted
+		// NFS share would clear every flag under it.
+		if _, statErr := os.Stat(dir); statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+			s.logger.Warn("exists_flag scan: cannot stat artist dir, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("dir", dir),
+				slog.Any("error", statErr))
+			skipped++
+			continue
+		}
+
+		patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
+		if _, found := img.FindExistingImage(dir, patterns); !found {
+			stale = append(stale, staleRow{artistID, imageType, slotIndex})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating exists_flag rows: %w", err)
+	}
+
+	cleared, failed := 0, 0
+	for _, r := range stale {
+		_, err := s.db.ExecContext(ctx, `
+			UPDATE artist_images SET exists_flag = 0
+			WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+			r.artistID, r.imageType, r.slotIndex)
+		if err != nil {
+			// The whole point of the scanner is to clear these flags; a failed
+			// UPDATE means a stale flag persists, which is the exact defect
+			// this scanner exists to prevent. Surface at Error, not Warn.
+			s.logger.Error("exists_flag scan: UPDATE failed, flag remains stale",
+				slog.String("artist_id", r.artistID),
+				slog.String("image_type", r.imageType),
+				slog.Int("slot_index", r.slotIndex),
+				slog.Any("error", err))
+			failed++
+			continue
+		}
+		cleared++
+	}
+
+	s.logger.Info("exists_flag consistency scan complete",
+		slog.Int("checked", checked),
+		slog.Int("cleared", cleared),
+		slog.Int("skipped", skipped),
+		slog.Int("failed", failed))
+	return nil
+}
+
+// StartExistsFlagScanner runs ScanExistsFlags once at startup (after
+// startupDelay, so DB migrations and other boot-time I/O don't contend with
+// it) and then on a fixed interval until the context is canceled.
+//
+// The startup scan matters because stale exists_flag=1 rows manifest as
+// broken image icons and backdrop 404s on the very first page load after a
+// restart; waiting a full interval to catch up leaves the UI broken in the
+// interim.
+//
+// startupDelay is a parameter (not a constant) so tests can drive it in
+// milliseconds rather than waiting 10 seconds per test.
+func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupDelay time.Duration) {
+	s.logger.Info("exists_flag scanner started",
+		slog.String("interval", interval.String()),
+		slog.String("startup_delay", startupDelay.String()))
+
+	select {
+	case <-ctx.Done():
+		s.logger.Info("exists_flag scanner stopped")
+		return
+	case <-time.After(startupDelay):
+	}
+	if err := s.ScanExistsFlags(ctx); err != nil {
+		s.logger.Error("initial exists_flag scan failed", slog.Any("error", err))
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("exists_flag scanner stopped")
+			return
+		case <-ticker.C:
+			if err := s.ScanExistsFlags(ctx); err != nil {
+				s.logger.Error("exists_flag scan failed", slog.Any("error", err))
+			}
+		}
+	}
 }
 
 // StartScheduler runs optimize on a fixed interval until the context is canceled.
