@@ -75,15 +75,22 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 	ctx := context.Background()
 	// Use INSERT OR IGNORE so re-running Migrate is a no-op once the rows
 	// exist. The PRIMARY KEY (artist_id, rule_id) enforces idempotency.
+	// The JOINs filter out orphaned rule_violations rows whose artist or
+	// rule no longer exists. Without them a single stale violation would
+	// abort the whole INSERT on a FK violation (rule_results has FKs to
+	// artists and rules) and leave the backfill half-applied, aborting
+	// migration and blocking startup.
 	_, err := db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO rule_results (
 			artist_id, rule_id, passed, violation_id, evaluated_at,
 			violation_message, first_failed_at
 		)
 		SELECT
-			artist_id, rule_id, 0, id, updated_at, message, created_at
-		FROM rule_violations
-		WHERE status IN ('open', 'pending_choice')
+			rv.artist_id, rv.rule_id, 0, rv.id, rv.updated_at, rv.message, rv.created_at
+		FROM rule_violations rv
+		JOIN artists a ON a.id = rv.artist_id
+		JOIN rules r ON r.id = rv.rule_id
+		WHERE rv.status IN ('open', 'pending_choice')
 	`)
 	if err != nil {
 		return fmt.Errorf("inserting rule_results backfill rows: %w", err)

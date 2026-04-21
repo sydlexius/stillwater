@@ -804,6 +804,20 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		return fmt.Errorf("upserting violation: %w", err)
 	}
 
+	// On repeat failures, the ON CONFLICT branch above preserves the
+	// existing rule_violations.id and ignores the fresh v.ID we generated.
+	// If we pass the fresh (non-persisted) v.ID to upsertRuleResultFailExec,
+	// the rule_results.violation_id FK points at a row that does not exist
+	// and the transaction rolls back. Re-read the persisted id inside the
+	// same tx and sync v.ID so the result-row write lands cleanly and the
+	// caller observes the authoritative id.
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&v.ID); err != nil {
+		return fmt.Errorf("loading persisted violation id: %w", err)
+	}
+
 	if writeResultRow {
 		if err := upsertRuleResultFailExec(ctx, tx, v.ArtistID, v.RuleID, v.ID, v.Message, v.UpdatedAt); err != nil {
 			return err

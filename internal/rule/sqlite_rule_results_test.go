@@ -386,3 +386,143 @@ func TestUpsertViolation_WritesResultRowTransactionally(t *testing.T) {
 		t.Errorf("passed = %d after resolve upsert, want 0 (row should be left alone)", row2.passed)
 	}
 }
+
+// TestUpsertViolation_RollsBackWhenResultWriteFails proves the atomicity
+// contract behind UpsertViolation (CR comment 3114386792): if the
+// rule_results write inside the same transaction fails, the sibling
+// rule_violations insert must also roll back. Without the transactional
+// pairing, a caller would see an "active" violation with no corresponding
+// rule_results fail row, breaching the "both tables agree" invariant.
+//
+// We force a failure by installing a BEFORE INSERT trigger on rule_results
+// that raises via SQLite's RAISE(ABORT, ...). The trigger is dropped at
+// the end of the test so the shared DB remains usable for sibling cases.
+// TestGetRuleResultCounts covers the compliance-report aggregator used by
+// handlers_report to attach rules_passed_count / rules_evaluated_count to
+// each artist row. Exercises the chunked IN-clause path with a single
+// under-chunk batch, mixed pass/fail outcomes, and the empty-input fast path.
+func TestGetRuleResultCounts(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Empty input returns an empty map without querying.
+	empty, err := svc.GetRuleResultCounts(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetRuleResultCounts(nil): %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("GetRuleResultCounts(nil) len = %d, want 0", len(empty))
+	}
+
+	// Two artists, two rules: a1 passes both, a2 fails one and passes the other.
+	for _, a := range []string{"a1", "a2"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artists (id, name, path) VALUES (?, ?, '')`,
+			a, "Artist "+a); err != nil {
+			t.Fatalf("inserting %s: %v", a, err)
+		}
+	}
+	for _, r := range []string{"rA", "rB"} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO rules (id, name, description, category, enabled, automation_mode, config)
+			VALUES (?, ?, 'd', 'nfo', 1, 'auto', '{}')`, r, r); err != nil {
+			t.Fatalf("inserting rule %s: %v", r, err)
+		}
+	}
+	now := time.Now().UTC()
+	if err := svc.UpsertRuleResultPass(ctx, "a1", "rA", now); err != nil {
+		t.Fatalf("pass a1/rA: %v", err)
+	}
+	if err := svc.UpsertRuleResultPass(ctx, "a1", "rB", now); err != nil {
+		t.Fatalf("pass a1/rB: %v", err)
+	}
+	if err := svc.UpsertRuleResultPass(ctx, "a2", "rA", now); err != nil {
+		t.Fatalf("pass a2/rA: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status)
+		VALUES ('v2B', 'rB', 'a2', 'Artist a2', 'warning', 'bad', 0, 'open')`); err != nil {
+		t.Fatalf("inserting violation: %v", err)
+	}
+	if err := svc.UpsertRuleResultFail(ctx, "a2", "rB", "v2B", "bad", now); err != nil {
+		t.Fatalf("fail a2/rB: %v", err)
+	}
+
+	counts, err := svc.GetRuleResultCounts(ctx, []string{"a1", "a2"})
+	if err != nil {
+		t.Fatalf("GetRuleResultCounts: %v", err)
+	}
+	if got := counts["a1"]; got.Passed != 2 || got.Evaluated != 2 {
+		t.Errorf("a1 counts = %+v, want {Passed:2, Evaluated:2}", got)
+	}
+	if got := counts["a2"]; got.Passed != 1 || got.Evaluated != 2 {
+		t.Errorf("a2 counts = %+v, want {Passed:1, Evaluated:2}", got)
+	}
+
+	// Unknown artist id returns the zero-value count rather than an error.
+	if got := counts["missing"]; got.Passed != 0 || got.Evaluated != 0 {
+		t.Errorf("missing counts = %+v, want zero", got)
+	}
+}
+
+func TestUpsertViolation_RollsBackWhenResultWriteFails(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedArtistAndRule(t, db, "a1", "r1")
+
+	// Install a trigger that aborts any INSERT into rule_results. The
+	// UpsertViolation call below must then roll back the in-flight
+	// rule_violations insert as well.
+	if _, err := db.ExecContext(ctx, `
+		CREATE TRIGGER rule_results_abort
+		BEFORE INSERT ON rule_results
+		BEGIN
+			SELECT RAISE(ABORT, 'forced-abort for rollback test');
+		END`); err != nil {
+		t.Fatalf("installing abort trigger: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := db.ExecContext(context.Background(),
+			`DROP TRIGGER IF EXISTS rule_results_abort`); err != nil {
+			t.Logf("dropping abort trigger: %v", err)
+		}
+	})
+
+	v := &RuleViolation{
+		RuleID:     "r1",
+		ArtistID:   "a1",
+		ArtistName: "Artist a1",
+		Severity:   "warning",
+		Message:    "bad",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	err := svc.UpsertViolation(ctx, v)
+	if err == nil {
+		t.Fatalf("UpsertViolation returned nil, want error from abort trigger")
+	}
+
+	// Both tables must be empty: the tx rolled back.
+	var violationCount int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		"r1", "a1").Scan(&violationCount); err != nil {
+		t.Fatalf("counting rule_violations: %v", err)
+	}
+	if violationCount != 0 {
+		t.Errorf("rule_violations rows = %d after rolled-back UpsertViolation, want 0", violationCount)
+	}
+
+	var resultCount int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM rule_results WHERE rule_id = ? AND artist_id = ?`,
+		"r1", "a1").Scan(&resultCount); err != nil {
+		t.Fatalf("counting rule_results: %v", err)
+	}
+	if resultCount != 0 {
+		t.Errorf("rule_results rows = %d after rolled-back UpsertViolation, want 0", resultCount)
+	}
+}

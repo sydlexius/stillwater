@@ -182,16 +182,6 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			return false
 		}
 
-		// Track which rules produced violations so the pass-side
-		// UpsertRuleResultPass call below skips them (they are handled
-		// transactionally by UpsertViolation).
-		violated := make(map[string]struct{}, len(eval.Violations))
-		for j := range eval.Violations {
-			if eval.Violations[j].RuleID == ruleID {
-				violated[eval.Violations[j].RuleID] = struct{}{}
-			}
-		}
-
 		for j := range eval.Violations {
 			v := &eval.Violations[j]
 			if v.RuleID != ruleID {
@@ -305,18 +295,27 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			}
 		}
 
-		// Issue #699: persist the pass row when the single rule we ran
-		// was actually considered for this artist (enabled, not skipped
-		// by filesystem-missing gating) and produced no violation.
-		passFilter := func(rid string) bool { return rid == ruleID }
-		if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, passFilter) {
+		// Issue #699 propagation fix: derive the pass/fail skip-set from
+		// the POST-fix evaluation, not the pre-fix snapshot. A rule the
+		// fixer just repaired still appears in the pre-fix Violations
+		// slice, so using that set would suppress its pass row for this
+		// run. updateHealthScore re-evaluates the artist anyway (to
+		// recompute the health score), so we reuse that result.
+		postEval, persistOKHealth := p.updateHealthScore(ctx, a, perRuleDirty)
+		if !persistOKHealth {
 			persistOK = false
 		}
-
-		// Re-evaluate and persist health score (and any in-memory
-		// changes fixers made) in a single write, then publish.
-		if !p.updateHealthScore(ctx, a, perRuleDirty) {
-			persistOK = false
+		if postEval != nil {
+			postViolated := make(map[string]struct{}, len(postEval.Violations))
+			for j := range postEval.Violations {
+				postViolated[postEval.Violations[j].RuleID] = struct{}{}
+			}
+			// Single-rule scope: only persist the pass row for the
+			// specific rule this invocation evaluated.
+			passFilter := func(rid string) bool { return rid == ruleID }
+			if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter) {
+				persistOK = false
+			}
 		}
 		p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
 		return persistOK
@@ -386,13 +385,6 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 
 	// Cache rule lookups to avoid repeated DB queries.
 	ruleCache := map[string]*Rule{}
-
-	// Track which rules produced violations so the pass-side write below
-	// only writes pass rows for rules that actually passed (issue #699).
-	violated := make(map[string]struct{}, len(eval.Violations))
-	for j := range eval.Violations {
-		violated[eval.Violations[j].RuleID] = struct{}{}
-	}
 
 	for j := range eval.Violations {
 		v := &eval.Violations[j]
@@ -515,10 +507,18 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 		}
 	}
 
-	// Issue #699: persist pass rows for every rule that was considered
-	// but did not produce a violation. When categoryFilter is set we only
-	// mirror the category into rule_results so RunImageRulesForArtist does
-	// not claim the artist "passes" metadata rules it never actually ran.
+	// Issue #699 propagation fix: derive the pass/fail skip-set from the
+	// POST-fix evaluation returned by updateHealthScore. A rule the fixer
+	// just repaired would otherwise stay in the pre-fix violation snapshot
+	// and be suppressed from the pass rows written below.
+	postEval, persistOKHealth := p.updateHealthScore(ctx, a, artistDirty)
+	if !persistOKHealth {
+		persistOK = false
+	}
+
+	// When categoryFilter is set we only mirror the category into
+	// rule_results so RunImageRulesForArtist does not claim the artist
+	// "passes" metadata rules it never actually ran.
 	var passFilter func(rid string) bool
 	if categoryFilter != "" {
 		passFilter = func(rid string) bool {
@@ -538,15 +538,16 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			return r.Category == categoryFilter
 		}
 	}
-	if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, passFilter) {
-		persistOK = false
+	if postEval != nil {
+		postViolated := make(map[string]struct{}, len(postEval.Violations))
+		for j := range postEval.Violations {
+			postViolated[postEval.Violations[j].RuleID] = struct{}{}
+		}
+		if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter) {
+			persistOK = false
+		}
 	}
 
-	// Re-evaluate and persist health score (and any in-memory
-	// changes fixers made) in a single write, then publish.
-	if !p.updateHealthScore(ctx, a, artistDirty) {
-		persistOK = false
-	}
 	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
 	// Stamp rules_evaluated_at only when categoryFilter is empty (every
 	// enabled rule was considered) AND every persistence step succeeded.
@@ -599,13 +600,6 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		if err != nil {
 			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
 			return false
-		}
-
-		// Track which rules produced violations so the pass-side write
-		// below skips them (fails are handled by UpsertViolation).
-		violated := make(map[string]struct{}, len(eval.Violations))
-		for j := range eval.Violations {
-			violated[eval.Violations[j].RuleID] = struct{}{}
 		}
 
 		for j := range eval.Violations {
@@ -729,17 +723,23 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 			}
 		}
 
-		// Issue #699: RunAllScoped evaluates every enabled rule, so every
-		// non-violated rule in eval.RulesConsidered is a legitimate pass
-		// and gets a passed=1 rule_results row.
-		if !p.persistPassResults(ctx, a, eval.RulesConsidered, violated, startedAt, nil) {
+		// Issue #699 propagation fix: derive the pass/fail skip-set from
+		// the POST-fix evaluation returned by updateHealthScore so rules
+		// repaired during this pass are recorded as passed=1 in the same
+		// run. Using the pre-fix violation snapshot would suppress them
+		// until the next evaluation.
+		postEval, persistOKHealth := p.updateHealthScore(ctx, a, perArtistDirty)
+		if !persistOKHealth {
 			persistOK = false
 		}
-
-		// Re-evaluate and persist health score (and any in-memory
-		// changes fixers made) in a single write, then publish.
-		if !p.updateHealthScore(ctx, a, perArtistDirty) {
-			persistOK = false
+		if postEval != nil {
+			postViolated := make(map[string]struct{}, len(postEval.Violations))
+			for j := range postEval.Violations {
+				postViolated[postEval.Violations[j].RuleID] = struct{}{}
+			}
+			if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, nil) {
+				persistOK = false
+			}
 		}
 		p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
 		return persistOK
@@ -956,7 +956,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
 		}
-		p.updateHealthScore(ctx, a, false)
+		// FixViolation operates on a single violation and does not own
+		// rule_results writes (the pipeline's RunRule/RunAll paths do),
+		// so we discard the post-fix evaluation result here.
+		_, _ = p.updateHealthScore(ctx, a, false)
 		p.publishAfterFix(ctx, a, fr)
 	}
 
@@ -1112,21 +1115,26 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 }
 
 // updateHealthScore re-evaluates the artist and persists the score. Returns
-// true when the artist row reached the DB cleanly, false when the Update
-// failed or was intentionally skipped. The walker uses the bool to decide
-// whether to stamp rules_evaluated_at: a failed persist must leave the
-// artist in the dirty set so the next pass retries.
+// the post-fix evaluation (nil when Evaluate failed) and a bool that is true
+// only when the artist row reached the DB cleanly. The walker uses the bool
+// to decide whether to stamp rules_evaluated_at: a failed persist must leave
+// the artist in the dirty set so the next pass retries.
+//
+// The returned EvaluationResult is consumed by the pass-row writer so
+// rule_results reflects the POST-fix state of the artist -- a rule the
+// fixer just repaired shows up as passed=1 in the same run, and a rule
+// that started passing but failed mid-run is written as a fail (issue #699).
 //
 // When mustPersist is true, the artist is persisted even if health
 // evaluation fails, to flush in-memory changes made by fixers. In that
 // case the caller relies on the returned bool to detect the transient
 // persist failure.
-func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) bool {
+func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, mustPersist bool) (*EvaluationResult, bool) {
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
 		p.logger.Warn("re-evaluating health score", "artist", a.Name, "error", err)
 		if !mustPersist {
-			return false
+			return nil, false
 		}
 	} else {
 		a.HealthScore = eval.HealthScore
@@ -1141,7 +1149,7 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 	// happened to round into the next second after startedAt).
 	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
-		return false
+		return eval, false
 	}
-	return true
+	return eval, true
 }

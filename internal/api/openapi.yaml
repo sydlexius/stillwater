@@ -4763,6 +4763,12 @@ paths:
                     type: array
                     items:
                       type: object
+                      required:
+                        - artist
+                        - health_score
+                        - violations
+                        - rules_passed_count
+                        - rules_evaluated_count
                       properties:
                         artist:
                           type: object

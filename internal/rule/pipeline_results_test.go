@@ -98,6 +98,89 @@ func TestPipeline_WritesPassResults(t *testing.T) {
 	}
 }
 
+// TestPipeline_FixFlipsFailToPassInSameRun exercises the propagation fix for
+// CR comment 3114386788: a rule that starts failing and is auto-fixed mid-run
+// must end the pass with passed=1 in rule_results for the same evaluation. The
+// prior implementation froze the skip-set from the pre-fix Violations slice,
+// so a repaired rule never got a pass row written until the next Run Rules
+// pass re-evaluated the artist. Drive this via NFOFixer (creates artist.nfo
+// and flips a.NFOExists to true), then assert rule_results shows Passed=true
+// after a single RunAllScoped invocation.
+func TestPipeline_FixFlipsFailToPassInSameRun(t *testing.T) {
+	db := setupTestDB(t)
+	ruleSvc := NewService(db)
+	artistSvc := artist.NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	// Keep only the nfo_exists rule enabled so the test focuses on the
+	// fail-to-pass transition without noise from other checkers.
+	disableAllRulesExcept(t, db, RuleNFOExists)
+	// Seeded defaults use automation_mode=manual, which the pipeline
+	// treats as "discover candidates only; never apply". NFOFixer does
+	// not implement CandidateDiscoverer, so in manual mode the fix is
+	// skipped and the rule stays failing. Force auto so the fixer runs.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE rules SET automation_mode = ? WHERE id = ?`,
+		AutomationModeAuto, RuleNFOExists); err != nil {
+		t.Fatalf("setting automation_mode=auto: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Fix Flips Pass",
+		SortName:  "Fix Flips Pass",
+		Path:      t.TempDir(), // dir exists, artist.nfo does not -> initial fail
+		NFOExists: false,
+		LibraryID: "lib-test", // nonSharedFSCheck returns SharedFSNone unconditionally
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	// Real NFOFixer: writes artist.nfo and sets a.NFOExists=true so the
+	// post-fix engine.Evaluate call inside updateHealthScore observes the
+	// repair. The fixer needs a SharedFSCheck that reports non-shared so
+	// the write is allowed.
+	nfoFixer := &NFOFixer{fsCheck: nonSharedFSCheck()}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{nfoFixer}, nil, testLogger())
+
+	runResult, err := pipeline.RunAllScoped(ctx, RunScopeAll)
+	if err != nil {
+		t.Fatalf("RunAllScoped: %v", err)
+	}
+	if runResult.FixesSucceeded != 1 {
+		t.Fatalf("FixesSucceeded = %d, want 1 (NFOFixer should have repaired the violation)", runResult.FixesSucceeded)
+	}
+
+	// rule_results for this (artist, rule) pair must show passed=1 even
+	// though the pre-fix Violations slice contained this rule. That is
+	// the whole point of deriving the pass skip-set from the post-fix
+	// evaluation.
+	results, err := ruleSvc.GetRuleResultsForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetRuleResultsForArtist: %v", err)
+	}
+	var found bool
+	for _, r := range results {
+		if r.RuleID != RuleNFOExists {
+			continue
+		}
+		found = true
+		if !r.Passed {
+			t.Errorf("rule_results.passed = false for rule that was fixed this run, want true")
+		}
+		if r.LastPassedAt == nil {
+			t.Errorf("rule_results.last_passed_at = nil after in-run fix, want set")
+		}
+	}
+	if !found {
+		t.Fatalf("no rule_results row for %s after fix-in-run (want one with passed=1)", RuleNFOExists)
+	}
+}
+
 func TestPipeline_WritesFailResultLinkedToViolation(t *testing.T) {
 	db := setupTestDB(t)
 	ruleSvc := NewService(db)
