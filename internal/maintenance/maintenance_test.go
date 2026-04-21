@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -326,6 +327,82 @@ func TestScanExistsFlagsUnresolvableDirSkips(t *testing.T) {
 	}
 	if flag != 1 {
 		t.Errorf("unresolvable-dir row: expected exists_flag=1 (skipped), got %d", flag)
+	}
+}
+
+// TestScanExistsFlagsStatErrorSkips verifies that when os.Stat on the image
+// directory fails with an error other than fs.ErrNotExist (e.g. permission
+// denied from an unreadable parent), the scanner SKIPS the row and preserves
+// the flag rather than treating the stat failure as "file absent". This is
+// the critical safety guard identified during pre-push review -- without it,
+// a single permission-denied directory would wipe flags for every artist
+// under it on the next scheduled scan.
+func TestScanExistsFlagsStatErrorSkips(t *testing.T) {
+	// The chmod 0o000 trick is Unix-only. Windows uses ACLs and Go's os.Chmod
+	// maps differently; skip rather than fake it.
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 semantics are Unix-specific")
+	}
+	// Running as root bypasses permission bits entirely, so the stat would
+	// succeed and the branch we want to exercise never fires.
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+	ctx := context.Background()
+
+	// Create parent dir with a real child dir inside, then drop the parent's
+	// execute bit so traversal (needed to stat the child) fails with EACCES.
+	parent := t.TempDir()
+	child := filepath.Join(parent, "unreadable-artist")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir child: %v", err)
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("chmod parent: %v", err)
+	}
+	// Restore permissions on cleanup so t.TempDir can remove the tree.
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	// Seed the artist pointing at the unreadable child dir with a stale flag.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, path) VALUES ('a-eacces', ?)`, child); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES ('i-eacces', 'a-eacces', 'thumb', 0, 1)`); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	if err := svc.ScanExistsFlags(ctx); err != nil {
+		t.Fatalf("ScanExistsFlags: %v", err)
+	}
+
+	var flag int
+	if err := db.QueryRowContext(ctx,
+		`SELECT exists_flag FROM artist_images WHERE id = 'i-eacces'`).Scan(&flag); err != nil {
+		t.Fatalf("reading flag: %v", err)
+	}
+	if flag != 1 {
+		t.Errorf("stat-error row: expected exists_flag=1 (skipped), got %d; non-ENOENT stat errors must not clear flags", flag)
+	}
+}
+
+// TestScanExistsFlagsCanceledContext verifies that a canceled context causes
+// the top-level SELECT to fail with an error, which ScanExistsFlags returns
+// to its caller rather than proceeding with an incomplete scan.
+func TestScanExistsFlagsCanceledContext(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := svc.ScanExistsFlags(ctx); err == nil {
+		t.Fatal("expected error from canceled context, got nil")
 	}
 }
 
