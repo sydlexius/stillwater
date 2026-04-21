@@ -516,35 +516,51 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 		persistOK = false
 	}
 
-	// When categoryFilter is set we only mirror the category into
-	// rule_results so RunImageRulesForArtist does not claim the artist
-	// "passes" metadata rules it never actually ran.
-	var passFilter func(rid string) bool
-	if categoryFilter != "" {
-		passFilter = func(rid string) bool {
-			r, ok := ruleCache[rid]
-			if !ok {
-				// Not cached means no violation used this rule lookup;
-				// fall back to a direct fetch so we respect the filter.
-				fetched, err := p.ruleService.GetByID(ctx, rid)
-				if err != nil {
-					p.logger.Warn("fetching rule for pass filter",
-						"rule_id", rid, "artist", a.Name, "error", err)
-					return false
-				}
-				ruleCache[rid] = fetched
-				r = fetched
-			}
-			return r.Category == categoryFilter
-		}
-	}
 	if postEval != nil {
 		postViolated := make(map[string]struct{}, len(postEval.Violations))
 		for j := range postEval.Violations {
 			postViolated[postEval.Violations[j].RuleID] = struct{}{}
 		}
-		if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter) {
-			persistOK = false
+
+		// When categoryFilter is set we only mirror the category into
+		// rule_results so RunImageRulesForArtist does not claim the artist
+		// "passes" metadata rules it never actually ran. Precomputing the
+		// allowed-ID set (vs evaluating the category per passFilter call)
+		// lets us treat a GetByID failure as a persistence failure instead
+		// of silently dropping the rule from the pass set, which would
+		// leave the artist clean but without a pass row (CR #3114616841).
+		var passFilter func(rid string) bool
+		filterReady := true
+		if categoryFilter != "" {
+			allowedIDs := make(map[string]struct{}, len(postEval.RulesConsidered))
+			for _, rid := range postEval.RulesConsidered {
+				r, ok := ruleCache[rid]
+				if !ok {
+					fetched, err := p.ruleService.GetByID(ctx, rid)
+					if err != nil {
+						p.logger.Warn("fetching rule for pass filter",
+							"rule_id", rid, "artist", a.Name, "error", err)
+						filterReady = false
+						persistOK = false
+						break
+					}
+					ruleCache[rid] = fetched
+					r = fetched
+				}
+				if r.Category == categoryFilter {
+					allowedIDs[rid] = struct{}{}
+				}
+			}
+			passFilter = func(rid string) bool {
+				_, ok := allowedIDs[rid]
+				return ok
+			}
+		}
+
+		if filterReady {
+			if !p.persistPassResults(ctx, a, postEval.RulesConsidered, postViolated, startedAt, passFilter) {
+				persistOK = false
+			}
 		}
 	}
 
@@ -1154,7 +1170,11 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist, must
 	// happened to round into the next second after startedAt).
 	if err := p.artistService.UpdateAfterRuleEvaluation(ctx, a); err != nil {
 		p.logger.Error("persisting artist after fixes", "artist", a.Name, "error", err)
-		return eval, false
+		// Return nil eval so callers that gate pass-row writes on
+		// `postEval != nil` cannot upsert passed=1 from in-memory fix
+		// state that never reached the artist row (CR review-body
+		// 4144589645). rule_results must not lead the stored artist.
+		return nil, false
 	}
 	return eval, authoritative
 }
