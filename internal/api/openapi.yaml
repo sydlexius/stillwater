@@ -259,9 +259,9 @@ components:
         disambiguation:
           type: string
           description: Provider disambiguation comment to distinguish similar names.
-        country:
+        origin:
           type: string
-          description: ISO country code associated with the candidate.
+          description: Country or region of origin associated with the candidate.
         score:
           type: integer
           description: Provider match score (higher is better).
@@ -914,6 +914,9 @@ components:
         gender:
           type: string
           description: Gender of the artist (e.g. male, female, other). Empty when unknown.
+        origin:
+          type: string
+          description: Country or region of origin for the artist (e.g. United States, Mandeville, Louisiana). Empty when unknown.
         disambiguation:
           type: string
           description: Text to distinguish similarly named artists.
@@ -1090,6 +1093,7 @@ components:
         - sort_name
         - type
         - gender
+        - origin
         - disambiguation
         - musicbrainz_id
         - audiodb_id
@@ -8348,7 +8352,7 @@ paths:
       description: |
         Updates one metadata field on the artist. Supported fields:
         biography, genres, styles, moods, formed, born, disbanded, died,
-        years_active, type, gender, name, sort_name, disambiguation,
+        years_active, type, gender, origin, name, sort_name, disambiguation,
         musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id.
 
         Validation rules: name must be non-empty (rejects empty or

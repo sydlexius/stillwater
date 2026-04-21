@@ -152,7 +152,7 @@ func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandi
 		out = append(out, templates.WizardCandidateView{
 			Name:           c.Name,
 			MBID:           c.MusicBrainzID,
-			Country:        c.Country,
+			Origin:         c.Origin,
 			Disambiguation: c.Disambiguation,
 			ConfidencePct:  pct,
 		})

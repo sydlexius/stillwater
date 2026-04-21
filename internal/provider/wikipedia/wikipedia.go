@@ -260,7 +260,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		meta.YearsActive = infobox.YearsActive
 	}
 	if infobox.Origin != "" {
-		meta.Country = infobox.Origin
+		meta.Origin = infobox.Origin
 	}
 	if len(infobox.Genres) > 0 {
 		meta.Genres = infobox.Genres

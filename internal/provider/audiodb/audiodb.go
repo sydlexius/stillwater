@@ -93,7 +93,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID:    art.IDArtist,
 			Name:          art.Artist,
-			Country:       art.Country,
+			Origin:        art.Country,
 			Score:         provider.NameSimilarity(name, art.Artist),
 			MusicBrainzID: art.MusicBrainzID,
 			Source:        string(provider.NameAudioDB),
@@ -302,7 +302,7 @@ func mapArtist(ctx context.Context, art *AudioDBArtist) *provider.ArtistMetadata
 		MusicBrainzID: art.MusicBrainzID,
 		Name:          art.Artist,
 		Gender:        strings.ToLower(art.Gender),
-		Country:       art.Country,
+		Origin:        art.Country,
 		Biography:     bio,
 	}
 

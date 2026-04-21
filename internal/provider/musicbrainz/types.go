@@ -10,6 +10,11 @@ type SearchResponse struct {
 	Artists []MBArtist `json:"artists"`
 }
 
+// MBArea represents a MusicBrainz area entity (country, region, or city).
+type MBArea struct {
+	Name string `json:"name"`
+}
+
 // MBArtist represents a MusicBrainz artist entity.
 type MBArtist struct {
 	ID             string       `json:"id"`
@@ -19,6 +24,7 @@ type MBArtist struct {
 	Gender         string       `json:"gender"`
 	Disambiguation string       `json:"disambiguation"`
 	Country        string       `json:"country"`
+	Area           MBArea       `json:"area"`
 	Score          int          `json:"score"`
 	LifeSpan       MBLifeSpan   `json:"life-span"`
 	Aliases        []MBAlias    `json:"aliases"`

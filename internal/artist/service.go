@@ -69,7 +69,7 @@ func HistoryIDFromContext(ctx context.Context) string {
 var trackableFields = []string{
 	"biography", "genres", "styles", "moods",
 	"formed", "born", "disbanded", "died",
-	"years_active", "type", "gender",
+	"years_active", "type", "gender", "origin",
 }
 
 // Service provides artist and band member data operations.
@@ -714,6 +714,8 @@ func FieldValueFromArtist(a *Artist, field string) string {
 		return a.Type
 	case "gender":
 		return a.Gender
+	case "origin":
+		return a.Origin
 	case "name":
 		return a.Name
 	case "sort_name":

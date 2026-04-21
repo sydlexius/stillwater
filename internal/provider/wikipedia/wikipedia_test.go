@@ -323,8 +323,8 @@ func TestGetArtist_WithInfobox(t *testing.T) {
 		t.Fatalf("GetArtist: %v", err)
 	}
 
-	if meta.Country != "Abingdon, Oxfordshire, England" {
-		t.Errorf("Country = %q, want %q", meta.Country, "Abingdon, Oxfordshire, England")
+	if meta.Origin != "Abingdon, Oxfordshire, England" {
+		t.Errorf("Origin = %q, want %q", meta.Origin, "Abingdon, Oxfordshire, England")
 	}
 
 	if len(meta.Genres) < 3 {

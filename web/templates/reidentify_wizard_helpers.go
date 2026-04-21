@@ -12,7 +12,7 @@ import (
 type WizardCandidateView struct {
 	Name           string
 	MBID           string
-	Country        string
+	Origin         string
 	Disambiguation string
 	ConfidencePct  int
 }

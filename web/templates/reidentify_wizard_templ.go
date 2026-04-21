@@ -570,15 +570,15 @@ func reIdentifyWizardCandidates(data ReIdentifyWizardStepData) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				if c.Country != "" {
+				if c.Origin != "" {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<span class=\"ml-1\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var31 string
-					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(c.Country)
+					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(c.Origin)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reidentify_wizard.templ`, Line: 192, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/reidentify_wizard.templ`, Line: 192, Col: 39}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {

@@ -158,13 +158,13 @@ func TestComputeDiffs_source_attribution(t *testing.T) {
 
 func TestExtractMBFieldValues(t *testing.T) {
 	meta := &provider.ArtistMetadata{
-		Name:    "Test Artist",
-		Type:    "group",
-		Gender:  "",
-		Genres:  []string{"rock", "pop"},
-		Formed:  "1990",
-		Born:    "1965",
-		Country: "US", // not a snapshot field
+		Name:   "Test Artist",
+		Type:   "group",
+		Gender: "",
+		Genres: []string{"rock", "pop"},
+		Formed: "1990",
+		Born:   "1965",
+		Origin: "US", // not a snapshot field
 	}
 
 	sources := []provider.FieldSource{
@@ -196,6 +196,12 @@ func TestExtractMBFieldValues(t *testing.T) {
 	}
 	if fieldValues["formed"] != "1990" {
 		t.Errorf("formed = %q, want %q", fieldValues["formed"], "1990")
+	}
+	if fieldValues["born"] != "1965" {
+		t.Errorf("born = %q, want %q", fieldValues["born"], "1965")
+	}
+	if _, ok := fieldValues["origin"]; ok {
+		t.Error("origin should not be in snapshots (not an MB snapshot field)")
 	}
 	if _, ok := fieldValues["genres"]; ok {
 		t.Error("genres should not be in snapshots (sourced from AudioDB)")

@@ -102,6 +102,23 @@ func TestOverwriteAttempted_TypeGenderNeverCleared(t *testing.T) {
 	}
 }
 
+func TestOverwriteAttempted_OriginNeverCleared(t *testing.T) {
+	a := &Artist{Origin: "United Kingdom"}
+	u := &MetadataUpdate{Origin: ""}
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"origin"},
+	})
+	if a.Origin != "United Kingdom" {
+		t.Errorf("origin should not be cleared, got %q", a.Origin)
+	}
+
+	u.Origin = "England"
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+	if !changed || a.Origin != "England" {
+		t.Errorf("origin = %q, want %q after non-empty overwrite", a.Origin, "England")
+	}
+}
+
 func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
 	a := &Artist{Type: "person", Gender: "male"}
 	u := &MetadataUpdate{Type: "group", Gender: "female"}
@@ -674,7 +691,7 @@ func TestFetchResultToUpdate(t *testing.T) {
 			SpotifyID: "spotify", Biography: "A band.", Genres: []string{"rock"},
 			Styles: []string{"indie"}, Moods: []string{"energetic"},
 			YearsActive: "2000-", Born: "1980", Formed: "2000",
-			Died: "", Disbanded: "",
+			Died: "", Disbanded: "", Origin: "United Kingdom",
 		},
 	}
 	u := FetchResultToUpdate(result)
@@ -693,6 +710,9 @@ func TestFetchResultToUpdate(t *testing.T) {
 	// Gender should be cleared for non-individual types.
 	if u.Gender != "" {
 		t.Errorf("Gender = %q, want empty for group type", u.Gender)
+	}
+	if u.Origin != "United Kingdom" {
+		t.Errorf("Origin = %q, want %q", u.Origin, "United Kingdom")
 	}
 }
 
