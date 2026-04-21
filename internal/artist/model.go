@@ -18,6 +18,7 @@ type Artist struct {
 	SortName          string     `json:"sort_name"`
 	Type              string     `json:"type"`
 	Gender            string     `json:"gender"`
+	Origin            string     `json:"origin"`
 	Disambiguation    string     `json:"disambiguation"`
 	MusicBrainzID     string     `json:"musicbrainz_id"`
 	AudioDBID         string     `json:"audiodb_id"`

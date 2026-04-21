@@ -26,6 +26,7 @@ var fieldColumnMap = map[string]string{
 	"years_active":   "years_active",
 	"type":           "type",
 	"gender":         "gender",
+	"origin":         "origin",
 	"name":           "name",
 	"sort_name":      "sort_name",
 	"disambiguation": "disambiguation",
@@ -78,7 +79,7 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artists (
-			id, name, sort_name, type, gender, disambiguation,
+			id, name, sort_name, type, gender, origin, disambiguation,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
 			path, library_id, nfo_exists,
@@ -86,9 +87,9 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 			locked, lock_source, locked_at, locked_fields,
 			metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
+		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Origin, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
@@ -265,7 +266,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	// but write-side ownership lives in the targeted helpers (#698).
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE artists SET
-			name = ?, sort_name = ?, type = ?, gender = ?, disambiguation = ?,
+			name = ?, sort_name = ?, type = ?, gender = ?, origin = ?, disambiguation = ?,
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?, nfo_exists = ?,
@@ -275,7 +276,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
-		a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
+		a.Name, a.SortName, a.Type, a.Gender, a.Origin, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),

@@ -119,8 +119,8 @@ func TestGetArtist(t *testing.T) {
 	if meta.Formed != "1985" {
 		t.Errorf("expected formed 1985, got %s", meta.Formed)
 	}
-	if meta.Country != "United Kingdom" {
-		t.Errorf("expected United Kingdom, got %s", meta.Country)
+	if meta.Origin != "United Kingdom" {
+		t.Errorf("expected United Kingdom, got %s", meta.Origin)
 	}
 	if len(meta.Genres) != 3 {
 		t.Fatalf("expected 3 genres, got %d", len(meta.Genres))

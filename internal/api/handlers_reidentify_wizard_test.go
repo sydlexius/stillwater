@@ -227,7 +227,7 @@ func TestProjectWizardCandidates(t *testing.T) {
 				ArtistSearchResult: provider.ArtistSearchResult{
 					Name:           "Pink Floyd",
 					MusicBrainzID:  "mbid-1",
-					Country:        "GB",
+					Origin:         "GB",
 					Disambiguation: "rock band",
 				},
 				Confidence: 0.85,
@@ -238,7 +238,7 @@ func TestProjectWizardCandidates(t *testing.T) {
 			t.Fatalf("len = %d, want 1", len(got))
 		}
 		want := templates.WizardCandidateView{
-			Name: "Pink Floyd", MBID: "mbid-1", Country: "GB",
+			Name: "Pink Floyd", MBID: "mbid-1", Origin: "GB",
 			Disambiguation: "rock band", ConfidencePct: 85,
 		}
 		if got[0] != want {

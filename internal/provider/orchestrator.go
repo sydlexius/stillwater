@@ -592,6 +592,12 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			return true
 		}
+	case "origin":
+		if meta.Origin != "" && result.Metadata.Origin == "" {
+			result.Metadata.Origin = meta.Origin
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
 	case "thumb", "fanart", "logo", "banner":
 		// For image fields, collect all matching candidates from this provider.
 		// Unlike text fields, images aggregate across providers so users can
@@ -793,6 +799,11 @@ func extractFieldForComparison(fpr *FieldProviderResult, field string, meta *Art
 	case "gender":
 		if meta.Gender != "" {
 			fpr.Value = meta.Gender
+			fpr.HasData = true
+		}
+	case "origin":
+		if meta.Origin != "" {
+			fpr.Value = meta.Origin
 			fpr.HasData = true
 		}
 	}

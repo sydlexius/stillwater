@@ -12,6 +12,7 @@ func TestFieldValueFromArtist_NewFields(t *testing.T) {
 		Name:           "Radiohead",
 		SortName:       "Radiohead",
 		Disambiguation: "UK band",
+		Origin:         "England",
 		MusicBrainzID:  "a74b1b7f-71a5-4011-9441-d0b5e4122711",
 		AudioDBID:      "111239",
 		DiscogsID:      "54321",
@@ -26,6 +27,7 @@ func TestFieldValueFromArtist_NewFields(t *testing.T) {
 		{"name", "Radiohead"},
 		{"sort_name", "Radiohead"},
 		{"disambiguation", "UK band"},
+		{"origin", "England"},
 		{"musicbrainz_id", "a74b1b7f-71a5-4011-9441-d0b5e4122711"},
 		{"audiodb_id", "111239"},
 		{"discogs_id", "54321"},
@@ -59,7 +61,7 @@ func TestIsEditableField_NewFields(t *testing.T) {
 		"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id",
 		// existing fields must still be editable
 		"biography", "genres", "styles", "moods", "formed", "born",
-		"disbanded", "died", "years_active", "type", "gender",
+		"disbanded", "died", "years_active", "type", "gender", "origin",
 	}
 	for _, f := range editable {
 		if !IsEditableField(f) {

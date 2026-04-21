@@ -85,13 +85,17 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		if ns := provider.NameSimilarity(name, a.Name); ns > score {
 			score = ns
 		}
+		origin := a.Area.Name
+		if origin == "" {
+			origin = a.Country
+		}
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID:     a.ID,
 			Name:           a.Name,
 			SortName:       a.SortName,
 			Type:           a.Type,
 			Disambiguation: a.Disambiguation,
-			Country:        a.Country,
+			Origin:         origin,
 			Score:          score,
 			MusicBrainzID:  a.ID,
 			Source:         string(provider.NameMusicBrainz),
@@ -579,6 +583,10 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	if mappedType != "" && !artist.IsIndividualType(mappedType) {
 		gender = ""
 	}
+	origin := mb.Area.Name
+	if origin == "" {
+		origin = mb.Country
+	}
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
@@ -587,7 +595,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		Type:           mappedType,
 		Gender:         gender,
 		Disambiguation: mb.Disambiguation,
-		Country:        mb.Country,
+		Origin:         origin,
 		URLs:           make(map[string]string),
 	}
 

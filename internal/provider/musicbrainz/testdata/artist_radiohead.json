@@ -4,6 +4,7 @@
   "name": "Radiohead",
   "sort-name": "Radiohead",
   "country": "GB",
+  "area": {"name": "United Kingdom"},
   "disambiguation": "",
   "gender": null,
   "life-span": {

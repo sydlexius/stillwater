@@ -158,13 +158,13 @@ func TestComputeDiffs_source_attribution(t *testing.T) {
 
 func TestExtractMBFieldValues(t *testing.T) {
 	meta := &provider.ArtistMetadata{
-		Name:    "Test Artist",
-		Type:    "group",
-		Gender:  "",
-		Genres:  []string{"rock", "pop"},
-		Formed:  "1990",
-		Born:    "1965",
-		Country: "US", // not a snapshot field
+		Name:   "Test Artist",
+		Type:   "group",
+		Gender: "",
+		Genres: []string{"rock", "pop"},
+		Formed: "1990",
+		Born:   "1965",
+		Origin: "US", // not a snapshot field
 	}
 
 	sources := []provider.FieldSource{

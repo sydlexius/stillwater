@@ -127,8 +127,8 @@ func TestSearchArtist(t *testing.T) {
 	if r.Score != 100 {
 		t.Errorf("expected score 100, got %d", r.Score)
 	}
-	if r.Country != "GB" {
-		t.Errorf("expected country GB, got %s", r.Country)
+	if r.Origin != "GB" {
+		t.Errorf("expected origin GB, got %s", r.Origin)
 	}
 	if r.Type != "Group" {
 		t.Errorf("expected type Group, got %s", r.Type)
@@ -188,8 +188,8 @@ func TestGetArtist(t *testing.T) {
 	if meta.Type != "group" {
 		t.Errorf("expected type group, got %s", meta.Type)
 	}
-	if meta.Country != "GB" {
-		t.Errorf("expected country GB, got %s", meta.Country)
+	if meta.Origin != "United Kingdom" {
+		t.Errorf("expected origin United Kingdom, got %s", meta.Origin)
 	}
 	if meta.Formed != "1991" {
 		t.Errorf("expected formed 1991, got %s", meta.Formed)
@@ -444,6 +444,12 @@ func TestGetArtistStyleExtraction(t *testing.T) {
 	}
 	if !styleSet["post-punk"] {
 		t.Errorf("expected 'post-punk' in styles, got %v", meta.Styles)
+	}
+
+	// Portishead fixture has "country":"GB" but no "area" object.
+	// Origin must fall back to the ISO country code rather than returning empty.
+	if meta.Origin != "GB" {
+		t.Errorf("expected origin GB (ISO fallback when area absent), got %q", meta.Origin)
 	}
 }
 

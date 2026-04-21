@@ -1451,6 +1451,7 @@ func TestApplyFieldDetailFields(t *testing.T) {
 	}{
 		{"gender", ArtistMetadata{Gender: "Male"}, func(m *ArtistMetadata) string { return m.Gender }},
 		{"type", ArtistMetadata{Type: "group"}, func(m *ArtistMetadata) string { return m.Type }},
+		{"origin", ArtistMetadata{Origin: "United Kingdom"}, func(m *ArtistMetadata) string { return m.Origin }},
 		{"years_active", ArtistMetadata{YearsActive: "1980-1990"}, func(m *ArtistMetadata) string { return m.YearsActive }},
 		{"born", ArtistMetadata{Born: "1970-01-01"}, func(m *ArtistMetadata) string { return m.Born }},
 		{"died", ArtistMetadata{Died: "2020-01-01"}, func(m *ArtistMetadata) string { return m.Died }},

@@ -45,6 +45,7 @@ type MetadataUpdate struct {
 	SortName       string
 	Type           string
 	Gender         string
+	Origin         string
 	Disambiguation string
 	MusicBrainzID  string
 	AudioDBID      string
@@ -243,15 +244,18 @@ func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields, popu
 		changed = setString(&a.Disbanded, u.Disbanded) || changed
 	}
 
-	// Type, Gender, Disambiguation, YearsActive: non-empty overwrite only
-	// (never clear). Disambiguation is populated here so a provider refresh
-	// records the value returned by MusicBrainz without waiting for a
+	// Type, Gender, Origin, Disambiguation, YearsActive: non-empty overwrite
+	// only (never clear). Disambiguation is populated here so a provider
+	// refresh records the value returned by MusicBrainz without waiting for a
 	// separate NFO import pass.
 	if !isLocked(locked, "type") {
 		changed = setNonEmpty(&a.Type, u.Type) || changed
 	}
 	if !isLocked(locked, "gender") {
 		changed = setNonEmpty(&a.Gender, u.Gender) || changed
+	}
+	if !isLocked(locked, "origin") {
+		changed = setNonEmpty(&a.Origin, u.Origin) || changed
 	}
 	if !isLocked(locked, "disambiguation") {
 		changed = setNonEmpty(&a.Disambiguation, u.Disambiguation) || changed
@@ -301,6 +305,7 @@ func applyFillEmpty(a *Artist, u *MetadataUpdate, locked map[string]struct{}) bo
 
 	setStr("type", &a.Type, u.Type)
 	setStr("gender", &a.Gender, u.Gender)
+	setStr("origin", &a.Origin, u.Origin)
 	setStr("musicbrainz_id", &a.MusicBrainzID, u.MusicBrainzID)
 	setStr("audiodb_id", &a.AudioDBID, u.AudioDBID)
 	setStr("discogs_id", &a.DiscogsID, u.DiscogsID)
@@ -358,6 +363,7 @@ func applyNFOImport(a *Artist, u *MetadataUpdate, locked map[string]struct{}) bo
 	// Classification: unconditional overwrite.
 	setStr("type", &a.Type, u.Type)
 	setStr("gender", &a.Gender, u.Gender)
+	setStr("origin", &a.Origin, u.Origin)
 	setStr("disambiguation", &a.Disambiguation, u.Disambiguation)
 
 	// Lists: unconditional overwrite.
@@ -395,6 +401,7 @@ func applySnapshotRestore(a *Artist, u *MetadataUpdate, locked map[string]struct
 	setStr("sort_name", &a.SortName, u.SortName)
 	setStr("type", &a.Type, u.Type)
 	setStr("gender", &a.Gender, u.Gender)
+	setStr("origin", &a.Origin, u.Origin)
 	setStr("disambiguation", &a.Disambiguation, u.Disambiguation)
 	setStr("musicbrainz_id", &a.MusicBrainzID, u.MusicBrainzID)
 	setStr("audiodb_id", &a.AudioDBID, u.AudioDBID)
@@ -460,6 +467,7 @@ func FetchResultToUpdate(result *provider.FetchResult) *MetadataUpdate {
 		SortName:       m.SortName,
 		Type:           m.Type,
 		Gender:         gender,
+		Origin:         m.Origin,
 		Disambiguation: m.Disambiguation,
 		MusicBrainzID:  m.MusicBrainzID,
 		AudioDBID:      m.AudioDBID,

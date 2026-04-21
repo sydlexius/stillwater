@@ -323,6 +323,7 @@ func DefaultPriorities() []FieldPriority {
 		{Field: "years_active", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameMusicBrainz}},
 		{Field: "type", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameDiscogs}},
 		{Field: "gender", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
+		{Field: "origin", Providers: []ProviderName{NameWikipedia, NameAudioDB, NameWikidata, NameMusicBrainz}},
 		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer, NameSpotify}},
 		{Field: "fanart", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
 		{Field: "logo", Providers: []ProviderName{NameFanartTV, NameAudioDB}},

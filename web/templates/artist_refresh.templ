@@ -91,8 +91,8 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 								if c.Result.Type != "" {
 									<span>{ c.Result.Type }</span>
 								}
-								if c.Result.Country != "" {
-									<span>{ tf(ctx, "image.from_country", c.Result.Country) }</span>
+								if c.Result.Origin != "" {
+									<span>{ tf(ctx, "image.from_country", c.Result.Origin) }</span>
 								}
 								if c.Result.Disambiguation != "" {
 									<span class="italic">({ c.Result.Disambiguation })</span>

@@ -197,7 +197,7 @@ type ArtistSearchResult struct {
 	SortName       string `json:"sort_name,omitempty"`
 	Type           string `json:"type,omitempty"`
 	Disambiguation string `json:"disambiguation,omitempty"`
-	Country        string `json:"country,omitempty"`
+	Origin         string `json:"origin,omitempty"`
 	Score          int    `json:"score"`
 	MusicBrainzID  string `json:"musicbrainz_id,omitempty"`
 	Source         string `json:"source"`
@@ -218,7 +218,7 @@ type ArtistMetadata struct {
 	Type           string            `json:"type,omitempty"`
 	Gender         string            `json:"gender,omitempty"`
 	Disambiguation string            `json:"disambiguation,omitempty"`
-	Country        string            `json:"country,omitempty"`
+	Origin         string            `json:"origin,omitempty"`
 	Biography      string            `json:"biography,omitempty"`
 	Genres         []string          `json:"genres,omitempty"`
 	Styles         []string          `json:"styles,omitempty"`

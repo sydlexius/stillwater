@@ -333,7 +333,7 @@ func mapArtist(mbid string, bindings []SPARQLBinding) *provider.ArtistMetadata {
 			meta.Disbanded = extractYear(first.Dissolved.Value)
 		}
 		if first.Country.Value != "" {
-			meta.Country = first.Country.Value
+			meta.Origin = first.Country.Value
 		}
 	}
 
