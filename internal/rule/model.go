@@ -75,13 +75,19 @@ type ImageCandidate struct {
 }
 
 // EvaluationResult holds the outcome of running all rules against an artist.
+//
+// RulesConsidered is the ordered list of rule IDs the engine actually ran
+// (enabled, registered checker, not skipped for a filesystem-missing artist).
+// Callers that persist pass/fail results (issue #699) diff this set against
+// Violations to learn which rules passed without re-querying the rule list.
 type EvaluationResult struct {
-	ArtistID    string      `json:"artist_id"`
-	ArtistName  string      `json:"artist_name"`
-	Violations  []Violation `json:"violations"`
-	RulesPassed int         `json:"rules_passed"`
-	RulesTotal  int         `json:"rules_total"`
-	HealthScore float64     `json:"health_score"`
+	ArtistID        string      `json:"artist_id"`
+	ArtistName      string      `json:"artist_name"`
+	Violations      []Violation `json:"violations"`
+	RulesPassed     int         `json:"rules_passed"`
+	RulesTotal      int         `json:"rules_total"`
+	HealthScore     float64     `json:"health_score"`
+	RulesConsidered []string    `json:"-"` // not serialized; consumed by persistence paths
 }
 
 // HealthSnapshot represents a recorded library health score.
@@ -120,6 +126,38 @@ type RuleViolation struct {
 	ResolvedAt  *time.Time       `json:"resolved_at,omitempty"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
+}
+
+// RuleResult represents a persisted per-artist, per-rule evaluation outcome
+// stored in the rule_results table (issue #699). A row is written for every
+// (artist, rule) pair that has been evaluated at least once: passed=1 marks a
+// rule the artist currently satisfies, passed=0 marks an active violation
+// (violation_id links to the corresponding rule_violations row).
+//
+// FirstFailedAt is preserved across repeated failures (COALESCE on fail) so
+// reports can answer "how long has this rule been failing?" without scanning
+// rule_violations history. LastPassedAt is stamped each time the row
+// transitions to passed=1 so callers can see when the artist most recently
+// satisfied the rule.
+type RuleResult struct {
+	ArtistID         string     `json:"artist_id"`
+	RuleID           string     `json:"rule_id"`
+	Passed           bool       `json:"passed"`
+	ViolationID      string     `json:"violation_id,omitempty"`
+	EvaluatedAt      time.Time  `json:"evaluated_at"`
+	ViolationMessage string     `json:"violation_message,omitempty"`
+	FirstFailedAt    *time.Time `json:"first_failed_at,omitempty"`
+	LastPassedAt     *time.Time `json:"last_passed_at,omitempty"`
+}
+
+// RuleResultCount aggregates per-artist pass/fail counts for the compliance
+// report (issue #699 slice 1). Evaluated is the total number of rule_results
+// rows for the artist; Passed is the subset with passed=1. The ratio
+// Passed/Evaluated is the coarse "rules satisfied" signal surfaced on the
+// /reports/compliance endpoint.
+type RuleResultCount struct {
+	Passed    int `json:"passed"`
+	Evaluated int `json:"evaluated"`
 }
 
 // ViolationListParams controls filtering, sorting, and grouping of violations.

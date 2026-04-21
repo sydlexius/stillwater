@@ -4763,6 +4763,41 @@ paths:
                     type: array
                     items:
                       type: object
+                      required:
+                        - artist
+                        - health_score
+                        - violations
+                        - rules_passed_count
+                        - rules_evaluated_count
+                      properties:
+                        artist:
+                          type: object
+                          description: Artist record.
+                        health_score:
+                          type: number
+                          format: float
+                          description: Stored health score for the artist (0-100).
+                        violations:
+                          type: array
+                          items:
+                            type: object
+                          description: Active violations (open, pending_choice) for the artist.
+                        rules_passed_count:
+                          type: integer
+                          description: |
+                            Number of enabled rules the artist currently passes,
+                            taken from the rule_results table (issue #699). Zero
+                            when no rule_results rows exist for the artist, or
+                            when count lookup is unavailable.
+                        rules_evaluated_count:
+                          type: integer
+                          description: |
+                            Total number of rules the artist has an outcome row
+                            for, taken from the rule_results table. Zero when no
+                            rule_results rows exist for the artist, or when
+                            count lookup is unavailable. The ratio
+                            rules_passed_count / rules_evaluated_count is the
+                            coarse "rules satisfied" signal for this artist.
                     description: Compliance report rows.
                   total:
                     type: integer

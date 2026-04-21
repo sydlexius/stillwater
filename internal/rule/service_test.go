@@ -306,6 +306,68 @@ func TestUpdate_DisabledClearsActiveViolations(t *testing.T) {
 	}
 }
 
+// TestUpdate_DisabledClearsRuleResults verifies the rule_results cleanup
+// added alongside the #1141 violation cleanup: when a rule flips to
+// enabled=false, every stored rule_results row for that rule is purged so
+// the per-rule dashboard does not surface stale pass/fail counts. Sibling
+// rules must be untouched by the scoped delete.
+func TestUpdate_DisabledClearsRuleResults(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed artists referenced by the pass rows we write below.
+	for _, id := range []string{"a1", "a2", "a3"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artists (id, name, path) VALUES (?, ?, '')`,
+			id, "Artist "+id); err != nil {
+			t.Fatalf("inserting artist %s: %v", id, err)
+		}
+	}
+
+	ruleID := RuleNFOExists
+	otherID := RuleFanartExists
+	now := time.Now().UTC()
+	// Seed rule_results rows for the target rule (pass rows) and the
+	// sibling rule (one pass row). Only target-rule rows should be deleted.
+	for _, id := range []string{"a1", "a2", "a3"} {
+		if err := svc.UpsertRuleResultPass(ctx, id, ruleID, now); err != nil {
+			t.Fatalf("UpsertRuleResultPass(%s, %s): %v", id, ruleID, err)
+		}
+	}
+	if err := svc.UpsertRuleResultPass(ctx, "a1", otherID, now); err != nil {
+		t.Fatalf("UpsertRuleResultPass(a1, %s): %v", otherID, err)
+	}
+
+	r, err := svc.GetByID(ctx, ruleID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	r.Enabled = false
+	if err := svc.Update(ctx, r); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	countFor := func(rid string) int {
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM rule_results WHERE rule_id = ?`, rid).Scan(&n); err != nil {
+			t.Fatalf("counting rule_results for %s: %v", rid, err)
+		}
+		return n
+	}
+	if got := countFor(ruleID); got != 0 {
+		t.Errorf("rule_results rows for disabled rule = %d, want 0", got)
+	}
+	if got := countFor(otherID); got != 1 {
+		t.Errorf("sibling rule_results rows = %d, want 1 (cleanup should be rule-scoped)", got)
+	}
+}
+
 // TestUpdate_EnabledLeavesActiveViolations is the negative companion: the
 // cleanup must only fire on disable, never on a plain enabled=true update
 // (e.g. config or automation_mode edits that keep the rule active).

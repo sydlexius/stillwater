@@ -184,6 +184,13 @@ func (h *HealthSubscriber) processPending(ctx context.Context) {
 
 // evaluateArtist loads an artist by ID, runs the rule engine, and persists
 // the updated health score. Errors are logged but not propagated.
+//
+// Issue #699: this is the only evaluation path outside the pipeline that
+// should own per-rule result persistence. After Evaluate returns we write
+// passed=1 rule_results rows for every rule that passed. Failing rules are
+// NOT written here: fails land transactionally via the paired UpsertViolation
+// call performed by the pipeline, so the health subscriber must not
+// duplicate that write (it does not know the violation_id).
 func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) {
 	a, err := h.artistService.GetByID(ctx, artistID)
 	if err != nil {
@@ -191,6 +198,7 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 		return
 	}
 
+	evaluatedAt := time.Now().UTC()
 	result, err := h.engine.Evaluate(ctx, a)
 	if err != nil {
 		h.logger.Warn("health subscriber: evaluating artist", "artist_id", artistID, "artist", a.Name, "error", err)
@@ -199,5 +207,53 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 
 	if err := h.artistService.UpdateHealthScore(ctx, artistID, result.HealthScore); err != nil {
 		h.logger.Warn("health subscriber: persisting health score", "artist_id", artistID, "artist", a.Name, "error", err)
+	}
+
+	// Issue #699: write pass rows for rules the artist satisfies, and a
+	// compensating fail row for rules the subscriber sees as newly violated.
+	//
+	// The subscriber runs from non-pipeline paths (artist.Service.UpdateArtist
+	// fires ArtistUpdated; the pipeline's transactional UpsertViolation does
+	// NOT run on that path). Without the fail write below, a rule that had a
+	// prior pass row and now fails would keep the stale passed=1 row until
+	// the next Run Rules pass, masking the newly-broken state in the
+	// compliance report. We reuse UpsertViolation so the violation row and
+	// the sibling rule_results fail row land in a single transaction.
+	if h.engine.service != nil {
+		violationByRule := make(map[string]*Violation, len(result.Violations))
+		for i := range result.Violations {
+			v := &result.Violations[i]
+			violationByRule[v.RuleID] = v
+		}
+		for _, rid := range result.RulesConsidered {
+			v, violated := violationByRule[rid]
+			if violated {
+				// Compensating fail write: the rule is currently
+				// violated on this subscriber-driven evaluation.
+				// UpsertViolation stamps both rule_violations (the
+				// authoritative active-violation row) and the
+				// rule_results fail row atomically, so a pre-existing
+				// passed=1 row is flipped to passed=0 in the same
+				// transaction, eliminating the stale-pass window.
+				rv := &RuleViolation{
+					RuleID:     rid,
+					ArtistID:   artistID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    v.Fixable,
+					Status:     ViolationStatusOpen,
+				}
+				if err := h.engine.service.UpsertViolation(ctx, rv); err != nil {
+					h.logger.Warn("health subscriber: persisting fail result",
+						"artist_id", artistID, "artist", a.Name, "rule_id", rid, "error", err)
+				}
+				continue
+			}
+			if err := h.engine.service.UpsertRuleResultPass(ctx, artistID, rid, evaluatedAt); err != nil {
+				h.logger.Warn("health subscriber: persisting pass result",
+					"artist_id", artistID, "artist", a.Name, "rule_id", rid, "error", err)
+			}
+		}
 	}
 }

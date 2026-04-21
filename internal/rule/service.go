@@ -460,6 +460,16 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 		); cleanupErr != nil {
 			return fmt.Errorf("cleaning up violations after disable: %w", cleanupErr)
 		}
+		// Full delete of rule_results on disable (not status-filtered like
+		// rule_violations): the rule no longer runs, so no existing row is
+		// authoritative until the rule is re-enabled and re-evaluated.
+		// Without this the per-rule dashboard would keep surfacing stale
+		// pass/fail counts for an inactive rule.
+		if _, cleanupErr := s.db.ExecContext(ctx,
+			`DELETE FROM rule_results WHERE rule_id = ?`, r.ID,
+		); cleanupErr != nil {
+			return fmt.Errorf("cleaning up rule_results after disable: %w", cleanupErr)
+		}
 	}
 	return nil
 }
@@ -744,8 +754,15 @@ func (s *Service) GetLatestHealthSnapshot(ctx context.Context) (*HealthSnapshot,
 	return snap, nil
 }
 
-// UpsertViolation inserts or updates a rule violation in the notifications store.
-// Uses (rule_id, artist_id) as the natural key for upsert.
+// UpsertViolation inserts or updates a rule violation in the notifications
+// store, and atomically writes the sibling rule_results row that records
+// "this (artist, rule) pair currently fails" (issue #699 slice 1). Both
+// writes happen inside a single transaction so a pipeline pass never leaves
+// the two tables disagreeing about whether a rule is failing.
+//
+// The rule_results row uses COALESCE on first_failed_at so the "how long has
+// this been broken" timestamp survives across repeated fails. The violation
+// row continues to use (rule_id, artist_id) as its natural upsert key.
 func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	if v.ID == "" {
 		v.ID = uuid.New().String()
@@ -755,7 +772,19 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 		v.CreatedAt = v.UpdatedAt
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	// Resolved / dismissed violations leave rule_results alone: a resolved
+	// violation means the rule is no longer failing, and the next pipeline
+	// pass will stamp the pass row via UpsertRuleResultPass. Writing fail
+	// rows for them would be wrong (and would re-arm first_failed_at).
+	writeResultRow := v.Status == ViolationStatusOpen || v.Status == ViolationStatusPendingChoice
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning upsert-violation transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(rule_id, artist_id) DO UPDATE SET
@@ -771,9 +800,32 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	`, v.ID, v.RuleID, v.ArtistID, v.ArtistName, v.Severity, v.Message,
 		dbutil.BoolToInt(v.Fixable), v.Status, marshalCandidates(v.Candidates),
 		dbutil.NilableTime(v.DismissedAt), dbutil.NilableTime(v.ResolvedAt),
-		v.CreatedAt.Format(time.RFC3339), v.UpdatedAt.Format(time.RFC3339))
-	if err != nil {
+		v.CreatedAt.Format(time.RFC3339), v.UpdatedAt.Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("upserting violation: %w", err)
+	}
+
+	// On repeat failures, the ON CONFLICT branch above preserves the
+	// existing rule_violations.id and ignores the fresh v.ID we generated.
+	// If we pass the fresh (non-persisted) v.ID to upsertRuleResultFailExec,
+	// the rule_results.violation_id FK points at a row that does not exist
+	// and the transaction rolls back. Re-read the persisted id inside the
+	// same tx and sync v.ID so the result-row write lands cleanly and the
+	// caller observes the authoritative id.
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&v.ID); err != nil {
+		return fmt.Errorf("loading persisted violation id: %w", err)
+	}
+
+	if writeResultRow {
+		if err := upsertRuleResultFailExec(ctx, tx, v.ArtistID, v.RuleID, v.ID, v.Message, v.UpdatedAt); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing upsert-violation transaction: %w", err)
 	}
 	return nil
 }

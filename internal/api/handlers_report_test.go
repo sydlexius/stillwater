@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -263,6 +264,88 @@ func TestHandleReportCompliance(t *testing.T) {
 	if int(total) != 2 {
 		t.Errorf("total = %d, want 2", int(total))
 	}
+}
+
+// TestHandleReportCompliance_IncludesRulesPassedCount covers the #699 slice 1
+// addition: each compliance row now carries rules_passed_count and
+// rules_evaluated_count, sourced from the rule_results table. Rows for
+// artists with no stored outcomes should default to zero so the field is
+// always present in the response (stable for clients that rely on its
+// existence).
+func TestHandleReportCompliance_IncludesRulesPassedCount(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	passing := addTestArtist(t, artistSvc, "Passing Artist")
+	partial := addTestArtist(t, artistSvc, "Partial Artist")
+	// Seed rule_results rows directly: passing artist has 3 pass rows,
+	// partial artist has 2 pass + 1 fail.
+	now := time.Now().UTC()
+	for _, rid := range []string{rule.RuleNFOExists, rule.RuleThumbExists, rule.RuleFanartExists} {
+		if err := r.ruleService.UpsertRuleResultPass(ctx, passing.ID, rid, now); err != nil {
+			t.Fatalf("seeding pass %s: %v", rid, err)
+		}
+	}
+	if err := r.ruleService.UpsertRuleResultPass(ctx, partial.ID, rule.RuleNFOExists, now); err != nil {
+		t.Fatalf("seeding partial pass 1: %v", err)
+	}
+	if err := r.ruleService.UpsertRuleResultPass(ctx, partial.ID, rule.RuleThumbExists, now); err != nil {
+		t.Fatalf("seeding partial pass 2: %v", err)
+	}
+	// Simulate a fail by inserting directly (skips the transactional pair
+	// that would also write a violation; this keeps the test focused on
+	// the compliance handler aggregating rule_results correctly).
+	if _, err := testRuleResultsDBFromRouter(r).ExecContext(ctx, `
+		INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at, first_failed_at)
+		VALUES (?, ?, 0, ?, ?)`,
+		partial.ID, rule.RuleFanartExists,
+		now.Format("2006-01-02T15:04:05Z"),
+		now.Format("2006-01-02T15:04:05Z")); err != nil {
+		t.Fatalf("seeding partial fail: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/compliance?page=1&page_size=10", nil)
+	w := httptest.NewRecorder()
+	r.handleReportCompliance(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Rows []struct {
+			Artist struct {
+				ID string `json:"id"`
+			} `json:"artist"`
+			RulesPassedCount    int `json:"rules_passed_count"`
+			RulesEvaluatedCount int `json:"rules_evaluated_count"`
+		} `json:"rows"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(resp.Rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(resp.Rows))
+	}
+
+	byID := make(map[string]struct{ passed, evaluated int }, len(resp.Rows))
+	for _, row := range resp.Rows {
+		byID[row.Artist.ID] = struct{ passed, evaluated int }{row.RulesPassedCount, row.RulesEvaluatedCount}
+	}
+	if got := byID[passing.ID]; got.passed != 3 || got.evaluated != 3 {
+		t.Errorf("passing artist counts = %+v, want {passed:3, evaluated:3}", got)
+	}
+	if got := byID[partial.ID]; got.passed != 2 || got.evaluated != 3 {
+		t.Errorf("partial artist counts = %+v, want {passed:2, evaluated:3}", got)
+	}
+}
+
+// testRuleResultsDBFromRouter pulls the *sql.DB out of the Router's
+// RuleService for raw inserts. Kept here so the backdoor stays local to
+// this test rather than exporting an accessor from the package.
+func testRuleResultsDBFromRouter(r *Router) interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+} {
+	return r.db
 }
 
 func TestSanitizeCSV(t *testing.T) {

@@ -355,6 +355,7 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 		}
 
 		result.RulesTotal++
+		result.RulesConsidered = append(result.RulesConsidered, r.ID)
 
 		v := checker(ctx, a, r.Config)
 		if v != nil {
