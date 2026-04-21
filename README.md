@@ -48,6 +48,10 @@ go install github.com/sydlexius/stillwater/cmd/stillwater@latest
 
 Static assets (CSS, JavaScript, fonts, images) are embedded in the binary. No additional files are required.
 
+#### Nightly builds
+
+A dated nightly release (`nightly-YYYYMMDD`) is published from `main` every day there are new commits. These builds are intended for testers and are available for manual download only; in-app updater support for a nightly channel is tracked in #1111. Nightly builds are not recommended for production use.
+
 ### Docker Run
 
 Pull and run the image with a single command:

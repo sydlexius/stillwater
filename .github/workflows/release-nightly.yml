@@ -1,0 +1,195 @@
+name: Release Nightly
+
+# Nightly GoReleaser pipeline that publishes per-arch binaries + checksums.txt
+# as a GitHub Release, so the self-updater's `nightly` channel (#639 / #1111)
+# has concrete assets to resolve against. Sibling to:
+#   - .github/workflows/release.yml  -- stable/rc pipeline (tag-triggered)
+#   - .github/workflows/nightly.yml  -- nightly Docker image to GHCR
+#
+# Tag format: nightly-YYYYMMDD (dated, immutable, UTC).
+# Retention:  keeps the 14 most recent nightly releases + tags; older are pruned.
+
+on:
+  schedule:
+    # 06:00 UTC daily. Offset from the nightly Docker workflow (00:00 UTC) so
+    # the two do not contend for the same runner minute and so nightly binaries
+    # are produced after the Docker image already rolled.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Do not cancel an in-flight nightly when a second one starts: releases are
+  # side-effecting (tags, GitHub Releases, cosign) and we never want two runs
+  # racing to publish the same date.
+  group: release-nightly
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release Nightly
+    # Only run against main. Guards a stray workflow_dispatch against a branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create tags and GitHub Releases
+      packages: write   # parity with stable; harmless if unused
+      id-token: write   # cosign keyless signing of checksums
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check for new commits since last nightly
+        id: guard
+        run: |
+          set -euo pipefail
+          # Find the most recent nightly-* tag (by tag date).
+          last_tag=$(git tag --list 'nightly-*' --sort=-creatordate | head -n1 || true)
+          if [ -z "$last_tag" ]; then
+            echo "No prior nightly tag found; proceeding with first nightly."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count=$(git rev-list --count "${last_tag}..HEAD")
+          echo "Last nightly: $last_tag"
+          echo "Commits since last nightly: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "No new commits on main since $last_tag; skipping nightly release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute nightly tag
+        id: tag
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # UTC date; immutable per day. If a same-day tag already exists
+          # (e.g. manual workflow_dispatch after the cron already ran), bail
+          # cleanly rather than clobbering a published release.
+          tag="nightly-$(date -u +%Y%m%d)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists; aborting to avoid overwriting an existing nightly release." >&2
+            exit 1
+          fi
+          echo "Planned tag: $tag"
+
+      # Create an annotated tag via the GitHub REST API. Tags authored by the
+      # Git Data API using the GITHUB_TOKEN are signed automatically with
+      # GitHub's github-actions[bot] GPG key, so the release carries the
+      # "Verified" badge (per memory: feedback_signed_annotated_tags.md).
+      #
+      # This repo has no GPG_PRIVATE_KEY secret provisioned -- stable releases
+      # are tagged locally on the maintainer's workstation via `git tag -s`.
+      # Using the Git Data API is the zero-secret path to a signed tag in CI.
+      - name: Create signed annotated tag (via GitHub API)
+        id: create_tag
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          echo "Tagging $sha as $TAG"
+
+          # 1. Create the annotated tag object.
+          tag_obj=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f "tag=${TAG}" \
+            -f "message=Stillwater nightly ${TAG}" \
+            -f "object=${sha}" \
+            -f "type=commit" \
+            --jq '.sha')
+
+          # 2. Create the ref pointing at the tag object.
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${TAG}" \
+            -f "sha=${tag_obj}"
+
+          # 3. Fetch the tag locally so GoReleaser sees it.
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          # Best-effort log of the tag verification output. Verification will
+          # typically fail on the runner (no GitHub GPG pubkey imported); this
+          # is informational only, so swallow errors.
+          { git tag -v "${TAG}" 2>&1 || true; } | head -n 20
+
+      - name: Set up Go
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install cosign
+        if: steps.guard.outputs.skip != 'true'
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+        with:
+          cosign-release: 'v2.4.1'
+
+      # Checkout the tag we just created so GoReleaser resolves {{ .Version }}
+      # from the tag rather than from the branch head.
+      - name: Checkout tag
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "refs/tags/${TAG}"
+
+      - name: Run GoReleaser
+        if: steps.guard.outputs.skip != 'true'
+        uses: goreleaser/goreleaser-action@e24998b8b67b290c2fa8b7c14fcfa7de2c5c9b8c # v7
+        with:
+          distribution: goreleaser
+          version: latest
+          # --skip=validate is required because nightly-YYYYMMDD is not a
+          # semver tag; GoReleaser's default guard would reject it otherwise.
+          args: release --clean --config .goreleaser.nightly.yml --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Retention: keep the 14 most recent nightly releases (and their tags);
+      # delete everything older. Only touches `nightly-*` refs; non-nightly
+      # tags (v*.*.*) are never enumerated. Only runs after a successful
+      # release; if the release step failed we do not want to prune stale
+      # nightlies that a rollback might still need to reference.
+      - name: Prune old nightly releases
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: 14
+        run: |
+          set -euo pipefail
+          # List all nightly-* releases, newest first by creation.
+          mapfile -t nightly < <(gh release list \
+            --limit 200 \
+            --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("nightly-"))] | sort_by(.createdAt) | reverse | .[].tagName')
+
+          total=${#nightly[@]}
+          echo "Total nightly releases: $total (keeping newest $KEEP)"
+
+          if [ "$total" -le "$KEEP" ]; then
+            echo "Nothing to prune."
+            exit 0
+          fi
+
+          # Delete the oldest (total - KEEP) releases, and their tags.
+          for tag in "${nightly[@]:$KEEP}"; do
+            echo "Deleting release + tag: $tag"
+            gh release delete "$tag" --yes --cleanup-tag || \
+              echo "warning: failed to delete $tag (already gone?)"
+          done
