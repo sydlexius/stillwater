@@ -197,6 +197,12 @@ func TestExtractMBFieldValues(t *testing.T) {
 	if fieldValues["formed"] != "1990" {
 		t.Errorf("formed = %q, want %q", fieldValues["formed"], "1990")
 	}
+	if fieldValues["born"] != "1965" {
+		t.Errorf("born = %q, want %q", fieldValues["born"], "1965")
+	}
+	if _, ok := fieldValues["origin"]; ok {
+		t.Error("origin should not be in snapshots (not an MB snapshot field)")
+	}
 	if _, ok := fieldValues["genres"]; ok {
 		t.Error("genres should not be in snapshots (sourced from AudioDB)")
 	}

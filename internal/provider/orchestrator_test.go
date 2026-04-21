@@ -619,6 +619,23 @@ func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
 	}
 }
 
+func TestExtractFieldForComparison_Origin(t *testing.T) {
+	fpr := &FieldProviderResult{}
+	extractFieldForComparison(fpr, "origin", &ArtistMetadata{Origin: "United Kingdom"})
+	if !fpr.HasData {
+		t.Error("expected HasData = true for non-empty origin")
+	}
+	if fpr.Value != "United Kingdom" {
+		t.Errorf("Value = %q, want %q", fpr.Value, "United Kingdom")
+	}
+
+	empty := &FieldProviderResult{}
+	extractFieldForComparison(empty, "origin", &ArtistMetadata{})
+	if empty.HasData {
+		t.Error("expected HasData = false for empty origin")
+	}
+}
+
 func findSource(sources []FieldSource, field string) *FieldSource {
 	for _, s := range sources {
 		if s.Field == field {
@@ -1474,10 +1491,13 @@ func TestApplyFieldDetailFields(t *testing.T) {
 			// Second provider must not overwrite the first-match-wins value.
 			pr2 := &providerResult{meta: &ArtistMetadata{
 				Gender: "Female", Type: "solo", YearsActive: "1999", Born: "x",
-				Died: "y", Disbanded: "z",
+				Died: "y", Disbanded: "z", Origin: "Canada",
 			}}
 			if applyField(result, tc.field, pr2, NameWikidata) {
 				t.Errorf("applyField(%s) returned true on second provider, expected first-match-wins", tc.field)
+			}
+			if got := tc.readBack(result.Metadata); got != tc.readBack(&tc.meta) {
+				t.Errorf("after second apply %s: got %q, want preserved %q", tc.field, got, tc.readBack(&tc.meta))
 			}
 		})
 	}
