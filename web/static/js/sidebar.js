@@ -226,28 +226,50 @@
     }
   }
 
+  // Monotonic sequence number guarding against out-of-order /status
+  // responses. Without it, a slow first request racing with a second
+  // triggered by `sw:update-status-changed` could overwrite a newer
+  // response with stale data. The counter is incremented at the start
+  // of every refresh; only responses whose captured sequence still
+  // matches the latest get to apply state.
+  var updateBadgeRequestSeq = 0;
+
   // Populate the update-available badge in the sidebar footer.
   //
   // Reads cached status from GET /api/v1/updates/status (never calls /check;
   // that endpoint hits GitHub). If the cached status reports both
   // update_available=true AND a non-empty release_url, set the anchor href
   // and reveal the badge. Any other response (never-checked, not available,
-  // network error, non-OK HTTP status, malformed JSON) is swallowed
-  // silently and the badge stays hidden: this signal is opportunistic and
-  // must never surface errors to the user.
+  // network error, non-OK HTTP status, malformed JSON) clears the badge
+  // state so stale release links/dots cannot survive a failed refresh
+  // after a successful prior response.
   function refreshUpdateBadge() {
     var badge = document.getElementById('sidebar-update-badge');
     if (!badge) return;
+    var requestSeq = ++updateBadgeRequestSeq;
+    var root = document.getElementById('sw-sidebar');
+
+    // clearBadge drops the href + data-update-available attributes that
+    // gate both indicators. Guarded by requestSeq so a late failure
+    // cannot wipe state applied by a newer successful response.
+    function clearBadge() {
+      if (requestSeq !== updateBadgeRequestSeq) return;
+      badge.setAttribute('href', '#');
+      if (root) root.removeAttribute('data-update-available');
+    }
+
     try {
       var url = (bp || '') + '/api/v1/updates/status';
       fetch(url, { credentials: 'same-origin' })
         .then(function (resp) {
-          if (!resp || !resp.ok) return null;
+          if (!resp || !resp.ok) {
+            clearBadge();
+            return null;
+          }
           return resp.json();
         })
         .then(function (data) {
-          if (!data) return;
-          var root = document.getElementById('sw-sidebar');
+          if (!data || requestSeq !== updateBadgeRequestSeq) return;
           var available = data.update_available === true &&
             typeof data.release_url === 'string' &&
             data.release_url !== '';
@@ -259,15 +281,14 @@
             badge.setAttribute('href', data.release_url);
             if (root) root.setAttribute('data-update-available', 'true');
           } else {
-            badge.setAttribute('href', '#');
-            if (root) root.removeAttribute('data-update-available');
+            clearBadge();
           }
         })
         .catch(function () {
-          // Intentionally swallowed: badge stays hidden on any failure.
+          clearBadge();
         });
     } catch (_e) {
-      // Same policy: any unexpected throw keeps the badge hidden.
+      clearBadge();
     }
   }
 

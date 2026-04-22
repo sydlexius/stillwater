@@ -93,26 +93,34 @@ func TestSetConfigInvalidChannel(t *testing.T) {
 func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
 	svc := buildTestService(t)
 	ctx := context.Background()
+	wantChecked := "2026-01-01T00:00:00Z"
 
 	// Default channel is stable. Seed the in-memory cache as if a prior
-	// Check found an update on stable.
+	// Check found an update on stable. LastChecked is seeded separately
+	// so we can prove it is preserved across both branches below: the
+	// Updates tab keeps displaying "Last checked <time>" even when
+	// latest/releaseURL are cleared by a channel switch.
 	svc.mu.Lock()
 	svc.updateAvailable = true
 	svc.latestVersion = "v999.0.0"
 	svc.releaseURL = "https://example.com/v999"
+	svc.lastChecked = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	svc.mu.Unlock()
 
 	// Saving the same channel (no change) must NOT clear the cache: users
-	// toggling auto_check alone should not see the sidebar pill flash.
+	// toggling auto_check alone should not see the sidebar pill flash,
+	// and LastChecked must remain available for the Updates tab.
 	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, AutoCheck: true}); err != nil {
 		t.Fatalf("SetConfig (same channel): %v", err)
 	}
-	if st := svc.Status(); !st.UpdateAvailable || st.ReleaseURL == "" {
+	if st := svc.Status(); !st.UpdateAvailable || st.ReleaseURL == "" || st.LastChecked != wantChecked {
 		t.Errorf("same-channel save cleared cache: status=%+v", st)
 	}
 
 	// Switching to a different channel MUST invalidate the cache so the
 	// next /status response reflects the fresh (not yet checked) state.
+	// LastChecked must survive: the Updates tab still wants to show when
+	// we last looked, even though what we found no longer applies.
 	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease, AutoCheck: false}); err != nil {
 		t.Fatalf("SetConfig (channel change): %v", err)
 	}
@@ -125,6 +133,60 @@ func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
 	}
 	if st.Latest != "" {
 		t.Errorf("after channel change, Latest = %q, want empty", st.Latest)
+	}
+	if st.LastChecked != wantChecked {
+		t.Errorf("after channel change, LastChecked = %q, want %q", st.LastChecked, wantChecked)
+	}
+}
+
+// TestDecideChannelChanged covers the pure decision used by SetConfig to
+// decide whether the cached release fields should be invalidated. The
+// error-read branch exists as a fail-safe: if we can't confirm the
+// previous channel, we must assume it changed, otherwise a real switch
+// with an unreadable previous state would leave stale release metadata
+// pointing at the wrong channel's release.
+func TestDecideChannelChanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		prev    Config
+		prevErr error
+		cfg     Config
+		want    bool
+	}{
+		{
+			name: "same channel and no error returns false",
+			prev: Config{Channel: ChannelStable},
+			cfg:  Config{Channel: ChannelStable},
+			want: false,
+		},
+		{
+			name: "different channel and no error returns true",
+			prev: Config{Channel: ChannelStable},
+			cfg:  Config{Channel: ChannelPrerelease},
+			want: true,
+		},
+		{
+			name:    "read error returns true (fail-safe)",
+			prev:    Config{},
+			prevErr: errors.New("read failed"),
+			cfg:     Config{Channel: ChannelStable},
+			want:    true,
+		},
+		{
+			name:    "read error returns true even when channels match",
+			prev:    Config{Channel: ChannelStable},
+			prevErr: errors.New("read failed"),
+			cfg:     Config{Channel: ChannelStable},
+			want:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decideChannelChanged(tc.prev, tc.prevErr, tc.cfg); got != tc.want {
+				t.Errorf("decideChannelChanged(%+v, %v, %+v) = %v, want %v",
+					tc.prev, tc.prevErr, tc.cfg, got, tc.want)
+			}
+		})
 	}
 }
 

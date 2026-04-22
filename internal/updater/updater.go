@@ -283,6 +283,18 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	return cfg, rows.Err()
 }
 
+// decideChannelChanged reports whether the cached release fields should
+// be invalidated given the previous config read. A read error is
+// treated as a change (fail-safe): we would rather clear a possibly
+// still-valid cache than serve stale channel-specific release metadata
+// after a real channel switch whose previous state we could not confirm.
+func decideChannelChanged(prev Config, prevErr error, cfg Config) bool {
+	if prevErr != nil {
+		return true
+	}
+	return prev.Channel != cfg.Channel
+}
+
 // SetConfig persists the updater configuration to the settings table.
 // When the channel actually changes, the in-memory cached release fields
 // (updateAvailable, latestVersion, releaseURL) are cleared: the new
@@ -303,7 +315,7 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	// channel truly changed. Saving config with the same channel (e.g.
 	// toggling auto_check alone) must not flash the sidebar pill away.
 	prev, prevErr := s.GetConfig(ctx)
-	channelChanged := prevErr == nil && prev.Channel != cfg.Channel
+	channelChanged := decideChannelChanged(prev, prevErr, cfg)
 
 	// Wrap both writes in a transaction so a mid-loop failure cannot leave
 	// the channel and auto-check settings in a split state.
