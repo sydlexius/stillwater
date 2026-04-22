@@ -198,6 +198,10 @@ templ Sidebar(data SidebarData) {
 						<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
 					</svg>
 					<span class="sw-sidebar-label">{ t(ctx, "nav.settings") }</span>
+					<!-- Update-available dot, shown only when sidebar is icon-only and
+					     the cached updater status reports an update. The full-state
+					     variant is the text pill next to the version string. -->
+					<span class="sw-sidebar-update-dot" aria-hidden="true"></span>
 				</a>
 			}
 			<div class="sw-sidebar-divider"></div>
@@ -238,9 +242,32 @@ templ Sidebar(data SidebarData) {
 					</svg>
 				</button>
 			</div>
-			<!-- Version -->
+			<!-- Version + update-available badge.
+			     The badge is populated by web/static/js/sidebar.js on page load from
+			     GET /api/v1/updates/status. It starts hidden and only becomes visible
+			     when the cached status says an update is available AND a release URL
+			     is known. The whole .sw-sidebar-version container is hidden by CSS
+			     when the sidebar is in icon-only or hidden state, so no separate
+			     collapsed-mode handling is needed here.
+			     The badge anchor is only emitted for admins: /api/v1/updates/status
+			     is admin-only server-side, and a non-admin request would be a
+			     wasted 403 on every pageload. Non-admins cannot apply updates
+			     anyway, so the signal is irrelevant to them. -->
 			<div class="sw-sidebar-version">
 				<span class="sw-sidebar-label">v{ data.Version }</span>
+				if data.IsAdmin {
+					<a
+						id="sidebar-update-badge"
+						class="sw-sidebar-update-pill"
+						href="#"
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label={ t(ctx, "nav.update_available") }
+						title={ t(ctx, "nav.update_available") }
+					>
+						{ t(ctx, "nav.update_available") }
+					</a>
+				}
 			</div>
 		</div>
 	</nav>

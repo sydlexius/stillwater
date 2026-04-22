@@ -284,6 +284,12 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 }
 
 // SetConfig persists the updater configuration to the settings table.
+// When the channel actually changes, the in-memory cached release fields
+// (updateAvailable, latestVersion, releaseURL) are cleared: the new
+// channel may have a different latest release, so retaining the old
+// channel's cache would advertise a stale "update available" state until
+// the next Check, and the sidebar pill (which reads this cache via
+// Status) would link to a release from the wrong channel.
 func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.Channel != ChannelStable && cfg.Channel != ChannelPrerelease {
 		return fmt.Errorf("invalid channel: %q", cfg.Channel)
@@ -292,6 +298,12 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.AutoCheck {
 		autoCheck = "true"
 	}
+
+	// Read the previous channel so we only invalidate the cache when the
+	// channel truly changed. Saving config with the same channel (e.g.
+	// toggling auto_check alone) must not flash the sidebar pill away.
+	prev, prevErr := s.GetConfig(ctx)
+	channelChanged := prevErr == nil && prev.Channel != cfg.Channel
 
 	// Wrap both writes in a transaction so a mid-loop failure cannot leave
 	// the channel and auto-check settings in a split state.
@@ -315,6 +327,14 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing updater config: %w", err)
+	}
+
+	if channelChanged {
+		s.mu.Lock()
+		s.updateAvailable = false
+		s.latestVersion = ""
+		s.releaseURL = ""
+		s.mu.Unlock()
 	}
 	return nil
 }

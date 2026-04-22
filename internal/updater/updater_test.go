@@ -82,6 +82,52 @@ func TestSetConfigInvalidChannel(t *testing.T) {
 	}
 }
 
+// TestSetConfigClearsCacheOnChannelChange verifies that switching the
+// updater channel invalidates the in-memory cached release fields. Without
+// this, the sidebar "update available" pill (and the Settings > Updates
+// latest row) would advertise a release from the previous channel until
+// the next Check, breaking the "channel selector = source of truth" UX.
+// Seeding the cache directly sidesteps the HTTP test harness because the
+// invariant under test is a pure bookkeeping step in SetConfig, not a
+// network-dependent behavior.
+func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Default channel is stable. Seed the in-memory cache as if a prior
+	// Check found an update on stable.
+	svc.mu.Lock()
+	svc.updateAvailable = true
+	svc.latestVersion = "v999.0.0"
+	svc.releaseURL = "https://example.com/v999"
+	svc.mu.Unlock()
+
+	// Saving the same channel (no change) must NOT clear the cache: users
+	// toggling auto_check alone should not see the sidebar pill flash.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, AutoCheck: true}); err != nil {
+		t.Fatalf("SetConfig (same channel): %v", err)
+	}
+	if st := svc.Status(); !st.UpdateAvailable || st.ReleaseURL == "" {
+		t.Errorf("same-channel save cleared cache: status=%+v", st)
+	}
+
+	// Switching to a different channel MUST invalidate the cache so the
+	// next /status response reflects the fresh (not yet checked) state.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (channel change): %v", err)
+	}
+	st := svc.Status()
+	if st.UpdateAvailable {
+		t.Errorf("after channel change, UpdateAvailable = true, want false")
+	}
+	if st.ReleaseURL != "" {
+		t.Errorf("after channel change, ReleaseURL = %q, want empty", st.ReleaseURL)
+	}
+	if st.Latest != "" {
+		t.Errorf("after channel change, Latest = %q, want empty", st.Latest)
+	}
+}
+
 // TestPickLatestStable verifies stable channel filtering.
 func TestPickLatestStable(t *testing.T) {
 	releases := []githubRelease{
@@ -289,6 +335,62 @@ func TestCheckWithMockGitHub(t *testing.T) {
 	}
 	if result.Latest != "v999.0.0" {
 		t.Errorf("Latest = %q, want v999.0.0", result.Latest)
+	}
+}
+
+// TestStatusCarriesCheckResultFields verifies that after a successful Check
+// that finds an update, Status() returns update_available=true and the
+// release_url from the GitHub response. This is the contract the sidebar
+// badge depends on: the sidebar calls GET /updates/status (never /check,
+// because /check hits GitHub) and expects the last-known check result to
+// have been cached on the service.
+func TestStatusCarriesCheckResultFields(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	const wantURL = "https://github.com/test/repo/releases/v999.0.0"
+	releases := []githubRelease{
+		{
+			TagName:     "v999.0.0",
+			Prerelease:  false,
+			Draft:       false,
+			HTMLURL:     wantURL,
+			PublishedAt: "2026-01-01T00:00:00Z",
+		},
+	}
+	body, err := json.Marshal(releases)
+	if err != nil {
+		t.Fatalf("marshaling releases: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	svc.httpClient = &http.Client{
+		Transport: &rewriteHostTransport{base: srv.URL},
+	}
+
+	// Pre-condition: before any check, Status() must not advertise an update.
+	if st := svc.Status(); st.UpdateAvailable || st.ReleaseURL != "" {
+		t.Fatalf("initial Status = %+v, want update_available=false and empty release_url", st)
+	}
+
+	if _, err := svc.Check(ctx); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+
+	st := svc.Status()
+	if !st.UpdateAvailable {
+		t.Errorf("Status.UpdateAvailable = false, want true after Check found an update")
+	}
+	if st.ReleaseURL != wantURL {
+		t.Errorf("Status.ReleaseURL = %q, want %q", st.ReleaseURL, wantURL)
+	}
+	if st.Latest != "v999.0.0" {
+		t.Errorf("Status.Latest = %q, want v999.0.0", st.Latest)
 	}
 }
 

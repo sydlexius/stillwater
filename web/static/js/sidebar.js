@@ -226,17 +226,75 @@
     }
   }
 
+  // Populate the update-available badge in the sidebar footer.
+  //
+  // Reads cached status from GET /api/v1/updates/status (never calls /check;
+  // that endpoint hits GitHub). If the cached status reports both
+  // update_available=true AND a non-empty release_url, set the anchor href
+  // and reveal the badge. Any other response (never-checked, not available,
+  // network error, non-OK HTTP status, malformed JSON) is swallowed
+  // silently and the badge stays hidden: this signal is opportunistic and
+  // must never surface errors to the user.
+  function refreshUpdateBadge() {
+    var badge = document.getElementById('sidebar-update-badge');
+    if (!badge) return;
+    try {
+      var url = (bp || '') + '/api/v1/updates/status';
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (resp) {
+          if (!resp || !resp.ok) return null;
+          return resp.json();
+        })
+        .then(function (data) {
+          if (!data) return;
+          var root = document.getElementById('sw-sidebar');
+          var available = data.update_available === true &&
+            typeof data.release_url === 'string' &&
+            data.release_url !== '';
+          // Single source of truth for both indicators (full-state pill and
+          // icon-only cog dot): the data-update-available attribute on
+          // #sw-sidebar. CSS gates visibility on sidebar state, so we do
+          // not touch display classes on the badge itself.
+          if (available) {
+            badge.setAttribute('href', data.release_url);
+            if (root) root.setAttribute('data-update-available', 'true');
+          } else {
+            badge.setAttribute('href', '#');
+            if (root) root.removeAttribute('data-update-available');
+          }
+        })
+        .catch(function () {
+          // Intentionally swallowed: badge stays hidden on any failure.
+        });
+    } catch (_e) {
+      // Same policy: any unexpected throw keeps the badge hidden.
+    }
+  }
+
   // Expose public API.
   window.swSidebar = {
     init: init,
     cycle: cycle,
-    cycleTheme: cycleTheme
+    cycleTheme: cycleTheme,
+    refreshUpdateBadge: refreshUpdateBadge
   };
+
+  // Refresh the badge when the Updates tab finishes a manual check. The
+  // check button uses raw fetch (not HTMX), so it dispatches this custom
+  // event after /check succeeds and the UI re-reads /status. The sidebar
+  // listens here to keep the pill/dot in sync without requiring a reload.
+  document.addEventListener('sw:update-status-changed', function () {
+    refreshUpdateBadge();
+  });
 
   // Auto-initialize on DOM ready.
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', function () {
+      init();
+      refreshUpdateBadge();
+    });
   } else {
     init();
+    refreshUpdateBadge();
   }
 })();
