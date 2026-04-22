@@ -520,15 +520,25 @@ func TestApplyConcurrentRace(t *testing.T) {
 	svc := buildTestService(t)
 	ctx := context.Background()
 
-	// Serve an empty release list so runApply exits immediately without
-	// touching the filesystem. The test only cares about the Apply return values.
+	// Hold the release fetch open so the winning goroutine's runApply
+	// stays in-flight (keeping applyRunning=1) until after both
+	// goroutines have raced through CompareAndSwap. Without the block,
+	// runApply can finish its fast-path (GetConfig -> empty release
+	// list -> defer Store(0)) before the second goroutine's Apply
+	// runs on a slow CI runner, leaving both CAS calls to succeed and
+	// the test to report "got 2/0".
 	releases := []map[string]interface{}{}
 	body, _ := json.Marshal(releases)
+	httpBlock := make(chan struct{})
+	var released sync.Once
+	unblock := func() { released.Do(func() { close(httpBlock) }) }
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-httpBlock
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 	}))
 	defer srv.Close()
+	defer unblock()
 	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
 
 	errs := make([]error, 2)
@@ -558,7 +568,8 @@ func TestApplyConcurrentRace(t *testing.T) {
 		t.Errorf("expected 1 success and 1 ErrAlreadyRunning, got %d/%d", nils, blocked)
 	}
 
-	// Wait for the goroutine that did launch to finish so the test is clean.
+	// Release runApply so it can complete and drain its goroutine cleanly.
+	unblock()
 	waitForIdle(t, svc, 5*time.Second)
 }
 
