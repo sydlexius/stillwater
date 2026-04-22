@@ -677,15 +677,24 @@ func TestNewerThanInvalidVersions(t *testing.T) {
 	}
 }
 
-// TestStatusWithLastChecked verifies that Status.LastChecked is populated
-// after setState(StateChecking, ...) is called.
+// TestStatusWithLastChecked verifies Status.LastChecked is populated
+// after a check cycle commits a result via storeCheckResult. We exercise
+// the real cache-writing path rather than setState because lastChecked
+// is no longer written at check-start: it is set only when a Check()
+// result passes the configGen guard, so /status accurately reflects
+// "when we last successfully cached a result" rather than "when we
+// last kicked off a check (possibly discarded)".
 func TestStatusWithLastChecked(t *testing.T) {
 	// Not parallel: buildTestService calls database.Migrate (goose global race).
 	svc := buildTestService(t)
-	// Trigger the StateChecking path which sets lastChecked.
-	svc.setState(StateChecking, 0, "")
-	// Reset to idle but lastChecked should remain set.
-	svc.setState(StateIdle, 100, "")
+
+	svc.mu.RLock()
+	gen := svc.configGen
+	svc.mu.RUnlock()
+	when := time.Now().UTC()
+	if !svc.storeCheckResult(gen, when, false, "", "") {
+		t.Fatal("storeCheckResult rejected a write with a matching gen")
+	}
 
 	st := svc.Status()
 	if st.LastChecked == "" {

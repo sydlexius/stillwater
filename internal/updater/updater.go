@@ -700,16 +700,19 @@ func (s *Service) downloadBytes(ctx context.Context, rawURL string) ([]byte, err
 }
 
 // setState updates the internal state fields under the lock.
+// It does NOT touch lastChecked: that timestamp is written only by
+// storeCheckResult, which runs after a Check() successfully produces
+// a result that survives the configGen guard. Writing lastChecked at
+// check-start would leave it advanced even when a concurrent channel
+// switch caused the check's write to be discarded, making /status
+// report "checked just now, no update" indistinguishable from a real
+// successful empty check against the new channel.
 func (s *Service) setState(st State, progress int, errMsg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state = st
 	s.progress = progress
 	s.lastErr = errMsg
-	// Mark last-checked at the start of a check cycle.
-	if st == StateChecking {
-		s.lastChecked = time.Now().UTC()
-	}
 }
 
 // pickLatest returns the release with the highest semantic version that matches

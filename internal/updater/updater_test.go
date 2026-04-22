@@ -180,6 +180,43 @@ func TestSetConfigBumpsConfigGenOnChannelChange(t *testing.T) {
 	}
 }
 
+// TestStoreCheckResultDoesNotAdvanceLastCheckedOnReject verifies that a
+// discarded Check() leaves lastChecked untouched, not advanced. If
+// setState(StateChecking) still wrote lastChecked at check-start (the
+// behavior removed alongside the configGen guard), a Check() racing a
+// channel switch would leave /status reporting "checked just now, no
+// update" -- indistinguishable from a real successful empty check. The
+// guarantee we want: lastChecked reflects the moment we last cached a
+// result, so operators can tell "check was discarded, we have no info
+// on the new channel yet" (lastChecked unchanged) from "we actually
+// looked and found nothing" (lastChecked advanced).
+func TestStoreCheckResultDoesNotAdvanceLastCheckedOnReject(t *testing.T) {
+	svc := buildTestService(t)
+
+	// Seed lastChecked to a known point-in-time so we can detect any
+	// unintended advancement by the discard path.
+	seeded := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	svc.mu.Lock()
+	svc.lastChecked = seeded
+	gen := svc.configGen
+	svc.configGen++
+	svc.mu.Unlock()
+
+	// storeCheckResult with a stale gen must reject and leave lastChecked
+	// unchanged. The later-time candidate would obviously be "newer" if
+	// the rejection path wrote through -- the assertion would catch that.
+	later := seeded.Add(10 * time.Minute)
+	if svc.storeCheckResult(gen, later, true, "v2.0.0", "https://example.com/v2") {
+		t.Fatal("storeCheckResult with stale gen returned true, want false")
+	}
+	svc.mu.RLock()
+	got := svc.lastChecked
+	svc.mu.RUnlock()
+	if !got.Equal(seeded) {
+		t.Errorf("rejected storeCheckResult advanced lastChecked: got %v, want %v", got, seeded)
+	}
+}
+
 // TestStoreCheckResultGenGuard covers the core invariant that protects
 // the cache from stale in-flight Check() writes. A Check that captured
 // gen=N before a channel switch must not be able to write back after
