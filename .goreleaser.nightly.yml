@@ -14,7 +14,7 @@ version: 2
 #   - docker_signs: no Docker artifacts produced here.
 #
 # Keeps cosign keyless signing of the checksums blob to match stable pipeline
-# behavior (checksums.txt.pem / .sig accompany every release).
+# behavior (checksums.txt.sig.bundle accompanies every release).
 
 before:
   hooks:
