@@ -91,12 +91,11 @@ docker_manifests:
 
 signs:
   - cmd: cosign
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sig.bundle"
     args:
       - sign-blob
-      - --new-bundle-format=false
-      - --output-certificate=${certificate}
-      - --output-signature=${signature}
+      - --new-bundle-format
+      - --bundle=${signature}
       - ${artifact}
       - --yes
     artifacts: checksum
