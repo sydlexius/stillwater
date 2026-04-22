@@ -157,6 +157,31 @@ func NewServiceWithRepos(
 	}
 }
 
+// NewDefaultRepos constructs the default SQLite-backed repository set used by
+// NewService. It is exported so tests in sibling packages can wrap one or more
+// repositories with a decorator (e.g. to inject a forced Update failure) while
+// reusing the real implementations for the remaining interfaces, then build a
+// Service via NewServiceWithRepos. Returning the interface types (not the
+// concrete sqlite structs) keeps the call site honest about what the Service
+// actually depends on.
+func NewDefaultRepos(db *sql.DB) (
+	Repository,
+	ProviderIDRepository,
+	MemberRepository,
+	AliasRepository,
+	ImageRepository,
+	PlatformIDRepository,
+	CompletenessRepository,
+) {
+	return newSQLiteArtistRepo(db),
+		newSQLiteProviderIDRepo(db),
+		newSQLiteMemberRepo(db),
+		newSQLiteAliasRepo(db),
+		newSQLiteImageRepo(db),
+		newSQLitePlatformIDRepo(db),
+		newSQLiteCompletenessRepo(db)
+}
+
 // Create inserts a new artist and persists its provider IDs and image metadata.
 // If normalized data persistence fails, the artist row is deleted as a
 // best-effort rollback (CASCADE handles child tables).
