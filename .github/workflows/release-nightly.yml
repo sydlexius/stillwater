@@ -137,7 +137,7 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
         with:
-          cosign-release: 'v2.4.1'
+          cosign-release: 'v3.0.6'
 
       # Checkout the tag we just created so GoReleaser resolves {{ .Version }}
       # from the tag rather than from the branch head.
