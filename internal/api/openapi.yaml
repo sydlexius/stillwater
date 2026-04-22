@@ -1278,7 +1278,8 @@ components:
           description: >-
             URL to the GitHub release page for the latest version. Absent when no
             check has succeeded yet OR when the most recent successful check
-            found no matching release on the current channel.
+            found no matching release on the current channel. The sidebar
+            update-available badge uses this URL as the anchor href.
     UpdateConfig:
       type: object
       required: [channel, auto_check]

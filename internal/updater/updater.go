@@ -142,6 +142,15 @@ type Service struct {
 	latestVersion   string
 	releaseURL      string // URL to the GitHub release page for the latest version
 
+	// configGen is bumped whenever SetConfig invalidates the cache on a
+	// channel change. Check() captures the live value at entry and any
+	// attempt to write back fresh release data must still match it; a
+	// Check() that started before the switch and finishes after will
+	// see a mismatched gen and have its write discarded, preventing
+	// old-channel release data from resurrecting in the cache. All
+	// access guarded by s.mu alongside the other cache fields.
+	configGen uint64
+
 	// applyRunning guards against concurrent Apply calls. 0 = idle, 1 = running.
 	// Using atomic.Int32 makes the idle-check and the transition to running a
 	// single indivisible operation (CompareAndSwap), eliminating the TOCTOU race
@@ -283,7 +292,25 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	return cfg, rows.Err()
 }
 
+// decideChannelChanged reports whether the cached release fields should
+// be invalidated given the previous config read. A read error is
+// treated as a change (fail-safe): we would rather clear a possibly
+// still-valid cache than serve stale channel-specific release metadata
+// after a real channel switch whose previous state we could not confirm.
+func decideChannelChanged(prev Config, prevErr error, cfg Config) bool {
+	if prevErr != nil {
+		return true
+	}
+	return prev.Channel != cfg.Channel
+}
+
 // SetConfig persists the updater configuration to the settings table.
+// When the channel actually changes, the in-memory cached release fields
+// (updateAvailable, latestVersion, releaseURL) are cleared: the new
+// channel may have a different latest release, so retaining the old
+// channel's cache would advertise a stale "update available" state until
+// the next Check, and the sidebar pill (which reads this cache via
+// Status) would link to a release from the wrong channel.
 func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.Channel != ChannelStable && cfg.Channel != ChannelPrerelease {
 		return fmt.Errorf("invalid channel: %q", cfg.Channel)
@@ -292,6 +319,12 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.AutoCheck {
 		autoCheck = "true"
 	}
+
+	// Read the previous channel so we only invalidate the cache when the
+	// channel truly changed. Saving config with the same channel (e.g.
+	// toggling auto_check alone) must not flash the sidebar pill away.
+	prev, prevErr := s.GetConfig(ctx)
+	channelChanged := decideChannelChanged(prev, prevErr, cfg)
 
 	// Wrap both writes in a transaction so a mid-loop failure cannot leave
 	// the channel and auto-check settings in a split state.
@@ -316,7 +349,41 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing updater config: %w", err)
 	}
+
+	if channelChanged {
+		// Bump the generation token and clear the cache in the same
+		// critical section: any Check() that captured the pre-bump
+		// value will fail the gen check when it tries to write back,
+		// so its old-channel release data cannot resurrect here.
+		s.mu.Lock()
+		s.updateAvailable = false
+		s.latestVersion = ""
+		s.releaseURL = ""
+		s.configGen++
+		s.mu.Unlock()
+	}
 	return nil
+}
+
+// storeCheckResult commits a Check() result to the in-memory cache,
+// but only if the captured generation still matches the live one.
+// Returns true when the write was applied, false when it was skipped
+// because SetConfig bumped configGen while this Check() was in flight.
+// The guard prevents a Check() launched against the previous channel
+// from writing its old-channel release data back into the cache after
+// SetConfig cleared it; without this, a channel switch overlapping a
+// slow GitHub fetch could re-surface cross-channel release badges.
+func (s *Service) storeCheckResult(gen uint64, lastChecked time.Time, available bool, latest, releaseURL string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.configGen != gen {
+		return false
+	}
+	s.lastChecked = lastChecked
+	s.updateAvailable = available
+	s.latestVersion = latest
+	s.releaseURL = releaseURL
+	return true
 }
 
 // Status returns a snapshot of the current update state.
@@ -347,6 +414,21 @@ func (s *Service) IsDocker() bool {
 // configured channel. It sets the internal state to StateChecking during
 // the request.
 func (s *Service) Check(ctx context.Context) (CheckResult, error) {
+	// Capture the config generation BEFORE reading cfg. If we captured it
+	// after GetConfig, a concurrent SetConfig that commits its tx (new
+	// channel visible to GetConfig) and then bumps configGen between the
+	// two reads would leave us with a stale cfg but a post-bump gen,
+	// and our cache write would incorrectly pass the guard. Capturing
+	// first makes the race-window symmetric: any SetConfig that runs
+	// after we capture will bump configGen past our captured value,
+	// which storeCheckResult will then reject. A legitimate new-channel
+	// Check that races with a switch may have its cache write discarded
+	// this way, but the caller still receives its CheckResult and the
+	// next auto/manual check repopulates the cache correctly.
+	s.mu.RLock()
+	genAtStart := s.configGen
+	s.mu.RUnlock()
+
 	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("reading config: %w", err)
@@ -376,13 +458,7 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 		// reality rather than a stale prior version. Latest is returned as
 		// the empty string so the CheckResult shape agrees with /status
 		// (which reads back these same cleared fields).
-		now := time.Now().UTC()
-		s.mu.Lock()
-		s.lastChecked = now
-		s.updateAvailable = false
-		s.latestVersion = ""
-		s.releaseURL = ""
-		s.mu.Unlock()
+		s.storeCheckResult(genAtStart, time.Now().UTC(), false, "", "")
 		return CheckResult{
 			Current:         version.Version,
 			Latest:          "",
@@ -392,13 +468,7 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 	}
 
 	available := newerThan(latest.TagName, version.Version)
-
-	s.mu.Lock()
-	s.lastChecked = time.Now().UTC()
-	s.updateAvailable = available
-	s.latestVersion = latest.TagName
-	s.releaseURL = latest.HTMLURL
-	s.mu.Unlock()
+	s.storeCheckResult(genAtStart, time.Now().UTC(), available, latest.TagName, latest.HTMLURL)
 
 	return CheckResult{
 		Current:         version.Version,
@@ -630,16 +700,19 @@ func (s *Service) downloadBytes(ctx context.Context, rawURL string) ([]byte, err
 }
 
 // setState updates the internal state fields under the lock.
+// It does NOT touch lastChecked: that timestamp is written only by
+// storeCheckResult, which runs after a Check() successfully produces
+// a result that survives the configGen guard. Writing lastChecked at
+// check-start would leave it advanced even when a concurrent channel
+// switch caused the check's write to be discarded, making /status
+// report "checked just now, no update" indistinguishable from a real
+// successful empty check against the new channel.
 func (s *Service) setState(st State, progress int, errMsg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state = st
 	s.progress = progress
 	s.lastErr = errMsg
-	// Mark last-checked at the start of a check cycle.
-	if st == StateChecking {
-		s.lastChecked = time.Now().UTC()
-	}
 }
 
 // pickLatest returns the release with the highest semantic version that matches

@@ -82,6 +82,230 @@ func TestSetConfigInvalidChannel(t *testing.T) {
 	}
 }
 
+// TestSetConfigClearsCacheOnChannelChange verifies that switching the
+// updater channel invalidates the in-memory cached release fields. Without
+// this, the sidebar "update available" pill (and the Settings > Updates
+// latest row) would advertise a release from the previous channel until
+// the next Check, breaking the "channel selector = source of truth" UX.
+// Seeding the cache directly sidesteps the HTTP test harness because the
+// invariant under test is a pure bookkeeping step in SetConfig, not a
+// network-dependent behavior.
+func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	wantChecked := "2026-01-01T00:00:00Z"
+
+	// Default channel is stable. Seed the in-memory cache as if a prior
+	// Check found an update on stable. LastChecked is seeded separately
+	// so we can prove it is preserved across both branches below: the
+	// Updates tab keeps displaying "Last checked <time>" even when
+	// latest/releaseURL are cleared by a channel switch.
+	svc.mu.Lock()
+	svc.updateAvailable = true
+	svc.latestVersion = "v999.0.0"
+	svc.releaseURL = "https://example.com/v999"
+	svc.lastChecked = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	svc.mu.Unlock()
+
+	// Saving the same channel (no change) must NOT clear the cache: users
+	// toggling auto_check alone should not see the sidebar pill flash,
+	// and LastChecked must remain available for the Updates tab.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, AutoCheck: true}); err != nil {
+		t.Fatalf("SetConfig (same channel): %v", err)
+	}
+	if st := svc.Status(); !st.UpdateAvailable || st.ReleaseURL == "" || st.LastChecked != wantChecked {
+		t.Errorf("same-channel save cleared cache: status=%+v", st)
+	}
+
+	// Switching to a different channel MUST invalidate the cache so the
+	// next /status response reflects the fresh (not yet checked) state.
+	// LastChecked must survive: the Updates tab still wants to show when
+	// we last looked, even though what we found no longer applies.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (channel change): %v", err)
+	}
+	st := svc.Status()
+	if st.UpdateAvailable {
+		t.Errorf("after channel change, UpdateAvailable = true, want false")
+	}
+	if st.ReleaseURL != "" {
+		t.Errorf("after channel change, ReleaseURL = %q, want empty", st.ReleaseURL)
+	}
+	if st.Latest != "" {
+		t.Errorf("after channel change, Latest = %q, want empty", st.Latest)
+	}
+	if st.LastChecked != wantChecked {
+		t.Errorf("after channel change, LastChecked = %q, want %q", st.LastChecked, wantChecked)
+	}
+}
+
+// TestSetConfigBumpsConfigGenOnChannelChange verifies the generation
+// token is incremented exactly when the channel changes. The token
+// is the mechanism that lets Check() discard its cache write when a
+// channel switch happens mid-flight: if this bump is missing, an
+// in-flight Check can resurrect old-channel release data after
+// SetConfig clears the cache, reintroducing the stale cross-channel
+// badge this PR is trying to eliminate.
+func TestSetConfigBumpsConfigGenOnChannelChange(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	svc.mu.RLock()
+	genBefore := svc.configGen
+	svc.mu.RUnlock()
+
+	// Same-channel save (stable -> stable) must NOT bump the gen.
+	// Users toggling auto_check alone have not invalidated the cache,
+	// so a concurrent Check's write should still land.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, AutoCheck: true}); err != nil {
+		t.Fatalf("SetConfig (same channel): %v", err)
+	}
+	svc.mu.RLock()
+	genAfterSame := svc.configGen
+	svc.mu.RUnlock()
+	if genAfterSame != genBefore {
+		t.Errorf("same-channel save bumped configGen: before=%d after=%d", genBefore, genAfterSame)
+	}
+
+	// Channel switch (stable -> prerelease) MUST bump the gen so any
+	// in-flight Check started on stable has its write discarded.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (channel change): %v", err)
+	}
+	svc.mu.RLock()
+	genAfterSwitch := svc.configGen
+	svc.mu.RUnlock()
+	if genAfterSwitch != genAfterSame+1 {
+		t.Errorf("channel switch: configGen = %d, want %d", genAfterSwitch, genAfterSame+1)
+	}
+}
+
+// TestStoreCheckResultDoesNotAdvanceLastCheckedOnReject verifies that a
+// discarded Check() leaves lastChecked untouched, not advanced. If
+// setState(StateChecking) still wrote lastChecked at check-start (the
+// behavior removed alongside the configGen guard), a Check() racing a
+// channel switch would leave /status reporting "checked just now, no
+// update" -- indistinguishable from a real successful empty check. The
+// guarantee we want: lastChecked reflects the moment we last cached a
+// result, so operators can tell "check was discarded, we have no info
+// on the new channel yet" (lastChecked unchanged) from "we actually
+// looked and found nothing" (lastChecked advanced).
+func TestStoreCheckResultDoesNotAdvanceLastCheckedOnReject(t *testing.T) {
+	svc := buildTestService(t)
+
+	// Seed lastChecked to a known point-in-time so we can detect any
+	// unintended advancement by the discard path.
+	seeded := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	svc.mu.Lock()
+	svc.lastChecked = seeded
+	gen := svc.configGen
+	svc.configGen++
+	svc.mu.Unlock()
+
+	// storeCheckResult with a stale gen must reject and leave lastChecked
+	// unchanged. The later-time candidate would obviously be "newer" if
+	// the rejection path wrote through -- the assertion would catch that.
+	later := seeded.Add(10 * time.Minute)
+	if svc.storeCheckResult(gen, later, true, "v2.0.0", "https://example.com/v2") {
+		t.Fatal("storeCheckResult with stale gen returned true, want false")
+	}
+	svc.mu.RLock()
+	got := svc.lastChecked
+	svc.mu.RUnlock()
+	if !got.Equal(seeded) {
+		t.Errorf("rejected storeCheckResult advanced lastChecked: got %v, want %v", got, seeded)
+	}
+}
+
+// TestStoreCheckResultGenGuard covers the core invariant that protects
+// the cache from stale in-flight Check() writes. A Check that captured
+// gen=N before a channel switch must not be able to write back after
+// SetConfig bumps gen to N+1; storeCheckResult is the single point
+// where that guard is enforced.
+func TestStoreCheckResultGenGuard(t *testing.T) {
+	svc := buildTestService(t)
+	when := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	// Matching gen -- write must apply. This is the happy path: no
+	// concurrent channel switch, Check's captured gen still matches,
+	// cache reflects what Check found.
+	svc.mu.RLock()
+	gen := svc.configGen
+	svc.mu.RUnlock()
+	if !svc.storeCheckResult(gen, when, true, "v2.0.0", "https://example.com/v2") {
+		t.Fatal("storeCheckResult with matching gen returned false, want true")
+	}
+	if st := svc.Status(); !st.UpdateAvailable || st.Latest != "v2.0.0" || st.ReleaseURL != "https://example.com/v2" {
+		t.Errorf("after matching-gen write, status=%+v, want update=true latest=v2.0.0", st)
+	}
+
+	// Simulate a channel switch bumping the gen. The values we wrote
+	// above are now considered stale by the guard.
+	svc.mu.Lock()
+	svc.configGen++
+	svc.mu.Unlock()
+
+	// Stale gen -- write must be rejected and cache must be untouched.
+	if svc.storeCheckResult(gen, when.Add(time.Minute), false, "v3.0.0-stale", "https://example.com/stale") {
+		t.Fatal("storeCheckResult with stale gen returned true, want false")
+	}
+	st := svc.Status()
+	if !st.UpdateAvailable || st.Latest != "v2.0.0" || st.ReleaseURL != "https://example.com/v2" {
+		t.Errorf("stale-gen write mutated cache: status=%+v, want the matching-gen values preserved", st)
+	}
+}
+
+// TestDecideChannelChanged covers the pure decision used by SetConfig to
+// decide whether the cached release fields should be invalidated. The
+// error-read branch exists as a fail-safe: if we can't confirm the
+// previous channel, we must assume it changed, otherwise a real switch
+// with an unreadable previous state would leave stale release metadata
+// pointing at the wrong channel's release.
+func TestDecideChannelChanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		prev    Config
+		prevErr error
+		cfg     Config
+		want    bool
+	}{
+		{
+			name: "same channel and no error returns false",
+			prev: Config{Channel: ChannelStable},
+			cfg:  Config{Channel: ChannelStable},
+			want: false,
+		},
+		{
+			name: "different channel and no error returns true",
+			prev: Config{Channel: ChannelStable},
+			cfg:  Config{Channel: ChannelPrerelease},
+			want: true,
+		},
+		{
+			name:    "read error returns true (fail-safe)",
+			prev:    Config{},
+			prevErr: errors.New("read failed"),
+			cfg:     Config{Channel: ChannelStable},
+			want:    true,
+		},
+		{
+			name:    "read error returns true even when channels match",
+			prev:    Config{Channel: ChannelStable},
+			prevErr: errors.New("read failed"),
+			cfg:     Config{Channel: ChannelStable},
+			want:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decideChannelChanged(tc.prev, tc.prevErr, tc.cfg); got != tc.want {
+				t.Errorf("decideChannelChanged(%+v, %v, %+v) = %v, want %v",
+					tc.prev, tc.prevErr, tc.cfg, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestPickLatestStable verifies stable channel filtering.
 func TestPickLatestStable(t *testing.T) {
 	releases := []githubRelease{
@@ -289,6 +513,62 @@ func TestCheckWithMockGitHub(t *testing.T) {
 	}
 	if result.Latest != "v999.0.0" {
 		t.Errorf("Latest = %q, want v999.0.0", result.Latest)
+	}
+}
+
+// TestStatusCarriesCheckResultFields verifies that after a successful Check
+// that finds an update, Status() returns update_available=true and the
+// release_url from the GitHub response. This is the contract the sidebar
+// badge depends on: the sidebar calls GET /updates/status (never /check,
+// because /check hits GitHub) and expects the last-known check result to
+// have been cached on the service.
+func TestStatusCarriesCheckResultFields(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	const wantURL = "https://github.com/test/repo/releases/v999.0.0"
+	releases := []githubRelease{
+		{
+			TagName:     "v999.0.0",
+			Prerelease:  false,
+			Draft:       false,
+			HTMLURL:     wantURL,
+			PublishedAt: "2026-01-01T00:00:00Z",
+		},
+	}
+	body, err := json.Marshal(releases)
+	if err != nil {
+		t.Fatalf("marshaling releases: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	svc.httpClient = &http.Client{
+		Transport: &rewriteHostTransport{base: srv.URL},
+	}
+
+	// Pre-condition: before any check, Status() must not advertise an update.
+	if st := svc.Status(); st.UpdateAvailable || st.ReleaseURL != "" {
+		t.Fatalf("initial Status = %+v, want update_available=false and empty release_url", st)
+	}
+
+	if _, err := svc.Check(ctx); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+
+	st := svc.Status()
+	if !st.UpdateAvailable {
+		t.Errorf("Status.UpdateAvailable = false, want true after Check found an update")
+	}
+	if st.ReleaseURL != wantURL {
+		t.Errorf("Status.ReleaseURL = %q, want %q", st.ReleaseURL, wantURL)
+	}
+	if st.Latest != "v999.0.0" {
+		t.Errorf("Status.Latest = %q, want v999.0.0", st.Latest)
 	}
 }
 

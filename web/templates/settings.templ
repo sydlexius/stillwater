@@ -5861,6 +5861,9 @@ templ updatesTabScript() {
 					// row, apply button) consistent with a single code path.
 					clearUpdaterStatus();
 					fetchAndPopulateUpdateStatus();
+					// Notify other page components (sidebar pill/dot) that the
+					// cached updater status has changed so they can re-read it.
+					document.dispatchEvent(new CustomEvent('sw:update-status-changed'));
 				})
 				.catch(function(err) {
 					setUpdaterStatus('error', err.message);
@@ -5970,6 +5973,10 @@ templ updatesTabScript() {
 					// the admin gets save confirmation.
 					setUpdaterStatus('saved', '');
 					fetchAndPopulateUpdateStatus();
+					// Notify the sidebar pill/dot: the server cleared its cached
+					// release fields if the channel actually changed, so the
+					// sidebar must re-read /status too.
+					document.dispatchEvent(new CustomEvent('sw:update-status-changed'));
 					// Deferred clear uses the state-guard helper so a failure
 					// from the /status fetch above (which sets the row to
 					// "error") does not get wiped by this timeout.
