@@ -43,7 +43,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
         with:
-          cosign-release: 'v2.4.1'
+          cosign-release: 'v3.0.6'
 
       # For stable tags (no -rc/-beta/-alpha suffix), force goreleaser to
       # compute the changelog from the previous *stable* tag, not the most
