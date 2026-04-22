@@ -3,6 +3,7 @@ package maintenance
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/database"
 	_ "modernc.org/sqlite"
 )
 
@@ -40,38 +42,26 @@ func setupTestDB(t *testing.T) (*sql.DB, string) {
 	return db, dbPath
 }
 
-// setupTestDBWithImages creates a DB with the artists and artist_images tables
-// in addition to the standard settings table.
+// setupTestDBWithImages opens a fresh SQLite DB and applies the project's
+// production migrations so the test exercises the same schema the running
+// service would see. Hand-rolling the subset of tables we touch here would
+// silently drift when 001_initial_schema.sql gains a new NOT NULL column on
+// artist_images or artists, so we run the real migration end-to-end.
 func setupTestDBWithImages(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	db, dbPath := setupTestDB(t)
-	ctx := context.Background()
-	for _, stmt := range []string{
-		`CREATE TABLE IF NOT EXISTS artists (
-			id   TEXT NOT NULL PRIMARY KEY,
-			path TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE TABLE IF NOT EXISTS artist_images (
-			id           TEXT NOT NULL PRIMARY KEY,
-			artist_id    TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-			image_type   TEXT NOT NULL,
-			slot_index   INTEGER NOT NULL DEFAULT 0,
-			exists_flag  INTEGER NOT NULL DEFAULT 0,
-			low_res      INTEGER NOT NULL DEFAULT 0,
-			placeholder  TEXT NOT NULL DEFAULT '',
-			width        INTEGER NOT NULL DEFAULT 0,
-			height       INTEGER NOT NULL DEFAULT 0,
-			phash        TEXT NOT NULL DEFAULT '',
-			file_format  TEXT NOT NULL DEFAULT '',
-			source       TEXT NOT NULL DEFAULT '',
-			last_written_at TEXT NOT NULL DEFAULT '',
-			locked       INTEGER NOT NULL DEFAULT 0,
-			UNIQUE(artist_id, image_type, slot_index)
-		)`,
-	} {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("setup images tables: %v", err)
-		}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
+		t.Fatalf("enabling WAL: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("applying migrations: %v", err)
 	}
 	return db, dbPath
 }
@@ -212,17 +202,22 @@ func TestScanExistsFlags(t *testing.T) {
 		t.Fatalf("creating real image file: %v", err)
 	}
 
+	// Build a deterministic missing-path under t.TempDir() rather than a
+	// hardcoded absolute path: the latter would flake on any host that happens
+	// to have "/tmp/does-not-exist-in-tests" present.
+	missingPath := filepath.Join(t.TempDir(), "missing")
+
 	// Seed artists: real path, missing path, and no path (cache-dir fallback).
 	for _, a := range []struct {
 		id   string
 		path string
 	}{
 		{"artist-real", realDir},
-		{"artist-missing", "/tmp/does-not-exist-in-tests"},
+		{"artist-missing", missingPath},
 		{"artist-nocache", ""},
 	} {
 		if _, err := db.ExecContext(ctx,
-			`INSERT INTO artists (id, path) VALUES (?, ?)`, a.id, a.path,
+			`INSERT INTO artists (id, name, path) VALUES (?, ?, ?)`, a.id, a.id, a.path,
 		); err != nil {
 			t.Fatalf("seeding artist %s: %v", a.id, err)
 		}
@@ -307,7 +302,7 @@ func TestScanExistsFlagsUnresolvableDirSkips(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, path) VALUES ('a-unresolvable', '')`); err != nil {
+		`INSERT INTO artists (id, name, path) VALUES ('a-unresolvable', 'a-unresolvable', '')`); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
@@ -368,7 +363,7 @@ func TestScanExistsFlagsStatErrorSkips(t *testing.T) {
 
 	// Seed the artist pointing at the unreadable child dir with a stale flag.
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, path) VALUES ('a-eacces', ?)`, child); err != nil {
+		`INSERT INTO artists (id, name, path) VALUES ('a-eacces', 'a-eacces', ?)`, child); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
@@ -401,8 +396,15 @@ func TestScanExistsFlagsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := svc.ScanExistsFlags(ctx); err == nil {
+	err := svc.ScanExistsFlags(ctx)
+	if err == nil {
 		t.Fatal("expected error from canceled context, got nil")
+	}
+	// Assert the cancellation cause specifically so a future regression that
+	// fails ScanExistsFlags for an unrelated reason (e.g. a closed DB) cannot
+	// masquerade as a passing "respects cancel" test.
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
 
@@ -453,10 +455,13 @@ func TestStartExistsFlagScanner_RunsStartupAndTick(t *testing.T) {
 	svc := NewService(db, dbPath, "", slog.Default())
 	ctx := context.Background()
 
-	// Seed one artist with a path that doesn't exist; exists_flag=1 should
-	// be cleared by the first scan.
+	// Seed one artist with a path under t.TempDir() that we never create;
+	// exists_flag=1 should be cleared by the first scan. Using t.TempDir()
+	// instead of a hardcoded absolute path keeps the test deterministic
+	// regardless of host filesystem state.
+	missingPath := filepath.Join(t.TempDir(), "missing")
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artists (id, path) VALUES ('a1', '/nope-does-not-exist')`); err != nil {
+		`INSERT INTO artists (id, name, path) VALUES ('a1', 'a1', ?)`, missingPath); err != nil {
 		t.Fatalf("seed artist: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
@@ -521,15 +526,35 @@ func TestStartExistsFlagScanner_RunsStartupAndTick(t *testing.T) {
 // TestStartExistsFlagScanner_CanceledDuringStartupDelay verifies the scanner
 // exits cleanly when the context is canceled before startupDelay elapses,
 // without attempting any scan or starting the ticker loop.
+//
+// Proving prompt exit is not sufficient: a regression that runs an immediate
+// scan and then exited on cancel would also satisfy that. To guard the
+// "startup delay must block all scanning" contract, seed a stale exists_flag=1
+// row pointing at a missing path and assert it is still 1 after the scanner
+// exits. If any scan had run, the row would have been cleared.
 func TestStartExistsFlagScanner_CanceledDuringStartupDelay(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, "", slog.Default())
+	ctx := context.Background()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Seed a stale row whose image directory does not exist, so any scan that
+	// did run would clear the flag.
+	missingPath := filepath.Join(t.TempDir(), "missing")
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, path) VALUES ('a-startup', 'a-startup', ?)`, missingPath); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES ('i-startup', 'a-startup', 'thumb', 0, 1)`); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		// Long startupDelay; we'll cancel before it elapses.
-		svc.StartExistsFlagScanner(ctx, time.Hour, 30*time.Second)
+		svc.StartExistsFlagScanner(runCtx, time.Hour, 30*time.Second)
 		close(done)
 	}()
 
@@ -539,5 +564,15 @@ func TestStartExistsFlagScanner_CanceledDuringStartupDelay(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("scanner did not stop within 2s of cancel during startup delay")
+	}
+
+	// The scanner must not have run any scan during the startup delay.
+	var flag int
+	if err := db.QueryRowContext(ctx,
+		`SELECT exists_flag FROM artist_images WHERE id = 'i-startup'`).Scan(&flag); err != nil {
+		t.Fatalf("reading flag: %v", err)
+	}
+	if flag != 1 {
+		t.Errorf("startup-delay contract: expected exists_flag=1 (no scan ran), got %d", flag)
 	}
 }
