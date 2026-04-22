@@ -36,8 +36,15 @@ func (r *failingArtistRepo) Update(_ context.Context, _ *artist.Artist) error {
 // setting the artist's Biography field in-memory and reporting Fixed=true. The
 // real MetadataFixer relies on a provider chain; using a stub keeps the test
 // hermetic and focused on the persistence-order invariant.
+//
+// fixCalls counts Fix invocations so the test can prove the invariant was
+// actually exercised. Without it, the no-resolved-violation assertion would
+// pass vacuously when the production path short-circuits before calling the
+// fixer -- the #983 persist-failure path skips writing any violation row on
+// Fixed=true, so "zero resolved rows" is trivially satisfied.
 type mutatingBioFixer struct {
-	mutated string // value written into a.Biography on Fix
+	mutated  string // value written into a.Biography on Fix
+	fixCalls int
 }
 
 func (f *mutatingBioFixer) CanFix(v *Violation) bool {
@@ -45,6 +52,7 @@ func (f *mutatingBioFixer) CanFix(v *Violation) bool {
 }
 
 func (f *mutatingBioFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	f.fixCalls++
 	a.Biography = f.mutated
 	return &FixResult{
 		RuleID:  v.RuleID,
@@ -188,10 +196,24 @@ func TestPipeline_PersistFailureDoesNotResolveViolation(t *testing.T) {
 				t.Errorf("artist.Biography = %q, want empty (Update should have failed and mutation should not have landed)", reloaded.Biography)
 			}
 
+			// Guard against a vacuous pass: if the production code
+			// short-circuits before invoking the fixer (e.g. engine
+			// drift hides the violation from the walker), Assertion 2
+			// below would iterate zero rows and the test would pass
+			// without proving anything about the persist-before-resolve
+			// invariant. Requiring at least one Fix() call locks in
+			// "the walker actually reached the fix-and-persist path".
+			if fixer.fixCalls == 0 {
+				t.Fatalf("fixer was never invoked; the test did not exercise the persist-before-resolve invariant")
+			}
+
 			// Assertion 2: no violation row for this artist may be
 			// ViolationStatusResolved. The fixer reported Fixed=true,
 			// but the persist failed, so the pipeline MUST leave the
-			// violation unresolved so the next pass retries.
+			// violation unresolved so the next pass retries. Note that
+			// on persist failure the walker also skips writing the
+			// Resolved row entirely -- "no matching row" is a valid
+			// pass so long as no matching row is Resolved.
 			violations, err := ruleSvc.ListViolationsFiltered(ctx, ViolationListParams{ArtistID: a.ID})
 			if err != nil {
 				t.Fatalf("ListViolationsFiltered: %v", err)
