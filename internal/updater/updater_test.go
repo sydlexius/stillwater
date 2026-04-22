@@ -139,6 +139,85 @@ func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
 	}
 }
 
+// TestSetConfigBumpsConfigGenOnChannelChange verifies the generation
+// token is incremented exactly when the channel changes. The token
+// is the mechanism that lets Check() discard its cache write when a
+// channel switch happens mid-flight: if this bump is missing, an
+// in-flight Check can resurrect old-channel release data after
+// SetConfig clears the cache, reintroducing the stale cross-channel
+// badge this PR is trying to eliminate.
+func TestSetConfigBumpsConfigGenOnChannelChange(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	svc.mu.RLock()
+	genBefore := svc.configGen
+	svc.mu.RUnlock()
+
+	// Same-channel save (stable -> stable) must NOT bump the gen.
+	// Users toggling auto_check alone have not invalidated the cache,
+	// so a concurrent Check's write should still land.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, AutoCheck: true}); err != nil {
+		t.Fatalf("SetConfig (same channel): %v", err)
+	}
+	svc.mu.RLock()
+	genAfterSame := svc.configGen
+	svc.mu.RUnlock()
+	if genAfterSame != genBefore {
+		t.Errorf("same-channel save bumped configGen: before=%d after=%d", genBefore, genAfterSame)
+	}
+
+	// Channel switch (stable -> prerelease) MUST bump the gen so any
+	// in-flight Check started on stable has its write discarded.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (channel change): %v", err)
+	}
+	svc.mu.RLock()
+	genAfterSwitch := svc.configGen
+	svc.mu.RUnlock()
+	if genAfterSwitch != genAfterSame+1 {
+		t.Errorf("channel switch: configGen = %d, want %d", genAfterSwitch, genAfterSame+1)
+	}
+}
+
+// TestStoreCheckResultGenGuard covers the core invariant that protects
+// the cache from stale in-flight Check() writes. A Check that captured
+// gen=N before a channel switch must not be able to write back after
+// SetConfig bumps gen to N+1; storeCheckResult is the single point
+// where that guard is enforced.
+func TestStoreCheckResultGenGuard(t *testing.T) {
+	svc := buildTestService(t)
+	when := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	// Matching gen -- write must apply. This is the happy path: no
+	// concurrent channel switch, Check's captured gen still matches,
+	// cache reflects what Check found.
+	svc.mu.RLock()
+	gen := svc.configGen
+	svc.mu.RUnlock()
+	if !svc.storeCheckResult(gen, when, true, "v2.0.0", "https://example.com/v2") {
+		t.Fatal("storeCheckResult with matching gen returned false, want true")
+	}
+	if st := svc.Status(); !st.UpdateAvailable || st.Latest != "v2.0.0" || st.ReleaseURL != "https://example.com/v2" {
+		t.Errorf("after matching-gen write, status=%+v, want update=true latest=v2.0.0", st)
+	}
+
+	// Simulate a channel switch bumping the gen. The values we wrote
+	// above are now considered stale by the guard.
+	svc.mu.Lock()
+	svc.configGen++
+	svc.mu.Unlock()
+
+	// Stale gen -- write must be rejected and cache must be untouched.
+	if svc.storeCheckResult(gen, when.Add(time.Minute), false, "v3.0.0-stale", "https://example.com/stale") {
+		t.Fatal("storeCheckResult with stale gen returned true, want false")
+	}
+	st := svc.Status()
+	if !st.UpdateAvailable || st.Latest != "v2.0.0" || st.ReleaseURL != "https://example.com/v2" {
+		t.Errorf("stale-gen write mutated cache: status=%+v, want the matching-gen values preserved", st)
+	}
+}
+
 // TestDecideChannelChanged covers the pure decision used by SetConfig to
 // decide whether the cached release fields should be invalidated. The
 // error-read branch exists as a fail-safe: if we can't confirm the
