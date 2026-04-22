@@ -66,7 +66,7 @@ jobs:
           DIRTY=$(git diff --name-only | grep -E '_templ\.go$' || true)
           if [ -n "$DIRTY" ]; then
             echo "Generated templ files are out of date:"
-            echo "$DIRTY" | sed 's/^/  /'
+            echo "  ${DIRTY//$'\n'/$'\n'  }"
             echo "Run 'templ generate' locally and commit the results."
             exit 1
           fi
