@@ -167,6 +167,13 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		var perRuleMetadata bool
 		var perRuleImages []string
 		var perRuleDirty bool
+		// resolvedRows collects violation upserts that should land with
+		// Status=ViolationStatusResolved. Issue #983: these are deferred
+		// until AFTER updateHealthScore persists the mutated artist --
+		// writing them inline meant the violation was marked resolved
+		// even when the trailing artist Update failed, silently dropping
+		// the fix.
+		var resolvedRows []*RuleViolation
 		// persistOK tracks whether every violation/health write for this
 		// artist reached the DB. A single transient failure is enough to
 		// leave the artist dirty for retry; silently stamping it clean
@@ -261,20 +268,42 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 			result.Results = append(result.Results, *fr)
 			result.FixesAttempted++
 
-			status := ViolationStatusOpen
+			// Issue #983: defer the resolved upsert until AFTER
+			// updateHealthScore persists the mutated artist. Writing
+			// ViolationStatusResolved inline would silently drop the
+			// fix when the trailing Update fails -- the violation row
+			// would say "resolved" but the artist row would be
+			// unchanged. Stash the resolved rows here and upsert them
+			// only once we know the artist row landed.
 			if fr.Fixed {
 				result.FixesSucceeded++
-				status = ViolationStatusResolved
 				perRuleDirty = true
 				if fr.ImageType != "" {
 					perRuleImages = append(perRuleImages, fr.ImageType)
 				} else {
 					perRuleMetadata = true
 				}
-			} else if len(fr.Candidates) > 0 {
-				status = ViolationStatusPendingChoice
+				resolvedRows = append(resolvedRows, &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    true,
+					Candidates: fr.Candidates,
+				})
+				continue
 			}
 
+			// Non-resolved statuses (open / pending_choice) are safe
+			// to persist inline because they do not depend on the
+			// artist row being updated: an open violation simply
+			// records that work is still pending, and pending_choice
+			// records the candidate list the user must pick from.
+			status := ViolationStatusOpen
+			if len(fr.Candidates) > 0 {
+				status = ViolationStatusPendingChoice
+			}
 			rv := &RuleViolation{
 				RuleID:     v.RuleID,
 				ArtistID:   a.ID,
@@ -284,10 +313,6 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 				Fixable:    true,
 				Status:     status,
 				Candidates: fr.Candidates,
-			}
-			if status == ViolationStatusResolved {
-				now := time.Now().UTC()
-				rv.ResolvedAt = &now
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
@@ -304,6 +329,22 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 		postEval, persistOKHealth := p.updateHealthScore(ctx, a, perRuleDirty)
 		if !persistOKHealth {
 			persistOK = false
+		}
+		// Issue #983: only mark violations resolved once the artist row
+		// persist succeeded. When persistOKHealth is false the artist
+		// mutation never reached the DB, so leaving the violations in
+		// their pre-fix state (open) keeps them in the queue for the next
+		// pass to retry instead of silently dropping the repair.
+		if persistOKHealth {
+			now := time.Now().UTC()
+			for _, rv := range resolvedRows {
+				rv.Status = ViolationStatusResolved
+				rv.ResolvedAt = &now
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting resolved violation", "rule_id", rv.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
+				}
+			}
 		}
 		if postEval != nil {
 			postViolated := make(map[string]struct{}, len(postEval.Violations))
@@ -373,6 +414,12 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	var metadataFixed bool
 	var fixedImageTypes []string
 	var artistDirty bool // tracks whether the artist model was modified by a fixer
+	// resolvedRows collects violation upserts that should land with
+	// Status=ViolationStatusResolved. Issue #983: these are deferred until
+	// AFTER updateHealthScore persists the mutated artist -- writing them
+	// inline meant the violation was marked resolved even when the trailing
+	// artist Update failed, silently dropping the fix.
+	var resolvedRows []*RuleViolation
 	// persistOK gates the per-artist rules_evaluated_at stamp the same way
 	// the multi-artist walker does: any violation/health write failure must
 	// leave the artist dirty so the next pass retries.
@@ -473,20 +520,33 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 		result.Results = append(result.Results, *fr)
 		result.FixesAttempted++
 
-		status := ViolationStatusOpen
+		// Issue #983: defer the resolved upsert until AFTER
+		// updateHealthScore persists the mutated artist. See the
+		// matching comment in RunRuleScoped.processArtist.
 		if fr.Fixed {
 			result.FixesSucceeded++
-			status = ViolationStatusResolved
 			artistDirty = true
 			if fr.ImageType != "" {
 				fixedImageTypes = append(fixedImageTypes, fr.ImageType)
 			} else {
 				metadataFixed = true
 			}
-		} else if len(fr.Candidates) > 0 {
-			status = ViolationStatusPendingChoice
+			resolvedRows = append(resolvedRows, &RuleViolation{
+				RuleID:     v.RuleID,
+				ArtistID:   a.ID,
+				ArtistName: a.Name,
+				Severity:   v.Severity,
+				Message:    v.Message,
+				Fixable:    true,
+				Candidates: fr.Candidates,
+			})
+			continue
 		}
 
+		status := ViolationStatusOpen
+		if len(fr.Candidates) > 0 {
+			status = ViolationStatusPendingChoice
+		}
 		rv := &RuleViolation{
 			RuleID:     v.RuleID,
 			ArtistID:   a.ID,
@@ -496,10 +556,6 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			Fixable:    true,
 			Status:     status,
 			Candidates: fr.Candidates,
-		}
-		if status == ViolationStatusResolved {
-			now := time.Now().UTC()
-			rv.ResolvedAt = &now
 		}
 		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 			p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
@@ -514,6 +570,20 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 	postEval, persistOKHealth := p.updateHealthScore(ctx, a, artistDirty)
 	if !persistOKHealth {
 		persistOK = false
+	}
+	// Issue #983: only resolve violations once the artist row persist
+	// succeeded. A failed Update leaves the mutation in memory; marking
+	// the violation resolved would silently drop the fix.
+	if persistOKHealth {
+		now := time.Now().UTC()
+		for _, rv := range resolvedRows {
+			rv.Status = ViolationStatusResolved
+			rv.ResolvedAt = &now
+			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+				p.logger.Warn("persisting resolved violation", "rule_id", rv.RuleID, "artist", a.Name, "error", err)
+				persistOK = false
+			}
+		}
 	}
 
 	if postEval != nil {
@@ -603,6 +673,12 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		var perArtistMetadata bool
 		var perArtistImages []string
 		var perArtistDirty bool
+		// resolvedRows collects violation upserts that should land with
+		// Status=ViolationStatusResolved. Issue #983: deferred until
+		// AFTER updateHealthScore persists the mutated artist so a
+		// failed artist Update does not silently mark the violation
+		// resolved while the actual fix never reached the DB.
+		var resolvedRows []*RuleViolation
 		// See RunRuleScoped's processArtist: persistOK gates the
 		// rules_evaluated_at stamp so a transient DB failure keeps the
 		// artist in the dirty set for retry instead of masking dropped
@@ -705,20 +781,33 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 			result.Results = append(result.Results, *fr)
 			result.FixesAttempted++
 
-			status := ViolationStatusOpen
+			// Issue #983: defer the resolved upsert until AFTER
+			// updateHealthScore persists the mutated artist. See the
+			// matching comment in RunRuleScoped.processArtist.
 			if fr.Fixed {
 				result.FixesSucceeded++
-				status = ViolationStatusResolved
 				perArtistDirty = true
 				if fr.ImageType != "" {
 					perArtistImages = append(perArtistImages, fr.ImageType)
 				} else {
 					perArtistMetadata = true
 				}
-			} else if len(fr.Candidates) > 0 {
-				status = ViolationStatusPendingChoice
+				resolvedRows = append(resolvedRows, &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    true,
+					Candidates: fr.Candidates,
+				})
+				continue
 			}
 
+			status := ViolationStatusOpen
+			if len(fr.Candidates) > 0 {
+				status = ViolationStatusPendingChoice
+			}
 			rv := &RuleViolation{
 				RuleID:     v.RuleID,
 				ArtistID:   a.ID,
@@ -728,10 +817,6 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				Fixable:    true,
 				Status:     status,
 				Candidates: fr.Candidates,
-			}
-			if status == ViolationStatusResolved {
-				now := time.Now().UTC()
-				rv.ResolvedAt = &now
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 				p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
@@ -747,6 +832,21 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 		postEval, persistOKHealth := p.updateHealthScore(ctx, a, perArtistDirty)
 		if !persistOKHealth {
 			persistOK = false
+		}
+		// Issue #983: only resolve violations once the artist row
+		// persisted cleanly. A failed Update leaves the mutation in
+		// memory; marking the violation resolved anyway would silently
+		// drop the fix.
+		if persistOKHealth {
+			now := time.Now().UTC()
+			for _, rv := range resolvedRows {
+				rv.Status = ViolationStatusResolved
+				rv.ResolvedAt = &now
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting resolved violation", "rule_id", rv.RuleID, "artist", a.Name, "error", err)
+					persistOK = false
+				}
+			}
 		}
 		if postEval != nil {
 			postViolated := make(map[string]struct{}, len(postEval.Violations))
