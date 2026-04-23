@@ -661,6 +661,29 @@ func TestBuildUpdatesTabData_WithService(t *testing.T) {
 	}
 }
 
+// TestBuildUpdatesTabData_NightlyChannel pins the render-side allowlist so the
+// nightly channel is not silently coerced back to "stable" when the settings
+// tab is assembled. Earlier UAT on #1111 surfaced that GetConfig correctly
+// returned "nightly" but buildUpdatesTabData's switch missed the case, causing
+// the template to render Stable as selected even though the DB held Nightly.
+func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	if err := r.updaterService.SetConfig(ctx, updater.Config{
+		Channel:   updater.ChannelNightly,
+		AutoCheck: false,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	data := r.buildUpdatesTabData(ctx)
+
+	if data.Channel != string(updater.ChannelNightly) {
+		t.Errorf("Channel = %q, want %q", data.Channel, updater.ChannelNightly)
+	}
+}
+
 // TestNormalizeSettingsSectionUpdates verifies that "updates" is a valid
 // settings section that routes to the updates tab.
 func TestNormalizeSettingsSectionUpdates(t *testing.T) {

@@ -455,9 +455,10 @@ func TestPickLatestEmpty(t *testing.T) {
 }
 
 // TestNewerThan verifies version comparison, including cross-channel
-// cases where either side may be a nightly tag. Nightly vs semver is
-// treated as "any difference is newer" so a channel switch always
-// surfaces an actionable update in the UI.
+// cases where either side may be a nightly tag. The cross-kind rule is
+// asymmetric: advertising an update pill only makes sense when moving
+// forward (stable -> nightly opt-in), not when the selected channel's
+// latest is older than the nightly build the user is already running.
 func TestNewerThan(t *testing.T) {
 	cases := []struct {
 		candidate string
@@ -477,9 +478,13 @@ func TestNewerThan(t *testing.T) {
 		{"nightly-20260420", "nightly-20260422", false},
 		{"nightly-20260422", "nightly-20260422", false},
 
-		// Cross-kind: any difference is considered an update.
-		{"nightly-20260422", "v0.9.5", true},
-		{"v1.0.0", "nightly-20260422", true},
+		// Cross-kind: advertising only makes sense when moving FROM semver
+		// TO nightly (opt-in). The reverse direction (running nightly,
+		// picked stable/prerelease) must not produce a pill because the
+		// semver release is almost certainly older than the nightly.
+		{"nightly-20260422", "v0.9.5", true},       // stable -> nightly opt-in
+		{"v1.0.0", "nightly-20260422", false},      // nightly -> stable (no pill)
+		{"v0.9.6-rc.2", "nightly-20260422", false}, // nightly -> prerelease (no pill)
 	}
 
 	for _, tc := range cases {

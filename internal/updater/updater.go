@@ -797,16 +797,20 @@ func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 //
 // Semver vs nightly comparison is asymmetric because nightly tags are not
 // semver and cannot be meaningfully compared against v1.2.3 on the same
-// numeric axis. Cross-kind cases are treated as "any difference is newer"
-// so the user always sees an actionable update when they switch channels:
+// numeric axis. "Newer" here means "worth advertising as an Update Available
+// pill" rather than "strictly greater in some global ordering":
 //
 //   - both nightly: lex compare on the "nightly-YYYYMMDD" tag (fixed-width
 //     date suffix makes lex order agree with chronological order).
 //   - only candidate is nightly: user moved from stable/prerelease to
-//     nightly; the nightly is always the target to advertise.
+//     nightly; advertise the nightly as the target so the channel switch
+//     shows a clickable Apply row.
 //   - only current is nightly: user is running a nightly build but has
-//     selected a non-nightly channel; any semver candidate is the path
-//     back to a tagged release, so advertise it.
+//     selected a non-nightly channel. The non-nightly channel's latest
+//     release is almost always older than the nightly, so do NOT advertise
+//     it as an update. Apply still works manually from the Check-result row
+//     for users who want to intentionally leave the nightly train; we just
+//     do not auto-suggest a downgrade.
 //   - neither nightly: fall through to the existing semver comparison.
 func newerThan(candidate, current string) bool {
 	candNightly := strings.HasPrefix(candidate, "nightly-")
@@ -814,8 +818,10 @@ func newerThan(candidate, current string) bool {
 	switch {
 	case candNightly && curNightly:
 		return candidate > current
-	case candNightly || curNightly:
-		return candidate != current
+	case candNightly:
+		return true
+	case curNightly:
+		return false
 	}
 
 	cv, err1 := parseSemver(candidate)
