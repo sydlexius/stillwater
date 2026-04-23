@@ -454,12 +454,7 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 	if err != nil {
 		r.logger.Warn("loading updater config for settings page", "error", err)
 	} else {
-		switch string(cfg.Channel) {
-		case "stable", "prerelease":
-			data.Channel = string(cfg.Channel)
-		default:
-			data.Channel = "stable"
-		}
+		data.Channel = string(cfg.Channel)
 		data.AutoCheck = cfg.AutoCheck
 	}
 

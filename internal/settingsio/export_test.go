@@ -218,6 +218,54 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRoundTrip_UpdaterSettings pins that updater.channel and
+// updater.auto_check survive the settings export/import round-trip, so a
+// future per-key allowlist in the exporter cannot silently drop them.
+func TestRoundTrip_UpdaterSettings(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	seeds := map[string]string{
+		"updater.channel":    "nightly",
+		"updater.auto_check": "true",
+	}
+	for k, v := range seeds {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
+			k, v, now); err != nil {
+			t.Fatalf("seeding %s: %v", k, err)
+		}
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	envelope, err := svc.Export(ctx, "test-passphrase")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	if _, err := svc2.Import(ctx, envelope, "test-passphrase"); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	for k, want := range seeds {
+		var got string
+		if err := db2.QueryRowContext(ctx,
+			`SELECT value FROM settings WHERE key = ?`, k).Scan(&got); err != nil {
+			t.Fatalf("scanning %s after import: %v", k, err)
+		}
+		if got != want {
+			t.Errorf("%s: got %q, want %q", k, got, want)
+		}
+	}
+}
+
 // TestRoundTrip_RuleScraperPreferences verifies that rule configuration,
 // scraper configs, and user preferences are included in the export payload and
 // correctly restored after import.

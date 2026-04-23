@@ -70,7 +70,7 @@ type SettingsData struct {
 // UpdatesTabData holds the data for the Updates settings tab.
 type UpdatesTabData struct {
 	CurrentVersion  string // Running binary version (from version.Version)
-	Channel         string // "stable" | "prerelease"
+	Channel         string // "stable" | "prerelease" | "nightly"
 	AutoCheck       bool
 	IsDocker        bool   // When true, hide binary apply controls
 	LastChecked     string // RFC 3339 or empty
@@ -2014,16 +2014,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
-		<!-- Updates tab -->
-		<div
-			data-tab-panel="updates"
-			class={
-				"space-y-6",
-				templ.KV("hidden", data.ActiveTab != "updates"),
-			}
-		>
-			@settingsUpdatesTab(data.Updates, assets.BasePath)
-		</div>
+			<!-- Updates tab -->
+			<div
+				data-tab-panel="updates"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "updates"),
+				}
+			>
+				@settingsUpdatesTab(data.Updates, assets.BasePath)
+			</div>
 		</div>
 		@sortableInitScript()
 		@updatesTabScript()
@@ -5775,6 +5775,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					[]components.SegmentOption{
 						{Value: "stable", Label: t(ctx, "settings.updates.channel_stable")},
 						{Value: "prerelease", Label: t(ctx, "settings.updates.channel_prerelease")},
+						{Value: "nightly", Label: t(ctx, "settings.updates.channel_nightly")},
 					},
 					data.Channel,
 				)

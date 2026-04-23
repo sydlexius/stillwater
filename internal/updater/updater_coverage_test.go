@@ -660,7 +660,10 @@ func TestPickLatestInvalidSemver(t *testing.T) {
 // TestNewerThanInvalidVersions verifies that invalid version strings cause
 // newerThan to return false (both parse errors branch).
 func TestNewerThanInvalidVersions(t *testing.T) {
-	t.Parallel()
+	// Not parallel: buildTestService calls database.Migrate which mutates a
+	// goose global (see file header). Running in parallel with other tests
+	// that call buildTestService races under -race.
+	svc := buildTestService(t)
 
 	cases := []struct {
 		candidate string
@@ -671,7 +674,7 @@ func TestNewerThanInvalidVersions(t *testing.T) {
 		{"", ""},
 	}
 	for _, tc := range cases {
-		if newerThan(tc.candidate, tc.current) {
+		if svc.newerThan(tc.candidate, tc.current) {
 			t.Errorf("newerThan(%q, %q) = true, want false for invalid inputs", tc.candidate, tc.current)
 		}
 	}

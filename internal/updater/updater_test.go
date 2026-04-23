@@ -71,12 +71,29 @@ func TestGetSetConfig(t *testing.T) {
 	if !cfg.AutoCheck {
 		t.Error("auto_check should be true")
 	}
+
+	// Round-trip nightly: both SetConfig validation and GetConfig parsing
+	// must accept the nightly channel end-to-end. This is the integration
+	// point that ties the settings KV serialization to the Channel enum.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (nightly): %v", err)
+	}
+	cfg, err = svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig after nightly set: %v", err)
+	}
+	if cfg.Channel != ChannelNightly {
+		t.Errorf("channel = %q, want %q", cfg.Channel, ChannelNightly)
+	}
+	if cfg.AutoCheck {
+		t.Error("auto_check should be false after nightly set")
+	}
 }
 
 // TestSetConfigInvalidChannel verifies that an invalid channel is rejected.
 func TestSetConfigInvalidChannel(t *testing.T) {
 	svc := buildTestService(t)
-	err := svc.SetConfig(context.Background(), Config{Channel: "nightly"})
+	err := svc.SetConfig(context.Background(), Config{Channel: "bogus"})
 	if err == nil {
 		t.Fatal("expected error for invalid channel")
 	}
@@ -136,6 +153,34 @@ func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
 	}
 	if st.LastChecked != wantChecked {
 		t.Errorf("after channel change, LastChecked = %q, want %q", st.LastChecked, wantChecked)
+	}
+}
+
+// TestSetConfigClearsCacheOnChannelChangeToNightly verifies the cache
+// invalidation also fires when the target channel is nightly. Without
+// this coverage the nightly channel could inherit stale stable- or
+// prerelease-channel release metadata until the next Check and re-surface
+// the cross-channel sidebar pill this guard is meant to suppress.
+func TestSetConfigClearsCacheOnChannelChangeToNightly(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Start on prerelease with a seeded cache, then switch to nightly.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease}); err != nil {
+		t.Fatalf("SetConfig (prerelease): %v", err)
+	}
+	svc.mu.Lock()
+	svc.updateAvailable = true
+	svc.latestVersion = "v0.9.6-rc.1"
+	svc.releaseURL = "https://example.com/rc"
+	svc.mu.Unlock()
+
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly}); err != nil {
+		t.Fatalf("SetConfig (nightly): %v", err)
+	}
+	st := svc.Status()
+	if st.UpdateAvailable || st.Latest != "" || st.ReleaseURL != "" {
+		t.Errorf("switch to nightly did not clear cache: status=%+v", st)
 	}
 }
 
@@ -339,6 +384,52 @@ func TestPickLatestPrerelease(t *testing.T) {
 	}
 }
 
+// TestPickLatestNightly verifies that the nightly channel picks the
+// lexicographically largest "nightly-YYYYMMDD" tag and ignores semver
+// releases even when those are newer by publish order.
+func TestPickLatestNightly(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "v0.9.5", Prerelease: false},
+		{TagName: "v0.9.6-rc.1", Prerelease: true},
+		{TagName: "nightly-20260420", Prerelease: true},
+		{TagName: "nightly-20260422", Prerelease: true},
+	}
+
+	got := pickLatest(releases, ChannelNightly)
+	if got == nil {
+		t.Fatal("expected a nightly release")
+	}
+	if got.TagName != "nightly-20260422" {
+		t.Errorf("nightly latest = %q, want nightly-20260422", got.TagName)
+	}
+}
+
+// TestPickLatestNightlyIgnoredByStable verifies that nightly tags are
+// invisible to the stable and prerelease channels, which must remain
+// semver-only to keep binary-asset naming deterministic.
+func TestPickLatestNightlyIgnoredByStable(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "nightly-20260422", Prerelease: true},
+		{TagName: "v0.9.6", Prerelease: false},
+	}
+
+	got := pickLatest(releases, ChannelStable)
+	if got == nil {
+		t.Fatal("expected a stable release")
+	}
+	if got.TagName != "v0.9.6" {
+		t.Errorf("stable latest = %q, want v0.9.6", got.TagName)
+	}
+
+	got = pickLatest(releases, ChannelPrerelease)
+	if got == nil {
+		t.Fatal("expected a prerelease match")
+	}
+	if got.TagName != "v0.9.6" {
+		t.Errorf("prerelease latest = %q, want v0.9.6 (nightly must be excluded)", got.TagName)
+	}
+}
+
 // TestPickLatestSkipsDrafts verifies draft releases are excluded.
 func TestPickLatestSkipsDrafts(t *testing.T) {
 	releases := []githubRelease{
@@ -363,8 +454,13 @@ func TestPickLatestEmpty(t *testing.T) {
 	}
 }
 
-// TestNewerThan verifies version comparison.
+// TestNewerThan verifies version comparison, including cross-channel
+// cases where either side may be a nightly tag. The cross-kind rule is
+// asymmetric: advertising an update pill only makes sense when moving
+// forward (stable -> nightly opt-in), not when the selected channel's
+// latest is older than the nightly build the user is already running.
 func TestNewerThan(t *testing.T) {
+	svc := buildTestService(t)
 	cases := []struct {
 		candidate string
 		current   string
@@ -377,13 +473,149 @@ func TestNewerThan(t *testing.T) {
 		{"v0.9.6", "v0.9.6-rc.2", true}, // stable > prerelease same version
 		{"v0.9.6-rc.2", "v0.9.6", false},
 		{"v1.1.0", "v1.0.9", true},
+
+		// Nightly vs nightly: lex compare on the "nightly-YYYYMMDD" tag.
+		{"nightly-20260422", "nightly-20260420", true},
+		{"nightly-20260420", "nightly-20260422", false},
+		{"nightly-20260422", "nightly-20260422", false},
+
+		// Cross-kind: advertising only makes sense when moving FROM semver
+		// TO nightly (opt-in). The reverse direction (running nightly,
+		// picked stable/prerelease) must not produce a pill because the
+		// semver release is almost certainly older than the nightly.
+		{"nightly-20260422", "v0.9.5", true},       // stable -> nightly opt-in
+		{"v1.0.0", "nightly-20260422", false},      // nightly -> stable (no pill)
+		{"v0.9.6-rc.2", "nightly-20260422", false}, // nightly -> prerelease (no pill)
 	}
 
 	for _, tc := range cases {
-		got := newerThan(tc.candidate, tc.current)
+		got := svc.newerThan(tc.candidate, tc.current)
 		if got != tc.want {
 			t.Errorf("newerThan(%q, %q) = %v, want %v", tc.candidate, tc.current, got, tc.want)
 		}
+	}
+}
+
+// TestNewerThanLogsParseFailure pins that when both inputs are non-nightly
+// and either fails parseSemver, the service logs a Warn. The function itself
+// returns false (conservative "not newer"), but the operator-visible log is
+// the forensic breadcrumb that lets debugging "updater says up-to-date but a
+// new release exists" actually start somewhere.
+func TestNewerThanLogsParseFailure(t *testing.T) {
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	svc := buildTestService(t)
+	svc.logger = logger
+
+	got := svc.newerThan("not-a-version", "also-not-a-version")
+	if got {
+		t.Errorf("newerThan on malformed pair = true, want false")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "semver parse failed") {
+		t.Errorf("expected Warn log mentioning \"semver parse failed\", got:\n%s", out)
+	}
+	if !strings.Contains(out, "not-a-version") {
+		t.Errorf("expected log to include the candidate string, got:\n%s", out)
+	}
+}
+
+// TestCheckWithMockGitHub_Nightly exercises Check end-to-end on the nightly
+// channel. Each link (pickLatest, newerThan, GetConfig, storeCheckResult) is
+// covered in isolation elsewhere; this test wires the full chain so a
+// refactor that breaks only the nightly path fails here rather than after a
+// release that should have surfaced never does.
+func TestCheckWithMockGitHub_Nightly(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	releases := []githubRelease{
+		{TagName: "v0.9.5", HTMLURL: "https://example.com/v0.9.5"},
+		{TagName: "v0.9.6-rc.1", Prerelease: true, HTMLURL: "https://example.com/rc"},
+		{TagName: "nightly-20260420", Prerelease: true, HTMLURL: "https://example.com/n20"},
+		{TagName: "nightly-20260422", Prerelease: true, HTMLURL: "https://example.com/n22"},
+	}
+	body, err := json.Marshal(releases)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	svc.httpClient = &http.Client{Transport: &rewriteHostTransport{base: srv.URL}}
+
+	result, err := svc.Check(ctx)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if result.Latest != "nightly-20260422" {
+		t.Errorf("Latest = %q, want nightly-20260422", result.Latest)
+	}
+	if result.Channel != ChannelNightly {
+		t.Errorf("Channel = %q, want %q", result.Channel, ChannelNightly)
+	}
+	// version.Version at test time defaults to "0.9.6-rc.2" (a valid semver).
+	// newerThan: candidate is nightly, current is semver -> cross-kind opt-in
+	// branch returns true. Locking this here prevents a future refactor from
+	// silently suppressing the stable->nightly pill.
+	if !result.UpdateAvailable {
+		t.Error("UpdateAvailable = false, want true (stable-semver current + nightly candidate)")
+	}
+}
+
+// TestCheckLogsWhenAllReleasesFiltered pins the pickLatest no-match
+// diagnostic: when GitHub returns releases but none pass the channel filter,
+// Check logs a Warn with the fetched count and a sample of rejected tag
+// names. Without this, "releases exist but updater reports up-to-date" is
+// indistinguishable in operator logs from "channel is genuinely empty".
+func TestCheckLogsWhenAllReleasesFiltered(t *testing.T) {
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	svc := buildTestService(t)
+	svc.logger = logger
+	ctx := context.Background()
+
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	// All non-nightly tags on the nightly channel: pickLatest returns nil.
+	releases := []githubRelease{
+		{TagName: "v0.9.5", HTMLURL: "https://example.com/a"},
+		{TagName: "v0.9.6-rc.1", Prerelease: true, HTMLURL: "https://example.com/b"},
+	}
+	body, err := json.Marshal(releases)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	svc.httpClient = &http.Client{Transport: &rewriteHostTransport{base: srv.URL}}
+
+	result, err := svc.Check(ctx)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if result.Latest != "" {
+		t.Errorf("Latest = %q, want empty string (no match)", result.Latest)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "no release matched channel filter") {
+		t.Errorf("expected Warn about unmatched channel filter, got:\n%s", out)
+	}
+	if !strings.Contains(out, "v0.9.5") {
+		t.Errorf("expected log to include fetched tag sample, got:\n%s", out)
 	}
 }
 

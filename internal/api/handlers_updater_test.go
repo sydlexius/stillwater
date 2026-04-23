@@ -132,10 +132,55 @@ func TestHandlePutUpdateConfig_Valid(t *testing.T) {
 	}
 }
 
-func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+// TestHandlePutUpdateConfig_Nightly verifies that the PUT handler
+// accepts the nightly channel and persists it through the round-trip.
+// The handler-level enum must stay in sync with the service-level
+// validation; without this test a future handler-side allowlist change
+// could silently reject nightly while SetConfig still accepts it.
+func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
 	body := `{"channel":"nightly","auto_check":false}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var cfg updater.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Channel != updater.ChannelNightly {
+		t.Errorf("channel = %q, want %q", cfg.Channel, updater.ChannelNightly)
+	}
+
+	// Round-trip through GET so the handler's nightly path is confirmed to
+	// persist, not merely echo the request body (mirrors the prerelease
+	// round-trip in TestHandlePutUpdateConfig_Valid).
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body: %s", getW.Code, getW.Body.String())
+	}
+	var persisted updater.Config
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal persisted config: %v", err)
+	}
+	if persisted.Channel != updater.ChannelNightly {
+		t.Errorf("persisted channel = %q, want %q", persisted.Channel, updater.ChannelNightly)
+	}
+}
+
+func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"bogus","auto_check":false}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -630,6 +675,29 @@ func TestBuildUpdatesTabData_WithService(t *testing.T) {
 	}
 	if !data.AutoCheck {
 		t.Error("AutoCheck should be true after SetConfig")
+	}
+}
+
+// TestBuildUpdatesTabData_NightlyChannel pins that the nightly channel survives
+// the full GetConfig -> buildUpdatesTabData pipeline without being coerced to
+// any other value. The current implementation passes cfg.Channel through
+// directly; a future refactor that reintroduces a render-side allowlist must
+// keep nightly in it or this test fails.
+func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	if err := r.updaterService.SetConfig(ctx, updater.Config{
+		Channel:   updater.ChannelNightly,
+		AutoCheck: false,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	data := r.buildUpdatesTabData(ctx)
+
+	if data.Channel != string(updater.ChannelNightly) {
+		t.Errorf("Channel = %q, want %q", data.Channel, updater.ChannelNightly)
 	}
 }
 
