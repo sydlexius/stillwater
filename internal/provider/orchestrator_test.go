@@ -1063,7 +1063,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			meta := &ArtistMetadata{URLs: tt.urls}
-			extractProviderIDsFromURLs(meta)
+			ExtractProviderIDsFromURLs(meta)
 			if meta.DiscogsID != tt.wantDiscogsID {
 				t.Errorf("DiscogsID: got %q, want %q", meta.DiscogsID, tt.wantDiscogsID)
 			}
@@ -1097,7 +1097,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 		}
-		extractProviderIDsFromURLs(meta)
+		ExtractProviderIDsFromURLs(meta)
 		if meta.DiscogsID != "existing" {
 			t.Errorf("DiscogsID was overwritten: got %q", meta.DiscogsID)
 		}
@@ -2469,5 +2469,50 @@ func TestEnrichProviderIDs_PreservesExistingWikidataID(t *testing.T) {
 
 	if got := providerIDs[NameWikidata]; got != "Q999999" {
 		t.Errorf("providerIDs[NameWikidata] = %q, want pre-existing %q", got, "Q999999")
+	}
+}
+
+// TestExtractProviderIDsFromURLs_RejectsInvalidQID verifies that the Wikidata
+// URL parser requires a well-formed Q-item identifier (Q followed by digits).
+// Addresses the CodeRabbit review finding on PR #1177: before this hardening,
+// a URL like /wiki/Qabc or /wiki/Qspecial:Random would accept "Qabc" or
+// "Qspecial:Random" as a "QID" and propagate it into providerIDs, which would
+// then drive a failed direct-entity SPARQL and mask the MBID fallback path.
+func TestExtractProviderIDsFromURLs_RejectsInvalidQID(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{"alpha chars", "https://www.wikidata.org/wiki/Qabc"},
+		{"mixed alphanum", "https://www.wikidata.org/wiki/Q12a34"},
+		{"colon suffix", "https://www.wikidata.org/wiki/Q123:suffix"},
+		{"lowercase q", "https://www.wikidata.org/wiki/q12345"},
+		{"just Q", "https://www.wikidata.org/wiki/Q"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := &ArtistMetadata{
+				URLs: map[string]string{"wikidata": tc.url},
+			}
+			ExtractProviderIDsFromURLs(meta)
+			if meta.WikidataID != "" {
+				t.Errorf("URL %q produced WikidataID=%q, want empty (invalid QID must be rejected)",
+					tc.url, meta.WikidataID)
+			}
+		})
+	}
+}
+
+// TestExtractProviderIDsFromURLs_AcceptsValidQID verifies that the Wikidata
+// URL parser still accepts well-formed Q-item identifiers after the
+// validation tightening.
+func TestExtractProviderIDsFromURLs_AcceptsValidQID(t *testing.T) {
+	meta := &ArtistMetadata{
+		URLs: map[string]string{"wikidata": "https://www.wikidata.org/wiki/Q175044"},
+	}
+	ExtractProviderIDsFromURLs(meta)
+	if meta.WikidataID != "Q175044" {
+		t.Errorf("WikidataID = %q, want Q175044", meta.WikidataID)
 	}
 }
