@@ -52,7 +52,15 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// GetMusicLibraries returns virtual folders with CollectionType "music".
+// GetMusicLibraries returns virtual folders that represent music content.
+// A folder qualifies when its CollectionType is explicitly "music" OR is
+// left blank. Emby lets administrators create libraries without an
+// explicit type (typically when the library mixes categories or was
+// created by an older client), and those libraries still receive NFO and
+// artwork writes, so they must be considered by conflict detection.
+// Collection types that positively identify another category -- "movies",
+// "tvshows", "homevideos", "boxsets", etc. -- are excluded so we do not
+// mistakenly offer to disable savers on a user's movies library.
 func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error) {
 	var folders []VirtualFolder
 	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
@@ -61,7 +69,10 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 
 	var music []VirtualFolder
 	for _, f := range folders {
-		if strings.EqualFold(f.CollectionType, "music") {
+		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
+		include := ct == "music" || ct == ""
+		c.Logger.Debug("emby virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
+		if include {
 			music = append(music, f)
 		}
 	}
@@ -481,6 +492,253 @@ func canonicalizeLockedFieldsDrops(in []string) (canon []string, dropped []strin
 		canon = append(canon, c)
 	}
 	return canon, dropped
+}
+
+// CheckImageSaverEnabled reports whether Emby will persist artwork files into
+// the shared library directory for any music library. Emby controls this with
+// the library-wide SaveLocalMetadata flag: when true, artwork is written to
+// disk alongside the media (using Emby's own naming convention, which
+// duplicates Stillwater's writes under different filenames). Returns true and
+// the first matching library's name; no saver found returns (false, "", nil).
+// An error from the server is returned rather than swallowed so the caller
+// can distinguish "no conflict" from "unable to check."
+func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return false, "", fmt.Errorf("checking emby image saver settings: %w", err)
+	}
+	for _, lib := range libs {
+		if lib.LibraryOptions.SaveLocalMetadata {
+			return true, lib.Name, nil
+		}
+	}
+	return false, "", nil
+}
+
+// LibraryWriteBackSnapshot captures just the fields Stillwater mutates when
+// DisableFileWriteBack runs: SaveLocalMetadata + MetadataSavers per music
+// library. On restore, Stillwater GETs the current library options from the
+// peer and overlays these fields only, so unrelated options that changed
+// after the snapshot are preserved. Version bumps if the snapshot shape
+// ever needs to evolve.
+type LibraryWriteBackSnapshot struct {
+	Version       int                         `json:"version"`
+	SnapshottedAt time.Time                   `json:"snapshotted_at"`
+	Libraries     []LibrarySaverSnapshotEntry `json:"libraries"`
+}
+
+// LibrarySaverSnapshotEntry holds the per-library saver state captured for
+// restore. LibraryName is informational only (for UI) and is not used during
+// restore; LibraryID is the authoritative key.
+type LibrarySaverSnapshotEntry struct {
+	LibraryID         string   `json:"library_id"`
+	LibraryName       string   `json:"library_name"`
+	SaveLocalMetadata bool     `json:"save_local_metadata"`
+	MetadataSavers    []string `json:"metadata_savers"`
+}
+
+// SnapshotLibraryOptions captures the current SaveLocalMetadata + MetadataSavers
+// for every music library. The returned JSON is stored on the connection row and
+// replayed verbatim by RestoreLibraryOptions on opt-out.
+func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
+	}
+	snap := LibraryWriteBackSnapshot{
+		Version:       1,
+		SnapshottedAt: time.Now().UTC(),
+		Libraries:     make([]LibrarySaverSnapshotEntry, 0, len(libs)),
+	}
+	for _, lib := range libs {
+		savers := lib.LibraryOptions.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		snap.Libraries = append(snap.Libraries, LibrarySaverSnapshotEntry{
+			LibraryID:         lib.ItemID,
+			LibraryName:       lib.Name,
+			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
+			MetadataSavers:    savers,
+		})
+	}
+	buf, err := json.Marshal(snap)
+	if err != nil {
+		return "", fmt.Errorf("encoding snapshot: %w", err)
+	}
+	return string(buf), nil
+}
+
+// DisableFileWriteBack clears SaveLocalMetadata and MetadataSavers on every
+// music library on the peer. Uses a lossless raw-JSON round-trip:
+// Emby's LibraryOptions response contains dozens of fields our Go struct
+// does not model, and PATCHing back with only the three fields we care
+// about makes Emby crash ("Object reference not set to an instance of an
+// object", i.e. a .NET NullReferenceException because required options
+// are now nil). Instead we GET each library's full options as a raw JSON
+// map, mutate only the two keys we intentionally change, and POST the
+// merged map back.
+func (c *Client) DisableFileWriteBack(ctx context.Context) error {
+	libs, err := c.getMusicLibrariesRaw(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+	var firstErr error
+	for _, lib := range libs {
+		opts := sanitizeLibraryOptions(lib.options)
+		// SaveLocalMetadata=false is the master switch: when off, Emby
+		// will neither save artwork nor invoke any MetadataSaver, so we
+		// deliberately leave MetadataSavers untouched. Mutating it
+		// alongside the flag crashed Emby with a NullReferenceException
+		// on some library shapes -- the peer API appears to expect the
+		// saver list to stay consistent with SaveLocalMetadata.
+		opts["SaveLocalMetadata"] = false
+		if err := c.postLibraryOptionsRaw(ctx, lib.id, opts); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			c.Logger.Warn("disabling file write-back failed for library", "library", lib.name, "error", err)
+		}
+	}
+	return firstErr
+}
+
+// sanitizeLibraryOptions drops keys whose values are null in the raw map.
+// Emby's POST handler treats some fields as non-nullable and throws when
+// they arrive as explicit nulls (the GET response happily returns them
+// that way). Dropping null keys before serialization lets Emby fill in
+// defaults for those fields instead of NullReferenceException-ing on them.
+func sanitizeLibraryOptions(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if v == nil {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// RestoreLibraryOptions applies a previously saved snapshot to the peer. For
+// each library in the snapshot it GETs the current options as raw JSON,
+// overlays only SaveLocalMetadata + MetadataSavers, and POSTs back. See
+// DisableFileWriteBack for why the raw-map approach is mandatory.
+func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string) error {
+	var snap LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(snapshotJSON), &snap); err != nil {
+		return fmt.Errorf("decoding snapshot: %w", err)
+	}
+	if snap.Version != 1 {
+		return fmt.Errorf("unsupported snapshot version %d", snap.Version)
+	}
+	libs, err := c.getMusicLibrariesRaw(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+	byID := make(map[string]rawMusicLibrary, len(libs))
+	for _, lib := range libs {
+		byID[lib.id] = lib
+	}
+	var firstErr error
+	for _, entry := range snap.Libraries {
+		lib, ok := byID[entry.LibraryID]
+		if !ok {
+			c.Logger.Warn("snapshot library missing on peer; skipping", "library_id", entry.LibraryID, "library_name", entry.LibraryName)
+			continue
+		}
+		opts := lib.options
+		opts["SaveLocalMetadata"] = entry.SaveLocalMetadata
+		savers := entry.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		opts["MetadataSavers"] = savers
+		if err := c.postLibraryOptionsRaw(ctx, lib.id, opts); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			c.Logger.Warn("restoring library options failed", "library", lib.name, "error", err)
+		}
+	}
+	return firstErr
+}
+
+// rawMusicLibrary is the lossless shape used by DisableFileWriteBack and
+// RestoreLibraryOptions. Options is the library's full LibraryOptions JSON
+// object from the peer, preserving every field our Go struct does not
+// model. Mutating only the keys we intentionally change keeps Emby happy.
+type rawMusicLibrary struct {
+	id      string
+	name    string
+	options map[string]any
+}
+
+// getMusicLibrariesRaw fetches /Library/VirtualFolders as an array of
+// arbitrary JSON objects and returns each music library's ItemId + Name +
+// full LibraryOptions map. A library counts as "music" for conflict
+// detection if its CollectionType is explicitly "music" OR is empty (some
+// Emby/Jellyfin installations leave the type blank for mixed or legacy
+// libraries). Every candidate is logged at debug so users can verify which
+// libraries the conflict detector is considering.
+func (c *Client) getMusicLibrariesRaw(ctx context.Context) ([]rawMusicLibrary, error) {
+	var folders []map[string]any
+	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
+		return nil, fmt.Errorf("getting virtual folders: %w", err)
+	}
+	var out []rawMusicLibrary
+	for _, f := range folders {
+		collectionType, _ := f["CollectionType"].(string)
+		name, _ := f["Name"].(string)
+		id, _ := f["ItemId"].(string)
+		locs, _ := f["Locations"].([]any)
+		paths := make([]string, 0, len(locs))
+		for _, v := range locs {
+			if s, ok := v.(string); ok {
+				paths = append(paths, s)
+			}
+		}
+		include := strings.EqualFold(collectionType, "music") || strings.TrimSpace(collectionType) == ""
+		c.Logger.Debug("emby virtual folder discovered", "name", name, "collection_type", collectionType, "paths", paths, "included_as_music", include)
+		if !include {
+			continue
+		}
+		opts, _ := f["LibraryOptions"].(map[string]any)
+		if opts == nil {
+			opts = map[string]any{}
+		}
+		out = append(out, rawMusicLibrary{id: id, name: name, options: opts})
+	}
+	return out, nil
+}
+
+// postLibraryOptionsRaw serializes a LibraryOptionsInfo wrapper around the
+// given options map and POSTs it to Emby.
+//
+// Emby's /Library/VirtualFolders/LibraryOptions endpoint refuses a bare
+// LibraryOptions body with an opaque 500 "Object reference not set to an
+// instance of an object." Empirically (verified against Emby 4.x via a
+// throwaway diagnostic) the endpoint requires the LibraryOptionsInfo
+// envelope {"Id": <libraryID>, "LibraryOptions": {...}}. The inner map
+// must include every field the peer originally returned; omitted fields
+// are silently dropped from the peer's config because the endpoint
+// performs a full REPLACE on LibraryOptions rather than a merge.
+//
+// Callers are therefore expected to pass the full options map from a
+// GET, mutate only the fields they mean to change, and let this helper
+// wrap and POST. The logged body preserves diagnostic value when future
+// peer-version drift breaks the endpoint again.
+func (c *Client) postLibraryOptionsRaw(ctx context.Context, libraryID string, opts map[string]any) error {
+	wrapper := map[string]any{
+		"Id":             libraryID,
+		"LibraryOptions": opts,
+	}
+	body, err := json.Marshal(wrapper)
+	if err != nil {
+		return fmt.Errorf("encoding library options: %w", err)
+	}
+	c.Logger.Debug("emby library options POST", "library_id", libraryID, "body", string(body))
+	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
+	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
 func (c *Client) setAuth(req *http.Request) {

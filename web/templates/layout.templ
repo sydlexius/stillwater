@@ -13,6 +13,7 @@ type AssetPaths struct {
 	SortableJS     string
 	HelpJS         string
 	PollingJS      string
+	ConflictGateJS string
 	SessionJS      string
 	PreferencesJS  string
 	SidebarJS      string
@@ -113,6 +114,7 @@ templ Layout(title string, assets AssetPaths) {
 				Version:     assets.Version,
 			})
 			<div class="min-h-full sw-sidebar-content" id="sw-main-content">
+				@ConflictBanner()
 				if assets.IsAdmin {
 					@SharedFilesystemBar()
 				}
@@ -131,6 +133,9 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.PreferencesJS }></script>
 			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.FilterFlyoutJS }></script>
+			if assets.ConflictGateJS != "" {
+				<script src={ assets.ConflictGateJS }></script>
+			}
 			<script src={ assets.HelpJS }></script>
 			if assets.DriverJS != "" {
 				<script src={ assets.DriverJS }></script>

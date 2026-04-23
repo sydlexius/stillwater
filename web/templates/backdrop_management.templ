@@ -229,6 +229,8 @@ templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConn
 								}) }
 									hx-confirm={ t(ctx, "image.confirm_assign_backdrop") }
 									hx-swap="none"
+									data-sw-requires-image-write
+									title="Disabled when the write-back conflict banner is active — see the top of the page"
 								>
 									{ t(ctx, "image.assign") }
 								</button>

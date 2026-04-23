@@ -32,7 +32,18 @@ type Connection struct {
 	FeatureImageWrite     bool       `json:"feature_image_write"`
 	FeatureMetadataPush   bool       `json:"feature_metadata_push"`
 	FeatureTriggerRefresh bool       `json:"feature_trigger_refresh"`
-	PlatformUserID        string     `json:"platform_user_id,omitempty"`
+	// FeatureManageServerFiles is the per-connection opt-in toggle
+	// "Let Stillwater manage artwork and NFO files on this server". When
+	// true, Stillwater has patched the peer's library options to disable
+	// its NFO saver + image saver (SaveLocalMetadata=false) and snapshotted
+	// the prior config into PreStillwaterConfigJSON for restore on opt-out
+	// or connection delete. Default false.
+	FeatureManageServerFiles bool `json:"feature_manage_server_files"`
+	// PreStillwaterConfigJSON is the JSON snapshot of the peer's library
+	// options taken when FeatureManageServerFiles was flipped on. Empty
+	// string when the toggle has never been flipped or has been restored.
+	PreStillwaterConfigJSON string `json:"pre_stillwater_config_json,omitempty"`
+	PlatformUserID          string `json:"platform_user_id,omitempty"`
 	// PlatformServerID is the Emby/Jellyfin server identity returned by
 	// /System/Info. Web deep-links must include serverId=<id> so the
 	// platform client loads the correct item view; without it the URL

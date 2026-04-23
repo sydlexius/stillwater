@@ -52,7 +52,11 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// GetMusicLibraries returns virtual folders with CollectionType "music".
+// GetMusicLibraries returns virtual folders that represent music content.
+// See emby.GetMusicLibraries for the rationale behind accepting libraries
+// with a blank CollectionType. Every considered folder is logged so users
+// can diagnose why a given library does or does not appear in the
+// conflict banner.
 func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error) {
 	var folders []VirtualFolder
 	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
@@ -61,7 +65,10 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 
 	var music []VirtualFolder
 	for _, f := range folders {
-		if strings.EqualFold(f.CollectionType, "music") {
+		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
+		include := ct == "music" || ct == ""
+		c.Logger.Debug("jellyfin virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
+		if include {
 			music = append(music, f)
 		}
 	}
@@ -383,6 +390,212 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 		return fmt.Errorf("encoding library options: %w", err)
 	}
 
+	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
+	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+}
+
+// CheckImageSaverEnabled reports whether Jellyfin will persist artwork files
+// into the shared library directory for any music library. Like Emby, this is
+// governed by the library-wide SaveLocalMetadata flag (the "Save artwork into
+// media folders" checkbox). True means any Stillwater write will be mirrored
+// by Jellyfin under its own filename convention, duplicating the file.
+func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return false, "", fmt.Errorf("checking jellyfin image saver settings: %w", err)
+	}
+	for _, lib := range libs {
+		if lib.LibraryOptions.SaveLocalMetadata {
+			return true, lib.Name, nil
+		}
+	}
+	return false, "", nil
+}
+
+// LibraryWriteBackSnapshot captures the per-library SaveLocalMetadata and
+// MetadataSavers values so Stillwater can restore the peer's prior config
+// exactly when the user opts out. See emby.LibraryWriteBackSnapshot for the
+// rationale; the shapes are intentionally identical.
+type LibraryWriteBackSnapshot struct {
+	Version       int                         `json:"version"`
+	SnapshottedAt time.Time                   `json:"snapshotted_at"`
+	Libraries     []LibrarySaverSnapshotEntry `json:"libraries"`
+}
+
+// LibrarySaverSnapshotEntry holds one library's saver state at snapshot time.
+type LibrarySaverSnapshotEntry struct {
+	LibraryID         string   `json:"library_id"`
+	LibraryName       string   `json:"library_name"`
+	SaveLocalMetadata bool     `json:"save_local_metadata"`
+	MetadataSavers    []string `json:"metadata_savers"`
+}
+
+// SnapshotLibraryOptions captures the current saver state for every music
+// library so RestoreLibraryOptions can replay it. See emby equivalent for
+// design notes.
+func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
+	}
+	snap := LibraryWriteBackSnapshot{
+		Version:       1,
+		SnapshottedAt: time.Now().UTC(),
+		Libraries:     make([]LibrarySaverSnapshotEntry, 0, len(libs)),
+	}
+	for _, lib := range libs {
+		savers := lib.LibraryOptions.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		snap.Libraries = append(snap.Libraries, LibrarySaverSnapshotEntry{
+			LibraryID:         lib.ItemID,
+			LibraryName:       lib.Name,
+			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
+			MetadataSavers:    savers,
+		})
+	}
+	buf, err := json.Marshal(snap)
+	if err != nil {
+		return "", fmt.Errorf("encoding snapshot: %w", err)
+	}
+	return string(buf), nil
+}
+
+// DisableFileWriteBack clears SaveLocalMetadata and MetadataSavers on every
+// music library via a lossless raw-JSON round-trip. See the matching Emby
+// implementation for the rationale: the Jellyfin LibraryOptions response
+// carries many fields our Go struct doesn't model, and PATCHing only the
+// modeled subset drops the rest and makes the server error out.
+func (c *Client) DisableFileWriteBack(ctx context.Context) error {
+	libs, err := c.getMusicLibrariesRaw(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+	var firstErr error
+	for _, lib := range libs {
+		opts := sanitizeLibraryOptions(lib.options)
+		// See emby equivalent: SaveLocalMetadata=false is the master kill
+		// switch; toggling MetadataSavers alongside triggered a peer crash
+		// on some library shapes, so we leave it alone.
+		opts["SaveLocalMetadata"] = false
+		if err := c.postLibraryOptionsRaw(ctx, lib.id, opts); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			c.Logger.Warn("disabling file write-back failed for library", "library", lib.name, "error", err)
+		}
+	}
+	return firstErr
+}
+
+func sanitizeLibraryOptions(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		if v == nil {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// RestoreLibraryOptions replays a snapshot onto the peer using the raw-JSON
+// overlay approach. See emby equivalent for design notes.
+func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string) error {
+	var snap LibraryWriteBackSnapshot
+	if err := json.Unmarshal([]byte(snapshotJSON), &snap); err != nil {
+		return fmt.Errorf("decoding snapshot: %w", err)
+	}
+	if snap.Version != 1 {
+		return fmt.Errorf("unsupported snapshot version %d", snap.Version)
+	}
+	libs, err := c.getMusicLibrariesRaw(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+	byID := make(map[string]rawMusicLibrary, len(libs))
+	for _, lib := range libs {
+		byID[lib.id] = lib
+	}
+	var firstErr error
+	for _, entry := range snap.Libraries {
+		lib, ok := byID[entry.LibraryID]
+		if !ok {
+			c.Logger.Warn("snapshot library missing on peer; skipping", "library_id", entry.LibraryID, "library_name", entry.LibraryName)
+			continue
+		}
+		opts := lib.options
+		opts["SaveLocalMetadata"] = entry.SaveLocalMetadata
+		savers := entry.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		opts["MetadataSavers"] = savers
+		if err := c.postLibraryOptionsRaw(ctx, lib.id, opts); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			c.Logger.Warn("restoring library options failed", "library", lib.name, "error", err)
+		}
+	}
+	return firstErr
+}
+
+type rawMusicLibrary struct {
+	id      string
+	name    string
+	options map[string]any
+}
+
+func (c *Client) getMusicLibrariesRaw(ctx context.Context) ([]rawMusicLibrary, error) {
+	var folders []map[string]any
+	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
+		return nil, fmt.Errorf("getting virtual folders: %w", err)
+	}
+	var out []rawMusicLibrary
+	for _, f := range folders {
+		collectionType, _ := f["CollectionType"].(string)
+		name, _ := f["Name"].(string)
+		id, _ := f["ItemId"].(string)
+		locs, _ := f["Locations"].([]any)
+		paths := make([]string, 0, len(locs))
+		for _, v := range locs {
+			if s, ok := v.(string); ok {
+				paths = append(paths, s)
+			}
+		}
+		ct := strings.TrimSpace(strings.ToLower(collectionType))
+		include := ct == "music" || ct == ""
+		c.Logger.Debug("jellyfin virtual folder discovered", "name", name, "collection_type", collectionType, "paths", paths, "included_as_music", include)
+		if !include {
+			continue
+		}
+		opts, _ := f["LibraryOptions"].(map[string]any)
+		if opts == nil {
+			opts = map[string]any{}
+		}
+		out = append(out, rawMusicLibrary{id: id, name: name, options: opts})
+	}
+	return out, nil
+}
+
+// postLibraryOptionsRaw wraps the options map in a LibraryOptionsInfo
+// envelope before POSTing. Jellyfin's /Library/VirtualFolders/LibraryOptions
+// endpoint inherits the same contract as Emby's (see emby.postLibraryOptionsRaw
+// for the full rationale): it requires the wrapper and performs a full
+// REPLACE on LibraryOptions, so the caller must pass every field from the
+// original GET.
+func (c *Client) postLibraryOptionsRaw(ctx context.Context, libraryID string, opts map[string]any) error {
+	wrapper := map[string]any{
+		"Id":             libraryID,
+		"LibraryOptions": opts,
+	}
+	body, err := json.Marshal(wrapper)
+	if err != nil {
+		return fmt.Errorf("encoding library options: %w", err)
+	}
+	c.Logger.Debug("jellyfin library options POST", "library_id", libraryID, "body", string(body))
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
 	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }

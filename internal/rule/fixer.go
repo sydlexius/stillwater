@@ -110,6 +110,21 @@ type PipelineRunner interface {
 // Compile-time assertion: *Pipeline implements PipelineRunner.
 var _ PipelineRunner = (*Pipeline)(nil)
 
+// WriteGate answers whether rule auto-fixes that produce image or NFO disk
+// writes are currently allowed. Implemented by internal/conflict.Gate via a
+// trivial adapter in the API wiring layer so the rule package stays free of
+// a dependency on the conflict package (avoids an import cycle).
+//
+// Allow* methods return nil when the write is permitted and a non-nil error
+// (typically *conflict.BlockedError) when the write-back conflict gate is
+// engaged. The rule pipeline treats any non-nil return as "skip the fix and
+// leave the violation open" -- the banner already tells the user why, so
+// there is no need to surface the gate error any further.
+type WriteGate interface {
+	AllowImageWrite(ctx context.Context) error
+	AllowNFOWrite(ctx context.Context) error
+}
+
 // Pipeline orchestrates rule evaluation and auto-fixing across artists.
 type Pipeline struct {
 	engine        *Engine
@@ -118,9 +133,18 @@ type Pipeline struct {
 	fixers        []Fixer
 	publisher     *publish.Publisher
 	logger        *slog.Logger
+	writeGate     WriteGate
 
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
+}
+
+// SetWriteGate installs (or replaces) the conflict gate the pipeline
+// consults before running auto-mode image/NFO fixers. Passing nil disables
+// the gate -- callers that never configure the gate behave exactly as
+// before. See WriteGate for semantics.
+func (p *Pipeline) SetWriteGate(g WriteGate) {
+	p.writeGate = g
 }
 
 // NewPipeline creates a new fix pipeline.
@@ -1174,6 +1198,24 @@ func supportsCandidateDiscovery(f Fixer) bool {
 
 // attemptFix tries each registered fixer for the violation.
 func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violation) *FixResult {
+	// If a write-back conflict gate is installed, refuse to run auto-fixers
+	// whose category would land a file on disk (image, nfo). The violation
+	// is kept open so the user can see it; the banner explains why the
+	// fixer did not run. Without a gate we fall through to the original
+	// behavior, preserving test harnesses that do not wire the conflict
+	// service.
+	if p.writeGate != nil {
+		switch v.Category {
+		case "image":
+			if err := p.writeGate.AllowImageWrite(ctx); err != nil {
+				return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "image write gated by conflict banner"}
+			}
+		case "nfo":
+			if err := p.writeGate.AllowNFOWrite(ctx); err != nil {
+				return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "nfo write gated by conflict banner"}
+			}
+		}
+	}
 	for _, f := range p.fixers {
 		if !f.CanFix(v) {
 			continue

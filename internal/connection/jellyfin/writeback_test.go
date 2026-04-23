@@ -1,0 +1,154 @@
+package jellyfin
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// fakeJellyfinServer mirrors emby/writeback_test.go but targets the
+// Jellyfin-shaped endpoints and type layout.
+type fakeJellyfinServer struct {
+	mu           sync.Mutex
+	libs         []VirtualFolder
+	receivedOpts map[string]LibraryOptions
+}
+
+func newFakeJellyfinServer(libs []VirtualFolder) (*httptest.Server, *fakeJellyfinServer) {
+	f := &fakeJellyfinServer{libs: libs, receivedOpts: map[string]LibraryOptions{}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/Library/VirtualFolders":
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			_ = json.NewEncoder(w).Encode(f.libs)
+		case r.Method == http.MethodPost && r.URL.Path == "/Library/VirtualFolders/LibraryOptions":
+			libID := r.URL.Query().Get("Id")
+			body, _ := io.ReadAll(r.Body)
+			// Jellyfin's endpoint expects the LibraryOptionsInfo wrapper
+			// {"Id":"...","LibraryOptions":{...}}. Unwrap before decoding
+			// into the typed LibraryOptions so the test's mock matches
+			// the real peer's contract.
+			var wrapper struct {
+				ID             string          `json:"Id"`
+				LibraryOptions json.RawMessage `json:"LibraryOptions"`
+			}
+			if err := json.Unmarshal(body, &wrapper); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			var opts LibraryOptions
+			if err := json.Unmarshal(wrapper.LibraryOptions, &opts); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			if wrapper.ID != "" {
+				libID = wrapper.ID
+			}
+			f.mu.Lock()
+			f.receivedOpts[libID] = opts
+			for i := range f.libs {
+				if f.libs[i].ItemID == libID {
+					f.libs[i].LibraryOptions = opts
+				}
+			}
+			f.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return srv, f
+}
+
+func (f *fakeJellyfinServer) received(libID string) LibraryOptions {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.receivedOpts[libID]
+}
+
+func TestJellyfinCheckImageSaverEnabled(t *testing.T) {
+	srv, _ := newFakeJellyfinServer([]VirtualFolder{
+		{Name: "Music", ItemID: "m1", CollectionType: "music",
+			LibraryOptions: LibraryOptions{SaveLocalMetadata: true}},
+	})
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	on, lib, err := c.CheckImageSaverEnabled(context.Background())
+	if err != nil || !on || lib != "Music" {
+		t.Errorf("got (%v,%q,%v), want (true,Music,nil)", on, lib, err)
+	}
+}
+
+func TestJellyfinSnapshotAndDisable(t *testing.T) {
+	srv, fake := newFakeJellyfinServer([]VirtualFolder{
+		{Name: "Music", ItemID: "m1", CollectionType: "music",
+			LibraryOptions: LibraryOptions{SaveLocalMetadata: true, MetadataSavers: []string{"Nfo"}}},
+	})
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+
+	snapJSON, err := c.SnapshotLibraryOptions(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot err = %v", err)
+	}
+	var snap LibraryWriteBackSnapshot
+	_ = json.Unmarshal([]byte(snapJSON), &snap)
+	if len(snap.Libraries) != 1 || !snap.Libraries[0].SaveLocalMetadata {
+		t.Fatalf("unexpected snapshot: %+v", snap)
+	}
+
+	if err := c.DisableFileWriteBack(context.Background()); err != nil {
+		t.Fatalf("disable err = %v", err)
+	}
+	got := fake.received("m1")
+	// SaveLocalMetadata=false is the master kill switch; MetadataSavers is
+	// intentionally left alone (see client for rationale).
+	if got.SaveLocalMetadata {
+		t.Errorf("SaveLocalMetadata not cleared: %+v", got)
+	}
+}
+
+func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
+	srv, fake := newFakeJellyfinServer([]VirtualFolder{
+		{Name: "Music", ItemID: "m1", CollectionType: "music",
+			LibraryOptions: LibraryOptions{SaveLocalMetadata: false, MetadataSavers: []string{}}},
+	})
+	defer srv.Close()
+
+	snap := LibraryWriteBackSnapshot{
+		Version: 1,
+		Libraries: []LibrarySaverSnapshotEntry{{
+			LibraryID:         "m1",
+			SaveLocalMetadata: true,
+			MetadataSavers:    []string{"Nfo"},
+		}},
+	}
+	buf, _ := json.Marshal(snap)
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.RestoreLibraryOptions(context.Background(), string(buf)); err != nil {
+		t.Fatalf("restore err = %v", err)
+	}
+	got := fake.received("m1")
+	if !got.SaveLocalMetadata || len(got.MetadataSavers) != 1 {
+		t.Errorf("restore did not apply: %+v", got)
+	}
+}
+
+func TestJellyfinRestoreRejectsUnknownVersion(t *testing.T) {
+	srv, _ := newFakeJellyfinServer(nil)
+	defer srv.Close()
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.RestoreLibraryOptions(context.Background(), `{"version":2,"libraries":[]}`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported snapshot version") {
+		t.Errorf("want version error, got %v", err)
+	}
+}

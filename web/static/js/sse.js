@@ -91,7 +91,13 @@
 
     // Dispatch a DOM event so page-specific scripts can react to SSE events
     // (e.g. the artist detail page refreshes its violations tab).
-    document.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data}));
+    // Fire on document.body with bubbles:true so listeners attached to
+    // either body (via HTMX's `from:body`) or document (via plain
+    // addEventListener) receive the event. The previous dispatch on
+    // document only reached document-level listeners because CustomEvents
+    // do not propagate downward, leaving body-targeted HTMX triggers
+    // (including the write-back conflict banner) silent on server push.
+    document.body.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data, bubbles: true}));
   }
 
   function refreshNotificationBadge() {

@@ -245,6 +245,9 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	if !ok {
 		return
 	}
+	if !r.gateImageWrite(w, req) {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {

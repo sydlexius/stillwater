@@ -5992,6 +5992,143 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /connections/{id}/stillwater-managed:
+    post:
+      tags: [Connections]
+      summary: Toggle "Let Stillwater manage artwork and NFO files on this server"
+      operationId: setStillwaterManaged
+      description: >
+        When enabled=true, Stillwater PATCHes the peer's music library options
+        to disable SaveLocalMetadata + MetadataSavers (or Lidarr's metadata
+        consumers), snapshotting the prior config so it can be restored when
+        the toggle is flipped off. When enabled=false, Stillwater replays the
+        snapshot onto the peer and clears it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Toggle state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                  feature_manage_server_files:
+                    type: boolean
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Peer rejected the snapshot or restore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /conflicts:
+    get:
+      tags: [Connections]
+      summary: Get the current write-back conflict ledger
+      operationId: getConflicts
+      description: >
+        Returns the aggregated conflict state across every configured connection.
+        Used by the UI banner and by external monitoring to audit whether
+        Stillwater's writes are currently gated. Pass refresh=1 to force a
+        synchronous re-query of every peer (useful after a remediation).
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Current ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                  round_trips:
+                    type: array
+                    items:
+                      type: object
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  axis:
+                    type: string
+                    enum: [image, nfo, round_trip]
+                    description: Which write axis triggered the block.
+                  reason:
+                    type: string
+                    description: Human-readable explanation safe for UI display.
+                  ledger:
+                    type: object
+                    description: Full ledger snapshot that caused the block.
+        "503":
+          description: Detector not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /config/conflict-banner:
+    get:
+      tags: [Connections]
+      summary: Rendered HTML partial for the write-back conflict banner
+      operationId: getConflictBanner
+      description: >
+        HTMX consumers swap the response into #conflict-banner. Empty-body
+        responses (204) indicate detection is not available; an HTML fragment
+        is returned otherwise.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Banner HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "204":
+          description: Detection unavailable; no content
+
   /connections/{id}/platform-summary:
     get:
       tags: [Connections]

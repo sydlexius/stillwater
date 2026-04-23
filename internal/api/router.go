@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
+	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/i18n"
@@ -143,6 +144,8 @@ type Router struct {
 	undoStore             *rule.UndoStore
 	sseHub                *SSEHub
 	i18nBundle            *i18n.Bundle
+	conflictDetector      *conflict.Detector
+	conflictGate          *conflict.Gate
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -207,6 +210,27 @@ func NewRouter(deps RouterDeps) *Router {
 	}
 	if deps.EventBus != nil {
 		r.sseHub.SubscribeToEventBus(deps.EventBus)
+	}
+
+	// Conflict detector and gate are owned by the router so every write
+	// handler shares the same cached ledger. We construct them here (not via
+	// RouterDeps) so main.go doesn't have to know about the dependency:
+	// the only inputs are the connection service and event bus, which are
+	// already in scope.
+	if deps.ConnectionService != nil {
+		r.conflictDetector = conflict.NewDetector(deps.ConnectionService, deps.EventBus, deps.Logger)
+		r.conflictGate = conflict.NewGate(r.conflictDetector)
+		// Teach the rule pipeline to refuse auto-mode image/NFO fixes while
+		// a conflict is active. Without this the pipeline would write
+		// artwork/NFO files that the peer immediately duplicates under its
+		// own filenames, defeating the whole detection effort.
+		if deps.Pipeline != nil {
+			if setter, ok := deps.Pipeline.(interface {
+				SetWriteGate(g rule.WriteGate)
+			}); ok {
+				setter.SetWriteGate(r.conflictGate)
+			}
+		}
 	}
 
 	// Configure the static asset base path used by template helpers (logoSrc, etc.)
@@ -309,6 +333,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-settings", wrapAuth(r.handleGetPlatformSettings, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/platform-settings/disable", wrapAuth(middleware.RequireAdmin(r.handleDisablePlatformSettings), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/stillwater-managed", wrapAuth(middleware.RequireAdmin(r.handleSetStillwaterManaged), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/conflict-detail", wrapAuth(r.handleGetConnectionConflictDetail, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/conflicts", wrapAuth(r.handleGetConflicts, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/config/conflict-banner", wrapAuth(r.handleGetConflictBanner, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-summary", wrapAuth(r.handleGetPlatformSummary, authMw))
 	// Connection library discovery/import routes
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))

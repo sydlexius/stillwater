@@ -415,6 +415,8 @@ templ imageSearchContextualized(data ImageSearchData) {
 							hx-swap="none"
 							hx-confirm={ t(ctx, "image.confirm_save") }
 							data-confirm-key="image-save"
+							data-sw-requires-image-write
+							title="Disabled when the write-back conflict banner is active — see the top of the page"
 						>
 							{ t(ctx, "image.use_this_one") }
 						</button>
@@ -783,6 +785,8 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 								hx-swap="none"
 								hx-confirm={ t(ctx, "image.confirm_save_fanart") }
 								data-confirm-key="image-save"
+								data-sw-requires-image-write
+								title="Disabled when the write-back conflict banner is active — see the top of the page"
 							>
 								{ t(ctx, "common.save") }
 							</button>

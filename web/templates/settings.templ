@@ -943,13 +943,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4">
-						<div
-							id="clobber-warnings"
-							hx-get="/api/v1/connections/clobber-check"
-							hx-trigger="load"
-							hx-swap="innerHTML"
-							class="mb-4"
-						></div>
+						<!-- The clobber-warnings block was removed in favour of
+							the global ConflictBanner in the layout. That banner
+							covers every screen, carries per-connection CTAs, and
+							shares its source of truth with the write-gate. -->
 						<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 							@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
 							@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
@@ -1412,10 +1409,28 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				for _, cat := range []string{"nfo", "image", "metadata"} {
 					{{ catRules := rulesForCategory(data.Rules, cat) }}
 					if len(catRules) > 0 {
-						<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div
+							class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg"
+							if cat == "image" {
+								data-sw-requires-image-write
+							}
+							if cat == "nfo" {
+								data-sw-requires-nfo-write
+							}
+						>
 							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 								<div class="flex items-center gap-2">
 									<h2 class="text-lg font-semibold">{ tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }</h2>
+									if cat == "image" {
+										<span class="sw-conflict-gated-chip hidden" title="Image-category rules are paused while the conflict banner is active. Clear the banner or enable 'Let Stillwater manage' to resume auto-fix.">
+											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">paused: write-back conflict</span>
+										</span>
+									}
+									if cat == "nfo" {
+										<span class="sw-conflict-gated-chip hidden" title="NFO-category rules are paused while the conflict banner is active. Clear the banner or enable 'Let Stillwater manage' to resume auto-fix.">
+											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">paused: write-back conflict</span>
+										</span>
+									}
 									if cat == "nfo" {
 										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).")
 									}
@@ -4729,7 +4744,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 		if len(conns) > 0 {
 			<div class="space-y-2 mb-3">
 				for _, c := range conns {
-					<div class="flex flex-col gap-1.5 rounded border border-gray-100 dark:border-gray-700 px-3 py-2">
+					<div id={ "connection-" + c.ID } class="flex flex-col gap-1.5 rounded border border-gray-100 dark:border-gray-700 px-3 py-2 target:ring-2 target:ring-amber-400/60 target:bg-amber-50/40 dark:target:bg-amber-900/10">
 						<div class="flex items-center gap-2 min-w-0">
 							<div
 								class={
@@ -4786,14 +4801,47 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						</div>
 					</div>
 					<div id={ "discover-" + c.ID } class="mt-2"></div>
-					<div id={ "features-" + c.ID } class="hidden mt-2 rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
-						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.feature_toggles") }</div>
-						<div class="space-y-2">
-							if c.Type != "lidarr" {
-								@connectionFeatureToggle(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport)
-							}
-							@connectionFeatureToggle(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite)
-							@connectionFeatureToggle(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite)
+					<div id={ "features-" + c.ID } class="hidden mt-2 space-y-2">
+						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+							<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">What Stillwater sends to this connection</div>
+							<div class="space-y-2">
+								if c.Type != "lidarr" {
+									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, "When on, Stillwater imports library metadata from this server.")
+								}
+								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, "When on, Stillwater writes artist.nfo files for artists in this server's libraries. Writes are still gated if this server is configured to write NFOs back to disk -- flip 'Let Stillwater manage' below to disarm that.")
+								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, "When on, Stillwater writes image files for artists in this server's libraries. Writes are still gated if this server is configured to write images back to disk.")
+							</div>
+						</div>
+						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+							<div class="flex items-center justify-between">
+								<div class="min-w-0 pr-3">
+									<div class="text-xs font-medium text-gray-700 dark:text-gray-300">Let Stillwater manage artwork and NFO files on this server</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+										When on, Stillwater watches this server and turns off its artwork and NFO savers whenever they get re-enabled. Your previous settings are saved and restored if you turn this off or remove the connection.
+									</div>
+								</div>
+								<button
+									type="button"
+									class={ ruleToggleBtnClasses(c.FeatureManageServerFiles) }
+									role="switch"
+									aria-checked={ boolAttr(c.FeatureManageServerFiles) }
+									aria-label="Toggle Let Stillwater manage"
+									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed?enabled=" + boolAttr(!c.FeatureManageServerFiles) }
+									hx-swap="none"
+									hx-on:htmx:after-request="document.body.dispatchEvent(new CustomEvent('sse:conflict.changed'))"
+								>
+									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
+								</button>
+							</div>
+						</div>
+						<div
+							id={ "detected-" + c.ID }
+							class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"
+							hx-get={ "/api/v1/connections/" + c.ID + "/conflict-detail" }
+							hx-trigger="load"
+							hx-swap="innerHTML"
+						>
+							<div class="text-xs text-gray-500 dark:text-gray-400">Checking server-side saver status…</div>
 						</div>
 					</div>
 				}
@@ -4919,6 +4967,29 @@ templ connectionFeatureToggle(connID string, feature string, label string, enabl
 			role="switch"
 			aria-checked={ boolAttr(enabled) }
 			aria-label={ "Toggle " + label }
+			data-conn-id={ connID }
+			data-feature={ feature }
+			onclick="toggleConnectionFeature(this)"
+		>
+			<span class={ ruleToggleKnobClasses(enabled) }></span>
+		</button>
+	</div>
+}
+
+// connectionFeatureToggleTT is the tooltip-equipped variant of
+// connectionFeatureToggle. Used by the redesigned per-connection settings
+// card so users can hover a label and see the precondition semantics
+// (e.g. "writes are still gated if the server has NFO saving on").
+templ connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string) {
+	<div class="flex items-center justify-between" title={ tooltip }>
+		<span class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+		<button
+			type="button"
+			class={ ruleToggleBtnClasses(enabled) }
+			role="switch"
+			aria-checked={ boolAttr(enabled) }
+			aria-label={ "Toggle " + label }
+			aria-describedby={ connID + "-" + feature + "-tt" }
 			data-conn-id={ connID }
 			data-feature={ feature }
 			onclick="toggleConnectionFeature(this)"

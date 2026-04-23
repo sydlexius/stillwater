@@ -118,6 +118,19 @@ Once running, open your browser and go to `http://your-server-ip:1973`.
 | `SW_PORT` | Port the HTTP server listens on | `1973` |
 | `SW_MUSIC_PATH` | Path to the music library inside the container | `/music` |
 
+## Write-Back Conflicts with Connected Servers
+
+Emby, Jellyfin, and Lidarr can each be configured to "save artwork into media folders" or write NFO files to disk. When Stillwater writes a file into the shared library directory and then pushes metadata via the server's API, the server may re-persist that same content to disk under its own filename convention, producing duplicate files (for example `backdrop.jpg` and `backdrop1.jpg` side by side).
+
+Stillwater detects this configuration on every enabled connection and gates its own file writes when a conflict is present:
+
+- A persistent top banner explains which server has the write-back enabled and on which axis (artwork or NFO).
+- Write endpoints return HTTP 409 with a structured payload identifying the axis and the contributing connections.
+- Each connection card in **Settings** includes a "Detected on this server" panel showing the current peer state and a toggle labelled **Let Stillwater manage artwork and NFO files on this server**. Enabling the toggle asks Stillwater to patch the peer's library options to disable its savers; the prior configuration is snapshotted and restored automatically if you turn the toggle off or remove the connection.
+- Overlapping library paths between two or more enabled connections are treated as a round-trip hazard and gate writes on both axes, even if only one peer currently has a saver enabled.
+
+Use `GET /api/v1/conflicts?refresh=1` to force an immediate re-check, or click **Re-check** on the banner. Details on each endpoint are in `internal/api/openapi.yaml`.
+
 ## Reverse Proxy
 
 ### SWAG
