@@ -158,6 +158,23 @@ func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
 	if cfg.Channel != updater.ChannelNightly {
 		t.Errorf("channel = %q, want %q", cfg.Channel, updater.ChannelNightly)
 	}
+
+	// Round-trip through GET so the handler's nightly path is confirmed to
+	// persist, not merely echo the request body (mirrors the prerelease
+	// round-trip in TestHandlePutUpdateConfig_Valid).
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body: %s", getW.Code, getW.Body.String())
+	}
+	var persisted updater.Config
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal persisted config: %v", err)
+	}
+	if persisted.Channel != updater.ChannelNightly {
+		t.Errorf("persisted channel = %q, want %q", persisted.Channel, updater.ChannelNightly)
+	}
 }
 
 func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
@@ -661,11 +678,11 @@ func TestBuildUpdatesTabData_WithService(t *testing.T) {
 	}
 }
 
-// TestBuildUpdatesTabData_NightlyChannel pins the render-side allowlist so the
-// nightly channel is not silently coerced back to "stable" when the settings
-// tab is assembled. Earlier UAT on #1111 surfaced that GetConfig correctly
-// returned "nightly" but buildUpdatesTabData's switch missed the case, causing
-// the template to render Stable as selected even though the DB held Nightly.
+// TestBuildUpdatesTabData_NightlyChannel pins that the nightly channel survives
+// the full GetConfig -> buildUpdatesTabData pipeline without being coerced to
+// any other value. The current implementation passes cfg.Channel through
+// directly; a future refactor that reintroduces a render-side allowlist must
+// keep nightly in it or this test fails.
 func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
 	r := testRouterWithUpdater(t)
 	ctx := context.Background()

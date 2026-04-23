@@ -294,6 +294,15 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 			switch Channel(v) {
 			case ChannelStable, ChannelPrerelease, ChannelNightly:
 				cfg.Channel = Channel(v)
+			default:
+				// A value outside the allowlist means something bypassed
+				// SetConfig's validation (direct DB write, failed migration,
+				// downgrade from a newer schema). cfg.Channel keeps its
+				// ChannelStable default; log loudly so operators can see
+				// drift rather than silently rendering "stable" when the
+				// user configured something else.
+				s.logger.Error("unknown updater.channel value in settings; coercing to stable",
+					"stored_value", v)
 			}
 		case SettingAutoCheck:
 			cfg.AutoCheck = v == "true"

@@ -70,7 +70,7 @@ type SettingsData struct {
 // UpdatesTabData holds the data for the Updates settings tab.
 type UpdatesTabData struct {
 	CurrentVersion  string // Running binary version (from version.Version)
-	Channel         string // "stable" | "prerelease"
+	Channel         string // "stable" | "prerelease" | "nightly"
 	AutoCheck       bool
 	IsDocker        bool   // When true, hide binary apply controls
 	LastChecked     string // RFC 3339 or empty

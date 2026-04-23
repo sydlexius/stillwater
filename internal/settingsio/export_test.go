@@ -218,12 +218,9 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRoundTrip_UpdaterSettings pins the invariant that updater.channel and
-// updater.auto_check survive export/import via the general settings KV sweep.
-// Settings panel has its own allowlist for render (handlers_platform.go) that
-// previously dropped "nightly" to "stable"; that bug did not live here, but a
-// future refactor could move exporter to a per-key allowlist and silently drop
-// updater.* keys. This test guards against that regression.
+// TestRoundTrip_UpdaterSettings pins that updater.channel and
+// updater.auto_check survive the settings export/import round-trip, so a
+// future per-key allowlist in the exporter cannot silently drop them.
 func TestRoundTrip_UpdaterSettings(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
