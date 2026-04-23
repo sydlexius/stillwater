@@ -681,3 +681,119 @@ func TestApplyFieldValueDetailFieldsEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyProviderIDsAndURLs_MergesIDsURLsAliases verifies the post-#1158
+// split: applyProviderIDsAndURLs always merges provider IDs, URL relations,
+// and aliases into the aggregated result, with first-write-wins semantics
+// on IDs so a later provider never clobbers a higher-priority provider's ID.
+func TestApplyProviderIDsAndURLs_MergesIDsURLsAliases(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		MusicBrainzID: "mbid-123",
+		AudioDBID:     "adb-123",
+		DiscogsID:     "disc-123",
+		WikidataID:    "Q175044",
+		DeezerID:      "5269",
+		SpotifyID:     "spotify-id",
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+			"deezer":   "https://www.deezer.com/artist/5269",
+		},
+		Aliases: []string{"12 Stones", "Twelve Stones"},
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	if result.Metadata.WikidataID != "Q175044" {
+		t.Errorf("WikidataID = %q, want Q175044", result.Metadata.WikidataID)
+	}
+	if result.Metadata.DeezerID != "5269" {
+		t.Errorf("DeezerID = %q, want 5269", result.Metadata.DeezerID)
+	}
+	if result.Metadata.SpotifyID != "spotify-id" {
+		t.Errorf("SpotifyID = %q, want spotify-id", result.Metadata.SpotifyID)
+	}
+	if len(result.Metadata.URLs) != 2 {
+		t.Errorf("URLs len = %d, want 2", len(result.Metadata.URLs))
+	}
+	if len(result.Metadata.Aliases) != 2 {
+		t.Errorf("Aliases len = %d, want 2", len(result.Metadata.Aliases))
+	}
+}
+
+// TestApplyProviderIDsAndURLs_FirstWriteWins verifies first-write-wins so a
+// lower-priority provider cannot clobber a higher-priority provider's IDs.
+func TestApplyProviderIDsAndURLs_FirstWriteWins(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			WikidataID: "Q-existing",
+			URLs:       make(map[string]string),
+		},
+	}
+	loserMeta := &provider.ArtistMetadata{
+		WikidataID: "Q-new",
+	}
+
+	applyProviderIDsAndURLs(result, loserMeta)
+
+	if result.Metadata.WikidataID != "Q-existing" {
+		t.Errorf("WikidataID = %q, want Q-existing (first write wins)", result.Metadata.WikidataID)
+	}
+}
+
+// TestApplyProviderIDsAndURLs_DoesNotMergeClassification verifies the split
+// keeps classification fields (Name, Type, Gender, etc.) out of the always-
+// merged bucket; those are applyMergeableFields's responsibility and must
+// be gated on provider selection.
+func TestApplyProviderIDsAndURLs_DoesNotMergeClassification(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		Name:           "Should Not Merge",
+		SortName:       "Should Not Merge",
+		Type:           "Group",
+		Gender:         "Female",
+		Disambiguation: "Should Not Merge",
+		YearsActive:    "1999-present",
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	if result.Metadata.Name != "" || result.Metadata.Type != "" ||
+		result.Metadata.Gender != "" || result.Metadata.Disambiguation != "" ||
+		result.Metadata.YearsActive != "" || result.Metadata.SortName != "" {
+		t.Errorf("applyProviderIDsAndURLs leaked classification fields: %+v", result.Metadata)
+	}
+}
+
+// TestApplyMergeableFields_DoesNotTouchIDs verifies that after the #1158
+// split, the selection-gated applyMergeableFields no longer handles provider
+// IDs. Those are now exclusively applyProviderIDsAndURLs's job, which runs
+// unconditionally.
+func TestApplyMergeableFields_DoesNotTouchIDs(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		MusicBrainzID: "mbid-should-not-merge",
+		WikidataID:    "Q-should-not-merge",
+		DeezerID:      "should-not-merge",
+	}
+
+	applyMergeableFields(result, meta, provider.NameAudioDB)
+
+	if result.Metadata.MusicBrainzID != "" ||
+		result.Metadata.WikidataID != "" ||
+		result.Metadata.DeezerID != "" {
+		t.Errorf("applyMergeableFields leaked provider IDs: %+v", result.Metadata)
+	}
+}

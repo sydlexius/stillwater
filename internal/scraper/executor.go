@@ -126,21 +126,46 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		}
 	}
 
-	// Apply mergeable fields only from providers that were actually selected.
-	// Also populate AttemptedProviders for providers that responded without
-	// error, so callers can update per-provider fetch timestamps. Errored
-	// providers are excluded to avoid hiding outages behind misleading
-	// "attempted" markers.
+	// Populate AttemptedProviders for providers that responded without error,
+	// so callers can update per-provider fetch timestamps. Errored providers
+	// are excluded to avoid hiding outages behind misleading "attempted"
+	// markers.
+	//
+	// Mergeable data falls into two buckets:
+	//   1. Provider IDs, URL relations, and aliases: orthogonal to field
+	//      selection. A provider that loses every field may still be the
+	//      only source of the artist's Wikidata/Deezer/Spotify ID or a
+	//      relation URL. These must merge for every successful provider so
+	//      downstream persistence records them.
+	//   2. Name/SortName and classification fields (Type, Gender,
+	//      Disambiguation, YearsActive): selection-gated to respect the
+	//      priority-wins semantics the scraper config defines.
+	//
+	// Collapsing both into one gate was the #1158 root cause: Wikidata
+	// returned Q175044 but lost every field to MusicBrainz, so nothing was
+	// merged from its result and the QID was dropped before persistence.
 	for provName, pr := range cache {
 		if pr.err != nil {
 			continue
 		}
 		result.AttemptedProviders = append(result.AttemptedProviders, provName)
-		if !selectedProviders[provName] || pr.meta == nil {
+		if pr.meta == nil {
+			continue
+		}
+		applyProviderIDsAndURLs(result, pr.meta)
+		if !selectedProviders[provName] {
 			continue
 		}
 		applyMergeableFields(result, pr.meta, provName)
 	}
+	// Final pass: backfill provider IDs from URL relations on the aggregated
+	// result. MusicBrainz publishes URL relations (deezer, wikidata, spotify,
+	// discogs, allmusic) whose last path segment is the provider's native ID;
+	// we can persist those even when the corresponding provider adapter was
+	// never invoked (e.g. the user has not enabled Deezer as a scraper). The
+	// non-scraper orchestrator performs the same sweep in FetchMetadata; the
+	// scraper path needs to match it so persistence sees the same IDs.
+	provider.ExtractProviderIDsFromURLs(result.Metadata)
 	// Post-merge normalization: clear gender for non-individual types regardless
 	// of provider iteration order (Go map iteration is non-deterministic).
 	if result.Metadata.Type != "" && !artist.IsIndividualType(result.Metadata.Type) {
@@ -489,9 +514,13 @@ func applyFieldValue(field FieldName, pr *providerResult, result *provider.Fetch
 	return false
 }
 
-// applyMergeableFields copies non-field-specific data (IDs, URLs, aliases) from
-// a provider result into the merged FetchResult.
-func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMetadata, source provider.ProviderName) {
+// applyProviderIDsAndURLs merges provider identifiers, URL relations, and
+// aliases from a provider result into the merged FetchResult. These three
+// buckets are orthogonal to per-field selection and must merge for every
+// provider that succeeded (regardless of whether the provider "won" any
+// field), so that downstream persistence sees every ID the query chain
+// discovered. See #1158.
+func applyProviderIDsAndURLs(result *provider.FetchResult, meta *provider.ArtistMetadata) {
 	if meta.MusicBrainzID != "" && result.Metadata.MusicBrainzID == "" {
 		result.Metadata.MusicBrainzID = meta.MusicBrainzID
 	}
@@ -510,6 +539,24 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
 		result.Metadata.SpotifyID = meta.SpotifyID
 	}
+	for k, v := range meta.URLs {
+		if _, exists := result.Metadata.URLs[k]; !exists {
+			result.Metadata.URLs[k] = v
+		}
+	}
+	for _, alias := range meta.Aliases {
+		if !containsString(result.Metadata.Aliases, alias) {
+			result.Metadata.Aliases = append(result.Metadata.Aliases, alias)
+		}
+	}
+}
+
+// applyMergeableFields copies classification fields (Name, SortName, Type,
+// Gender, Disambiguation, YearsActive) from a selected provider's result
+// into the merged FetchResult. Callers must gate this on the scraper-config
+// selection, because these fields follow priority-wins semantics; IDs and
+// URLs belong in applyProviderIDsAndURLs, which is called unconditionally.
+func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMetadata, source provider.ProviderName) {
 	// MusicBrainz is authoritative for artist names (it owns the MBID), so
 	// its Name/SortName always win. This is especially important when
 	// language-aware name promotion selects a localized alias. Other
@@ -540,21 +587,6 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	if meta.YearsActive != "" && result.Metadata.YearsActive == "" {
 		result.Metadata.YearsActive = meta.YearsActive
 	}
-
-	// Merge URLs
-	for k, v := range meta.URLs {
-		if _, exists := result.Metadata.URLs[k]; !exists {
-			result.Metadata.URLs[k] = v
-		}
-	}
-
-	// Merge aliases (deduplicated)
-	for _, alias := range meta.Aliases {
-		if !containsString(result.Metadata.Aliases, alias) {
-			result.Metadata.Aliases = append(result.Metadata.Aliases, alias)
-		}
-	}
-
 }
 
 func fieldToImageType(field FieldName) provider.ImageType {

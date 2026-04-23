@@ -17,6 +17,13 @@ import (
 // whitespace, quote, or end of string.
 var sensitiveParamRe = regexp.MustCompile(`(?i)(api_?key|token|secret|password|authorization)=([^&\s"']+)`)
 
+// wikidataQIDRe matches a well-formed Wikidata Q-item identifier. Callers that
+// accept a last-path-segment as a QID must validate against this to avoid
+// propagating malformed values like "Qabc" or "Qspecial:Random" through
+// providerIDs, which would otherwise drive a failed direct-entity SPARQL and
+// mask the MBID fallback.
+var wikidataQIDRe = regexp.MustCompile(`^Q[0-9]+$`)
+
 // ScrubError removes sensitive query parameter values (API keys, tokens, passwords)
 // from error strings before they are written to logs. Provider errors may contain
 // full request URLs with credentials in query parameters (e.g. Fanart.tv includes
@@ -200,7 +207,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 	// Final backfill pass for the merged metadata (catches any IDs not yet
 	// populated from earlier per-provider enrichment).
-	extractProviderIDsFromURLs(result.Metadata)
+	ExtractProviderIDsFromURLs(result.Metadata)
 
 	// MusicBrainz is authoritative for artist Name and SortName: it owns the
 	// MBID and applies language-aware alias promotion inline on its meta.Name.
@@ -934,10 +941,11 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 		URLs:       meta.URLs,
 		DiscogsID:  meta.DiscogsID,
 		DeezerID:   meta.DeezerID,
+		WikidataID: meta.WikidataID,
 		AllMusicID: meta.AllMusicID,
 		SpotifyID:  meta.SpotifyID,
 	}
-	extractProviderIDsFromURLs(scratch)
+	ExtractProviderIDsFromURLs(scratch)
 
 	// Only set IDs that are not already populated. We preserve non-empty
 	// stored IDs because the caller's existing ID is authoritative.
@@ -953,6 +961,18 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 			providerIDs[NameDeezer] = scratch.DeezerID
 		}
 	}
+	// Wikidata URLs from MusicBrainz carry the Q-item ID directly
+	// (e.g. "https://www.wikidata.org/wiki/Q175044"). Propagating this
+	// into providerIDs lets the orchestrator call Wikidata by QID instead
+	// of MBID, which is important when the Wikidata entity does not have
+	// its P434 (MusicBrainz artist ID) property populated. The P434-based
+	// SPARQL lookup returns no bindings in that case, so a pre-resolved
+	// QID is the only reliable path.
+	if scratch.WikidataID != "" {
+		if current := providerIDs[NameWikidata]; current == "" {
+			providerIDs[NameWikidata] = scratch.WikidataID
+		}
+	}
 	if scratch.AllMusicID != "" {
 		if current := providerIDs[NameAllMusic]; current == "" {
 			providerIDs[NameAllMusic] = scratch.AllMusicID
@@ -965,7 +985,7 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	}
 }
 
-// extractProviderIDsFromURLs backfills provider IDs from URL relations returned
+// ExtractProviderIDsFromURLs backfills provider IDs from URL relations returned
 // by MusicBrainz when the IDs are not yet set.
 //
 // MusicBrainz URL relations look like:
@@ -975,7 +995,7 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 //	wikidata: "https://www.wikidata.org/wiki/Q44190"       -> "Q44190"
 //	deezer:   "https://www.deezer.com/artist/3106"         -> "3106"
 //	allmusic: "https://www.allmusic.com/artist/mn0000505828" -> "mn0000505828"
-func extractProviderIDsFromURLs(meta *ArtistMetadata) {
+func ExtractProviderIDsFromURLs(meta *ArtistMetadata) {
 	if meta == nil {
 		return
 	}
@@ -1005,7 +1025,7 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 			}
 			if idx := strings.LastIndex(u, "/"); idx >= 0 {
 				candidate := u[idx+1:]
-				if len(candidate) > 1 && candidate[0] == 'Q' {
+				if wikidataQIDRe.MatchString(candidate) {
 					meta.WikidataID = candidate
 				}
 			}
