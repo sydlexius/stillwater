@@ -349,6 +349,110 @@ func TestGetArtistInvalidMBID(t *testing.T) {
 	}
 }
 
+// TestGetArtist_AcceptsQID verifies that a Wikidata QID (e.g. "Q175044") is
+// accepted by GetArtist and that the SPARQL query sent to the server uses
+// the direct-entity BIND form (wd:Q175044) rather than the P434-based filter.
+// This path is required for artists whose Wikidata entity lacks a P434
+// cross-link to MusicBrainz: a P434 query would return zero bindings.
+func TestGetArtist_AcceptsQID(t *testing.T) {
+	artistData := loadFixture(t, "artist_radiohead.json")
+	queryCh := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		queryCh <- r.URL.Query().Get("query")
+		_, _ = w.Write(artistData)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "Q175044")
+	if err != nil {
+		t.Fatalf("GetArtist(QID): %v", err)
+	}
+
+	captured := <-queryCh
+	// Direct-entity form must be present.
+	if !strings.Contains(captured, "BIND(wd:Q175044 AS ?item)") {
+		t.Errorf("expected SPARQL to bind wd:Q175044 directly; query:\n%s", captured)
+	}
+	// The P434-based filter must not appear on the QID path.
+	if strings.Contains(captured, "wdt:P434") {
+		t.Errorf("did not expect wdt:P434 in SPARQL for QID path; query:\n%s", captured)
+	}
+
+	// MusicBrainzID on the returned metadata must be empty when the caller
+	// supplied a QID rather than a UUID; there is no MBID to record.
+	if meta.MusicBrainzID != "" {
+		t.Errorf("MusicBrainzID = %q, want empty when input is a QID", meta.MusicBrainzID)
+	}
+}
+
+// TestGetArtist_AcceptsMBID_PreservesExistingPath verifies that a UUID input
+// still routes through the P434-based SPARQL query and that the returned
+// metadata carries the MBID as before, so QID support does not regress the
+// existing MBID lookup path.
+func TestGetArtist_AcceptsMBID_PreservesExistingPath(t *testing.T) {
+	artistData := loadFixture(t, "artist_radiohead.json")
+	queryCh := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		queryCh <- r.URL.Query().Get("query")
+		_, _ = w.Write(artistData)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	meta, err := a.GetArtist(context.Background(), mbid)
+	if err != nil {
+		t.Fatalf("GetArtist(MBID): %v", err)
+	}
+
+	captured := <-queryCh
+	// P434-based filter is the historical path for UUID inputs.
+	if !strings.Contains(captured, "wdt:P434") {
+		t.Errorf("expected wdt:P434 in SPARQL for MBID path; query:\n%s", captured)
+	}
+	// BIND form must not appear on the MBID path.
+	if strings.Contains(captured, "BIND(wd:") {
+		t.Errorf("did not expect BIND(wd:...) in SPARQL for MBID path; query:\n%s", captured)
+	}
+
+	if meta.MusicBrainzID != mbid {
+		t.Errorf("MusicBrainzID = %q, want %q", meta.MusicBrainzID, mbid)
+	}
+}
+
+// TestIsQID covers the Q-item identifier matcher used by GetArtist to route
+// between the direct-entity and P434-based SPARQL paths.
+func TestIsQID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"Q44190", true},
+		{"Q1", true},
+		{"Q175044", true},
+		{"q175044", false}, // lowercase q is not valid
+		{"Q", false},       // needs at least one digit
+		{"Q12abc", false},  // digits only after Q
+		{"QQ1", false},
+		{"a74b1b7f-71a5-4011-9441-d0b5e4122711", false}, // UUID, not QID
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isQID(tt.input); got != tt.want {
+			t.Errorf("isQID(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestGetImagesInvalidMBID(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -508,5 +612,92 @@ func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	}
 	if _, ok := err.(*provider.ErrProviderUnavailable); !ok {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+// TestGetArtist_QID_ReturnsNotFoundOnEmptyBindings verifies that GetArtist
+// returns ErrNotFound when the SPARQL server responds successfully but with
+// zero bindings. This mirrors the existing MBID path behavior and ensures the
+// QID path also propagates a proper not-found error rather than returning a
+// nil/zero-value metadata struct.
+func TestGetArtist_QID_ReturnsNotFoundOnEmptyBindings(t *testing.T) {
+	// Minimal SPARQL JSON response with an empty results binding list.
+	emptyBindings := []byte(`{"results":{"bindings":[]}}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		_, _ = w.Write(emptyBindings)
+	}))
+	defer srv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, srv.URL)
+
+	_, err := a.GetArtist(context.Background(), "Q175044")
+	if err == nil {
+		t.Fatal("expected error for QID with empty SPARQL bindings, got nil")
+	}
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+// TestBuildArtistQuery_QIDPath verifies that buildArtistQuery emits a
+// BIND(wd:...) statement and omits the wdt:P434 filter when given a QID.
+func TestBuildArtistQuery_QIDPath(t *testing.T) {
+	query := buildArtistQuery("Q175044", nil)
+
+	if !strings.Contains(query, "BIND(wd:Q175044 AS ?item)") {
+		t.Errorf("QID query does not contain BIND form; query:\n%s", query)
+	}
+	if strings.Contains(query, "wdt:P434") {
+		t.Errorf("QID query must not use wdt:P434 filter; query:\n%s", query)
+	}
+}
+
+// TestBuildArtistQuery_MBIDPath verifies that buildArtistQuery emits the
+// wdt:P434 filter and omits the BIND form when given a UUID (MBID).
+func TestBuildArtistQuery_MBIDPath(t *testing.T) {
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	query := buildArtistQuery(mbid, nil)
+
+	if !strings.Contains(query, `wdt:P434 "`+mbid+`"`) {
+		t.Errorf("MBID query does not contain P434 filter; query:\n%s", query)
+	}
+	if strings.Contains(query, "BIND(wd:") {
+		t.Errorf("MBID query must not use BIND form; query:\n%s", query)
+	}
+}
+
+// TestGetArtist_RejectsNonUUIDNonQID verifies that an input that is neither a
+// well-formed UUID nor a QID (e.g. a plain word or a partial QID like "Qabc")
+// is rejected immediately as ErrNotFound without any network call. This guards
+// the dual-validation gate added alongside QID support.
+func TestGetArtist_RejectsNonUUIDNonQID(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"plain word", "radiohead"},
+		{"partial QID alpha", "Qabc"},
+		{"QID with leading zero context", "Q 12345"},
+		{"empty string", ""},
+	}
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	// Pass a dead host; a network call would cause the test to hang/fail.
+	a := NewWithEndpoint(limiter, logger, "http://127.0.0.1:0")
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := a.GetArtist(context.Background(), tc.input)
+			if err == nil {
+				t.Fatalf("GetArtist(%q) returned nil error, want ErrNotFound", tc.input)
+			}
+			if _, ok := err.(*provider.ErrNotFound); !ok {
+				t.Errorf("GetArtist(%q) returned %T (%v), want ErrNotFound", tc.input, err, err)
+			}
+		})
 	}
 }

@@ -681,3 +681,243 @@ func TestApplyFieldValueDetailFieldsEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyProviderIDsAndURLs_MergesIDsURLsAliases verifies the post-#1158
+// split: applyProviderIDsAndURLs always merges provider IDs, URL relations,
+// and aliases into the aggregated result, with first-write-wins semantics
+// on IDs so a later provider never clobbers a higher-priority provider's ID.
+func TestApplyProviderIDsAndURLs_MergesIDsURLsAliases(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		MusicBrainzID: "mbid-123",
+		AudioDBID:     "adb-123",
+		DiscogsID:     "disc-123",
+		WikidataID:    "Q175044",
+		DeezerID:      "5269",
+		SpotifyID:     "spotify-id",
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+			"deezer":   "https://www.deezer.com/artist/5269",
+		},
+		Aliases: []string{"12 Stones", "Twelve Stones"},
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	if result.Metadata.WikidataID != "Q175044" {
+		t.Errorf("WikidataID = %q, want Q175044", result.Metadata.WikidataID)
+	}
+	if result.Metadata.DeezerID != "5269" {
+		t.Errorf("DeezerID = %q, want 5269", result.Metadata.DeezerID)
+	}
+	if result.Metadata.SpotifyID != "spotify-id" {
+		t.Errorf("SpotifyID = %q, want spotify-id", result.Metadata.SpotifyID)
+	}
+	if len(result.Metadata.URLs) != 2 {
+		t.Errorf("URLs len = %d, want 2", len(result.Metadata.URLs))
+	}
+	if len(result.Metadata.Aliases) != 2 {
+		t.Errorf("Aliases len = %d, want 2", len(result.Metadata.Aliases))
+	}
+}
+
+// TestApplyProviderIDsAndURLs_FirstWriteWins verifies first-write-wins so a
+// lower-priority provider cannot clobber a higher-priority provider's IDs.
+func TestApplyProviderIDsAndURLs_FirstWriteWins(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			WikidataID: "Q-existing",
+			URLs:       make(map[string]string),
+		},
+	}
+	loserMeta := &provider.ArtistMetadata{
+		WikidataID: "Q-new",
+	}
+
+	applyProviderIDsAndURLs(result, loserMeta)
+
+	if result.Metadata.WikidataID != "Q-existing" {
+		t.Errorf("WikidataID = %q, want Q-existing (first write wins)", result.Metadata.WikidataID)
+	}
+}
+
+// TestApplyProviderIDsAndURLs_DoesNotMergeClassification verifies the split
+// keeps classification fields (Name, Type, Gender, etc.) out of the always-
+// merged bucket; those are applyMergeableFields's responsibility and must
+// be gated on provider selection.
+func TestApplyProviderIDsAndURLs_DoesNotMergeClassification(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		Name:           "Should Not Merge",
+		SortName:       "Should Not Merge",
+		Type:           "Group",
+		Gender:         "Female",
+		Disambiguation: "Should Not Merge",
+		YearsActive:    "1999-present",
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	if result.Metadata.Name != "" || result.Metadata.Type != "" ||
+		result.Metadata.Gender != "" || result.Metadata.Disambiguation != "" ||
+		result.Metadata.YearsActive != "" || result.Metadata.SortName != "" {
+		t.Errorf("applyProviderIDsAndURLs leaked classification fields: %+v", result.Metadata)
+	}
+}
+
+// TestApplyMergeableFields_DoesNotTouchIDs verifies that after the #1158
+// split, the selection-gated applyMergeableFields no longer handles provider
+// IDs. Those are now exclusively applyProviderIDsAndURLs's job, which runs
+// unconditionally.
+func TestApplyMergeableFields_DoesNotTouchIDs(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		MusicBrainzID: "mbid-should-not-merge",
+		WikidataID:    "Q-should-not-merge",
+		DeezerID:      "should-not-merge",
+	}
+
+	applyMergeableFields(result, meta, provider.NameAudioDB)
+
+	if result.Metadata.MusicBrainzID != "" ||
+		result.Metadata.WikidataID != "" ||
+		result.Metadata.DeezerID != "" {
+		t.Errorf("applyMergeableFields leaked provider IDs: %+v", result.Metadata)
+	}
+}
+
+// TestApplyProviderIDsAndURLs_AliasDeduplication verifies that calling
+// applyProviderIDsAndURLs multiple times with an overlapping alias list does
+// not produce duplicate entries. The function uses containsString to guard
+// each append, so the same alias must appear exactly once.
+func TestApplyProviderIDsAndURLs_AliasDeduplication(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Aliases: []string{"Radiohead"},
+			URLs:    make(map[string]string),
+		},
+	}
+	// Second call with the same alias.
+	meta := &provider.ArtistMetadata{
+		Aliases: []string{"Radiohead", "On A Friday"},
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	count := 0
+	for _, a := range result.Metadata.Aliases {
+		if a == "Radiohead" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("alias \"Radiohead\" appears %d times, want 1 (deduplication failure)", count)
+	}
+	// New alias must have been appended.
+	found := false
+	for _, a := range result.Metadata.Aliases {
+		if a == "On A Friday" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("alias \"On A Friday\" not found in %v", result.Metadata.Aliases)
+	}
+}
+
+// TestApplyProviderIDsAndURLs_URLKeyFirstWriteWins verifies that a URL key
+// already present in result.Metadata.URLs is not overwritten by a later
+// provider call. This mirrors the first-write-wins semantics applied to
+// provider IDs.
+func TestApplyProviderIDsAndURLs_URLKeyFirstWriteWins(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			URLs: map[string]string{
+				"wikidata": "https://www.wikidata.org/wiki/Q-existing",
+			},
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q-new",
+			"deezer":   "https://www.deezer.com/artist/5269",
+		},
+	}
+
+	applyProviderIDsAndURLs(result, meta)
+
+	if result.Metadata.URLs["wikidata"] != "https://www.wikidata.org/wiki/Q-existing" {
+		t.Errorf("wikidata URL = %q, want original value (first write wins)",
+			result.Metadata.URLs["wikidata"])
+	}
+	// New key must have been added.
+	if result.Metadata.URLs["deezer"] != "https://www.deezer.com/artist/5269" {
+		t.Errorf("deezer URL = %q, want https://www.deezer.com/artist/5269",
+			result.Metadata.URLs["deezer"])
+	}
+}
+
+// TestApplyMergeableFields_MusicBrainzNameOverwritesExisting verifies that a
+// MusicBrainz result replaces an already-set Name, because MB is authoritative
+// (it owns the MBID and performs language-aware alias promotion).
+func TestApplyMergeableFields_MusicBrainzNameOverwritesExisting(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name:     "Radiohead (old)",
+			SortName: "Radiohead, old",
+			URLs:     make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		Name:     "Radiohead",
+		SortName: "Radiohead",
+	}
+
+	applyMergeableFields(result, meta, provider.NameMusicBrainz)
+
+	if result.Metadata.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead (MusicBrainz must overwrite existing name)", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "Radiohead" {
+		t.Errorf("SortName = %q, want Radiohead", result.Metadata.SortName)
+	}
+}
+
+// TestApplyMergeableFields_NonMBDoesNotOverwriteExistingName verifies that a
+// non-MusicBrainz provider only fills in Name/SortName if the result does not
+// already have one set — the priority-wins semantics that prevent a lower-
+// priority provider from clobbering the higher-priority choice.
+func TestApplyMergeableFields_NonMBDoesNotOverwriteExistingName(t *testing.T) {
+	result := &provider.FetchResult{
+		Metadata: &provider.ArtistMetadata{
+			Name:     "Radiohead",
+			SortName: "Radiohead",
+			URLs:     make(map[string]string),
+		},
+	}
+	meta := &provider.ArtistMetadata{
+		Name:     "Radiohead (alt spelling)",
+		SortName: "Radiohead Alt",
+	}
+
+	applyMergeableFields(result, meta, provider.NameLastFM)
+
+	if result.Metadata.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead (non-MB must not overwrite existing name)", result.Metadata.Name)
+	}
+	if result.Metadata.SortName != "Radiohead" {
+		t.Errorf("SortName = %q, want Radiohead", result.Metadata.SortName)
+	}
+}

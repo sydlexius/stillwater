@@ -1063,7 +1063,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			meta := &ArtistMetadata{URLs: tt.urls}
-			extractProviderIDsFromURLs(meta)
+			ExtractProviderIDsFromURLs(meta)
 			if meta.DiscogsID != tt.wantDiscogsID {
 				t.Errorf("DiscogsID: got %q, want %q", meta.DiscogsID, tt.wantDiscogsID)
 			}
@@ -1097,7 +1097,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 		}
-		extractProviderIDsFromURLs(meta)
+		ExtractProviderIDsFromURLs(meta)
 		if meta.DiscogsID != "existing" {
 			t.Errorf("DiscogsID was overwritten: got %q", meta.DiscogsID)
 		}
@@ -2412,5 +2412,164 @@ func TestOrchestratorPopulatedFields_DedupAcrossProviders(t *testing.T) {
 	// Sanity: aggregation actually happened.
 	if len(result.Metadata.Genres) < 2 {
 		t.Errorf("expected genres aggregated across both providers, got %v", result.Metadata.Genres)
+	}
+}
+
+// TestEnrichProviderIDs_ExtractsWikidataID verifies that a Wikidata URL
+// relation returned by MusicBrainz is extracted into providerIDs so that
+// subsequent Wikidata calls can look up the entity by its QID directly
+// (required when the Wikidata entity lacks a P434 cross-link).
+func TestEnrichProviderIDs_ExtractsWikidataID(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got := providerIDs[NameWikidata]; got != "Q175044" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want %q", got, "Q175044")
+	}
+}
+
+// TestEnrichProviderIDs_IgnoresMalformedWikidataURL verifies that URLs that
+// do not end in a Q-item ID (e.g. Special:Random pages) do not populate the
+// Wikidata provider ID.
+func TestEnrichProviderIDs_IgnoresMalformedWikidataURL(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Special:Random",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got, ok := providerIDs[NameWikidata]; ok && got != "" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want unset/empty", got)
+	}
+}
+
+// TestEnrichProviderIDs_PreservesExistingWikidataID verifies that a pre-existing
+// Wikidata ID in providerIDs is not overwritten by URL extraction, matching
+// the first-write-wins behavior used for the other providers.
+func TestEnrichProviderIDs_PreservesExistingWikidataID(t *testing.T) {
+	providerIDs := map[ProviderName]string{
+		NameWikidata: "Q999999",
+	}
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got := providerIDs[NameWikidata]; got != "Q999999" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want pre-existing %q", got, "Q999999")
+	}
+}
+
+// TestExtractProviderIDsFromURLs_RejectsInvalidQID verifies that the Wikidata
+// URL parser requires a well-formed Q-item identifier (Q followed by digits).
+// Addresses the CodeRabbit review finding on PR #1177: before this hardening,
+// a URL like /wiki/Qabc or /wiki/Qspecial:Random would accept "Qabc" or
+// "Qspecial:Random" as a "QID" and propagate it into providerIDs, which would
+// then drive a failed direct-entity SPARQL and mask the MBID fallback path.
+func TestExtractProviderIDsFromURLs_RejectsInvalidQID(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{"alpha chars", "https://www.wikidata.org/wiki/Qabc"},
+		{"mixed alphanum", "https://www.wikidata.org/wiki/Q12a34"},
+		{"colon suffix", "https://www.wikidata.org/wiki/Q123:suffix"},
+		{"lowercase q", "https://www.wikidata.org/wiki/q12345"},
+		{"just Q", "https://www.wikidata.org/wiki/Q"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := &ArtistMetadata{
+				URLs: map[string]string{"wikidata": tc.url},
+			}
+			ExtractProviderIDsFromURLs(meta)
+			if meta.WikidataID != "" {
+				t.Errorf("URL %q produced WikidataID=%q, want empty (invalid QID must be rejected)",
+					tc.url, meta.WikidataID)
+			}
+		})
+	}
+}
+
+// TestExtractProviderIDsFromURLs_AcceptsValidQID verifies that the Wikidata
+// URL parser still accepts well-formed Q-item identifiers after the
+// validation tightening.
+func TestExtractProviderIDsFromURLs_AcceptsValidQID(t *testing.T) {
+	meta := &ArtistMetadata{
+		URLs: map[string]string{"wikidata": "https://www.wikidata.org/wiki/Q175044"},
+	}
+	ExtractProviderIDsFromURLs(meta)
+	if meta.WikidataID != "Q175044" {
+		t.Errorf("WikidataID = %q, want Q175044", meta.WikidataID)
+	}
+}
+
+// TestEnrichProviderIDs_DirectWikidataIDPropagates verifies that a WikidataID
+// already set directly on meta (not via a URL relation) is propagated into
+// providerIDs. EnrichProviderIDs copies meta.WikidataID into a scratch struct
+// before calling ExtractProviderIDsFromURLs, so the field-level ID is not
+// lost even when no "wikidata" URL key is present.
+func TestEnrichProviderIDs_DirectWikidataIDPropagates(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+	meta := &ArtistMetadata{
+		WikidataID: "Q42",
+		// No URLs map – ID comes from the struct field directly.
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got := providerIDs[NameWikidata]; got != "Q42" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want Q42 (direct field propagation)", got)
+	}
+}
+
+// TestExtractProviderIDsFromURLs_NilMetaNoOp verifies that calling
+// ExtractProviderIDsFromURLs with a nil pointer does not panic.
+func TestExtractProviderIDsFromURLs_NilMetaNoOp(t *testing.T) {
+	// Should not panic; the function has an early nil-guard.
+	ExtractProviderIDsFromURLs(nil)
+}
+
+// TestExtractProviderIDsFromURLs_WikidataURLWithQueryString verifies that a
+// Wikidata URL containing a query string (e.g. ?format=json) does not prevent
+// QID extraction. The implementation strips everything from the first '?' or
+// '#' before taking the last path segment.
+func TestExtractProviderIDsFromURLs_WikidataURLWithQueryString(t *testing.T) {
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q44190?format=json",
+		},
+	}
+	ExtractProviderIDsFromURLs(meta)
+	if meta.WikidataID != "Q44190" {
+		t.Errorf("WikidataID = %q, want Q44190 (query string must be stripped before QID extraction)", meta.WikidataID)
+	}
+}
+
+// TestExtractProviderIDsFromURLs_WikidataURLWithFragment verifies that a
+// Wikidata URL ending in a fragment (e.g. #section) does not prevent QID
+// extraction. The implementation strips everything from the first '?' or '#'.
+func TestExtractProviderIDsFromURLs_WikidataURLWithFragment(t *testing.T) {
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q44190#section",
+		},
+	}
+	ExtractProviderIDsFromURLs(meta)
+	if meta.WikidataID != "Q44190" {
+		t.Errorf("WikidataID = %q, want Q44190 (fragment must be stripped before QID extraction)", meta.WikidataID)
 	}
 }
