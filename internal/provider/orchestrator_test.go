@@ -2414,3 +2414,60 @@ func TestOrchestratorPopulatedFields_DedupAcrossProviders(t *testing.T) {
 		t.Errorf("expected genres aggregated across both providers, got %v", result.Metadata.Genres)
 	}
 }
+
+// TestEnrichProviderIDs_ExtractsWikidataID verifies that a Wikidata URL
+// relation returned by MusicBrainz is extracted into providerIDs so that
+// subsequent Wikidata calls can look up the entity by its QID directly
+// (required when the Wikidata entity lacks a P434 cross-link).
+func TestEnrichProviderIDs_ExtractsWikidataID(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got := providerIDs[NameWikidata]; got != "Q175044" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want %q", got, "Q175044")
+	}
+}
+
+// TestEnrichProviderIDs_IgnoresMalformedWikidataURL verifies that URLs that
+// do not end in a Q-item ID (e.g. Special:Random pages) do not populate the
+// Wikidata provider ID.
+func TestEnrichProviderIDs_IgnoresMalformedWikidataURL(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Special:Random",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got, ok := providerIDs[NameWikidata]; ok && got != "" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want unset/empty", got)
+	}
+}
+
+// TestEnrichProviderIDs_PreservesExistingWikidataID verifies that a pre-existing
+// Wikidata ID in providerIDs is not overwritten by URL extraction, matching
+// the first-write-wins behavior used for the other providers.
+func TestEnrichProviderIDs_PreservesExistingWikidataID(t *testing.T) {
+	providerIDs := map[ProviderName]string{
+		NameWikidata: "Q999999",
+	}
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"wikidata": "https://www.wikidata.org/wiki/Q175044",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if got := providerIDs[NameWikidata]; got != "Q999999" {
+		t.Errorf("providerIDs[NameWikidata] = %q, want pre-existing %q", got, "Q999999")
+	}
+}

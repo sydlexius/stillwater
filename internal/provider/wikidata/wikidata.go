@@ -8,11 +8,22 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// qidPattern matches a Wikidata Q-item identifier ("Q" followed by at least
+// one digit). It is used to distinguish QIDs from MusicBrainz UUIDs when a
+// caller passes either form to GetArtist.
+var qidPattern = regexp.MustCompile(`^Q\d+$`)
+
+// isQID returns true if s matches the Wikidata Q-item identifier format.
+func isQID(s string) bool {
+	return qidPattern.MatchString(s)
+}
 
 const (
 	defaultEndpoint        = "https://query.wikidata.org/sparql"
@@ -62,14 +73,26 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 	return nil, nil
 }
 
-// GetArtist fetches metadata for an artist from Wikidata by their MusicBrainz ID.
-// When the caller has set metadata language preferences in the context, the SPARQL
-// query uses those preferences in wikibase:label so that entity labels (artist name,
-// country name, genre name) are returned in the user's preferred language.
-func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
-	// Validate MBID format before interpolating into SPARQL query to prevent injection.
-	if !provider.IsUUID(mbid) {
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
+// GetArtist fetches metadata for an artist from Wikidata.
+// The id argument may be either a MusicBrainz UUID (in which case the SPARQL
+// query filters on P434) or a Wikidata Q-item identifier (in which case the
+// query looks up the entity directly). Any other input is rejected as
+// ErrNotFound without a network call. This matters because a Wikidata entity
+// may not have its P434 (MusicBrainz artist ID) property populated even when
+// MusicBrainz advertises the reverse URL relation; MB's URL is then the only
+// reliable discovery path and it carries a QID rather than an MBID.
+//
+// When the caller has set metadata language preferences in the context, the
+// SPARQL query uses those preferences in wikibase:label so that entity labels
+// (artist name, country name, genre name) are returned in the user's preferred
+// language.
+func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	// Validate the input as either a UUID or a QID before interpolating into
+	// the SPARQL query. This guards against injection regardless of which
+	// branch buildArtistQuery takes below.
+	isUUID := provider.IsUUID(id)
+	if !isUUID && !isQID(id) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: id}
 	}
 
 	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
@@ -80,17 +103,23 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 	}
 
 	langPrefs := provider.MetadataLanguages(ctx)
-	query := buildArtistQuery(mbid, langPrefs)
+	query := buildArtistQuery(id, langPrefs)
 	bindings, err := a.executeSPARQL(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(bindings) == 0 {
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: id}
 	}
 
-	return mapArtist(mbid, bindings), nil
+	// Only pass a UUID through to mapArtist as the MBID; QID callers have no
+	// MBID to record on the returned metadata.
+	mbidForMap := ""
+	if isUUID {
+		mbidForMap = id
+	}
+	return mapArtist(mbidForMap, bindings), nil
 }
 
 // GetImages fetches artist images from Wikimedia Commons via Wikidata properties
@@ -255,15 +284,42 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	return sparqlResp.Results.Bindings, nil
 }
 
-// buildArtistQuery constructs the SPARQL query for an artist identified by MBID.
-// langPrefs is the user's ordered metadata language preference list (BCP 47 tags).
-// The wikibase:label SERVICE is told to try each language in the preference order,
-// falling back through parent subtags and ultimately to English when no match exists.
-// For example, preferences ["ja", "en-GB"] become "ja,en-gb,en": "en-GB" is kept
-// as-is, its base "en" is expanded inline, and the trailing "en" fallback is not
-// duplicated. The Wikidata label service resolves by trying each entry left to right.
-func buildArtistQuery(mbid string, langPrefs []string) string {
+// buildArtistQuery constructs the SPARQL query for an artist identified by
+// either a MusicBrainz UUID or a Wikidata Q-item identifier.
+//
+//   - When id is a UUID, the query filters entities whose P434 property
+//     (MusicBrainz artist ID) equals the given string. This is the historical
+//     path and works when the Wikidata entity has been cross-linked to MB.
+//   - When id is a QID (e.g. "Q175044"), the query binds ?item directly to
+//     wd:<QID>. This is required when P434 is absent on the Wikidata entity
+//     but MusicBrainz still advertises the wikidata URL relation, because
+//     the P434-based filter would return zero bindings in that case.
+//
+// The caller is expected to have already validated id as either a UUID or a
+// QID; any other input is interpolated verbatim.
+//
+// langPrefs is the user's ordered metadata language preference list (BCP 47
+// tags). The wikibase:label SERVICE is told to try each language in the
+// preference order, falling back through parent subtags and ultimately to
+// English when no match exists. For example, preferences ["ja", "en-GB"]
+// become "ja,en-gb,en": "en-GB" is kept as-is, its base "en" is expanded
+// inline, and the trailing "en" fallback is not duplicated. The Wikidata
+// label service resolves by trying each entry left to right.
+func buildArtistQuery(id string, langPrefs []string) string {
 	lang := wikidataLangParam(langPrefs)
+	// QID path: bind ?item directly to the entity.
+	if isQID(id) {
+		return fmt.Sprintf(`
+SELECT ?item ?itemLabel ?inception ?dissolved ?countryLabel ?genreLabel WHERE {
+  BIND(wd:%s AS ?item)
+  OPTIONAL { ?item wdt:P571 ?inception . }
+  OPTIONAL { ?item wdt:P576 ?dissolved . }
+  OPTIONAL { ?item wdt:P495 ?country . }
+  OPTIONAL { ?item wdt:P136 ?genre . }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "%s" . }
+}`, id, lang)
+	}
+	// MBID path: filter on P434.
 	return fmt.Sprintf(`
 SELECT ?item ?itemLabel ?inception ?dissolved ?countryLabel ?genreLabel WHERE {
   ?item wdt:P434 "%s" .
@@ -272,7 +328,7 @@ SELECT ?item ?itemLabel ?inception ?dissolved ?countryLabel ?genreLabel WHERE {
   OPTIONAL { ?item wdt:P495 ?country . }
   OPTIONAL { ?item wdt:P136 ?genre . }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "%s" . }
-}`, mbid, lang)
+}`, id, lang)
 }
 
 // wikidataLangParam builds the comma-separated language string for the

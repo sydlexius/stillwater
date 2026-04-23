@@ -934,6 +934,7 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 		URLs:       meta.URLs,
 		DiscogsID:  meta.DiscogsID,
 		DeezerID:   meta.DeezerID,
+		WikidataID: meta.WikidataID,
 		AllMusicID: meta.AllMusicID,
 		SpotifyID:  meta.SpotifyID,
 	}
@@ -951,6 +952,18 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	if scratch.DeezerID != "" {
 		if current := providerIDs[NameDeezer]; current == "" {
 			providerIDs[NameDeezer] = scratch.DeezerID
+		}
+	}
+	// Wikidata URLs from MusicBrainz carry the Q-item ID directly
+	// (e.g. "https://www.wikidata.org/wiki/Q175044"). Propagating this
+	// into providerIDs lets the orchestrator call Wikidata by QID instead
+	// of MBID, which is important when the Wikidata entity does not have
+	// its P434 (MusicBrainz artist ID) property populated. The P434-based
+	// SPARQL lookup returns no bindings in that case, so a pre-resolved
+	// QID is the only reliable path.
+	if scratch.WikidataID != "" {
+		if current := providerIDs[NameWikidata]; current == "" {
+			providerIDs[NameWikidata] = scratch.WikidataID
 		}
 	}
 	if scratch.AllMusicID != "" {
