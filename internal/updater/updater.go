@@ -12,8 +12,8 @@
 //     container-appropriate re-pull instructions instead.
 //
 // Config keys stored in the settings table:
-//   - updater.channel:    "stable" | "prerelease"  (default: "stable")
-//   - updater.auto_check: "true" | "false"          (default: "false")
+//   - updater.channel:    "stable" | "prerelease" | "nightly"  (default: "stable")
+//   - updater.auto_check: "true" | "false"                     (default: "false")
 package updater
 
 import (
@@ -61,6 +61,10 @@ const (
 	ChannelStable Channel = "stable"
 	// ChannelPrerelease tracks prerelease tags (v1.2.3-rc.1, v1.2.3-beta.1).
 	ChannelPrerelease Channel = "prerelease"
+	// ChannelNightly tracks date-stamped nightly releases (nightly-YYYYMMDD).
+	// Nightly tags are not semver and are compared lexicographically; the
+	// YYYYMMDD suffix orders correctly under plain string comparison.
+	ChannelNightly Channel = "nightly"
 )
 
 // State describes the current phase of the update lifecycle.
@@ -125,6 +129,12 @@ type githubAsset struct {
 
 // semverRE matches a simple semver tag with optional pre-release suffix.
 var semverRE = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$`)
+
+// nightlyRE matches a nightly release tag of the form "nightly-YYYYMMDD".
+// The YYYYMMDD suffix is fixed-width, so lexicographic ordering on the whole
+// tag agrees with chronological ordering; pickLatest exploits this to pick
+// the newest nightly without a semver parse.
+var nightlyRE = regexp.MustCompile(`^nightly-\d{8}$`)
 
 // Service manages the update lifecycle.
 type Service struct {
@@ -282,7 +292,7 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 		switch k {
 		case SettingChannel:
 			switch Channel(v) {
-			case ChannelStable, ChannelPrerelease:
+			case ChannelStable, ChannelPrerelease, ChannelNightly:
 				cfg.Channel = Channel(v)
 			}
 		case SettingAutoCheck:
@@ -312,7 +322,7 @@ func decideChannelChanged(prev Config, prevErr error, cfg Config) bool {
 // the next Check, and the sidebar pill (which reads this cache via
 // Status) would link to a release from the wrong channel.
 func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
-	if cfg.Channel != ChannelStable && cfg.Channel != ChannelPrerelease {
+	if cfg.Channel != ChannelStable && cfg.Channel != ChannelPrerelease && cfg.Channel != ChannelNightly {
 		return fmt.Errorf("invalid channel: %q", cfg.Channel)
 	}
 	autoCheck := "false"
@@ -715,12 +725,34 @@ func (s *Service) setState(st State, progress int, errMsg string) {
 	s.lastErr = errMsg
 }
 
-// pickLatest returns the release with the highest semantic version that matches
-// the channel. GitHub returns releases in reverse-chronological order, but
-// backported releases (e.g. v1.9.9 published after v2.0.0) would be wrongly
-// treated as "latest" by a first-match strategy. Scanning all entries and
-// keeping the max semver ensures correctness regardless of publish order.
+// pickLatest returns the release that is newest on the requested channel.
+// GitHub returns releases in reverse-chronological order, but backported
+// releases (e.g. v1.9.9 published after v2.0.0) would be wrongly treated as
+// "latest" by a first-match strategy. Scanning all entries and keeping the
+// max version ensures correctness regardless of publish order.
+//
+// Nightly takes a separate path because nightly tags ("nightly-YYYYMMDD")
+// are not semver and would be rejected by semverRE/parseSemver. That path
+// filters to nightlyRE matches and picks the lexicographic max; the
+// fixed-width date suffix makes lex order agree with chronological order.
 func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
+	if ch == ChannelNightly {
+		var best *githubRelease
+		for i := range releases {
+			r := &releases[i]
+			if r.Draft {
+				continue
+			}
+			if !nightlyRE.MatchString(r.TagName) {
+				continue
+			}
+			if best == nil || r.TagName > best.TagName {
+				best = r
+			}
+		}
+		return best
+	}
+
 	var best *githubRelease
 	var bestVer semver
 
@@ -762,8 +794,30 @@ func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 }
 
 // newerThan returns true when candidate is strictly newer than current.
-// Comparison is done via parseSemver.
+//
+// Semver vs nightly comparison is asymmetric because nightly tags are not
+// semver and cannot be meaningfully compared against v1.2.3 on the same
+// numeric axis. Cross-kind cases are treated as "any difference is newer"
+// so the user always sees an actionable update when they switch channels:
+//
+//   - both nightly: lex compare on the "nightly-YYYYMMDD" tag (fixed-width
+//     date suffix makes lex order agree with chronological order).
+//   - only candidate is nightly: user moved from stable/prerelease to
+//     nightly; the nightly is always the target to advertise.
+//   - only current is nightly: user is running a nightly build but has
+//     selected a non-nightly channel; any semver candidate is the path
+//     back to a tagged release, so advertise it.
+//   - neither nightly: fall through to the existing semver comparison.
 func newerThan(candidate, current string) bool {
+	candNightly := strings.HasPrefix(candidate, "nightly-")
+	curNightly := strings.HasPrefix(current, "nightly-")
+	switch {
+	case candNightly && curNightly:
+		return candidate > current
+	case candNightly || curNightly:
+		return candidate != current
+	}
+
 	cv, err1 := parseSemver(candidate)
 	cur, err2 := parseSemver(current)
 	if err1 != nil || err2 != nil {

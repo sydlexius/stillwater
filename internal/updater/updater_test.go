@@ -71,12 +71,29 @@ func TestGetSetConfig(t *testing.T) {
 	if !cfg.AutoCheck {
 		t.Error("auto_check should be true")
 	}
+
+	// Round-trip nightly: both SetConfig validation and GetConfig parsing
+	// must accept the nightly channel end-to-end. This is the integration
+	// point that ties the settings KV serialization to the Channel enum.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly, AutoCheck: false}); err != nil {
+		t.Fatalf("SetConfig (nightly): %v", err)
+	}
+	cfg, err = svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig after nightly set: %v", err)
+	}
+	if cfg.Channel != ChannelNightly {
+		t.Errorf("channel = %q, want %q", cfg.Channel, ChannelNightly)
+	}
+	if cfg.AutoCheck {
+		t.Error("auto_check should be false after nightly set")
+	}
 }
 
 // TestSetConfigInvalidChannel verifies that an invalid channel is rejected.
 func TestSetConfigInvalidChannel(t *testing.T) {
 	svc := buildTestService(t)
-	err := svc.SetConfig(context.Background(), Config{Channel: "nightly"})
+	err := svc.SetConfig(context.Background(), Config{Channel: "bogus"})
 	if err == nil {
 		t.Fatal("expected error for invalid channel")
 	}
@@ -136,6 +153,34 @@ func TestSetConfigClearsCacheOnChannelChange(t *testing.T) {
 	}
 	if st.LastChecked != wantChecked {
 		t.Errorf("after channel change, LastChecked = %q, want %q", st.LastChecked, wantChecked)
+	}
+}
+
+// TestSetConfigClearsCacheOnChannelChangeToNightly verifies the cache
+// invalidation also fires when the target channel is nightly. Without
+// this coverage the nightly channel could inherit stale stable- or
+// prerelease-channel release metadata until the next Check and re-surface
+// the cross-channel sidebar pill this guard is meant to suppress.
+func TestSetConfigClearsCacheOnChannelChangeToNightly(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Start on prerelease with a seeded cache, then switch to nightly.
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelPrerelease}); err != nil {
+		t.Fatalf("SetConfig (prerelease): %v", err)
+	}
+	svc.mu.Lock()
+	svc.updateAvailable = true
+	svc.latestVersion = "v0.9.6-rc.1"
+	svc.releaseURL = "https://example.com/rc"
+	svc.mu.Unlock()
+
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelNightly}); err != nil {
+		t.Fatalf("SetConfig (nightly): %v", err)
+	}
+	st := svc.Status()
+	if st.UpdateAvailable || st.Latest != "" || st.ReleaseURL != "" {
+		t.Errorf("switch to nightly did not clear cache: status=%+v", st)
 	}
 }
 
@@ -339,6 +384,52 @@ func TestPickLatestPrerelease(t *testing.T) {
 	}
 }
 
+// TestPickLatestNightly verifies that the nightly channel picks the
+// lexicographically largest "nightly-YYYYMMDD" tag and ignores semver
+// releases even when those are newer by publish order.
+func TestPickLatestNightly(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "v0.9.5", Prerelease: false},
+		{TagName: "v0.9.6-rc.1", Prerelease: true},
+		{TagName: "nightly-20260420", Prerelease: true},
+		{TagName: "nightly-20260422", Prerelease: true},
+	}
+
+	got := pickLatest(releases, ChannelNightly)
+	if got == nil {
+		t.Fatal("expected a nightly release")
+	}
+	if got.TagName != "nightly-20260422" {
+		t.Errorf("nightly latest = %q, want nightly-20260422", got.TagName)
+	}
+}
+
+// TestPickLatestNightlyIgnoredByStable verifies that nightly tags are
+// invisible to the stable and prerelease channels, which must remain
+// semver-only to keep binary-asset naming deterministic.
+func TestPickLatestNightlyIgnoredByStable(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "nightly-20260422", Prerelease: true},
+		{TagName: "v0.9.6", Prerelease: false},
+	}
+
+	got := pickLatest(releases, ChannelStable)
+	if got == nil {
+		t.Fatal("expected a stable release")
+	}
+	if got.TagName != "v0.9.6" {
+		t.Errorf("stable latest = %q, want v0.9.6", got.TagName)
+	}
+
+	got = pickLatest(releases, ChannelPrerelease)
+	if got == nil {
+		t.Fatal("expected a prerelease match")
+	}
+	if got.TagName != "v0.9.6" {
+		t.Errorf("prerelease latest = %q, want v0.9.6 (nightly must be excluded)", got.TagName)
+	}
+}
+
 // TestPickLatestSkipsDrafts verifies draft releases are excluded.
 func TestPickLatestSkipsDrafts(t *testing.T) {
 	releases := []githubRelease{
@@ -363,7 +454,10 @@ func TestPickLatestEmpty(t *testing.T) {
 	}
 }
 
-// TestNewerThan verifies version comparison.
+// TestNewerThan verifies version comparison, including cross-channel
+// cases where either side may be a nightly tag. Nightly vs semver is
+// treated as "any difference is newer" so a channel switch always
+// surfaces an actionable update in the UI.
 func TestNewerThan(t *testing.T) {
 	cases := []struct {
 		candidate string
@@ -377,6 +471,15 @@ func TestNewerThan(t *testing.T) {
 		{"v0.9.6", "v0.9.6-rc.2", true}, // stable > prerelease same version
 		{"v0.9.6-rc.2", "v0.9.6", false},
 		{"v1.1.0", "v1.0.9", true},
+
+		// Nightly vs nightly: lex compare on the "nightly-YYYYMMDD" tag.
+		{"nightly-20260422", "nightly-20260420", true},
+		{"nightly-20260420", "nightly-20260422", false},
+		{"nightly-20260422", "nightly-20260422", false},
+
+		// Cross-kind: any difference is considered an update.
+		{"nightly-20260422", "v0.9.5", true},
+		{"v1.0.0", "nightly-20260422", true},
 	}
 
 	for _, tc := range cases {

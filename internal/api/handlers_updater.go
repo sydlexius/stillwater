@@ -107,9 +107,11 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 	}
 
 	// Validate channel value before persisting.
-	if body.Channel != updater.ChannelStable && body.Channel != updater.ChannelPrerelease {
+	if body.Channel != updater.ChannelStable &&
+		body.Channel != updater.ChannelPrerelease &&
+		body.Channel != updater.ChannelNightly {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "channel must be \"stable\" or \"prerelease\"",
+			"error": "channel must be \"stable\", \"prerelease\", or \"nightly\"",
 		})
 		return
 	}

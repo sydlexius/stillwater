@@ -11829,6 +11829,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			[]components.SegmentOption{
 				{Value: "stable", Label: t(ctx, "settings.updates.channel_stable")},
 				{Value: "prerelease", Label: t(ctx, "settings.updates.channel_prerelease")},
+				{Value: "nightly", Label: t(ctx, "settings.updates.channel_nightly")},
 			},
 			data.Channel,
 		).Render(ctx, templ_7745c5c3_Buffer)
@@ -11856,7 +11857,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var648 string
 		templ_7745c5c3_Var648, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5799, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5800, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var648))
 		if templ_7745c5c3_Err != nil {
@@ -11869,7 +11870,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var649 string
 		templ_7745c5c3_Var649, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.actions_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5807, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5808, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var649))
 		if templ_7745c5c3_Err != nil {
@@ -11882,7 +11883,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		var templ_7745c5c3_Var650 string
 		templ_7745c5c3_Var650, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5816, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5817, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var650))
 		if templ_7745c5c3_Err != nil {
@@ -11910,7 +11911,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			var templ_7745c5c3_Var651 string
 			templ_7745c5c3_Var651, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5826, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5827, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var651))
 			if templ_7745c5c3_Err != nil {

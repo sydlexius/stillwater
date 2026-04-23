@@ -132,10 +132,38 @@ func TestHandlePutUpdateConfig_Valid(t *testing.T) {
 	}
 }
 
-func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+// TestHandlePutUpdateConfig_Nightly verifies that the PUT handler
+// accepts the nightly channel and persists it through the round-trip.
+// The handler-level enum must stay in sync with the service-level
+// validation; without this test a future handler-side allowlist change
+// could silently reject nightly while SetConfig still accepts it.
+func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
 	body := `{"channel":"nightly","auto_check":false}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var cfg updater.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Channel != updater.ChannelNightly {
+		t.Errorf("channel = %q, want %q", cfg.Channel, updater.ChannelNightly)
+	}
+}
+
+func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"bogus","auto_check":false}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

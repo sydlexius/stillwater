@@ -1225,7 +1225,7 @@ components:
           example: "v1.0.0"
         channel:
           type: string
-          enum: [stable, prerelease]
+          enum: [stable, prerelease, nightly]
           description: Release channel used for this check.
         update_available:
           type: boolean
@@ -1286,10 +1286,11 @@ components:
       properties:
         channel:
           type: string
-          enum: [stable, prerelease]
+          enum: [stable, prerelease, nightly]
           description: >-
             Release channel to track. "stable" follows non-prerelease semver tags;
-            "prerelease" also includes release candidates and beta builds.
+            "prerelease" also includes release candidates and beta builds;
+            "nightly" follows date-stamped nightly builds (nightly-YYYYMMDD).
         auto_check:
           type: boolean
           description: When true, the updater periodically checks for new releases in the background.
@@ -8066,8 +8067,8 @@ paths:
       summary: Check for updates
       description: |
         Queries the GitHub Releases API for the latest version on the configured
-        channel (stable or prerelease). Returns the current running version, the
-        latest available version, and whether an update is available.
+        channel (stable, prerelease, or nightly). Returns the current running
+        version, the latest available version, and whether an update is available.
 
         Uses POST rather than GET because the call mutates server-side updater
         state (`last_checked` timestamp, cached `latest` / `release_url` /
@@ -8229,8 +8230,8 @@ paths:
       tags: [Updates]
       summary: Set update configuration
       description: |
-        Persists the update channel (`stable` or `prerelease`) and the
-        auto-check toggle. Config is stored in the settings key-value table.
+        Persists the update channel (`stable`, `prerelease`, or `nightly`) and
+        the auto-check toggle. Config is stored in the settings key-value table.
       operationId: setUpdateConfig
       requestBody:
         required: true
