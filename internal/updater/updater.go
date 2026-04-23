@@ -477,6 +477,22 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 		// reality rather than a stale prior version. Latest is returned as
 		// the empty string so the CheckResult shape agrees with /status
 		// (which reads back these same cleared fields).
+		//
+		// When the fetched release list is non-empty but pickLatest still
+		// found nothing, log a sample of the fetched tag names so operators
+		// debugging "my just-published release is not showing up" can see
+		// whether the channel is genuinely empty or whether every candidate
+		// was filtered (draft, wrong prerelease flag, regex mismatch on the
+		// nightly path).
+		if len(releases) > 0 {
+			const sampleLimit = 5
+			sample := make([]string, 0, sampleLimit)
+			for i := 0; i < len(releases) && i < sampleLimit; i++ {
+				sample = append(sample, releases[i].TagName)
+			}
+			s.logger.Warn("updater: no release matched channel filter",
+				"channel", cfg.Channel, "fetched", len(releases), "sample_tags", sample)
+		}
 		s.storeCheckResult(genAtStart, time.Now().UTC(), false, "", "")
 		return CheckResult{
 			Current:         version.Version,
@@ -486,7 +502,7 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 		}, nil
 	}
 
-	available := newerThan(latest.TagName, version.Version)
+	available := s.newerThan(latest.TagName, version.Version)
 	s.storeCheckResult(genAtStart, time.Now().UTC(), available, latest.TagName, latest.HTMLURL)
 
 	return CheckResult{
@@ -548,7 +564,7 @@ func (s *Service) runApply(ctx context.Context) {
 	}
 
 	latest := pickLatest(releases, cfg.Channel)
-	if latest == nil || !newerThan(latest.TagName, version.Version) {
+	if latest == nil || !s.newerThan(latest.TagName, version.Version) {
 		s.setState(StateIdle, 100, "")
 		return
 	}
@@ -821,9 +837,18 @@ func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 //     for users who want to intentionally leave the nightly train; we just
 //     do not auto-suggest a downgrade.
 //   - neither nightly: fall through to the existing semver comparison.
-func newerThan(candidate, current string) bool {
-	candNightly := strings.HasPrefix(candidate, "nightly-")
-	curNightly := strings.HasPrefix(current, "nightly-")
+//
+// This is a Service method (not a pure function) so the semver parse-failure
+// branch can log. A malformed version.Version ldflag or a hand-rolled tag
+// that slipped past pickLatest would otherwise silently return "not newer"
+// and an operator debugging "updater says up-to-date but a new release
+// exists" would have no breadcrumb.
+func (s *Service) newerThan(candidate, current string) bool {
+	// Match pickLatest's regex-based detection so "nightly-foobar" or any
+	// other HasPrefix-but-not-well-formed input does not sneak into the
+	// nightly-aware branches and get lex-compared as if it were a date.
+	candNightly := nightlyRE.MatchString(candidate)
+	curNightly := nightlyRE.MatchString(current)
 	switch {
 	case candNightly && curNightly:
 		return candidate > current
@@ -836,6 +861,9 @@ func newerThan(candidate, current string) bool {
 	cv, err1 := parseSemver(candidate)
 	cur, err2 := parseSemver(current)
 	if err1 != nil || err2 != nil {
+		s.logger.Warn("updater: semver parse failed; treating candidate as not newer",
+			"candidate", candidate, "current", current,
+			"candidate_err", err1, "current_err", err2)
 		return false
 	}
 	return semverCompare(cv, cur) > 0

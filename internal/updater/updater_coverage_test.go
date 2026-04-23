@@ -661,6 +661,7 @@ func TestPickLatestInvalidSemver(t *testing.T) {
 // newerThan to return false (both parse errors branch).
 func TestNewerThanInvalidVersions(t *testing.T) {
 	t.Parallel()
+	svc := buildTestService(t)
 
 	cases := []struct {
 		candidate string
@@ -671,7 +672,7 @@ func TestNewerThanInvalidVersions(t *testing.T) {
 		{"", ""},
 	}
 	for _, tc := range cases {
-		if newerThan(tc.candidate, tc.current) {
+		if svc.newerThan(tc.candidate, tc.current) {
 			t.Errorf("newerThan(%q, %q) = true, want false for invalid inputs", tc.candidate, tc.current)
 		}
 	}
