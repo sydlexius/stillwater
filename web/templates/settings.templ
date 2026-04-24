@@ -5050,22 +5050,24 @@ templ connectionFeatureToggle(connID string, feature string, label string, enabl
 // description path since title is not consistently exposed by assistive
 // technology.
 templ connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string) {
+	{{ labelID := connID + "-" + feature + "-label" }}
+	{{ ttID := connID + "-" + feature + "-tt" }}
 	<div class="flex items-center justify-between" title={ tooltip }>
-		<span class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+		<span id={ labelID } class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
 		<button
 			type="button"
 			class={ ruleToggleBtnClasses(enabled) }
 			role="switch"
 			aria-checked={ boolAttr(enabled) }
-			aria-label={ "Toggle " + label }
-			aria-describedby={ connID + "-" + feature + "-tt" }
+			aria-labelledby={ labelID }
+			aria-describedby={ ttID }
 			data-conn-id={ connID }
 			data-feature={ feature }
 			onclick="toggleConnectionFeature(this)"
 		>
 			<span class={ ruleToggleKnobClasses(enabled) }></span>
 		</button>
-		<span id={ connID + "-" + feature + "-tt" } class="sr-only">{ tooltip }</span>
+		<span id={ ttID } class="sr-only">{ tooltip }</span>
 	</div>
 }
 
