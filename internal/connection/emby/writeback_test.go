@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -155,9 +156,15 @@ func TestDisableFileWriteBack_ClearsSaverAndMetadata(t *testing.T) {
 	}
 	// SaveLocalMetadata=false alone is the master switch; we intentionally
 	// leave MetadataSavers untouched because mutating it alongside the flag
-	// triggered a peer NullReferenceException on real Emby builds.
+	// triggered a peer NullReferenceException on real Emby builds. Pin both
+	// halves of that contract so a regression that "tidies up" by clearing
+	// the saver list trips this test.
 	if got.SaveLocalMetadata {
 		t.Errorf("want SaveLocalMetadata cleared, got %+v", got)
+	}
+	wantSavers := []string{"Nfo"}
+	if !reflect.DeepEqual(got.MetadataSavers, wantSavers) {
+		t.Errorf("MetadataSavers should be preserved unchanged, got %v want %v", got.MetadataSavers, wantSavers)
 	}
 }
 

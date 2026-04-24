@@ -135,9 +135,16 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 		t.Fatalf("DisableFileWriteBack did not POST LibraryOptions for m1")
 	}
 	// SaveLocalMetadata=false is the master kill switch; MetadataSavers is
-	// intentionally left alone (see client for rationale).
+	// intentionally left alone (see client for rationale). Pin both halves
+	// of that contract so a regression that "tidies up" by clearing the
+	// saver list trips this test.
 	if got.SaveLocalMetadata {
 		t.Errorf("SaveLocalMetadata not cleared: %+v", got)
+	}
+	// wantSavers is declared above for the snapshot assertion; reuse it
+	// here to pin the post-disable preservation contract.
+	if !reflect.DeepEqual(got.MetadataSavers, wantSavers) {
+		t.Errorf("MetadataSavers should be preserved unchanged, got %v want %v", got.MetadataSavers, wantSavers)
 	}
 }
 

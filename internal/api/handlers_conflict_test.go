@@ -396,8 +396,9 @@ func TestRestoreLibraryOptions_RejectsUnsupportedType(t *testing.T) {
 	if err == nil {
 		t.Fatal("restoreLibraryOptions on unsupported type should error")
 	}
-	if !strings.Contains(err.Error(), "unsupported") {
-		t.Errorf("error message = %q, should mention 'unsupported'", err.Error())
+	got := fmt.Sprint(err)
+	if !strings.Contains(got, "unsupported") {
+		t.Errorf("error message = %q, should mention 'unsupported'", got)
 	}
 }
 

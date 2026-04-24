@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"reflect"
@@ -56,7 +57,10 @@ func (f *fakeTransport) Get(_ context.Context, path string, result any) error {
 }
 
 func (f *fakeTransport) PostJSON(_ context.Context, path string, body io.Reader, _ any) error {
-	buf, _ := io.ReadAll(body)
+	buf, err := io.ReadAll(body)
+	if err != nil {
+		return fmt.Errorf("read post body: %w", err)
+	}
 	idx := len(f.posts)
 	f.posts = append(f.posts, postCall{path: path, body: buf})
 	if idx < len(f.postErrs) {

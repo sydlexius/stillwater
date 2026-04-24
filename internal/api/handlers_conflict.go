@@ -234,8 +234,27 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// refreshConflictState rebuilds the cached ledger and emits a
+	// ConflictChanged event so the UI banner and write gate pick up the
+	// new connection state immediately. It MUST run on every error path
+	// too: clearStillwaterManaged flips SetManageServerFiles(false) before
+	// attempting the peer restore, so a failure mid-flight leaves the DB
+	// flag off while the cached ledger still treats the connection as
+	// managed. Without this refresh the banner and gate would stay stale
+	// until the 5-minute TTL expires. context.WithoutCancel keeps the
+	// refresh going even after writeJSON sends the response and the HTTP
+	// framework cancels the request context.
+	refreshConflictState := func() {
+		if r.conflictDetector == nil {
+			return
+		}
+		r.conflictDetector.Invalidate()
+		r.conflictDetector.Refresh(context.WithoutCancel(req.Context()))
+	}
+
 	if body.Enabled {
 		if err := r.applyStillwaterManaged(req.Context(), conn); err != nil {
+			refreshConflictState()
 			r.logger.Error("applying stillwater-managed toggle failed", "connection_id", conn.ID, "connection_type", conn.Type, "error", err)
 			status, msg := stillwaterManagedErrorResponse(err, "peer rejected snapshot or disable; see server log")
 			writeJSON(w, status, map[string]string{"error": msg})
@@ -243,6 +262,7 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		}
 	} else {
 		if err := r.clearStillwaterManaged(req.Context(), conn); err != nil {
+			refreshConflictState()
 			r.logger.Error("clearing stillwater-managed toggle failed", "connection_id", conn.ID, "connection_type", conn.Type, "error", err)
 			status, msg := stillwaterManagedErrorResponse(err, "peer rejected restore; see server log")
 			writeJSON(w, status, map[string]string{"error": msg})
@@ -250,13 +270,7 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		}
 	}
 
-	if r.conflictDetector != nil {
-		r.conflictDetector.Invalidate()
-		// Force a fresh read so the event bus emits ConflictChanged now,
-		// before the HTTP response returns. The UI relies on that event to
-		// re-fetch the banner without waiting for the 5-minute TTL.
-		r.conflictDetector.Refresh(req.Context())
-	}
+	refreshConflictState()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"connection_id":               conn.ID,

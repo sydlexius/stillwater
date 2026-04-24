@@ -75,16 +75,29 @@ func startFakeEmby(t *testing.T) (*httptest.Server, *sync.Map) {
 		case "/Library/VirtualFolders":
 			_ = json.NewEncoder(w).Encode([]any{initial})
 		case "/Library/VirtualFolders/LibraryOptions":
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("fake emby: read body err = %v", err)
+				http.Error(w, "read body failed", http.StatusBadRequest)
+				return
+			}
 			// Unwrap the LibraryOptionsInfo envelope; see production
 			// client for why the peer requires it.
 			var wrapper struct {
 				ID             string          `json:"Id"`
 				LibraryOptions json.RawMessage `json:"LibraryOptions"`
 			}
-			_ = json.Unmarshal(body, &wrapper)
+			if err := json.Unmarshal(body, &wrapper); err != nil {
+				t.Errorf("fake emby: decode wrapper err = %v body=%s", err, body)
+				http.Error(w, "decode wrapper failed", http.StatusBadRequest)
+				return
+			}
 			var got embyLibraryOptionsShape
-			_ = json.Unmarshal(wrapper.LibraryOptions, &got)
+			if err := json.Unmarshal(wrapper.LibraryOptions, &got); err != nil {
+				t.Errorf("fake emby: decode library options err = %v body=%s", err, wrapper.LibraryOptions)
+				http.Error(w, "decode library options failed", http.StatusBadRequest)
+				return
+			}
 			received.Store(r.URL.Query().Get("Id"), got)
 			// Reflect the post into subsequent GETs so the detector sees
 			// the peer's updated state.
@@ -215,16 +228,29 @@ func startFakeJellyfin(t *testing.T) *httptest.Server {
 		case "/Library/VirtualFolders":
 			_ = json.NewEncoder(w).Encode([]any{initial})
 		case "/Library/VirtualFolders/LibraryOptions":
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("fake jellyfin: read body err = %v", err)
+				http.Error(w, "read body failed", http.StatusBadRequest)
+				return
+			}
 			// Unwrap the LibraryOptionsInfo envelope; see production
 			// client for why the peer requires it.
 			var wrapper struct {
 				ID             string          `json:"Id"`
 				LibraryOptions json.RawMessage `json:"LibraryOptions"`
 			}
-			_ = json.Unmarshal(body, &wrapper)
+			if err := json.Unmarshal(body, &wrapper); err != nil {
+				t.Errorf("fake jellyfin: decode wrapper err = %v body=%s", err, body)
+				http.Error(w, "decode wrapper failed", http.StatusBadRequest)
+				return
+			}
 			var got embyLibraryOptionsShape
-			_ = json.Unmarshal(wrapper.LibraryOptions, &got)
+			if err := json.Unmarshal(wrapper.LibraryOptions, &got); err != nil {
+				t.Errorf("fake jellyfin: decode library options err = %v body=%s", err, wrapper.LibraryOptions)
+				http.Error(w, "decode library options failed", http.StatusBadRequest)
+				return
+			}
 			initial["LibraryOptions"] = map[string]any{
 				"SaveLocalMetadata": got.SaveLocalMetadata,
 				"MetadataSavers":    got.MetadataSavers,
@@ -258,9 +284,18 @@ func startFakeLidarr(t *testing.T) *httptest.Server {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/metadata":
 			_ = json.NewEncoder(w).Encode(consumers)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/metadata/1":
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("fake lidarr: read body err = %v", err)
+				http.Error(w, "read body failed", http.StatusBadRequest)
+				return
+			}
 			var got map[string]any
-			_ = json.Unmarshal(body, &got)
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Errorf("fake lidarr: decode metadata err = %v body=%s", err, body)
+				http.Error(w, "decode metadata failed", http.StatusBadRequest)
+				return
+			}
 			consumers[0] = got
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -412,6 +447,32 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 	r.handleSetStillwaterManaged(disableW, disableReq)
 	if disableW.Code != http.StatusBadGateway {
 		t.Fatalf("disable status = %d body=%s, want 502", disableW.Code, disableW.Body.String())
+	}
+
+	// clearStillwaterManaged flips SetManageServerFiles(false) before
+	// attempting the peer restore, so a peer-restore failure leaves the
+	// DB flag off. The cached ledger must reflect that immediately --
+	// without the error-path refresh the banner and write gate would
+	// keep treating the connection as managed (ManageServerFiles=true)
+	// until the 5-minute TTL expires. Querying Current here returns the
+	// in-memory cache directly; if refreshConflictState ran on the error
+	// path it should now show ManageServerFiles=false.
+	if r.conflictDetector == nil {
+		t.Fatal("test harness should have wired conflictDetector")
+	}
+	ledger := r.conflictDetector.Current(ctx)
+	var found bool
+	for _, c := range ledger.Connections {
+		if c.ConnectionID != conn.ID {
+			continue
+		}
+		found = true
+		if c.ManageServerFiles {
+			t.Errorf("cached ledger still shows ManageServerFiles=true after failed disable; error path did not refresh detector cache: %+v", c)
+		}
+	}
+	if !found {
+		t.Errorf("connection %s missing from cached ledger after disable", conn.ID)
 	}
 }
 
