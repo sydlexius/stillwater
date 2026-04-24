@@ -202,11 +202,12 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 								<button
 									type="button"
 									class="px-2.5 py-1 rounded-md bg-amber-400/90 text-amber-950 text-xs font-medium hover:bg-amber-300"
-									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed?enabled=true" }
+									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+									hx-vals={ manageServerFilesPayload(true) }
 									hx-swap="none"
 									hx-disabled-elt="this"
 									hx-indicator="this"
-									hx-on::after-request="if (event.detail.successful) { document.body.dispatchEvent(new CustomEvent('sse:conflict.changed', {bubbles: true})); }"
+									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
 									title="Disable this server's savers and restore on opt-out"
 								>
 									Let Stillwater manage
@@ -280,8 +281,10 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 									<button
 										type="button"
 										class="px-2.5 py-1 rounded-md bg-rose-200 text-rose-950 text-xs font-medium hover:bg-white"
-										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed?enabled=true" }
+										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
+										hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
 										title="Disable this server's savers and restore on opt-out"
 									>
 										Let Stillwater manage
