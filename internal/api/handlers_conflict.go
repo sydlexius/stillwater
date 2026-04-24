@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,18 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/web/templates"
+)
+
+// Sentinel errors classify failures from applyStillwaterManaged /
+// clearStillwaterManaged so the HTTP handler can map them to the right
+// status code. ErrConflictPeerRejected => 502 (peer-side: snapshot read,
+// disable, restore). ErrConflictLocalPersist => 500 (Stillwater-side:
+// SetPreStillwaterConfig, SetManageServerFiles). Local persistence
+// failures returned a 502 in the original implementation, which sent
+// callers toward the wrong remediation path.
+var (
+	ErrConflictPeerRejected = errors.New("peer rejected stillwater-managed change")
+	ErrConflictLocalPersist = errors.New("persisting stillwater-managed state failed")
 )
 
 // parseBoolStrict accepts the truthy / falsy forms HTMX and curl users are
@@ -224,13 +237,15 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 	if body.Enabled {
 		if err := r.applyStillwaterManaged(req.Context(), conn); err != nil {
 			r.logger.Error("applying stillwater-managed toggle failed", "connection_id", conn.ID, "connection_type", conn.Type, "error", err)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "peer rejected snapshot or disable; see server log"})
+			status, msg := stillwaterManagedErrorResponse(err, "peer rejected snapshot or disable; see server log")
+			writeJSON(w, status, map[string]string{"error": msg})
 			return
 		}
 	} else {
 		if err := r.clearStillwaterManaged(req.Context(), conn); err != nil {
 			r.logger.Error("clearing stillwater-managed toggle failed", "connection_id", conn.ID, "connection_type", conn.Type, "error", err)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "peer rejected restore; see server log"})
+			status, msg := stillwaterManagedErrorResponse(err, "peer rejected restore; see server log")
+			writeJSON(w, status, map[string]string{"error": msg})
 			return
 		}
 	}
@@ -254,18 +269,42 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 // (one library out of three accepts, two fail), we keep the snapshot so
 // restore can still roll back the accepted library. Better a partial
 // rollback than an orphaned mutation.
+//
+// Once SetPreStillwaterConfig has persisted the snapshot, any subsequent
+// failure must roll back: a second enable attempt would resnap the
+// already-mutated peer state and overwrite the real pre-Stillwater config,
+// so opt-out could no longer restore the original saver settings.
 func (r *Router) applyStillwaterManaged(ctx context.Context, conn *connection.Connection) error {
 	snapshot, err := r.snapshotLibraryOptions(ctx, conn)
 	if err != nil {
-		return fmt.Errorf("snapshotting peer config: %w", err)
+		return fmt.Errorf("%w: snapshotting peer config: %w", ErrConflictPeerRejected, err)
 	}
 	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, snapshot); err != nil {
-		return fmt.Errorf("persisting snapshot: %w", err)
+		return fmt.Errorf("%w: persisting snapshot: %w", ErrConflictLocalPersist, err)
 	}
 	if err := r.disableFileWriteBack(ctx, conn); err != nil {
-		return fmt.Errorf("disabling peer savers: %w", err)
+		r.rollbackStillwaterManaged(ctx, conn, snapshot, "disable peer savers")
+		return fmt.Errorf("%w: disabling peer savers: %w", ErrConflictPeerRejected, err)
 	}
-	return r.connectionService.SetManageServerFiles(ctx, conn.ID, true)
+	if err := r.connectionService.SetManageServerFiles(ctx, conn.ID, true); err != nil {
+		r.rollbackStillwaterManaged(ctx, conn, snapshot, "set managed flag")
+		return fmt.Errorf("%w: setting managed flag: %w", ErrConflictLocalPersist, err)
+	}
+	return nil
+}
+
+// rollbackStillwaterManaged best-effort restores the peer to the snapshotted
+// state and clears the pre-Stillwater config row when applyStillwaterManaged
+// fails after persisting the snapshot. Rollback failures are logged but not
+// returned: the caller surfaces the original failure so the user sees the
+// proximate cause rather than a derived rollback error.
+func (r *Router) rollbackStillwaterManaged(ctx context.Context, conn *connection.Connection, snapshot, stage string) {
+	if err := r.restoreLibraryOptions(ctx, conn, snapshot); err != nil {
+		r.logger.Error("rollback restoreLibraryOptions failed", "connection_id", conn.ID, "stage", stage, "error", err)
+	}
+	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
+		r.logger.Error("rollback SetPreStillwaterConfig clear failed", "connection_id", conn.ID, "stage", stage, "error", err)
+	}
 }
 
 // clearStillwaterManaged flips the DB managed flag off FIRST, then restores
@@ -281,15 +320,15 @@ func (r *Router) applyStillwaterManaged(ctx context.Context, conn *connection.Co
 func (r *Router) clearStillwaterManaged(ctx context.Context, conn *connection.Connection) error {
 	snapshot := conn.PreStillwaterConfigJSON
 	if err := r.connectionService.SetManageServerFiles(ctx, conn.ID, false); err != nil {
-		return fmt.Errorf("disabling managed mode: %w", err)
+		return fmt.Errorf("%w: disabling managed mode: %w", ErrConflictLocalPersist, err)
 	}
 	if snapshot != "" {
 		if err := r.restoreLibraryOptions(ctx, conn, snapshot); err != nil {
-			return fmt.Errorf("restoring peer config: %w", err)
+			return fmt.Errorf("%w: restoring peer config: %w", ErrConflictPeerRejected, err)
 		}
 	}
 	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
-		return fmt.Errorf("clearing snapshot: %w", err)
+		return fmt.Errorf("%w: clearing snapshot: %w", ErrConflictLocalPersist, err)
 	}
 	return nil
 }
@@ -366,6 +405,23 @@ func (r *Router) gateNFOWrite(w http.ResponseWriter, req *http.Request) bool {
 		r.logger.Warn("nfo write gate check failed; falling through", "error", err)
 	}
 	return true
+}
+
+// stillwaterManagedErrorResponse maps a sentinel-wrapped error from
+// applyStillwaterManaged / clearStillwaterManaged to an HTTP status and
+// user-facing message. ErrConflictLocalPersist => 500 (Stillwater-side DB
+// failure); ErrConflictPeerRejected => 502 with the supplied peerMsg
+// (which differs between apply and clear). Anything unwrapped falls
+// through to 502 to preserve the historical shape.
+func stillwaterManagedErrorResponse(err error, peerMsg string) (int, string) {
+	switch {
+	case errors.Is(err, ErrConflictLocalPersist):
+		return http.StatusInternalServerError, "stillwater failed to persist managed-mode change; see server log"
+	case errors.Is(err, ErrConflictPeerRejected):
+		return http.StatusBadGateway, peerMsg
+	default:
+		return http.StatusBadGateway, peerMsg
+	}
 }
 
 // writeConflictError emits a 409 JSON body with the structured conflict payload

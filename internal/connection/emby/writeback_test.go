@@ -32,7 +32,11 @@ func newFakeEmbyServer(libs []VirtualFolder) (*httptest.Server, *fakeEmbyServer)
 			_ = json.NewEncoder(w).Encode(f.libs)
 		case r.Method == http.MethodPost && r.URL.Path == "/Library/VirtualFolders/LibraryOptions":
 			libID := r.URL.Query().Get("Id")
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "read body err: "+err.Error(), http.StatusBadRequest)
+				return
+			}
 			// Emby's endpoint requires the LibraryOptionsInfo wrapper
 			// {"Id":"...","LibraryOptions":{...}}. Unwrap in the mock so
 			// the test exercises the same code path as real peers.
@@ -175,7 +179,10 @@ func TestRestoreLibraryOptions_ReplaysSnapshot(t *testing.T) {
 			MetadataSavers:    []string{"Nfo"},
 		}},
 	}
-	buf, _ := json.Marshal(snap)
+	buf, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	if err := c.RestoreLibraryOptions(context.Background(), string(buf)); err != nil {
@@ -203,7 +210,10 @@ func TestRestoreLibraryOptions_SkipsMissingLibrary(t *testing.T) {
 			LibraryID: "ghost", SaveLocalMetadata: true, MetadataSavers: []string{"Nfo"},
 		}},
 	}
-	buf, _ := json.Marshal(snap)
+	buf, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	if err := c.RestoreLibraryOptions(context.Background(), string(buf)); err != nil {

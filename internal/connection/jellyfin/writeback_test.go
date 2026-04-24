@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -115,8 +116,15 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 	if err := json.Unmarshal([]byte(snapJSON), &snap); err != nil {
 		t.Fatalf("unmarshal snapshot err = %v", err)
 	}
-	if len(snap.Libraries) != 1 || !snap.Libraries[0].SaveLocalMetadata {
-		t.Fatalf("unexpected snapshot: %+v", snap)
+	if len(snap.Libraries) != 1 {
+		t.Fatalf("snapshot library count = %d, want 1: %+v", len(snap.Libraries), snap)
+	}
+	if !snap.Libraries[0].SaveLocalMetadata {
+		t.Fatalf("snapshot SaveLocalMetadata = false, want true: %+v", snap)
+	}
+	wantSavers := []string{"Nfo"}
+	if !reflect.DeepEqual(snap.Libraries[0].MetadataSavers, wantSavers) {
+		t.Fatalf("snapshot MetadataSavers = %v, want %v", snap.Libraries[0].MetadataSavers, wantSavers)
 	}
 
 	if err := c.DisableFileWriteBack(context.Background()); err != nil {
@@ -161,8 +169,12 @@ func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("RestoreLibraryOptions did not POST LibraryOptions for m1")
 	}
-	if !got.SaveLocalMetadata || len(got.MetadataSavers) != 1 {
-		t.Errorf("restore did not apply: %+v", got)
+	if !got.SaveLocalMetadata {
+		t.Errorf("restored SaveLocalMetadata = false, want true: %+v", got)
+	}
+	wantSavers := []string{"Nfo"}
+	if !reflect.DeepEqual(got.MetadataSavers, wantSavers) {
+		t.Errorf("restored MetadataSavers = %v, want %v", got.MetadataSavers, wantSavers)
 	}
 }
 

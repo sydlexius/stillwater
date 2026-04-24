@@ -46,6 +46,9 @@ func (f *fakeClient) CheckNFOWriterEnabled(_ context.Context) (bool, string, err
 }
 
 func (f *fakeClient) CheckImageSaverEnabled(_ context.Context) (bool, string, error) {
+	f.mu.Lock()
+	f.callCount++
+	f.mu.Unlock()
 	return f.image, f.libName, f.imageErr
 }
 
