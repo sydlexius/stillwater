@@ -4835,6 +4835,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									data-sw-btn-off={ ruleToggleBtnClasses(false) }
 									data-sw-knob-on={ ruleToggleKnobClasses(true) }
 									data-sw-knob-off={ ruleToggleKnobClasses(false) }
+									data-sw-error={ t(ctx, "settings.connections.manage_error") }
 									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
 								>
 									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
@@ -4999,7 +5000,12 @@ script stillwaterManagedAfterRequest(connID string) {
 	} else {
 		var el = document.getElementById("detected-" + connID);
 		if (el) {
-			el.textContent = "Could not update this server-managed setting. Try again or reload the page.";
+			// Prefer the render-time translated copy pinned on the button's
+			// data-sw-error attribute. The English literal is retained as a
+			// last-resort fallback for the pathological case where the
+			// button has been removed from the DOM before the request
+			// settles (e.g. the features panel was torn down mid-flight).
+			el.textContent = (btn && btn.dataset.swError) || "Could not update this server-managed setting. Try again or reload the page.";
 		}
 	}
 }

@@ -1182,6 +1182,7 @@
   "settings.connections.feature_toggles": "Feature toggles",
   "settings.connections.manage_aria_label": "Toggle Let Stillwater manage",
   "settings.connections.manage_description": "When on, Stillwater watches this server and turns off its artwork and NFO savers whenever they get re-enabled. Your previous settings are saved and restored if you turn this off or remove the connection.",
+  "settings.connections.manage_error": "Could not update this server-managed setting. Try again or reload the page.",
   "settings.connections.manage_title": "Let Stillwater manage artwork and NFO files on this server",
   "settings.connections.not_configured": "Not configured",
   "settings.connections.sends_heading": "What Stillwater sends to this connection",
