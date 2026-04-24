@@ -520,12 +520,6 @@ func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, erro
 	return false, "", nil
 }
 
-// LibraryWriteBackSnapshot captures just the fields Stillwater mutates when
-// DisableFileWriteBack runs: SaveLocalMetadata + MetadataSavers per music
-// library. On restore, Stillwater GETs the current library options from the
-// peer and overlays these fields only, so unrelated options that changed
-// after the snapshot are preserved. Version bumps if the snapshot shape
-// ever needs to evolve.
 // SnapshotLibraryOptions captures the current SaveLocalMetadata + MetadataSavers
 // for every Emby music library. The returned JSON is stored on the connection
 // row and replayed verbatim by RestoreLibraryOptions on opt-out. The typed
