@@ -108,9 +108,9 @@ release:
   # Nightly builds are always prereleases and never "latest".
   prerelease: true
   make_latest: false
-  name_template: "Nightly {{ .Tag }}"
+  name_template: "{{ .Tag }}"
   header: |
-    ## Stillwater Nightly {{ .Tag }}
+    ## Stillwater {{ .Tag }}
 
     > Automated nightly build from `main`. Intended for the updater's
     > `nightly` channel and early testers. No stability guarantees.
