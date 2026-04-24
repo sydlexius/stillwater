@@ -176,11 +176,22 @@ func TestDetectorPublishesEventOnTransition(t *testing.T) {
 	var (
 		mu   sync.Mutex
 		seen []event.Event
+		// got buffers one signal per delivered event so the test can wait
+		// on a synchronization point instead of a fixed sleep. Using a
+		// time-based drain made this test flaky on slow runners; the
+		// channel approach pins exact event-arrival ordering.
+		got = make(chan event.Event, 4)
 	)
 	bus.Subscribe(event.ConflictChanged, func(e event.Event) {
 		mu.Lock()
 		seen = append(seen, e)
 		mu.Unlock()
+		// Non-blocking send so the bus goroutine never stalls if the
+		// test exits early.
+		select {
+		case got <- e:
+		default:
+		}
 	})
 	go bus.Start()
 	defer bus.Stop()
@@ -192,8 +203,15 @@ func TestDetectorPublishesEventOnTransition(t *testing.T) {
 	client.image = true
 	d.Refresh(context.Background())
 
-	// Drain briefly; the bus dispatches asynchronously.
-	time.Sleep(20 * time.Millisecond)
+	// Wait for the transition event with a generous timeout. A failure here
+	// means the bus did not deliver the expected event within a second,
+	// which is many orders of magnitude beyond the in-process dispatch
+	// latency under load.
+	select {
+	case <-got:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ConflictChanged event")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()

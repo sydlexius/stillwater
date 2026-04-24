@@ -286,11 +286,16 @@ func warnSubtitle(axis string, v ConflictBannerView) string {
 }
 
 // warnAffected returns the "Affected: ..." sub-line matching the mockup's
-// per-axis guidance.
+// per-axis guidance. The image-axis copy intentionally matches every gated
+// endpoint (upload, fetch, crop, fanart assign + batch fetch, rules,
+// maintenance) so the banner does not promise actions the API will reject
+// with 409. The earlier copy claimed "edits to existing artwork are still
+// allowed", which contradicted the gate -- gateImageWrite blocks crop and
+// fanart assign too.
 func warnAffected(axis string) string {
 	switch axis {
 	case "image":
-		return "Affected: manual fetch, fetch-batch, rules, maintenance. Edits to existing artwork are still allowed."
+		return "Affected: image upload, fetch, crop, fanart assign + batch fetch, rules, maintenance."
 	case "nfo":
 		return "Affected: NFO edits, generation, rules targeting NFO. Images unaffected."
 	case "both":

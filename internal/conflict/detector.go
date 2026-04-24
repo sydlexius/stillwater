@@ -214,14 +214,16 @@ func (d *Detector) Refresh(ctx context.Context) Ledger {
 		// synthesize a fail-closed sentinel. AnyImageConflict and
 		// AnyNFOConflict treat a non-empty CheckErr as a conflict
 		// (gate closed), which is the conservative default until a
-		// later refresh succeeds.
+		// later refresh succeeds. CheckErr is client-visible (rendered
+		// in the conflict detail panel), so the message stays generic;
+		// the full error text was already logged above.
 		sentinel := Ledger{
 			GeneratedAt: time.Now().UTC(),
 			Connections: []ConnectionState{{
 				ConnectionID:   "__unavailable__",
 				ConnectionName: "connection list",
 				Enabled:        true,
-				CheckErr:       "connection list unavailable: " + err.Error(),
+				CheckErr:       "connection list unavailable",
 				CheckedAt:      time.Now().UTC(),
 			}},
 		}
@@ -340,8 +342,15 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 		return state
 	}
 
+	// CheckErr flows to GET /conflicts JSON and the per-connection detail
+	// panel HTML, so it must stay free of internal/peer error text (URLs,
+	// HTTP snippets, file paths). Log the full error server-side and store
+	// only a generic, user-facing reason in state.CheckErr. AnyImageConflict
+	// and AnyNFOConflict treat any non-empty CheckErr as a conflict, so the
+	// gate fails closed regardless of the message text.
 	if nfo, lib, err := client.CheckNFOWriterEnabled(ctx); err != nil {
-		state.CheckErr = "nfo check: " + err.Error()
+		d.logger.Warn("nfo writer check failed", "connection", c.Name, "error", err)
+		state.CheckErr = "nfo check unavailable"
 	} else {
 		state.NFOWriteback = nfo
 		if nfo && state.LibraryName == "" {
@@ -350,10 +359,11 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 	}
 
 	if img, lib, err := client.CheckImageSaverEnabled(ctx); err != nil {
+		d.logger.Warn("image saver check failed", "connection", c.Name, "error", err)
 		if state.CheckErr == "" {
-			state.CheckErr = "image check: " + err.Error()
+			state.CheckErr = "image check unavailable"
 		} else {
-			state.CheckErr += "; image check: " + err.Error()
+			state.CheckErr += "; image check unavailable"
 		}
 	} else {
 		state.ImageWriteback = img
@@ -370,13 +380,13 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 			// real shared-directory conflict. Surface via CheckErr so
 			// AnyImageConflict/AnyNFOConflict fail closed on this row
 			// rather than silently treating it as non-overlapping. Log
-			// at Warn so operators notice drift; Debug would bury it.
+			// the full error server-side; CheckErr is client-visible so
+			// it stays generic.
 			d.logger.Warn("fetching library paths failed", "connection", c.Name, "error", err)
-			pathErr := "paths check: " + err.Error()
 			if state.CheckErr == "" {
-				state.CheckErr = pathErr
+				state.CheckErr = "paths check unavailable"
 			} else {
-				state.CheckErr += "; " + pathErr
+				state.CheckErr += "; paths check unavailable"
 			}
 		} else {
 			state.Paths = normalizePaths(libPaths)
@@ -399,31 +409,49 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 			"nfo_writeback", state.NFOWriteback,
 		)
 		if err := client.DisableFileWriteBack(ctx); err != nil {
+			// Critical: a failed auto re-disable must NOT leave the row
+			// in a "managed and clean" state. AnyImageConflict and
+			// AnyNFOConflict skip rows where ManageServerFiles=true,
+			// so if we kept the managed flag here the gate would
+			// silently reopen even though the peer saver is still on.
+			// Flip ManageServerFiles=false in the in-memory state (the
+			// DB column stays unchanged so the user's intent persists)
+			// and surface CheckErr so the gate stays closed. The DB
+			// flag will be re-honored on the next refresh once the
+			// peer is reachable again and the disable succeeds.
 			d.logger.Warn("auto re-disable failed", "connection", c.Name, "error", err)
+			state.ManageServerFiles = false
+			if state.CheckErr == "" {
+				state.CheckErr = "managed re-disable unavailable"
+			} else {
+				state.CheckErr += "; managed re-disable unavailable"
+			}
 		} else {
 			// Re-query so the ledger reflects the corrected state. If
 			// either recheck errors we surface it via CheckErr rather
 			// than keeping the pre-disable flag -- silently retaining
 			// the stale value would make the banner report "still
 			// conflicted" when the peer actually just went offline.
+			// CheckErr is client-visible, so log full error server-side
+			// and store a generic phrase here.
 			if nfo, _, nfoErr := client.CheckNFOWriterEnabled(ctx); nfoErr == nil {
 				state.NFOWriteback = nfo
 			} else {
-				re := "post-disable nfo recheck: " + nfoErr.Error()
+				d.logger.Warn("post-disable nfo recheck failed", "connection", c.Name, "error", nfoErr)
 				if state.CheckErr == "" {
-					state.CheckErr = re
+					state.CheckErr = "post-disable nfo recheck unavailable"
 				} else {
-					state.CheckErr += "; " + re
+					state.CheckErr += "; post-disable nfo recheck unavailable"
 				}
 			}
 			if img, _, imgErr := client.CheckImageSaverEnabled(ctx); imgErr == nil {
 				state.ImageWriteback = img
 			} else {
-				re := "post-disable image recheck: " + imgErr.Error()
+				d.logger.Warn("post-disable image recheck failed", "connection", c.Name, "error", imgErr)
 				if state.CheckErr == "" {
-					state.CheckErr = re
+					state.CheckErr = "post-disable image recheck unavailable"
 				} else {
-					state.CheckErr += "; " + re
+					state.CheckErr += "; post-disable image recheck unavailable"
 				}
 			}
 		}

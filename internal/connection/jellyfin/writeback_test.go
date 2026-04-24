@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 )
 
 // fakeJellyfinServer mirrors emby/writeback_test.go but targets the
@@ -109,7 +111,7 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot err = %v", err)
 	}
-	var snap LibraryWriteBackSnapshot
+	var snap mediabrowser.LibraryWriteBackSnapshot
 	if err := json.Unmarshal([]byte(snapJSON), &snap); err != nil {
 		t.Fatalf("unmarshal snapshot err = %v", err)
 	}
@@ -138,9 +140,9 @@ func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
 	})
 	defer srv.Close()
 
-	snap := LibraryWriteBackSnapshot{
+	snap := mediabrowser.LibraryWriteBackSnapshot{
 		Version: 1,
-		Libraries: []LibrarySaverSnapshotEntry{{
+		Libraries: []mediabrowser.LibrarySaverSnapshotEntry{{
 			LibraryID:         "m1",
 			SaveLocalMetadata: true,
 			MetadataSavers:    []string{"Nfo"},

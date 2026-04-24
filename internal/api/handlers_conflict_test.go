@@ -170,6 +170,64 @@ func TestHandleSetStillwaterManaged_RejectsBadJSON(t *testing.T) {
 	}
 }
 
+// TestHandleSetStillwaterManaged_RejectsEmptyBody pins the strict-validation
+// contract: an empty body with no query-param fallback must return 400, not
+// silently coerce to enabled=false (which would be a destructive state change
+// triggered by a dropped HTMX body or a curl typo).
+func TestHandleSetStillwaterManaged_RejectsEmptyBody(t *testing.T) {
+	r := newConflictHarness(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader(nil))
+	req.SetPathValue("id", "abc")
+	w := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleSetStillwaterManaged_RejectsJSONWithoutEnabled covers the case
+// where the body is well-formed JSON but omits the "enabled" key. Coercing
+// to false here would silently flip the toggle off on any caller that sent
+// {"foo":"bar"} or {} -- exactly what strict validation is meant to prevent.
+func TestHandleSetStillwaterManaged_RejectsJSONWithoutEnabled(t *testing.T) {
+	r := newConflictHarness(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`{"foo":"bar"}`)))
+	req.SetPathValue("id", "abc")
+	w := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleSetStillwaterManaged_RejectsInvalidEnabledValue covers the case
+// where "enabled" is present but not parseable as bool (string "maybe", a
+// number, etc.).
+func TestHandleSetStillwaterManaged_RejectsInvalidEnabledValue(t *testing.T) {
+	r := newConflictHarness(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`{"enabled":"maybe"}`)))
+	req.SetPathValue("id", "abc")
+	w := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleSetStillwaterManaged_RejectsFormBodyWithoutEnabled covers the
+// HTMX-style application/x-www-form-urlencoded path. A form body that omits
+// "enabled" or sends a malformed value (e.g. enabled=maybe) must 400.
+func TestHandleSetStillwaterManaged_RejectsFormBodyWithoutEnabled(t *testing.T) {
+	r := newConflictHarness(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`other=field`)))
+	req.SetPathValue("id", "abc")
+	w := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
 func TestWriteConflictError_EmitsExpectedShape(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeConflictError(w, &conflict.BlockedError{

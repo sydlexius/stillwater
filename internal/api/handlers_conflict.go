@@ -17,14 +17,21 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// parseBoolLenient accepts the truthy forms HTMX and curl users are likely
-// to send: "true"/"1"/"on"/"yes" map to true, everything else to false.
-func parseBoolLenient(s string) bool {
+// parseBoolStrict accepts the truthy / falsy forms HTMX and curl users are
+// likely to send and signals via the second return whether the input was
+// recognized at all. The strict variant lets the handler distinguish a
+// missing/garbled value from an explicit false: a "missing" signal must
+// produce a 400, otherwise an empty body or a typo silently flips the toggle
+// off and triggers a destructive state change instead of a clean rejection
+// at the API boundary.
+func parseBoolStrict(s string) (bool, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "1", "true", "on", "yes", "y", "t":
-		return true
+		return true, true
+	case "0", "false", "off", "no", "n", "f":
+		return false, true
 	}
-	return false
+	return false, false
 }
 
 // handleGetConflicts returns the current conflict ledger as JSON. Consumed by
@@ -136,7 +143,13 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 	// Accept either a JSON body ({"enabled":true}) or a form-encoded body
 	// (enabled=true). HTMX buttons in the banner use form encoding because
 	// the project does not bundle htmx's json-enc extension; API callers
-	// are free to use JSON. Parsing is tolerant of either.
+	// are free to use JSON. The query-string fallback covers curl one-liners.
+	//
+	// Strict-validation rationale: empty body + missing query param + missing
+	// or unparsable "enabled" key all return 400 instead of being coerced
+	// to enabled=false. The off path mutates DB and peer state; treating bad
+	// input as "disable" turns user typos and dropped HTMX bodies into
+	// destructive state changes. Validate at the boundary, not after.
 	body := struct {
 		Enabled bool `json:"enabled"`
 	}{}
@@ -146,30 +159,60 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		return
 	}
 	trimmed := strings.TrimSpace(string(raw))
+	var seenEnabled bool
 	switch {
 	case trimmed == "":
-		// No body; caller relies on a query param or expects the toggle
-		// default. Fall through with body.Enabled=false.
+		// No body; the query-param branch below will need to supply
+		// enabled or we reject.
 	case strings.HasPrefix(trimmed, "{"):
-		if err := json.Unmarshal(raw, &body); err != nil {
+		// Parse into a raw map first so a missing "enabled" key is
+		// distinguishable from an explicit false. Unmarshalling directly
+		// into the struct silently zero-values the field.
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &payload); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
 			return
 		}
+		if v, ok := payload["enabled"]; ok {
+			if err := json.Unmarshal(v, &body.Enabled); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled value"})
+				return
+			}
+			seenEnabled = true
+		}
 	default:
 		// Treat as application/x-www-form-urlencoded. url.ParseQuery is
-		// lenient about missing values and returns an error only on
-		// malformed percent encoding.
+		// lenient about missing values and only errors on malformed
+		// percent encoding.
 		values, perr := url.ParseQuery(trimmed)
 		if perr != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
 			return
 		}
-		body.Enabled = parseBoolLenient(values.Get("enabled"))
+		if v := values.Get("enabled"); v != "" {
+			parsed, ok := parseBoolStrict(v)
+			if !ok {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled value"})
+				return
+			}
+			body.Enabled, seenEnabled = parsed, true
+		}
 	}
-	// Allow the caller to override via query string as a last resort, so
-	// curl users without a body can still toggle via ?enabled=true.
+	// Query-string fallback for curl users without a body, AND an override
+	// for callers that want to be explicit on top of a body. Always wins
+	// when present so the precedence is "URL > body" -- HTMX never sends
+	// both, but this keeps API behavior predictable.
 	if q := req.URL.Query().Get("enabled"); q != "" {
-		body.Enabled = parseBoolLenient(q)
+		parsed, ok := parseBoolStrict(q)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enabled query param"})
+			return
+		}
+		body.Enabled, seenEnabled = parsed, true
+	}
+	if !seenEnabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing enabled"})
+		return
 	}
 
 	conn, err := r.connectionService.GetByID(req.Context(), id)
@@ -225,19 +268,30 @@ func (r *Router) applyStillwaterManaged(ctx context.Context, conn *connection.Co
 	return r.connectionService.SetManageServerFiles(ctx, conn.ID, true)
 }
 
-// clearStillwaterManaged restores the peer from the snapshot and clears the
-// toggle + snapshot column. If the snapshot is empty (toggle was flipped off
-// without ever having been on) we still flip the DB bit so the UI matches.
+// clearStillwaterManaged flips the DB managed flag off FIRST, then restores
+// the peer from snapshot and clears the snapshot column. The ordering is
+// load-bearing: if SetManageServerFiles(false) fails, the peer is still in
+// "Stillwater-managed" state with its savers off, so the conflict gate
+// stays closed (the safe default). If we restored peer write-back first
+// and then SetManageServerFiles failed, Stillwater would still consider
+// the connection managed -- and AnyImageConflict / AnyNFOConflict skip
+// managed rows -- so the gate would silently reopen even though peer
+// write-back is back on. Snapshot clearing is last because failing there
+// only leaves a stale snapshot (cosmetic; restore is idempotent).
 func (r *Router) clearStillwaterManaged(ctx context.Context, conn *connection.Connection) error {
-	if conn.PreStillwaterConfigJSON != "" {
-		if err := r.restoreLibraryOptions(ctx, conn, conn.PreStillwaterConfigJSON); err != nil {
+	snapshot := conn.PreStillwaterConfigJSON
+	if err := r.connectionService.SetManageServerFiles(ctx, conn.ID, false); err != nil {
+		return fmt.Errorf("disabling managed mode: %w", err)
+	}
+	if snapshot != "" {
+		if err := r.restoreLibraryOptions(ctx, conn, snapshot); err != nil {
 			return fmt.Errorf("restoring peer config: %w", err)
 		}
 	}
 	if err := r.connectionService.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
 		return fmt.Errorf("clearing snapshot: %w", err)
 	}
-	return r.connectionService.SetManageServerFiles(ctx, conn.ID, false)
+	return nil
 }
 
 func (r *Router) snapshotLibraryOptions(ctx context.Context, conn *connection.Connection) (string, error) {

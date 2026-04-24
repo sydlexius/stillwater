@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 )
 
 // fakeEmbyServer returns a test server that serves GetMusicLibraries and
@@ -116,7 +118,7 @@ func TestSnapshotLibraryOptions_CapturesSaverState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot err = %v", err)
 	}
-	var snap LibraryWriteBackSnapshot
+	var snap mediabrowser.LibraryWriteBackSnapshot
 	if err := json.Unmarshal([]byte(snapJSON), &snap); err != nil {
 		t.Fatalf("bad snapshot json: %v", err)
 	}
@@ -164,9 +166,9 @@ func TestRestoreLibraryOptions_ReplaysSnapshot(t *testing.T) {
 	defer srv.Close()
 
 	// Snapshot from before disable: user had savers on.
-	snap := LibraryWriteBackSnapshot{
+	snap := mediabrowser.LibraryWriteBackSnapshot{
 		Version: 1,
-		Libraries: []LibrarySaverSnapshotEntry{{
+		Libraries: []mediabrowser.LibrarySaverSnapshotEntry{{
 			LibraryID:         "m1",
 			LibraryName:       "Music",
 			SaveLocalMetadata: true,
@@ -195,9 +197,9 @@ func TestRestoreLibraryOptions_SkipsMissingLibrary(t *testing.T) {
 	defer srv.Close()
 
 	// Snapshot references a library ID that no longer exists on the peer.
-	snap := LibraryWriteBackSnapshot{
+	snap := mediabrowser.LibraryWriteBackSnapshot{
 		Version: 1,
-		Libraries: []LibrarySaverSnapshotEntry{{
+		Libraries: []mediabrowser.LibrarySaverSnapshotEntry{{
 			LibraryID: "ghost", SaveLocalMetadata: true, MetadataSavers: []string{"Nfo"},
 		}},
 	}
