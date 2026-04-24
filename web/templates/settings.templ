@@ -4821,6 +4821,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									</div>
 								</div>
 								<button
+									id={ "stillwater-managed-" + c.ID }
 									type="button"
 									class={ ruleToggleBtnClasses(c.FeatureManageServerFiles) }
 									role="switch"
@@ -4830,6 +4831,10 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									hx-vals={ manageServerFilesPayload(!c.FeatureManageServerFiles) }
 									hx-swap="none"
 									data-conn-id={ c.ID }
+									data-sw-btn-on={ ruleToggleBtnClasses(true) }
+									data-sw-btn-off={ ruleToggleBtnClasses(false) }
+									data-sw-knob-on={ ruleToggleKnobClasses(true) }
+									data-sw-knob-off={ ruleToggleKnobClasses(false) }
 									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
 								>
 									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
@@ -4950,13 +4955,44 @@ script toggleConnectionForm(connType string) {
 }
 
 // stillwaterManagedAfterRequest runs after the "Let Stillwater manage"
-// toggle POSTs. On success it re-fetches the per-connection
-// conflict-detail fragment so the "Detected on this server" panel reflects
-// post-toggle state and dispatches the SSE event that tells the
-// top-of-page banner to refresh. On failure it writes an inline error
-// into the same target so the user notices without a page reload.
+// toggle POSTs. Because the button uses hx-swap="none", its
+// aria-checked, Tailwind class list, and hx-vals payload are otherwise
+// frozen at render-time. Without syncing them from the server response,
+// a second click would re-send the same enabled value and cause
+// applyStillwaterManaged to overwrite the peer-config snapshot with
+// the already-disabled state, losing restore-ability.
+//
+// On success it syncs the button from the handler's JSON response
+// (the feature_manage_server_files field is authoritative), then
+// re-fetches the per-connection conflict-detail fragment and fires
+// sse:conflict.changed for the top-of-page banner. On failure it
+// writes an inline error into the detail target so the user notices
+// without a page reload.
+//
+// Button class strings are read from data-sw-{btn,knob}-{on,off}
+// attributes populated at render time by the ruleToggle*Classes
+// helpers, so this script never hardcodes Tailwind utility names and
+// stays in sync if those helpers change.
 script stillwaterManagedAfterRequest(connID string) {
+	var btn = document.getElementById("stillwater-managed-" + connID);
 	if (event.detail.successful) {
+		try {
+			var resp = JSON.parse(event.detail.xhr.responseText || "{}");
+			if (btn && typeof resp.feature_manage_server_files === "boolean") {
+				var enabled = resp.feature_manage_server_files;
+				var knob = btn.querySelector("span");
+				btn.setAttribute("aria-checked", String(enabled));
+				btn.setAttribute("class", enabled ? btn.dataset.swBtnOn : btn.dataset.swBtnOff);
+				btn.setAttribute("hx-vals", JSON.stringify({ enabled: !enabled }));
+				if (knob) {
+					knob.setAttribute("class", enabled ? btn.dataset.swKnobOn : btn.dataset.swKnobOff);
+				}
+			}
+		} catch (_) {
+			// Non-JSON response; leave button state and rely on a subsequent
+			// page load to re-sync. The fetch below will still refresh the
+			// detail fragment so the user sees the new server-side state.
+		}
 		htmx.ajax("GET", "/api/v1/connections/" + connID + "/conflict-detail",
 			{ target: "#detected-" + connID, swap: "innerHTML" });
 		document.body.dispatchEvent(new CustomEvent("sse:conflict.changed"));
