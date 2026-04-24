@@ -1,6 +1,7 @@
 package templates
 
-// ConflictBannerView is the view model for the write-back conflict banner.
+// ConflictBannerView is the view model for the conflict gating banner,
+// covering both write-back and round-trip overlap states.
 // State is one of "clean", "image_only", "nfo_only", "both", "round_trip"
 // and maps to the banner variants A/B/C/D from the approved mockup at
 // /tmp/stillwater-conflict-banner-mockup.html. The banner renders above all
@@ -348,7 +349,7 @@ templ conflictBannerClean() {
 		<div class="max-w-6xl mx-auto flex items-center gap-3 text-sm">
 			<span class="inline-block h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20" aria-hidden="true"></span>
 			<span class="text-emerald-100 font-medium">All clear.</span>
-			<span class="text-emerald-100/80 flex-1">No connections are writing back to Stillwater-managed libraries.</span>
+			<span class="text-emerald-100/80 flex-1">No conflict gating is active. No write-back or round-trip overlap detected.</span>
 			<button
 				type="button"
 				class="text-emerald-100/80 hover:text-white"
