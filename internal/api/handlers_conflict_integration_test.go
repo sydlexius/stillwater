@@ -565,7 +565,8 @@ func TestSetStillwaterManaged_RollsBackWhenPeerDisableFails(t *testing.T) {
 		case "/Library/VirtualFolders/LibraryOptions":
 			body, err := io.ReadAll(req.Body)
 			if err != nil {
-				http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+				t.Errorf("rollback fake: read body err = %v", err)
+				http.Error(w, "read body failed", http.StatusBadRequest)
 				return
 			}
 			var wrapper struct {
@@ -573,12 +574,14 @@ func TestSetStillwaterManaged_RollsBackWhenPeerDisableFails(t *testing.T) {
 				LibraryOptions json.RawMessage `json:"LibraryOptions"`
 			}
 			if err := json.Unmarshal(body, &wrapper); err != nil {
-				http.Error(w, "wrapper: "+err.Error(), http.StatusBadRequest)
+				t.Errorf("rollback fake: decode wrapper err = %v body=%s", err, body)
+				http.Error(w, "decode wrapper failed", http.StatusBadRequest)
 				return
 			}
 			var got embyLibraryOptionsShape
 			if err := json.Unmarshal(wrapper.LibraryOptions, &got); err != nil {
-				http.Error(w, "options: "+err.Error(), http.StatusBadRequest)
+				t.Errorf("rollback fake: decode library options err = %v body=%s", err, wrapper.LibraryOptions)
+				http.Error(w, "decode library options failed", http.StatusBadRequest)
 				return
 			}
 			mu.Lock()
