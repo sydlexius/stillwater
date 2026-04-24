@@ -431,3 +431,114 @@ func TestDetectorSurfacesCheckErrors(t *testing.T) {
 		t.Error("check error should propagate to ConnectionState")
 	}
 }
+
+// errRepo returns a fixed error from List so we can exercise the
+// cold-start Refresh fail-closed path.
+type errRepo struct{ err error }
+
+func (e *errRepo) List(context.Context) ([]connection.Connection, error) {
+	return nil, e.err
+}
+
+func TestDetectorColdStartRepoErrorFailsClosed(t *testing.T) {
+	// If the very first refresh cannot list connections (e.g. DB locked
+	// at boot), Refresh must synthesize a fail-closed sentinel so every
+	// write gate reports conflict. A silent empty ledger here would
+	// reopen every write on startup before any peer check has ever run.
+	bus := event.NewBus(newLogger(), 16)
+	factory := func(c connection.Connection) (peerClient, pathProvider) { return &fakeClient{}, nil }
+	d := newDetectorWithClients(&errRepo{err: errors.New("db locked")}, bus, newLogger(), factory)
+
+	l := d.Refresh(context.Background())
+
+	if len(l.Connections) != 1 {
+		t.Fatalf("want 1 sentinel connection, got %d", len(l.Connections))
+	}
+	if l.Connections[0].CheckErr == "" {
+		t.Error("sentinel must populate CheckErr so AnyImageConflict / AnyNFOConflict fail closed")
+	}
+	if !l.AnyImageConflict() || !l.AnyNFOConflict() {
+		t.Error("sentinel must force both axes conflicted")
+	}
+}
+
+// errPaths returns a fixed error from MusicLibraryPaths. The detector
+// must surface that via CheckErr, otherwise round-trip detection is
+// silently disabled for that connection.
+type errPaths struct{ err error }
+
+func (e *errPaths) MusicLibraryPaths(context.Context) ([]string, error) {
+	return nil, e.err
+}
+
+func TestDetectorSurfacesPathProviderErrorAsCheckErr(t *testing.T) {
+	conns := []connection.Connection{
+		{ID: "e", Name: "Emby", Type: connection.TypeEmby, Enabled: true},
+	}
+	client := &fakeClient{}
+	paths := map[string]pathProvider{"e": &errPaths{err: errors.New("peer 502")}}
+	d, _ := buildDetector(t, conns, map[string]peerClient{"e": client}, paths)
+
+	l := d.Refresh(context.Background())
+
+	if len(l.Connections) != 1 {
+		t.Fatalf("want 1 connection, got %d", len(l.Connections))
+	}
+	if l.Connections[0].CheckErr == "" {
+		t.Error("paths error must surface via CheckErr, not be silently swallowed")
+	}
+}
+
+// postDisableErrClient drives the managed-drift auto-disable path into
+// the post-disable recheck, where we want to assert that a recheck error
+// gets surfaced via CheckErr rather than retaining the pre-disable flag.
+type postDisableErrClient struct {
+	calls int
+	mu    sync.Mutex
+	// first two Check* calls (the pre-disable probes) report writeback=true
+	// so managed-drift logic engages; subsequent calls (the post-disable
+	// recheck) return errors so the CheckErr surfacing branch runs.
+}
+
+func (p *postDisableErrClient) CheckNFOWriterEnabled(context.Context) (bool, string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	if p.calls == 1 {
+		return true, "lib", nil
+	}
+	return false, "", errors.New("peer down after disable (nfo)")
+}
+
+func (p *postDisableErrClient) CheckImageSaverEnabled(context.Context) (bool, string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	if p.calls == 2 {
+		return true, "lib", nil
+	}
+	return false, "", errors.New("peer down after disable (image)")
+}
+
+func (p *postDisableErrClient) DisableFileWriteBack(context.Context) error { return nil }
+
+func TestDetectorSurfacesPostDisableRecheckErrors(t *testing.T) {
+	// Managed connection reporting savers back on. DisableFileWriteBack
+	// succeeds, but the post-disable recheck can't reach the peer. The
+	// detector must capture that via CheckErr so the banner does not
+	// keep reporting stale (pre-disable) writeback state.
+	conns := []connection.Connection{
+		{ID: "e", Name: "Emby", Type: connection.TypeEmby, Enabled: true, FeatureManageServerFiles: true},
+	}
+	client := &postDisableErrClient{}
+	d, _ := buildDetector(t, conns, map[string]peerClient{"e": client}, nil)
+
+	l := d.Refresh(context.Background())
+
+	if len(l.Connections) != 1 {
+		t.Fatalf("want 1 connection, got %d", len(l.Connections))
+	}
+	if l.Connections[0].CheckErr == "" {
+		t.Error("post-disable recheck error must surface via CheckErr")
+	}
+}
