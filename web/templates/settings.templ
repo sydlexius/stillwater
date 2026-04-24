@@ -4826,7 +4826,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									role="switch"
 									aria-checked={ boolAttr(c.FeatureManageServerFiles) }
 									aria-label="Toggle Let Stillwater manage"
-									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed?enabled=" + boolAttr(!c.FeatureManageServerFiles) }
+									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+									hx-vals={ manageServerFilesPayload(!c.FeatureManageServerFiles) }
 									hx-swap="none"
 									data-conn-id={ c.ID }
 									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }

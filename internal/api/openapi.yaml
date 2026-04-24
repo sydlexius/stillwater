@@ -6048,8 +6048,19 @@ paths:
             type: string
       requestBody:
         required: true
+        description: >
+          The HTMX toggle in the Connections settings page posts form-encoded;
+          API/curl callers can use JSON. The handler accepts either and also
+          honors an `?enabled=` query param as a last resort.
         content:
           application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+          application/x-www-form-urlencoded:
             schema:
               type: object
               required: [enabled]
@@ -6118,12 +6129,6 @@ paths:
                     type: array
                     items:
                       type: object
-        "409":
-          description: Write blocked by the conflict ledger
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConflictWriteBlock"
         "503":
           description: Detector not configured
           content:

@@ -345,10 +345,7 @@ func conflictSettingsConnectionsHref() templ.SafeURL {
 // used by the "Let Stillwater manage" toggle. enable=true means the user is
 // flipping the toggle on (so the POST enables remediation); false reverses.
 func manageServerFilesPayload(enable bool) string {
-	if enable {
-		return `{"enabled": true}`
-	}
-	return `{"enabled": false}`
+	return hxValsJSONAny(map[string]any{"enabled": enable})
 }
 
 // boolAttr returns "true" or "false" for use in HTML attributes like aria-checked.

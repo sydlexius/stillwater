@@ -133,7 +133,13 @@ type Pipeline struct {
 	fixers        []Fixer
 	publisher     *publish.Publisher
 	logger        *slog.Logger
-	writeGate     WriteGate
+
+	// writeGateMu guards writeGate. SetWriteGate is documented as
+	// idempotent and safe to call after construction ("replace"), so
+	// reads on the hot fix path must lock even though the common case
+	// is a single init-time write. Same pattern as ruleCacheMu below.
+	writeGateMu sync.RWMutex
+	writeGate   WriteGate
 
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
@@ -144,7 +150,18 @@ type Pipeline struct {
 // the gate -- callers that never configure the gate behave exactly as
 // before. See WriteGate for semantics.
 func (p *Pipeline) SetWriteGate(g WriteGate) {
+	p.writeGateMu.Lock()
 	p.writeGate = g
+	p.writeGateMu.Unlock()
+}
+
+// getWriteGate returns the currently installed WriteGate under the
+// writeGateMu read lock so attemptFix and any future consumer can read it
+// safely without racing a concurrent SetWriteGate.
+func (p *Pipeline) getWriteGate() WriteGate {
+	p.writeGateMu.RLock()
+	defer p.writeGateMu.RUnlock()
+	return p.writeGate
 }
 
 // NewPipeline creates a new fix pipeline.
@@ -1205,14 +1222,14 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 	// behavior, preserving test harnesses that do not wire the conflict
 	// service. DiscoveryOnly fixes surface candidate lists without touching
 	// disk, so they are allowed through even when the gate is closed.
-	if p.writeGate != nil && !v.Config.DiscoveryOnly {
+	if g := p.getWriteGate(); g != nil && !v.Config.DiscoveryOnly {
 		switch v.Category {
 		case "image":
-			if err := p.writeGate.AllowImageWrite(ctx); err != nil {
+			if err := g.AllowImageWrite(ctx); err != nil {
 				return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "image write gated by conflict banner"}
 			}
 		case "nfo":
-			if err := p.writeGate.AllowNFOWrite(ctx); err != nil {
+			if err := g.AllowNFOWrite(ctx); err != nil {
 				return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "nfo write gated by conflict banner"}
 			}
 		}

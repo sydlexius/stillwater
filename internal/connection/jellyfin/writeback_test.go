@@ -29,7 +29,11 @@ func newFakeJellyfinServer(libs []VirtualFolder) (*httptest.Server, *fakeJellyfi
 			_ = json.NewEncoder(w).Encode(f.libs)
 		case r.Method == http.MethodPost && r.URL.Path == "/Library/VirtualFolders/LibraryOptions":
 			libID := r.URL.Query().Get("Id")
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "read body error", http.StatusBadRequest)
+				return
+			}
 			// Jellyfin's endpoint expects the LibraryOptionsInfo wrapper
 			// {"Id":"...","LibraryOptions":{...}}. Unwrap before decoding
 			// into the typed LibraryOptions so the test's mock matches
@@ -106,7 +110,9 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 		t.Fatalf("snapshot err = %v", err)
 	}
 	var snap LibraryWriteBackSnapshot
-	_ = json.Unmarshal([]byte(snapJSON), &snap)
+	if err := json.Unmarshal([]byte(snapJSON), &snap); err != nil {
+		t.Fatalf("unmarshal snapshot err = %v", err)
+	}
 	if len(snap.Libraries) != 1 || !snap.Libraries[0].SaveLocalMetadata {
 		t.Fatalf("unexpected snapshot: %+v", snap)
 	}
@@ -140,7 +146,10 @@ func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
 			MetadataSavers:    []string{"Nfo"},
 		}},
 	}
-	buf, _ := json.Marshal(snap)
+	buf, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal snapshot err = %v", err)
+	}
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	if err := c.RestoreLibraryOptions(context.Background(), string(buf)); err != nil {

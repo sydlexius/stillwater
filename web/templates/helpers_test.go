@@ -118,13 +118,15 @@ func TestMirrorStatusLabel(t *testing.T) {
 }
 
 // TestManageServerFilesPayload pins the JSON the settings-page uses for
-// the hx-vals toggle so escaping drift does not silently break it.
+// the hx-vals toggle so escaping drift does not silently break it. The
+// payload is produced by json.Marshal via hxValsJSONAny, so the compact
+// form without whitespace around the colon is what HTMX actually sees.
 func TestManageServerFilesPayload(t *testing.T) {
 	for _, enable := range []bool{true, false} {
 		got := manageServerFilesPayload(enable)
-		wantSubstr := `"enabled": true`
+		wantSubstr := `"enabled":true`
 		if !enable {
-			wantSubstr = `"enabled": false`
+			wantSubstr = `"enabled":false`
 		}
 		if len(got) == 0 || got[0] != '{' || got[len(got)-1] != '}' {
 			t.Errorf("payload not JSON-shaped: %q", got)
