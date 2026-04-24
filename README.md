@@ -118,7 +118,7 @@ Once running, open your browser and go to `http://your-server-ip:1973`.
 | `SW_PORT` | Port the HTTP server listens on | `1973` |
 | `SW_MUSIC_PATH` | Path to the music library inside the container | `/music` |
 
-## Write-Back Conflicts with Connected Servers
+## Write-Back and Round-Trip Conflicts with Connected Servers
 
 Emby, Jellyfin, and Lidarr can each be configured to "save artwork into media folders" or write NFO files to disk. When Stillwater writes a file into the shared library directory and then pushes metadata via the server's API, the server may re-persist that same content to disk under its own filename convention, producing duplicate files (for example `backdrop.jpg` and `backdrop1.jpg` side by side).
 

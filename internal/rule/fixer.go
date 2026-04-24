@@ -116,10 +116,11 @@ var _ PipelineRunner = (*Pipeline)(nil)
 // a dependency on the conflict package (avoids an import cycle).
 //
 // Allow* methods return nil when the write is permitted and a non-nil error
-// (typically *conflict.BlockedError) when the write-back conflict gate is
-// engaged. The rule pipeline treats any non-nil return as "skip the fix and
-// leave the violation open" -- the banner already tells the user why, so
-// there is no need to surface the gate error any further.
+// (typically *conflict.BlockedError) when the conflict gate is engaged --
+// either write-back or round-trip. The rule pipeline treats any non-nil
+// return as "skip the fix and leave the violation open" -- the banner
+// already tells the user why, so there is no need to surface the gate
+// error any further.
 type WriteGate interface {
 	AllowImageWrite(ctx context.Context) error
 	AllowNFOWrite(ctx context.Context) error
@@ -1215,13 +1216,14 @@ func supportsCandidateDiscovery(f Fixer) bool {
 
 // attemptFix tries each registered fixer for the violation.
 func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violation) *FixResult {
-	// If a write-back conflict gate is installed, refuse to run auto-fixers
-	// whose category would land a file on disk (image, nfo). The violation
-	// is kept open so the user can see it; the banner explains why the
-	// fixer did not run. Without a gate we fall through to the original
-	// behavior, preserving test harnesses that do not wire the conflict
-	// service. DiscoveryOnly fixes surface candidate lists without touching
-	// disk, so they are allowed through even when the gate is closed.
+	// If a conflict gate is installed, refuse to run auto-fixers whose
+	// category would land a file on disk (image, nfo) while write-back or
+	// round-trip gating is active. The violation is kept open so the user
+	// can see it; the banner explains why the fixer did not run. Without a
+	// gate we fall through to the original behavior, preserving test
+	// harnesses that do not wire the conflict service. DiscoveryOnly fixes
+	// surface candidate lists without touching disk, so they are allowed
+	// through even when the gate is closed.
 	if g := p.getWriteGate(); g != nil && !v.Config.DiscoveryOnly {
 		switch v.Category {
 		case "image":

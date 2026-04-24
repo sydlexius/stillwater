@@ -6113,7 +6113,7 @@ paths:
   /conflicts:
     get:
       tags: [Connections]
-      summary: Get the current write-back conflict ledger
+      summary: Get the current conflict ledger
       operationId: getConflicts
       description: >
         Returns the aggregated conflict state across every configured connection.
@@ -6156,7 +6156,7 @@ paths:
   /config/conflict-banner:
     get:
       tags: [Connections]
-      summary: Rendered HTML partial for the write-back conflict banner
+      summary: Rendered HTML partial for the conflict banner
       operationId: getConflictBanner
       description: >
         HTMX consumers swap the response into #conflict-banner. Empty-body

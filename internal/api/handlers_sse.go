@@ -164,7 +164,7 @@ func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
 		{event.MetadataFixed, "Metadata fixed", func(data map[string]any) string {
 			return strVal(data, "message")
 		}},
-		{event.ConflictChanged, "Write-back conflict state changed", func(data map[string]any) string {
+		{event.ConflictChanged, "Conflict state changed", func(data map[string]any) string {
 			state := strVal(data, "banner_state")
 			if state == "" {
 				return ""

@@ -357,7 +357,7 @@ templ conflictBannerClean() {
 				type="button"
 				class="text-emerald-100/80 hover:text-white"
 				aria-label="Dismiss"
-				onclick="(function(b){ sessionStorage.setItem('sw_conflict_clean_dismissed','1'); b.closest('#sw-conflict-clean').remove(); })(this)"
+				onclick="(function(b){ try { sessionStorage.setItem('sw_conflict_clean_dismissed','1'); } catch (e) {} var el = b.closest('#sw-conflict-clean'); if (el) el.remove(); })(this)"
 			>
 				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
@@ -366,10 +366,12 @@ templ conflictBannerClean() {
 		</div>
 		<script>
 			(function () {
-				if (sessionStorage.getItem('sw_conflict_clean_dismissed') === '1') {
-					var el = document.getElementById('sw-conflict-clean');
-					if (el) el.remove();
-				}
+				try {
+					if (sessionStorage.getItem('sw_conflict_clean_dismissed') === '1') {
+						var el = document.getElementById('sw-conflict-clean');
+						if (el) el.remove();
+					}
+				} catch (e) {}
 			})();
 		</script>
 	</div>

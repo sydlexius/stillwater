@@ -1,5 +1,5 @@
-// Package conflict detects and gates file write-back conflicts between
-// Stillwater and connected media servers (Emby, Jellyfin, Lidarr).
+// Package conflict detects and gates write-back and round-trip conflicts
+// between Stillwater and connected media servers (Emby, Jellyfin, Lidarr).
 //
 // Background: when Stillwater writes NFO or artwork files into the shared
 // library directory and then POSTs metadata to the peer, the peer may itself

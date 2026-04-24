@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  // Refresh the write-back conflict banner and every visible per-connection
+  // Refresh the conflict banner and every visible per-connection
   // detected-* panel. We route through htmx.ajax instead of hx-trigger
   // because HTMX special-cases the "sse:" event-name prefix and silently
   // drops `hx-trigger="sse:conflict.changed"` unless the htmx-sse extension

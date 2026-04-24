@@ -96,7 +96,7 @@
     // addEventListener) receive the event. The previous dispatch on
     // document only reached document-level listeners because CustomEvents
     // do not propagate downward, leaving body-targeted HTMX triggers
-    // (including the write-back conflict banner) silent on server push.
+    // (including the conflict banner) silent on server push.
     document.body.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data, bubbles: true}));
   }
 
