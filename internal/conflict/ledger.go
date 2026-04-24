@@ -72,10 +72,12 @@ type ConnectionState struct {
 }
 
 // HasAnyConflict returns true if this connection contributes to the global
-// gate (either saver axis is on AND the user has not opted in to
-// "Let Stillwater manage").
+// gate. A disabled connection never contributes regardless of saver state;
+// a managed connection has its savers disabled by Stillwater so it does
+// not contribute either. For every other connection, either saver axis
+// being on is enough.
 func (s ConnectionState) HasAnyConflict() bool {
-	if s.ManageServerFiles {
+	if !s.Enabled || s.ManageServerFiles {
 		return false
 	}
 	return s.NFOWriteback || s.ImageWriteback
@@ -107,8 +109,10 @@ type Ledger struct {
 }
 
 // AnyImageConflict reports whether image writes should be gated globally.
-// True when any enabled, unmanaged connection has image_writeback=true OR
-// any round-trip pairing exists.
+// True when any enabled, unmanaged connection has image_writeback=true,
+// any round-trip pairing exists, or any enabled unmanaged connection has
+// a non-empty CheckErr (saver state unknown -- fail closed per the
+// ConnectionState.CheckErr contract).
 func (l Ledger) AnyImageConflict() bool {
 	if len(l.RoundTrips) > 0 {
 		return true
@@ -120,6 +124,9 @@ func (l Ledger) AnyImageConflict() bool {
 		if c.ManageServerFiles {
 			continue
 		}
+		if c.CheckErr != "" {
+			return true
+		}
 		if c.ImageWriteback {
 			return true
 		}
@@ -128,7 +135,8 @@ func (l Ledger) AnyImageConflict() bool {
 }
 
 // AnyNFOConflict reports whether NFO writes should be gated globally. Mirror
-// of AnyImageConflict for the NFO axis.
+// of AnyImageConflict for the NFO axis, including the same fail-closed
+// treatment of CheckErr.
 func (l Ledger) AnyNFOConflict() bool {
 	if len(l.RoundTrips) > 0 {
 		return true
@@ -139,6 +147,9 @@ func (l Ledger) AnyNFOConflict() bool {
 		}
 		if c.ManageServerFiles {
 			continue
+		}
+		if c.CheckErr != "" {
+			return true
 		}
 		if c.NFOWriteback {
 			return true

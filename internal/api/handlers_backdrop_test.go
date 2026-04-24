@@ -18,6 +18,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -72,6 +73,14 @@ func testRouterForBackdrops(t *testing.T) (*Router, *artist.Service) {
 		StaticFS:           os.DirFS("../../web/static"),
 		ImageCacheDir:      cacheDir,
 	})
+
+	// Override the auto-wired conflict detector with the no-op NewForTest
+	// variant so handler tests that create connection fixtures (without
+	// standing up real peer stubs) do not trip the fail-closed CheckErr
+	// contract in ledger.AnyImageConflict / AnyNFOConflict. Tests that
+	// exercise the gate itself build their own router.
+	r.conflictDetector = conflict.NewForTest(connSvc, logger)
+	r.conflictGate = conflict.NewGate(r.conflictDetector)
 
 	return r, artistSvc
 }

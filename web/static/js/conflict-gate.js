@@ -34,11 +34,12 @@
     // the DOM. These carry their own hx-get so we can just trigger a
     // refresh rather than know their URLs.
     var panels = document.querySelectorAll('[id^="detected-"]');
-    panels.forEach(function (el) {
+    for (var i = 0; i < panels.length; i++) {
+      var el = panels[i];
       var url = el.getAttribute("hx-get");
-      if (!url) return;
+      if (!url) continue;
       htmx.ajax("GET", url, { target: "#" + el.id, swap: "innerHTML" });
-    });
+    }
   }
 
   // Listen on body for the SSE-sourced event (sse.js dispatches these on

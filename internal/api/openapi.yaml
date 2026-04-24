@@ -46,9 +46,12 @@ components:
       type: object
       description: >
         Envelope returned with HTTP 409 when Stillwater's conflict gate blocks
-        a write because a connected media server is configured to write the
-        same axis back to disk. Clients should surface `reason` to the user
-        and offer the "Let Stillwater manage" toggle from the ledger.
+        a write due to an active conflict on any axis: a connected media
+        server configured to write the same axis back to disk (`image` or
+        `nfo`), or a round-trip overlap between two enabled connections
+        whose library paths share a filesystem root (`round_trip`). Clients
+        should surface `reason` to the user and offer the "Let Stillwater
+        manage" toggle from the ledger.
       properties:
         error:
           type: string

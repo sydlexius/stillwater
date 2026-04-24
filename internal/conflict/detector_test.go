@@ -338,6 +338,46 @@ func TestLedgerHasAnyConflictRespectsManaged(t *testing.T) {
 	}
 }
 
+// TestLedgerHasAnyConflictIgnoresDisabled guards the contract that disabled
+// connections never contribute to gating even if stale saver flags remain
+// populated from a prior probe.
+func TestLedgerHasAnyConflictIgnoresDisabled(t *testing.T) {
+	disabled := ConnectionState{Enabled: false, ImageWriteback: true, NFOWriteback: true}
+	if disabled.HasAnyConflict() {
+		t.Error("disabled connection should report no conflict even with stale writeback flags")
+	}
+}
+
+// TestLedgerAnyConflictFailsClosedOnCheckErr guards the contract that an
+// enabled unmanaged connection with an unknown saver state (CheckErr set)
+// must gate writes rather than silently passing. Symmetric across both
+// image and NFO axes.
+func TestLedgerAnyConflictFailsClosedOnCheckErr(t *testing.T) {
+	l := Ledger{Connections: []ConnectionState{{
+		ConnectionID: "a",
+		Enabled:      true,
+		CheckErr:     "nfo check: dial tcp: connection refused",
+	}}}
+	if !l.AnyImageConflict() {
+		t.Error("AnyImageConflict must return true when CheckErr is set on an enabled unmanaged connection")
+	}
+	if !l.AnyNFOConflict() {
+		t.Error("AnyNFOConflict must return true when CheckErr is set on an enabled unmanaged connection")
+	}
+
+	// Managed connection with CheckErr does not contribute; Stillwater has
+	// disabled the peer's savers so a failed probe does not matter.
+	lManaged := Ledger{Connections: []ConnectionState{{
+		ConnectionID:      "a",
+		Enabled:           true,
+		ManageServerFiles: true,
+		CheckErr:          "probe failed",
+	}}}
+	if lManaged.AnyImageConflict() || lManaged.AnyNFOConflict() {
+		t.Error("managed connection should not gate on CheckErr")
+	}
+}
+
 func TestLedgerMarshalRoundTrip(t *testing.T) {
 	l := Ledger{Connections: []ConnectionState{{ConnectionID: "x"}}}
 	buf, err := l.Marshal()

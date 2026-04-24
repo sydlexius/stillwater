@@ -709,7 +709,7 @@ func conflictBannerRoundTripDanger(v ConflictBannerView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"><div class=\"max-w-6xl mx-auto flex flex-wrap items-start gap-4\"><div class=\"flex items-start gap-3 min-w-0 flex-1\"><span class=\"inline-block h-2 w-2 mt-1.5 rounded-full bg-rose-400 ring-4 ring-rose-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0\"><div class=\"font-semibold text-rose-100\">Stillwater file writes are disabled — <span class=\"font-normal text-rose-100/90\">Two or more servers write files back to the shared music folder. Any image or NFO Stillwater saves will be clobbered within seconds. API metadata push is unaffected.</span></div><ul class=\"flex flex-col gap-1.5 text-xs text-rose-100/90 mt-2\" role=\"list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"><div class=\"max-w-6xl mx-auto flex flex-wrap items-start gap-4\"><div class=\"flex items-start gap-3 min-w-0 flex-1\"><span class=\"inline-block h-2 w-2 mt-1.5 rounded-full bg-rose-400 ring-4 ring-rose-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0\"><div class=\"font-semibold text-rose-100\">Stillwater file writes are disabled. <span class=\"font-normal text-rose-100/90\">Two or more enabled connections share the same library path, creating a round-trip conflict on the shared music folder. Any image or NFO Stillwater saves can be rewritten within seconds. API metadata push is unaffected.</span></div><ul class=\"flex flex-col gap-1.5 text-xs text-rose-100/90 mt-2\" role=\"list\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
