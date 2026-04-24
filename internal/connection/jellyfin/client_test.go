@@ -248,6 +248,10 @@ func TestCheckNFOWriterEnabled_NoMusicLibraries(t *testing.T) {
 }
 
 func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
+	// A peer-side error must propagate so the conflict detector can
+	// populate ConnectionState.CheckErr and fail the gate closed. If this
+	// method silently swallowed the error and returned (false, "", nil),
+	// a transient Jellyfin outage would reopen NFO writes.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -255,8 +259,8 @@ func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
 
 	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error from server 500, got nil")
 	}
 	if enabled {
 		t.Error("expected false on server error")

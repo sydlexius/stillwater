@@ -79,13 +79,17 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 	return music, nil
 }
 
-// CheckNFOWriterEnabled checks if any Emby music library has an NFO metadata saver enabled.
-// Returns true and the library name if found. On error, logs a warning and returns false.
+// CheckNFOWriterEnabled reports whether any Emby music library has an NFO
+// metadata saver enabled. Returns the matching library name when one is found.
+// An error from the server is returned rather than swallowed so the caller
+// (conflict detector) can distinguish "no conflict" from "unable to check"
+// and populate ConnectionState.CheckErr for fail-closed gating; silently
+// returning (false, "", nil) on error would mark the connection clean and
+// reopen writes on a transient peer outage.
 func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
-		c.Logger.Warn("could not check emby library options", "error", err)
-		return false, "", nil
+		return false, "", fmt.Errorf("checking emby nfo saver settings: %w", err)
 	}
 
 	for _, lib := range libs {

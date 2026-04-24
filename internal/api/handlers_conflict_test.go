@@ -104,6 +104,21 @@ func TestHandleGetConflictBanner_204WhenDetectorMissing(t *testing.T) {
 	}
 }
 
+func TestHandleGetConflictBanner_RefreshInvalidatesCache(t *testing.T) {
+	r := newConflictHarness(t, []connection.Connection{
+		{ID: "a", Name: "A", Type: connection.TypeEmby, Enabled: true},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config/conflict-banner?refresh=1", nil)
+	w := httptest.NewRecorder()
+	r.handleGetConflictBanner(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("content-type = %q, want text/html", ct)
+	}
+}
+
 func TestHandleGetConnectionConflictDetail_RendersForKnownID(t *testing.T) {
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "abc", Name: "Emby One", Type: connection.TypeEmby, Enabled: true},

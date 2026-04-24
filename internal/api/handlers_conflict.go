@@ -55,6 +55,13 @@ func (r *Router) handleGetConflictBanner(w http.ResponseWriter, req *http.Reques
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// ?refresh=1 forces a synchronous re-query of every peer before render,
+	// matching GET /conflicts. The banner template's "Check again" buttons
+	// (conflict_banner.templ:172, 316) rely on this to clear stale state
+	// after a user remediates on the peer side.
+	if req.URL.Query().Get("refresh") == "1" {
+		r.conflictDetector.Invalidate()
+	}
 	ledger := r.conflictDetector.Current(req.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ConflictBannerContent(conflictBannerView(ledger)).Render(req.Context(), w); err != nil {

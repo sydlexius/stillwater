@@ -77,8 +77,11 @@ func (c *Client) GetMetadataProfiles(ctx context.Context) ([]MetadataProfile, er
 func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
 	consumers, err := c.getMetadataConsumers(ctx)
 	if err != nil {
-		c.Logger.Warn("could not read Lidarr metadata consumers", "error", err)
-		return false, "", nil
+		// Propagate the error so the conflict detector can populate
+		// ConnectionState.CheckErr and fail closed on a transient Lidarr
+		// outage. Silently returning (false, "", nil) would mark the
+		// connection clean and reopen NFO writes.
+		return false, "", fmt.Errorf("checking lidarr metadata consumers: %w", err)
 	}
 	for _, m := range consumers {
 		if !metadataConsumerEnabled(m) {
@@ -214,8 +217,10 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, error) {
 	consumers, err := c.getMetadataConsumers(ctx)
 	if err != nil {
-		c.Logger.Warn("could not read Lidarr metadata consumers", "error", err)
-		return false, "", nil
+		// Same rationale as CheckNFOWriterEnabled above: propagate so the
+		// conflict detector fails closed on transient peer error instead
+		// of silently treating the connection as clean.
+		return false, "", fmt.Errorf("checking lidarr metadata consumers: %w", err)
 	}
 	for _, m := range consumers {
 		if !metadataConsumerEnabled(m) {

@@ -76,7 +76,7 @@ templ ConnectionConflictDetail(v ConnectionConflictDetailView) {
 				<li class="text-gray-500 dark:text-gray-400">Paths: { v.PathsSummary }</li>
 			}
 			if v.ManageServerFiles {
-				<li class="text-emerald-700 dark:text-emerald-300">Stillwater is managing this server — savers disabled.</li>
+				<li class="text-emerald-700 dark:text-emerald-300">Stillwater is managing this server -- savers disabled.</li>
 			}
 		</ul>
 	}
@@ -160,7 +160,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 					<div class="min-w-0">
 						<div class="font-semibold text-amber-100">
 							{ warnTitle(axis) }
-							<span class="font-normal text-amber-200/90"> — { warnSubtitle(axis, v) }</span>
+							<span class="font-normal text-amber-200/90"> -- { warnSubtitle(axis, v) }</span>
 						</div>
 						<div class="text-xs text-amber-200/70 mt-0.5">{ warnAffected(axis) }</div>
 					</div>
@@ -195,7 +195,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 								<span class="text-amber-200/70">({ c.Type })</span>
 								@offenderAxisLabel(c)
 								if c.LibraryName != "" {
-									<span class="text-amber-200/70">— "{ c.LibraryName }"</span>
+									<span class="text-amber-200/70">-- "{ c.LibraryName }"</span>
 								}
 							</div>
 							<div class="flex items-center gap-2 shrink-0">
@@ -274,7 +274,7 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 											<span class="inline-flex items-center rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-100">NFO saver</span>
 									}
 									if c.LibraryName != "" {
-										<span class="text-rose-200/70">— "{ c.LibraryName }"</span>
+										<span class="text-rose-200/70">-- "{ c.LibraryName }"</span>
 									}
 								</div>
 								<div class="flex items-center gap-2 shrink-0">

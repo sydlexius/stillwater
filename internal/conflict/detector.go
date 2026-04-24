@@ -72,6 +72,12 @@ type Detector struct {
 	// conflict: state stays "image_only" but the row for Emby must
 	// disappear).
 	lastSignature string
+	// refreshMu serializes the expensive peer fan-out in Refresh so a
+	// burst of Current() callers that all observe a stale cache at the
+	// same instant only trigger one network sweep. The first holder does
+	// the work; subsequent holders see a fresh cache on re-check and
+	// return without re-querying peers. See Current() for the pattern.
+	refreshMu sync.Mutex
 }
 
 // NewDetector returns a detector wired to the live connection service and
@@ -160,10 +166,27 @@ func (noopClient) DisableFileWriteBack(context.Context) error { return nil }
 // it triggers a synchronous Refresh. Callers in hot paths (write-handler
 // gates) should use this; callers doing bulk background work can call
 // Refresh directly to force a fetch.
+//
+// Cache-stampede guard: when several goroutines see the cache stale at the
+// same moment, only one holds refreshMu and runs Refresh. The rest wait on
+// the mutex, then re-check freshness and return the just-populated cache
+// without re-querying peers. Without this, N concurrent write handlers
+// after a TTL boundary would each fan out HTTP calls to every peer.
 func (d *Detector) Current(ctx context.Context) Ledger {
 	d.mu.RLock()
 	ledger := d.cachedLedger
 	fresh := !d.cachedAt.IsZero() && time.Since(d.cachedAt) < d.ttl
+	d.mu.RUnlock()
+	if fresh {
+		return ledger
+	}
+	d.refreshMu.Lock()
+	defer d.refreshMu.Unlock()
+	// Recheck under the refresh lock: a goroutine that raced with us may
+	// have already completed the refresh while we were waiting.
+	d.mu.RLock()
+	ledger = d.cachedLedger
+	fresh = !d.cachedAt.IsZero() && time.Since(d.cachedAt) < d.ttl
 	d.mu.RUnlock()
 	if fresh {
 		return ledger
@@ -178,11 +201,31 @@ func (d *Detector) Refresh(ctx context.Context) Ledger {
 	conns, err := d.repo.List(ctx)
 	if err != nil {
 		d.logger.Warn("listing connections for conflict refresh failed", "error", err)
-		// Preserve whatever we had; a stale ledger is preferable to an
-		// all-clean ledger that would silently drop the gate.
 		d.mu.RLock()
-		defer d.mu.RUnlock()
-		return d.cachedLedger
+		prior := d.cachedLedger
+		firstRun := d.cachedAt.IsZero()
+		d.mu.RUnlock()
+		if !firstRun {
+			// Stale ledger is preferable to an all-clean ledger that
+			// would silently drop the gate.
+			return prior
+		}
+		// First-ever refresh failed: we have no prior knowledge, so
+		// synthesize a fail-closed sentinel. AnyImageConflict and
+		// AnyNFOConflict treat a non-empty CheckErr as a conflict
+		// (gate closed), which is the conservative default until a
+		// later refresh succeeds.
+		sentinel := Ledger{
+			GeneratedAt: time.Now().UTC(),
+			Connections: []ConnectionState{{
+				ConnectionID:   "__unavailable__",
+				ConnectionName: "connection list",
+				Enabled:        true,
+				CheckErr:       "connection list unavailable: " + err.Error(),
+				CheckedAt:      time.Now().UTC(),
+			}},
+		}
+		return sentinel
 	}
 
 	states := make([]ConnectionState, 0, len(conns))
@@ -322,7 +365,19 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 	if paths != nil {
 		libPaths, err := paths.MusicLibraryPaths(ctx)
 		if err != nil {
-			d.logger.Debug("fetching library paths failed", "connection", c.Name, "error", err)
+			// A path fetch failure means we cannot detect round-trip
+			// overlap for this connection, which would otherwise hide a
+			// real shared-directory conflict. Surface via CheckErr so
+			// AnyImageConflict/AnyNFOConflict fail closed on this row
+			// rather than silently treating it as non-overlapping. Log
+			// at Warn so operators notice drift; Debug would bury it.
+			d.logger.Warn("fetching library paths failed", "connection", c.Name, "error", err)
+			pathErr := "paths check: " + err.Error()
+			if state.CheckErr == "" {
+				state.CheckErr = pathErr
+			} else {
+				state.CheckErr += "; " + pathErr
+			}
 		} else {
 			state.Paths = normalizePaths(libPaths)
 		}
@@ -346,11 +401,30 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 		if err := client.DisableFileWriteBack(ctx); err != nil {
 			d.logger.Warn("auto re-disable failed", "connection", c.Name, "error", err)
 		} else {
+			// Re-query so the ledger reflects the corrected state. If
+			// either recheck errors we surface it via CheckErr rather
+			// than keeping the pre-disable flag -- silently retaining
+			// the stale value would make the banner report "still
+			// conflicted" when the peer actually just went offline.
 			if nfo, _, nfoErr := client.CheckNFOWriterEnabled(ctx); nfoErr == nil {
 				state.NFOWriteback = nfo
+			} else {
+				re := "post-disable nfo recheck: " + nfoErr.Error()
+				if state.CheckErr == "" {
+					state.CheckErr = re
+				} else {
+					state.CheckErr += "; " + re
+				}
 			}
 			if img, _, imgErr := client.CheckImageSaverEnabled(ctx); imgErr == nil {
 				state.ImageWriteback = img
+			} else {
+				re := "post-disable image recheck: " + imgErr.Error()
+				if state.CheckErr == "" {
+					state.CheckErr = re
+				} else {
+					state.CheckErr += "; " + re
+				}
 			}
 		}
 	}

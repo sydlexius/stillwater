@@ -169,7 +169,7 @@ func ConnectionConflictDetail(v ConnectionConflictDetailView) templ.Component {
 				}
 			}
 			if v.ManageServerFiles {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<li class=\"text-emerald-700 dark:text-emerald-300\">Stillwater is managing this server — savers disabled.</li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<li class=\"text-emerald-700 dark:text-emerald-300\">Stillwater is managing this server -- savers disabled.</li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -448,14 +448,14 @@ func conflictBannerWarn(v ConflictBannerView, axis string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " <span class=\"font-normal text-amber-200/90\">— ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " <span class=\"font-normal text-amber-200/90\">-- ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(warnSubtitle(axis, v))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 163, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 163, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -532,14 +532,14 @@ func conflictBannerWarn(v ConflictBannerView, axis string) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if c.LibraryName != "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"text-amber-200/70\">— \"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"text-amber-200/70\">-- \"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var20 string
 					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(c.LibraryName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 198, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 198, Col: 60}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 					if templ_7745c5c3_Err != nil {
@@ -775,14 +775,14 @@ func conflictBannerRoundTripDanger(v ConflictBannerView) templ.Component {
 				}
 			}
 			if c.LibraryName != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<span class=\"text-rose-200/70\">— \"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<span class=\"text-rose-200/70\">-- \"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(c.LibraryName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 277, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 277, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {

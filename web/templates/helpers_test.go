@@ -208,15 +208,6 @@ func TestWarnAffected_PerAxis(t *testing.T) {
 	}
 }
 
-func TestManageTarget(t *testing.T) {
-	if manageTarget("both") != "both" {
-		t.Error("both axis should label 'both'")
-	}
-	if manageTarget("image") != "it" || manageTarget("nfo") != "it" {
-		t.Error("single-axis labels should be 'it'")
-	}
-}
-
 func TestConflictGates(t *testing.T) {
 	cases := []struct {
 		state     string

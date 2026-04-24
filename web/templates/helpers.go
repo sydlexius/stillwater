@@ -299,22 +299,6 @@ func warnAffected(axis string) string {
 	return ""
 }
 
-// manageTarget returns the button-label fragment after "Let Stillwater
-// manage". Single-axis conflicts (image, nfo, or unknown) return "it";
-// composite conflicts return "both". The final rendered copy reads e.g.
-// "Let Stillwater manage it" or "Let Stillwater manage both".
-func manageTarget(axis string) string {
-	switch axis {
-	case "image":
-		return "it"
-	case "nfo":
-		return "it"
-	case "both":
-		return "both"
-	}
-	return "it"
-}
-
 // conflictImageGated reports whether the banner state should cause
 // image-writing UI to grey out. Composite "both" and "round_trip" always
 // gate; "image_only" gates; everything else allows writes.
