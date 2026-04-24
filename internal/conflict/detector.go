@@ -309,6 +309,8 @@ func (d *Detector) checkOne(ctx context.Context, c connection.Connection) Connec
 	if img, lib, err := client.CheckImageSaverEnabled(ctx); err != nil {
 		if state.CheckErr == "" {
 			state.CheckErr = "image check: " + err.Error()
+		} else {
+			state.CheckErr += "; image check: " + err.Error()
 		}
 	} else {
 		state.ImageWriteback = img

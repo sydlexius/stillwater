@@ -66,10 +66,16 @@ func newFakeJellyfinServer(libs []VirtualFolder) (*httptest.Server, *fakeJellyfi
 	return srv, f
 }
 
-func (f *fakeJellyfinServer) received(libID string) LibraryOptions {
+// received reports whether the fake server observed a POST for libID and
+// returns the recorded LibraryOptions when it did. The ok flag is the only
+// reliable way to tell "client never posted" from "client posted a
+// zero-value" -- without it, a regression that stops posting altogether
+// would silently pass assertions that only inspect the returned fields.
+func (f *fakeJellyfinServer) received(libID string) (LibraryOptions, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.receivedOpts[libID]
+	opts, ok := f.receivedOpts[libID]
+	return opts, ok
 }
 
 func TestJellyfinCheckImageSaverEnabled(t *testing.T) {
@@ -108,7 +114,10 @@ func TestJellyfinSnapshotAndDisable(t *testing.T) {
 	if err := c.DisableFileWriteBack(context.Background()); err != nil {
 		t.Fatalf("disable err = %v", err)
 	}
-	got := fake.received("m1")
+	got, ok := fake.received("m1")
+	if !ok {
+		t.Fatalf("DisableFileWriteBack did not POST LibraryOptions for m1")
+	}
 	// SaveLocalMetadata=false is the master kill switch; MetadataSavers is
 	// intentionally left alone (see client for rationale).
 	if got.SaveLocalMetadata {
@@ -137,7 +146,10 @@ func TestJellyfinRestoreAppliesSnapshot(t *testing.T) {
 	if err := c.RestoreLibraryOptions(context.Background(), string(buf)); err != nil {
 		t.Fatalf("restore err = %v", err)
 	}
-	got := fake.received("m1")
+	got, ok := fake.received("m1")
+	if !ok {
+		t.Fatalf("RestoreLibraryOptions did not POST LibraryOptions for m1")
+	}
 	if !got.SaveLocalMetadata || len(got.MetadataSavers) != 1 {
 		t.Errorf("restore did not apply: %+v", got)
 	}

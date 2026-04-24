@@ -42,6 +42,25 @@ components:
             type: string
           description: Validation error details. Present when validation fails, containing one or more error messages.
       required: [error]
+    ConflictWriteBlock:
+      type: object
+      description: >
+        Envelope returned with HTTP 409 when Stillwater's conflict gate blocks
+        a write because a connected media server is configured to write the
+        same axis back to disk. Clients should surface `reason` to the user
+        and offer the "Let Stillwater manage" toggle from the ledger.
+      properties:
+        axis:
+          type: string
+          enum: [image, nfo, round_trip]
+          description: Which write axis triggered the block.
+        reason:
+          type: string
+          description: Human-readable explanation safe for UI display.
+        ledger:
+          type: object
+          description: Full ledger snapshot that caused the block.
+      required: [axis, reason, ledger]
     NFOFieldMap:
       type: object
       description: Configures how genre, style, and mood categories map to NFO XML elements for platform compatibility.
@@ -2392,6 +2411,12 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the uploaded image. Present only when needs_crop is true, for use in a client-side crop tool.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
         "413":
           description: File exceeds 25MB limit
           content:
@@ -2487,6 +2512,12 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the fetched image. Present only when needs_crop is true, for use in a client-side crop tool.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/images/search:
     get:
@@ -2590,6 +2621,12 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/nfo/diff:
     get:
@@ -6015,6 +6052,7 @@ paths:
           application/json:
             schema:
               type: object
+              required: [enabled]
               properties:
                 enabled:
                   type: boolean
@@ -6025,6 +6063,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [connection_id, feature_manage_server_files]
                 properties:
                   connection_id:
                     type: string
@@ -6084,18 +6123,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  axis:
-                    type: string
-                    enum: [image, nfo, round_trip]
-                    description: Which write axis triggered the block.
-                  reason:
-                    type: string
-                    description: Human-readable explanation safe for UI display.
-                  ledger:
-                    type: object
-                    description: Full ledger snapshot that caused the block.
+                $ref: "#/components/schemas/ConflictWriteBlock"
         "503":
           description: Detector not configured
           content:
@@ -9339,11 +9367,11 @@ paths:
                     items:
                       type: string
         "409":
-          description: No filesystem path
+          description: Write blocked by the conflict ledger
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/images/fanart/reorder:
     post:
@@ -9454,6 +9482,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
         "502":
           description: Failed to download backdrop from platform
           content:

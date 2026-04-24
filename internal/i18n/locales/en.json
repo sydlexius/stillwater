@@ -692,6 +692,7 @@
   "image.delete_selected": "Delete selected",
   "image.delete_this_fanart": "Delete this fanart",
   "image.delete_type": "Delete %s",
+  "image.disabled_during_conflict": "Disabled when the write-back conflict banner is active -- see the top of the page",
   "image.drag_drop_hint": "Drag and drop an image to replace",
   "image.drop_image_here": "Drop image here",
   "image.extend_type": "Extend: %s",

@@ -263,6 +263,11 @@ func warnSubtitle(axis string, v ConflictBannerView) string {
 	if name == "" {
 		name = c.Type
 	}
+	if strings.TrimSpace(name) == "" {
+		// Last-resort label when both Name and Type are blank so the
+		// rendered subtitle never starts with " is saving...".
+		name = "A connected server"
+	}
 	switch axis {
 	case "image":
 		if c.LibraryName != "" {
@@ -326,14 +331,14 @@ func conflictNFOGated(v ConflictBannerView) bool {
 // to the specific card, so the user lands directly on the "Detected on
 // this server" panel regardless of which tab was previously active.
 func conflictConnectionHref(connID string) templ.SafeURL {
-	return templ.SafeURL(staticBasePath + "/settings?tab=connections#connection-" + connID)
+	return templ.SafeURL(basePath() + "/settings?tab=connections#connection-" + connID)
 }
 
 // conflictSettingsConnectionsHref targets the Connections tab without a
 // specific card, used by the "Review each connection" CTA in banner
 // state C.
 func conflictSettingsConnectionsHref() templ.SafeURL {
-	return templ.SafeURL(staticBasePath + "/settings?tab=connections")
+	return templ.SafeURL(basePath() + "/settings?tab=connections")
 }
 
 // manageServerFilesPayload returns the JSON body for the hx-vals attribute

@@ -1203,8 +1203,9 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 	// is kept open so the user can see it; the banner explains why the
 	// fixer did not run. Without a gate we fall through to the original
 	// behavior, preserving test harnesses that do not wire the conflict
-	// service.
-	if p.writeGate != nil {
+	// service. DiscoveryOnly fixes surface candidate lists without touching
+	// disk, so they are allowed through even when the gate is closed.
+	if p.writeGate != nil && !v.Config.DiscoveryOnly {
 		switch v.Category {
 		case "image":
 			if err := p.writeGate.AllowImageWrite(ctx); err != nil {

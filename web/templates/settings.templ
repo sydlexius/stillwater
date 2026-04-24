@@ -4828,7 +4828,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 									aria-label="Toggle Let Stillwater manage"
 									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed?enabled=" + boolAttr(!c.FeatureManageServerFiles) }
 									hx-swap="none"
-									hx-on:htmx:after-request="document.body.dispatchEvent(new CustomEvent('sse:conflict.changed'))"
+									data-conn-id={ c.ID }
+									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
 								>
 									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
 								</button>
@@ -4947,6 +4948,25 @@ script toggleConnectionForm(connType string) {
 	}
 }
 
+// stillwaterManagedAfterRequest runs after the "Let Stillwater manage"
+// toggle POSTs. On success it re-fetches the per-connection
+// conflict-detail fragment so the "Detected on this server" panel reflects
+// post-toggle state and dispatches the SSE event that tells the
+// top-of-page banner to refresh. On failure it writes an inline error
+// into the same target so the user notices without a page reload.
+script stillwaterManagedAfterRequest(connID string) {
+	if (event.detail.successful) {
+		htmx.ajax("GET", "/api/v1/connections/" + connID + "/conflict-detail",
+			{ target: "#detected-" + connID, swap: "innerHTML" });
+		document.body.dispatchEvent(new CustomEvent("sse:conflict.changed"));
+	} else {
+		var el = document.getElementById("detected-" + connID);
+		if (el) {
+			el.textContent = "Could not update this server-managed setting. Try again or reload the page.";
+		}
+	}
+}
+
 script toggleConnectionFeatures(connID string) {
 	var panel = document.getElementById("features-" + connID);
 	if (panel) {
@@ -4996,6 +5016,10 @@ templ connectionFeatureToggleTT(connID string, feature string, label string, ena
 		>
 			<span class={ ruleToggleKnobClasses(enabled) }></span>
 		</button>
+		// sr-only tooltip node so screen readers resolve the
+		// aria-describedby reference above. The title attribute is a
+		// mouse affordance; aria-describedby is the accessibility one.
+		<span id={ connID + "-" + feature + "-tt" } class="sr-only">{ tooltip }</span>
 	</div>
 }
 
