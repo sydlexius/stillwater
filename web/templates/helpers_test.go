@@ -183,6 +183,22 @@ func TestWarnSubtitle_FallsBackWhenNoConnections(t *testing.T) {
 	}
 }
 
+// TestWarnSubtitle_FallsBackWhenConnectionIdentityBlank pins the "A connected
+// server" fallback branch: the ledger may carry a connection with neither
+// Name nor Type populated (e.g. a peer whose identity probe failed before
+// the conflict was detected). Without this test the branch could silently
+// regress to the " is saving artwork..." rendering that started the
+// warnSubtitle fix in round 1.
+func TestWarnSubtitle_FallsBackWhenConnectionIdentityBlank(t *testing.T) {
+	v := ConflictBannerView{
+		Connections: []ConflictBannerConn{{Name: "", Type: "", LibraryName: "Music"}},
+	}
+	got := warnSubtitle("image", v)
+	if !contains(got, "A connected server") {
+		t.Errorf("expected generic actor fallback, got %q", got)
+	}
+}
+
 func TestWarnAffected_PerAxis(t *testing.T) {
 	if warnAffected("image") == "" || warnAffected("nfo") == "" || warnAffected("both") == "" {
 		t.Error("affected text should be populated for all axes")

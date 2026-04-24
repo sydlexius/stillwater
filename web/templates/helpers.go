@@ -300,7 +300,9 @@ func warnAffected(axis string) string {
 }
 
 // manageTarget returns the button-label fragment after "Let Stillwater
-// manage" that varies by axis ("it" vs "NFO writes" vs "both").
+// manage". Single-axis conflicts (image, nfo, or unknown) return "it";
+// composite conflicts return "both". The final rendered copy reads e.g.
+// "Let Stillwater manage it" or "Let Stillwater manage both".
 func manageTarget(axis string) string {
 	switch axis {
 	case "image":

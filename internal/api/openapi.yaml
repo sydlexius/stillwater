@@ -50,6 +50,14 @@ components:
         same axis back to disk. Clients should surface `reason` to the user
         and offer the "Let Stillwater manage" toggle from the ledger.
       properties:
+        error:
+          type: string
+          description: >
+            Stable machine-readable conflict code of the form
+            "{axis}_write_blocked" (e.g. image_write_blocked,
+            nfo_write_blocked, round_trip_write_blocked). Matches the
+            generic Error envelope so clients that ignore the conflict
+            fields still see a familiar shape.
         axis:
           type: string
           enum: [image, nfo, round_trip]
@@ -60,7 +68,7 @@ components:
         ledger:
           type: object
           description: Full ledger snapshot that caused the block.
-      required: [axis, reason, ledger]
+      required: [error, axis, reason, ledger]
     NFOFieldMap:
       type: object
       description: Configures how genre, style, and mood categories map to NFO XML elements for platform compatibility.
@@ -6080,6 +6088,15 @@ paths:
                     type: string
                   feature_manage_server_files:
                     type: boolean
+        "400":
+          description: >
+            Invalid request. Returned when the connection id is missing from
+            the path, the request body could not be read, or the body was
+            neither valid JSON nor a parseable form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Connection not found
           content:
