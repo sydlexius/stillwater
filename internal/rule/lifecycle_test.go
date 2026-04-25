@@ -254,3 +254,81 @@ func TestService_DisablingRuleSoftResolvesViolations(t *testing.T) {
 		t.Errorf("resolved_at = nil, want populated")
 	}
 }
+
+// TestService_DisableFilesystemRulesSoftResolvesViolations asserts that the
+// auto-disable path (DisableFilesystemRules, triggered when the last local
+// library is removed) runs the same cleanup as a manual disable Update: open
+// violations transition to resolved and rule_results rows are purged. Without
+// this, an auto-disabled fs rule keeps surfacing stale "needs attention"
+// counts and stale pass/fail rows on the dashboard.
+func TestService_DisableFilesystemRulesSoftResolvesViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// RuleNFOExists is the lone filesystem-dependent rule; force-enable it so
+	// the test is independent of seed defaults.
+	r, err := svc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !r.Enabled {
+		r.Enabled = true
+		if err := svc.Update(ctx, r); err != nil {
+			t.Fatalf("force-enable: %v", err)
+		}
+	}
+
+	// Seed an artist (FK target) before upserting a violation. UpsertViolation
+	// atomically writes a sibling rule_results row, so we don't need to insert
+	// rule_results manually -- after the auto-disable, both rows must be gone
+	// (rule_results) or resolved (rule_violations).
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, path) VALUES (?, ?, '')`,
+		"a1", "A1",
+	); err != nil {
+		t.Fatalf("seed artist: %v", err)
+	}
+
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "missing nfo", Fixable: true,
+		Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	count, err := svc.DisableFilesystemRules(ctx)
+	if err != nil {
+		t.Fatalf("DisableFilesystemRules: %v", err)
+	}
+	if count < 1 {
+		t.Fatalf("DisableFilesystemRules count = %d, want >= 1", count)
+	}
+
+	got, err := svc.GetViolationByID(ctx, v.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusResolved {
+		t.Errorf("status after auto-disable = %q, want %q", got.Status, ViolationStatusResolved)
+	}
+	if got.ResolvedAt == nil {
+		t.Errorf("resolved_at = nil, want populated after auto-disable")
+	}
+
+	var resultsCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_results WHERE rule_id = ?`, RuleNFOExists,
+	).Scan(&resultsCount); err != nil {
+		t.Fatalf("count rule_results: %v", err)
+	}
+	if resultsCount != 0 {
+		t.Errorf("rule_results rows for %s = %d, want 0 (cleanup should have purged)", RuleNFOExists, resultsCount)
+	}
+}

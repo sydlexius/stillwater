@@ -461,26 +461,37 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 	}
 
 	if !r.Enabled {
-		now := time.Now().UTC().Format(time.RFC3339)
-		if _, cleanupErr := s.db.ExecContext(ctx,
-			`UPDATE rule_violations
-			    SET status = ?, resolved_at = ?, updated_at = ?
-			  WHERE rule_id = ? AND status IN (?, ?)`,
-			ViolationStatusResolved, now, now,
-			r.ID, ViolationStatusOpen, ViolationStatusPendingChoice,
-		); cleanupErr != nil {
-			return fmt.Errorf("cleaning up violations after disable: %w", cleanupErr)
+		if err := s.cleanupDisabledRuleState(ctx, r.ID); err != nil {
+			return err
 		}
-		// Full delete of rule_results on disable (not status-filtered like
-		// rule_violations): the rule no longer runs, so no existing row is
-		// authoritative until the rule is re-enabled and re-evaluated.
-		// Without this the per-rule dashboard would keep surfacing stale
-		// pass/fail counts for an inactive rule.
-		if _, cleanupErr := s.db.ExecContext(ctx,
-			`DELETE FROM rule_results WHERE rule_id = ?`, r.ID,
-		); cleanupErr != nil {
-			return fmt.Errorf("cleaning up rule_results after disable: %w", cleanupErr)
-		}
+	}
+	return nil
+}
+
+// cleanupDisabledRuleState soft-resolves any open or pending-choice violations
+// for the given rule and deletes its pass/fail history rows. Called from every
+// path that flips a rule from enabled to disabled (manual Update, automatic
+// DisableFilesystemRules) so that all disable transitions converge on the
+// same end state.
+//
+// Soft-resolve (UPDATE) preserves audit history per #1143; rule_results uses
+// a hard DELETE because no existing row is authoritative once the rule stops
+// running.
+func (s *Service) cleanupDisabledRuleState(ctx context.Context, ruleID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE rule_violations
+		    SET status = ?, resolved_at = ?, updated_at = ?
+		  WHERE rule_id = ? AND status IN (?, ?)`,
+		ViolationStatusResolved, now, now,
+		ruleID, ViolationStatusOpen, ViolationStatusPendingChoice,
+	); err != nil {
+		return fmt.Errorf("cleaning up violations after disable: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM rule_results WHERE rule_id = ?`, ruleID,
+	); err != nil {
+		return fmt.Errorf("cleaning up rule_results after disable: %w", err)
 	}
 	return nil
 }
@@ -499,37 +510,72 @@ func (s *Service) DisableFilesystemRules(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	// Build parameterized query with the correct number of placeholders.
 	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids)+1)
-	now := time.Now().UTC().Format(time.RFC3339)
+	idArgs := make([]any, len(ids))
 	for i, id := range ids {
 		placeholders[i] = "?"
-		args = append(args, id)
+		idArgs[i] = id
 	}
-	args = append(args, now)
 
-	query := fmt.Sprintf( //nolint:gosec // G201: only "?" placeholders are interpolated; all values are parameterized
-		`UPDATE rules SET enabled = 0, updated_at = ? WHERE enabled = 1 AND id IN (%s)`,
+	// Identify which fs rules are currently enabled. We need the specific IDs
+	// so the cleanup pass below only touches rules that this call actually
+	// disabled, mirroring what Update does for a single rule.
+	selectQuery := fmt.Sprintf( //nolint:gosec // G201: only "?" placeholders are interpolated; all values are parameterized
+		`SELECT id FROM rules WHERE enabled = 1 AND id IN (%s)`,
 		strings.Join(placeholders, ", "),
 	)
-	// The updated_at parameter must be first to match the SET clause position.
-	// Reorder: updated_at, then all IDs.
-	orderedArgs := make([]any, 0, len(args))
-	orderedArgs = append(orderedArgs, now)
-	for _, id := range ids {
-		orderedArgs = append(orderedArgs, id)
+	rows, err := s.db.QueryContext(ctx, selectQuery, idArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("disabling filesystem rules: selecting enabled: %w", err)
+	}
+	var toDisable []string
+	scanErr := func() error {
+		defer rows.Close() //nolint:errcheck
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("disabling filesystem rules: scanning enabled: %w", err)
+			}
+			toDisable = append(toDisable, id)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("disabling filesystem rules: iterating enabled: %w", err)
+		}
+		return nil
+	}()
+	if scanErr != nil {
+		return 0, scanErr
+	}
+	if len(toDisable) == 0 {
+		return 0, nil
 	}
 
-	result, err := s.db.ExecContext(ctx, query, orderedArgs...)
-	if err != nil {
+	// Flip enabled=0 in one statement.
+	disablePlaceholders := make([]string, len(toDisable))
+	disableArgs := make([]any, 0, len(toDisable)+1)
+	now := time.Now().UTC().Format(time.RFC3339)
+	disableArgs = append(disableArgs, now)
+	for i, id := range toDisable {
+		disablePlaceholders[i] = "?"
+		disableArgs = append(disableArgs, id)
+	}
+	updateQuery := fmt.Sprintf( //nolint:gosec // G201: only "?" placeholders are interpolated; all values are parameterized
+		`UPDATE rules SET enabled = 0, updated_at = ? WHERE id IN (%s)`,
+		strings.Join(disablePlaceholders, ", "),
+	)
+	if _, err := s.db.ExecContext(ctx, updateQuery, disableArgs...); err != nil {
 		return 0, fmt.Errorf("disabling filesystem rules: %w", err)
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("disabling filesystem rules: getting rows affected: %w", err)
+
+	// Run the same disable cleanup that Update performs, so auto-disabled
+	// filesystem rules don't leave stale open violations or pass/fail rows.
+	for _, id := range toDisable {
+		if err := s.cleanupDisabledRuleState(ctx, id); err != nil {
+			return 0, fmt.Errorf("disabling filesystem rules: cleanup for %s: %w", id, err)
+		}
 	}
-	return int(rows), nil
+
+	return len(toDisable), nil
 }
 
 // RecordHealthSnapshot inserts a row into the health_history table, subject to
