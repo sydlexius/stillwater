@@ -133,11 +133,19 @@ func (c *Client) postFullItem(ctx context.Context, platformArtistID string, item
 	// Strip read-only fields that Jellyfin rejects in a POST. Done here (not
 	// at each call site) so a future addition to jellyfinReadOnlyFields cannot
 	// silently slip through one path while protecting the other.
+	//
+	// Operate on a shallow copy so callers that retain `item` after this call
+	// (for example to log it on error or pass it to a retry) see their
+	// original map unchanged.
+	cleanItem := make(map[string]any, len(item))
+	for k, v := range item {
+		cleanItem[k] = v
+	}
 	for _, key := range jellyfinReadOnlyFields {
-		delete(item, key)
+		delete(cleanItem, key)
 	}
 
-	payload, err := json.Marshal(item)
+	payload, err := json.Marshal(cleanItem)
 	if err != nil {
 		return fmt.Errorf("marshaling %s body: %w", op, err)
 	}
