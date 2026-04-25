@@ -570,14 +570,11 @@ func normalizeHyphens(s string) string {
 	return hyphenReplacer.Replace(s)
 }
 
-// mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.
-// When language preferences are set in the context, mapArtist promotes the
-// best-matching primary alias to the Name and SortName fields, placing the
-// canonical name behind all language-matched aliases in the aliases list.
-// Remaining aliases, including the canonical name, are sorted by preference score.
-// Relation-derived aliases ("is person" / "also performs as") are appended after
-// the sorted list because they lack locale metadata for scoring.
-func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
+// newArtistMetadata constructs the seed ArtistMetadata for mapArtist with the
+// always-set fields (IDs, normalized name/sort, type, gender, disambiguation,
+// origin). Gender is forced empty for non-individual types to match the
+// scraper-executor normalization path.
+func newArtistMetadata(mb *MBArtist) *provider.ArtistMetadata {
 	mappedType := mapArtistType(mb.Type)
 	gender := strings.ToLower(mb.Gender)
 	if mappedType != "" && !artist.IsIndividualType(mappedType) {
@@ -587,7 +584,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	if origin == "" {
 		origin = mb.Country
 	}
-	meta := &provider.ArtistMetadata{
+	return &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
 		Name:           normalizeHyphens(mb.Name),
@@ -598,8 +595,11 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		Origin:         origin,
 		URLs:           make(map[string]string),
 	}
+}
 
-	// Life span
+// applyLifeSpan maps the MB life-span Begin/End onto the formed/born and
+// disbanded/died fields, choosing per the artist's group-vs-individual type.
+func applyLifeSpan(meta *provider.ArtistMetadata, mb *MBArtist) {
 	if mb.LifeSpan.Begin != "" {
 		if isGroupType(mb.Type) {
 			meta.Formed = mb.LifeSpan.Begin
@@ -614,17 +614,21 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 			meta.Died = mb.LifeSpan.End
 		}
 	}
+}
 
-	// Genres from the structured genres array.
+// applyGenresAndTags fills meta.Genres / meta.Styles / meta.Moods from the
+// MusicBrainz response. When structured genres are present they are kept
+// verbatim and tags are mined for additional style entries; otherwise the
+// tag list is classified into all three buckets so styles and moods are not
+// lost as plain genres.
+func applyGenresAndTags(meta *provider.ArtistMetadata, mb *MBArtist) {
 	for _, g := range mb.Genres {
 		if g.Name != "" {
 			meta.Genres = append(meta.Genres, g.Name)
 		}
 	}
 
-	hasStructuredGenres := len(meta.Genres) > 0
-
-	if hasStructuredGenres {
+	if len(meta.Genres) > 0 {
 		// Structured genres exist. Classify all genres + tags together to
 		// extract style-level entries, then deduplicate against the genre list.
 		var allTagNames []string
@@ -640,76 +644,98 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		}
 		_, extractedStyles, _ := tagclass.ClassifyTags(allTagNames)
 		meta.Styles = deduplicateStyles(extractedStyles, meta.Genres)
-	} else if len(mb.Tags) > 0 {
-		// No structured genres -- classify tags into genres/styles/moods
-		// instead of dumping everything into genres. Without this split,
-		// deduplicateStyles would remove all styles because they were
-		// already placed in the genres bucket.
-		var tagNames []string
-		for _, t := range mb.Tags {
-			if t.Name != "" && t.Count > 0 {
-				tagNames = append(tagNames, t.Name)
-			}
-		}
-		fallbackGenres, fallbackStyles, fallbackMoods := tagclass.ClassifyTags(tagNames)
-		meta.Genres = fallbackGenres
-		meta.Styles = append(meta.Styles, fallbackStyles...)
-		meta.Moods = append(meta.Moods, fallbackMoods...)
+		return
 	}
 
-	// Language-aware name promotion: if the user has language preferences,
-	// look for a primary alias in the preferred language and promote its
-	// name (and sort name, if present) to the top-level fields. The original
-	// canonical name is demoted into the aliases list so it is not lost.
-	langPrefs := provider.MetadataLanguages(ctx)
-	canonicalName := meta.Name
-	if len(langPrefs) > 0 {
-		bestScore := -1
-		var bestAlias MBAlias
-		for _, alias := range mb.Aliases {
-			if alias.Name == "" || !alias.Primary {
-				continue
-			}
-			score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
-			if score >= 0 && (bestScore < 0 || score < bestScore) {
-				bestScore = score
-				bestAlias = alias
-			}
-		}
-		if bestScore >= 0 {
-			promotedName := normalizeHyphens(bestAlias.Name)
-			promotedSort := normalizeHyphens(bestAlias.SortName)
-			nameChanged := promotedName != "" && promotedName != canonicalName
-			sortChanged := promotedSort != "" && promotedSort != meta.SortName
-			if nameChanged || sortChanged {
-				a.logger.Debug("promoting localized name",
-					"from", canonicalName,
-					"to", bestAlias.Name,
-					"locale", bestAlias.Locale)
-				if nameChanged {
-					meta.Name = promotedName
-				}
-				if sortChanged {
-					meta.SortName = promotedSort
-				} else if nameChanged {
-					a.logger.Debug("promoted alias has no sort name, retaining canonical",
-						"canonical_sort", meta.SortName,
-						"locale", bestAlias.Locale)
-				}
-			}
+	if len(mb.Tags) == 0 {
+		return
+	}
+	// No structured genres -- classify tags into genres/styles/moods
+	// instead of dumping everything into genres. Without this split,
+	// deduplicateStyles would remove all styles because they were
+	// already placed in the genres bucket.
+	var tagNames []string
+	for _, t := range mb.Tags {
+		if t.Name != "" && t.Count > 0 {
+			tagNames = append(tagNames, t.Name)
 		}
 	}
+	fallbackGenres, fallbackStyles, fallbackMoods := tagclass.ClassifyTags(tagNames)
+	meta.Genres = fallbackGenres
+	meta.Styles = append(meta.Styles, fallbackStyles...)
+	meta.Moods = append(meta.Moods, fallbackMoods...)
+}
 
-	// Aliases: collect all, then sort by user's language preference if set.
-	// The canonical name is included if it differs from the promoted name.
-	type scoredAlias struct {
-		name  string
-		score int
+// pickBestPrimaryAlias scans MB aliases and returns the highest-priority
+// primary alias for the supplied language preference list. ok is false when
+// no primary alias matched any preference.
+func pickBestPrimaryAlias(aliases []MBAlias, langPrefs []string) (best MBAlias, ok bool) {
+	bestScore := -1
+	for _, alias := range aliases {
+		if alias.Name == "" || !alias.Primary {
+			continue
+		}
+		score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
+		if score >= 0 && (bestScore < 0 || score < bestScore) {
+			bestScore = score
+			best = alias
+		}
 	}
-	var scored []scoredAlias
-	seen := make(map[string]bool)
+	return best, bestScore >= 0
+}
+
+// promoteLocalizedName replaces meta.Name and/or meta.SortName with the
+// best-matching primary alias for the user's language preferences. Returns
+// the original canonical name so caller can re-add it as an alias if it was
+// displaced.
+func (a *Adapter) promoteLocalizedName(meta *provider.ArtistMetadata, mb *MBArtist, langPrefs []string) (canonicalName string) {
+	canonicalName = meta.Name
+	if len(langPrefs) == 0 {
+		return canonicalName
+	}
+	bestAlias, ok := pickBestPrimaryAlias(mb.Aliases, langPrefs)
+	if !ok {
+		return canonicalName
+	}
+	promotedName := normalizeHyphens(bestAlias.Name)
+	promotedSort := normalizeHyphens(bestAlias.SortName)
+	nameChanged := promotedName != "" && promotedName != canonicalName
+	sortChanged := promotedSort != "" && promotedSort != meta.SortName
+	if !nameChanged && !sortChanged {
+		return canonicalName
+	}
+	a.logger.Debug("promoting localized name",
+		"from", canonicalName,
+		"to", bestAlias.Name,
+		"locale", bestAlias.Locale)
+	if nameChanged {
+		meta.Name = promotedName
+	}
+	if sortChanged {
+		meta.SortName = promotedSort
+	} else if nameChanged {
+		a.logger.Debug("promoted alias has no sort name, retaining canonical",
+			"canonical_sort", meta.SortName,
+			"locale", bestAlias.Locale)
+	}
+	return canonicalName
+}
+
+// scoredAlias pairs an alias name with its language-preference match score.
+// Negative scores indicate "no language match"; lower non-negative scores rank
+// higher.
+type scoredAlias struct {
+	name  string
+	score int
+}
+
+// collectAndScoreAliases builds the deduplicated alias list. The returned
+// `seen` map is shared with applyRelations so "is person" relations can avoid
+// re-adding an existing alias. canonicalName is only re-added as an alias
+// when promoteLocalizedName replaced meta.Name with a different value.
+func collectAndScoreAliases(meta *provider.ArtistMetadata, mb *MBArtist, langPrefs []string, canonicalName string) (scored []scoredAlias, seen map[string]bool) {
+	seen = make(map[string]bool)
 	seen[meta.Name] = true
-	// If we promoted a different name, add the original canonical name as an alias.
 	if canonicalName != meta.Name {
 		scored = append(scored, scoredAlias{name: canonicalName, score: -1})
 		seen[canonicalName] = true
@@ -723,55 +749,122 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 		score := provider.MatchLanguagePreference(alias.Locale, langPrefs)
 		scored = append(scored, scoredAlias{name: normalizedAlias, score: score})
 	}
-	// Sort: matched locales first (lower score wins), unmatched last.
-	if len(langPrefs) > 0 && len(scored) > 1 {
-		sort.SliceStable(scored, func(i, j int) bool {
-			si, sj := scored[i].score, scored[j].score
-			// -1 means unmatched -- push to end
-			if si < 0 && sj >= 0 {
-				return false
-			}
-			if sj < 0 && si >= 0 {
-				return true
-			}
-			return si < sj
-		})
+	return scored, seen
+}
+
+// sortAliasesByLanguagePreference orders scored aliases so locale matches
+// come first (lower score wins) and unmatched (-1) entries fall to the end.
+// Stable to preserve MB's original ordering within a score group.
+func sortAliasesByLanguagePreference(scored []scoredAlias, langPrefs []string) {
+	if len(langPrefs) == 0 || len(scored) <= 1 {
+		return
 	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		si, sj := scored[i].score, scored[j].score
+		// -1 means unmatched -- push to end
+		if si < 0 && sj >= 0 {
+			return false
+		}
+		if sj < 0 && si >= 0 {
+			return true
+		}
+		return si < sj
+	})
+}
+
+// applyRelation maps a single MB relation onto meta. seen is mutated when an
+// "is person" relation contributes a fresh alias.
+func applyRelation(meta *provider.ArtistMetadata, rel MBRelation, seen map[string]bool) {
+	switch {
+	case rel.Type == "member of band" && rel.Artist != nil && rel.Direction == "backward":
+		member := provider.MemberInfo{
+			Name:       rel.Artist.Name,
+			MBID:       rel.Artist.ID,
+			IsActive:   !rel.Ended,
+			DateJoined: rel.Begin,
+			DateLeft:   rel.End,
+		}
+		member.Instruments = append(member.Instruments, rel.Attributes...)
+		meta.Members = append(meta.Members, member)
+
+	case rel.Type == "is person" && rel.Artist != nil:
+		// "is person" is the MusicBrainz relation type for "also performs as"
+		// (legal name <-> stage name links). Capture the related artist name
+		// as an alias if it is not already present.
+		aliasName := normalizeHyphens(rel.Artist.Name)
+		if aliasName != "" && aliasName != meta.Name && !seen[aliasName] {
+			meta.Aliases = append(meta.Aliases, aliasName)
+			seen[aliasName] = true
+		}
+
+	case rel.URL != nil && rel.URL.Resource != "":
+		urlType := mapURLType(rel.Type, rel.URL.Resource)
+		if urlType != "" {
+			meta.URLs[urlType] = rel.URL.Resource
+		}
+	}
+}
+
+// applyRelations dispatches every MB relation to applyRelation. The seen map
+// is shared with collectAndScoreAliases so "is person" relations cannot
+// duplicate an existing alias.
+func applyRelations(meta *provider.ArtistMetadata, mb *MBArtist, seen map[string]bool) {
+	for _, rel := range mb.Relations {
+		applyRelation(meta, rel, seen)
+	}
+}
+
+// synthesizeYearsActive fills meta.YearsActive from formed/disbanded for
+// group-type artists when the provider did not supply one. Output uses
+// "YYYY-YYYY" or "YYYY-present"; partial dates are reduced to the year part.
+func synthesizeYearsActive(meta *provider.ArtistMetadata, mb *MBArtist) {
+	if meta.YearsActive != "" || !isGroupType(mb.Type) {
+		return
+	}
+	formedYear := yearFromDate(meta.Formed)
+	if formedYear == "" {
+		return
+	}
+	disbandedYear := yearFromDate(meta.Disbanded)
+	if disbandedYear != "" {
+		meta.YearsActive = formedYear + "-" + disbandedYear
+	} else {
+		meta.YearsActive = formedYear + "-present"
+	}
+}
+
+// mapArtist transforms a raw MusicBrainz API response into the internal
+// ArtistMetadata model. The transformation is staged so each helper owns a
+// self-contained slice of the conversion: seed, life span, tag classification,
+// locale-aware name promotion, alias scoring, relation mapping, member dedup,
+// and years-active synthesis.
+//
+// When language preferences are set in the context, mapArtist promotes the
+// best-matching primary alias to the Name and SortName fields, placing the
+// canonical name behind all language-matched aliases in the aliases list.
+// Remaining aliases, including the canonical name, are sorted by preference
+// score. Relation-derived aliases ("is person" / "also performs as") are
+// appended after the sorted list because they lack locale metadata for scoring.
+func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistMetadata {
+	meta := newArtistMetadata(mb)
+	applyLifeSpan(meta, mb)
+	applyGenresAndTags(meta, mb)
+
+	// Language-aware name promotion happens BEFORE alias collection so the
+	// canonical name (when displaced) can be re-added to the alias list.
+	langPrefs := provider.MetadataLanguages(ctx)
+	canonicalName := a.promoteLocalizedName(meta, mb, langPrefs)
+
+	scored, seen := collectAndScoreAliases(meta, mb, langPrefs, canonicalName)
+	sortAliasesByLanguagePreference(scored, langPrefs)
 	for _, sa := range scored {
 		meta.Aliases = append(meta.Aliases, sa.name)
 	}
 
-	// Relations: extract members, "also performs as" aliases, and URLs.
-	for _, rel := range mb.Relations {
-		switch {
-		case rel.Type == "member of band" && rel.Artist != nil && rel.Direction == "backward":
-			member := provider.MemberInfo{
-				Name:       rel.Artist.Name,
-				MBID:       rel.Artist.ID,
-				IsActive:   !rel.Ended,
-				DateJoined: rel.Begin,
-				DateLeft:   rel.End,
-			}
-			member.Instruments = append(member.Instruments, rel.Attributes...)
-			meta.Members = append(meta.Members, member)
-
-		case rel.Type == "is person" && rel.Artist != nil:
-			// "is person" is the MusicBrainz relation type for "also performs as"
-			// (legal name <-> stage name links). Capture the related artist name
-			// as an alias if it is not already present.
-			aliasName := normalizeHyphens(rel.Artist.Name)
-			if aliasName != "" && aliasName != meta.Name && !seen[aliasName] {
-				meta.Aliases = append(meta.Aliases, aliasName)
-				seen[aliasName] = true
-			}
-
-		case rel.URL != nil && rel.URL.Resource != "":
-			urlType := mapURLType(rel.Type, rel.URL.Resource)
-			if urlType != "" {
-				meta.URLs[urlType] = rel.URL.Resource
-			}
-		}
-	}
+	// Relations may add more aliases via the "is person" path; share the seen
+	// map with collectAndScoreAliases so duplicates are avoided across both
+	// passes.
+	applyRelations(meta, mb, seen)
 
 	// Deduplicate members by MBID. When the same person appears multiple times
 	// (e.g., different active periods), merge their date ranges and instruments.
@@ -779,21 +872,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	// when merging duplicates with different name variants.
 	meta.Members = deduplicateMembers(meta.Members, langPrefs)
 
-	// Synthesize YearsActive from Formed/Disbanded for group-type artists when
-	// the provider did not supply an explicit years-active value. Formed and
-	// Disbanded may be partial dates ("1991-05", "1946-10-14"), so extract
-	// only the 4-digit year portion for a clean "YYYY-YYYY" range.
-	if meta.YearsActive == "" && isGroupType(mb.Type) {
-		formedYear := yearFromDate(meta.Formed)
-		disbandedYear := yearFromDate(meta.Disbanded)
-		if formedYear != "" {
-			if disbandedYear != "" {
-				meta.YearsActive = formedYear + "-" + disbandedYear
-			} else {
-				meta.YearsActive = formedYear + "-present"
-			}
-		}
-	}
+	synthesizeYearsActive(meta, mb)
 
 	return meta
 }

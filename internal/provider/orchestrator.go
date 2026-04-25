@@ -497,179 +497,325 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	return pr
 }
 
-// applyField applies data from a provider result to the merged result for a specific field.
-// Returns true if data was applied (i.e., the field was populated).
-func applyField(result *FetchResult, field string, pr *providerResult, source ProviderName) bool {
-	if pr.meta == nil {
-		return false
-	}
+// fieldApplier mutates result with one provider's contribution to the named
+// field and reports the outcome:
+//
+//   - populated: true if this call actually changed result for the target field
+//     (e.g. wrote a new value or grew a tag slice).
+//   - matched: true if the field-specific code path was entered. The pre-refactor
+//     applyField returned from inside its switch in this case, so the
+//     downstream provider-ID/URL/alias merge MUST be skipped to preserve
+//     behavior. When false, fall through to the merge tail and return false.
+//
+// Each helper below mirrors one arm of the original switch. `matched` follows
+// the original early-return semantics exactly: any case arm that took the
+// `return ...` statement counts as matched.
+type fieldApplier func(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool)
 
+// scalarFieldAccessor describes how to read/write one of the simple scalar
+// "set-if-empty" fields handled by applyField. The pattern is identical for
+// every entry in scalarFieldAccessors: if the source meta has a non-empty
+// value AND the merged result is still empty, copy it across and record the
+// provider in the source list.
+type scalarFieldAccessor struct {
+	get func(*ArtistMetadata) string
+	set func(*ArtistMetadata, string)
+}
+
+// scalarFieldAccessors maps field names to their getter/setter pair. Keep
+// this table in sync with the corresponding fields on ArtistMetadata. Fields
+// with custom semantics (biography junk filter, type/gender interaction,
+// slice merges, image aggregation) are handled separately.
+var scalarFieldAccessors = map[string]scalarFieldAccessor{
+	"formed": {
+		get: func(m *ArtistMetadata) string { return m.Formed },
+		set: func(m *ArtistMetadata, v string) { m.Formed = v },
+	},
+	"born": {
+		get: func(m *ArtistMetadata) string { return m.Born },
+		set: func(m *ArtistMetadata, v string) { m.Born = v },
+	},
+	"died": {
+		get: func(m *ArtistMetadata) string { return m.Died },
+		set: func(m *ArtistMetadata, v string) { m.Died = v },
+	},
+	"disbanded": {
+		get: func(m *ArtistMetadata) string { return m.Disbanded },
+		set: func(m *ArtistMetadata, v string) { m.Disbanded = v },
+	},
+	"years_active": {
+		get: func(m *ArtistMetadata) string { return m.YearsActive },
+		set: func(m *ArtistMetadata, v string) { m.YearsActive = v },
+	},
+	"origin": {
+		get: func(m *ArtistMetadata) string { return m.Origin },
+		set: func(m *ArtistMetadata, v string) { m.Origin = v },
+	},
+}
+
+// applyScalarField copies a simple scalar string field from meta into result
+// when meta has data and result is still empty. matched is true only when the
+// populate condition held, mirroring the original switch arms which only took
+// the early-return when both sides were ready.
+func applyScalarField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	acc, ok := scalarFieldAccessors[field]
+	if !ok {
+		return false, false
+	}
 	meta := pr.meta
+	if acc.get(meta) == "" || acc.get(result.Metadata) != "" {
+		return false, false
+	}
+	acc.set(result.Metadata, acc.get(meta))
+	result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+	return true, true
+}
 
-	switch field {
-	case "biography":
-		if meta.Biography != "" && result.Metadata.Biography == "" && !IsJunkBiography(meta.Biography) {
-			result.Metadata.Biography = meta.Biography
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "genres":
-		if len(meta.Genres) > 0 {
-			before := len(result.Metadata.Genres)
-			result.Metadata.Genres = tagdict.MergeAndDeduplicate(result.Metadata.Genres, meta.Genres)
-			if len(result.Metadata.Genres) > before && !hasFieldSource(result.Sources, field) {
-				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			}
-			return len(result.Metadata.Genres) > before
-		}
-	case "styles":
-		if len(meta.Styles) > 0 {
-			before := len(result.Metadata.Styles)
-			result.Metadata.Styles = tagdict.MergeAndDeduplicate(result.Metadata.Styles, meta.Styles)
-			if len(result.Metadata.Styles) > before && !hasFieldSource(result.Sources, field) {
-				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			}
-			return len(result.Metadata.Styles) > before
-		}
-	case "moods":
-		if len(meta.Moods) > 0 {
-			before := len(result.Metadata.Moods)
-			result.Metadata.Moods = tagdict.MergeAndDeduplicate(result.Metadata.Moods, meta.Moods)
-			if len(result.Metadata.Moods) > before && !hasFieldSource(result.Sources, field) {
-				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			}
-			return len(result.Metadata.Moods) > before
-		}
-	case "members":
-		if len(meta.Members) > 0 && len(result.Metadata.Members) == 0 {
-			result.Metadata.Members = meta.Members
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "formed":
-		if meta.Formed != "" && result.Metadata.Formed == "" {
-			result.Metadata.Formed = meta.Formed
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "born":
-		if meta.Born != "" && result.Metadata.Born == "" {
-			result.Metadata.Born = meta.Born
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "died":
-		if meta.Died != "" && result.Metadata.Died == "" {
-			result.Metadata.Died = meta.Died
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "disbanded":
-		if meta.Disbanded != "" && result.Metadata.Disbanded == "" {
-			result.Metadata.Disbanded = meta.Disbanded
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "years_active":
-		if meta.YearsActive != "" && result.Metadata.YearsActive == "" {
-			result.Metadata.YearsActive = meta.YearsActive
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "type":
-		if meta.Type != "" && result.Metadata.Type == "" {
-			result.Metadata.Type = meta.Type
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			// Non-individual types (group, orchestra, choir) cannot carry a
-			// gender value. Clear any previously-applied gender value and its
-			// provenance to mirror the scraper-executor normalization path.
-			if !isIndividualTypeValue(meta.Type) {
-				result.Metadata.Gender = ""
-				result.Sources = removeFieldSource(result.Sources, "gender")
-			}
-			return true
-		}
-	case "gender":
-		// Only accept a gender when the accumulated type is empty (unknown)
-		// or an individual type. Group/orchestra/choir types do not carry
-		// gender.
-		if meta.Gender != "" && result.Metadata.Gender == "" &&
-			(result.Metadata.Type == "" || isIndividualTypeValue(result.Metadata.Type)) {
-			result.Metadata.Gender = meta.Gender
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "origin":
-		if meta.Origin != "" && result.Metadata.Origin == "" {
-			result.Metadata.Origin = meta.Origin
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
-		}
-	case "thumb", "fanart", "logo", "banner":
-		// For image fields, collect all matching candidates from this provider.
-		// Unlike text fields, images aggregate across providers so users can
-		// choose from multiple candidates. Individual images carry their own
-		// .Source for per-image provenance.
-		imgType := fieldToImageType(field)
-		found := false
-		for _, img := range pr.images {
-			if img.Type == imgType {
-				result.Images = append(result.Images, img)
-				found = true
-			}
-		}
-		if found {
-			// Only record the first (highest-priority) provider as the
-			// field source. MetadataSources is map[field]provider (last
-			// write wins), so appending multiple providers would record
-			// the lowest-priority one instead of the preferred one.
-			if !hasFieldSource(result.Sources, field) {
-				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			}
-			return true
-		}
+// applyBiography copies the biography from meta when the merged result is
+// still empty, skipping known junk strings via IsJunkBiography. matched is
+// true only when the populate condition held (matching the original switch
+// arm's early-return semantics).
+func applyBiography(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	meta := pr.meta
+	if meta.Biography == "" || result.Metadata.Biography != "" || IsJunkBiography(meta.Biography) {
+		return false, false
 	}
+	result.Metadata.Biography = meta.Biography
+	result.Sources = append(result.Sources, FieldSource{Field: "biography", Provider: source})
+	return true, true
+}
 
-	// Also merge provider IDs when available
-	if meta.MusicBrainzID != "" && result.Metadata.MusicBrainzID == "" {
-		result.Metadata.MusicBrainzID = meta.MusicBrainzID
-	}
-	if meta.AudioDBID != "" && result.Metadata.AudioDBID == "" {
-		result.Metadata.AudioDBID = meta.AudioDBID
-	}
-	if meta.DiscogsID != "" && result.Metadata.DiscogsID == "" {
-		result.Metadata.DiscogsID = meta.DiscogsID
-	}
-	if meta.WikidataID != "" && result.Metadata.WikidataID == "" {
-		result.Metadata.WikidataID = meta.WikidataID
-	}
-	if meta.DeezerID != "" && result.Metadata.DeezerID == "" {
-		result.Metadata.DeezerID = meta.DeezerID
-	}
-	if meta.AllMusicID != "" && result.Metadata.AllMusicID == "" {
-		result.Metadata.AllMusicID = meta.AllMusicID
-	}
-	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
-		result.Metadata.SpotifyID = meta.SpotifyID
-	}
-	if meta.Name != "" && result.Metadata.Name == "" {
-		result.Metadata.Name = meta.Name
-	}
+// tagSliceFieldAccessor is the slice analog of scalarFieldAccessor for the
+// genres / styles / moods fields, which merge-and-deduplicate rather than
+// first-write-wins.
+type tagSliceFieldAccessor struct {
+	get func(*ArtistMetadata) []string
+	set func(*ArtistMetadata, []string)
+}
 
-	// Merge URLs
+var tagSliceFieldAccessors = map[string]tagSliceFieldAccessor{
+	"genres": {
+		get: func(m *ArtistMetadata) []string { return m.Genres },
+		set: func(m *ArtistMetadata, v []string) { m.Genres = v },
+	},
+	"styles": {
+		get: func(m *ArtistMetadata) []string { return m.Styles },
+		set: func(m *ArtistMetadata, v []string) { m.Styles = v },
+	},
+	"moods": {
+		get: func(m *ArtistMetadata) []string { return m.Moods },
+		set: func(m *ArtistMetadata, v []string) { m.Moods = v },
+	},
+}
+
+// applyTagSliceField merges meta's tag slice into result via tagdict
+// deduplication. populated is true when the merge actually grew the result
+// slice; matched is true whenever meta supplied any candidates (matching the
+// original switch arm, which entered its inner `if len(meta.X) > 0` and then
+// always returned). The field source is recorded only on first growth so the
+// highest-priority contributor stays first.
+func applyTagSliceField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	acc, ok := tagSliceFieldAccessors[field]
+	if !ok {
+		return false, false
+	}
+	meta := pr.meta
+	src := acc.get(meta)
+	if len(src) == 0 {
+		return false, false
+	}
+	current := acc.get(result.Metadata)
+	before := len(current)
+	merged := tagdict.MergeAndDeduplicate(current, src)
+	acc.set(result.Metadata, merged)
+	grew := len(merged) > before
+	if grew && !hasFieldSource(result.Sources, field) {
+		result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+	}
+	return grew, true
+}
+
+// applyMembers copies the members list from meta when result has none. The
+// members field is first-write-wins (no merge across providers) because each
+// provider returns a complete band roster.
+func applyMembers(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	meta := pr.meta
+	if len(meta.Members) == 0 || len(result.Metadata.Members) != 0 {
+		return false, false
+	}
+	result.Metadata.Members = meta.Members
+	result.Sources = append(result.Sources, FieldSource{Field: "members", Provider: source})
+	return true, true
+}
+
+// applyType copies the artist type from meta when result has none. Setting a
+// non-individual type (group, orchestra, choir) also clears any previously
+// applied gender value and its provenance, mirroring the scraper-executor
+// normalization path.
+func applyType(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	meta := pr.meta
+	if meta.Type == "" || result.Metadata.Type != "" {
+		return false, false
+	}
+	result.Metadata.Type = meta.Type
+	result.Sources = append(result.Sources, FieldSource{Field: "type", Provider: source})
+	if !isIndividualTypeValue(meta.Type) {
+		result.Metadata.Gender = ""
+		result.Sources = removeFieldSource(result.Sources, "gender")
+	}
+	return true, true
+}
+
+// applyGender copies gender from meta when result has none AND the accumulated
+// type either is empty (unknown) or refers to an individual.
+// Group/orchestra/choir types do not carry gender.
+func applyGender(result *FetchResult, _ string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	meta := pr.meta
+	if meta.Gender == "" || result.Metadata.Gender != "" {
+		return false, false
+	}
+	if result.Metadata.Type != "" && !isIndividualTypeValue(result.Metadata.Type) {
+		return false, false
+	}
+	result.Metadata.Gender = meta.Gender
+	result.Sources = append(result.Sources, FieldSource{Field: "gender", Provider: source})
+	return true, true
+}
+
+// applyImageField appends all images of the matching type from the provider
+// result. Image fields aggregate across providers (unlike scalar fields), but
+// the field source is recorded only for the first contributor so
+// MetadataSources reflects the highest-priority provider. matched mirrors the
+// original switch arm: only true when at least one matching image was found.
+func applyImageField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	imgType := fieldToImageType(field)
+	found := false
+	for _, img := range pr.images {
+		if img.Type == imgType {
+			result.Images = append(result.Images, img)
+			found = true
+		}
+	}
+	if !found {
+		return false, false
+	}
+	if !hasFieldSource(result.Sources, field) {
+		result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+	}
+	return true, true
+}
+
+// fieldAppliers dispatches a field name to its specific applier. Field names
+// without an entry fall through to applyScalarField / applyTagSliceField via
+// dispatchFieldApplier.
+var fieldAppliers = map[string]fieldApplier{
+	"biography": applyBiography,
+	"members":   applyMembers,
+	"type":      applyType,
+	"gender":    applyGender,
+	"thumb":     applyImageField,
+	"fanart":    applyImageField,
+	"logo":      applyImageField,
+	"banner":    applyImageField,
+}
+
+// dispatchFieldApplier routes the field to its specific applier or to the
+// scalar / tag-slice generic helpers. Unknown fields return matched=false so
+// the caller falls through to the provider-ID merge tail.
+func dispatchFieldApplier(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
+	if fn, ok := fieldAppliers[field]; ok {
+		return fn(result, field, pr, source)
+	}
+	if _, ok := scalarFieldAccessors[field]; ok {
+		return applyScalarField(result, field, pr, source)
+	}
+	if _, ok := tagSliceFieldAccessors[field]; ok {
+		return applyTagSliceField(result, field, pr, source)
+	}
+	return false, false
+}
+
+// providerIDAccessor names one of the cross-provider identifier fields whose
+// "first non-empty wins" merge runs as part of mergeProviderIDsAndExtras.
+type providerIDAccessor struct {
+	get func(*ArtistMetadata) string
+	set func(*ArtistMetadata, string)
+}
+
+// providerIDAccessors enumerates all scalar identifier-style fields merged
+// when applyField falls through to the post-switch tail. The Name field is
+// included here because it shares the same first-write-wins shape; it is not
+// a provider ID, but applying it via the same loop keeps cyclomatic
+// complexity flat.
+var providerIDAccessors = []providerIDAccessor{
+	{get: func(m *ArtistMetadata) string { return m.MusicBrainzID }, set: func(m *ArtistMetadata, v string) { m.MusicBrainzID = v }},
+	{get: func(m *ArtistMetadata) string { return m.AudioDBID }, set: func(m *ArtistMetadata, v string) { m.AudioDBID = v }},
+	{get: func(m *ArtistMetadata) string { return m.DiscogsID }, set: func(m *ArtistMetadata, v string) { m.DiscogsID = v }},
+	{get: func(m *ArtistMetadata) string { return m.WikidataID }, set: func(m *ArtistMetadata, v string) { m.WikidataID = v }},
+	{get: func(m *ArtistMetadata) string { return m.DeezerID }, set: func(m *ArtistMetadata, v string) { m.DeezerID = v }},
+	{get: func(m *ArtistMetadata) string { return m.AllMusicID }, set: func(m *ArtistMetadata, v string) { m.AllMusicID = v }},
+	{get: func(m *ArtistMetadata) string { return m.SpotifyID }, set: func(m *ArtistMetadata, v string) { m.SpotifyID = v }},
+	{get: func(m *ArtistMetadata) string { return m.Name }, set: func(m *ArtistMetadata, v string) { m.Name = v }},
+}
+
+// mergeFirstWinsScalars copies each scalar identifier from meta into result
+// when the source has data and the destination is still empty.
+func mergeFirstWinsScalars(result *FetchResult, meta *ArtistMetadata) {
+	for _, acc := range providerIDAccessors {
+		if acc.get(meta) != "" && acc.get(result.Metadata) == "" {
+			acc.set(result.Metadata, acc.get(meta))
+		}
+	}
+}
+
+// mergeURLs copies meta's URL map into result, leaving any pre-existing key
+// in result untouched (first-writer-per-key wins).
+func mergeURLs(result *FetchResult, meta *ArtistMetadata) {
 	for k, v := range meta.URLs {
 		if _, exists := result.Metadata.URLs[k]; !exists {
 			result.Metadata.URLs[k] = v
 		}
 	}
+}
 
-	// Merge aliases (deduplicated)
+// mergeAliases appends each meta alias to result.Metadata.Aliases unless it
+// already exists (linear-scan deduplication).
+func mergeAliases(result *FetchResult, meta *ArtistMetadata) {
 	for _, alias := range meta.Aliases {
 		if !containsString(result.Metadata.Aliases, alias) {
 			result.Metadata.Aliases = append(result.Metadata.Aliases, alias)
 		}
 	}
+}
 
+// mergeProviderIDsAndExtras merges provider-specific IDs, the canonical name,
+// URLs, and aliases from meta into result. The pre-refactor applyField ran
+// these merges only when its switch fell through to the tail (i.e. the
+// requested field's case was unmatched or its inner conditions failed).
+// First-write-wins for scalars; deduplicated for URLs and aliases.
+func mergeProviderIDsAndExtras(result *FetchResult, meta *ArtistMetadata) {
+	mergeFirstWinsScalars(result, meta)
+	mergeURLs(result, meta)
+	mergeAliases(result, meta)
+}
+
+// applyField applies data from a provider result to the merged result for a
+// specific field. Returns true if the requested field was populated by this
+// call. When the field-specific path is not taken (unknown field, or its
+// inner conditions failed), this function also merges provider IDs, the
+// canonical name, URLs, and aliases from meta into result. This preserves
+// the pre-refactor early-return / fall-through behavior exactly: a
+// successful field-specific apply does NOT trigger the ID/URL/alias merge.
+func applyField(result *FetchResult, field string, pr *providerResult, source ProviderName) bool {
+	if pr.meta == nil {
+		return false
+	}
+
+	populated, matched := dispatchFieldApplier(result, field, pr, source)
+	if matched {
+		return populated
+	}
+	mergeProviderIDsAndExtras(result, pr.meta)
 	return false
 }
 
