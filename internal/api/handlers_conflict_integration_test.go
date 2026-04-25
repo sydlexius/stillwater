@@ -48,6 +48,31 @@ func testRouterForConflictToggle(t *testing.T) (*Router, *connection.Service) {
 	return r, connSvc
 }
 
+// assertSetManagedResponse decodes the 200 body from POST
+// /connections/{id}/stillwater-managed and asserts the contract advertised
+// in openapi.yaml (connection_id + feature_manage_server_files). The
+// handler at handlers_conflict.go:284 builds this response from a
+// map[string]any literal, so neither the Go type system nor
+// TestOpenAPIConsistency (a name-presence-only spec-drift detector) catches
+// regressions in the field name, value, or type. This helper is the only
+// place that does.
+func assertSetManagedResponse(t *testing.T, w *httptest.ResponseRecorder, wantConnID string, wantEnabled bool) {
+	t.Helper()
+	var resp struct {
+		ConnectionID             string `json:"connection_id"`
+		FeatureManageServerFiles bool   `json:"feature_manage_server_files"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, w.Body.String())
+	}
+	if resp.ConnectionID != wantConnID {
+		t.Fatalf("connection_id = %q, want %q", resp.ConnectionID, wantConnID)
+	}
+	if resp.FeatureManageServerFiles != wantEnabled {
+		t.Fatalf("feature_manage_server_files = %v, want %v", resp.FeatureManageServerFiles, wantEnabled)
+	}
+}
+
 // embyLibraryOptionsShape mirrors the minimal shape Stillwater sends to
 // /Library/VirtualFolders/LibraryOptions so the test fake can assert what
 // it received.
@@ -140,6 +165,7 @@ func TestSetStillwaterManaged_EnableSnapshotsAndDisablesPeer(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
+	assertSetManagedResponse(t, w, conn.ID, true)
 
 	// Verify the peer was patched to disable savers.
 	got, ok := received.Load("lib1")
@@ -191,6 +217,7 @@ func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
 	if enableW.Code != http.StatusOK {
 		t.Fatalf("enable status = %d body=%s", enableW.Code, enableW.Body.String())
 	}
+	assertSetManagedResponse(t, enableW, conn.ID, true)
 
 	// Now disable; restore path should POST the original (saver-on) config back.
 	body = bytes.NewReader([]byte(`{"enabled":false}`))
@@ -201,6 +228,7 @@ func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("disable status = %d body=%s", w.Code, w.Body.String())
 	}
+	assertSetManagedResponse(t, w, conn.ID, false)
 
 	// The most recent POST should have restored the saver on. Check the
 	// ok flag so a regression that stops POSTing entirely fails loudly
@@ -375,6 +403,7 @@ func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
+	assertSetManagedResponse(t, w, conn.ID, true)
 
 	// SaveLocalMetadata=false is the single master switch that stops Jellyfin
 	// from persisting artwork OR NFO to disk. A 200-only check would let a
@@ -407,6 +436,7 @@ func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
+	assertSetManagedResponse(t, w, conn.ID, true)
 
 	// Stillwater-managed flips the per-field flags artistMetadata and
 	// artistImages to false; the top-level "enable" stays true (the
@@ -435,6 +465,7 @@ func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("disable status = %d body=%s", w.Code, w.Body.String())
 	}
+	assertSetManagedResponse(t, w, conn.ID, false)
 
 	// Restore should put the original (true/true/true) back; the snapshot
 	// captured pre-enable values match the seed in startFakeLidarr.
@@ -541,6 +572,7 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 	if enableW.Code != http.StatusOK {
 		t.Fatalf("enable status = %d body=%s", enableW.Code, enableW.Body.String())
 	}
+	assertSetManagedResponse(t, enableW, conn.ID, true)
 
 	disableReq := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", bytes.NewReader([]byte(`{"enabled":false}`)))
 	disableReq.SetPathValue("id", conn.ID)
@@ -585,6 +617,19 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 	r, svc := testRouterForConflictToggle(t)
 
+	// postCount tracks how many LibraryOptions POSTs the fake peer received.
+	// The handler's apply path issues one POST to disable savers (which
+	// returns 500 here, driving rollback) and the rollback path then issues
+	// a second POST to restore the original config (which also 500s,
+	// driving the restoreLibraryOptions error branch). A regression that
+	// silently skips the restore call would leave postCount at 1, but the
+	// outer effects (502 + cleared snapshot) would still match. Without
+	// this counter the test cannot distinguish "rollback ran and failed"
+	// from "rollback was never attempted".
+	var (
+		mu        sync.Mutex
+		postCount int
+	)
 	initial := map[string]any{
 		"Name":           "Music",
 		"CollectionType": "music",
@@ -602,6 +647,9 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 		case "/Library/VirtualFolders":
 			_ = json.NewEncoder(w).Encode([]any{initial})
 		case "/Library/VirtualFolders/LibraryOptions":
+			mu.Lock()
+			postCount++
+			mu.Unlock()
 			http.Error(w, "peer broken", http.StatusInternalServerError)
 		default:
 			http.NotFound(w, req)
@@ -623,6 +671,13 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d body=%s, want 502", w.Code, w.Body.String())
+	}
+
+	mu.Lock()
+	gotPostCount := postCount
+	mu.Unlock()
+	if gotPostCount < 2 {
+		t.Fatalf("rollback restore was not attempted; LibraryOptions POST count = %d, want >= 2 (disable + restore)", gotPostCount)
 	}
 
 	updated, err := svc.GetByID(ctx, conn.ID)
