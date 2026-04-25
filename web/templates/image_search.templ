@@ -133,6 +133,11 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					}
 					var saveBtn = document.getElementById('crop-save-btn');
 					if (saveBtn) saveBtn.disabled = false;
+					// Clear the global cropper ref BEFORE the new cropImage.onload
+					// fires, otherwise saveCroppedImage's `if (!window._cropper)`
+					// readiness guard sees a truthy reference to the previous (now
+					// destroyed) Cropper instance and bypasses the inline error.
+					window._cropper = null;
 					_currentRatio = NaN;
 					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
@@ -171,10 +176,22 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					// modal is dismissed. See the cascade-trap comment there.
 					modal.classList.add('hidden');
 					modal.classList.remove('flex');
+					// Drop the cached image's load/error handlers so the closures
+					// they hold over the destroyed Cropper instance are released
+					// and a late-firing onload from a slow source cannot resurrect
+					// _cropper after close.
+					var cropImage = document.getElementById('crop-image');
+					if (cropImage) {
+						cropImage.onload = null;
+						cropImage.onerror = null;
+					}
 					if (_cropper) {
 						_cropper.destroy();
 						_cropper = null;
 					}
+					// Mirror the open path so the readiness guard in
+					// saveCroppedImage sees a clean state next time.
+					window._cropper = null;
 				}
 				function setCropRatio(ratio) {
 					_currentRatio = ratio;
