@@ -91,7 +91,7 @@ docker_manifests:
 
 signs:
   - cmd: cosign
-    signature: "${artifact}.sig.bundle"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
       - --new-bundle-format
