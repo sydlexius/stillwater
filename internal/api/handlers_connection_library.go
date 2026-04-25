@@ -544,6 +544,49 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+// dedupeForImport finds an existing artist that an inbound platform item
+// (Emby / Jellyfin / Lidarr) should attach to, scanning across ALL
+// libraries (issue #1004). Returns:
+//   - (existing, false): caller attaches platform mapping + library
+//     membership and skips creation
+//   - (nil, false): caller creates a new artist row
+//   - (nil, true): a lookup error or MBID conflict was logged; caller
+//     must increment Skipped and move to the next item
+//
+// Replaces the previous per-library-scoped GetByMBIDAndLibrary +
+// GetByNameAndLibrary lookups, which produced duplicate artist rows when
+// the same real-world artist was imported from multiple libraries (the
+// classic Emby + Jellyfin against the same /music topology).
+func (r *Router) dedupeForImport(
+	ctx context.Context,
+	mbid, name, source string,
+	result *populateResult,
+) (*artist.Artist, bool) {
+	if mbid == "" && name == "" {
+		return nil, false
+	}
+	a, err := r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil {
+		r.logger.Warn("dedup lookup",
+			"mbid", mbid, "name", name, "platform", source, "error", err)
+		result.Skipped++
+		return nil, true
+	}
+	if a == nil {
+		return nil, false
+	}
+	if mbid != "" && a.MusicBrainzID != "" && a.MusicBrainzID != mbid {
+		// Name collision with conflicting MBIDs: two different artists
+		// share a name. Skip to avoid wrong association.
+		r.logger.Warn("mbid conflict during dedup, skipping",
+			"name", name, "platform", source,
+			"platform_mbid", mbid, "existing_mbid", a.MusicBrainzID)
+		result.Skipped++
+		return nil, true
+	}
+	return a, false
+}
+
 func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
@@ -558,35 +601,9 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.dedupeForImport(ctx, mbid, item.Name, "emby", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {
@@ -600,6 +617,12 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				// Store the platform-to-Stillwater artist ID mapping.
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
+				}
+				// Issue #1004: record that this Emby library now also
+				// observes the existing artist (filesystem-imported or
+				// Jellyfin-imported, etc.). Idempotent.
+				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "emby"); memErr != nil {
+					r.logger.Warn("adding emby library membership", "name", existing.Name, "error", memErr)
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
@@ -635,6 +658,11 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
 			}
+			// Issue #1004: record initial library membership for the
+			// freshly-created artist.
+			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "emby"); memErr != nil {
+				r.logger.Warn("adding emby library membership for new artist", "name", a.Name, "error", memErr)
+			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, "emby", result)
@@ -662,35 +690,9 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.dedupeForImport(ctx, mbid, item.Name, "jellyfin", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {
@@ -704,6 +706,11 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				// Store the platform-to-Stillwater artist ID mapping.
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
+				}
+				// Issue #1004: record that this Jellyfin library now also
+				// observes the existing artist. Idempotent.
+				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "jellyfin"); memErr != nil {
+					r.logger.Warn("adding jellyfin library membership", "name", existing.Name, "error", memErr)
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
@@ -738,6 +745,11 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			// Store the platform-to-Stillwater artist ID mapping.
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
+			}
+			// Issue #1004: record initial library membership for the
+			// freshly-created artist.
+			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "jellyfin"); memErr != nil {
+				r.logger.Warn("adding jellyfin library membership for new artist", "name", a.Name, "error", memErr)
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
