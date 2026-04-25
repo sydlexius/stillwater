@@ -85,6 +85,17 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("backfilling rule_results from violations: %w", err)
 	}
 
+	// Issue #1004: artists become M:N with libraries via artist_libraries.
+	// On fresh installs this only ensures the table exists (001 already has
+	// it). On pre-1004 DBs this also backfills memberships from the orphan
+	// artists.library_id column and collapses legacy duplicate artist rows
+	// (one canonical row per real-world artist, with the loser library_ids
+	// folded into artist_libraries memberships). Idempotent: on second
+	// startup the helper finds no work to do.
+	if err := ensureArtistLibrariesMembership(db); err != nil {
+		return fmt.Errorf("ensuring artist_libraries membership: %w", err)
+	}
+
 	return nil
 }
 
@@ -281,6 +292,493 @@ func ensureArtistPlatformIDsUnique(db *sql.DB) error {
 		return fmt.Errorf("creating unique index on artist_platform_ids: %w", err)
 	}
 	return nil
+}
+
+// ensureArtistLibrariesMembership ensures the artist_libraries table exists,
+// backfills memberships from the legacy artists.library_id column on pre-1004
+// DBs, and collapses any duplicate artist rows produced by the old
+// per-library-scoped scanner. Idempotent: on a fresh install or already-
+// migrated DB it is a fast no-op.
+//
+// The collapse step picks a canonical artist per duplicate group as follows:
+//  1. Group by MusicBrainz ID when present (strongest identity).
+//  2. Group by LOWER(name) for rows without an MBID, excluding any artist
+//     already claimed by an MBID group.
+//  3. Within each group, prefer the row whose library is filesystem-sourced
+//     (or whose library_id is null and so represents the canonical
+//     filesystem-only path); tie-break by oldest created_at, then artist id.
+//
+// Re-pointing FK rows to the canonical artist uses INSERT OR IGNORE for
+// composite-PK / unique-indexed tables (the canonical row's existing entry
+// wins) and UPDATE OR IGNORE for single-PK tables with secondary uniques.
+// Loser artist rows are then deleted; ON DELETE CASCADE cleans up any FK
+// rows that did not get re-pointed (i.e. duplicates that conflicted with the
+// canonical's existing data).
+func ensureArtistLibrariesMembership(db *sql.DB) error {
+	ctx := context.Background()
+	logger := slog.Default().With("component", "database")
+
+	// Step 1: idempotent table + index. 001 has these for fresh installs;
+	// pre-1004 DBs need them at startup.
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS artist_libraries (
+			artist_id  TEXT NOT NULL REFERENCES artists(id)   ON DELETE CASCADE,
+			library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+			source     TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','manual')),
+			added_at   TEXT NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (artist_id, library_id)
+		)
+	`); err != nil {
+		return fmt.Errorf("ensuring artist_libraries table: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_artist_libraries_library
+		ON artist_libraries(library_id)
+	`); err != nil {
+		return fmt.Errorf("ensuring artist_libraries index: %w", err)
+	}
+
+	// Step 2: backfill memberships from the orphan artists.library_id column.
+	// Fresh installs skip silently because the column does not exist.
+	hasOrphan, err := columnExists(db, "artists", "library_id")
+	if err != nil {
+		return fmt.Errorf("checking artists.library_id presence: %w", err)
+	}
+	if !hasOrphan {
+		return nil
+	}
+
+	res, err := db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO artist_libraries (artist_id, library_id, source, added_at)
+		SELECT
+			a.id,
+			a.library_id,
+			CASE
+				WHEN c.type = 'emby'     THEN 'emby'
+				WHEN c.type = 'jellyfin' THEN 'jellyfin'
+				ELSE 'filesystem'
+			END,
+			a.created_at
+		FROM artists a
+		JOIN libraries l ON l.id = a.library_id
+		LEFT JOIN connections c ON c.id = l.connection_id
+		WHERE a.library_id IS NOT NULL AND a.library_id != ''
+	`)
+	if err != nil {
+		return fmt.Errorf("backfilling artist_libraries from orphan library_id: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Info("backfilled artist_libraries memberships from legacy library_id",
+			"rows", n)
+	}
+
+	// Step 3: collapse legacy duplicate artists.
+	return collapseDuplicateArtists(ctx, db, logger)
+}
+
+// collapseGroup describes a duplicate artist group: one canonical row that
+// keeps its identity, and one or more loser rows whose FK children get
+// re-pointed at the canonical before the losers are deleted.
+type collapseGroup struct {
+	canonicalID string
+	loserIDs    []string
+}
+
+// collapseDuplicateArtists finds duplicate artist groups by MBID then by
+// case-insensitive name and collapses them per the rules in
+// ensureArtistLibrariesMembership. The whole collapse runs in a single
+// transaction so a partial failure rolls back to a consistent state.
+func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
+	mbidGroups, err := findDuplicateGroupsByMBID(ctx, db)
+	if err != nil {
+		return fmt.Errorf("finding mbid duplicates: %w", err)
+	}
+
+	claimed := make(map[string]bool, len(mbidGroups)*2)
+	for _, g := range mbidGroups {
+		claimed[g.canonicalID] = true
+		for _, l := range g.loserIDs {
+			claimed[l] = true
+		}
+	}
+
+	nameGroups, err := findDuplicateGroupsByName(ctx, db, claimed)
+	if err != nil {
+		return fmt.Errorf("finding name duplicates: %w", err)
+	}
+
+	allGroups := append(mbidGroups, nameGroups...)
+	if len(allGroups) == 0 {
+		return nil
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin collapse tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var totalRepointed, totalRemoved int64
+	for _, g := range allGroups {
+		repointed, err := repointArtistFKs(ctx, tx, g.canonicalID, g.loserIDs)
+		if err != nil {
+			return fmt.Errorf("re-pointing canonical=%s: %w", g.canonicalID, err)
+		}
+		totalRepointed += repointed
+
+		// Carry the losers' library memberships onto the canonical artist.
+		// This catches the case where a loser had a library that the
+		// canonical did not yet know about (the typical Emby+Jellyfin
+		// duplicate scenario).
+		placeholders, args := buildInList(g.loserIDs)
+		args = append([]any{g.canonicalID}, args...)
+		//nolint:gosec // G201: placeholders is a "?,?,..." literal built by buildInList from a known-length loop
+		insertSQL := fmt.Sprintf(`
+			INSERT OR IGNORE INTO artist_libraries (artist_id, library_id, source, added_at)
+			SELECT
+				?,
+				a.library_id,
+				CASE
+					WHEN c.type = 'emby'     THEN 'emby'
+					WHEN c.type = 'jellyfin' THEN 'jellyfin'
+					ELSE 'filesystem'
+				END,
+				a.created_at
+			FROM artists a
+			JOIN libraries l ON l.id = a.library_id
+			LEFT JOIN connections c ON c.id = l.connection_id
+			WHERE a.id IN (%s)
+			  AND a.library_id IS NOT NULL AND a.library_id != ''
+		`, placeholders)
+		if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
+			return fmt.Errorf("inserting loser memberships under canonical=%s: %w",
+				g.canonicalID, err)
+		}
+
+		// Delete losers. ON DELETE CASCADE removes any remaining FK children
+		// (rows that conflicted on insert/update and were not re-pointed).
+		delPh, delArgs := buildInList(g.loserIDs)
+		deleteSQL := fmt.Sprintf(`DELETE FROM artists WHERE id IN (%s)`, delPh) //nolint:gosec // G201: delPh is a "?,?,..." literal
+		delRes, err := tx.ExecContext(ctx, deleteSQL, delArgs...)
+		if err != nil {
+			return fmt.Errorf("deleting losers under canonical=%s: %w",
+				g.canonicalID, err)
+		}
+		n, _ := delRes.RowsAffected()
+		totalRemoved += n
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit collapse tx: %w", err)
+	}
+
+	logger.Info("collapsed duplicate artist rows (issue #1004)",
+		"groups", len(allGroups),
+		"repointed_rows", totalRepointed,
+		"removed_artists", totalRemoved,
+	)
+	return nil
+}
+
+// pickCanonicalCTE produces the CASE expression that ranks rows within a
+// duplicate group. Lower rank wins. Filesystem-source rows rank highest:
+// either the artist has no library (legacy data) or its library is not
+// attached to a connection (manual filesystem library). Connection-backed
+// rows (Emby, Jellyfin, ...) fall back. The MusicBrainz ID lives on
+// artist_provider_ids, so we LEFT JOIN it here for the MBID grouping query.
+// The CTE is reused by both group finders so the canonical-pick rule is
+// identical.
+const pickCanonicalCTE = `
+WITH ranked AS (
+	SELECT
+		a.id,
+		COALESCE(ap.provider_id, '') AS mbid,
+		a.name,
+		a.created_at,
+		CASE
+			WHEN a.library_id IS NULL OR a.library_id = '' THEN 0
+			WHEN c.type IS NULL                         THEN 1
+			ELSE 2
+		END AS source_rank
+	FROM artists a
+	LEFT JOIN artist_provider_ids ap
+		ON ap.artist_id = a.id AND ap.provider = 'musicbrainz'
+	LEFT JOIN libraries   l ON l.id = a.library_id
+	LEFT JOIN connections c ON c.id = l.connection_id
+)
+`
+
+// findDuplicateGroupsByMBID returns one collapseGroup per MBID that has more
+// than one artist row. Within each group the canonical is the lowest
+// (source_rank, created_at, id) row.
+func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup, error) {
+	rows, err := db.QueryContext(ctx, pickCanonicalCTE+`
+		SELECT id, mbid, source_rank, created_at
+		FROM ranked
+		WHERE mbid != ''
+		  AND mbid IN (
+			SELECT mbid FROM ranked
+			WHERE mbid != ''
+			GROUP BY mbid HAVING COUNT(*) > 1
+		)
+		ORDER BY mbid, source_rank, created_at, id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying mbid duplicate groups: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	groups := []collapseGroup{}
+	var current *collapseGroup
+	var currentKey string
+	for rows.Next() {
+		var id, mbid, createdAt string
+		var rank int
+		if err := rows.Scan(&id, &mbid, &rank, &createdAt); err != nil {
+			return nil, fmt.Errorf("scanning mbid duplicate row: %w", err)
+		}
+		if mbid != currentKey {
+			currentKey = mbid
+			groups = append(groups, collapseGroup{canonicalID: id})
+			current = &groups[len(groups)-1]
+			continue
+		}
+		current.loserIDs = append(current.loserIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating mbid duplicate rows: %w", err)
+	}
+	return groups, nil
+}
+
+// findDuplicateGroupsByName returns collapseGroups for case-insensitive name
+// duplicates, excluding any artist already claimed by an MBID group. This
+// catches duplicates that exist because one or both rows lack an MBID (typical
+// for filesystem-only artists that were also imported from Emby/Jellyfin).
+func findDuplicateGroupsByName(ctx context.Context, db *sql.DB, claimed map[string]bool) ([]collapseGroup, error) {
+	rows, err := db.QueryContext(ctx, pickCanonicalCTE+`
+		SELECT id, name, source_rank, created_at
+		FROM ranked
+		WHERE LOWER(name) IN (
+			SELECT LOWER(name) FROM ranked
+			GROUP BY LOWER(name) HAVING COUNT(*) > 1
+		)
+		ORDER BY LOWER(name), source_rank, created_at, id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying name duplicate groups: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	type rawRow struct {
+		id, name string
+	}
+	byName := map[string][]rawRow{}
+	for rows.Next() {
+		var id, name, createdAt string
+		var rank int
+		if err := rows.Scan(&id, &name, &rank, &createdAt); err != nil {
+			return nil, fmt.Errorf("scanning name duplicate row: %w", err)
+		}
+		key := name
+		// LOWER for grouping; preserve original case in the row for logging.
+		// (SQLite's GROUP BY in the subquery uses LOWER, so we re-key here.)
+		// We could push LOWER(name) into the SELECT, but storing the
+		// original-case name keeps the slog line readable.
+		_ = key
+		k := lowercaseASCII(name)
+		byName[k] = append(byName[k], rawRow{id: id, name: name})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating name duplicate rows: %w", err)
+	}
+
+	groups := []collapseGroup{}
+	for _, rs := range byName {
+		// Drop rows already in an MBID group; if fewer than two remain there
+		// is no duplicate left to collapse for this name.
+		filtered := rs[:0]
+		for _, r := range rs {
+			if !claimed[r.id] {
+				filtered = append(filtered, r)
+			}
+		}
+		if len(filtered) < 2 {
+			continue
+		}
+		// First filtered row is canonical (rows already arrive sorted by
+		// source_rank, created_at, id from the ORDER BY above).
+		g := collapseGroup{canonicalID: filtered[0].id}
+		for _, r := range filtered[1:] {
+			g.loserIDs = append(g.loserIDs, r.id)
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+// repointArtistFKs moves every child row owned by losers to canonical, with
+// per-table conflict resolution. Returns the total number of rows actually
+// re-pointed (informational; rows that conflicted with the canonical's
+// existing data are dropped on cascade when losers are deleted).
+//
+// Tables with composite PK (artist_id, X) get INSERT OR IGNORE: the
+// canonical's existing row wins for any (canonical, X) collision; loser rows
+// for keys the canonical does not have are absorbed.
+//
+// Tables with single-id PK and a secondary UNIQUE on (artist_id, ...) get
+// UPDATE OR IGNORE: rows that would create a unique-violation when re-keyed
+// to canonical are silently dropped (canonical already has data for that
+// slot and we keep canonical's).
+//
+// Tables with single-id PK and no other uniques get a plain UPDATE.
+func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers []string) (int64, error) {
+	loserPh, loserArgs := buildInList(losers)
+	var total int64
+
+	// Composite-PK tables: INSERT OR IGNORE the loser rows under canonical.
+	// We must list columns explicitly because each table's column set differs.
+	insertOrIgnore := []struct {
+		table   string
+		columns string
+		selectX string // "X" portion of the SELECT after the canonical id
+	}{
+		{
+			"artist_provider_ids",
+			"(artist_id, provider, provider_id, fetched_at)",
+			"provider, provider_id, fetched_at",
+		},
+		{
+			"artist_platform_ids",
+			"(artist_id, connection_id, platform_artist_id, created_at, updated_at)",
+			"connection_id, platform_artist_id, created_at, updated_at",
+		},
+		{
+			"rule_results",
+			"(artist_id, rule_id, passed, violation_id, evaluated_at, violation_message, first_failed_at)",
+			"rule_id, passed, violation_id, evaluated_at, violation_message, first_failed_at",
+		},
+	}
+	for _, t := range insertOrIgnore {
+		args := append([]any{canonical}, loserArgs...)
+		stmt := fmt.Sprintf( //nolint:gosec // G201: table/columns/loserPh are hard-coded literals or static placeholder strings
+			`INSERT OR IGNORE INTO %s %s SELECT ?, %s FROM %s WHERE artist_id IN (%s)`,
+			t.table, t.columns, t.selectX, t.table, loserPh,
+		)
+		res, err := tx.ExecContext(ctx, stmt, args...)
+		if err != nil {
+			return total, fmt.Errorf("re-pointing %s: %w", t.table, err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+
+	// Single-PK tables with secondary UNIQUE: UPDATE OR IGNORE so unique-
+	// violations drop silently (canonical already covers that slot).
+	updateOrIgnore := []string{
+		"artist_images",   // UNIQUE (artist_id, image_type, slot_index)
+		"mb_snapshots",    // UNIQUE (artist_id, field)
+		"rule_violations", // UNIQUE (rule_id, artist_id)
+	}
+	for _, t := range updateOrIgnore {
+		args := append([]any{canonical}, loserArgs...)
+		stmt := fmt.Sprintf( //nolint:gosec // G201: table is a hard-coded literal
+			`UPDATE OR IGNORE %s SET artist_id = ? WHERE artist_id IN (%s)`,
+			t, loserPh,
+		)
+		res, err := tx.ExecContext(ctx, stmt, args...)
+		if err != nil {
+			return total, fmt.Errorf("re-pointing %s: %w", t, err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+
+	// Plain UPDATE: no secondary uniques, all loser rows survive.
+	plainUpdate := []string{
+		"artist_aliases",
+		"band_members",
+		"nfo_snapshots",
+		"metadata_changes",
+	}
+	for _, t := range plainUpdate {
+		args := append([]any{canonical}, loserArgs...)
+		stmt := fmt.Sprintf( //nolint:gosec // G201: table is a hard-coded literal
+			`UPDATE %s SET artist_id = ? WHERE artist_id IN (%s)`,
+			t, loserPh,
+		)
+		res, err := tx.ExecContext(ctx, stmt, args...)
+		if err != nil {
+			return total, fmt.Errorf("re-pointing %s: %w", t, err)
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+
+	return total, nil
+}
+
+// columnExists returns true if the named column is present on the table.
+// Used by ensureArtistLibrariesMembership to decide whether to backfill from
+// the orphan artists.library_id column (present on pre-1004 DBs only).
+func columnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(context.Background(),
+		fmt.Sprintf("PRAGMA table_info(%s)", table)) //nolint:gosec // G201: table is a hard-coded literal
+	if err != nil {
+		return false, fmt.Errorf("reading %s schema: %w", table, err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue sql.NullString
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return false, fmt.Errorf("scanning %s schema row: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// buildInList returns ("?,?,?", []any{ids...}) for use in WHERE x IN (...).
+// Returns an empty-string SQL literal when the input is empty so the IN
+// clause stays valid (matches nothing instead of producing a syntax error).
+func buildInList(ids []string) (string, []any) {
+	if len(ids) == 0 {
+		return "''", nil
+	}
+	placeholders := make([]byte, 0, len(ids)*2)
+	args := make([]any, 0, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args = append(args, id)
+	}
+	return string(placeholders), args
+}
+
+// lowercaseASCII lowercases a string using ASCII semantics. Matches SQLite's
+// default LOWER() behavior for the ASCII range, which is what the duplicate
+// detection grouping uses. Non-ASCII bytes pass through unchanged in both
+// SQLite and here, so the grouping stays consistent.
+func lowercaseASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // ensureColumn adds a column to a table if it does not already exist.

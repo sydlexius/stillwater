@@ -170,6 +170,11 @@ CREATE TABLE IF NOT EXISTS artists (
     disbanded TEXT NOT NULL DEFAULT '',
     biography TEXT NOT NULL DEFAULT '',
     path TEXT NOT NULL,
+    -- Issue #1004: artists are M:N with libraries via artist_libraries.
+    -- library_id is soft-deprecated: still written by legacy code paths
+    -- during the multi-phase rollout, but membership of record lives in
+    -- artist_libraries. The column will be removed once all readers/writers
+    -- are migrated.
     library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
     nfo_exists INTEGER NOT NULL DEFAULT 0,
     health_score REAL NOT NULL DEFAULT 0.0,
@@ -202,6 +207,23 @@ CREATE INDEX idx_artists_name ON artists(name);
 CREATE INDEX idx_artists_path ON artists(path);
 CREATE INDEX idx_artists_library_id ON artists(library_id);
 CREATE INDEX idx_artists_locked ON artists(locked);
+
+-- Issue #1004: M:N membership of artists in libraries. Replaces the legacy
+-- artists.library_id single-FK column. An artist can be observed by any
+-- number of libraries (filesystem, Emby connection library, Jellyfin
+-- connection library, ...). Source records which scanner/connection first
+-- discovered the membership; useful for debugging and future UI badges.
+-- During the multi-phase rollout artists.library_id remains populated by
+-- legacy writers; this table is the canonical membership record going forward.
+CREATE TABLE IF NOT EXISTS artist_libraries (
+    artist_id  TEXT NOT NULL REFERENCES artists(id)   ON DELETE CASCADE,
+    library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','manual')),
+    added_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (artist_id, library_id)
+);
+
+CREATE INDEX idx_artist_libraries_library ON artist_libraries(library_id);
 -- Supports the "dirty artist" scan used by incremental Run Rules (issue #698).
 -- The composite index lets SQLite resolve the WHERE clause without scanning
 -- the full table when only a small slice of artists have changed.
