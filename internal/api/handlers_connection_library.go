@@ -1067,6 +1067,18 @@ func (r *Router) backfillPlatformIDToManualLibs(
 			continue
 		}
 		if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
+			// Issue #1076: a UNIQUE index on
+			// (connection_id, platform_artist_id) means at most one
+			// artist row can hold a given platform mapping. The
+			// connection-library artist already claimed it before we
+			// got here, so the filesystem-library copy is now
+			// redundant rather than erroneous. Skip silently with a
+			// debug log instead of warning.
+			if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
+				r.logger.Debug("backfill: platform id already held by another artist row, skipping",
+					"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+				continue
+			}
 			r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
 			continue
 		}

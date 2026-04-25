@@ -244,7 +244,14 @@ func (s *Service) CountArtists(ctx context.Context, libraryID string) (int, erro
 }
 
 // DeleteWithArtists removes a library and all artists belonging to it in a
-// single transaction. Band members are cleaned up by ON DELETE CASCADE.
+// single transaction. Child rows (artist_platform_ids, artist_images,
+// artist_aliases, band_members, rule_violations, rule_results, nfo_snapshots,
+// metadata_changes, mb_snapshots, artist_provider_ids) are removed via
+// ON DELETE CASCADE. Issue #1072 also calls for pruning artists that came in
+// from the library's connection but were never assigned a library_id (so a
+// straight WHERE library_id = ? misses them). Those are detected via
+// artist_platform_ids whose connection_id matches the library's connection
+// AND whose artist no longer has any library_id.
 func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -252,9 +259,57 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Look up the library's connection_id so we can prune artists that came
+	// in from this connection but have no library_id assigned. This matches
+	// the issue #1072 expectation that "Delete artists" actually removes
+	// every artist sourced from the unlinked library, including ones whose
+	// library_id was lost in an earlier code path.
+	var connectionID sql.NullString
+	if err := tx.QueryRowContext(ctx,
+		`SELECT connection_id FROM libraries WHERE id = ?`, id).Scan(&connectionID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("library not found: %s", id)
+		}
+		return fmt.Errorf("looking up library connection: %w", err)
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM artists WHERE library_id = ?`, id); err != nil {
 		return fmt.Errorf("deleting library artists: %w", err)
+	}
+
+	// Prune artists that have no library_id and whose only remaining
+	// platform mapping is for this library's connection. These are the
+	// "orphaned references" called out in the bug report. Skip when the
+	// library was not connected to a platform (manual library).
+	//
+	// IMPORTANT: only run the prune when this is the LAST library on the
+	// connection. With sibling libraries still attached, an artist with
+	// library_id IS NULL might legitimately belong to one of those siblings
+	// (e.g. a prior code path lost its library_id but the artist is still
+	// being managed via the connection). Deleting blindly here would erase
+	// data that another linked library still references.
+	if connectionID.Valid && connectionID.String != "" {
+		var siblingLibraries int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM libraries WHERE connection_id = ? AND id != ?`,
+			connectionID.String, id).Scan(&siblingLibraries); err != nil {
+			return fmt.Errorf("counting sibling libraries on connection: %w", err)
+		}
+		if siblingLibraries == 0 {
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM artists
+				WHERE library_id IS NULL
+				  AND id IN (
+				    SELECT artist_id FROM artist_platform_ids WHERE connection_id = ?
+				  )
+				  AND id NOT IN (
+				    SELECT artist_id FROM artist_platform_ids WHERE connection_id != ?
+				  )
+			`, connectionID.String, connectionID.String); err != nil {
+				return fmt.Errorf("pruning orphaned connection artists: %w", err)
+			}
+		}
 	}
 
 	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)

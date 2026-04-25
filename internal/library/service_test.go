@@ -857,3 +857,251 @@ func TestHasLocalLibrary(t *testing.T) {
 		t.Error("expected HasLocalLibrary = false after deleting the local library")
 	}
 }
+
+// seedConnection inserts a connection row so libraries can reference it.
+// Used by the issue #1072 / #1078 / #1076 cascade and dedup tests below.
+func seedConnection(t *testing.T, db *sql.DB, id, connType string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(), `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'http://test', 'k', 1, 'ok', datetime('now'), datetime('now'))
+	`, id, "Conn-"+id, connType)
+	if err != nil {
+		t.Fatalf("seeding connection: %v", err)
+	}
+}
+
+// seedArtist inserts an artist row with the given library_id (may be empty).
+func seedArtist(t *testing.T, db *sql.DB, id, name, libraryID string) {
+	t.Helper()
+	var libArg any
+	if libraryID == "" {
+		libArg = nil
+	} else {
+		libArg = libraryID
+	}
+	_, err := db.ExecContext(context.Background(), `
+		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+	`, id, name, name, "/music/"+name, libArg)
+	if err != nil {
+		t.Fatalf("seeding artist %s: %v", id, err)
+	}
+}
+
+// seedPlatformID inserts a row in artist_platform_ids. Used for cascade /
+// orphan tests where we deliberately bypass the repository to set up state.
+func seedPlatformID(t *testing.T, db *sql.DB, artistID, connID, platformID string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(), `
+		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
+		VALUES (?, ?, ?, datetime('now'), datetime('now'))
+	`, artistID, connID, platformID)
+	if err != nil {
+		t.Fatalf("seeding platform id: %v", err)
+	}
+}
+
+// TestDeleteWithArtists_CascadesPlatformIDs covers issue #1078: deleting an
+// artist row must remove its artist_platform_ids row via ON DELETE CASCADE.
+// Regression guard for the orphan rows that were observed in production.
+func TestDeleteWithArtists_CascadesPlatformIDs(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-emby", "emby")
+	dir := t.TempDir()
+	lib := &Library{Name: "Emby Lib", Path: dir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-1", Source: SourceEmby}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create library: %v", err)
+	}
+	seedArtist(t, db, "art-1", "Deftones", lib.ID)
+	seedPlatformID(t, db, "art-1", "conn-emby", "emby-deftones-001")
+
+	// Sanity: row exists.
+	var pre int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-1'`).Scan(&pre); err != nil {
+		t.Fatalf("preflight count: %v", err)
+	}
+	if pre != 1 {
+		t.Fatalf("preflight platform id count = %d, want 1", pre)
+	}
+
+	if err := svc.DeleteWithArtists(ctx, lib.ID); err != nil {
+		t.Fatalf("DeleteWithArtists: %v", err)
+	}
+
+	var post int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-1'`).Scan(&post); err != nil {
+		t.Fatalf("post count: %v", err)
+	}
+	if post != 0 {
+		t.Errorf("artist_platform_ids row count = %d, want 0 (cascade should have removed it)", post)
+	}
+
+	var artistCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-1'`).Scan(&artistCount); err != nil {
+		t.Fatalf("artist count: %v", err)
+	}
+	if artistCount != 0 {
+		t.Errorf("artist row count = %d, want 0", artistCount)
+	}
+}
+
+// TestDeleteWithArtists_PrunesOrphanedConnectionArtists covers issue #1072:
+// when a connected library is unlinked with deleteArtists=true, artists that
+// came from the same connection but have a NULL library_id (because some
+// earlier code path lost the assignment) should also be pruned.
+func TestDeleteWithArtists_PrunesOrphanedConnectionArtists(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-jelly", "jellyfin")
+
+	// Library tied to the connection.
+	dir := t.TempDir()
+	lib := &Library{Name: "Jelly Lib", Path: dir, Type: TypeRegular, ConnectionID: "conn-jelly", ExternalID: "j-1", Source: SourceJellyfin}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create library: %v", err)
+	}
+
+	// Artist properly attached to the library.
+	seedArtist(t, db, "art-attached", "Attached", lib.ID)
+	seedPlatformID(t, db, "art-attached", "conn-jelly", "jp-1")
+
+	// Artist sourced from the same connection but missing library_id.
+	seedArtist(t, db, "art-orphan", "Orphan", "")
+	seedPlatformID(t, db, "art-orphan", "conn-jelly", "jp-2")
+
+	// Artist with mappings to two connections (this connection plus another).
+	// Must NOT be pruned: it still has a non-null mapping after the unlink.
+	seedConnection(t, db, "conn-other", "emby")
+	seedArtist(t, db, "art-multi", "Multi", "")
+	seedPlatformID(t, db, "art-multi", "conn-jelly", "jp-3")
+	seedPlatformID(t, db, "art-multi", "conn-other", "ep-3")
+
+	if err := svc.DeleteWithArtists(ctx, lib.ID); err != nil {
+		t.Fatalf("DeleteWithArtists: %v", err)
+	}
+
+	check := func(id string, wantPresent bool) {
+		t.Helper()
+		var n int
+		if err := db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM artists WHERE id = ?`, id).Scan(&n); err != nil {
+			t.Fatalf("counting artist %s: %v", id, err)
+		}
+		got := n > 0
+		if got != wantPresent {
+			t.Errorf("artist %s present = %v, want %v", id, got, wantPresent)
+		}
+	}
+	check("art-attached", false)
+	check("art-orphan", false)
+	check("art-multi", true)
+
+	// Multi's mapping for the deleted connection must be gone (FK cascade
+	// from connection only fires on connection delete; here we only deleted
+	// the library, but the artist row survival check above covers the user
+	// expectation). The mapping for "conn-jelly" remains because we kept
+	// the connection alive in this test; real connection-delete is tested
+	// elsewhere.
+	var jellyMaps int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multi' AND connection_id = 'conn-jelly'`).Scan(&jellyMaps); err != nil {
+		t.Fatalf("counting multi jelly mappings: %v", err)
+	}
+	if jellyMaps != 1 {
+		t.Errorf("multi jelly mapping count = %d, want 1 (connection still exists)", jellyMaps)
+	}
+}
+
+// TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists guards the
+// CodeRabbit-flagged regression on PR #1211: when a connection has more
+// than one library, unlinking one of them must NOT prune artists that
+// are missing library_id but still belong to the connection. Those
+// artists may legitimately belong to a sibling library on the same
+// connection. The prune fallback is only safe when this is the LAST
+// library on the connection.
+func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-emby", "emby")
+
+	// Two libraries on the same connection.
+	musicDir := t.TempDir()
+	classicalDir := t.TempDir()
+	music := &Library{Name: "Music", Path: musicDir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-music", Source: SourceEmby}
+	classical := &Library{Name: "Classical", Path: classicalDir, Type: TypeClassical, ConnectionID: "conn-emby", ExternalID: "emby-classical", Source: SourceEmby}
+	if err := svc.Create(ctx, music); err != nil {
+		t.Fatalf("Create music library: %v", err)
+	}
+	if err := svc.Create(ctx, classical); err != nil {
+		t.Fatalf("Create classical library: %v", err)
+	}
+
+	// Artist directly attached to the library being deleted.
+	seedArtist(t, db, "art-music", "MusicArtist", music.ID)
+	seedPlatformID(t, db, "art-music", "conn-emby", "emby-music-1")
+
+	// Artist with NULL library_id but a connection mapping. With only
+	// the music library on this connection, the old prune would delete
+	// this row. With the classical library still attached, the new
+	// guard must preserve it.
+	seedArtist(t, db, "art-sibling-orphan", "SiblingOrphan", "")
+	seedPlatformID(t, db, "art-sibling-orphan", "conn-emby", "emby-orphan-1")
+
+	if err := svc.DeleteWithArtists(ctx, music.ID); err != nil {
+		t.Fatalf("DeleteWithArtists: %v", err)
+	}
+
+	// The directly-attached artist is gone.
+	var attached int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-music'`).Scan(&attached); err != nil {
+		t.Fatalf("counting attached artist: %v", err)
+	}
+	if attached != 0 {
+		t.Errorf("attached artist count = %d, want 0", attached)
+	}
+
+	// The sibling-library orphan is preserved because the classical
+	// library still hangs off the connection.
+	var orphan int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-sibling-orphan'`).Scan(&orphan); err != nil {
+		t.Fatalf("counting sibling orphan: %v", err)
+	}
+	if orphan != 1 {
+		t.Errorf("sibling orphan count = %d, want 1 (must be preserved while sibling libraries exist)", orphan)
+	}
+
+	// Now delete the last library on the connection. Without siblings
+	// remaining, the prune is safe and the orphan must finally go.
+	if err := svc.DeleteWithArtists(ctx, classical.ID); err != nil {
+		t.Fatalf("DeleteWithArtists last library: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-sibling-orphan'`).Scan(&orphan); err != nil {
+		t.Fatalf("counting sibling orphan after last delete: %v", err)
+	}
+	if orphan != 0 {
+		t.Errorf("sibling orphan count after last library delete = %d, want 0 (prune fires when last library is gone)", orphan)
+	}
+}

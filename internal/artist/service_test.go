@@ -633,7 +633,7 @@ func TestLibraryID_RoundTrip(t *testing.T) {
 
 	// Create a library to reference
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO libraries (id, name, path, type, created_at, updated_at)
+		INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at)
 		VALUES ('lib-1', 'Test Library', '/music/test', 'regular', datetime('now'), datetime('now'))
 	`)
 	if err != nil {
@@ -693,8 +693,8 @@ func TestGetByNameAndLibrary(t *testing.T) {
 
 	// Create two libraries
 	for _, q := range []string{
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-x', 'Library X', '/music/x', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-y', 'Library Y', '/music/y', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-x', 'Library X', '/music/x', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-y', 'Library Y', '/music/y', 'regular', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatalf("creating library: %v", err)
@@ -742,8 +742,8 @@ func TestGetByMBIDAndLibrary(t *testing.T) {
 
 	// Create two libraries
 	for _, q := range []string{
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-m', 'Library M', '/music/m', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-n', 'Library N', '/music/n', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-m', 'Library M', '/music/m', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-n', 'Library N', '/music/n', 'regular', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatalf("creating library: %v", err)
@@ -970,8 +970,8 @@ func TestList_LibraryIDFilter(t *testing.T) {
 
 	// Create two libraries
 	for _, q := range []string{
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-a', 'Library A', '/music/a', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-b', 'Library B', '/music/b', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-a', 'Library A', '/music/a', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-b', 'Library B', '/music/b', 'regular', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatalf("creating library: %v", err)
@@ -1024,7 +1024,7 @@ func TestFindByMBIDOrName_ByMBID(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
 	); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
@@ -1058,7 +1058,7 @@ func TestFindByMBIDOrName_ByNameCaseInsensitive(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
 	); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
@@ -1088,7 +1088,7 @@ func TestFindByMBIDOrName_MBIDPreferredOverName(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
 	); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
@@ -1129,7 +1129,7 @@ func TestFindByMBIDOrName_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
 	); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
@@ -1149,8 +1149,8 @@ func TestFindByMBIDOrName_RespectsLibraryScope(t *testing.T) {
 	ctx := context.Background()
 
 	for _, q := range []string{
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-emby', 'Emby', '/music/emby', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-emby', 'Emby', '/music/emby', 'regular', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatalf("creating library: %v", err)
@@ -1186,7 +1186,7 @@ func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 		{"lib-emby", "Emby", "emby"},
 	} {
 		_, err := db.ExecContext(ctx,
-			`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+			`INSERT OR IGNORE INTO libraries (id, name, path, type, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
 			lib.id, lib.name, "/music", "regular", lib.source)
 		if err != nil {
 			t.Fatalf("creating library %s: %v", lib.id, err)
@@ -1222,12 +1222,21 @@ func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 	}
 
 	// Create an orphaned platform ID row referencing a deleted connection.
+	// Issue #1078 turned foreign key enforcement actually on, so we disable
+	// the pragma briefly to mimic the legacy state this test was written
+	// to clean up.
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatalf("disabling fks: %v", err)
+	}
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
 		VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
 		embyArtist.ID, "deleted-conn", "orphan-platform-id")
 	if err != nil {
 		t.Fatalf("inserting orphan row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("re-enabling fks: %v", err)
 	}
 
 	// Run the migration SQL manually.
@@ -1265,13 +1274,20 @@ func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 		t.Errorf("orphan count = %d, want 0", orphanCount)
 	}
 
-	// Verify platform ID was backfilled to filesystem artist.
-	fsPlatformID, err := svc.GetPlatformID(ctx, fsArtist.ID, "conn-1")
-	if err != nil {
-		t.Fatalf("GetPlatformID (fs): %v", err)
+	// Issue #1076 added a UNIQUE(connection_id, platform_artist_id) index, so
+	// the INSERT OR IGNORE backfill above is now a no-op when the same
+	// platform id is already held by another artist (the emby artist in this
+	// case). The post-fix invariant is that exactly one artist row holds a
+	// given (connection_id, platform_artist_id) pair, not both. Dedup on
+	// startup is covered by ensureArtistPlatformIDsUnique tests in the
+	// database package; here we just assert the constraint was enforced.
+	var holders int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE connection_id = 'conn-1' AND platform_artist_id = 'emby-deftones-001'`).Scan(&holders); err != nil {
+		t.Fatalf("counting platform id holders: %v", err)
 	}
-	if fsPlatformID != "emby-deftones-001" {
-		t.Errorf("fs platform ID = %q, want %q", fsPlatformID, "emby-deftones-001")
+	if holders != 1 {
+		t.Errorf("platform id holders = %d, want 1 (UNIQUE constraint should prevent duplicates)", holders)
 	}
 }
 
