@@ -42,6 +42,14 @@ func NewExecutor(service *Service, registry *provider.Registry, settings *provid
 // ScrapeAll scrapes all enabled fields using the scraper configuration for the
 // given scope. It returns a merged FetchResult compatible with the
 // provider.Orchestrator output.
+//
+// Per-field provider ordering is sourced from the UI-configured priority list
+// (provider.priority.<field> settings, exposed by SettingsService.GetPriorities)
+// rather than the scraper config's hardcoded primary + fallback chain. This
+// keeps the refresh path consistent with what the user sees and edits in
+// Settings > Providers (#1030). The scraper config still controls which fields
+// are enabled and supplies a backup fallback list for any provider absent from
+// the priority settings.
 func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
 	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
 	// with IDs extracted from earlier providers' URL results.
@@ -57,6 +65,15 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 	available, err := e.providerSettings.AvailableProviderNames(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading available providers: %w", err)
+	}
+
+	priorities, err := e.providerSettings.GetPriorities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading provider priorities: %w", err)
+	}
+	priorityByField := make(map[FieldName][]provider.ProviderName, len(priorities))
+	for _, pri := range priorities {
+		priorityByField[FieldName(pri.Field)] = pri.EnabledProviders()
 	}
 
 	result := &provider.FetchResult{
@@ -80,7 +97,13 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 			continue
 		}
 
-		fr := e.scrapeField(ctx, mbid, name, field, *chain, available, providerIDs, cache, &mu, result)
+		// Build the effective ordered provider list for this field by combining
+		// the user-configured priority list (authoritative) with any providers
+		// from the scraper config's fallback chain that are not yet listed.
+		// The first entry in the resulting list becomes the effective primary.
+		effField, effChain := effectiveFieldOrdering(field, *chain, priorityByField[field.Field])
+
+		fr := e.scrapeField(ctx, mbid, name, effField, effChain, available, providerIDs, cache, &mu, result)
 		if fr.Err != nil {
 			result.Errors = append(result.Errors,
 				fmt.Sprintf("%s: %s", fr.Field, fr.Err.Error()))
@@ -611,4 +634,53 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// effectiveFieldOrdering merges the UI-configured priority list for a field
+// with the scraper config's primary + fallback chain to produce the final
+// ordered provider list to query. The priority list is authoritative for
+// ordering: its first enabled provider becomes the effective primary, and any
+// providers from the scraper config (primary + fallback chain) that are not
+// already covered are appended so newly registered providers are not silently
+// dropped.
+//
+// When the priority list is empty (e.g. no setting persisted and no defaults
+// for a custom field), the original scraper-config primary and chain are
+// returned unchanged so behavior matches the pre-#1030 path.
+func effectiveFieldOrdering(field FieldConfig, chain FallbackChain, priority []provider.ProviderName) (FieldConfig, FallbackChain) {
+	if len(priority) == 0 {
+		return field, chain
+	}
+
+	// Build the effective ordered list: priority entries first, then any
+	// scraper-config entries (primary + chain) that are not already present.
+	seen := make(map[provider.ProviderName]bool, len(priority)+len(chain.Providers)+1)
+	ordered := make([]provider.ProviderName, 0, len(priority)+len(chain.Providers)+1)
+	for _, p := range priority {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		ordered = append(ordered, p)
+	}
+	if field.Primary != "" && !seen[field.Primary] {
+		seen[field.Primary] = true
+		ordered = append(ordered, field.Primary)
+	}
+	for _, p := range chain.Providers {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		ordered = append(ordered, p)
+	}
+
+	effField := field
+	effField.Primary = ordered[0]
+
+	effChain := FallbackChain{
+		Category:  chain.Category,
+		Providers: ordered,
+	}
+	return effField, effChain
 }

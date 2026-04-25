@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -777,6 +779,161 @@ func TestApplyProviderIDsAndURLs_DoesNotMergeClassification(t *testing.T) {
 // split, the selection-gated applyMergeableFields no longer handles provider
 // IDs. Those are now exclusively applyProviderIDsAndURLs's job, which runs
 // unconditionally.
+// TestExecutorHonorsConfiguredPriority verifies the #1030 fix: the scraper
+// executor must consult the UI-configured provider.priority.<field> settings
+// (exposed by SettingsService.GetPriorities) when deciding which provider to
+// query first for a field, instead of using the hardcoded ScraperConfig.Primary
+// value. The setup configures Last.fm as the scraper-config primary for
+// biography but overrides priority to put AudioDB first; the test asserts
+// AudioDB was called first AND its biography won.
+func TestExecutorHonorsConfiguredPriority(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// Track call order so we can prove AudioDB was queried first.
+	var callOrder []provider.ProviderName
+	var callMu sync.Mutex
+	recordCall := func(name provider.ProviderName) {
+		callMu.Lock()
+		defer callMu.Unlock()
+		callOrder = append(callOrder, name)
+	}
+
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameAudioDB)
+			return &provider.ArtistMetadata{Biography: "AudioDB-sourced biography text long enough to clear the IsJunkBiography minimum length filter."}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name:    provider.NameLastFM,
+		authReq: true,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameLastFM)
+			return &provider.ArtistMetadata{Biography: "Last.fm-sourced biography text long enough to clear the IsJunkBiography minimum length filter."}, nil
+		},
+	})
+
+	ctx := context.Background()
+	// Stash a Last.fm API key so AvailableProviderNames includes it.
+	if err := settings.SetAPIKey(ctx, provider.NameLastFM, "lfm-key"); err != nil {
+		t.Fatalf("SetAPIKey lastfm: %v", err)
+	}
+	if err := settings.SetAPIKey(ctx, provider.NameAudioDB, "adb-key"); err != nil {
+		t.Fatalf("SetAPIKey audiodb: %v", err)
+	}
+
+	// Scraper config: Last.fm is the primary for biography (mirrors the
+	// hardcoded DefaultConfig() value the bug report calls out).
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldBiography, Primary: provider.NameLastFM, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameLastFM, provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	// User reorders biography priority: AudioDB first, then Last.fm.
+	if err := settings.SetPriority(ctx, "biography", []provider.ProviderName{provider.NameAudioDB, provider.NameLastFM}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	if result.Metadata.Biography == "" || !strings.HasPrefix(result.Metadata.Biography, "AudioDB-sourced") {
+		t.Errorf("expected biography from AudioDB (configured first in priority), got %q",
+			result.Metadata.Biography)
+	}
+
+	callMu.Lock()
+	defer callMu.Unlock()
+	if len(callOrder) == 0 || callOrder[0] != provider.NameAudioDB {
+		t.Errorf("expected AudioDB to be called first, got call order %v", callOrder)
+	}
+}
+
+// TestExecutorPriorityFallbackPreservesUnlistedProviders verifies that when a
+// provider is present in the scraper-config fallback chain but absent from the
+// user's priority list, it is still appended to the effective ordering so
+// newly registered providers are not silently skipped.
+func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	var callOrder []provider.ProviderName
+	var callMu sync.Mutex
+	recordCall := func(name provider.ProviderName) {
+		callMu.Lock()
+		defer callMu.Unlock()
+		callOrder = append(callOrder, name)
+	}
+
+	registry.Register(&mockProvider{
+		name:    provider.NameMusicBrainz,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameMusicBrainz)
+			return nil, &provider.ErrNotFound{Provider: provider.NameMusicBrainz, ID: id}
+		},
+	})
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameAudioDB)
+			return &provider.ArtistMetadata{Genres: []string{"jazz"}}, nil
+		},
+	})
+
+	ctx := context.Background()
+	if err := settings.SetAPIKey(ctx, provider.NameAudioDB, "adb-key"); err != nil {
+		t.Fatalf("SetAPIKey audiodb: %v", err)
+	}
+
+	// Priority list contains only MusicBrainz; AudioDB is only in the chain.
+	if err := settings.SetPriority(ctx, "genres", []provider.ProviderName{provider.NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldGenres, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	result, err := exec.ScrapeAll(ctx, "mbid-x", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	if len(result.Metadata.Genres) == 0 || result.Metadata.Genres[0] != "jazz" {
+		t.Errorf("expected genres from AudioDB chain fallback, got %v", result.Metadata.Genres)
+	}
+
+	callMu.Lock()
+	defer callMu.Unlock()
+	if len(callOrder) < 2 || callOrder[0] != provider.NameMusicBrainz || callOrder[1] != provider.NameAudioDB {
+		t.Errorf("expected call order [MusicBrainz, AudioDB], got %v", callOrder)
+	}
+}
+
 func TestApplyMergeableFields_DoesNotTouchIDs(t *testing.T) {
 	result := &provider.FetchResult{
 		Metadata: &provider.ArtistMetadata{
