@@ -1028,29 +1028,41 @@ func TestApplyAlreadyInProgress(t *testing.T) {
 
 // TestApplyConcurrentRace verifies that exactly one of two concurrent Apply
 // calls succeeds and the other returns ErrAlreadyRunning. Run with -race.
+//
+// Two synchronization mechanisms cooperate to make the test deterministic:
+//
+//  1. httpBlock keeps the winning goroutine's runApply pinned inside
+//     fetchReleases, so its `defer Store(0)` cannot fire until the test
+//     releases. This holds applyRunning=1 across both Apply calls and is
+//     what prevents the historical "got 2/0" flake (#1162) where a fast
+//     runApply finished its empty-release fast-path before the loser's CAS.
+//
+//  2. httpStarted is closed by the HTTP handler the first time it is hit
+//     and is asserted at the end of the test. If httpBlock somehow fails to
+//     engage (e.g. a future refactor reorders runApply so HTTP is no longer
+//     reached on the empty-release path), httpStarted will be open and the
+//     test fails loudly instead of passing for the wrong reason.
 func TestApplyConcurrentRace(t *testing.T) {
 	svc := buildTestService(t)
 	ctx := context.Background()
 
-	// Hold the release fetch open so the winning goroutine's runApply
-	// stays in-flight (keeping applyRunning=1) until after both
-	// goroutines have raced through CompareAndSwap. Without the block,
-	// runApply can finish its fast-path (GetConfig -> empty release
-	// list -> defer Store(0)) before the second goroutine's Apply
-	// runs on a slow CI runner, leaving both CAS calls to succeed and
-	// the test to report "got 2/0".
 	releases := []map[string]interface{}{}
 	body, _ := json.Marshal(releases)
 	httpBlock := make(chan struct{})
-	var released sync.Once
+	httpStarted := make(chan struct{})
+	var (
+		released  sync.Once
+		startedOK sync.Once
+	)
 	unblock := func() { released.Do(func() { close(httpBlock) }) }
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		startedOK.Do(func() { close(httpStarted) })
 		<-httpBlock
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 	}))
-	defer srv.Close()
-	defer unblock()
+	t.Cleanup(srv.Close)
+	t.Cleanup(unblock)
 	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
 
 	errs := make([]error, 2)
@@ -1078,6 +1090,18 @@ func TestApplyConcurrentRace(t *testing.T) {
 	}
 	if nils != 1 || blocked != 1 {
 		t.Errorf("expected 1 success and 1 ErrAlreadyRunning, got %d/%d", nils, blocked)
+	}
+
+	// Sanity-check the test setup itself: confirm runApply actually hit
+	// the HTTP block within a generous deadline. If it didn't, the
+	// nils/blocked counts above were validated under unintended timing
+	// rather than the documented httpBlock pin, and the test would be
+	// flaky again the moment the runtime got faster or slower.
+	select {
+	case <-httpStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("httpBlock never engaged: runApply did not reach fetchReleases within 5s, " +
+			"so the assertion above did not exercise the documented serialization path")
 	}
 
 	// Release runApply so it can complete and drain its goroutine cleanly.
