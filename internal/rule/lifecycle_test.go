@@ -253,6 +253,20 @@ func TestService_DisablingRuleSoftResolvesViolations(t *testing.T) {
 	if got.ResolvedAt == nil {
 		t.Errorf("resolved_at = nil, want populated")
 	}
+
+	// rule_results must also be purged on the manual-disable path so the
+	// per-rule dashboard stops surfacing stale pass/fail counts. Without this
+	// assertion the manual disable's rule_results invariant could regress
+	// silently while only the auto-disable test catches it.
+	var resultsCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_results WHERE rule_id = ?`, RuleNFOExists,
+	).Scan(&resultsCount); err != nil {
+		t.Fatalf("count rule_results: %v", err)
+	}
+	if resultsCount != 0 {
+		t.Errorf("rule_results rows for %s = %d, want 0 after manual disable", RuleNFOExists, resultsCount)
+	}
 }
 
 // TestService_DisableFilesystemRulesSoftResolvesViolations asserts that the
