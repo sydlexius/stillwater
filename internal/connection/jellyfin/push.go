@@ -90,38 +90,10 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		existing["EndDate"] = ""
 	}
 
-	// Strip read-only fields that Jellyfin rejects in a POST.
-	for _, key := range jellyfinReadOnlyFields {
-		delete(existing, key)
+	if err := c.postFullItem(ctx, platformArtistID, existing, "push"); err != nil {
+		return err
 	}
 
-	payload, err := json.Marshal(existing)
-	if err != nil {
-		return fmt.Errorf("marshaling push body: %w", err)
-	}
-
-	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("creating push request: %w", err)
-	}
-	c.AuthFunc(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
-	if err != nil {
-		return fmt.Errorf("executing push request: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode >= 300 {
-		const maxErrBody = 1 << 20 // 1 MB
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	_, _ = io.Copy(io.Discard, resp.Body)
 	c.Logger.Debug("metadata pushed to jellyfin", "artist_id", platformArtistID)
 	return nil
 }
@@ -146,33 +118,61 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 		c.Logger.Debug("jellyfin: per-field locks ignored (not supported at item level)",
 			"artist_id", platformArtistID, "field_count", len(lockedFields))
 	}
+
+	return c.postFullItem(ctx, platformArtistID, existing, "lock update")
+}
+
+// postFullItem strips read-only fields from item, marshals it, and POSTs the
+// full body to /Items/{platformArtistID}. Jellyfin's POST /Items/{id} requires
+// a complete item body (not a delta), so both PushMetadata and
+// UpdateArtistLocks share this request/response cycle. The op label appears in
+// error messages so callers can distinguish failures (e.g. "push failed with
+// status 500", "lock update failed with status 500") without each call site
+// re-implementing the request boilerplate.
+func (c *Client) postFullItem(ctx context.Context, platformArtistID string, item map[string]any, op string) error {
+	// Strip read-only fields that Jellyfin rejects in a POST. Done here (not
+	// at each call site) so a future addition to jellyfinReadOnlyFields cannot
+	// silently slip through one path while protecting the other.
+	//
+	// Operate on a shallow copy so callers that retain `item` after this call
+	// (for example to log it on error or pass it to a retry) see their
+	// original map unchanged.
+	cleanItem := make(map[string]any, len(item))
+	for k, v := range item {
+		cleanItem[k] = v
+	}
 	for _, key := range jellyfinReadOnlyFields {
-		delete(existing, key)
+		delete(cleanItem, key)
 	}
 
-	body, err := json.Marshal(existing)
+	payload, err := json.Marshal(cleanItem)
 	if err != nil {
-		return fmt.Errorf("encoding lock update body: %w", err)
+		return fmt.Errorf("marshaling %s body: %w", op, err)
 	}
+
 	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("creating lock update request: %w", err)
+		return fmt.Errorf("creating %s request: %w", op, err)
 	}
 	c.AuthFunc(req)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
-		return fmt.Errorf("executing lock update: %w", err)
+		return fmt.Errorf("executing %s request: %w", op, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
+
 	if resp.StatusCode >= 300 {
+		// Cap the error body at 1 MB so a misbehaving peer that returns a
+		// huge HTML error page cannot blow up the caller's logger.
 		const maxErrBody = 1 << 20
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("lock update failed with status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("%s failed with status %d: %s", op, resp.StatusCode, string(respBody))
 	}
+
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
