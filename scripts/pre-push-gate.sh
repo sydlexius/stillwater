@@ -74,8 +74,15 @@ echo "=== Patch coverage ==="
 # this script's silent HEAD~1 fallback. Letting the child resolve BASE
 # avoids narrowing patch coverage to only the tip commit on a branch
 # whose base ref isn't reachable.
+PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
+if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
+  echo "pre-push-gate: missing $PATCH_COVERAGE_HELPER" >&2
+  echo "Install the user-level helpers (see CLAUDE.md Helper Scripts) before running this gate." >&2
+  exit 1
+fi
 if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \
-    bash "$SCRIPT_DIR/patch-coverage.sh"; then
+    PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go" \
+    bash "$PATCH_COVERAGE_HELPER"; then
   :
 else
   exit 1

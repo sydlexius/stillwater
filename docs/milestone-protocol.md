@@ -114,7 +114,7 @@ When any change touches user-facing behavior, check whether it affects existing 
 Once every sub-issue PR is merged to `main`:
 1. Post findings comments to all research/analysis issues and close them.
 2. Post a summary comment to the umbrella issue and close it.
-3. Remove all worktrees: run `git worktree list` then `bash scripts/cleanup-worktree.sh <issue>` for each (or remove manually with `git worktree remove <path>`).
+3. Remove all worktrees: run `git worktree list` then `bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>` for each (or remove manually with `git worktree remove <path>`).
 4. Run `git fetch --prune` to remove stale tracking refs.
 5. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
 6. Update `memory/worktrees.md` to move entries to "Completed" or remove them.

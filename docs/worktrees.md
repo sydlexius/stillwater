@@ -39,7 +39,14 @@ Multiple rule PRs conflict on merge (all modify `engine.go`, `service.go`, `chec
 ## Cleanup after merge
 
 ```bash
-bash scripts/cleanup-worktree.sh <issue>
+bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>
 ```
 
-This removes the worktree, deletes local and remote branches, and prunes stale refs. Then update `memory/worktrees.md`.
+`<suffix>` is whatever follows `stillwater-` in the worktree directory name. Examples (one per worktree shape above):
+
+- `1180` for `stillwater-1180` (single-issue)
+- `m36` for `stillwater-m36` (milestone umbrella)
+- `m36-639` for `stillwater-m36-639` (milestone sub-issue)
+- `fanart-dup` for `stillwater-fanart-dup` (slug)
+
+The helper is repo-agnostic: it detects the repo prefix from the current main worktree's basename, so the same script works from any checkout. It removes the worktree, deletes local and remote branches, and prunes stale refs. Then update `memory/worktrees.md`.

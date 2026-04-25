@@ -100,7 +100,7 @@ Run `bash scripts/pre-push-gate.sh` (deterministic checks), then `/pr-review-too
 
 ## Worktrees
 
-Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue}/`, `../stillwater-m{N}-{issue}/`. Track in `~/.claude/projects/<project>/memory/worktrees.md`. See `docs/worktrees.md` for full protocol. After merge: `bash scripts/cleanup-worktree.sh <issue>`.
+Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue}/`, `../stillwater-m{N}-{issue}/`. Track in `~/.claude/projects/<project>/memory/worktrees.md`. See `docs/worktrees.md` for full protocol. After merge: `bash $HOME/.claude/scripts/cleanup-worktree.sh <suffix>` (where `<suffix>` is whatever follows `stillwater-` in the worktree dirname -- e.g. `1180`, `m36-639`, or a slug like `fanart-dup`).
 
 ## Milestone Work
 
@@ -117,8 +117,8 @@ Do not use `paths-ignore` on triggers when required status checks exist (GitHub 
 ## Helper Scripts
 
 - `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files)
-- `scripts/cleanup-worktree.sh <issue>` -- remove worktree, delete local/remote branches, prune refs
 - `scripts/check-generated.sh` -- verify *_templ.go was regenerated after .templ changes
+- `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix)
 - `~/.claude/scripts/pr-unreplied-comments.sh [--wait] [--count-only] <PR>` -- unreplied bot comments
 
 ## License
