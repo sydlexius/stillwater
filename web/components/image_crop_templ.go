@@ -9,6 +9,12 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // ImageCropModal renders the Cropper.js modal for client-side image cropping.
+//
+// The default class intentionally omits `flex`: `openCropModal` adds `flex`
+// when revealing the modal and `closeCropModal` removes it again on close.
+// Co-applying `hidden` + `flex` (or any other display utility) is a Tailwind
+// cascade trap -- whichever rule is declared later in the compiled stylesheet
+// wins, so a future utility reorder could leave the modal stuck visible.
 func ImageCropModal(artistID string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -30,7 +36,7 @@ func ImageCropModal(artistID string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"crop-modal\" class=\"fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto\"><div class=\"flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-lg font-semibold\">Crop Image</h3><button type=\"button\" class=\"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" onclick=\"closeCropModal()\">X</button></div><div class=\"p-4\"><div class=\"mb-3 flex flex-wrap items-center gap-2\"><label class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">Aspect Ratio:</label> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(1)\">1:1 (Thumb)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(16/9)\">16:9 (Fanart)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(5.4)\">5.4:1 (Banner)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(NaN)\">Free</button> <label class=\"ml-2 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none\"><input type=\"checkbox\" id=\"crop-lock-ratio\" class=\"rounded\" onchange=\"toggleRatioLock(this.checked)\"> Lock ratio</label></div><div id=\"crop-container\" class=\"max-h-[50vh] overflow-hidden\"><img id=\"crop-image\" src=\"\" alt=\"Crop preview\" class=\"max-w-full\"></div><div class=\"mt-3\"><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Save as:</label> <select id=\"crop-type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm\"><option value=\"thumb\">Thumbnail</option> <option value=\"fanart\">Fanart</option> <option value=\"logo\">Logo</option> <option value=\"banner\">Banner</option></select></div></div><div class=\"flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"closeCropModal()\">Cancel</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"crop-modal\" class=\"fixed inset-0 z-50 hidden bg-black/50 items-center justify-center p-4\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto\"><div class=\"flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-lg font-semibold\">Crop Image</h3><button type=\"button\" class=\"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" onclick=\"closeCropModal()\">X</button></div><div class=\"p-4\"><div class=\"mb-3 flex flex-wrap items-center gap-2\"><label class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">Aspect Ratio:</label> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(1)\">1:1 (Thumb)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(16/9)\">16:9 (Fanart)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(5.4)\">5.4:1 (Banner)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(NaN)\">Free</button> <label class=\"ml-2 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none\"><input type=\"checkbox\" id=\"crop-lock-ratio\" class=\"rounded\" onchange=\"toggleRatioLock(this.checked)\"> Lock ratio</label></div><div id=\"crop-container\" class=\"max-h-[50vh] overflow-hidden\"><img id=\"crop-image\" src=\"\" alt=\"Crop preview\" class=\"max-w-full\"></div><div class=\"mt-3\"><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Save as:</label> <select id=\"crop-type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm\"><option value=\"thumb\">Thumbnail</option> <option value=\"fanart\">Fanart</option> <option value=\"logo\">Logo</option> <option value=\"banner\">Banner</option></select></div></div><div id=\"crop-error\" class=\"hidden mx-4 mb-2 px-3 py-2 text-sm rounded border border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200\" role=\"alert\" aria-live=\"polite\"></div><div class=\"flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"closeCropModal()\">Cancel</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -38,7 +44,7 @@ func ImageCropModal(artistID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<button type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<button id=\"crop-save-btn\" type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -57,10 +63,40 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_f187`,
-		Function: `function __templ_saveCroppedImage_f187(artistID){if (!window._cropper) return;
+		Name: `__templ_saveCroppedImage_886b`,
+		Function: `function __templ_saveCroppedImage_886b(artistID){// Set up error surfacing first so the early-exit guards below have
+	// somewhere to report. Without this, an unready cropper or a tainted
+	// canvas would return silently and leave the modal sitting open with no
+	// feedback to the user (the original #1124 symptom from the user side).
+	var errEl = document.getElementById('crop-error');
+	function showCropError(msg) {
+		if (!errEl) return;
+		errEl.textContent = msg;
+		errEl.classList.remove('hidden');
+	}
+	function clearCropError() {
+		if (!errEl) return;
+		errEl.textContent = '';
+		errEl.classList.add('hidden');
+	}
+	var saveBtn = document.getElementById('crop-save-btn');
+	function reEnableSaveBtn() {
+		if (saveBtn) saveBtn.disabled = false;
+	}
+	clearCropError();
+
+	if (!window._cropper) {
+		showCropError('Crop tool is not ready. Close this dialog and reopen it before saving.');
+		return;
+	}
 	var canvas = window._cropper.getCroppedCanvas();
-	if (!canvas) return;
+	if (!canvas) {
+		// getCroppedCanvas returns null when the source image is canvas-tainted,
+		// typically because it loaded from another origin without CORS headers.
+		// The visual crop preview still works but Save cannot extract pixels.
+		showCropError('Cannot extract the cropped image. The source image is cross-origin and the browser blocked canvas access. Save it to disk first, then crop.');
+		return;
+	}
 	var cropType = document.getElementById('crop-type').value;
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
@@ -68,6 +104,11 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 	var base64 = canvas.toDataURL(mimeType, 0.92);
 	var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
+	// Disable the Save button while the request is in flight to prevent
+	// double-submits (rapid double-click would otherwise queue two saves).
+	if (saveBtn) saveBtn.disabled = true;
+
 	fetch(bp + '/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
 		headers: {
@@ -81,15 +122,44 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 			width: canvas.width,
 			height: canvas.height
 		})
-	}).then(function(r) { return r.json(); }).then(function(data) {
-		if (data.status === 'ok') {
+	}).then(function(r) {
+		// Parse the body so we can surface the server's error message when
+		// present. Default to an empty object if the body is not JSON so the
+		// success/error branching below still has something to inspect.
+		return r.json().catch(function() { return {}; }).then(function(data) {
+			return { ok: r.ok, status: r.status, data: data };
+		});
+	}).then(function(result) {
+		if (result.ok && result.data && result.data.status === 'ok') {
+			// Close the modal BEFORE the navigation so the hidden state is
+			// committed to the DOM regardless of how quickly the load begins.
 			closeCropModal();
-			window.location.reload();
+			// Strip ?crop=1 from the URL before navigating. The image_search
+			// page auto-opens the crop modal whenever crop=1 is present, so a
+			// plain window.location.reload() here would re-open the modal on
+			// the just-saved image and look like "modal did not close after
+			// Save". Navigating to the cleaned URL fetches the fresh image
+			// without re-triggering the auto-open IIFE.
+			var url = new URL(window.location.href);
+			url.searchParams.delete('crop');
+			window.location.assign(url.toString());
+			return;
 		}
+		// Non-2xx response, or 200 with an unexpected body. Keep the modal
+		// open so the user can retry; surface whatever message the server
+		// supplied (or a generic fallback).
+		var msg = (result.data && (result.data.error || result.data.message)) ||
+			('Save failed (HTTP ' + result.status + ')');
+		showCropError(msg);
+		reEnableSaveBtn();
+	}).catch(function(err) {
+		// Network failure or other fetch-level error.
+		showCropError('Save failed: ' + (err && err.message ? err.message : 'network error'));
+		reEnableSaveBtn();
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_f187`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_f187`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_886b`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_886b`, artistID),
 	}
 }
 
