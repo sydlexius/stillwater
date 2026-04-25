@@ -12,3 +12,11 @@ extend-exclude = [
 [default.extend-identifiers]
 # Go variable names that are not typos
 fpr = "fpr"  # FieldProviderResult in internal/provider/orchestrator.go
+
+[default.extend-words]
+# Project / standard names that look like typos.
+# in-toto (https://in-toto.io) is the SLSA attestation format; ".intoto.jsonl"
+# is the canonical file suffix that OpenSSF Scorecard's Signed-Releases check
+# recognizes. Without this allowlist, typos rewrites it to ".into.jsonl" and
+# silently breaks Scorecard provenance detection.
+intoto = "intoto"
