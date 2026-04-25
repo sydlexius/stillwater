@@ -39,6 +39,12 @@ type MembershipRepository interface {
 	// to. Used by the unlink path to decide whether to prune the artist
 	// (zero remaining memberships AND zero platform mappings -> prune).
 	CountForArtist(ctx context.Context, artistID string) (int, error)
+
+	// AddDerivingSource inserts a membership row whose source is derived
+	// from the target library's connection (or 'filesystem' when the
+	// library has no connection). No-op when the library row does not
+	// exist; idempotent when the membership already exists.
+	AddDerivingSource(ctx context.Context, artistID, libraryID string) error
 }
 
 type sqliteMembershipRepo struct {
@@ -108,4 +114,31 @@ func (r *sqliteMembershipRepo) CountForArtist(ctx context.Context, artistID stri
 		return 0, fmt.Errorf("counting memberships for artist %s: %w", artistID, err)
 	}
 	return n, nil
+}
+
+func (r *sqliteMembershipRepo) AddDerivingSource(ctx context.Context, artistID, libraryID string) error {
+	// SELECT-driven INSERT: when the libraries row does not exist the
+	// SELECT yields zero rows and the INSERT is a no-op, so callers do
+	// not have to pre-check for FK validity. Source is computed from the
+	// connection type when one is present; manual filesystem libraries
+	// fall through to 'filesystem'. INSERT OR IGNORE preserves the
+	// original added_at on repeat calls.
+	_, err := r.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO artist_libraries (artist_id, library_id, source, added_at)
+		SELECT ?, l.id,
+			CASE
+				WHEN c.type = 'emby'     THEN 'emby'
+				WHEN c.type = 'jellyfin' THEN 'jellyfin'
+				WHEN c.type = 'lidarr'   THEN 'lidarr'
+				ELSE 'filesystem'
+			END,
+			datetime('now')
+		FROM libraries l
+		LEFT JOIN connections c ON c.id = l.connection_id
+		WHERE l.id = ?
+	`, artistID, libraryID)
+	if err != nil {
+		return fmt.Errorf("inserting derived membership: %w", err)
+	}
+	return nil
 }

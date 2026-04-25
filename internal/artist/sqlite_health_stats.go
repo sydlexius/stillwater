@@ -87,8 +87,14 @@ WHERE a.is_excluded = 0`
 	var args []any
 
 	if libraryID != "" {
-		query = baseQuery + " AND a.library_id = ?"
-		args = []any{libraryID}
+		query = baseQuery + ` AND (
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = a.id AND al.library_id = ?
+			)
+			OR a.library_id = ?
+		)`
+		args = []any{libraryID, libraryID}
 	} else {
 		query = baseQuery
 	}

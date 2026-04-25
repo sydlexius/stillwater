@@ -195,6 +195,15 @@ func NewDefaultRepos(db *sql.DB) (
 // Create inserts a new artist and persists its provider IDs and image metadata.
 // If normalized data persistence fails, the artist row is deleted as a
 // best-effort rollback (CASCADE handles child tables).
+//
+// When a.LibraryID is set, an artist_libraries membership is inserted
+// alongside the artist row so the artist appears in per-library queries.
+// The source is derived from the target library: a connection-backed
+// library uses the connection type (emby / jellyfin / lidarr); otherwise
+// the artist is recorded as filesystem-sourced. Membership insert is
+// best-effort; FK failures (e.g., the library does not exist in tests
+// that bypass the libraries table) are ignored so the artist row still
+// lands.
 func (s *Service) Create(ctx context.Context, a *Artist) error {
 	if err := s.artists.Create(ctx, a); err != nil {
 		return err
@@ -203,7 +212,22 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		_ = s.artists.Delete(ctx, a.ID) // best-effort rollback
 		return err
 	}
+	s.recordInitialMembershipBestEffort(ctx, a)
 	return nil
+}
+
+// recordInitialMembershipBestEffort inserts an artist_libraries row
+// derived from a.LibraryID. The membership repo deduces the source from
+// the target library (filesystem when no connection, otherwise the
+// connection's type) and quietly skips when the library does not exist.
+func (s *Service) recordInitialMembershipBestEffort(ctx context.Context, a *Artist) {
+	if s.memberships == nil || a.LibraryID == "" {
+		return
+	}
+	if err := s.memberships.AddDerivingSource(ctx, a.ID, a.LibraryID); err != nil {
+		slog.Warn("recording initial library membership",
+			"artist_id", a.ID, "library_id", a.LibraryID, "error", err)
+	}
 }
 
 // GetHealthStats returns aggregate health metrics for non-excluded artists.

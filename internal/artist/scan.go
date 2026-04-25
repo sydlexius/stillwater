@@ -201,8 +201,18 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 
 	if params.LibraryID != "" {
-		conditions = append(conditions, "library_id = ?")
-		args = append(args, params.LibraryID)
+		// Match either via the M:N membership table or the legacy
+		// library_id column, so artists created before the membership
+		// rollout still appear in per-library queries until phase 7
+		// drops the column.
+		conditions = append(conditions, `(
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = artists.id AND al.library_id = ?
+			)
+			OR artists.library_id = ?
+		)`)
+		args = append(args, params.LibraryID, params.LibraryID)
 	}
 
 	switch params.Filter {
@@ -335,16 +345,37 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 	if len(libIncludes) > 0 {
 		ph := strings.Repeat("?,", len(libIncludes))
-		conditions = append(conditions, "library_id IN ("+ph[:len(ph)-1]+")")
+		// Union semantics: match if the artist has membership in ANY of
+		// the included libraries OR the legacy column points at one.
+		// Drop the legacy branch in the column-removal phase.
+		conditions = append(conditions, `(
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = artists.id
+				  AND al.library_id IN (`+ph[:len(ph)-1]+`)
+			)
+			OR artists.library_id IN (`+ph[:len(ph)-1]+`)
+		)`)
+		for _, id := range libIncludes {
+			args = append(args, id)
+		}
 		for _, id := range libIncludes {
 			args = append(args, id)
 		}
 	}
 	if len(libExcludes) > 0 {
 		ph := strings.Repeat("?,", len(libExcludes))
-		// Use IS NULL OR NOT IN so artists with no library assignment are not
-		// silently dropped when excluding a specific library (NULL NOT IN (...) = NULL).
-		conditions = append(conditions, "(library_id IS NULL OR library_id NOT IN ("+ph[:len(ph)-1]+"))")
+		// Drop artists with membership OR legacy pointer in any excluded
+		// library. Artists with neither pass through (nothing to exclude),
+		// matching the prior "IS NULL OR NOT IN" semantic.
+		conditions = append(conditions, `NOT EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = artists.id
+			  AND al.library_id IN (`+ph[:len(ph)-1]+`)
+		) AND (artists.library_id IS NULL OR artists.library_id NOT IN (`+ph[:len(ph)-1]+`))`)
+		for _, id := range libExcludes {
+			args = append(args, id)
+		}
 		for _, id := range libExcludes {
 			args = append(args, id)
 		}
