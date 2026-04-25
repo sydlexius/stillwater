@@ -437,12 +437,19 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 // remaining enabled rules' outcomes are unchanged by the disable, so a full
 // library walk would be wasted work.
 //
-// When a rule is disabled, active violations for that rule are deleted so
-// they stop counting against compliance scores. Without this cleanup the
-// violation rows would persist indefinitely -- the rule no longer runs, so
-// nothing would ever mark them resolved. Historical dismissed/resolved
-// rows are left alone; only open and pending_choice violations (the ones
-// still surfacing in the UI as "needs attention") are removed.
+// When a rule is disabled, active violations for that rule are soft-resolved
+// (status='resolved', resolved_at=now) so they stop counting against compliance
+// scores. Without this cleanup the violation rows would persist indefinitely:
+// the rule no longer runs, so nothing would ever mark them resolved. Historical
+// dismissed/resolved rows are left alone; only open and pending_choice
+// violations (the ones still surfacing in the UI as "needs attention") are
+// updated.
+//
+// Issue #1143: prefer soft cleanup over a hard DELETE so the violation history
+// (when the row was first created, when it was last seen, etc.) is preserved
+// for audit. The 'resolved' state mirrors the path the auto-fix pipeline takes
+// when a fixer succeeds, so downstream consumers (compliance counts, history
+// charts) treat the two transitions identically.
 func (s *Service) Update(ctx context.Context, r *Rule) error {
 	r.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
@@ -454,8 +461,12 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 	}
 
 	if !r.Enabled {
+		now := time.Now().UTC().Format(time.RFC3339)
 		if _, cleanupErr := s.db.ExecContext(ctx,
-			`DELETE FROM rule_violations WHERE rule_id = ? AND status IN (?, ?)`,
+			`UPDATE rule_violations
+			    SET status = ?, resolved_at = ?, updated_at = ?
+			  WHERE rule_id = ? AND status IN (?, ?)`,
+			ViolationStatusResolved, now, now,
 			r.ID, ViolationStatusOpen, ViolationStatusPendingChoice,
 		); cleanupErr != nil {
 			return fmt.Errorf("cleaning up violations after disable: %w", cleanupErr)
@@ -784,6 +795,13 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Issue #1107: dismissed is terminal from the user's perspective. Once a
+	// row is stored as 'dismissed', re-evaluation must NOT clobber the status
+	// or dismissed_at back to fresh values; otherwise every Run Rules pass
+	// resurrects a violation the user explicitly hid. We preserve status and
+	// dismissed_at when the existing row is dismissed, while still letting
+	// resolved -> open transitions happen normally (a user-deleted file
+	// should re-open the violation that previously fixed it).
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -792,9 +810,13 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 			severity = excluded.severity,
 			message = excluded.message,
 			fixable = excluded.fixable,
-			status = excluded.status,
+			status = CASE WHEN rule_violations.status = 'dismissed'
+			              THEN rule_violations.status
+			              ELSE excluded.status END,
 			candidates = excluded.candidates,
-			dismissed_at = excluded.dismissed_at,
+			dismissed_at = CASE WHEN rule_violations.status = 'dismissed'
+			                    THEN rule_violations.dismissed_at
+			                    ELSE excluded.dismissed_at END,
 			resolved_at = excluded.resolved_at,
 			updated_at = excluded.updated_at
 	`, v.ID, v.RuleID, v.ArtistID, v.ArtistName, v.Severity, v.Message,
@@ -811,12 +833,21 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	// and the transaction rolls back. Re-read the persisted id inside the
 	// same tx and sync v.ID so the result-row write lands cleanly and the
 	// caller observes the authoritative id.
+	//
+	// Issue #1107: also re-read the persisted status so writeResultRow
+	// reflects the post-upsert state. When the stored row was 'dismissed',
+	// the ON CONFLICT preserves it and we must NOT write a fail row even if
+	// the incoming v.Status is 'open'. Otherwise rule_results would carry a
+	// fresh fail for a violation the user explicitly hid.
+	var persistedStatus string
 	if err := tx.QueryRowContext(ctx,
-		`SELECT id FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		`SELECT id, status FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
 		v.RuleID, v.ArtistID,
-	).Scan(&v.ID); err != nil {
+	).Scan(&v.ID, &persistedStatus); err != nil {
 		return fmt.Errorf("loading persisted violation id: %w", err)
 	}
+	writeResultRow = writeResultRow &&
+		(persistedStatus == ViolationStatusOpen || persistedStatus == ViolationStatusPendingChoice)
 
 	if writeResultRow {
 		if err := upsertRuleResultFailExec(ctx, tx, v.ArtistID, v.RuleID, v.ID, v.Message, v.UpdatedAt); err != nil {
@@ -1196,6 +1227,31 @@ func (s *Service) ResolveViolation(ctx context.Context, id string) error {
 		return fmt.Errorf("resolving violation: %w", err)
 	}
 	return nil
+}
+
+// ResolveViolationIfActive transitions an open or pending_choice violation
+// for the given (rule_id, artist_id) pair to status='resolved'. Dismissed and
+// already-resolved rows are left untouched: dismissed is terminal (#1107) and
+// resolved is idempotent. Returns true when a row was actually updated so the
+// caller can decide whether to log or emit an event.
+//
+// Issue #1105: the rule pipeline calls this for every (rule, artist) pair
+// where the rule was considered but no longer reports a violation, so a row
+// the user fixed out-of-band (e.g. dropped a logo.png into the artist
+// directory) finally clears from the dashboard on the next Run Rules.
+func (s *Service) ResolveViolationIfActive(ctx context.Context, ruleID, artistID string) (bool, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE rule_violations
+		   SET status = ?, resolved_at = ?, updated_at = ?
+		 WHERE rule_id = ? AND artist_id = ? AND status IN (?, ?)
+	`, ViolationStatusResolved, now, now,
+		ruleID, artistID, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return false, fmt.Errorf("resolving active violation: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // CountActiveViolationsForArtist returns the count of active (open + pending_choice)
