@@ -96,10 +96,12 @@ func artistSourceInfo(a artist.Artist, sources map[string]LibrarySourceInfo) Lib
 	return sources[a.LibraryID]
 }
 
-// artistHasFilesystem returns true when the artist was discovered from a
-// filesystem library scan (has a non-empty path).
-func artistHasFilesystem(a artist.Artist) bool {
-	return a.Path != ""
+// artistHasFilesystem returns true when the artist holds at least one
+// filesystem-library membership. Issue #1004 replaced the prior path-based
+// heuristic, which gave false positives for connection-only artists whose
+// path was set by Emby / Jellyfin populates.
+func artistHasFilesystem(pp artist.PlatformPresence) bool {
+	return pp.HasFilesystem
 }
 
 // lidarrTooltip returns the tooltip text for a Lidarr platform badge.
@@ -139,7 +141,7 @@ func computeArtistBadges(ctx context.Context, a artist.Artist, sources map[strin
 	src := artistSourceInfo(a, sources)
 	pp := artistPlatformPresence(a.ID, platforms)
 	var badges []artistBadge
-	if artistHasFilesystem(a) {
+	if artistHasFilesystem(pp) {
 		badges = append(badges, artistBadge{"filesystem", tf(ctx, "artists.badge.found_in", a.Path)})
 	}
 	if pp.HasLidarr || src.Source == "lidarr" {

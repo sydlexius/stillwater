@@ -513,6 +513,82 @@ func TestCollapseDuplicatesByName(t *testing.T) {
 	}
 }
 
+// TestCollapseDuplicatesPreservesPlatformMappings covers the regression
+// caught during UAT: artist_platform_ids has a secondary UNIQUE on
+// (connection_id, platform_artist_id) added in #1076. The original collapse
+// helper used INSERT OR IGNORE to move the loser's mapping onto canonical,
+// which the unique index rejected, and the loser cascade-delete then dropped
+// the mapping entirely. UPDATE OR IGNORE on the artist_id column moves the
+// loser row onto canonical and only drops the row when canonical already
+// has a mapping for the same connection. Issue #1004.
+func TestCollapseDuplicatesPreservesPlatformMappings(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	seedConnectionWithType(t, db, "conn-emby", "emby")
+	seedConnectionWithType(t, db, "conn-jelly", "jellyfin")
+	seedLibrary(t, db, "lib-fs", "filesystem", "")
+	seedLibrary(t, db, "lib-emby", "import", "conn-emby")
+	seedLibrary(t, db, "lib-jelly", "import", "conn-jelly")
+
+	seedArtistWithLibrary(t, db, "a-fs", "12 Stones", "lib-fs", "2026-01-01T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-emby", "12 Stones", "lib-emby", "2026-01-02T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-jelly", "12 Stones", "lib-jelly", "2026-01-03T00:00:00Z")
+	for _, aid := range []string{"a-fs", "a-emby", "a-jelly"} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
+			VALUES (?, 'musicbrainz', 'mbid-12-stones', datetime('now'))
+		`, aid); err != nil {
+			t.Fatalf("seed mbid for %s: %v", aid, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
+		VALUES ('a-emby', 'conn-emby', 'emby-12s-id',
+			strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	`); err != nil {
+		t.Fatalf("seed emby mapping: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
+		VALUES ('a-jelly', 'conn-jelly', 'jelly-12s-id',
+			strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	`); err != nil {
+		t.Fatalf("seed jellyfin mapping: %v", err)
+	}
+
+	if err := ensureArtistLibrariesMembership(db); err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists`).Scan(&n); err != nil {
+		t.Fatalf("count artists: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("artist count after collapse = %d, want 1", n)
+	}
+
+	want := map[string]string{
+		"conn-emby":  "emby-12s-id",
+		"conn-jelly": "jelly-12s-id",
+	}
+	for connID, expectPID := range want {
+		var got string
+		err := db.QueryRowContext(ctx, `
+			SELECT platform_artist_id FROM artist_platform_ids
+			WHERE artist_id = 'a-fs' AND connection_id = ?
+		`, connID).Scan(&got)
+		if err != nil {
+			t.Errorf("missing %s mapping on canonical: %v", connID, err)
+			continue
+		}
+		if got != expectPID {
+			t.Errorf("%s mapping = %q, want %q", connID, got, expectPID)
+		}
+	}
+}
+
 // TestCollapseDuplicatesPreferMBIDOverName covers the precedence rule: an
 // artist already claimed by an MBID group is excluded from name-based
 // grouping, even if its name matches another row.

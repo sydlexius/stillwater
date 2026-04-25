@@ -636,8 +636,19 @@ func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers 
 	loserPh, loserArgs := buildInList(losers)
 	var total int64
 
-	// Composite-PK tables: INSERT OR IGNORE the loser rows under canonical.
-	// We must list columns explicitly because each table's column set differs.
+	// Composite-PK tables without secondary uniques: INSERT OR IGNORE the
+	// loser rows under canonical. (artist_id, X) PK is the only conflict
+	// surface, so canonical's existing rows win and loser's surplus rows
+	// are absorbed. We list columns explicitly because each schema differs.
+	//
+	// artist_platform_ids is intentionally NOT in this group: it carries an
+	// extra UNIQUE (connection_id, platform_artist_id) that would cause
+	// INSERT OR IGNORE to drop every loser row whose platform mapping is
+	// already claimed by the loser itself, then the cascade-delete of the
+	// loser would lose the mapping entirely. It uses UPDATE OR IGNORE
+	// below, which moves the loser's row onto canonical (preserving the
+	// platform mapping) and only drops the row if canonical already has
+	// its own mapping for the same connection.
 	insertOrIgnore := []struct {
 		table   string
 		columns string
@@ -647,11 +658,6 @@ func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers 
 			"artist_provider_ids",
 			"(artist_id, provider, provider_id, fetched_at)",
 			"provider, provider_id, fetched_at",
-		},
-		{
-			"artist_platform_ids",
-			"(artist_id, connection_id, platform_artist_id, created_at, updated_at)",
-			"connection_id, platform_artist_id, created_at, updated_at",
 		},
 		{
 			"rule_results",
@@ -673,12 +679,22 @@ func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers 
 		total += n
 	}
 
-	// Single-PK tables with secondary UNIQUE: UPDATE OR IGNORE so unique-
-	// violations drop silently (canonical already covers that slot).
+	// Tables with at least one UNIQUE constraint that includes artist_id:
+	// UPDATE OR IGNORE moves the loser row's artist_id to canonical, and
+	// silently drops the row when the move would conflict with a row
+	// canonical already owns for the same slot. Whatever loser-side rows
+	// remain after this UPDATE are removed by the cascade when the loser
+	// artist is deleted.
+	//
+	// artist_platform_ids is here (not in insertOrIgnore) because of the
+	// UNIQUE (connection_id, platform_artist_id) added by issue #1076.
+	// Moving the loser's row onto canonical preserves the platform mapping
+	// when canonical does not yet have one for the same connection.
 	updateOrIgnore := []string{
-		"artist_images",   // UNIQUE (artist_id, image_type, slot_index)
-		"mb_snapshots",    // UNIQUE (artist_id, field)
-		"rule_violations", // UNIQUE (rule_id, artist_id)
+		"artist_images",       // UNIQUE (artist_id, image_type, slot_index)
+		"mb_snapshots",        // UNIQUE (artist_id, field)
+		"rule_violations",     // UNIQUE (rule_id, artist_id)
+		"artist_platform_ids", // PK (artist_id, connection_id) + UNIQUE (connection_id, platform_artist_id)
 	}
 	for _, t := range updateOrIgnore {
 		args := append([]any{canonical}, loserArgs...)

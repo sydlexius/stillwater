@@ -118,9 +118,11 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 	return nil
 }
 
-// GetPresenceForArtists returns a map of artist ID to PlatformPresence by
-// joining artist_platform_ids with connections to determine which platform
-// types each artist has a mapping for. Artists with no mappings are omitted.
+// GetPresenceForArtists returns a map of artist ID to PlatformPresence.
+// Connection-platform presence comes from joining artist_platform_ids with
+// connections; filesystem presence (issue #1004) comes from joining
+// artist_libraries with libraries WHERE connection_id IS NULL. Artists with
+// no mappings AND no memberships are omitted.
 func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error) {
 	if len(artistIDs) == 0 {
 		return nil, nil
@@ -132,15 +134,15 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 		placeholders[i] = "?"
 		args[i] = id
 	}
+	in := strings.Join(placeholders, ",")
 
-	// Return one row per (artist, connection_type) pair. GROUP BY collapses
-	// multiple connections of the same type into a single row per artist.
-	query := `SELECT ap.artist_id, c.type ` + //nolint:gosec // G202: placeholders are "?" literals
+	// Connection-platform presence. One row per (artist, connection_type).
+	platformQuery := `SELECT ap.artist_id, c.type ` + //nolint:gosec // G202: placeholders are "?" literals
 		`FROM artist_platform_ids ap ` +
 		`JOIN connections c ON c.id = ap.connection_id ` +
-		`WHERE ap.artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
+		`WHERE ap.artist_id IN (` + in + `) ` +
 		`GROUP BY ap.artist_id, c.type`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, platformQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch getting platform presence: %w", err)
 	}
@@ -165,6 +167,35 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating platform presence rows: %w", err)
+	}
+
+	// Filesystem-library presence: any artist with at least one
+	// artist_libraries row pointing at a connection-less library is in
+	// at least one filesystem library. Issue #1004 replacement for the
+	// pre-existing path-based heuristic.
+	fsQuery := `SELECT al.artist_id ` + //nolint:gosec // G202: placeholders are "?" literals
+		`FROM artist_libraries al ` +
+		`JOIN libraries l ON l.id = al.library_id ` +
+		`WHERE al.artist_id IN (` + in + `) ` +
+		`AND l.connection_id IS NULL ` +
+		`GROUP BY al.artist_id`
+	fsRows, err := r.db.QueryContext(ctx, fsQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch getting filesystem presence: %w", err)
+	}
+	defer fsRows.Close() //nolint:errcheck
+
+	for fsRows.Next() {
+		var artistID string
+		if err := fsRows.Scan(&artistID); err != nil {
+			return nil, fmt.Errorf("scanning filesystem presence row: %w", err)
+		}
+		p := result[artistID]
+		p.HasFilesystem = true
+		result[artistID] = p
+	}
+	if err := fsRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating filesystem presence rows: %w", err)
 	}
 	return result, nil
 }

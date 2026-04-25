@@ -32,4 +32,10 @@ type PlatformPresence struct {
 	HasEmby     bool `json:"has_emby"`
 	HasJellyfin bool `json:"has_jellyfin"`
 	HasLidarr   bool `json:"has_lidarr"`
+	// HasFilesystem records membership in at least one filesystem-source
+	// library (a libraries row whose connection_id is NULL). Replaces the
+	// pre-#1004 path-presence heuristic in the artist list row, which
+	// gave false positives for Emby/Jellyfin-only artists that happen to
+	// carry an on-disk path written by the connection populate.
+	HasFilesystem bool `json:"has_filesystem"`
 }
