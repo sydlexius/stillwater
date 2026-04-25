@@ -2436,3 +2436,105 @@ func TestCountActiveViolations_SearchFilter(t *testing.T) {
 		}
 	})
 }
+
+// TestListViolationsFiltered_SearchEscapesLikeWildcards locks in the fix for
+// issue #1103: free-text search treated user input as a SQL LIKE pattern, so
+// a search for "100%" matched every row containing "100" (the % wildcard) and
+// a search for "foo_bar" matched any "foo<any-char>bar". The fix escapes %,
+// _, and the escape character (\) before composing the pattern and tells
+// SQLite about the escape via ESCAPE '\'. This test seeds rows that would
+// false-match under the unescaped pattern and asserts only the literal
+// matches are returned.
+func TestListViolationsFiltered_SearchEscapesLikeWildcards(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed rows that would false-match if % and _ were left unescaped.
+	// art-1 holds the literal "100%" string; art-2 / art-3 are decoys that
+	// would slip through an unescaped "%100%%" pattern. art-4 holds the
+	// literal "foo_bar"; art-5 is a single-char-wildcard decoy.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "art-1", ArtistName: "Percent Artist",
+			Severity: "error", Message: "100% complete", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "art-2", ArtistName: "Decoy Songs",
+			Severity: "warning", Message: "100 songs imported", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "art-3", ArtistName: "Decoy Tracks",
+			Severity: "warning", Message: "1000 tracks scanned", Status: ViolationStatusOpen},
+		{RuleID: RuleLogoExists, ArtistID: "art-4", ArtistName: "Underscore Artist",
+			Severity: "info", Message: "literal foo_bar token", Status: ViolationStatusOpen},
+		{RuleID: RuleBioExists, ArtistID: "art-5", ArtistName: "Underscore Decoy",
+			Severity: "info", Message: "fooXbar single-char decoy", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation(%s): %v", v.ArtistID, err)
+		}
+	}
+
+	t.Run("percent is treated as a literal", func(t *testing.T) {
+		got, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Search: "100%"})
+		if err != nil {
+			t.Fatalf("ListViolationsFiltered(Search=100%%): %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("Search=100%% returned %d rows, want 1: %+v", len(got), got)
+		}
+		if got[0].ArtistID != "art-1" {
+			t.Errorf("Search=100%% returned artist %q, want art-1", got[0].ArtistID)
+		}
+	})
+
+	t.Run("underscore is treated as a literal", func(t *testing.T) {
+		got, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Search: "foo_bar"})
+		if err != nil {
+			t.Fatalf("ListViolationsFiltered(Search=foo_bar): %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("Search=foo_bar returned %d rows, want 1: %+v", len(got), got)
+		}
+		if got[0].ArtistID != "art-4" {
+			t.Errorf("Search=foo_bar returned artist %q, want art-4", got[0].ArtistID)
+		}
+	})
+
+	t.Run("non-wildcard substring still matches", func(t *testing.T) {
+		// Regression guard: escaping must not break ordinary substring
+		// matches. "complete" appears only in art-1's message.
+		got, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Search: "complete"})
+		if err != nil {
+			t.Fatalf("ListViolationsFiltered(Search=complete): %v", err)
+		}
+		if len(got) != 1 || got[0].ArtistID != "art-1" {
+			t.Errorf("Search=complete returned %+v, want one row for art-1", got)
+		}
+	})
+
+	t.Run("backslash is treated as a literal", func(t *testing.T) {
+		// Add a row containing a literal backslash and confirm searching
+		// for that string finds the row. The escape helper must escape
+		// the escape character (\) itself first, otherwise the user's
+		// backslash followed by a normal character would be interpreted
+		// by SQLite as escaping the next character at match time and
+		// the row would not match. Both Message and Search use raw
+		// string literals so the backslashes are single, literal bytes.
+		bs := &RuleViolation{
+			RuleID: RuleThumbSquare, ArtistID: "art-6", ArtistName: "Backslash Artist",
+			Severity: "info", Message: `path C:\Users\test`, Status: ViolationStatusOpen,
+		}
+		if err := svc.UpsertViolation(ctx, bs); err != nil {
+			t.Fatalf("UpsertViolation(art-6): %v", err)
+		}
+		got, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Search: `C:\Users`})
+		if err != nil {
+			t.Fatalf(`ListViolationsFiltered(Search=C:\Users): %v`, err)
+		}
+		if len(got) != 1 || got[0].ArtistID != "art-6" {
+			t.Errorf(`Search=C:\Users returned %+v, want one row for art-6`, got)
+		}
+	})
+}

@@ -902,10 +902,20 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, p.Category)
 	}
 
-	// Free-text search across artist name, message, and rule ID
+	// Free-text search across artist name, message, and rule ID.
+	//
+	// User input is interpolated into a SQL LIKE pattern, so the LIKE
+	// metacharacters %, _, and the escape character itself (\) must be
+	// escaped before composing the pattern. Without this, a user searching
+	// for "100%" would match every row containing "100" because % is the
+	// "any sequence" wildcard. The escape character is escaped first so a
+	// literal backslash in the user input is not silently doubled. The
+	// SQL clause declares ESCAPE '\' so SQLite treats the escapes as
+	// literals at match time.
 	if p.Search != "" {
-		like := "%" + p.Search + "%"
-		whereClauses = append(whereClauses, "(rv.artist_name LIKE ? OR rv.message LIKE ? OR rv.rule_id LIKE ?)")
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(p.Search)
+		like := "%" + escaped + "%"
+		whereClauses = append(whereClauses, `(rv.artist_name LIKE ? ESCAPE '\' OR rv.message LIKE ? ESCAPE '\' OR rv.rule_id LIKE ? ESCAPE '\')`)
 		args = append(args, like, like, like)
 	}
 
