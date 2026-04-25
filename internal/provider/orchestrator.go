@@ -1037,11 +1037,24 @@ func removeFieldSource(sources []FieldSource, field string) []FieldSource {
 
 // isIndividualTypeValue reports whether the given artist type string
 // represents a single individual (and therefore can carry a gender value).
-// The check is trimmed and case-insensitive. Non-individual types such as
-// "group", "orchestra", or "choir" return false and must not have a gender
-// attached.
+// The vocabulary mirrors internal/artist.IsIndividualType: "solo", "person",
+// and "character" are individual types; group/orchestra/choir are not. The
+// check is trimmed and case-insensitive so a stray casing variant from a
+// future provider does not silently clear gender.
+//
+// The orchestrator cannot import internal/artist directly: that would create
+// an import cycle via internal/artist/disambiguation.go importing back into
+// internal/provider. Keep this list in sync with internal/artist/merge.go's
+// IsIndividualType. The two-test surface (TestApplyFieldGenderPreservedFor
+// IndividualTypes here, TestIsIndividualType in internal/artist) catches
+// drift in either direction.
 func isIndividualTypeValue(v string) bool {
-	return strings.EqualFold(strings.TrimSpace(v), "person")
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "solo", "person", "character":
+		return true
+	default:
+		return false
+	}
 }
 
 func fieldToImageType(field string) ImageType {

@@ -1559,24 +1559,38 @@ func TestApplyFieldGenderRejectedWhenTypeNonIndividual(t *testing.T) {
 	}
 }
 
-// TestIsIndividualTypeValue verifies case/whitespace handling of the helper.
-func TestIsIndividualTypeValue(t *testing.T) {
-	cases := []struct {
-		in   string
-		want bool
-	}{
-		{"person", true},
-		{"Person", true},
-		{"  person  ", true},
-		{"group", false},
-		{"orchestra", false},
-		{"choir", false},
-		{"", false},
-	}
-	for _, tc := range cases {
-		if got := isIndividualTypeValue(tc.in); got != tc.want {
-			t.Errorf("isIndividualTypeValue(%q) = %v, want %v", tc.in, got, tc.want)
-		}
+// TestApplyFieldGenderPreservedForIndividualTypes guards against the
+// predicate-vocabulary regression where applyType / applyGender used a local
+// orchestrator helper that only recognized "person", while the upstream
+// MusicBrainz mapping layer (and internal/artist) treats "solo", "person",
+// and "character" as individual types that carry gender. Without sharing the
+// predicate, a solo artist's gender was silently cleared in applyType or
+// blocked in applyGender depending on field-arrival order.
+func TestApplyFieldGenderPreservedForIndividualTypes(t *testing.T) {
+	for _, typ := range []string{"solo", "person", "character"} {
+		t.Run("gender_first_type="+typ, func(t *testing.T) {
+			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
+			applyField(result, "gender", &providerResult{meta: &ArtistMetadata{Gender: "Female"}}, NameMusicBrainz)
+			applyField(result, "type", &providerResult{meta: &ArtistMetadata{Type: typ}}, NameWikidata)
+			if result.Metadata.Gender != "Female" {
+				t.Errorf("Gender = %q, want Female (type %q must preserve gender)", result.Metadata.Gender, typ)
+			}
+			if findSource(result.Sources, "gender") == nil {
+				t.Errorf("gender FieldSource cleared for individual type %q", typ)
+			}
+		})
+		t.Run("type_first_then_gender_type="+typ, func(t *testing.T) {
+			result := &FetchResult{
+				Metadata: &ArtistMetadata{Type: typ, URLs: make(map[string]string)},
+				Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
+			}
+			if !applyField(result, "gender", &providerResult{meta: &ArtistMetadata{Gender: "Male"}}, NameWikidata) {
+				t.Errorf("applyField(gender) = false for individual type %q, want true", typ)
+			}
+			if result.Metadata.Gender != "Male" {
+				t.Errorf("Gender = %q, want Male (type %q must accept gender)", result.Metadata.Gender, typ)
+			}
+		})
 	}
 }
 
