@@ -235,10 +235,12 @@ func TestUpdate(t *testing.T) {
 }
 
 // TestUpdate_DisabledClearsActiveViolations verifies the cleanup branch added
-// in round 2: when a rule flips to enabled=false, open and pending_choice
-// violations for that rule are deleted so they stop showing up as "needs
-// attention" rows now that the rule no longer re-evaluates the library.
-// Historical dismissed/resolved rows must be left alone.
+// in round 2 (then refined in #1143): when a rule flips to enabled=false, open
+// and pending_choice violations for that rule are soft-resolved
+// (status='resolved', resolved_at=now) so they stop counting against
+// compliance scores while preserving the audit history (#1143 prefers Option B
+// over a hard DELETE). Historical dismissed/resolved rows must be left alone,
+// and sibling rules must not be touched.
 func TestUpdate_DisabledClearsActiveViolations(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
@@ -293,16 +295,36 @@ func TestUpdate_DisabledClearsActiveViolations(t *testing.T) {
 	if got := countByStatus(ruleID, ViolationStatusPendingChoice); got != 0 {
 		t.Errorf("pending_choice rows for disabled rule = %d, want 0", got)
 	}
-	// Historical rows must survive the disable.
-	if got := countByStatus(ruleID, ViolationStatusResolved); got != 1 {
-		t.Errorf("resolved rows for disabled rule = %d, want 1 (history must survive)", got)
+	// #1143 soft-resolve: the original open + pending_choice rows are
+	// transitioned to resolved (2 new resolutions) and stack on top of the
+	// pre-existing resolved row, so the resolved bucket now holds 3.
+	if got := countByStatus(ruleID, ViolationStatusResolved); got != 3 {
+		t.Errorf("resolved rows for disabled rule = %d, want 3 (2 soft-resolved + 1 pre-existing)", got)
 	}
+	// Dismissed history must survive untouched (terminal state per #1107).
 	if got := countByStatus(ruleID, ViolationStatusDismissed); got != 1 {
 		t.Errorf("dismissed rows for disabled rule = %d, want 1 (history must survive)", got)
 	}
 	// Sibling rule must be untouched by the cleanup.
 	if got := countByStatus(otherID, ViolationStatusOpen); got != 1 {
 		t.Errorf("sibling rule open rows = %d, want 1 (cleanup should be rule-scoped)", got)
+	}
+	// resolved_at must be populated on the rows the cleanup actually
+	// transitioned (a1, a2). Pre-existing resolved rows in the seed (a3) may
+	// carry NULL because the test setup did not stamp ResolvedAt, so the
+	// assertion is scoped to the artists the disable path was responsible
+	// for resolving.
+	for _, aid := range []string{"a1", "a2"} {
+		var resolvedAt sql.NullString
+		if err := db.QueryRow(
+			`SELECT resolved_at FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+			ruleID, aid,
+		).Scan(&resolvedAt); err != nil {
+			t.Fatalf("reading resolved_at for %s: %v", aid, err)
+		}
+		if !resolvedAt.Valid {
+			t.Errorf("artist %s resolved_at = NULL, want populated after disable", aid)
+		}
 	}
 }
 
@@ -2537,4 +2559,202 @@ func TestListViolationsFiltered_SearchEscapesLikeWildcards(t *testing.T) {
 			t.Errorf(`Search=C:\Users returned %+v, want one row for art-6`, got)
 		}
 	})
+}
+
+// TestUpsertViolation_PreservesDismissedStatus verifies the #1107 fix: once a
+// violation row is in 'dismissed' status, a re-evaluation that would otherwise
+// upsert the same (rule_id, artist_id) with status='open' must NOT clobber the
+// dismissed status or dismissed_at. Dismissal is terminal from the user's
+// perspective; only an explicit reset path may transition out of it.
+func TestUpsertViolation_PreservesDismissedStatus(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Step 1: insert an open violation.
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "missing nfo", Fixable: true,
+		Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+
+	// Step 2: dismiss it.
+	if err := svc.DismissViolation(ctx, v.ID); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+
+	// Capture the post-dismiss dismissed_at so we can assert it is preserved
+	// across the resurrection upsert.
+	var dismissedAtBefore sql.NullString
+	if err := db.QueryRow(
+		`SELECT dismissed_at FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&dismissedAtBefore); err != nil {
+		t.Fatalf("reading pre-upsert dismissed_at: %v", err)
+	}
+	if !dismissedAtBefore.Valid {
+		t.Fatalf("dismissed_at must be populated after DismissViolation")
+	}
+
+	// Step 3: re-evaluate -- the pipeline upserts with status=open again.
+	resurrect := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "missing nfo", Fixable: true,
+		Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, resurrect); err != nil {
+		t.Fatalf("resurrection upsert: %v", err)
+	}
+
+	// Step 4: status must still be 'dismissed' and dismissed_at unchanged.
+	var status string
+	var dismissedAtAfter sql.NullString
+	if err := db.QueryRow(
+		`SELECT status, dismissed_at FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&status, &dismissedAtAfter); err != nil {
+		t.Fatalf("reading post-upsert state: %v", err)
+	}
+	if status != ViolationStatusDismissed {
+		t.Errorf("status after re-eval = %q, want %q (dismissal must survive)", status, ViolationStatusDismissed)
+	}
+	if dismissedAtAfter.String != dismissedAtBefore.String {
+		t.Errorf("dismissed_at changed: before=%q after=%q", dismissedAtBefore.String, dismissedAtAfter.String)
+	}
+
+	// Step 5: the resurrection upsert must not bump rule_results for this
+	// (rule, artist). The first Upsert (status=open) legitimately wrote a
+	// fail row, but once the row is dismissed any subsequent Upsert with
+	// the same (rule_id, artist_id) is a no-op for rule_results because
+	// writeResultRow is recomputed from the persisted (preserved) status.
+	// We capture evaluated_at after the dismiss and assert it does not
+	// change across the resurrection upsert.
+	var beforeLastFailed sql.NullString
+	if err := db.QueryRow(
+		`SELECT evaluated_at FROM rule_results
+		   WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&beforeLastFailed); err != nil && err != sql.ErrNoRows {
+		t.Fatalf("reading pre-resurrect evaluated_at: %v", err)
+	}
+	// Nudge clock so a fresh write would visibly bump the timestamp.
+	time.Sleep(1100 * time.Millisecond)
+	if err := svc.UpsertViolation(ctx, &RuleViolation{
+		RuleID: v.RuleID, ArtistID: v.ArtistID, ArtistName: v.ArtistName,
+		Severity: v.Severity, Message: v.Message, Fixable: true,
+		Status: ViolationStatusOpen,
+	}); err != nil {
+		t.Fatalf("second resurrection upsert: %v", err)
+	}
+	var afterLastFailed sql.NullString
+	if err := db.QueryRow(
+		`SELECT evaluated_at FROM rule_results
+		   WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&afterLastFailed); err != nil && err != sql.ErrNoRows {
+		t.Fatalf("reading post-resurrect evaluated_at: %v", err)
+	}
+	if beforeLastFailed.String != afterLastFailed.String {
+		t.Errorf("rule_results.evaluated_at bumped across dismissed-resurrect upsert: before=%q after=%q",
+			beforeLastFailed.String, afterLastFailed.String)
+	}
+}
+
+// TestUpsertViolation_ResolvedReopensOnReDetection verifies the #1107 fix
+// preserves only the dismissed terminal state, not resolved. A violation that
+// was resolved (e.g., by the auto-fixer) but then becomes broken again on disk
+// must reopen on the next evaluation.
+func TestUpsertViolation_ResolvedReopensOnReDetection(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	v := &RuleViolation{
+		RuleID: RuleLogoExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "warning", Message: "no logo", Fixable: true,
+		Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+	if err := svc.ResolveViolation(ctx, v.ID); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	// User deletes the file again; the next evaluation re-detects the
+	// violation. status should transition resolved -> open.
+	reopen := &RuleViolation{
+		RuleID: RuleLogoExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "warning", Message: "no logo", Fixable: true,
+		Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, reopen); err != nil {
+		t.Fatalf("reopen upsert: %v", err)
+	}
+
+	var status string
+	if err := db.QueryRow(
+		`SELECT status FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		v.RuleID, v.ArtistID,
+	).Scan(&status); err != nil {
+		t.Fatalf("reading status: %v", err)
+	}
+	if status != ViolationStatusOpen {
+		t.Errorf("status after re-detection = %q, want %q (resolved must reopen)", status, ViolationStatusOpen)
+	}
+}
+
+// TestResolveViolationIfActive verifies the #1105 helper used by
+// persistPassResults: open and pending_choice rows are transitioned to
+// resolved, dismissed and already-resolved rows are left untouched.
+func TestResolveViolationIfActive(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	type row struct {
+		artistID  string
+		startStat string
+		wantStat  string
+		wantOK    bool
+	}
+	rows := []row{
+		{"open-art", ViolationStatusOpen, ViolationStatusResolved, true},
+		{"pending-art", ViolationStatusPendingChoice, ViolationStatusResolved, true},
+		{"dismissed-art", ViolationStatusDismissed, ViolationStatusDismissed, false},
+		{"resolved-art", ViolationStatusResolved, ViolationStatusResolved, false},
+	}
+	for _, r := range rows {
+		v := &RuleViolation{
+			RuleID: RuleNFOExists, ArtistID: r.artistID, ArtistName: r.artistID,
+			Severity: "error", Message: "stale", Fixable: true,
+			Status: r.startStat,
+		}
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("seed %s: %v", r.artistID, err)
+		}
+	}
+
+	for _, r := range rows {
+		updated, err := svc.ResolveViolationIfActive(ctx, RuleNFOExists, r.artistID)
+		if err != nil {
+			t.Fatalf("ResolveViolationIfActive(%s): %v", r.artistID, err)
+		}
+		if updated != r.wantOK {
+			t.Errorf("ResolveViolationIfActive(%s) updated=%v, want %v", r.artistID, updated, r.wantOK)
+		}
+		var got string
+		if err := db.QueryRow(
+			`SELECT status FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+			RuleNFOExists, r.artistID,
+		).Scan(&got); err != nil {
+			t.Fatalf("reading status for %s: %v", r.artistID, err)
+		}
+		if got != r.wantStat {
+			t.Errorf("status for %s = %q, want %q", r.artistID, got, r.wantStat)
+		}
+	}
 }
