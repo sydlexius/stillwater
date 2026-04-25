@@ -21,7 +21,29 @@ func newSQLitePlatformIDRepo(db *sql.DB) *sqlitePlatformIDRepo {
 func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, platformArtistID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err := r.db.ExecContext(ctx, `
+	// Issue #1076: a UNIQUE index on (connection_id, platform_artist_id)
+	// prevents two artist rows from claiming the same platform item.
+	// SQLite supports only one ON CONFLICT clause per INSERT, and the
+	// existing one targets (artist_id, connection_id) for upsert. Detect
+	// the cross-artist collision explicitly and return a typed sentinel so
+	// the manual-library backfill (and any other best-effort caller) can
+	// distinguish "already claimed by someone else, skip" from a real
+	// database error.
+	var existingArtistID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT artist_id FROM artist_platform_ids
+		WHERE connection_id = ? AND platform_artist_id = ?
+	`, connectionID, platformArtistID).Scan(&existingArtistID)
+	switch {
+	case err == sql.ErrNoRows:
+		// No collision; fall through to upsert.
+	case err != nil:
+		return fmt.Errorf("checking existing platform id holder: %w", err)
+	case existingArtistID != artistID:
+		return ErrPlatformIDClaimedByAnotherArtist
+	}
+
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (artist_id, connection_id)

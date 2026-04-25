@@ -8,6 +8,14 @@ import (
 // ErrPlatformIDNotFound is returned when a platform ID mapping does not exist.
 var ErrPlatformIDNotFound = errors.New("platform id not found")
 
+// ErrPlatformIDClaimedByAnotherArtist is returned by SetPlatformID when the
+// requested (connection_id, platform_artist_id) pair is already held by a
+// different artist. Issue #1076 added a UNIQUE index on that pair so a
+// platform item can only ever be claimed by a single Stillwater artist.
+// Callers that prefer to no-op rather than fail (for example, the manual-
+// library backfill helper) should match on this sentinel via errors.Is.
+var ErrPlatformIDClaimedByAnotherArtist = errors.New("platform id already claimed by another artist")
+
 // PlatformID maps a Stillwater artist to their ID on a specific platform connection.
 type PlatformID struct {
 	ArtistID         string    `json:"artist_id"`

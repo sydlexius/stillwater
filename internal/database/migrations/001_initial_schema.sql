@@ -255,6 +255,16 @@ CREATE TABLE IF NOT EXISTS artist_platform_ids (
 CREATE INDEX idx_artist_platform_ids_connection
     ON artist_platform_ids(connection_id);
 
+-- Issue #1076: prevent duplicate artist rows from racing to claim the same
+-- platform mapping. Different scanner / import paths previously created a
+-- new artist row for the same on-disk directory after renames or re-scans
+-- and mapped it to an already-claimed (connection_id, platform_artist_id)
+-- pair. The runtime ensureArtistPlatformIDsUnique helper collapses any
+-- existing duplicates on startup before this index is enforced for legacy
+-- databases that already recorded 001 as applied.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artist_platform_ids_unique
+    ON artist_platform_ids(connection_id, platform_artist_id);
+
 CREATE TABLE IF NOT EXISTS artist_aliases (
     id TEXT PRIMARY KEY,
     artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
@@ -381,6 +391,12 @@ CREATE INDEX idx_rule_results_rule_id      ON rule_results(rule_id);
 CREATE INDEX idx_rule_results_artist_id    ON rule_results(artist_id);
 CREATE INDEX idx_rule_results_passed       ON rule_results(passed);
 CREATE INDEX idx_rule_results_evaluated_at ON rule_results(evaluated_at);
+-- Required for the ON DELETE SET NULL cascade on the rule_violations FK.
+-- Without this index, every rule_violations DELETE scans rule_results to
+-- find rows whose violation_id matches, which the query-plan regression
+-- test (cleanup_old_violations) flags as a performance regression now
+-- that foreign key enforcement is actually on (issue #1078).
+CREATE INDEX IF NOT EXISTS idx_rule_results_violation_id ON rule_results(violation_id);
 
 -- =============================================================================
 -- Health tracking

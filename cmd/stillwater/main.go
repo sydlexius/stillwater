@@ -131,6 +131,13 @@ func run() error {
 		}
 	}()
 
+	// Issue #1078: turn on PRAGMA foreign_keys so the ON DELETE CASCADE
+	// declarations on artist_platform_ids, artist_images, rule_violations,
+	// etc. actually fire on artist / connection deletes.
+	if err := database.EnableForeignKeys(db); err != nil {
+		return fmt.Errorf("enabling foreign keys: %w", err)
+	}
+
 	// Run migrations
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
@@ -690,6 +697,9 @@ func resetCredentials() error {
 	}
 	defer db.Close() //nolint:errcheck
 
+	if err := database.EnableForeignKeys(db); err != nil {
+		return fmt.Errorf("enabling foreign keys: %w", err)
+	}
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}
@@ -742,6 +752,9 @@ func resetPassword(username, password string) error {
 	}
 	defer db.Close() //nolint:errcheck
 
+	if err := database.EnableForeignKeys(db); err != nil {
+		return fmt.Errorf("enabling foreign keys: %w", err)
+	}
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}

@@ -2277,13 +2277,18 @@ func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-deftones-001")
 	}
 
-	// Verify platform ID was ALSO backfilled to filesystem artist.
+	// Issue #1076 added a UNIQUE(connection_id, platform_artist_id) index,
+	// so the historical "duplicate the mapping onto the filesystem artist"
+	// behavior is no longer possible: at most one artist row can hold a
+	// given (connection, platform_id) pair. The post-fix invariant is that
+	// the connection-library artist owns the mapping and the filesystem
+	// artist does not get a duplicate copy.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs artist): %v", err)
 	}
-	if fsPlatformID != "emby-deftones-001" {
-		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-deftones-001")
+	if fsPlatformID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
 	}
 }
 
@@ -2378,13 +2383,14 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-radiohead-001")
 	}
 
-	// The filesystem artist should ALSO have the platform ID (new behavior).
+	// Issue #1076: only the connection-library artist holds the mapping;
+	// the filesystem artist no longer gets a duplicate.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "emby-radiohead-001" {
-		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-radiohead-001")
+	if fsPlatformID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
 	}
 }
 
@@ -2474,12 +2480,33 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 		t.Fatalf("scanFromEmby: %v", err)
 	}
 
+	// Issue #1076: the connection-library artist holds the platform mapping.
+	// Look it up by case-insensitive name within the Emby library; the
+	// scan should have created (or reused) an artist row there with the
+	// platform ID set. The filesystem artist must NOT carry a duplicate
+	// mapping under the new UNIQUE(connection_id, platform_artist_id)
+	// invariant; the case-insensitive match logic still runs and decides
+	// to skip rather than collide.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "emby-veridia-001" {
-		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-veridia-001")
+	if fsPlatformID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
+	}
+	embyArtistRow, err := router.artistService.GetByNameAndLibrary(ctx, "VERIDIA", embyLib.ID)
+	if err != nil {
+		t.Fatalf("GetByNameAndLibrary (emby): %v", err)
+	}
+	if embyArtistRow == nil {
+		t.Fatal("scanFromEmby should have created the Emby-library artist row")
+	}
+	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtistRow.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (emby): %v", err)
+	}
+	if embyPlatformID != "emby-veridia-001" {
+		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-veridia-001")
 	}
 }
 
@@ -2571,14 +2598,26 @@ func TestBackfillPlatformIDToManualLibs_MultipleManualLibraries(t *testing.T) {
 		"conn-emby-1", "emby-tool-001", "conn-artist-id",
 		manualLibs)
 
+	// Issue #1076: at most one artist row can hold a given
+	// (connection_id, platform_artist_id). The backfill iterates the manual
+	// libraries in order; the first artist claims the mapping and any
+	// subsequent same-name artist in another library skips silently
+	// (ErrPlatformIDClaimedByAnotherArtist). Assert that exactly one of the
+	// candidates holds the mapping rather than all of them.
+	holders := 0
 	for i, id := range fsArtistIDs {
 		pid, err := router.artistService.GetPlatformID(ctx, id, "conn-emby-1")
 		if err != nil {
 			t.Fatalf("GetPlatformID artist[%d]: %v", i, err)
 		}
-		if pid != "emby-tool-001" {
-			t.Errorf("artist[%d] platform ID = %q, want %q", i, pid, "emby-tool-001")
+		if pid == "emby-tool-001" {
+			holders++
+		} else if pid != "" {
+			t.Errorf("artist[%d] platform ID = %q, want empty or %q", i, pid, "emby-tool-001")
 		}
+	}
+	if holders != 1 {
+		t.Errorf("holders of platform id = %d, want exactly 1", holders)
 	}
 }
 
@@ -2717,12 +2756,21 @@ func TestScanFromJellyfin_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("scanFromJellyfin: %v", err)
 	}
 
+	// Issue #1076: only the connection-library artist (jfArtist) holds the
+	// mapping; the filesystem artist no longer gets a duplicate.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-jf-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "jf-bjork-001" {
-		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "jf-bjork-001")
+	if fsPlatformID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
+	}
+	jfPlatformID, err := router.artistService.GetPlatformID(ctx, jfArtist.ID, "conn-jf-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (jf): %v", err)
+	}
+	if jfPlatformID != "jf-bjork-001" {
+		t.Errorf("jellyfin artist platform ID = %q, want %q", jfPlatformID, "jf-bjork-001")
 	}
 }
 
@@ -2796,11 +2844,20 @@ func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("scanFromLidarr: %v", err)
 	}
 
+	// Issue #1076: only the connection-library artist (lidarrArtist) holds
+	// the mapping; the filesystem artist no longer gets a duplicate.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-lidarr-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "42" {
-		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "42")
+	if fsPlatformID != "" {
+		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
+	}
+	lidarrPlatformID, err := router.artistService.GetPlatformID(ctx, lidarrArtist.ID, "conn-lidarr-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (lidarr): %v", err)
+	}
+	if lidarrPlatformID != "42" {
+		t.Errorf("lidarr artist platform ID = %q, want %q", lidarrPlatformID, "42")
 	}
 }
