@@ -83,6 +83,7 @@ type Service struct {
 	completeness CompletenessRepository
 	history      *HistoryService
 	mbSnapshots  MBSnapshotRepository
+	memberships  MembershipRepository
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that
@@ -132,7 +133,16 @@ func NewService(db *sql.DB) *Service {
 		platformIDs:  newSQLitePlatformIDRepo(db),
 		completeness: newSQLiteCompletenessRepo(db),
 		mbSnapshots:  newSQLiteMBSnapshotRepo(db),
+		memberships:  newSQLiteMembershipRepo(db),
 	}
+}
+
+// SetMembershipRepository attaches a MembershipRepository to the artist
+// Service for the issue #1004 M:N artist-libraries surface. Setter form
+// matches SetMBSnapshotRepository so existing NewServiceWithRepos callers
+// (and their test fakes) keep working without a signature break.
+func (s *Service) SetMembershipRepository(repo MembershipRepository) {
+	s.memberships = repo
 }
 
 // NewServiceWithRepos creates an artist service using the provided repository
@@ -343,6 +353,79 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 	return a, nil
 }
 
+// GetByName retrieves an artist by case-insensitive exact name match,
+// without library scope. Issue #1004 replacement for GetByNameAndLibrary.
+// Returns nil, nil when no match is found.
+func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
+	a, err := s.artists.GetByName(ctx, name)
+	if err != nil || a == nil {
+		return a, err
+	}
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// FindByMBIDOrNameUnscoped tries MBID first, then case-insensitive name,
+// without library scope. Issue #1004 replacement for FindByMBIDOrName,
+// used by connection populate paths to dedupe across all libraries.
+// Returns nil, nil when no match is found.
+func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error) {
+	a, err := s.artists.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil || a == nil {
+		return a, err
+	}
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// AddLibraryMembership records that an artist is observed by the given
+// library. Idempotent. Issue #1004.
+func (s *Service) AddLibraryMembership(ctx context.Context, artistID, libraryID, source string) error {
+	if s.memberships == nil {
+		return nil
+	}
+	return s.memberships.Add(ctx, artistID, libraryID, source)
+}
+
+// RemoveLibraryMembership removes a single (artist, library) pair from the
+// membership table. Issue #1004.
+func (s *Service) RemoveLibraryMembership(ctx context.Context, artistID, libraryID string) error {
+	if s.memberships == nil {
+		return nil
+	}
+	return s.memberships.Remove(ctx, artistID, libraryID)
+}
+
+// LibrariesForArtist returns every library this artist is currently a
+// member of. Issue #1004.
+func (s *Service) LibrariesForArtist(ctx context.Context, artistID string) ([]LibraryMembership, error) {
+	if s.memberships == nil {
+		return nil, nil
+	}
+	return s.memberships.ListForArtist(ctx, artistID)
+}
+
+// CountLibrariesForArtist returns the number of libraries this artist is
+// currently a member of. Used by the unlink path to decide whether to
+// prune the artist after a library detachment. Issue #1004.
+func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) (int, error) {
+	if s.memberships == nil {
+		return 0, nil
+	}
+	return s.memberships.CountForArtist(ctx, artistID)
+}
+
+// Deprecated: use FindByMBIDOrNameUnscoped after the issue #1004 rollout.
 // FindByMBIDOrName finds an artist by MBID first, then falls back to
 // case-insensitive name match, both scoped to the given library.
 // Returns nil, nil when no match is found.
