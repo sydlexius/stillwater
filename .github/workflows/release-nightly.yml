@@ -185,7 +185,10 @@ jobs:
           set -euo pipefail
           out="stillwater_${TAG}_provenance.intoto.jsonl"
           cp "$BUNDLE" "$out"
-          gh release upload "$TAG" "$out"
+          # --clobber: idempotent on workflow retry (e.g. workflow_dispatch
+          # rerun on the same nightly tag). gh deletes the existing asset
+          # before re-uploading.
+          gh release upload "$TAG" "$out" --clobber
 
       # Retention: keep the 14 most recent nightly releases (and their tags);
       # delete everything older. Only touches `nightly-*` refs; non-nightly

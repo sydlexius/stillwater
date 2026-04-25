@@ -97,7 +97,10 @@ jobs:
           set -euo pipefail
           out="stillwater_${TAG#v}_provenance.intoto.jsonl"
           cp "$BUNDLE" "$out"
-          gh release upload "$TAG" "$out"
+          # --clobber: idempotent on workflow retry. gh deletes the existing
+          # asset before re-uploading, so a failed retry leaves the release
+          # without provenance until the next successful run.
+          gh release upload "$TAG" "$out" --clobber
 
       - name: Mark stable release as latest
         if: "!contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha')"
