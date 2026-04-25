@@ -2,18 +2,19 @@
 #
 # Step 1 (auto-label): On open/edit/sync, parse "Fixes #N" / "Closes #N" /
 # "Resolves #N" references from the PR body, fetch labels from each linked
-# issue, and apply any that match the valid release label set defined in
-# .claude/release.toml.  This mirrors the milestone propagation in
-# pr-milestone.yml.
+# issue, and copy any that exist in the repo's Labels set onto the PR.
 #
-# Step 2 (gate): Fail the required status check if the PR has no valid release
-# label after auto-labeling.  Applying a label (manually or via auto-label)
-# re-triggers this workflow through the "labeled" event, giving the gate a
-# second chance to pass without a new commit.
+# Step 2 (gate): Fail the required status check if the PR has no label
+# defined in the repo's Labels set.  Applying a label re-triggers this
+# workflow through the "labeled" event, giving the gate a second chance to
+# pass without a new commit.
 #
-# Uses pull_request_target so the config is always read from the base branch
-# via the GitHub contents API (no checkout needed).  This prevents a PR from
-# redefining valid labels to bypass the gate.
+# The "valid label" set is the repo's own Labels list (queried via the API).
+# Manage it through Settings > Labels -- no workflow edit needed to add or
+# rename a label.  Release-notes grouping is still controlled by
+# .claude/release.toml; unmapped labels fall into "Other Changes".
+#
+# Uses pull_request_target so a fork PR cannot redefine the gate logic.
 #
 # Dependabot PRs are skipped -- they never reference labelled issues.
 #
@@ -34,7 +35,6 @@ jobs:
     name: Require release label
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       issues: read
       pull-requests: write
     if: github.event.pull_request.user.login != 'dependabot[bot]'
@@ -49,31 +49,14 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            // Read valid release labels from .claude/release.toml on the base
-            // branch via the contents API (no checkout needed; always reads
-            // from base so a PR cannot redefine labels to bypass the gate).
-            const configResp = await github.rest.repos.getContent({
+            // Valid labels = the repo's own Labels set (Settings > Labels).
+            const repoLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              path: '.claude/release.toml',
-              ref: context.payload.pull_request.base.ref,
+              per_page: 100,
             });
-            const toml = Buffer.from(configResp.data.content, 'base64').toString('utf8');
-
-            function parseValidLabels(toml) {
-              const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
-              const labels = new Set();
-              if (sectionMatch) {
-                for (const line of sectionMatch[1].split('\n')) {
-                  const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
-                  if (m) labels.add(m[1]);
-                }
-              }
-              return labels;
-            }
-
-            const validLabels = parseValidLabels(toml);
-            core.info(`Valid release labels: ${[...validLabels].join(', ')}`);
+            const validLabels = new Set(repoLabels.map(l => l.name));
+            core.info(`Repo labels (${validLabels.size}): ${[...validLabels].sort().join(', ')}`);
 
             // Parse issue references from the PR body.
             const body = context.payload.pull_request.body || '';
@@ -139,29 +122,13 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            // Read valid release labels from .claude/release.toml on the base
-            // branch via the contents API.
-            const configResp = await github.rest.repos.getContent({
+            // Valid labels = the repo's own Labels set (Settings > Labels).
+            const repoLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              path: '.claude/release.toml',
-              ref: context.payload.pull_request.base.ref,
+              per_page: 100,
             });
-            const toml = Buffer.from(configResp.data.content, 'base64').toString('utf8');
-
-            function parseValidLabels(toml) {
-              const sectionMatch = toml.match(/\[release_notes\.group_labels\]([\s\S]*?)(?=\n\[|$)/);
-              const labels = new Set();
-              if (sectionMatch) {
-                for (const line of sectionMatch[1].split('\n')) {
-                  const m = line.match(/^\s*([A-Za-z0-9_-]+)\s*=/);
-                  if (m) labels.add(m[1]);
-                }
-              }
-              return labels;
-            }
-
-            const validLabels = parseValidLabels(toml);
+            const validLabels = new Set(repoLabels.map(l => l.name));
 
             // Fetch current PR labels via API -- auto-label may have just
             // added some in the previous step.
@@ -174,11 +141,11 @@ jobs:
             const hasValid = prLabels.some(l => validLabels.has(l));
 
             if (!hasValid) {
-              const sorted = [...validLabels].sort().join(', ');
               core.setFailed(
-                `PR has no release label. Add one of: ${sorted}\n` +
+                `PR has no label from the repo's Labels set. ` +
+                `Apply at least one (Settings > Labels lists them all). ` +
                 `If this PR fixes a labelled issue, the label will be applied automatically.`
               );
             } else {
-              core.info(`Release label present: ${prLabels.filter(l => validLabels.has(l)).join(', ')}`);
+              core.info(`Label present: ${prLabels.filter(l => validLabels.has(l)).join(', ')}`);
             }

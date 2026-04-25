@@ -118,7 +118,26 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					var lockCb = document.getElementById('crop-lock-ratio');
 					cropImage.crossOrigin = 'anonymous';
 					if (imageType) cropType.value = imageType;
+					// Toggle BOTH `hidden` and `flex` so only one display class is
+					// active at a time. The template default is `hidden` only --
+					// co-applying `hidden` + `flex` would be a Tailwind cascade trap
+					// (whichever rule is declared later in styles.css wins).
 					modal.classList.remove('hidden');
+					modal.classList.add('flex');
+					// Reset any error left over from a previous failed save and
+					// re-enable the Save button.
+					var errEl = document.getElementById('crop-error');
+					if (errEl) {
+						errEl.textContent = '';
+						errEl.classList.add('hidden');
+					}
+					var saveBtn = document.getElementById('crop-save-btn');
+					if (saveBtn) saveBtn.disabled = false;
+					// Clear the global cropper ref BEFORE the new cropImage.onload
+					// fires, otherwise saveCroppedImage's `if (!window._cropper)`
+					// readiness guard sees a truthy reference to the previous (now
+					// destroyed) Cropper instance and bypasses the inline error.
+					window._cropper = null;
 					_currentRatio = NaN;
 					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
@@ -152,11 +171,27 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				}
 				function closeCropModal() {
 					var modal = document.getElementById('crop-modal');
+					// Toggle BOTH classes back to the hidden state -- mirror of
+					// openCropModal so only the `hidden` rule is active when the
+					// modal is dismissed. See the cascade-trap comment there.
 					modal.classList.add('hidden');
+					modal.classList.remove('flex');
+					// Drop the cached image's load/error handlers so the closures
+					// they hold over the destroyed Cropper instance are released
+					// and a late-firing onload from a slow source cannot resurrect
+					// _cropper after close.
+					var cropImage = document.getElementById('crop-image');
+					if (cropImage) {
+						cropImage.onload = null;
+						cropImage.onerror = null;
+					}
 					if (_cropper) {
 						_cropper.destroy();
 						_cropper = null;
 					}
+					// Mirror the open path so the readiness guard in
+					// saveCroppedImage sees a clean state next time.
+					window._cropper = null;
 				}
 				function setCropRatio(ratio) {
 					_currentRatio = ratio;
