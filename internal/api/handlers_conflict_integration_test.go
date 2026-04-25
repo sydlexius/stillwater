@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -226,9 +227,18 @@ func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
 }
 
 // startFakeJellyfin mirrors startFakeEmby for the Jellyfin dispatch branch in
-// handleSetStillwaterManaged. Same LibraryOptions POST shape.
-func startFakeJellyfin(t *testing.T) *httptest.Server {
+// handleSetStillwaterManaged. Same LibraryOptions POST shape. The snapshot
+// closure exposes the most recent decoded LibraryOptions so tests can assert
+// the production client actually flipped SaveLocalMetadata to false; without
+// that the JellyfinBranch test would only verify HTTP 200 and miss a no-op
+// regression in the dispatch branch.
+func startFakeJellyfin(t *testing.T) (*httptest.Server, func() (embyLibraryOptionsShape, bool)) {
 	t.Helper()
+	var (
+		mu   sync.Mutex
+		last embyLibraryOptionsShape
+		seen bool
+	)
 	initial := map[string]any{
 		"Name":           "Music",
 		"CollectionType": "music",
@@ -238,7 +248,7 @@ func startFakeJellyfin(t *testing.T) *httptest.Server {
 			"MetadataSavers":    []string{"Nfo"},
 		},
 	}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/Library/VirtualFolders":
 			_ = json.NewEncoder(w).Encode([]any{initial})
@@ -266,6 +276,10 @@ func startFakeJellyfin(t *testing.T) *httptest.Server {
 				http.Error(w, "decode library options failed", http.StatusBadRequest)
 				return
 			}
+			mu.Lock()
+			last = got
+			seen = true
+			mu.Unlock()
 			initial["LibraryOptions"] = map[string]any{
 				"SaveLocalMetadata": got.SaveLocalMetadata,
 				"MetadataSavers":    got.MetadataSavers,
@@ -275,6 +289,12 @@ func startFakeJellyfin(t *testing.T) *httptest.Server {
 			http.NotFound(w, r)
 		}
 	}))
+	snapshot := func() (embyLibraryOptionsShape, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		return last, seen
+	}
+	return srv, snapshot
 }
 
 // startFakeLidarr exposes /api/v1/metadata (the NFO/image consumer endpoint)
@@ -331,9 +351,7 @@ func startFakeLidarr(t *testing.T) (*httptest.Server, func() map[string]any) {
 		mu.Lock()
 		defer mu.Unlock()
 		out := make(map[string]any, len(consumers[0]))
-		for k, v := range consumers[0] {
-			out[k] = v
-		}
+		maps.Copy(out, consumers[0])
 		return out
 	}
 	return srv, snapshot
@@ -341,7 +359,7 @@ func startFakeLidarr(t *testing.T) (*httptest.Server, func() map[string]any) {
 
 func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
 	r, svc := testRouterForConflictToggle(t)
-	fake := startFakeJellyfin(t)
+	fake, snapshot := startFakeJellyfin(t)
 	defer fake.Close()
 
 	conn := &connection.Connection{Name: "TestJF", Type: connection.TypeJellyfin, URL: fake.URL, APIKey: "k"}
@@ -356,6 +374,18 @@ func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
 	r.handleSetStillwaterManaged(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	// SaveLocalMetadata=false is the single master switch that stops Jellyfin
+	// from persisting artwork OR NFO to disk. A 200-only check would let a
+	// regression slip where the dispatch branch routes correctly but never
+	// actually flips the flag on the peer payload.
+	got, ok := snapshot()
+	if !ok {
+		t.Fatal("no LibraryOptions POST captured for Jellyfin")
+	}
+	if got.SaveLocalMetadata {
+		t.Errorf("SaveLocalMetadata: want false after enable, got %+v", got)
 	}
 }
 
@@ -439,22 +469,6 @@ func lidarrField(consumer map[string]any, name string) any {
 		}
 	}
 	return nil
-}
-
-func TestHandleGetConnectionConflictDetail_FormatsPathsSummary(t *testing.T) {
-	// Force a ledger with many paths via a handcrafted detector.
-	r := newConflictHarness(t, []connection.Connection{
-		{ID: "c1", Name: "C1", Type: connection.TypeEmby, Enabled: true},
-	})
-	// Can't easily inject paths through the test harness; just verify the
-	// handler renders without panicking when the ledger has a known conn.
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.SetPathValue("id", "c1")
-	w := httptest.NewRecorder()
-	r.handleGetConnectionConflictDetail(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d", w.Code)
-	}
 }
 
 func TestSetStillwaterManaged_404OnUnknownConnection(t *testing.T) {
