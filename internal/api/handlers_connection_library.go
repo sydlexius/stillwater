@@ -544,6 +544,101 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+// findExistingArtistForImport locates an existing artist that an inbound
+// platform item (Emby/Jellyfin) should attach to, looking first inside the
+// connection library and then across the user's manual filesystem libraries.
+//
+// Issue #1004: when a connection (e.g. Emby) is added against a library that
+// already has artists imported via filesystem scan, the previous behavior
+// scoped dedupe to the connection library only. That caused two visible rows
+// per artist: the original filesystem artist (no platform mapping) and a new
+// connection-library artist (with the mapping). Wave 2A's UNIQUE index on
+// (connection_id, platform_artist_id) further means the backfill to the
+// filesystem row would be silently dropped, leaving the duplicate permanent.
+//
+// The fix is to consult manual libraries when the connection-scoped dedupe
+// misses, so the import attaches the platform mapping directly to the
+// existing filesystem artist instead of creating a parallel row.
+//
+// Returns (existing, skip):
+//   - existing != nil  -- caller should attach platform mapping and not create
+//   - existing == nil, skip == false -- caller should create a new artist
+//   - skip == true     -- a lookup error or MBID conflict was logged; caller
+//     must increment Skipped and move to the next item
+func (r *Router) findExistingArtistForImport(
+	ctx context.Context,
+	mbid, name string,
+	lib *library.Library,
+	manualLibs []library.Library,
+	platform string,
+	result *populateResult,
+) (existing *artist.Artist, skip bool) {
+	// 1. In-library dedupe: re-imports must find the same row created on a
+	// previous run.
+	if mbid != "" {
+		a, err := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+		if err != nil {
+			r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "platform", platform, "error", err)
+			result.Skipped++
+			return nil, true
+		}
+		existing = a
+	}
+	if existing == nil {
+		nameMatch, err := r.artistService.GetByNameAndLibrary(ctx, name, lib.ID)
+		if err != nil {
+			r.logger.Warn("dedup lookup by name", "name", name, "platform", platform, "error", err)
+			result.Skipped++
+			return nil, true
+		}
+		if nameMatch != nil {
+			if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
+				// Name collision with conflicting MBIDs: two different
+				// artists share a name. Skip to avoid wrong association.
+				r.logger.Warn("mbid conflict during name dedup, skipping",
+					"name", name, "platform", platform,
+					"platform_mbid", mbid, "existing_mbid", nameMatch.MusicBrainzID)
+				result.Skipped++
+				return nil, true
+			}
+			existing = nameMatch
+		}
+	}
+	if existing != nil {
+		return existing, false
+	}
+
+	// 2. Cross-library dedupe (issue #1004): when the connection library is
+	// freshly added against an existing filesystem library, the artist rows
+	// live under the manual library. Match by MBID first, then case-insensitive
+	// name, scoped to each manual library. If multiple manual libraries hold a
+	// candidate the first match wins (FindByMBIDOrName already prefers MBID).
+	for _, ml := range manualLibs {
+		fsArtist, err := r.artistService.FindByMBIDOrName(ctx, mbid, name, ml.ID)
+		if err != nil {
+			r.logger.Warn("cross-library dedup lookup",
+				"name", name, "manual_library", ml.ID, "platform", platform, "error", err)
+			// Best-effort: a single failing library should not abort the
+			// whole import. Skip just this manual library and try the next.
+			continue
+		}
+		if fsArtist == nil {
+			continue
+		}
+		if mbid != "" && fsArtist.MusicBrainzID != "" && fsArtist.MusicBrainzID != mbid {
+			// Same name but conflicting MBID: do not associate.
+			r.logger.Warn("cross-library mbid conflict, skipping",
+				"name", name, "platform", platform,
+				"platform_mbid", mbid, "existing_mbid", fsArtist.MusicBrainzID)
+			result.Skipped++
+			return nil, true
+		}
+		return fsArtist, false
+	}
+
+	return nil, false
+}
+
 func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
@@ -558,35 +653,9 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.findExistingArtistForImport(ctx, mbid, item.Name, lib, manualLibs, "emby", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {
@@ -662,35 +731,9 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.findExistingArtistForImport(ctx, mbid, item.Name, lib, manualLibs, "jellyfin", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {

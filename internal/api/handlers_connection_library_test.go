@@ -2292,7 +2292,20 @@ func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 	}
 }
 
-func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+// TestPopulateFromEmby_AttachesPlatformIDToFilesystemArtist verifies that
+// when a connection library is freshly populated against a filesystem library
+// already holding the artist (matched by MBID), the platform ID is attached
+// to the existing filesystem artist rather than creating a duplicate
+// connection-library row.
+//
+// Issue #1004: previously the import created a parallel artist row in the
+// connection library, leaving the user with two visible entries (one local,
+// one platform-only). With the cross-library dedup added in
+// findExistingArtistForImport, the import now reuses the filesystem artist.
+// Wave 2A's UNIQUE index on (connection_id, platform_artist_id) makes this
+// behavior load-bearing: creating the duplicate row and then trying to
+// backfill the mapping silently dropped the filesystem mapping.
+func TestPopulateFromEmby_AttachesPlatformIDToFilesystemArtist(t *testing.T) {
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -2358,7 +2371,6 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("creating emby library: %v", err)
 	}
 
-	// Populate -- this creates a NEW emby-library artist.
 	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
@@ -2366,31 +2378,143 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("populateFromEmbyCtx: %v", err)
 	}
 
-	if result.Created != 1 {
-		t.Fatalf("created = %d, want 1", result.Created)
+	// No new artist row should be created; the existing filesystem artist
+	// is reused via cross-library dedup.
+	if result.Created != 0 {
+		t.Errorf("created = %d, want 0 (should reuse filesystem artist)", result.Created)
+	}
+	if result.Skipped != 1 {
+		t.Errorf("skipped = %d, want 1", result.Skipped)
 	}
 
-	// The emby-library artist should have a platform ID (existing behavior).
+	// No emby-library artist row should exist for Radiohead.
 	embyArtist, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", embyLib.ID)
-	if err != nil || embyArtist == nil {
+	if err != nil {
 		t.Fatalf("looking up emby artist: %v", err)
 	}
-	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
-	if err != nil {
-		t.Fatalf("GetPlatformID (emby): %v", err)
-	}
-	if embyPlatformID != "emby-radiohead-001" {
-		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-radiohead-001")
+	if embyArtist != nil {
+		t.Errorf("emby-library artist created (id=%q); expected import to reuse filesystem artist", embyArtist.ID)
 	}
 
-	// Issue #1076: only the connection-library artist holds the mapping;
-	// the filesystem artist no longer gets a duplicate.
+	// The filesystem artist should now hold the Emby platform mapping.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "" {
-		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
+	if fsPlatformID != "emby-radiohead-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-radiohead-001")
+	}
+}
+
+// TestPopulateFromEmby_ReimportIsIdempotent verifies that re-running the
+// Emby import after a filesystem artist has already had its Emby mapping
+// attached does not create a duplicate row and does not raise a UNIQUE
+// constraint error from the (connection_id, platform_artist_id) index.
+//
+// Issue #1004 acceptance: re-running an Emby import on a library with
+// existing artist mappings must not create duplicates or fail.
+func TestPopulateFromEmby_ReimportIsIdempotent(t *testing.T) {
+	var hits atomic.Int32
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-radiohead-001",
+				"Path":"",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"mbid-radiohead"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	musicDir := t.TempDir()
+	manualLib := &library.Library{
+		Name: "Filesystem", Path: musicDir,
+		Type: library.TypeRegular, Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	rhDir := filepath.Join(musicDir, "Radiohead")
+	if err := os.MkdirAll(rhDir, 0o755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+	fsArtist := &artist.Artist{
+		Name: "Radiohead", SortName: "Radiohead",
+		MusicBrainzID: "mbid-radiohead",
+		LibraryID:     manualLib.ID, Path: rhDir,
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating fs artist: %v", err)
+	}
+
+	embyLib := &library.Library{
+		Name: "Emby Music", Type: library.TypeRegular,
+		Source: library.SourceEmby, ConnectionID: "conn-emby-1",
+		ExternalID: "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	// First import: cross-library dedup should attach the mapping to fsArtist.
+	var first populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, embyLib, &first); err != nil {
+		t.Fatalf("first populate: %v", err)
+	}
+	if first.Created != 0 {
+		t.Errorf("first created = %d, want 0", first.Created)
+	}
+
+	// Second import: should be a no-op against the same filesystem artist,
+	// must not create a duplicate, must not raise a UNIQUE-constraint error.
+	var second populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, embyLib, &second); err != nil {
+		t.Fatalf("second populate: %v", err)
+	}
+	if second.Created != 0 {
+		t.Errorf("second created = %d, want 0", second.Created)
+	}
+
+	// Verify only one Radiohead artist exists across all libraries.
+	listed, _, err := router.artistService.List(ctx, artist.ListParams{Page: 1, PageSize: 100, Sort: "name"})
+	if err != nil {
+		t.Fatalf("listing artists: %v", err)
+	}
+	count := 0
+	for _, a := range listed {
+		if strings.EqualFold(a.Name, "Radiohead") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Radiohead row count = %d, want 1", count)
+	}
+
+	// Verify the platform mapping is present and points to the fs artist.
+	pid, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID: %v", err)
+	}
+	if pid != "emby-radiohead-001" {
+		t.Errorf("platform id = %q, want emby-radiohead-001", pid)
 	}
 }
 
