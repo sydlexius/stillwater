@@ -36,7 +36,7 @@ jobs:
         run: templ generate
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@256d634097be96e792d6764f9edaefc4320557b1 # v4
+        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         with:
           languages: go
 
@@ -51,6 +51,6 @@ jobs:
             -o stillwater ./cmd/stillwater
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@256d634097be96e792d6764f9edaefc4320557b1 # v4
+        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         with:
           category: /language:go
