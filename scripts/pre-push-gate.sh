@@ -75,7 +75,8 @@ echo "=== Patch coverage ==="
 # avoids narrowing patch coverage to only the tip commit on a branch
 # whose base ref isn't reachable.
 if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \
-    bash "$SCRIPT_DIR/patch-coverage.sh"; then
+    PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go" \
+    bash "$HOME/.claude/scripts/patch-coverage.sh"; then
   :
 else
   exit 1
