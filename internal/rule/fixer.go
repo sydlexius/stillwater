@@ -1168,6 +1168,13 @@ func (p *Pipeline) ClearRuleCache() {
 // (RunRule / RunRuleScoped) only write pass rows for the specific rule they
 // evaluated, not for every rule the engine happened to consider.
 //
+// Issue #1105: this function is also the natural site for "rule passed, so
+// resolve any stale open violation row" reconciliation. When a rule was
+// considered AND did not appear in the new violation set, any open or
+// pending_choice rule_violations row for that (rule, artist) pair is stale
+// and is transitioned to resolved. Dismissed and already-resolved rows are
+// left untouched (see ResolveViolationIfActive).
+//
 // Returns true when every pass write succeeded. Failures are warn-logged and
 // fold into the caller's persistOK flag so the artist stays dirty and the
 // next pass retries, mirroring how violation-write failures are handled.
@@ -1189,6 +1196,19 @@ func (p *Pipeline) persistPassResults(
 		}
 		if err := p.ruleService.UpsertRuleResultPass(ctx, a.ID, rid, evaluatedAt); err != nil {
 			p.logger.Warn("persisting pass result",
+				"rule_id", rid, "artist", a.Name, "error", err)
+			ok = false
+		}
+		// Issue #1105: resolve any stale open violation row. A rule that
+		// was considered but did not produce a violation in this pass means
+		// either the auto-fix succeeded (the resolvedRows path already
+		// covered that) OR the underlying condition was corrected
+		// out-of-band (user dropped a file in place, scanner refreshed
+		// metadata, etc.). The latter has no in-memory marker, so without
+		// this reconciliation the dashboard keeps reporting a cleared
+		// violation as open indefinitely.
+		if _, err := p.ruleService.ResolveViolationIfActive(ctx, rid, a.ID); err != nil {
+			p.logger.Warn("resolving stale violation after pass",
 				"rule_id", rid, "artist", a.Name, "error", err)
 			ok = false
 		}
@@ -1248,6 +1268,20 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 				RuleID:  v.RuleID,
 				Fixed:   false,
 				Message: "fix failed",
+			}
+		}
+		// Issue #1108: fixers mutate the filesystem (delete extraneous
+		// images, write NFOs, save trimmed logos, rename directories) but
+		// do not invalidate the rule engine's FSCache. Within the cache's
+		// 60s TTL the next Evaluate call would read a stale directory
+		// listing -- the deleted file still appears, the new file is still
+		// missing -- and resurrect the violation we just fixed. Invalidate
+		// the artist directory here so every fixer benefits without
+		// threading the cache into each fixer constructor. DiscoveryOnly
+		// fixes do not write to disk and do not need invalidation.
+		if fr != nil && fr.Fixed && !v.Config.DiscoveryOnly && a.Path != "" {
+			if cache := p.engine.FSCache(); cache != nil {
+				cache.InvalidatePath(a.Path)
 			}
 		}
 		return fr
