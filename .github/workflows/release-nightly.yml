@@ -33,9 +33,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # create tags and GitHub Releases
-      packages: write   # parity with stable; harmless if unused
-      id-token: write   # cosign keyless signing of checksums
+      contents: write       # create tags and GitHub Releases
+      packages: write       # parity with stable; harmless if unused
+      id-token: write       # cosign keyless signing of checksums
+      attestations: write   # SLSA build provenance via actions/attest-build-provenance
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -160,6 +161,34 @@ jobs:
           args: release --clean --config .goreleaser.nightly.yml --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # SLSA v1 build provenance for nightly artifacts. Mirrors the stable
+      # release pipeline (.github/workflows/release.yml) so OpenSSF Scorecard's
+      # Signed-Releases provenance sub-check is satisfied for both channels.
+      - name: Generate build provenance attestation
+        id: attest
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            dist/stillwater_*_checksums.txt
+            dist/stillwater_*.tar.gz
+            dist/stillwater_*.zip
+
+      - name: Attach provenance to release
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          out="stillwater_${TAG}_provenance.intoto.jsonl"
+          cp "$BUNDLE" "$out"
+          # --clobber: idempotent on workflow retry (e.g. workflow_dispatch
+          # rerun on the same nightly tag). gh deletes the existing asset
+          # before re-uploading.
+          gh release upload "$TAG" "$out" --clobber
 
       # Retention: keep the 14 most recent nightly releases (and their tags);
       # delete everything older. Only touches `nightly-*` refs; non-nightly
