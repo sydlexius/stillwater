@@ -146,15 +146,27 @@ func TestEnsureArtistPlatformIDsUnique_DedupesExisting(t *testing.T) {
 		t.Fatalf("ensureArtistPlatformIDsUnique: %v", err)
 	}
 
-	// Only the keeper artist remains; the loser was deleted, cascading its
-	// platform_id row away.
+	// Both artist rows remain. The dedup helper resolves the unique-key
+	// conflict by deleting only the losing platform mapping; legacy
+	// duplicates are not always true duplicate artists, so we never erase
+	// an artist row out from under its images, rule state, or library
+	// association during a startup repair.
 	var n int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM artists WHERE id IN ('a-old', 'a-new')`).Scan(&n); err != nil {
 		t.Fatalf("count artists: %v", err)
 	}
+	if n != 2 {
+		t.Errorf("artist count = %d, want 2 (both artists must remain after dedup)", n)
+	}
+
+	// Exactly one mapping row survives, and it points to the keeper.
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE connection_id = 'c-1' AND platform_artist_id = 'shared'`).Scan(&n); err != nil {
+		t.Fatalf("count mappings: %v", err)
+	}
 	if n != 1 {
-		t.Errorf("artist count = %d, want 1 (loser should be deleted)", n)
+		t.Errorf("mapping count = %d, want 1 (loser mapping should be deleted)", n)
 	}
 
 	var keeper string
@@ -164,6 +176,18 @@ func TestEnsureArtistPlatformIDsUnique_DedupesExisting(t *testing.T) {
 	}
 	if keeper != "a-new" {
 		t.Errorf("keeper = %q, want a-new", keeper)
+	}
+
+	// The losing artist's other associations are untouched. The keeper now
+	// owns the mapping; the loser stays in artists with whatever other
+	// state it had.
+	var loserName string
+	if err := db.QueryRowContext(ctx,
+		`SELECT name FROM artists WHERE id = 'a-old'`).Scan(&loserName); err != nil {
+		t.Errorf("losing artist row was unexpectedly removed: %v", err)
+	}
+	if loserName != "Old" {
+		t.Errorf("losing artist name = %q, want Old", loserName)
 	}
 
 	// Index is back; a duplicate insert is now rejected.

@@ -166,17 +166,22 @@ func cleanupOrphanArtistPlatformIDs(db *sql.DB) error {
 	return nil
 }
 
-// ensureArtistPlatformIDsUnique collapses duplicate artist rows that map to
-// the same (connection_id, platform_artist_id) pair, then creates the
-// UNIQUE index that prevents future duplicates. Issue #1076 documented this
-// scenario: scanner and import paths could each create an artist row for the
-// same on-disk directory after renames or re-scans, race to claim the same
-// Emby/Jellyfin item, and produce inconsistent server-side lock state.
+// ensureArtistPlatformIDsUnique collapses duplicate platform mapping rows
+// that share the same (connection_id, platform_artist_id) pair, then creates
+// the UNIQUE index that prevents future duplicates. Issue #1076 documented
+// the scenario: scanner and import paths could each create a mapping row for
+// the same Emby/Jellyfin item, race to claim the platform id, and produce
+// inconsistent server-side lock state.
 //
-// Dedup strategy: group by (connection_id, platform_artist_id), keep the
-// artist row with the most recent updated_at, and reassign the surviving
-// platform-id row to that artist. The losing artist rows are deleted, which
-// cascades to their platform_ids, images, violations, and rule_results.
+// Dedup strategy: group by (connection_id, platform_artist_id), pick the
+// keeper artist by most recent updated_at, and delete only the losing
+// artist_platform_ids rows. The losing artist rows themselves are left
+// intact: legacy duplicates are not always true duplicate artists (a
+// connection-library artist and a filesystem/manual artist could
+// temporarily share a mapping), so cascade-deleting an artist row would
+// silently remove its images, rule state, and library association.
+// Whoever needs to reconcile the surviving artist rows can do so with
+// real visibility, after this helper has resolved the unique-key conflict.
 //
 // The index is created LAST so a partial dedup never hits a unique-constraint
 // violation that aborts the whole startup. Re-running this on a clean DB is
@@ -245,27 +250,25 @@ func ensureArtistPlatformIDsUnique(db *sql.DB) error {
 			return fmt.Errorf("picking keeper for (%s, %s): %w", d.connID, d.platformID, err)
 		}
 
-		// Delete losing artist rows. CASCADE removes their child rows
-		// (artist_platform_ids, artist_images, rule_violations, etc.).
+		// Delete only the conflicting mapping rows. The losing artist rows
+		// remain in place; collapsing the mapping is enough to satisfy the
+		// new unique index, and we avoid the silent data loss that whole-
+		// artist deletion would cause when legacy duplicates turn out to
+		// be distinct artists that briefly shared a platform id.
 		res, err := db.ExecContext(ctx, `
-			DELETE FROM artists
-			WHERE id IN (
-				SELECT a.id
-				FROM artists a
-				JOIN artist_platform_ids ap ON ap.artist_id = a.id
-				WHERE ap.connection_id = ? AND ap.platform_artist_id = ? AND a.id != ?
-			)
+			DELETE FROM artist_platform_ids
+			WHERE connection_id = ? AND platform_artist_id = ? AND artist_id != ?
 		`, d.connID, d.platformID, keeperID)
 		if err != nil {
-			return fmt.Errorf("deleting duplicate artists for (%s, %s): %w", d.connID, d.platformID, err)
+			return fmt.Errorf("deleting duplicate platform mappings for (%s, %s): %w", d.connID, d.platformID, err)
 		}
 		n, _ := res.RowsAffected()
 		logger.Info(
-			"collapsed duplicate artist rows mapping to the same platform id",
+			"collapsed duplicate platform mapping rows",
 			"connection_id", d.connID,
 			"platform_artist_id", d.platformID,
 			"keeper_artist_id", keeperID,
-			"deleted_count", n,
+			"deleted_mappings", n,
 		)
 	}
 
