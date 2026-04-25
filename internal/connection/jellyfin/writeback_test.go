@@ -99,6 +99,28 @@ func TestJellyfinCheckImageSaverEnabled(t *testing.T) {
 	}
 }
 
+// TestJellyfinCheckImageSaverDisabled exercises the complementary branch where
+// SaveLocalMetadata=false. The check must return (on=false, lib="") so the
+// gate doesn't flip closed for a peer that already has its saver off. Without
+// this case a regression that always reports "enabled" would still pass
+// TestJellyfinCheckImageSaverEnabled, since both report on=true.
+func TestJellyfinCheckImageSaverDisabled(t *testing.T) {
+	srv, _ := newFakeJellyfinServer([]VirtualFolder{
+		{Name: "Music", ItemID: "m1", CollectionType: "music",
+			LibraryOptions: LibraryOptions{SaveLocalMetadata: false}},
+	})
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	on, lib, err := c.CheckImageSaverEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if on || lib != "" {
+		t.Errorf("got (on=%v,lib=%q), want (false,\"\")", on, lib)
+	}
+}
+
 func TestJellyfinSnapshotAndDisable(t *testing.T) {
 	srv, fake := newFakeJellyfinServer([]VirtualFolder{
 		{Name: "Music", ItemID: "m1", CollectionType: "music",

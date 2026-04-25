@@ -132,6 +132,15 @@ func (r *Router) handleGetConnectionConflictDetail(w http.ResponseWriter, req *h
 		}
 		break
 	}
+	// HTMX lazy-loads this fragment per-row; an unknown id (deleted
+	// connection, or a stale id from a cached page) has no detection state
+	// to display. Returning 204 keeps the per-row container empty rather
+	// than rendering a misleading "Not yet checked" message that the
+	// template's !v.Known branch would emit.
+	if !view.Known {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ConnectionConflictDetail(view).Render(req.Context(), w); err != nil {
 		r.logger.Warn("rendering conflict detail failed", "error", err)

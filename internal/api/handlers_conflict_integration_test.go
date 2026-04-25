@@ -178,11 +178,18 @@ func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// Enable first so we have a snapshot to restore from.
+	// Enable first so we have a snapshot to restore from. If this setup
+	// step regresses (e.g. snapshot path stops returning 200), we want a
+	// clear failure here rather than a confusing assertion miss further
+	// down -- otherwise a broken enable masquerades as a broken restore.
 	body := bytes.NewReader([]byte(`{"enabled":true}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/stillwater-managed", body)
 	req.SetPathValue("id", conn.ID)
-	r.handleSetStillwaterManaged(httptest.NewRecorder(), req)
+	enableW := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(enableW, req)
+	if enableW.Code != http.StatusOK {
+		t.Fatalf("enable status = %d body=%s", enableW.Code, enableW.Body.String())
+	}
 
 	// Now disable; restore path should POST the original (saver-on) config back.
 	body = bytes.NewReader([]byte(`{"enabled":false}`))
@@ -194,14 +201,22 @@ func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
 		t.Fatalf("disable status = %d body=%s", w.Code, w.Body.String())
 	}
 
-	// The most recent POST should have restored the saver on.
-	got, _ := received.Load("lib1")
+	// The most recent POST should have restored the saver on. Check the
+	// ok flag so a regression that stops POSTing entirely fails loudly
+	// instead of silently passing zero-value assertions.
+	got, ok := received.Load("lib1")
+	if !ok {
+		t.Fatal("no restore POST to peer recorded")
+	}
 	opts := got.(embyLibraryOptionsShape)
 	if !opts.SaveLocalMetadata || len(opts.MetadataSavers) != 1 {
 		t.Errorf("restore did not reinstate savers: %+v", opts)
 	}
 
-	updated, _ := svc.GetByID(ctx, conn.ID)
+	updated, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload conn: %v", err)
+	}
 	if updated.FeatureManageServerFiles {
 		t.Error("FeatureManageServerFiles should be false after disable")
 	}
@@ -266,8 +281,9 @@ func startFakeJellyfin(t *testing.T) *httptest.Server {
 // and the matching /:id PUT for the Lidarr dispatch branch. Mirrors the real
 // Lidarr shape: each consumer has an "enable" flag and a "fields" array
 // whose entries toggle sub-features like artistMetadata and artistImages.
-func startFakeLidarr(t *testing.T) *httptest.Server {
+func startFakeLidarr(t *testing.T) (*httptest.Server, func() map[string]any) {
 	t.Helper()
+	var mu sync.Mutex
 	consumers := []map[string]any{
 		{
 			"id":     float64(1),
@@ -279,9 +295,11 @@ func startFakeLidarr(t *testing.T) *httptest.Server {
 			},
 		},
 	}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/metadata":
+			mu.Lock()
+			defer mu.Unlock()
 			_ = json.NewEncoder(w).Encode(consumers)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/metadata/1":
 			body, err := io.ReadAll(r.Body)
@@ -296,12 +314,29 @@ func startFakeLidarr(t *testing.T) *httptest.Server {
 				http.Error(w, "decode metadata failed", http.StatusBadRequest)
 				return
 			}
+			mu.Lock()
 			consumers[0] = got
+			mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
+	// Snapshot returns a copy of the latest consumer payload so the test can
+	// assert which fields the production client actually flipped (enable +
+	// the artistMetadata / artistImages entries inside fields). Without this
+	// the LidarrBranch test would only verify HTTP 200, missing no-op or
+	// wrong-field regressions in the dispatch branch.
+	snapshot := func() map[string]any {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make(map[string]any, len(consumers[0]))
+		for k, v := range consumers[0] {
+			out[k] = v
+		}
+		return out
+	}
+	return srv, snapshot
 }
 
 func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
@@ -326,7 +361,7 @@ func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
 
 func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
 	r, svc := testRouterForConflictToggle(t)
-	fake := startFakeLidarr(t)
+	fake, snapshot := startFakeLidarr(t)
 	defer fake.Close()
 
 	conn := &connection.Connection{Name: "TestLid", Type: connection.TypeLidarr, URL: fake.URL, APIKey: "k"}
@@ -343,6 +378,24 @@ func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
 
+	// Stillwater-managed flips the per-field flags artistMetadata and
+	// artistImages to false; the top-level "enable" stays true (the
+	// consumer remains registered, just with its writers gated). Asserting
+	// the field-level flips is what catches no-op or wrong-field
+	// regressions that a 200-only check would let through. See
+	// internal/connection/lidarr/writeback_test.go for the same contract
+	// at the client layer.
+	got := snapshot()
+	if enable, _ := got["enable"].(bool); !enable {
+		t.Errorf("enable: want true after enable (consumer stays registered), got %v (full=%+v)", got["enable"], got)
+	}
+	if v := lidarrField(got, "artistMetadata"); v != false {
+		t.Errorf("artistMetadata: want false after enable, got %v", v)
+	}
+	if v := lidarrField(got, "artistImages"); v != false {
+		t.Errorf("artistImages: want false after enable, got %v", v)
+	}
+
 	// And disable, which routes through the Lidarr restore branch.
 	body = bytes.NewReader([]byte(`{"enabled":false}`))
 	req = httptest.NewRequest(http.MethodPost, "/", body)
@@ -352,6 +405,40 @@ func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("disable status = %d body=%s", w.Code, w.Body.String())
 	}
+
+	// Restore should put the original (true/true/true) back; the snapshot
+	// captured pre-enable values match the seed in startFakeLidarr.
+	got = snapshot()
+	if enable, _ := got["enable"].(bool); !enable {
+		t.Errorf("enable: want true after restore, got %v (full=%+v)", got["enable"], got)
+	}
+	if v := lidarrField(got, "artistMetadata"); v != true {
+		t.Errorf("artistMetadata: want true after restore, got %v", v)
+	}
+	if v := lidarrField(got, "artistImages"); v != true {
+		t.Errorf("artistImages: want true after restore, got %v", v)
+	}
+}
+
+// lidarrField walks the {fields:[{name,value}]} shape used by Lidarr metadata
+// consumers and returns the value for the named entry, or nil if absent. The
+// production code stores per-field flags in this nested array (not flat top
+// level), so assertions need a small helper to keep the test readable.
+func lidarrField(consumer map[string]any, name string) any {
+	fields, ok := consumer["fields"].([]any)
+	if !ok {
+		return nil
+	}
+	for _, f := range fields {
+		fm, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		if fm["name"] == name {
+			return fm["value"]
+		}
+	}
+	return nil
 }
 
 func TestHandleGetConnectionConflictDetail_FormatsPathsSummary(t *testing.T) {
