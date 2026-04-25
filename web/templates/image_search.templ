@@ -118,7 +118,21 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					var lockCb = document.getElementById('crop-lock-ratio');
 					cropImage.crossOrigin = 'anonymous';
 					if (imageType) cropType.value = imageType;
+					// Toggle BOTH `hidden` and `flex` so only one display class is
+					// active at a time. The template default is `hidden` only --
+					// co-applying `hidden` + `flex` would be a Tailwind cascade trap
+					// (whichever rule is declared later in styles.css wins).
 					modal.classList.remove('hidden');
+					modal.classList.add('flex');
+					// Reset any error left over from a previous failed save and
+					// re-enable the Save button.
+					var errEl = document.getElementById('crop-error');
+					if (errEl) {
+						errEl.textContent = '';
+						errEl.classList.add('hidden');
+					}
+					var saveBtn = document.getElementById('crop-save-btn');
+					if (saveBtn) saveBtn.disabled = false;
 					_currentRatio = NaN;
 					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
@@ -152,7 +166,11 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				}
 				function closeCropModal() {
 					var modal = document.getElementById('crop-modal');
+					// Toggle BOTH classes back to the hidden state -- mirror of
+					// openCropModal so only the `hidden` rule is active when the
+					// modal is dismissed. See the cascade-trap comment there.
 					modal.classList.add('hidden');
+					modal.classList.remove('flex');
 					if (_cropper) {
 						_cropper.destroy();
 						_cropper = null;

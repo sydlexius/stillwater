@@ -1,10 +1,16 @@
 package components
 
 // ImageCropModal renders the Cropper.js modal for client-side image cropping.
+//
+// The default class intentionally omits `flex`: `openCropModal` adds `flex`
+// when revealing the modal and `closeCropModal` removes it again on close.
+// Co-applying `hidden` + `flex` (or any other display utility) is a Tailwind
+// cascade trap -- whichever rule is declared later in the compiled stylesheet
+// wins, so a future utility reorder could leave the modal stuck visible.
 templ ImageCropModal(artistID string) {
 	<div
 		id="crop-modal"
-		class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4"
+		class="fixed inset-0 z-50 hidden bg-black/50 items-center justify-center p-4"
 	>
 		<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
 			<div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -50,6 +56,12 @@ templ ImageCropModal(artistID string) {
 					</select>
 				</div>
 			</div>
+			<div
+				id="crop-error"
+				class="hidden mx-4 mb-2 px-3 py-2 text-sm rounded border border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200"
+				role="alert"
+				aria-live="polite"
+			></div>
 			<div class="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
 				<button
 					type="button"
@@ -59,8 +71,9 @@ templ ImageCropModal(artistID string) {
 					Cancel
 				</button>
 				<button
+					id="crop-save-btn"
 					type="button"
-					class="px-4 py-2.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+					class="px-4 py-2.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
 					onclick={ saveCroppedImage(artistID) }
 				>
 					Save Cropped
@@ -71,9 +84,39 @@ templ ImageCropModal(artistID string) {
 }
 
 script saveCroppedImage(artistID string) {
-	if (!window._cropper) return;
+	// Set up error surfacing first so the early-exit guards below have
+	// somewhere to report. Without this, an unready cropper or a tainted
+	// canvas would return silently and leave the modal sitting open with no
+	// feedback to the user (the original #1124 symptom from the user side).
+	var errEl = document.getElementById('crop-error');
+	function showCropError(msg) {
+		if (!errEl) return;
+		errEl.textContent = msg;
+		errEl.classList.remove('hidden');
+	}
+	function clearCropError() {
+		if (!errEl) return;
+		errEl.textContent = '';
+		errEl.classList.add('hidden');
+	}
+	var saveBtn = document.getElementById('crop-save-btn');
+	function reEnableSaveBtn() {
+		if (saveBtn) saveBtn.disabled = false;
+	}
+	clearCropError();
+
+	if (!window._cropper) {
+		showCropError('Crop tool is not ready. Close this dialog and reopen it before saving.');
+		return;
+	}
 	var canvas = window._cropper.getCroppedCanvas();
-	if (!canvas) return;
+	if (!canvas) {
+		// getCroppedCanvas returns null when the source image is canvas-tainted,
+		// typically because it loaded from another origin without CORS headers.
+		// The visual crop preview still works but Save cannot extract pixels.
+		showCropError('Cannot extract the cropped image. The source image is cross-origin and the browser blocked canvas access. Save it to disk first, then crop.');
+		return;
+	}
 	var cropType = document.getElementById('crop-type').value;
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
@@ -81,6 +124,11 @@ script saveCroppedImage(artistID string) {
 	var base64 = canvas.toDataURL(mimeType, 0.92);
 	var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
+	// Disable the Save button while the request is in flight to prevent
+	// double-submits (rapid double-click would otherwise queue two saves).
+	if (saveBtn) saveBtn.disabled = true;
+
 	fetch(bp + '/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
 		headers: {
@@ -94,10 +142,39 @@ script saveCroppedImage(artistID string) {
 			width: canvas.width,
 			height: canvas.height
 		})
-	}).then(function(r) { return r.json(); }).then(function(data) {
-		if (data.status === 'ok') {
+	}).then(function(r) {
+		// Parse the body so we can surface the server's error message when
+		// present. Default to an empty object if the body is not JSON so the
+		// success/error branching below still has something to inspect.
+		return r.json().catch(function() { return {}; }).then(function(data) {
+			return { ok: r.ok, status: r.status, data: data };
+		});
+	}).then(function(result) {
+		if (result.ok && result.data && result.data.status === 'ok') {
+			// Close the modal BEFORE the navigation so the hidden state is
+			// committed to the DOM regardless of how quickly the load begins.
 			closeCropModal();
-			window.location.reload();
+			// Strip ?crop=1 from the URL before navigating. The image_search
+			// page auto-opens the crop modal whenever crop=1 is present, so a
+			// plain window.location.reload() here would re-open the modal on
+			// the just-saved image and look like "modal did not close after
+			// Save". Navigating to the cleaned URL fetches the fresh image
+			// without re-triggering the auto-open IIFE.
+			var url = new URL(window.location.href);
+			url.searchParams.delete('crop');
+			window.location.assign(url.toString());
+			return;
 		}
+		// Non-2xx response, or 200 with an unexpected body. Keep the modal
+		// open so the user can retry; surface whatever message the server
+		// supplied (or a generic fallback).
+		var msg = (result.data && (result.data.error || result.data.message)) ||
+			('Save failed (HTTP ' + result.status + ')');
+		showCropError(msg);
+		reEnableSaveBtn();
+	}).catch(function(err) {
+		// Network failure or other fetch-level error.
+		showCropError('Save failed: ' + (err && err.message ? err.message : 'network error'));
+		reEnableSaveBtn();
 	});
 }
