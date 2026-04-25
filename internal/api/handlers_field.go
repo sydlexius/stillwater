@@ -80,6 +80,9 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusBadRequest, "unknown or non-editable field: "+field)
 		return
 	}
+	if !r.gateNFOWrite(w, req) {
+		return
+	}
 
 	value, err := extractFieldValue(req, field)
 	if err != nil {
@@ -155,6 +158,9 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 
 	if !artist.IsEditableField(field) {
 		writeError(w, req, http.StatusBadRequest, "unknown or non-editable field: "+field)
+		return
+	}
+	if !r.gateNFOWrite(w, req) {
 		return
 	}
 

@@ -943,13 +943,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4">
-						<div
-							id="clobber-warnings"
-							hx-get="/api/v1/connections/clobber-check"
-							hx-trigger="load"
-							hx-swap="innerHTML"
-							class="mb-4"
-						></div>
+						<!-- The clobber-warnings block was removed in favour of
+							the global ConflictBanner in the layout. That banner
+							covers every screen, carries per-connection CTAs, and
+							shares its source of truth with the write-gate. -->
 						<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 							@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
 							@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
@@ -1412,10 +1409,28 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				for _, cat := range []string{"nfo", "image", "metadata"} {
 					{{ catRules := rulesForCategory(data.Rules, cat) }}
 					if len(catRules) > 0 {
-						<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div
+							class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg"
+							if cat == "image" {
+								data-sw-requires-image-write
+							}
+							if cat == "nfo" {
+								data-sw-requires-nfo-write
+							}
+						>
 							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 								<div class="flex items-center gap-2">
 									<h2 class="text-lg font-semibold">{ tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }</h2>
+									if cat == "image" {
+										<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_image_tooltip") }>
+											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+										</span>
+									}
+									if cat == "nfo" {
+										<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_nfo_tooltip") }>
+											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+										</span>
+									}
 									if cat == "nfo" {
 										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).")
 									}
@@ -4729,7 +4744,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 		if len(conns) > 0 {
 			<div class="space-y-2 mb-3">
 				for _, c := range conns {
-					<div class="flex flex-col gap-1.5 rounded border border-gray-100 dark:border-gray-700 px-3 py-2">
+					<div id={ "connection-" + c.ID } class="flex flex-col gap-1.5 rounded border border-gray-100 dark:border-gray-700 px-3 py-2 target:ring-2 target:ring-amber-400/60 target:bg-amber-50/40 dark:target:bg-amber-900/10">
 						<div class="flex items-center gap-2 min-w-0">
 							<div
 								class={
@@ -4786,14 +4801,55 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						</div>
 					</div>
 					<div id={ "discover-" + c.ID } class="mt-2"></div>
-					<div id={ "features-" + c.ID } class="hidden mt-2 rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
-						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.feature_toggles") }</div>
-						<div class="space-y-2">
-							if c.Type != "lidarr" {
-								@connectionFeatureToggle(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport)
-							}
-							@connectionFeatureToggle(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite)
-							@connectionFeatureToggle(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite)
+					<div id={ "features-" + c.ID } class="hidden mt-2 space-y-2">
+						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+							<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.sends_heading") }</div>
+							<div class="space-y-2">
+								if c.Type != "lidarr" {
+									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"))
+								}
+								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"))
+								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"))
+							</div>
+						</div>
+						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+							<div class="flex items-center justify-between">
+								<div class="min-w-0 pr-3">
+									<div class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+										{ t(ctx, "settings.connections.manage_description") }
+									</div>
+								</div>
+								<button
+									id={ "stillwater-managed-" + c.ID }
+									type="button"
+									class={ ruleToggleBtnClasses(c.FeatureManageServerFiles) }
+									role="switch"
+									aria-checked={ boolAttr(c.FeatureManageServerFiles) }
+									aria-label={ t(ctx, "settings.connections.manage_aria_label") }
+									hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+									hx-vals={ manageServerFilesPayload(!c.FeatureManageServerFiles) }
+									hx-swap="none"
+									data-conn-id={ c.ID }
+									data-sw-btn-on={ ruleToggleBtnClasses(true) }
+									data-sw-btn-off={ ruleToggleBtnClasses(false) }
+									data-sw-knob-on={ ruleToggleKnobClasses(true) }
+									data-sw-knob-off={ ruleToggleKnobClasses(false) }
+									data-sw-error={ t(ctx, "settings.connections.manage_error") }
+									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
+								>
+									<span class={ ruleToggleKnobClasses(c.FeatureManageServerFiles) }></span>
+								</button>
+							</div>
+						</div>
+						<div
+							id={ "detected-" + c.ID }
+							class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2"
+							hx-get={ "/api/v1/connections/" + c.ID + "/conflict-detail" }
+							hx-trigger="load"
+							hx-swap="innerHTML"
+						>
+							<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.connections.checking_saver_status") }</div>
 						</div>
 					</div>
 				}
@@ -4899,6 +4955,61 @@ script toggleConnectionForm(connType string) {
 	}
 }
 
+// stillwaterManagedAfterRequest runs after the "Let Stillwater manage"
+// toggle POSTs. Because the button uses hx-swap="none", its
+// aria-checked, Tailwind class list, and hx-vals payload are otherwise
+// frozen at render-time. Without syncing them from the server response,
+// a second click would re-send the same enabled value and cause
+// applyStillwaterManaged to overwrite the peer-config snapshot with
+// the already-disabled state, losing restore-ability.
+//
+// On success it syncs the button from the handler's JSON response
+// (the feature_manage_server_files field is authoritative), then
+// re-fetches the per-connection conflict-detail fragment and fires
+// sse:conflict.changed for the top-of-page banner. On failure it
+// writes an inline error into the detail target so the user notices
+// without a page reload.
+//
+// Button class strings are read from data-sw-{btn,knob}-{on,off}
+// attributes populated at render time by the ruleToggle*Classes
+// helpers, so this script never hardcodes Tailwind utility names and
+// stays in sync if those helpers change.
+script stillwaterManagedAfterRequest(connID string) {
+	var btn = document.getElementById("stillwater-managed-" + connID);
+	if (event.detail.successful) {
+		try {
+			var resp = JSON.parse(event.detail.xhr.responseText || "{}");
+			if (btn && typeof resp.feature_manage_server_files === "boolean") {
+				var enabled = resp.feature_manage_server_files;
+				var knob = btn.querySelector("span");
+				btn.setAttribute("aria-checked", String(enabled));
+				btn.setAttribute("class", enabled ? btn.dataset.swBtnOn : btn.dataset.swBtnOff);
+				btn.setAttribute("hx-vals", JSON.stringify({ enabled: !enabled }));
+				if (knob) {
+					knob.setAttribute("class", enabled ? btn.dataset.swKnobOn : btn.dataset.swKnobOff);
+				}
+			}
+		} catch (_) {
+			// Non-JSON response; leave button state and rely on a subsequent
+			// page load to re-sync. The fetch below will still refresh the
+			// detail fragment so the user sees the new server-side state.
+		}
+		htmx.ajax("GET", "/api/v1/connections/" + connID + "/conflict-detail",
+			{ target: "#detected-" + connID, swap: "innerHTML" });
+		document.body.dispatchEvent(new CustomEvent("sse:conflict.changed"));
+	} else {
+		var el = document.getElementById("detected-" + connID);
+		if (el) {
+			// Prefer the render-time translated copy pinned on the button's
+			// data-sw-error attribute. The English literal is retained as a
+			// last-resort fallback for the pathological case where the
+			// button has been removed from the DOM before the request
+			// settles (e.g. the features panel was torn down mid-flight).
+			el.textContent = (btn && btn.dataset.swError) || "Could not update this server-managed setting. Try again or reload the page.";
+		}
+	}
+}
+
 script toggleConnectionFeatures(connID string) {
 	var panel = document.getElementById("features-" + connID);
 	if (panel) {
@@ -4925,6 +5036,38 @@ templ connectionFeatureToggle(connID string, feature string, label string, enabl
 		>
 			<span class={ ruleToggleKnobClasses(enabled) }></span>
 		</button>
+	</div>
+}
+
+// connectionFeatureToggleTT is the tooltip-equipped variant of
+// connectionFeatureToggle. Used by the redesigned per-connection settings
+// card so users can hover a label and see the precondition semantics
+// (e.g. "writes are still gated if the server has NFO saving on").
+//
+// The template renders both a `title` attribute (mouse-hover affordance)
+// and a sibling sr-only <span> carrying the same tooltip text referenced
+// by aria-describedby. The sr-only node is the reliable screen-reader
+// description path since title is not consistently exposed by assistive
+// technology.
+templ connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string) {
+	{{ labelID := connID + "-" + feature + "-label" }}
+	{{ ttID := connID + "-" + feature + "-tt" }}
+	<div class="flex items-center justify-between" title={ tooltip }>
+		<span id={ labelID } class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+		<button
+			type="button"
+			class={ ruleToggleBtnClasses(enabled) }
+			role="switch"
+			aria-checked={ boolAttr(enabled) }
+			aria-labelledby={ labelID }
+			aria-describedby={ ttID }
+			data-conn-id={ connID }
+			data-feature={ feature }
+			onclick="toggleConnectionFeature(this)"
+		>
+			<span class={ ruleToggleKnobClasses(enabled) }></span>
+		</button>
+		<span id={ ttID } class="sr-only">{ tooltip }</span>
 	</div>
 }
 

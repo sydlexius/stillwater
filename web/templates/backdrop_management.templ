@@ -229,6 +229,8 @@ templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConn
 								}) }
 									hx-confirm={ t(ctx, "image.confirm_assign_backdrop") }
 									hx-swap="none"
+									data-sw-requires-image-write
+									title={ t(ctx, "image.disabled_during_conflict") }
 								>
 									{ t(ctx, "image.assign") }
 								</button>

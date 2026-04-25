@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // FanartFilename returns the correct filename for a fanart image at the given
@@ -214,6 +216,7 @@ func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) erro
 		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			return fmt.Errorf("clearing stale temp file %s: %w", tmpName, removeErr)
 		}
+		filesystem.TraceFSWrite("Rename(stage)", tmpPath, 0)
 		if err := os.Rename(oldPath, tmpPath); err != nil {
 			// Best-effort rollback of already-staged files.
 			var rollbackErrs []string
@@ -243,6 +246,7 @@ func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) erro
 		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
 		finalName := newBase + sf.ext
 		finalPath := filepath.Join(dir, finalName)
+		filesystem.TraceFSWrite("Rename(finalize)", finalPath, 0)
 		if err := os.Rename(sf.tmpPath, finalPath); err != nil {
 			phase2Err = fmt.Errorf("renaming %s to %s: %w", filepath.Base(sf.tmpPath), finalName, err)
 			break

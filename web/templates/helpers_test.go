@@ -116,3 +116,117 @@ func TestMirrorStatusLabel(t *testing.T) {
 		})
 	}
 }
+
+// TestManageServerFilesPayload pins the JSON the settings-page uses for
+// the hx-vals toggle so escaping drift does not silently break it. The
+// payload is produced by json.Marshal via hxValsJSONAny, so the compact
+// form without whitespace around the colon is what HTMX actually sees.
+func TestManageServerFilesPayload(t *testing.T) {
+	for _, enable := range []bool{true, false} {
+		got := manageServerFilesPayload(enable)
+		wantSubstr := `"enabled":true`
+		if !enable {
+			wantSubstr = `"enabled":false`
+		}
+		if len(got) == 0 || got[0] != '{' || got[len(got)-1] != '}' {
+			t.Errorf("payload not JSON-shaped: %q", got)
+		}
+		if !contains(got, wantSubstr) {
+			t.Errorf("enable=%v payload=%q want substring %q", enable, got, wantSubstr)
+		}
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && indexOf(s, sub) >= 0
+}
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestWarnTitle(t *testing.T) {
+	cases := map[string]string{
+		"image": "Image file writes paused",
+		"nfo":   "NFO file writes paused",
+		"both":  "Image and NFO file writes paused",
+		"":      "Write-back conflict",
+	}
+	for axis, want := range cases {
+		if got := warnTitle(axis); got != want {
+			t.Errorf("warnTitle(%q) = %q, want %q", axis, got, want)
+		}
+	}
+}
+
+func TestWarnSubtitle_UsesConnectionName(t *testing.T) {
+	v := ConflictBannerView{
+		Connections: []ConflictBannerConn{{Name: "Emby UAT", LibraryName: "Music"}},
+	}
+	got := warnSubtitle("image", v)
+	if got == "" || !contains(got, "Emby UAT") {
+		t.Errorf("subtitle should mention Emby UAT: %q", got)
+	}
+	if !contains(got, `"Music"`) {
+		t.Errorf("subtitle should mention library Music: %q", got)
+	}
+}
+
+func TestWarnSubtitle_FallsBackWhenNoConnections(t *testing.T) {
+	got := warnSubtitle("nfo", ConflictBannerView{})
+	if got == "" {
+		t.Error("empty fallback")
+	}
+}
+
+// TestWarnSubtitle_FallsBackWhenConnectionIdentityBlank pins the "A connected
+// server" fallback branch: the ledger may carry a connection with neither
+// Name nor Type populated (e.g. a peer whose identity probe failed before
+// the conflict was detected). Without this test the branch could silently
+// regress to the " is saving artwork..." rendering that started the
+// warnSubtitle fix in round 1.
+func TestWarnSubtitle_FallsBackWhenConnectionIdentityBlank(t *testing.T) {
+	v := ConflictBannerView{
+		Connections: []ConflictBannerConn{{Name: "", Type: "", LibraryName: "Music"}},
+	}
+	got := warnSubtitle("image", v)
+	if !contains(got, "A connected server") {
+		t.Errorf("expected generic actor fallback, got %q", got)
+	}
+}
+
+func TestWarnAffected_PerAxis(t *testing.T) {
+	if warnAffected("image") == "" || warnAffected("nfo") == "" || warnAffected("both") == "" {
+		t.Error("affected text should be populated for all axes")
+	}
+	if warnAffected("other") != "" {
+		t.Error("unknown axis should return empty")
+	}
+}
+
+func TestConflictGates(t *testing.T) {
+	cases := []struct {
+		state     string
+		wantImage bool
+		wantNFO   bool
+	}{
+		{"clean", false, false},
+		{"image_only", true, false},
+		{"nfo_only", false, true},
+		{"both", true, true},
+		{"round_trip", true, true},
+	}
+	for _, c := range cases {
+		v := ConflictBannerView{State: c.state}
+		if got := conflictImageGated(v); got != c.wantImage {
+			t.Errorf("conflictImageGated(%q) = %v, want %v", c.state, got, c.wantImage)
+		}
+		if got := conflictNFOGated(v); got != c.wantNFO {
+			t.Errorf("conflictNFOGated(%q) = %v, want %v", c.state, got, c.wantNFO)
+		}
+	}
+}

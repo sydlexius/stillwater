@@ -98,6 +98,9 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		return
 	}
+	if !r.gateImageWrite(w, req) {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
@@ -251,6 +254,9 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	if !r.gateImageWrite(w, req) {
 		return
 	}
 
@@ -548,6 +554,9 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	if !r.gateImageWrite(w, req) {
 		return
 	}
 
@@ -1946,6 +1955,9 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	if !r.gateImageWrite(w, req) {
 		return
 	}
 

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // conflictingExtensions maps each image extension to the alternatives that conflict.
@@ -99,6 +101,7 @@ func CleanupConflictingFormats(dir string, fileName string, logger *slog.Logger)
 					slog.String("deleted", oldPath),
 					slog.String("canonical", newPath))
 			} else {
+				filesystem.TraceFSWrite("Rename(case-mismatch)", newPath, 0)
 				if err := os.Rename(oldPath, newPath); err != nil {
 					return err
 				}

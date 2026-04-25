@@ -42,6 +42,36 @@ components:
             type: string
           description: Validation error details. Present when validation fails, containing one or more error messages.
       required: [error]
+    ConflictWriteBlock:
+      type: object
+      description: >
+        Envelope returned with HTTP 409 when Stillwater's conflict gate blocks
+        a write due to an active conflict on any axis: a connected media
+        server configured to write the same axis back to disk (`image` or
+        `nfo`), or a round-trip overlap between two enabled connections
+        whose library paths share a filesystem root (`round_trip`). Clients
+        should surface `reason` to the user and offer the "Let Stillwater
+        manage" toggle from the ledger.
+      properties:
+        error:
+          type: string
+          description: >
+            Stable machine-readable conflict code of the form
+            "{axis}_write_blocked" (e.g. image_write_blocked,
+            nfo_write_blocked, round_trip_write_blocked). Matches the
+            generic Error envelope so clients that ignore the conflict
+            fields still see a familiar shape.
+        axis:
+          type: string
+          enum: [image, nfo, round_trip]
+          description: Which write axis triggered the block.
+        reason:
+          type: string
+          description: Human-readable explanation safe for UI display.
+        ledger:
+          type: object
+          description: Full ledger snapshot that caused the block.
+      required: [error, axis, reason, ledger]
     NFOFieldMap:
       type: object
       description: Configures how genre, style, and mood categories map to NFO XML elements for platform compatibility.
@@ -2392,6 +2422,12 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the uploaded image. Present only when needs_crop is true, for use in a client-side crop tool.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
         "413":
           description: File exceeds 25MB limit
           content:
@@ -2487,6 +2523,12 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the fetched image. Present only when needs_crop is true, for use in a client-side crop tool.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/images/search:
     get:
@@ -2590,6 +2632,12 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/nfo/diff:
     get:
@@ -5992,6 +6040,148 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /connections/{id}/stillwater-managed:
+    post:
+      tags: [Connections]
+      summary: Toggle "Let Stillwater manage artwork and NFO files on this server"
+      operationId: setStillwaterManaged
+      description: >
+        When enabled=true, Stillwater PATCHes the peer's music library options
+        to disable SaveLocalMetadata + MetadataSavers (or Lidarr's metadata
+        consumers), snapshotting the prior config so it can be restored when
+        the toggle is flipped off. When enabled=false, Stillwater replays the
+        snapshot onto the peer and clears it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: >
+          The HTMX toggle in the Connections settings page posts form-encoded;
+          API/curl callers can use JSON. The handler accepts either and also
+          honors an `?enabled=` query param as a last resort.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Toggle state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [connection_id, feature_manage_server_files]
+                properties:
+                  connection_id:
+                    type: string
+                  feature_manage_server_files:
+                    type: boolean
+        "400":
+          description: >
+            Invalid request. Returned when the connection id is missing from
+            the path, the request body could not be read, or the body was
+            neither valid JSON nor a parseable form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Peer rejected the snapshot or restore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /conflicts:
+    get:
+      tags: [Connections]
+      summary: Get the current conflict ledger
+      operationId: getConflicts
+      description: >
+        Returns the aggregated conflict state across every configured connection.
+        Used by the UI banner and by external monitoring to audit whether
+        Stillwater's writes are currently gated. Pass refresh=1 to force a
+        synchronous re-query of every peer (useful after a remediation).
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Current ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                  round_trips:
+                    type: array
+                    items:
+                      type: object
+        "503":
+          description: Detector not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /config/conflict-banner:
+    get:
+      tags: [Connections]
+      summary: Rendered HTML partial for the conflict banner
+      operationId: getConflictBanner
+      description: >
+        HTMX consumers swap the response into #conflict-banner. Empty-body
+        responses (204) indicate detection is not available; an HTML fragment
+        is returned otherwise.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Banner HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "204":
+          description: Detection unavailable; no content
+
   /connections/{id}/platform-summary:
     get:
       tags: [Connections]
@@ -9202,11 +9392,11 @@ paths:
                     items:
                       type: string
         "409":
-          description: No filesystem path
+          description: Write blocked by the conflict ledger
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/ConflictWriteBlock"
 
   /artists/{id}/images/fanart/reorder:
     post:
@@ -9317,6 +9507,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: Write blocked by the conflict ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConflictWriteBlock"
         "502":
           description: Failed to download backdrop from platform
           content:

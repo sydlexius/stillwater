@@ -2111,3 +2111,83 @@ func TestPipeline_RunRule_PersistsArtistChanges(t *testing.T) {
 		t.Errorf("Biography = %q, want %q (fixer mutation not persisted via RunRule)", reloaded.Biography, "set-by-runrule")
 	}
 }
+
+// blockingGate implements WriteGate by always rejecting writes. Used to
+// verify attemptFix short-circuits image/NFO-category violations when the
+// conflict banner is active without needing a full HTTP stack.
+type blockingGate struct{}
+
+func (blockingGate) AllowImageWrite(_ context.Context) error { return errBlocked }
+func (blockingGate) AllowNFOWrite(_ context.Context) error   { return errBlocked }
+
+var errBlocked = errBlockedSentinel{}
+
+type errBlockedSentinel struct{}
+
+func (errBlockedSentinel) Error() string { return "blocked" }
+
+func TestAttemptFix_GateBlocksImageCategory(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	fixer := &mockFixer{canFix: true}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+	pipeline.SetWriteGate(blockingGate{})
+
+	fr := pipeline.attemptFix(context.Background(), &artist.Artist{}, &Violation{
+		RuleID:   "thumb_dimensions",
+		Category: "image",
+	})
+	if fr == nil || fr.Fixed {
+		t.Errorf("image fix should have been blocked, got %+v", fr)
+	}
+	if fixer.calls != 0 {
+		t.Errorf("fixer should not have been invoked when gate blocks, calls=%d", fixer.calls)
+	}
+}
+
+func TestAttemptFix_GateBlocksNFOCategory(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	fixer := &mockFixer{canFix: true}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+	pipeline.SetWriteGate(blockingGate{})
+
+	fr := pipeline.attemptFix(context.Background(), &artist.Artist{}, &Violation{
+		RuleID:   "artist_nfo_required",
+		Category: "nfo",
+	})
+	if fr == nil || fr.Fixed {
+		t.Errorf("nfo fix should have been blocked, got %+v", fr)
+	}
+	if fixer.calls != 0 {
+		t.Error("fixer should not have been invoked when gate blocks")
+	}
+}
+
+func TestAttemptFix_GateAllowsOtherCategories(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	fixer := &mockFixer{canFix: true}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+	pipeline.SetWriteGate(blockingGate{})
+
+	fr := pipeline.attemptFix(context.Background(), &artist.Artist{}, &Violation{
+		RuleID:   "some_metadata_rule",
+		Category: "metadata",
+	})
+	if fr == nil {
+		t.Fatal("nil result")
+	}
+	if !fr.Fixed {
+		t.Errorf("metadata-category fix should not be gated, got %+v", fr)
+	}
+	if fixer.calls != 1 {
+		t.Errorf("fixer should have run once for metadata category, calls=%d", fixer.calls)
+	}
+}

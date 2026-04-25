@@ -1588,3 +1588,35 @@ input:-webkit-autofill:focus {
 .dark .sw-tour-popover .driver-popover-arrow-side-right {
   border-right-color: rgb(30, 41, 59) !important;
 }
+
+/*
+ * Conflict-gate grey-out: when the top-of-page write-back banner is active
+ * on either axis, any button or input tagged with data-sw-requires-image-write
+ * (or -nfo-write) is visibly disabled. The banner component sets the matching
+ * body data attribute after each HTMX swap via web/static/js/conflict-gate.js.
+ * Pages opt in by adding the data attribute to their primary write buttons;
+ * the server-side 409 gate is the authoritative stop, this only improves UX.
+ */
+body[data-sw-image-gated="true"] [data-sw-requires-image-write],
+body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write],
+body[data-sw-image-gated="true"] [hx-post*="/images/"],
+body[data-sw-image-gated="true"] [hx-post*="/fanart/"],
+body[data-sw-nfo-gated="true"] [hx-patch*="/fields/"],
+body[data-sw-nfo-gated="true"] [hx-delete*="/fields/"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+  pointer-events: none;
+}
+
+/* Reveal the "paused" chip on the rules-category header when the gate is
+ * engaged. The chip ships hidden by default and is unhidden declaratively
+ * via the body data attribute, so SSE updates flip it without any JS. */
+body[data-sw-image-gated="true"] [data-sw-requires-image-write] .sw-conflict-gated-chip,
+body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-chip {
+  display: inline-flex;
+  opacity: 1;
+  cursor: help;
+  filter: none;
+  pointer-events: auto;
+}

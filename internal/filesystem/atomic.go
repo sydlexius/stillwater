@@ -18,6 +18,7 @@ import (
 //
 // If rename fails (e.g., cross-mount point), falls back to copy+delete with fsync.
 func WriteFileAtomic(target string, data []byte, perm os.FileMode) error {
+	TraceFSWrite("WriteFileAtomic", target, 0)
 	tmpPath := target + ".tmp"
 	bakPath := target + ".bak"
 

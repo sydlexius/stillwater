@@ -621,3 +621,55 @@ func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
 		t.Error("expected FeatureTriggerRefresh to be preserved as true")
 	}
 }
+
+// TestSetManageServerFiles_RoundTrip covers the ON/OFF toggle path for the
+// "Let Stillwater manage" setter plus the DB column read/write. Also pins
+// down SetPreStillwaterConfig alongside since they are always paired.
+func TestSetManageServerFiles_RoundTrip(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+	conn := &Connection{Name: "e", Type: TypeEmby, URL: "http://localhost:8096", APIKey: "k"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := svc.SetPreStillwaterConfig(ctx, conn.ID, `{"v":1}`); err != nil {
+		t.Fatalf("set snapshot: %v", err)
+	}
+	if err := svc.SetManageServerFiles(ctx, conn.ID, true); err != nil {
+		t.Fatalf("set toggle: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !got.FeatureManageServerFiles {
+		t.Error("toggle should be on")
+	}
+	if got.PreStillwaterConfigJSON != `{"v":1}` {
+		t.Errorf("snapshot round-trip = %q", got.PreStillwaterConfigJSON)
+	}
+
+	// Flip off + clear snapshot (mirrors the clearStillwaterManaged flow).
+	if err := svc.SetManageServerFiles(ctx, conn.ID, false); err != nil {
+		t.Fatalf("flip off: %v", err)
+	}
+	if err := svc.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
+		t.Fatalf("clear snapshot: %v", err)
+	}
+	got, _ = svc.GetByID(ctx, conn.ID)
+	if got.FeatureManageServerFiles || got.PreStillwaterConfigJSON != "" {
+		t.Errorf("post-clear state = %+v", got)
+	}
+}
+
+func TestSetManageServerFiles_ErrorOnUnknownID(t *testing.T) {
+	svc := setupTestService(t)
+	if err := svc.SetManageServerFiles(context.Background(), "ghost", true); err == nil {
+		t.Error("want error on unknown id")
+	}
+	if err := svc.SetPreStillwaterConfig(context.Background(), "ghost", "{}"); err == nil {
+		t.Error("want error on unknown id")
+	}
+}

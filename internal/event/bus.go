@@ -27,6 +27,11 @@ const (
 	FSDirCreated         Type = "fs.dir.created"
 	FSDirRemoved         Type = "fs.dir.removed"
 	FSUnexpectedWrite    Type = "fs.unexpected.write"
+	// ConflictChanged fires when the conflict ledger transitions between
+	// states (clean / image-writeback / NFO-writeback / round-trip).
+	// Subscribed by the SSE hub so the banner refetches and by any tests
+	// verifying gate state changes are observable.
+	ConflictChanged Type = "conflict.changed"
 )
 
 // Event represents something that happened in the system.

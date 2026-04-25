@@ -105,7 +105,13 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 // PRAGMA table_info to avoid the "duplicate column" error SQLite raises
 // when a column already exists.
 func ensureConnectionColumns(db *sql.DB) error {
-	return ensureColumn(db, "connections", "platform_server_id", "TEXT NOT NULL DEFAULT ''")
+	if err := ensureColumn(db, "connections", "platform_server_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "connections", "feature_manage_server_files", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	return ensureColumn(db, "connections", "pre_stillwater_config_json", "TEXT NOT NULL DEFAULT ''")
 }
 
 // ensureColumn adds a column to a table if it does not already exist.

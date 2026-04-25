@@ -15,6 +15,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -52,7 +53,15 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// GetMusicLibraries returns virtual folders with CollectionType "music".
+// GetMusicLibraries returns virtual folders that represent music content.
+// A folder qualifies when its CollectionType is explicitly "music" OR is
+// left blank. Emby lets administrators create libraries without an
+// explicit type (typically when the library mixes categories or was
+// created by an older client), and those libraries still receive NFO and
+// artwork writes, so they must be considered by conflict detection.
+// Collection types that positively identify another category -- "movies",
+// "tvshows", "homevideos", "boxsets", etc. -- are excluded so we do not
+// mistakenly offer to disable savers on a user's movies library.
 func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error) {
 	var folders []VirtualFolder
 	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
@@ -61,20 +70,27 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 
 	var music []VirtualFolder
 	for _, f := range folders {
-		if strings.EqualFold(f.CollectionType, "music") {
+		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
+		include := ct == "music" || ct == ""
+		c.Logger.Debug("emby virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
+		if include {
 			music = append(music, f)
 		}
 	}
 	return music, nil
 }
 
-// CheckNFOWriterEnabled checks if any Emby music library has an NFO metadata saver enabled.
-// Returns true and the library name if found. On error, logs a warning and returns false.
+// CheckNFOWriterEnabled reports whether any Emby music library has an NFO
+// metadata saver enabled. Returns the matching library name when one is found.
+// An error from the server is returned rather than swallowed so the caller
+// (conflict detector) can distinguish "no conflict" from "unable to check"
+// and populate ConnectionState.CheckErr for fail-closed gating; silently
+// returning (false, "", nil) on error would mark the connection clean and
+// reopen writes on a transient peer outage.
 func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
-		c.Logger.Warn("could not check emby library options", "error", err)
-		return false, "", nil
+		return false, "", fmt.Errorf("checking emby nfo saver settings: %w", err)
 	}
 
 	for _, lib := range libs {
@@ -481,6 +497,69 @@ func canonicalizeLockedFieldsDrops(in []string) (canon []string, dropped []strin
 		canon = append(canon, c)
 	}
 	return canon, dropped
+}
+
+// CheckImageSaverEnabled reports whether Emby will persist artwork files into
+// the shared library directory for any music library. Emby controls this with
+// the library-wide SaveLocalMetadata flag: when true, artwork is written to
+// disk alongside the media (using Emby's own naming convention, which
+// duplicates Stillwater's writes under different filenames). Returns true and
+// the first matching library's name; no saver found returns (false, "", nil).
+// An error from the server is returned rather than swallowed so the caller
+// can distinguish "no conflict" from "unable to check."
+func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return false, "", fmt.Errorf("checking emby image saver settings: %w", err)
+	}
+	for _, lib := range libs {
+		if lib.LibraryOptions.SaveLocalMetadata {
+			return true, lib.Name, nil
+		}
+	}
+	return false, "", nil
+}
+
+// SnapshotLibraryOptions captures the current SaveLocalMetadata + MetadataSavers
+// for every Emby music library. The returned JSON is stored on the connection
+// row and replayed verbatim by RestoreLibraryOptions on opt-out. The typed
+// GetMusicLibraries call lives in this package because the Emby and Jellyfin
+// VirtualFolder shapes diverge slightly; the per-library snapshot envelope
+// itself is shared via mediabrowser.BuildSnapshot.
+func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
+	}
+	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
+	for _, lib := range libs {
+		savers := lib.LibraryOptions.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		entries = append(entries, mediabrowser.LibrarySaverSnapshotEntry{
+			LibraryID:         lib.ItemID,
+			LibraryName:       lib.Name,
+			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
+			MetadataSavers:    savers,
+		})
+	}
+	return mediabrowser.BuildSnapshot(entries)
+}
+
+// DisableFileWriteBack clears SaveLocalMetadata on every Emby music library.
+// Delegates to mediabrowser since the Emby and Jellyfin /Library/VirtualFolders
+// surfaces are identical at the raw-JSON level; the platform argument only
+// adjusts the per-call debug log prefix.
+func (c *Client) DisableFileWriteBack(ctx context.Context) error {
+	return mediabrowser.DisableFileWriteBack(ctx, c, c.Logger, "emby")
+}
+
+// RestoreLibraryOptions applies a previously saved snapshot to the Emby peer.
+// Delegates to the shared mediabrowser implementation; see that package for the
+// raw-JSON round-trip rationale and the null-key sanitization the POST needs.
+func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string) error {
+	return mediabrowser.RestoreLibraryOptions(ctx, c, c.Logger, "emby", snapshotJSON)
 }
 
 func (c *Client) setAuth(req *http.Request) {

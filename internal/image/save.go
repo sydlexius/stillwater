@@ -108,6 +108,7 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 				continue
 			}
 			// Subsequent files: create symlink to primary
+			filesystem.TraceFSWrite("Symlink", targetPath, 0)
 			if err := filesystem.CreateRelativeSymlink(primaryPath, targetPath); err != nil {
 				logger.Warn("symlink creation failed, falling back to copy",
 					slog.String("target", targetPath),

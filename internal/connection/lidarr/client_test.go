@@ -86,62 +86,47 @@ func TestGetMetadataProfiles(t *testing.T) {
 	}
 }
 
+// CheckNFOWriterEnabled now queries /api/v1/metadata (the NFO/image
+// consumer endpoint) rather than /api/v1/config/metadataprovider (the
+// audio-tag writer). Tests assert the new contract: Fields[artistMetadata]
+// = true on an enabled consumer triggers the conflict.
+
 func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/metadata" {
+			t.Errorf("path = %s, want /api/v1/metadata", r.URL.Path)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
-			{"id":1,"metadataType":"MediaBrowser","consumerId":1,"consumerName":"MediaBrowser","enable":true},
-			{"id":2,"metadataType":"Kodi (XBMC) / Emby","consumerId":2,"consumerName":"Kodi (XBMC) / Emby","enable":true}
+			{"id":1,"name":"Kodi (XBMC) / Emby","enable":true,"fields":[
+				{"name":"artistMetadata","value":true},
+				{"name":"artistImages","value":false}
+			]}
 		]`))
 	}))
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
-	enabled, libName, err := c.CheckNFOWriterEnabled(context.Background())
+	enabled, name, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
 	}
 	if !enabled {
 		t.Error("expected NFO writer to be enabled")
 	}
-	if libName != "" {
-		t.Errorf("library name = %q, want empty (Lidarr setting is global)", libName)
+	if name != "Kodi (XBMC) / Emby" {
+		t.Errorf("name = %q, want Kodi (XBMC) / Emby", name)
 	}
 }
 
-func TestCheckNFOWriterEnabled_SingleObject(t *testing.T) {
-	// Newer Lidarr versions return a single object instead of an array
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
-		}
-		if r.URL.Path != "/api/v1/config/metadataprovider" {
-			t.Errorf("path = %s, want /api/v1/config/metadataprovider", r.URL.Path)
-		}
-		if r.Header.Get("X-Api-Key") != "key" {
-			t.Errorf("X-Api-Key = %q, want key", r.Header.Get("X-Api-Key"))
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`))
-	}))
-	defer srv.Close()
-
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
-	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
-	if err != nil {
-		t.Fatalf("CheckNFOWriterEnabled (single object) failed: %v", err)
-	}
-	if !enabled {
-		t.Error("expected NFO writer to be enabled from single object response")
-	}
-}
-
-func TestCheckNFOWriterEnabled_False(t *testing.T) {
+func TestCheckNFOWriterEnabled_FieldFalseMeansNoConflict(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
-			{"id":1,"metadataType":"MediaBrowser","consumerId":1,"consumerName":"MediaBrowser","enable":true},
-			{"id":2,"metadataType":"Kodi (XBMC) / Emby","consumerId":2,"consumerName":"Kodi (XBMC) / Emby","enable":false}
+			{"id":1,"name":"Kodi","enable":true,"fields":[
+				{"name":"artistMetadata","value":false},
+				{"name":"artistImages","value":false}
+			]}
 		]`))
 	}))
 	defer srv.Close()
@@ -152,7 +137,29 @@ func TestCheckNFOWriterEnabled_False(t *testing.T) {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
 	}
 	if enabled {
-		t.Error("expected NFO writer to be disabled")
+		t.Error("expected NFO writer to be disabled when artistMetadata=false")
+	}
+}
+
+func TestCheckNFOWriterEnabled_False(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Master enable=false overrides whatever the fields say.
+		_, _ = w.Write([]byte(`[
+			{"id":1,"name":"Kodi","enable":false,"fields":[
+				{"name":"artistMetadata","value":true}
+			]}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
+	}
+	if enabled {
+		t.Error("expected NFO writer to be disabled when consumer is disabled")
 	}
 }
 

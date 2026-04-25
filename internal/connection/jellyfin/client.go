@@ -15,6 +15,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
+	"github.com/sydlexius/stillwater/internal/connection/mediabrowser"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -52,7 +53,11 @@ func (c *Client) TestConnection(ctx context.Context) error {
 	return nil
 }
 
-// GetMusicLibraries returns virtual folders with CollectionType "music".
+// GetMusicLibraries returns virtual folders that represent music content.
+// See emby.GetMusicLibraries for the rationale behind accepting libraries
+// with a blank CollectionType. Every considered folder is logged so users
+// can diagnose why a given library does or does not appear in the
+// conflict banner.
 func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error) {
 	var folders []VirtualFolder
 	if err := c.Get(ctx, "/Library/VirtualFolders", &folders); err != nil {
@@ -61,20 +66,27 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 
 	var music []VirtualFolder
 	for _, f := range folders {
-		if strings.EqualFold(f.CollectionType, "music") {
+		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
+		include := ct == "music" || ct == ""
+		c.Logger.Debug("jellyfin virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
+		if include {
 			music = append(music, f)
 		}
 	}
 	return music, nil
 }
 
-// CheckNFOWriterEnabled checks if any Jellyfin music library has an NFO metadata saver enabled.
-// Returns true and the library name if found. On error, logs a warning and returns false.
+// CheckNFOWriterEnabled reports whether any Jellyfin music library has an NFO
+// metadata saver enabled. Returns the matching library name when one is found.
+// An error from the server is returned rather than swallowed so the caller
+// (conflict detector) can distinguish "no conflict" from "unable to check"
+// and populate ConnectionState.CheckErr for fail-closed gating; silently
+// returning (false, "", nil) on error would mark the connection clean and
+// reopen writes on a transient peer outage.
 func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {
-		c.Logger.Warn("could not check jellyfin library options", "error", err)
-		return false, "", nil
+		return false, "", fmt.Errorf("checking jellyfin nfo saver settings: %w", err)
 	}
 
 	for _, lib := range libs {
@@ -385,6 +397,63 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
 	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+}
+
+// CheckImageSaverEnabled reports whether Jellyfin will persist artwork files
+// into the shared library directory for any music library. Like Emby, this is
+// governed by the library-wide SaveLocalMetadata flag (the "Save artwork into
+// media folders" checkbox). True means any Stillwater write will be mirrored
+// by Jellyfin under its own filename convention, duplicating the file.
+func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return false, "", fmt.Errorf("checking jellyfin image saver settings: %w", err)
+	}
+	for _, lib := range libs {
+		if lib.LibraryOptions.SaveLocalMetadata {
+			return true, lib.Name, nil
+		}
+	}
+	return false, "", nil
+}
+
+// SnapshotLibraryOptions captures the current saver state for every Jellyfin
+// music library. The typed GetMusicLibraries call lives in this package
+// because the Emby and Jellyfin VirtualFolder shapes diverge slightly; the
+// per-library snapshot envelope itself is shared via mediabrowser.BuildSnapshot.
+func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
+	}
+	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
+	for _, lib := range libs {
+		savers := lib.LibraryOptions.MetadataSavers
+		if savers == nil {
+			savers = []string{}
+		}
+		entries = append(entries, mediabrowser.LibrarySaverSnapshotEntry{
+			LibraryID:         lib.ItemID,
+			LibraryName:       lib.Name,
+			SaveLocalMetadata: lib.LibraryOptions.SaveLocalMetadata,
+			MetadataSavers:    savers,
+		})
+	}
+	return mediabrowser.BuildSnapshot(entries)
+}
+
+// DisableFileWriteBack clears SaveLocalMetadata on every Jellyfin music
+// library. Delegates to mediabrowser since Emby and Jellyfin share the
+// /Library/VirtualFolders REST surface byte-for-byte at the raw-JSON level;
+// the platform argument only adjusts the per-call debug log prefix.
+func (c *Client) DisableFileWriteBack(ctx context.Context) error {
+	return mediabrowser.DisableFileWriteBack(ctx, c, c.Logger, "jellyfin")
+}
+
+// RestoreLibraryOptions applies a previously saved snapshot to the Jellyfin
+// peer. Delegates to the shared mediabrowser implementation.
+func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string) error {
+	return mediabrowser.RestoreLibraryOptions(ctx, c, c.Logger, "jellyfin", snapshotJSON)
 }
 
 func (c *Client) setAuth(req *http.Request) {

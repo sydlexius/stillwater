@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
 	templates "github.com/sydlexius/stillwater/web/templates"
 )
@@ -242,6 +243,9 @@ func (r *Router) handlePlatformBackdropThumbnail(w http.ResponseWriter, req *htt
 func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
+		return
+	}
+	if !r.gateImageWrite(w, req) {
 		return
 	}
 
@@ -571,6 +575,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to clear stale temp file"})
 			return
 		}
+		filesystem.TraceFSWrite("Rename(reorder-stage)", tmpPath, 0)
 		if renameErr := os.Rename(paths[srcIdx], tmpPath); renameErr != nil { //nolint:gosec // path from trusted fanart discovery
 			r.logger.Error("staging fanart for reorder",
 				slog.String("artist_id", artistID),
@@ -612,6 +617,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
 		finalName := newBase + sf.originalExt
 		finalPath := filepath.Join(dir, finalName)
+		filesystem.TraceFSWrite("Rename(reorder-finalize)", finalPath, 0)
 		if renameErr := os.Rename(sf.tmpPath, finalPath); renameErr != nil { //nolint:gosec // paths built from controlled directory
 			r.logger.Error("applying fanart reorder",
 				slog.String("artist_id", artistID),

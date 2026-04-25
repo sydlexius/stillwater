@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/a-h/templ"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -228,6 +229,114 @@ func tourStepsJSON(ctx context.Context) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// warnTitle returns the state-specific headline used by the amber banner
+// variants. Copy mirrors the approved mockup so the three axes (image,
+// nfo, both) each read as a concrete action rather than a generic warning.
+func warnTitle(axis string) string {
+	switch axis {
+	case "image":
+		return "Image file writes paused"
+	case "nfo":
+		return "NFO file writes paused"
+	case "both":
+		return "Image and NFO file writes paused"
+	}
+	return "Write-back conflict"
+}
+
+// warnSubtitle builds the body-text clause that explains which server is
+// causing the pause and, where available, which library.
+func warnSubtitle(axis string, v ConflictBannerView) string {
+	if len(v.Connections) == 0 {
+		switch axis {
+		case "image":
+			return "a connected server is saving artwork files into the music library, which clobbers Stillwater's files."
+		case "nfo":
+			return "a connected server has an NFO metadata saver enabled."
+		}
+		return "a connected server is writing files back into the music library."
+	}
+	c := v.Connections[0]
+	name := c.Name
+	if name == "" {
+		name = c.Type
+	}
+	if strings.TrimSpace(name) == "" {
+		// Last-resort label when both Name and Type are blank so the
+		// rendered subtitle never starts with " is saving...".
+		name = "A connected server"
+	}
+	switch axis {
+	case "image":
+		if c.LibraryName != "" {
+			return name + " is saving artwork files into library \"" + c.LibraryName + "\", which clobbers Stillwater's files."
+		}
+		return name + " is saving artwork files into the music library, which clobbers Stillwater's files."
+	case "nfo":
+		if c.LibraryName != "" {
+			return name + " has an NFO metadata saver enabled on library \"" + c.LibraryName + "\"."
+		}
+		return name + " has an NFO metadata saver enabled."
+	case "both":
+		return name + " is saving both artwork and NFO files into the music library."
+	}
+	return name + " is writing files back into the music library."
+}
+
+// warnAffected returns the "Affected: ..." sub-line matching the mockup's
+// per-axis guidance. The image-axis copy intentionally matches every gated
+// endpoint (upload, fetch, crop, fanart assign + batch fetch, rules,
+// maintenance) so the banner does not promise actions the API will reject
+// with 409. The earlier copy claimed "edits to existing artwork are still
+// allowed", which contradicted the gate -- gateImageWrite blocks crop and
+// fanart assign too.
+func warnAffected(axis string) string {
+	switch axis {
+	case "image":
+		return "Affected: image upload, fetch, crop, fanart assign + batch fetch, rules, maintenance."
+	case "nfo":
+		return "Affected: NFO edits, generation, rules targeting NFO. Images unaffected."
+	case "both":
+		return "Affected: image fetch/edit/crop/assign, NFO generate/edit, rule fix-all, maintenance."
+	}
+	return ""
+}
+
+// conflictImageGated reports whether the banner state should cause
+// image-writing UI to grey out. Composite "both" and "round_trip" always
+// gate; "image_only" gates; everything else allows writes.
+func conflictImageGated(v ConflictBannerView) bool {
+	return v.State == "image_only" || v.State == "both" || v.State == "round_trip"
+}
+
+// conflictNFOGated mirrors conflictImageGated for the NFO axis.
+func conflictNFOGated(v ConflictBannerView) bool {
+	return v.State == "nfo_only" || v.State == "both" || v.State == "round_trip"
+}
+
+// conflictConnectionHref builds the in-app deep link the banner uses to
+// jump from an offender row to its settings card. The tab query param
+// activates the Connections tab before the fragment scrolls the browser
+// to the specific card, so the user lands directly on the "Detected on
+// this server" panel regardless of which tab was previously active.
+func conflictConnectionHref(connID string) templ.SafeURL {
+	return templ.SafeURL(basePath() + "/settings?tab=connections#connection-" + connID)
+}
+
+// conflictSettingsConnectionsHref targets the Connections tab without a
+// specific card, used by the "Review each connection" CTA in banner
+// state C.
+func conflictSettingsConnectionsHref() templ.SafeURL {
+	return templ.SafeURL(basePath() + "/settings?tab=connections")
+}
+
+// manageServerFilesPayload returns the JSON body for the hx-vals attribute
+// used by the "Let Stillwater manage" toggle. enable=true means the user is
+// flipping the toggle on (so the POST enables remediation); false reverses.
+func manageServerFilesPayload(enable bool) string {
+	return hxValsJSONAny(map[string]any{"enabled": enable})
 }
 
 // boolAttr returns "true" or "false" for use in HTML attributes like aria-checked.
