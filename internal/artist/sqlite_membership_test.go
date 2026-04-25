@@ -12,7 +12,7 @@ import (
 // migration applied + foreign keys enabled, matching the convention used in
 // internal/database/migrate_test.go. Tests share this helper so they get the
 // same schema as production startup, including the artist_libraries table
-// added in #1004.
+// .
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := database.Open(":memory:")
@@ -75,7 +75,7 @@ func seedMembershipFixtures(t *testing.T, db *sql.DB) {
 }
 
 // TestMembershipAddIsIdempotent verifies Add inserts a row on first call
-// and is a no-op on repeat. Issue #1004.
+// and is a no-op on repeat.
 func TestMembershipAddIsIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db)
@@ -182,7 +182,7 @@ func TestMembershipCascadeOnArtistDelete(t *testing.T) {
 }
 
 // TestArtistGetByName verifies the unscoped name lookup is case-insensitive
-// and returns nil when no match exists. Issue #1004.
+// and returns nil when no match exists.
 func TestArtistGetByName(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -218,7 +218,7 @@ func TestArtistGetByName(t *testing.T) {
 
 // TestArtistFindByMBIDOrNameUnscoped covers the dedupe priority: MBID
 // match wins when present; falls through to case-insensitive name
-// otherwise. Issue #1004.
+// otherwise.
 func TestArtistFindByMBIDOrNameUnscoped(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

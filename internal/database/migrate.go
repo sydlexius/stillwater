@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/pressly/goose/v3"
 )
@@ -47,7 +49,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensuring connection columns: %w", err)
 	}
 
-	// Issue #1078: legacy code paths (or sessions without
+	// legacy code paths (or sessions without
 	// PRAGMA foreign_keys=ON) left orphan rows in artist_platform_ids whose
 	// artist_id or connection_id no longer exist. Sweep them at startup so the
 	// invariant the FK declarations imply actually holds. Idempotent.
@@ -55,7 +57,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("cleaning orphan artist_platform_ids: %w", err)
 	}
 
-	// Issue #1076: dedupe duplicate artist rows mapping to the same
+	// dedupe duplicate artist rows mapping to the same
 	// (connection_id, platform_artist_id) pair before enforcing the unique
 	// index. Goose only ever runs 001 once per DB, so the index added in
 	// 001_initial_schema.sql does not appear on databases that already
@@ -64,7 +66,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensuring artist_platform_ids unique constraint: %w", err)
 	}
 
-	// Issue #1078 follow-on: rule_results.violation_id FK is ON DELETE SET
+	// rule_results.violation_id FK is ON DELETE SET
 	// NULL, so every rule_violations DELETE scans rule_results without an
 	// index. Now that foreign key enforcement is actually on, that scan
 	// shows up in the query-plan regression test. Create the index
@@ -74,7 +76,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensuring rule_results.violation_id index: %w", err)
 	}
 
-	// Issue #699: seed rule_results rows for every open / pending_choice
+	// seed rule_results rows for every open / pending_choice
 	// violation already in the database. Without this, pre-existing
 	// violations would have a missing first_failed_at until the next
 	// pipeline pass re-evaluated the artist, losing the "how long has
@@ -85,7 +87,7 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("backfilling rule_results from violations: %w", err)
 	}
 
-	// Issue #1004: artists become M:N with libraries via artist_libraries.
+	// artists become M:N with libraries via artist_libraries.
 	// On fresh installs this only ensures the table exists (001 already has
 	// it). On pre-1004 DBs this also backfills memberships from the orphan
 	// artists.library_id column and collapses legacy duplicate artist rows
@@ -155,7 +157,7 @@ func ensureConnectionColumns(db *sql.DB) error {
 // cleanupOrphanArtistPlatformIDs removes rows from artist_platform_ids whose
 // artist_id or connection_id no longer reference an existing row. Such rows
 // should be impossible given the ON DELETE CASCADE foreign keys, but issue
-// #1078 caught real orphans in the wild -- presumably from a delete path that
+// Earlier audits caught real orphans in the wild -- presumably from a delete path that
 // ran without PRAGMA foreign_keys=ON, or from raw SQL bypassing the
 // repository. Running this on every startup is idempotent and cheap.
 func cleanupOrphanArtistPlatformIDs(db *sql.DB) error {
@@ -163,7 +165,7 @@ func cleanupOrphanArtistPlatformIDs(db *sql.DB) error {
 	res, err := db.ExecContext(ctx, `
 		DELETE FROM artist_platform_ids
 		WHERE artist_id NOT IN (SELECT id FROM artists)
-		   OR connection_id NOT IN (SELECT id FROM connections)
+		 OR connection_id NOT IN (SELECT id FROM connections)
 	`)
 	if err != nil {
 		return fmt.Errorf("deleting orphan artist_platform_ids: %w", err)
@@ -179,7 +181,7 @@ func cleanupOrphanArtistPlatformIDs(db *sql.DB) error {
 
 // ensureArtistPlatformIDsUnique collapses duplicate platform mapping rows
 // that share the same (connection_id, platform_artist_id) pair, then creates
-// the UNIQUE index that prevents future duplicates. Issue #1076 documented
+// the UNIQUE index that prevents future duplicates. documented
 // the scenario: scanner and import paths could each create a mapping row for
 // the same Emby/Jellyfin item, race to claim the platform id, and produce
 // inconsistent server-side lock state.
@@ -301,12 +303,12 @@ func ensureArtistPlatformIDsUnique(db *sql.DB) error {
 // migrated DB it is a fast no-op.
 //
 // The collapse step picks a canonical artist per duplicate group as follows:
-//  1. Group by MusicBrainz ID when present (strongest identity).
-//  2. Group by LOWER(name) for rows without an MBID, excluding any artist
-//     already claimed by an MBID group.
-//  3. Within each group, prefer the row whose library is filesystem-sourced
-//     (or whose library_id is null and so represents the canonical
-//     filesystem-only path); tie-break by oldest created_at, then artist id.
+// 1. Group by MusicBrainz ID when present (strongest identity).
+// 2. Group by LOWER(name) for rows without an MBID, excluding any artist
+// already claimed by an MBID group.
+// 3. Within each group, prefer the row whose library is filesystem-sourced
+// (or whose library_id is null and so represents the canonical
+// filesystem-only path); tie-break by oldest created_at, then artist id.
 //
 // Re-pointing FK rows to the canonical artist uses INSERT OR IGNORE for
 // composite-PK / unique-indexed tables (the canonical row's existing entry
@@ -319,17 +321,22 @@ func ensureArtistLibrariesMembership(db *sql.DB) error {
 	logger := slog.Default().With("component", "database")
 
 	// Step 1: idempotent table + index. 001 has these for fresh installs;
-	// pre-1004 DBs need them at startup.
+	// pre-1004 DBs need them at startup. The CHECK constraint includes
+	// 'lidarr' (later addition); rebuildArtistLibrariesIfStaleCheck
+	// detects an old shape (no lidarr) and rewrites the table in place.
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS artist_libraries (
-			artist_id  TEXT NOT NULL REFERENCES artists(id)   ON DELETE CASCADE,
+			artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
 			library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-			source     TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','manual')),
-			added_at   TEXT NOT NULL DEFAULT (datetime('now')),
+			source TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','lidarr','manual')),
+			added_at TEXT NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (artist_id, library_id)
 		)
 	`); err != nil {
 		return fmt.Errorf("ensuring artist_libraries table: %w", err)
+	}
+	if err := rebuildArtistLibrariesIfStaleCheck(ctx, db); err != nil {
+		return fmt.Errorf("rebuilding artist_libraries with current CHECK: %w", err)
 	}
 	if _, err := db.ExecContext(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_artist_libraries_library
@@ -354,7 +361,7 @@ func ensureArtistLibrariesMembership(db *sql.DB) error {
 			a.id,
 			a.library_id,
 			CASE
-				WHEN c.type = 'emby'     THEN 'emby'
+				WHEN c.type = 'emby' THEN 'emby'
 				WHEN c.type = 'jellyfin' THEN 'jellyfin'
 				ELSE 'filesystem'
 			END,
@@ -439,7 +446,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 				?,
 				a.library_id,
 				CASE
-					WHEN c.type = 'emby'     THEN 'emby'
+					WHEN c.type = 'emby' THEN 'emby'
 					WHEN c.type = 'jellyfin' THEN 'jellyfin'
 					ELSE 'filesystem'
 				END,
@@ -448,7 +455,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 			JOIN libraries l ON l.id = a.library_id
 			LEFT JOIN connections c ON c.id = l.connection_id
 			WHERE a.id IN (%s)
-			  AND a.library_id IS NOT NULL AND a.library_id != ''
+			 AND a.library_id IS NOT NULL AND a.library_id != ''
 		`, placeholders)
 		if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
 			return fmt.Errorf("inserting loser memberships under canonical=%s: %w",
@@ -472,7 +479,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 		return fmt.Errorf("commit collapse tx: %w", err)
 	}
 
-	logger.Info("collapsed duplicate artist rows (issue #1004)",
+	logger.Info("collapsed duplicate artist rows",
 		"groups", len(allGroups),
 		"repointed_rows", totalRepointed,
 		"removed_artists", totalRemoved,
@@ -497,13 +504,13 @@ WITH ranked AS (
 		a.created_at,
 		CASE
 			WHEN a.library_id IS NULL OR a.library_id = '' THEN 0
-			WHEN c.type IS NULL                         THEN 1
+			WHEN c.type IS NULL THEN 1
 			ELSE 2
 		END AS source_rank
 	FROM artists a
 	LEFT JOIN artist_provider_ids ap
 		ON ap.artist_id = a.id AND ap.provider = 'musicbrainz'
-	LEFT JOIN libraries   l ON l.id = a.library_id
+	LEFT JOIN libraries l ON l.id = a.library_id
 	LEFT JOIN connections c ON c.id = l.connection_id
 )
 `
@@ -516,7 +523,7 @@ func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup
 		SELECT id, mbid, source_rank, created_at
 		FROM ranked
 		WHERE mbid != ''
-		  AND mbid IN (
+		 AND mbid IN (
 			SELECT mbid FROM ranked
 			WHERE mbid != ''
 			GROUP BY mbid HAVING COUNT(*) > 1
@@ -687,7 +694,7 @@ func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers 
 	// artist is deleted.
 	//
 	// artist_platform_ids is here (not in insertOrIgnore) because of the
-	// UNIQUE (connection_id, platform_artist_id) added by issue #1076.
+	// UNIQUE (connection_id, platform_artist_id) added in a prior change.
 	// Moving the loser's row onto canonical preserves the platform mapping
 	// when canonical does not yet have one for the same connection.
 	updateOrIgnore := []string{
@@ -732,6 +739,64 @@ func repointArtistFKs(ctx context.Context, tx *sql.Tx, canonical string, losers 
 	}
 
 	return total, nil
+}
+
+// rebuildArtistLibrariesIfStaleCheck detects pre-existing artist_libraries
+// tables whose CHECK constraint predates the addition of 'lidarr' as a
+// permitted source value and rewrites them in place.
+// SQLite does not support ALTER ... DROP CHECK, so we do the standard
+// rebuild dance: create a temp table with the current shape, copy data
+// across, drop the old, rename. Idempotent: when the existing CHECK
+// already matches, this is a fast no-op.
+func rebuildArtistLibrariesIfStaleCheck(ctx context.Context, db *sql.DB) error {
+	var sqlText sql.NullString
+	if err := db.QueryRowContext(ctx,
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name='artist_libraries'`).Scan(&sqlText); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("reading artist_libraries CREATE: %w", err)
+	}
+	if !sqlText.Valid || strings.Contains(sqlText.String, "'lidarr'") {
+		return nil
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin rebuild tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `
+		CREATE TABLE artist_libraries_new (
+			artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+			library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+			source TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','lidarr','manual')),
+			added_at TEXT NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (artist_id, library_id)
+		)
+	`); err != nil {
+		return fmt.Errorf("creating artist_libraries_new: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO artist_libraries_new (artist_id, library_id, source, added_at)
+		SELECT artist_id, library_id, source, added_at FROM artist_libraries
+	`); err != nil {
+		return fmt.Errorf("copying artist_libraries rows: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DROP TABLE artist_libraries`); err != nil {
+		return fmt.Errorf("dropping old artist_libraries: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE artist_libraries_new RENAME TO artist_libraries`); err != nil {
+		return fmt.Errorf("renaming artist_libraries_new: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit rebuild: %w", err)
+	}
+	slog.Default().With("component", "database").Info(
+		"rebuilt artist_libraries table to refresh CHECK constraint")
+	return nil
 }
 
 // columnExists returns true if the named column is present on the table.

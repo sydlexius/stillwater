@@ -12,18 +12,18 @@ type Repository interface {
 	GetByMBID(ctx context.Context, mbid string) (*Artist, error)
 
 	// GetByName looks up an artist by case-insensitive exact name match
-	// without any library scope. Issue #1004: connection populates use this
+	// without any library scope. connection populates use this
 	// to dedupe across all libraries (the legacy GetByNameAndLibrary scoped
 	// to one library and missed cross-library duplicates).
 	GetByName(ctx context.Context, name string) (*Artist, error)
 
 	// FindByMBIDOrNameUnscoped performs unscoped MBID-then-name lookup,
-	// matching the dedupe priority used by connection populates. Issue #1004
-	// replacement for the library-scoped FindByMBIDOrName.
+	// matching the dedupe priority used by connection populates. Replaces
+	// the library-scoped FindByMBIDOrName.
 	FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error)
 
 	// Deprecated: use GetByMBID. The library-scoped variant remains while
-	// legacy populate paths are migrated; remove with #1004 cleanup.
+	// legacy populate paths are migrated; remove with the M:N cleanup.
 	GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error)
 	// Deprecated: use GetByName. See GetByMBIDAndLibrary above.
 	GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error)

@@ -10,7 +10,7 @@ var ErrPlatformIDNotFound = errors.New("platform id not found")
 
 // ErrPlatformIDClaimedByAnotherArtist is returned by SetPlatformID when the
 // requested (connection_id, platform_artist_id) pair is already held by a
-// different artist. Issue #1076 added a UNIQUE index on that pair so a
+// different artist. A new a UNIQUE index on that pair so a
 // platform item can only ever be claimed by a single Stillwater artist.
 // Callers that prefer to no-op rather than fail (for example, the manual-
 // library backfill helper) should match on this sentinel via errors.Is.
@@ -34,7 +34,7 @@ type PlatformPresence struct {
 	HasLidarr   bool `json:"has_lidarr"`
 	// HasFilesystem records membership in at least one filesystem-source
 	// library (a libraries row whose connection_id is NULL). Replaces the
-	// pre-#1004 path-presence heuristic in the artist list row, which
+	// legacy path-presence heuristic in the artist list row, which
 	// gave false positives for Emby/Jellyfin-only artists that happen to
 	// carry an on-disk path written by the connection populate.
 	HasFilesystem bool `json:"has_filesystem"`

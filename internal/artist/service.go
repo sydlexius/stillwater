@@ -138,7 +138,7 @@ func NewService(db *sql.DB) *Service {
 }
 
 // SetMembershipRepository attaches a MembershipRepository to the artist
-// Service for the issue #1004 M:N artist-libraries surface. Setter form
+// Service for the M:N artist-libraries surface. Setter form
 // matches SetMBSnapshotRepository so existing NewServiceWithRepos callers
 // (and their test fakes) keep working without a signature break.
 func (s *Service) SetMembershipRepository(repo MembershipRepository) {
@@ -227,7 +227,7 @@ func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 
 // MarkDirty stamps dirty_since for one artist. The rule pipeline picks up
 // artists whose dirty_since is newer than rules_evaluated_at on the next
-// "Run Rules" invocation. See issue #698.
+// "Run Rules" invocation.
 func (s *Service) MarkDirty(ctx context.Context, id string, ts time.Time) error {
 	return s.artists.MarkDirty(ctx, id, ts)
 }
@@ -354,7 +354,7 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 }
 
 // GetByName retrieves an artist by case-insensitive exact name match,
-// without library scope. Issue #1004 replacement for GetByNameAndLibrary.
+// without library scope. replacement for GetByNameAndLibrary.
 // Returns nil, nil when no match is found.
 func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
 	a, err := s.artists.GetByName(ctx, name)
@@ -371,7 +371,7 @@ func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
 }
 
 // FindByMBIDOrNameUnscoped tries MBID first, then case-insensitive name,
-// without library scope. Issue #1004 replacement for FindByMBIDOrName,
+// without library scope. replacement for FindByMBIDOrName,
 // used by connection populate paths to dedupe across all libraries.
 // Returns nil, nil when no match is found.
 func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error) {
@@ -389,7 +389,7 @@ func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name strin
 }
 
 // AddLibraryMembership records that an artist is observed by the given
-// library. Idempotent. Issue #1004.
+// library. Idempotent
 func (s *Service) AddLibraryMembership(ctx context.Context, artistID, libraryID, source string) error {
 	if s.memberships == nil {
 		return nil
@@ -398,7 +398,7 @@ func (s *Service) AddLibraryMembership(ctx context.Context, artistID, libraryID,
 }
 
 // RemoveLibraryMembership removes a single (artist, library) pair from the
-// membership table. Issue #1004.
+// membership table
 func (s *Service) RemoveLibraryMembership(ctx context.Context, artistID, libraryID string) error {
 	if s.memberships == nil {
 		return nil
@@ -407,7 +407,7 @@ func (s *Service) RemoveLibraryMembership(ctx context.Context, artistID, library
 }
 
 // LibrariesForArtist returns every library this artist is currently a
-// member of. Issue #1004.
+// member of
 func (s *Service) LibrariesForArtist(ctx context.Context, artistID string) ([]LibraryMembership, error) {
 	if s.memberships == nil {
 		return nil, nil
@@ -417,7 +417,7 @@ func (s *Service) LibrariesForArtist(ctx context.Context, artistID string) ([]Li
 
 // CountLibrariesForArtist returns the number of libraries this artist is
 // currently a member of. Used by the unlink path to decide whether to
-// prune the artist after a library detachment. Issue #1004.
+// prune the artist after a library detachment
 func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) (int, error) {
 	if s.memberships == nil {
 		return 0, nil
@@ -425,7 +425,7 @@ func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) 
 	return s.memberships.CountForArtist(ctx, artistID)
 }
 
-// Deprecated: use FindByMBIDOrNameUnscoped after the issue #1004 rollout.
+// Deprecated: use FindByMBIDOrNameUnscoped after the rollout.
 // FindByMBIDOrName finds an artist by MBID first, then falls back to
 // case-insensitive name match, both scoped to the given library.
 // Returns nil, nil when no match is found.
@@ -753,8 +753,8 @@ func applyProviderFieldToArtist(a *Artist, providerName, value string) {
 
 // ValidateFieldUpdate returns a non-nil error when the field value is
 // invalid. Validation rules:
-//   - "name" must not be empty or whitespace-only.
-//   - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
+// - "name" must not be empty or whitespace-only.
+// - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
 //
 // All other fields are accepted as-is (free-form text).
 func ValidateFieldUpdate(field, value string) error {

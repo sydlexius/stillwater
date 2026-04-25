@@ -254,6 +254,17 @@ func setupPlatformPresenceTest(t *testing.T) *Service {
 			VALUES ('conn-2', 'Test Jellyfin', 'jellyfin', 'http://jf:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
 		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
 			VALUES ('conn-3', 'Test Lidarr', 'lidarr', 'http://lidarr:8686', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		// presence is derived from artist_libraries, so the
+		// fixture creates one library per connection. Tests using this
+		// setup add membership rows pointing at these library IDs to
+		// signal presence (in addition to the artist_platform_ids row,
+		// which carries the actual platform identifier).
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-emby', 'lib-emby', '/music', 'regular', 'import', 'conn-1', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-jelly', 'lib-jelly', '/music', 'regular', 'import', 'conn-2', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-lidarr', 'lib-lidarr', '/music', 'regular', 'import', 'conn-3', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatal(err)
@@ -261,6 +272,16 @@ func setupPlatformPresenceTest(t *testing.T) *Service {
 	}
 
 	return NewService(db)
+}
+
+// addMembership inserts an artist_libraries row for a presence test. Issue
+// #1004: presence is now derived from these rows, not from the platform
+// mapping, so tests asserting Has* must seed both.
+func addMembership(t *testing.T, svc *Service, artistID, libraryID, source string) {
+	t.Helper()
+	if err := svc.AddLibraryMembership(context.Background(), artistID, libraryID, source); err != nil {
+		t.Fatalf("AddLibraryMembership(%s, %s, %s): %v", artistID, libraryID, source, err)
+	}
 }
 
 func TestGetPlatformPresenceForArtists(t *testing.T) {
@@ -271,20 +292,24 @@ func TestGetPlatformPresenceForArtists(t *testing.T) {
 	a2 := createTestArtist(t, svc, "Bjork")
 	a3 := createTestArtist(t, svc, "Portishead")
 
-	// a1: Emby + Jellyfin
+	// a1: Emby + Jellyfin (presence requires both the
+	// platform mapping AND the library membership; helper seeds both).
 	if err := svc.SetPlatformID(ctx, a1.ID, "conn-1", "emby-111"); err != nil {
 		t.Fatal(err)
 	}
+	addMembership(t, svc, a1.ID, "lib-emby", "emby")
 	if err := svc.SetPlatformID(ctx, a1.ID, "conn-2", "jf-111"); err != nil {
 		t.Fatal(err)
 	}
+	addMembership(t, svc, a1.ID, "lib-jelly", "jellyfin")
 
 	// a2: Lidarr only
 	if err := svc.SetPlatformID(ctx, a2.ID, "conn-3", "lidarr-222"); err != nil {
 		t.Fatal(err)
 	}
+	addMembership(t, svc, a2.ID, "lib-lidarr", "lidarr")
 
-	// a3: no platform IDs (should be absent from result)
+	// a3: no platform IDs and no memberships (should be absent from result)
 
 	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{a1.ID, a2.ID, a3.ID})
 	if err != nil {
@@ -353,10 +378,15 @@ func TestGetPlatformPresenceForArtists_AllPlatforms(t *testing.T) {
 
 	a := createTestArtist(t, svc, "Radiohead")
 
-	// Artist with all three platform types
+	// Artist with all three platform types. presence flows
+	// from artist_libraries memberships, not the platform mappings; seed
+	// both to assert presence.
 	svc.SetPlatformID(ctx, a.ID, "conn-1", "emby-111")
+	addMembership(t, svc, a.ID, "lib-emby", "emby")
 	svc.SetPlatformID(ctx, a.ID, "conn-2", "jf-111")
+	addMembership(t, svc, a.ID, "lib-jelly", "jellyfin")
 	svc.SetPlatformID(ctx, a.ID, "conn-3", "lidarr-111")
+	addMembership(t, svc, a.ID, "lib-lidarr", "lidarr")
 
 	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{a.ID})
 	if err != nil {

@@ -203,7 +203,7 @@ func (s *Service) ClearConnectionID(ctx context.Context, connectionID string) er
 }
 
 // Delete removes a library by ID. Artists are preserved; their membership
-// rows in artist_libraries cascade-delete via the FK. Issue #1004: this is
+// rows in artist_libraries cascade-delete via the FK. this is
 // the "unlink only" path, where the user wants to disconnect the library
 // but keep the artists (which may still be observed by other libraries).
 //
@@ -301,21 +301,21 @@ func collectUnlinkCandidates(ctx context.Context, tx *sql.Tx, libraryID string) 
 }
 
 // DeleteWithArtists removes a library and prunes artists that have no
-// other home. Issue #1004 redefines this for the M:N model and folds in
-// the legacy connection-orphan handling from issue #1072:
+// other home. Membership-based for the M:N model, with a fallback prune
+// for legacy connection-orphan rows that predate artist_libraries:
 //
-//   - Membership prune (issue #1004): for each artist with a membership
-//     in the deleted library, if zero memberships remain after the
-//     cascade AND zero platform mappings exist, drop the artist row.
-//     Artists with sibling-library memberships or live platform mappings
-//     elsewhere survive.
-//   - Connection-orphan prune (issue #1072 carryover): when the deleted
-//     library was the last library on its connection, also drop artists
-//     whose only platform mapping is on that connection and who had no
-//     library_id assignment. These are pre-#1004 data shapes that the
-//     migration backfill could not see (no library_id to copy from).
-//     The "last library on connection" guard avoids deleting data that a
-//     sibling library still legitimately references.
+// - Membership prune: for each artist with a membership
+// in the deleted library, if zero memberships remain after the
+// cascade AND zero platform mappings exist, drop the artist row.
+// Artists with sibling-library memberships or live platform mappings
+// elsewhere survive.
+// - Connection-orphan prune (carryover): when the deleted
+// library was the last library on its connection, also drop artists
+// whose only platform mapping is on that connection and who had no
+// library_id assignment. These are legacy data shapes that the
+// migration backfill could not see (no library_id to copy from).
+// The "last library on connection" guard avoids deleting data that a
+// sibling library still legitimately references.
 //
 // Order matters: the membership snapshot is taken BEFORE the library
 // delete fires the cascade.
@@ -410,19 +410,19 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 
 	// Connection-orphan sweep for artists never in candidateIDs (no
 	// membership row, no library_id pointer, but a mapping on the
-	// just-unlinked connection). Pre-#1004 #1072 case.
+	// just-unlinked connection). Legacy case.
 	if connOrphanPruneAllowed {
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM artists
 			WHERE id IN (
 				SELECT ap.artist_id FROM artist_platform_ids ap
 				WHERE ap.connection_id = ?
-				  AND ap.artist_id NOT IN (
+				 AND ap.artist_id NOT IN (
 					SELECT artist_id FROM artist_libraries
-				  )
-				  AND ap.artist_id NOT IN (
+				 )
+				 AND ap.artist_id NOT IN (
 					SELECT artist_id FROM artist_platform_ids WHERE connection_id != ?
-				  )
+				 )
 			)
 		`, connectionID.String, connectionID.String); err != nil {
 			return fmt.Errorf("sweeping connection-orphan artists: %w", err)

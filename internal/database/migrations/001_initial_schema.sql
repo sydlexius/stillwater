@@ -218,7 +218,7 @@ CREATE INDEX idx_artists_locked ON artists(locked);
 CREATE TABLE IF NOT EXISTS artist_libraries (
     artist_id  TEXT NOT NULL REFERENCES artists(id)   ON DELETE CASCADE,
     library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
-    source     TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','manual')),
+    source     TEXT NOT NULL CHECK (source IN ('filesystem','emby','jellyfin','lidarr','manual')),
     added_at   TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (artist_id, library_id)
 );

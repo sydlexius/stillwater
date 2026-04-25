@@ -21,7 +21,7 @@ func newSQLitePlatformIDRepo(db *sql.DB) *sqlitePlatformIDRepo {
 func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, platformArtistID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	// Issue #1076: a UNIQUE index on (connection_id, platform_artist_id)
+	// a UNIQUE index on (connection_id, platform_artist_id)
 	// prevents two artist rows from claiming the same platform item.
 	// SQLite supports only one ON CONFLICT clause per INSERT, and the
 	// existing one targets (artist_id, connection_id) for upsert. Detect
@@ -119,10 +119,15 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 }
 
 // GetPresenceForArtists returns a map of artist ID to PlatformPresence.
-// Connection-platform presence comes from joining artist_platform_ids with
-// connections; filesystem presence (issue #1004) comes from joining
-// artist_libraries with libraries WHERE connection_id IS NULL. Artists with
-// no mappings AND no memberships are omitted.
+// presence derives from artist_libraries memberships (the
+// authoritative "currently observed by" record), not from artist_platform_ids
+// (which can lag behind library state -- a library unlink leaves the
+// connection and its mappings intact). One query covers all four presence
+// flags; library.connection_id IS NULL maps to filesystem presence,
+// otherwise the connection's type maps to HasEmby/HasJellyfin/HasLidarr.
+//
+// Artists with no membership rows are omitted from the result map; the
+// caller treats a missing entry as "no presence."
 func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error) {
 	if len(artistIDs) == 0 {
 		return nil, nil
@@ -134,15 +139,18 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	in := strings.Join(placeholders, ",")
 
-	// Connection-platform presence. One row per (artist, connection_type).
-	platformQuery := `SELECT ap.artist_id, c.type ` + //nolint:gosec // G202: placeholders are "?" literals
-		`FROM artist_platform_ids ap ` +
-		`JOIN connections c ON c.id = ap.connection_id ` +
-		`WHERE ap.artist_id IN (` + in + `) ` +
-		`GROUP BY ap.artist_id, c.type`
-	rows, err := r.db.QueryContext(ctx, platformQuery, args...)
+	// Alias is "presence_kind" rather than "source" to avoid colliding
+	// with libraries.source in the GROUP BY (SQLite resolves the bare
+	// name to the table column, raising "ambiguous column" otherwise).
+	query := `SELECT al.artist_id, ` + //nolint:gosec // G202: placeholders are "?" literals
+		`CASE WHEN l.connection_id IS NULL THEN 'filesystem' ELSE COALESCE(c.type, '') END AS presence_kind ` +
+		`FROM artist_libraries al ` +
+		`JOIN libraries l ON l.id = al.library_id ` +
+		`LEFT JOIN connections c ON c.id = l.connection_id ` +
+		`WHERE al.artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
+		`GROUP BY al.artist_id, presence_kind`
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch getting platform presence: %w", err)
 	}
@@ -150,12 +158,14 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 
 	result := make(map[string]PlatformPresence, len(artistIDs))
 	for rows.Next() {
-		var artistID, connType string
-		if err := rows.Scan(&artistID, &connType); err != nil {
+		var artistID, kind string
+		if err := rows.Scan(&artistID, &kind); err != nil {
 			return nil, fmt.Errorf("scanning platform presence row: %w", err)
 		}
 		p := result[artistID]
-		switch connType {
+		switch kind {
+		case "filesystem":
+			p.HasFilesystem = true
 		case "emby":
 			p.HasEmby = true
 		case "jellyfin":
@@ -167,35 +177,6 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating platform presence rows: %w", err)
-	}
-
-	// Filesystem-library presence: any artist with at least one
-	// artist_libraries row pointing at a connection-less library is in
-	// at least one filesystem library. Issue #1004 replacement for the
-	// pre-existing path-based heuristic.
-	fsQuery := `SELECT al.artist_id ` + //nolint:gosec // G202: placeholders are "?" literals
-		`FROM artist_libraries al ` +
-		`JOIN libraries l ON l.id = al.library_id ` +
-		`WHERE al.artist_id IN (` + in + `) ` +
-		`AND l.connection_id IS NULL ` +
-		`GROUP BY al.artist_id`
-	fsRows, err := r.db.QueryContext(ctx, fsQuery, args...)
-	if err != nil {
-		return nil, fmt.Errorf("batch getting filesystem presence: %w", err)
-	}
-	defer fsRows.Close() //nolint:errcheck
-
-	for fsRows.Next() {
-		var artistID string
-		if err := fsRows.Scan(&artistID); err != nil {
-			return nil, fmt.Errorf("scanning filesystem presence row: %w", err)
-		}
-		p := result[artistID]
-		p.HasFilesystem = true
-		result[artistID] = p
-	}
-	if err := fsRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating filesystem presence rows: %w", err)
 	}
 	return result, nil
 }

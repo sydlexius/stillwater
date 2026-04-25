@@ -51,7 +51,7 @@ func seedArtist(t *testing.T, db *sql.DB, id, name string) {
 
 // TestArtistPlatformIDsCascadeOnArtistDelete verifies that deleting an artist
 // row removes its artist_platform_ids row via ON DELETE CASCADE. This is the
-// regression test called for in issue #1078.
+// regression test called for in
 func TestArtistPlatformIDsCascadeOnArtistDelete(t *testing.T) {
 	db := openMigratedDB(t)
 	ctx := context.Background()
@@ -80,7 +80,7 @@ func TestArtistPlatformIDsCascadeOnArtistDelete(t *testing.T) {
 	}
 }
 
-// TestArtistPlatformIDsUniqueConstraint covers issue #1076: inserting two
+// TestArtistPlatformIDsUniqueConstraint covers inserting two
 // rows with the same (connection_id, platform_artist_id) must be rejected
 // by the UNIQUE index, regardless of artist_id.
 func TestArtistPlatformIDsUniqueConstraint(t *testing.T) {
@@ -206,7 +206,7 @@ func TestEnsureArtistPlatformIDsUnique_DedupesExisting(t *testing.T) {
 	}
 }
 
-// TestCleanupOrphanArtistPlatformIDs covers the safety net for issue #1078.
+// TestCleanupOrphanArtistPlatformIDs covers the safety net for
 // Insert a row with foreign keys disabled (mimicking the suspected legacy
 // path), then run the cleanup and assert the orphan is gone.
 func TestCleanupOrphanArtistPlatformIDs(t *testing.T) {
@@ -304,7 +304,7 @@ func seedConnectionWithType(t *testing.T, db *sql.DB, id, connType string) {
 // TestArtistLibrariesBackfillFromOrphanColumn verifies that the migration
 // reads the legacy artists.library_id column and creates a matching
 // artist_libraries membership row, with source derived from the library's
-// connection type. Issue #1004.
+// connection type.
 func TestArtistLibrariesBackfillFromOrphanColumn(t *testing.T) {
 	db := openMigratedDB(t)
 	ctx := context.Background()
@@ -366,12 +366,10 @@ func TestArtistLibrariesBackfillFromOrphanColumn(t *testing.T) {
 
 // TestCollapseDuplicatesByMBID seeds two artist rows with the same MBID under
 // different libraries (filesystem + emby) and asserts the migration:
-//   - keeps the filesystem row as canonical
-//   - re-points the loser's artist_provider_ids and other FK rows
-//   - inserts a membership row for the loser's library under the canonical
-//   - deletes the loser artist row
-//
-// Issue #1004 architectural fix.
+// - keeps the filesystem row as canonical
+// - re-points the loser's artist_provider_ids and other FK rows
+// - inserts a membership row for the loser's library under the canonical
+// - deletes the loser artist row
 func TestCollapseDuplicatesByMBID(t *testing.T) {
 	db := openMigratedDB(t)
 	ctx := context.Background()
@@ -515,12 +513,12 @@ func TestCollapseDuplicatesByName(t *testing.T) {
 
 // TestCollapseDuplicatesPreservesPlatformMappings covers the regression
 // caught during UAT: artist_platform_ids has a secondary UNIQUE on
-// (connection_id, platform_artist_id) added in #1076. The original collapse
+// (connection_id, platform_artist_id). The original collapse
 // helper used INSERT OR IGNORE to move the loser's mapping onto canonical,
 // which the unique index rejected, and the loser cascade-delete then dropped
 // the mapping entirely. UPDATE OR IGNORE on the artist_id column moves the
 // loser row onto canonical and only drops the row when canonical already
-// has a mapping for the same connection. Issue #1004.
+// has a mapping for the same connection.
 func TestCollapseDuplicatesPreservesPlatformMappings(t *testing.T) {
 	db := openMigratedDB(t)
 	ctx := context.Background()

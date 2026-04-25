@@ -105,7 +105,7 @@ func artistSourceInfo(a artist.Artist, sources map[string]LibrarySourceInfo) Lib
 }
 
 // artistHasFilesystem returns true when the artist holds at least one
-// filesystem-library membership. Issue #1004 replaced the prior path-based
+// filesystem-library membership. Replaced the prior path-based
 // heuristic, which gave false positives for connection-only artists whose
 // path was set by Emby / Jellyfin populates.
 func artistHasFilesystem(pp artist.PlatformPresence) bool {

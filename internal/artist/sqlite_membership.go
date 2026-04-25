@@ -8,7 +8,7 @@ import (
 
 // LibraryMembership records that an artist is observed by a particular
 // library. An artist can have many memberships across filesystem and
-// connection libraries. Issue #1004.
+// connection libraries
 type LibraryMembership struct {
 	ArtistID  string `json:"artist_id"`
 	LibraryID string `json:"library_id"`

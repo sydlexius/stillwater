@@ -546,7 +546,7 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 
 // dedupeForImport finds an existing artist that an inbound platform item
 // (Emby / Jellyfin / Lidarr) should attach to, scanning across ALL
-// libraries (issue #1004). Returns:
+// libraries. Returns:
 //   - (existing, false): caller attaches platform mapping + library
 //     membership and skips creation
 //   - (nil, false): caller creates a new artist row
@@ -618,7 +618,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
 				}
-				// Issue #1004: record that this Emby library now also
+				// record that this Emby library now also
 				// observes the existing artist (filesystem-imported or
 				// Jellyfin-imported, etc.). Idempotent.
 				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "emby"); memErr != nil {
@@ -658,7 +658,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
 			}
-			// Issue #1004: record initial library membership for the
+			// record initial library membership for the
 			// freshly-created artist.
 			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "emby"); memErr != nil {
 				r.logger.Warn("adding emby library membership for new artist", "name", a.Name, "error", memErr)
@@ -707,7 +707,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
 				}
-				// Issue #1004: record that this Jellyfin library now also
+				// record that this Jellyfin library now also
 				// observes the existing artist. Idempotent.
 				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "jellyfin"); memErr != nil {
 					r.logger.Warn("adding jellyfin library membership", "name", existing.Name, "error", memErr)
@@ -746,7 +746,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
 			}
-			// Issue #1004: record initial library membership for the
+			// record initial library membership for the
 			// freshly-created artist.
 			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "jellyfin"); memErr != nil {
 				r.logger.Warn("adding jellyfin library membership for new artist", "name", a.Name, "error", memErr)
@@ -775,38 +775,22 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		result.Total++
 		mbid := la.ForeignArtistID
 
-		if mbid != "" {
-			existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-			if lookupErr != nil {
-				r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-				result.Skipped++
-				continue
+		existing, skip := r.dedupeForImport(ctx, mbid, la.ArtistName, "lidarr", result)
+		if skip {
+			continue
+		}
+
+		if existing != nil {
+			if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+				r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
 			}
-			if existing != nil {
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
-					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
-				}
-				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
-				result.Skipped++
-				continue
+			// record this Lidarr library's membership.
+			if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "lidarr"); memErr != nil {
+				r.logger.Warn("adding lidarr library membership", "name", existing.Name, "error", memErr)
 			}
-		} else {
-			existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
-			if lookupErr != nil {
-				r.logger.Warn("dedup lookup by name", "name", la.ArtistName, "error", lookupErr)
-				result.Skipped++
-				continue
-			}
-			if existing != nil {
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
-					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
-				}
-				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
-				result.Skipped++
-				continue
-			}
+			r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
+			result.Skipped++
+			continue
 		}
 
 		a := &artist.Artist{
@@ -822,9 +806,12 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		}
 		result.Created++
 
-		// Store the platform-to-Stillwater artist ID mapping.
 		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
+		}
+		// record initial library membership.
+		if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "lidarr"); memErr != nil {
+			r.logger.Warn("adding lidarr library membership for new artist", "name", a.Name, "error", memErr)
 		}
 		r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), a.ID, manualLibs)
 	}
@@ -1079,7 +1066,7 @@ func (r *Router) backfillPlatformIDToManualLibs(
 			continue
 		}
 		if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
-			// Issue #1076: a UNIQUE index on
+			// a UNIQUE index on
 			// (connection_id, platform_artist_id) means at most one
 			// artist row can hold a given platform mapping. The
 			// connection-library artist already claimed it before we
