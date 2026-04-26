@@ -639,3 +639,52 @@ func TestCollapseDuplicatesPreferMBIDOverName(t *testing.T) {
 		t.Errorf("a-other survived = %d, want 1 (MBID-less row must not be folded into MBID group)", stillThere)
 	}
 }
+
+// TestCollapseDuplicates_CreatedAtMixedFormatsPickEarliest covers the
+// pickCanonicalCTE datetime normalization. The artists table contains
+// rows in two formats in the wild: SQLite's "YYYY-MM-DD HH:MM:SS" written
+// by older code, and RFC3339 "YYYY-MM-DDTHH:MM:SSZ" written by newer Go
+// callers. Without `datetime()` normalization, lexical TEXT ordering
+// would treat 'T' (0x54) > ' ' (0x20), so a 2026-01-01T00:00:00Z RFC3339
+// row would sort AFTER a 2026-02-01 00:00:00 SQLite row even though it
+// is chronologically earlier. The canonical-pick rule is "lowest
+// (source_rank, created_at, id) wins", so the wrong winner could be
+// chosen on real-world DBs whose history mixes both formats.
+func TestCollapseDuplicates_CreatedAtMixedFormatsPickEarliest(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	seedLibrary(t, db, "lib-fs", "filesystem", "")
+
+	// Two filesystem rows with the same MBID, identical source_rank.
+	// Tie-breaker is created_at_norm, then id. Format mismatch:
+	//   a-rfc:    2026-01-01T00:00:00Z (RFC3339, chronologically earliest)
+	//   a-sqlite: 2026-02-01 00:00:00  (SQLite text, chronologically later)
+	// Lexically: 'T' > ' ', so without datetime() the SQLite row sorts
+	// first and would be picked as canonical -- the wrong answer.
+	seedArtistWithLibrary(t, db, "a-rfc", "TwinPeaks", "lib-fs", "2026-01-01T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-sqlite", "TwinPeaks", "lib-fs", "2026-02-01 00:00:00")
+	for _, aid := range []string{"a-rfc", "a-sqlite"} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
+			VALUES (?, 'musicbrainz', 'mbid-twinpeaks', datetime('now'))
+		`, aid); err != nil {
+			t.Fatalf("seeding mb id %s: %v", aid, err)
+		}
+	}
+
+	if err := ensureArtistLibrariesMembership(db); err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
+
+	// The chronologically earliest row (a-rfc, January) must survive as
+	// canonical; the later row (a-sqlite, February) must be the loser.
+	var survivor string
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM artists WHERE name = 'TwinPeaks'`).Scan(&survivor); err != nil {
+		t.Fatalf("query survivor: %v", err)
+	}
+	if survivor != "a-rfc" {
+		t.Errorf("canonical = %q, want a-rfc (chronologically earliest after datetime() normalization)", survivor)
+	}
+}

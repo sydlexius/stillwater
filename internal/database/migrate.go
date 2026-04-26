@@ -544,13 +544,19 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 // artist_provider_ids, so we LEFT JOIN it here for the MBID grouping query.
 // The CTE is reused by both group finders so the canonical-pick rule is
 // identical.
+//
+// created_at is normalized via datetime() because the artists table has
+// a mix of formats in the wild (SQLite "YYYY-MM-DD HH:MM:SS" written by
+// older code, RFC3339 "T"-separated strings written by newer Go callers).
+// Lexical TEXT ordering would otherwise pick the wrong winner whenever
+// the formats mix in the same duplicate group.
 const pickCanonicalCTE = `
 WITH ranked AS (
 	SELECT
 		a.id,
 		COALESCE(ap.provider_id, '') AS mbid,
 		a.name,
-		a.created_at,
+		datetime(a.created_at) AS created_at_norm,
 		CASE
 			WHEN a.library_id IS NULL OR a.library_id = '' THEN 0
 			WHEN c.type IS NULL THEN 1
@@ -569,7 +575,7 @@ WITH ranked AS (
 // (source_rank, created_at, id) row.
 func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup, error) {
 	rows, err := db.QueryContext(ctx, pickCanonicalCTE+`
-		SELECT id, mbid, source_rank, created_at
+		SELECT id, mbid, source_rank, created_at_norm
 		FROM ranked
 		WHERE mbid != ''
 		 AND mbid IN (
@@ -577,7 +583,7 @@ func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup
 			WHERE mbid != ''
 			GROUP BY mbid HAVING COUNT(*) > 1
 		)
-		ORDER BY mbid, source_rank, created_at, id
+		ORDER BY mbid, source_rank, created_at_norm, id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("querying mbid duplicate groups: %w", err)
@@ -613,13 +619,13 @@ func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup
 // for filesystem-only artists that were also imported from Emby/Jellyfin).
 func findDuplicateGroupsByName(ctx context.Context, db *sql.DB, claimed map[string]bool) ([]collapseGroup, error) {
 	rows, err := db.QueryContext(ctx, pickCanonicalCTE+`
-		SELECT id, name, source_rank, created_at
+		SELECT id, name, source_rank, created_at_norm
 		FROM ranked
 		WHERE LOWER(name) IN (
 			SELECT LOWER(name) FROM ranked
 			GROUP BY LOWER(name) HAVING COUNT(*) > 1
 		)
-		ORDER BY LOWER(name), source_rank, created_at, id
+		ORDER BY LOWER(name), source_rank, created_at_norm, id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("querying name duplicate groups: %w", err)

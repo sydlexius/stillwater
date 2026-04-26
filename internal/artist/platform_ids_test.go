@@ -484,7 +484,6 @@ func TestGetPlatformPresenceForArtists_LegacyLibraryIDFallback(t *testing.T) {
 	// Create an artist directly via SQL so artist.Service.Create does
 	// not auto-populate artist_libraries. The artists.library_id column
 	// is the only thing pointing at lib-emby for this row.
-	_ = svc
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO artists (id, name, sort_name, library_id, path, created_at, updated_at)
 		VALUES ('a-legacy-emby', 'Legacy Emby', 'Legacy Emby', 'lib-emby',
