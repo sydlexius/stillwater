@@ -246,6 +246,13 @@ func TestHandleArtistRenameDirectory_PublishesEvent(t *testing.T) {
 // counters off the slog handler call to assert the log fired so a future
 // refactor that drops the slog.Error in the default branch is caught.
 func TestHandleArtistRenameDirectory_FilesystemError500(t *testing.T) {
+	// Root bypasses POSIX permission bits, so the chmod 0500 below would
+	// not produce EACCES and the default 500 branch we want to exercise
+	// would never fire. Same skip pattern used elsewhere in the repo.
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+
 	r, a, root := renameHandlerFixture(t)
 
 	// Strip write permission so any rename or copy under the parent fails.

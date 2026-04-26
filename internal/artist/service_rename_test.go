@@ -229,6 +229,13 @@ func (r *updateAndDestroyRepo) Update(_ context.Context, a *Artist) error {
 // "renaming %q to %q: %w". This exercises both the wrapped-error branch in
 // the service and the handler's default 500 mapping for unsentineled errors.
 func TestRenameDirectory_RenameError(t *testing.T) {
+	// Root bypasses POSIX permission bits, so the chmod 0500 below would
+	// not produce EACCES and the wrapped-error branch we want to exercise
+	// would never fire. Same skip pattern used by maintenance_test.go.
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+
 	svc, a, root := renameTestArtist(t, "lib-rename-fserr")
 	ctx := context.Background()
 
