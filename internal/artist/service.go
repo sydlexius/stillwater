@@ -3,10 +3,15 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // ctxKey is the type for context value keys used by the artist package.
@@ -591,6 +596,126 @@ func (s *Service) update(ctx context.Context, a *Artist, markDirty bool) error {
 	}
 
 	return s.persistNormalized(ctx, a)
+}
+
+// Errors returned by RenameDirectory. Callers (HTTP handlers, tests) inspect
+// these to distinguish bad-input cases from server-side failures so they can
+// surface appropriate status codes and messages without parsing error strings.
+var (
+	// ErrRenameInvalidName indicates the requested directory name is empty,
+	// contains a path separator, or resolves to "." or "..". The handler
+	// translates this to HTTP 400.
+	ErrRenameInvalidName = errors.New("invalid directory name")
+	// ErrRenameNoPath indicates the artist has no on-disk path to rename
+	// (e.g. it was created via a virtual library). HTTP 409.
+	ErrRenameNoPath = errors.New("artist has no filesystem path")
+	// ErrRenameLocked indicates the artist is locked, so automated and
+	// destructive operations are skipped. HTTP 409.
+	ErrRenameLocked = errors.New("artist is locked")
+	// ErrRenameDestExists indicates the target directory already exists, so
+	// the rename would clobber another artist's directory. HTTP 409.
+	ErrRenameDestExists = errors.New("destination directory already exists")
+	// ErrRenameNoChange indicates the requested name matches the current
+	// directory name, so there is nothing to do. HTTP 400.
+	ErrRenameNoChange = errors.New("new directory name matches current")
+)
+
+// RenameDirectory renames the artist's on-disk directory to newDirName and
+// persists the new path to the database. This is intentionally decoupled from
+// metadata edits: editing an artist's display name only touches the DB row
+// and NFO file, while a directory rename is a separate, explicit action that
+// can break platform mappings (Emby/Jellyfin item-to-path) and must be
+// initiated by the user via a dedicated endpoint.
+//
+// newDirName must be a single path segment (no separators) and may not be "."
+// or "..". The new path is computed by replacing the leaf of the artist's
+// current Path with newDirName, preserving the parent directory.
+//
+// On success, the artist row's path column is updated to the new path. The
+// in-memory Artist passed in to the caller is not mutated; callers should
+// re-fetch via GetByID if they need the updated value.
+//
+// Side effects intentionally NOT performed here (caller's responsibility):
+//   - Re-issuing platform-id mappings on Emby/Jellyfin so connected platforms
+//     pick up the new directory. The fix-direction in issue #1077 calls this
+//     out; the API handler (or a future workflow) drives that step.
+//   - Rule re-evaluation. The caller's normal Update path stamps dirty_since;
+//     for a path-only change we do the same so the rule pipeline picks it up
+//     on the next sweep.
+func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName string) (newPath string, err error) {
+	newDirName = strings.TrimSpace(newDirName)
+	if newDirName == "" || newDirName == "." || newDirName == ".." {
+		return "", ErrRenameInvalidName
+	}
+	// Reject any path separator (forward or back slash) so callers cannot
+	// escape the parent directory by smuggling a relative path through.
+	if strings.ContainsAny(newDirName, `/\`) {
+		return "", ErrRenameInvalidName
+	}
+
+	a, err := s.artists.GetByID(ctx, artistID)
+	if err != nil {
+		return "", err
+	}
+	if a.Locked {
+		return "", ErrRenameLocked
+	}
+	if strings.TrimSpace(a.Path) == "" {
+		return "", ErrRenameNoPath
+	}
+
+	parent := filepath.Dir(a.Path)
+	newPath = filepath.Join(parent, newDirName)
+
+	// Short-circuit when the names match exactly. We do not attempt a
+	// Unicode-equivalence check here (the rule fixer does that for the
+	// canonical-name workflow); this endpoint is user-driven and the user
+	// asked for an exact name.
+	if newPath == a.Path {
+		return "", ErrRenameNoChange
+	}
+
+	// Refuse to clobber an existing directory. The fixer does the same
+	// safety check; mirror it here so the explicit-rename endpoint is no
+	// looser than the rule-engine path.
+	if _, statErr := os.Stat(newPath); statErr == nil {
+		return "", ErrRenameDestExists
+	} else if !os.IsNotExist(statErr) {
+		return "", fmt.Errorf("checking destination %q: %w", newPath, statErr)
+	}
+
+	oldPath := a.Path
+	if err := filesystem.RenameDirAtomic(oldPath, newPath); err != nil {
+		return "", fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
+	}
+
+	// Persist the new path. We re-use the full Update path so dirty_since
+	// is stamped and the rule pipeline picks the change up on the next pass.
+	a.Path = newPath
+	if err := s.update(ctx, a, true); err != nil {
+		// The on-disk rename succeeded but the DB write failed. Attempt to
+		// roll the directory back so the next scan does not find a
+		// directory whose path no longer matches the artist row. A failed
+		// rollback is logged but not returned: the original error is what
+		// the caller needs to surface, and the operator can reconcile by
+		// re-running a scan.
+		if rollbackErr := filesystem.RenameDirAtomic(newPath, oldPath); rollbackErr != nil {
+			slog.Error("rename directory: db update failed and rollback also failed",
+				"artist_id", artistID,
+				"new_path", newPath,
+				"old_path", oldPath,
+				"db_error", err,
+				"rollback_error", rollbackErr)
+		}
+		return "", fmt.Errorf("persisting renamed path: %w", err)
+	}
+
+	slog.Info("renamed artist directory",
+		"artist_id", artistID,
+		"artist", a.Name,
+		"new_path", newPath)
+
+	return newPath, nil
 }
 
 // persistNormalized writes provider IDs and image metadata to the normalized

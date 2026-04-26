@@ -8781,6 +8781,77 @@ paths:
 
   # --- Artist refresh and disambiguation ---
 
+  /artists/{id}/rename-directory:
+    post:
+      tags: [Artists]
+      summary: Rename the artist's on-disk directory
+      description: >
+        Renames the artist's directory to the supplied name and updates the
+        stored path. Decoupled from the Name field edit (PATCH /artists/{id}/fields/name)
+        so that editing display name does not have a filesystem side-effect
+        that can break Emby/Jellyfin item-to-path mappings. See issue #1077.
+      operationId: renameArtistDirectory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                new_dirname:
+                  type: string
+                  description: New leaf directory name (no path separators).
+              required: [new_dirname]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                new_dirname:
+                  type: string
+              required: [new_dirname]
+      responses:
+        "200":
+          description: Directory renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  new_path:
+                    type: string
+        "400":
+          description: Invalid directory name (empty, contains separator, or matches current name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Artist locked, has no path, or destination directory already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Filesystem or database error during rename
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}/refresh:
     post:
       tags: [Artists]

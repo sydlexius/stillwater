@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -12,6 +13,18 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// artistDirBasename returns the leaf component of the artist's filesystem
+// path. Used by the rename-directory action in the artist detail page to
+// pre-fill the prompt with the current directory name. Returns the empty
+// string when the artist has no path (e.g. virtual library entries).
+func artistDirBasename(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	return filepath.Base(p)
+}
 
 // staticBasePath is the URL prefix for all static assets (e.g. "/app").
 // Set once via SetBasePath at server startup so that logoSrc and logoSrcSet
