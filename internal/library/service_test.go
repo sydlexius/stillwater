@@ -1011,19 +1011,29 @@ func TestDeleteWithArtists_PrunesOrphanedConnectionArtists(t *testing.T) {
 	check("art-orphan", false)
 	check("art-multi", true)
 
-	// Multi's mapping for the deleted connection must be gone (FK cascade
-	// from connection only fires on connection delete; here we only deleted
-	// the library, but the artist row survival check above covers the user
-	// expectation). The mapping for "conn-jelly" remains because we kept
-	// the connection alive in this test; real connection-delete is tested
-	// elsewhere.
+	// Issue #1072 reopen: when the unlinked library was the last library
+	// on its connection, the multi-conn artist's mapping to that
+	// connection must be cleaned even though the artist row survives via
+	// its other-connection mapping. The connection itself is still alive
+	// here, so the FK cascade does not fire; the application-level sweep
+	// in DeleteWithArtists is responsible.
 	var jellyMaps int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multi' AND connection_id = 'conn-jelly'`).Scan(&jellyMaps); err != nil {
 		t.Fatalf("counting multi jelly mappings: %v", err)
 	}
-	if jellyMaps != 1 {
-		t.Errorf("multi jelly mapping count = %d, want 1 (connection still exists)", jellyMaps)
+	if jellyMaps != 0 {
+		t.Errorf("multi jelly mapping count = %d, want 0 (last library on connection unlinked, mapping is stale)", jellyMaps)
+	}
+
+	// The other-connection mapping must remain.
+	var otherMaps int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multi' AND connection_id = 'conn-other'`).Scan(&otherMaps); err != nil {
+		t.Fatalf("counting multi other mappings: %v", err)
+	}
+	if otherMaps != 1 {
+		t.Errorf("multi other mapping count = %d, want 1 (must survive unlink)", otherMaps)
 	}
 }
 
@@ -1175,5 +1185,166 @@ func TestDeleteWithArtists_PreservesArtistInOtherLibraries(t *testing.T) {
 	}
 	if embyMember != 0 {
 		t.Errorf("emby membership count = %d, want 0 (cascade should have removed it)", embyMember)
+	}
+}
+
+// TestDeleteWithArtists_PrunesStalePlatformIDsForMultiHomeArtist covers
+// issue #1072 (reopened post-#1215 M:N): when a multi-home artist has
+// memberships in libraries on two different connections and one of those
+// libraries is unlinked, the artist row and its other connection's
+// membership and platform_id must survive, but the artist_platform_ids
+// row pointing at the just-unlinked connection must be removed. The
+// connection FK CASCADE does not fire here because the connection itself
+// stays alive, and the artist row is preserved by the candidate-prune
+// loop because memberships > 0.
+func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiHomeArtist(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-emby", "emby")
+	seedConnection(t, db, "conn-jelly", "jellyfin")
+
+	embyDir := t.TempDir()
+	jellyDir := t.TempDir()
+	embyLib := &Library{Name: "Emby Music", Path: embyDir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-1", Source: SourceEmby}
+	jellyLib := &Library{Name: "Jelly Music", Path: jellyDir, Type: TypeRegular, ConnectionID: "conn-jelly", ExternalID: "jelly-1", Source: SourceJellyfin}
+	if err := svc.Create(ctx, embyLib); err != nil {
+		t.Fatalf("Create emby library: %v", err)
+	}
+	if err := svc.Create(ctx, jellyLib); err != nil {
+		t.Fatalf("Create jelly library: %v", err)
+	}
+
+	// Multi-home artist: membership in BOTH libraries.
+	seedArtist(t, db, "art-multihome", "Tool", "")
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		VALUES ('art-multihome', ?, 'emby', datetime('now')),
+		       ('art-multihome', ?, 'jellyfin', datetime('now'))
+	`, embyLib.ID, jellyLib.ID); err != nil {
+		t.Fatalf("seed memberships: %v", err)
+	}
+	seedPlatformID(t, db, "art-multihome", "conn-emby", "emby-tool-1")
+	seedPlatformID(t, db, "art-multihome", "conn-jelly", "jelly-tool-1")
+
+	if err := svc.DeleteWithArtists(ctx, embyLib.ID); err != nil {
+		t.Fatalf("DeleteWithArtists emby: %v", err)
+	}
+
+	// Artist row survives.
+	var artistRows int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-multihome'`).Scan(&artistRows); err != nil {
+		t.Fatalf("count artist: %v", err)
+	}
+	if artistRows != 1 {
+		t.Errorf("artist count = %d, want 1 (multi-home survival)", artistRows)
+	}
+
+	// Jelly membership survives.
+	var jellyMember int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-multihome' AND library_id = ?`,
+		jellyLib.ID).Scan(&jellyMember); err != nil {
+		t.Fatalf("count jelly membership: %v", err)
+	}
+	if jellyMember != 1 {
+		t.Errorf("jelly membership count = %d, want 1", jellyMember)
+	}
+
+	// Platform mapping on the surviving connection is intact.
+	var jellyMap int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multihome' AND connection_id = 'conn-jelly'`).Scan(&jellyMap); err != nil {
+		t.Fatalf("count jelly mapping: %v", err)
+	}
+	if jellyMap != 1 {
+		t.Errorf("jelly mapping count = %d, want 1", jellyMap)
+	}
+
+	// Platform mapping on the unlinked connection is gone (the bug).
+	var embyMap int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multihome' AND connection_id = 'conn-emby'`).Scan(&embyMap); err != nil {
+		t.Fatalf("count emby mapping: %v", err)
+	}
+	if embyMap != 0 {
+		t.Errorf("emby mapping count = %d, want 0 (stale platform_id on unlinked connection must be cleaned)", embyMap)
+	}
+}
+
+// TestDeleteWithArtists_PrunesStalePlatformIDsForMultiConnArtist covers
+// the second survival branch of issue #1072: an artist whose only
+// library membership is in the unlinked library, but which has
+// platform_id mappings on a different connection. The candidate-prune
+// loop preserves the artist (otherConnMappings > 0). The mapping on the
+// unlinked connection must still be cleaned up because the artist no
+// longer has any library backing it on that connection.
+func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiConnArtist(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-emby", "emby")
+	seedConnection(t, db, "conn-jelly", "jellyfin")
+
+	embyDir := t.TempDir()
+	embyLib := &Library{Name: "Emby Music", Path: embyDir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-1", Source: SourceEmby}
+	if err := svc.Create(ctx, embyLib); err != nil {
+		t.Fatalf("Create emby library: %v", err)
+	}
+
+	// Artist has a membership ONLY in the Emby library, but holds
+	// platform mappings on both Emby and Jelly. After unlink, the artist
+	// survives because of the Jelly mapping; the Emby mapping is stale.
+	seedArtist(t, db, "art-multiconn", "Mastodon", "")
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		VALUES ('art-multiconn', ?, 'emby', datetime('now'))
+	`, embyLib.ID); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	seedPlatformID(t, db, "art-multiconn", "conn-emby", "emby-mastodon-1")
+	seedPlatformID(t, db, "art-multiconn", "conn-jelly", "jelly-mastodon-1")
+
+	if err := svc.DeleteWithArtists(ctx, embyLib.ID); err != nil {
+		t.Fatalf("DeleteWithArtists emby: %v", err)
+	}
+
+	// Artist survives because of the Jelly mapping.
+	var artistRows int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-multiconn'`).Scan(&artistRows); err != nil {
+		t.Fatalf("count artist: %v", err)
+	}
+	if artistRows != 1 {
+		t.Errorf("artist count = %d, want 1 (preserved by other-conn mapping)", artistRows)
+	}
+
+	// Jelly mapping retained.
+	var jellyMap int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multiconn' AND connection_id = 'conn-jelly'`).Scan(&jellyMap); err != nil {
+		t.Fatalf("count jelly mapping: %v", err)
+	}
+	if jellyMap != 1 {
+		t.Errorf("jelly mapping count = %d, want 1", jellyMap)
+	}
+
+	// Emby mapping cleaned up.
+	var embyMap int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-multiconn' AND connection_id = 'conn-emby'`).Scan(&embyMap); err != nil {
+		t.Fatalf("count emby mapping: %v", err)
+	}
+	if embyMap != 0 {
+		t.Errorf("emby mapping count = %d, want 0 (stale platform_id must be cleaned even when artist survives via other-conn mapping)", embyMap)
 	}
 }

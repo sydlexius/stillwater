@@ -440,6 +440,39 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 		}
 	}
 
+	// Issue #1072 (reopened post-#1215 M:N): drop artist_platform_ids rows
+	// pointing at this connection that are no longer backed by an
+	// artist_libraries membership on any library of this connection. The
+	// candidate-prune loop above correctly preserves multi-home artists
+	// (memberships > 0) and artists with mappings on other connections
+	// (otherConnMappings > 0), but their mapping to the just-unlinked
+	// connection is stale because no library remains to back it. The
+	// connection FK CASCADE never fires because the connection itself is
+	// still alive.
+	//
+	// Gated on connOrphanPruneAllowed (last library on the connection)
+	// for two reasons: (1) the user-stated acceptance criterion for
+	// #1072 is the "last library on a connection" case, and (2) running
+	// this sweep while a sibling library remains would erase the
+	// platform_id evidence the legacy connection-orphan sweep relies on
+	// when the last sibling is finally unlinked, leaving zombie artist
+	// rows behind.
+	if connOrphanPruneAllowed {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM artist_platform_ids
+			WHERE connection_id = ?
+			 AND artist_id NOT IN (
+				SELECT al.artist_id
+				FROM artist_libraries al
+				JOIN libraries l ON l.id = al.library_id
+				WHERE l.connection_id = ?
+			 )
+		`, connectionID.String, connectionID.String); err != nil {
+			return fmt.Errorf("clearing stale platform mappings on connection %s: %w",
+				connectionID.String, err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing delete: %w", err)
 	}
