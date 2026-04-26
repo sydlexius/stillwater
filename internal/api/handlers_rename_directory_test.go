@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 )
 
 // renameHandlerFixture seeds an artist whose directory exists on a temp
@@ -170,3 +174,112 @@ func TestHandleArtistRenameDirectory_InvalidJSON(t *testing.T) {
 		t.Errorf("status = %d, want 400 (body: %s)", w.Code, w.Body.String())
 	}
 }
+
+// TestHandleArtistRenameDirectory_MalformedFormBody covers the ParseForm
+// error path in extractRenameDirname. A literal "%" with no following hex
+// digits is invalid percent-encoding and trips ParseForm before the
+// PostForm lookup, which the handler maps to HTTP 400. Without this case
+// the err != nil branch returning "invalid form body" is unreachable in
+// tests.
+func TestHandleArtistRenameDirectory_MalformedFormBody(t *testing.T) {
+	r, a, _ := renameHandlerFixture(t)
+	// "%" is an incomplete percent-escape; ParseForm rejects with
+	// "invalid URL escape".
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/artists/"+a.ID+"/rename-directory", strings.NewReader("new_dirname=%"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleArtistRenameDirectory(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleArtistRenameDirectory_PublishesEvent verifies the eventBus.Publish
+// branch on a successful rename. testRouter does not wire an event bus by
+// default, leaving the publish path unexecuted by every other test in this
+// file. Here we attach a real bus, subscribe to ArtistUpdated, drive a
+// rename, and confirm the subscriber observed the event with the right
+// artist_id payload. Covers both the nil-check and the Publish call site.
+func TestHandleArtistRenameDirectory_PublishesEvent(t *testing.T) {
+	r, a, _ := renameHandlerFixture(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	bus := event.NewBus(logger, 4)
+	r.eventBus = bus
+
+	received := make(chan event.Event, 1)
+	bus.Subscribe(event.ArtistUpdated, func(e event.Event) {
+		// Non-blocking send: we only care about the first event.
+		select {
+		case received <- e:
+		default:
+		}
+	})
+
+	// Bus.Start blocks until Stop. Run it in a goroutine for the duration
+	// of the test so Publish actually dispatches to subscribers.
+	go bus.Start()
+	t.Cleanup(bus.Stop)
+
+	req, w := renameRequest(t, a.ID, "Bus Renamed")
+	r.handleArtistRenameDirectory(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case e := <-received:
+		if e.Data["artist_id"] != a.ID {
+			t.Errorf("event artist_id = %v, want %q", e.Data["artist_id"], a.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for ArtistUpdated event after successful rename")
+	}
+}
+
+// TestHandleArtistRenameDirectory_FilesystemError500 covers the handler's
+// default error branch (not one of the named sentinels). With the parent
+// directory mode 0500, the service's RenameDirAtomic fails with EACCES,
+// which the service wraps as a generic error. The handler must map that to
+// HTTP 500, log the failure, and surface a non-empty body. We use atomic
+// counters off the slog handler call to assert the log fired so a future
+// refactor that drops the slog.Error in the default branch is caught.
+func TestHandleArtistRenameDirectory_FilesystemError500(t *testing.T) {
+	r, a, root := renameHandlerFixture(t)
+
+	// Strip write permission so any rename or copy under the parent fails.
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatalf("chmod parent ro: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+
+	var logged atomic.Int32
+	r.logger = slog.New(countingHandler{count: &logged})
+
+	req, w := renameRequest(t, a.ID, "Cannot Rename")
+	r.handleArtistRenameDirectory(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body: %s)", w.Code, w.Body.String())
+	}
+	if logged.Load() == 0 {
+		t.Errorf("expected handler to log unmapped error in the default 500 branch")
+	}
+}
+
+// countingHandler is a minimal slog.Handler that tallies records at Error
+// level. Used by FilesystemError500 to confirm the handler's default branch
+// emitted the diagnostic log.
+type countingHandler struct {
+	count *atomic.Int32
+}
+
+func (h countingHandler) Enabled(_ context.Context, lvl slog.Level) bool {
+	return lvl >= slog.LevelError
+}
+func (h countingHandler) Handle(_ context.Context, _ slog.Record) error {
+	h.count.Add(1)
+	return nil
+}
+func (h countingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h countingHandler) WithGroup(_ string) slog.Handler      { return h }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -203,6 +204,120 @@ type updateFailingRepo struct {
 
 func (r *updateFailingRepo) Update(ctx context.Context, a *Artist) error {
 	return errors.New("simulated DB failure")
+}
+
+// updateAndDestroyRepo extends updateFailingRepo by removing the directory at
+// a.Path before failing Update. Since RenameDirectory sets a.Path to newPath
+// and only then calls Update, removing a.Path inside the failing Update
+// guarantees the subsequent rollback's RenameDirAtomic(newPath, oldPath) has
+// no source to move, so the rollback itself fails. That drives the
+// "rollback also failed" slog.Error block in RenameDirectory which has no
+// other natural trigger.
+type updateAndDestroyRepo struct {
+	Repository
+}
+
+func (r *updateAndDestroyRepo) Update(_ context.Context, a *Artist) error {
+	_ = os.RemoveAll(a.Path)
+	return errors.New("simulated DB failure with missing newPath")
+}
+
+// TestRenameDirectory_RenameError covers the failure of the initial on-disk
+// RenameDirAtomic call (before any DB work). With the parent directory mode
+// 0500, both os.Rename and the copy fallback are forbidden, so
+// RenameDirAtomic returns an error that RenameDirectory wraps as
+// "renaming %q to %q: %w". This exercises both the wrapped-error branch in
+// the service and the handler's default 500 mapping for unsentineled errors.
+func TestRenameDirectory_RenameError(t *testing.T) {
+	svc, a, root := renameTestArtist(t, "lib-rename-fserr")
+	ctx := context.Background()
+
+	// Strip write permission from the parent so any rename or copy under it
+	// fails with EACCES. Restore in cleanup so t.TempDir's cleanup can
+	// remove the tree.
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatalf("chmod parent ro: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+
+	_, err := svc.RenameDirectory(ctx, a.ID, "Cannot Rename Here")
+	if err == nil {
+		t.Fatal("RenameDirectory: expected filesystem error, got nil")
+	}
+	// Wrapped under any of the named sentinels would mean a category
+	// regression; the FS-rename failure must surface as a generic error.
+	for _, sentinel := range []error{
+		ErrRenameInvalidName, ErrRenameLocked, ErrRenameNoPath,
+		ErrRenameDestExists, ErrRenameNoChange, ErrNotFound,
+	} {
+		if errors.Is(err, sentinel) {
+			t.Fatalf("rename error matched sentinel %v; expected generic FS error", sentinel)
+		}
+	}
+	// Original directory must still be at oldPath. (We can stat it once we
+	// restore parent perms; do that here so the assertion is meaningful.)
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatalf("chmod parent rw for assert: %v", err)
+	}
+	if _, statErr := os.Stat(a.Path); statErr != nil {
+		t.Errorf("original dir missing after refused rename: %v", statErr)
+	}
+}
+
+// TestRenameDirectory_RollbackAlsoFails exercises the slog.Error branch
+// inside RenameDirectory that fires when both the DB Update and the FS
+// rollback fail. The decorator removes the newPath directory while
+// returning an Update error, so the rollback's RenameDirAtomic has no
+// source to move and itself fails. The function still surfaces the
+// original db error to the caller; we assert that contract here so any
+// future refactor that swaps which error wins is caught.
+func TestRenameDirectory_RollbackAlsoFails(t *testing.T) {
+	db := setupTestDB(t)
+	root := t.TempDir()
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-rb-double', 'lib-rb-double', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+	dir := filepath.Join(root, "Original")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+	seedSvc := NewService(db)
+	a := testArtist("Original", dir)
+	a.LibraryID = "lib-rb-double"
+	if err := seedSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+	failingArtists := &updateAndDestroyRepo{Repository: artists}
+	svc := NewServiceWithRepos(failingArtists, providers, members, aliases, images, platformIDs, completeness)
+
+	_, err := svc.RenameDirectory(ctx, a.ID, "New Name Lost")
+	if err == nil {
+		t.Fatal("expected wrapped DB error, got nil")
+	}
+	// The DB error is what the caller sees; the failed rollback only logs.
+	if !strings.Contains(err.Error(), "persisting renamed path") {
+		t.Errorf("error wrap missing 'persisting renamed path': %v", err)
+	}
+	// Both the original and new paths are gone (Update destroyed newPath
+	// and rollback could not restore it). The DB row, however, must still
+	// carry the original path because the failing Update did not commit.
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("expected original dir gone after destructive rollback, statErr=%v", statErr)
+	}
+	after, err := seedSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("post-rollback GetByID: %v", err)
+	}
+	if after.Path != dir {
+		t.Errorf("DB path mutated despite failed Update: was %q, now %q", dir, after.Path)
+	}
 }
 
 func TestRenameDirectory_InvalidName(t *testing.T) {
