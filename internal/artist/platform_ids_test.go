@@ -245,6 +245,12 @@ func setupPlatformPresenceTest(t *testing.T) *Service {
 	if err := database.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	// Mirror production: enforce foreign keys so orphan
+	// artist_libraries / artist_platform_ids writes fail loudly in tests
+	// rather than silently passing.
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { db.Close() })
 
 	ctx := context.Background()
@@ -300,6 +306,10 @@ func setupPlatformPresenceTestWithDB(t *testing.T) (*Service, *sql.DB) {
 		t.Fatal(err)
 	}
 	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	// See setupPlatformPresenceTest: mirror production FK enforcement.
+	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })

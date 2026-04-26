@@ -640,6 +640,107 @@ func TestCollapseDuplicatesPreferMBIDOverName(t *testing.T) {
 	}
 }
 
+// TestCollapseDuplicates_FKDisabledExplicitChildCleanup covers the
+// startup ordering where collapseDuplicateArtists runs BEFORE
+// EnableForeignKeys turns SQLite FK enforcement on. The collapse code
+// has an explicit per-table DELETE that defends against FK-OFF (where
+// ON DELETE CASCADE would not fire and child rows would survive as
+// orphans pointing at the deleted loser artist).
+//
+// openMigratedDB enables FKs eagerly, so the rest of the suite can
+// rely on cascade rather than the explicit cleanup. This test
+// deliberately bypasses that helper and uses the FK-OFF startup shape
+// the production migration path actually runs under.
+func TestCollapseDuplicates_FKDisabledExplicitChildCleanup(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := Migrate(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	// IMPORTANT: do NOT call EnableForeignKeys yet. We are simulating
+	// the startup window in which collapseDuplicateArtists runs, so
+	// CASCADE must not fire and the explicit child cleanup is the only
+	// thing keeping orphans from surviving.
+	ctx := context.Background()
+
+	seedLibrary(t, db, "lib-fs", "filesystem", "")
+	seedArtistWithLibrary(t, db, "a-keep", "Cher", "lib-fs", "2026-01-01T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-loser", "Cher", "lib-fs", "2026-01-02T00:00:00Z")
+
+	// Both rows share an MBID -> same group, a-keep wins on created_at.
+	for _, aid := range []string{"a-keep", "a-loser"} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
+			VALUES (?, 'musicbrainz', 'mbid-fk-test', datetime('now'))
+		`, aid); err != nil {
+			t.Fatalf("seeding mb id %s: %v", aid, err)
+		}
+	}
+
+	// Seed a dependent rule_violations row on the loser. With FK
+	// enforcement ON, deleting the loser would CASCADE this away.
+	// With FK enforcement OFF (this test), only the explicit per-table
+	// DELETE in collapseDuplicateArtists can prevent it from becoming
+	// an orphan.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, category, enabled, automation_mode, created_at, updated_at)
+		VALUES ('rule-1', 'Test Rule', 'integrity', 1, 'manual',
+			datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, message, created_at)
+		VALUES ('rv-1', 'rule-1', 'a-loser', 'Cher', 'test', datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding rule_violations: %v", err)
+	}
+
+	// Run the collapse path the production migrate startup uses.
+	if err := ensureArtistLibrariesMembership(db); err != nil {
+		t.Fatalf("collapse: %v", err)
+	}
+
+	// a-loser should be gone, a-keep should survive.
+	var keepN, loserN int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'a-keep'`).Scan(&keepN); err != nil {
+		t.Fatalf("count keeper: %v", err)
+	}
+	if keepN != 1 {
+		t.Errorf("canonical artist count = %d, want 1", keepN)
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'a-loser'`).Scan(&loserN); err != nil {
+		t.Fatalf("count loser: %v", err)
+	}
+	if loserN != 0 {
+		t.Errorf("loser count = %d, want 0", loserN)
+	}
+
+	// Critical assertion: rule_violations row pointing at a-loser must
+	// NOT survive even though FK CASCADE was disabled when the collapse
+	// ran. Without the explicit child-cleanup DELETE in
+	// collapseDuplicateArtists, this row would still be present.
+	var orphanN int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_violations WHERE artist_id = 'a-loser'`).Scan(&orphanN); err != nil {
+		t.Fatalf("count orphans: %v", err)
+	}
+	if orphanN != 0 {
+		t.Errorf("orphaned rule_violations rows for a-loser = %d, want 0 (explicit child cleanup must run when FKs are off)", orphanN)
+	}
+
+	// Sanity: turning FK on after the collapse should not surface
+	// any deferred constraint violations either.
+	if err := EnableForeignKeys(db); err != nil {
+		t.Errorf("EnableForeignKeys after collapse: %v", err)
+	}
+}
+
 // TestCollapseDuplicates_CreatedAtMixedFormatsPickEarliest covers the
 // pickCanonicalCTE datetime normalization. The artists table contains
 // rows in two formats in the wild: SQLite's "YYYY-MM-DD HH:MM:SS" written
