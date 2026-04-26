@@ -298,12 +298,15 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									@components.IconPhoto("h-4 w-4 text-gray-400")
 									{ t(ctx, "artist.fetch_all_images") }
 								</a>
-								// Explicit "Rename Directory" action. Decoupled from the
-								// Name field edit (issue #1077) so users opt in. Prompts
-								// the user for the new leaf name; default is the current
-								// directory basename. The HTMX call posts JSON; the
-								// response triggers a page reload so the new path is
-								// reflected throughout the UI.
+								<!-- Explicit "Rename Directory" action. Decoupled from
+									 the Name field edit so users opt in. Prompts for
+									 the new leaf name (default = current basename) and
+									 posts JSON; success reloads the page so the new
+									 path is reflected throughout the UI. The inline
+									 fetch must prepend basePath() and include the
+									 X-CSRF-Token header explicitly because hand-rolled
+									 fetch() bypasses the global htmx:configRequest hook
+									 that wires both for hx-* requests. -->
 								<button
 									type="button"
 									role="menuitem"
@@ -312,7 +315,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									data-rename-current={ artistDirBasename(data.Artist.Path) }
 									data-rename-url={ "/api/v1/artists/" + data.Artist.ID + "/rename-directory" }
 									data-rename-failed-prefix={ t(ctx, "artist.rename_directory_failed") }
-									onclick="(function(btn){var newName=window.prompt(btn.dataset.renamePrompt, btn.dataset.renameCurrent);if(!newName)return;fetch(btn.dataset.renameUrl,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({new_dirname:newName})}).then(function(resp){if(resp.ok){window.location.reload();return;}return resp.text().then(function(t){var msg=t;try{msg=JSON.parse(t).error||t;}catch(e){}window.alert(btn.dataset.renameFailedPrefix+msg);});}).catch(function(e){window.alert(btn.dataset.renameFailedPrefix+e.message);});})(this)"
+									onclick="(function(btn){var newName=window.prompt(btn.dataset.renamePrompt, btn.dataset.renameCurrent);if(!newName)return;var bpEl=document.querySelector('meta[name=&quot;htmx-base-path&quot;]');var bp=bpEl?bpEl.content:'';var csrfMatch=document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);var csrf=csrfMatch?csrfMatch[1]:'';fetch(bp+btn.dataset.renameUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},credentials:'same-origin',body:JSON.stringify({new_dirname:newName})}).then(function(resp){if(resp.ok){window.location.reload();return;}return resp.text().then(function(t){var msg=t;try{msg=JSON.parse(t).error||t;}catch(e){}window.alert(btn.dataset.renameFailedPrefix+msg);});}).catch(function(e){window.alert(btn.dataset.renameFailedPrefix+e.message);});})(this)"
 								>
 									@components.IconArrowPath("h-4 w-4 text-gray-400")
 									{ t(ctx, "artist.rename_directory") }

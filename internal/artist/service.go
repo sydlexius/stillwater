@@ -637,8 +637,8 @@ var (
 //
 // Side effects intentionally NOT performed here (caller's responsibility):
 //   - Re-issuing platform-id mappings on Emby/Jellyfin so connected platforms
-//     pick up the new directory. The fix-direction in issue #1077 calls this
-//     out; the API handler (or a future workflow) drives that step.
+//     pick up the new directory. The API handler (or a future workflow)
+//     drives that step.
 //   - Rule re-evaluation. The caller's normal Update path stamps dirty_since;
 //     for a path-only change we do the same so the rule pipeline picks it up
 //     on the next sweep.
@@ -653,7 +653,13 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		return "", ErrRenameInvalidName
 	}
 
-	a, err := s.artists.GetByID(ctx, artistID)
+	// Hydrated load. s.update() routes through persistNormalized() which
+	// re-writes provider IDs and image rows from the in-memory Artist.
+	// s.artists.GetByID returns a non-hydrated row, so passing that into
+	// s.update() would silently wipe the artist's provider IDs and image
+	// rows. The Service-level GetByID hydrates both, so the round-trip
+	// preserves all normalized state.
+	a, err := s.GetByID(ctx, artistID)
 	if err != nil {
 		return "", err
 	}
@@ -665,7 +671,17 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	}
 
 	parent := filepath.Dir(a.Path)
-	newPath = filepath.Join(parent, newDirName)
+	newPath = filepath.Clean(filepath.Join(parent, newDirName))
+
+	// Defense-in-depth: confirm the joined path is still a direct child of
+	// parent. The combined input checks above (literal "."/".." reject and
+	// the separator reject via strings.ContainsAny) should already prevent
+	// any newDirName that could escape, but encoding the invariant
+	// explicitly here satisfies the path-traversal lint and guards against
+	// any future regression of those input-validation steps.
+	if filepath.Dir(newPath) != parent {
+		return "", ErrRenameInvalidName
+	}
 
 	// Short-circuit when the names match exactly. We do not attempt a
 	// Unicode-equivalence check here (the rule fixer does that for the

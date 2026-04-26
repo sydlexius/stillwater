@@ -53,6 +53,11 @@ func (r *Router) handleArtistRenameDirectory(w http.ResponseWriter, req *http.Re
 		switch {
 		case errors.Is(err, artist.ErrRenameInvalidName), errors.Is(err, artist.ErrRenameNoChange):
 			writeError(w, req, http.StatusBadRequest, err.Error())
+		case errors.Is(err, artist.ErrNotFound):
+			// RenameDirectory propagates GetByID's not-found sentinel.
+			// Map to 404 so the client distinguishes "no such artist"
+			// from server-side or conflict failures.
+			writeError(w, req, http.StatusNotFound, "artist not found")
 		case errors.Is(err, artist.ErrRenameLocked),
 			errors.Is(err, artist.ErrRenameNoPath),
 			errors.Is(err, artist.ErrRenameDestExists):
