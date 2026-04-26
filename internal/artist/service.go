@@ -714,15 +714,15 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		return "", fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
 	}
 
-	// Persist the new path with a single-row update on artists. We deliberately
-	// avoid s.update() here: that path runs persistNormalized() which re-upserts
-	// provider IDs and image rows, and a failure inside persistNormalized would
-	// leave artists.path committed to newPath while we rolled the directory
-	// back to oldPath, desynchronizing the DB from the filesystem. A path-only
-	// rename has no normalized state to refresh, so a single-row Update plus a
-	// best-effort dirty stamp keeps DB and FS in lockstep on the rollback.
-	a.Path = newPath
-	if err := s.artists.Update(ctx, a); err != nil {
+	// Persist the new path with a single-column UPDATE so a concurrent edit to
+	// any other field (Name, Locked, etc.) landing between our hydrated load
+	// and this write is not silently reverted. A full-row s.artists.Update
+	// would rewrite every column from the snapshot we loaded earlier, which
+	// could clobber concurrent mutations; UpdatePath touches only artists.path
+	// (and updated_at). We also avoid s.update() entirely so persistNormalized
+	// is not invoked here -- a path-only rename has no normalized state to
+	// refresh, and skipping it keeps DB and FS in lockstep on the rollback.
+	if err := s.artists.UpdatePath(ctx, a.ID, newPath); err != nil {
 		// The on-disk rename succeeded but the DB write failed. Attempt to
 		// roll the directory back so the next scan does not find a
 		// directory whose path no longer matches the artist row. A failed

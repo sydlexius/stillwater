@@ -195,31 +195,65 @@ func TestRenameDirectory_RollbackOnDBFailure(t *testing.T) {
 	}
 }
 
-// updateFailingRepo wraps a Repository and forces Update to fail. All other
-// methods delegate. This is just enough to drive the rollback branch in
-// RenameDirectory without rewriting every Repository method by hand.
+// updateFailingRepo wraps a Repository and forces UpdatePath to fail. All
+// other methods delegate. This is just enough to drive the rollback branch in
+// RenameDirectory (which now uses UpdatePath, not Update, to avoid clobbering
+// concurrent edits) without rewriting every Repository method by hand.
 type updateFailingRepo struct {
 	Repository
 }
 
-func (r *updateFailingRepo) Update(ctx context.Context, a *Artist) error {
+func (r *updateFailingRepo) UpdatePath(_ context.Context, _ string, _ string) error {
 	return errors.New("simulated DB failure")
 }
 
-// updateAndDestroyRepo extends updateFailingRepo by removing the directory at
-// a.Path before failing Update. Since RenameDirectory sets a.Path to newPath
-// and only then calls Update, removing a.Path inside the failing Update
-// guarantees the subsequent rollback's RenameDirAtomic(newPath, oldPath) has
-// no source to move, so the rollback itself fails. That drives the
-// "rollback also failed" slog.Error block in RenameDirectory which has no
-// other natural trigger.
+// updateAndDestroyRepo extends updateFailingRepo by removing the newPath
+// directory before failing UpdatePath. RenameDirectory has already called
+// filesystem.RenameDirAtomic(oldPath, newPath) by this point, so removing
+// newPath here guarantees the subsequent rollback's
+// RenameDirAtomic(newPath, oldPath) has no source to move and itself fails.
+// That drives the "rollback also failed" slog.Error block in RenameDirectory
+// which has no other natural trigger.
 type updateAndDestroyRepo struct {
 	Repository
 }
 
-func (r *updateAndDestroyRepo) Update(_ context.Context, a *Artist) error {
-	_ = os.RemoveAll(a.Path)
+func (r *updateAndDestroyRepo) UpdatePath(_ context.Context, _ string, path string) error {
+	_ = os.RemoveAll(path)
 	return errors.New("simulated DB failure with missing newPath")
+}
+
+// TestRenameDirectory_PreservesConcurrentMetadataEdit is the regression test
+// for the CR-Critical concurrent-edit clobber. The hydrated load at the top
+// of RenameDirectory snapshots every column on the artist row. If the rename
+// then writes the row back via the full-row Update path, any column another
+// request mutated in the meantime is silently reverted. We simulate that
+// race by mutating a non-path column (Name) between the load and the write,
+// using the public UpdateName surface, then assert the post-rename row still
+// carries the new Name. With the old s.artists.Update(ctx, a) call this would
+// fail; with UpdatePath it must hold.
+func TestRenameDirectory_PreservesConcurrentMetadataEdit(t *testing.T) {
+	svc, a, _ := renameTestArtist(t, "lib-rename-concurrent")
+	ctx := context.Background()
+
+	// Stand in for "another request edited Name between our load and our
+	// write." UpdateField targets only the name column so it does not race
+	// with the path column we are about to mutate.
+	if err := svc.UpdateField(ctx, a.ID, "name", "Concurrently Renamed"); err != nil {
+		t.Fatalf("UpdateField name: %v", err)
+	}
+
+	if _, err := svc.RenameDirectory(ctx, a.ID, "Renamed Dir"); err != nil {
+		t.Fatalf("RenameDirectory: %v", err)
+	}
+
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("post-rename GetByID: %v", err)
+	}
+	if after.Name != "Concurrently Renamed" {
+		t.Errorf("Name reverted by rename: got %q, want %q", after.Name, "Concurrently Renamed")
+	}
 }
 
 // TestRenameDirectory_RenameError covers the failure of the initial on-disk
