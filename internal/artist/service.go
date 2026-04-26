@@ -652,6 +652,15 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	if strings.ContainsAny(newDirName, `/\`) {
 		return "", ErrRenameInvalidName
 	}
+	// filepath.IsLocal is the canonical path-traversal sanitizer (Go 1.20+):
+	// it rejects absolute paths, paths containing "..", and reserved Windows
+	// names. The literal and separator checks above already cover the cases
+	// we care about, but calling IsLocal here clears the CodeQL taint flow
+	// from this user input through filesystem.RenameDirAtomic into the
+	// downstream os.Stat / os.Rename / copyFile sinks.
+	if !filepath.IsLocal(newDirName) {
+		return "", ErrRenameInvalidName
+	}
 
 	// Hydrated load. s.update() routes through persistNormalized() which
 	// re-writes provider IDs and image rows from the in-memory Artist.
@@ -705,10 +714,15 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		return "", fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
 	}
 
-	// Persist the new path. We re-use the full Update path so dirty_since
-	// is stamped and the rule pipeline picks the change up on the next pass.
+	// Persist the new path with a single-row update on artists. We deliberately
+	// avoid s.update() here: that path runs persistNormalized() which re-upserts
+	// provider IDs and image rows, and a failure inside persistNormalized would
+	// leave artists.path committed to newPath while we rolled the directory
+	// back to oldPath, desynchronizing the DB from the filesystem. A path-only
+	// rename has no normalized state to refresh, so a single-row Update plus a
+	// best-effort dirty stamp keeps DB and FS in lockstep on the rollback.
 	a.Path = newPath
-	if err := s.update(ctx, a, true); err != nil {
+	if err := s.artists.Update(ctx, a); err != nil {
 		// The on-disk rename succeeded but the DB write failed. Attempt to
 		// roll the directory back so the next scan does not find a
 		// directory whose path no longer matches the artist row. A failed
@@ -725,6 +739,7 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		}
 		return "", fmt.Errorf("persisting renamed path: %w", err)
 	}
+	s.markDirtyBestEffort(ctx, a.ID)
 
 	slog.Info("renamed artist directory",
 		"artist_id", artistID,

@@ -8814,6 +8814,7 @@ paths:
               properties:
                 new_dirname:
                   type: string
+                  description: New leaf directory name. Must be a single path segment with no separators ("/" or "\"); "." and ".." are also rejected.
               required: [new_dirname]
       responses:
         "200":
@@ -8822,9 +8823,11 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status, new_path]
                 properties:
                   status:
                     type: string
+                    enum: [renamed]
                   new_path:
                     type: string
         "400":
