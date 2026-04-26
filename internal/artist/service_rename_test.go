@@ -451,3 +451,33 @@ func TestRenameDirectory_DestExists(t *testing.T) {
 		t.Errorf("original path missing after refused rename: %v", statErr)
 	}
 }
+
+// TestRenameDirectory_DestExistsDanglingSymlink is the regression guard for
+// the Lstat-vs-Stat distinction. os.Stat follows symlinks and returns
+// IsNotExist for a broken target, which would let the rename clobber the
+// user's symlink instead of refusing the operation. Lstat does not follow
+// the link, so the dirent is detected and ErrRenameDestExists fires as
+// intended.
+func TestRenameDirectory_DestExistsDanglingSymlink(t *testing.T) {
+	svc, a, root := renameTestArtist(t, "lib-rename-dangling")
+	ctx := context.Background()
+
+	// Symlink "Already Here" -> "/nonexistent-target-for-test" so the link
+	// is dangling. Lstat will succeed (the symlink dirent exists); Stat
+	// would return IsNotExist (the target is gone).
+	target := filepath.Join(root, "Already Here")
+	if err := os.Symlink("/nonexistent-target-for-test", target); err != nil {
+		t.Fatalf("creating dangling symlink: %v", err)
+	}
+
+	_, err := svc.RenameDirectory(ctx, a.ID, "Already Here")
+	if !errors.Is(err, ErrRenameDestExists) {
+		t.Errorf("got err %v, want ErrRenameDestExists (dangling symlink should trip the conflict guard)", err)
+	}
+	// The symlink must still be at its original spot, untouched.
+	if info, lerr := os.Lstat(target); lerr != nil {
+		t.Errorf("symlink lost after refused rename: %v", lerr)
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("symlink replaced by something else: mode=%v", info.Mode())
+	}
+}

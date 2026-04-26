@@ -702,8 +702,12 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 
 	// Refuse to clobber an existing directory. The fixer does the same
 	// safety check; mirror it here so the explicit-rename endpoint is no
-	// looser than the rule-engine path.
-	if _, statErr := os.Stat(newPath); statErr == nil {
+	// looser than the rule-engine path. Use Lstat (not Stat) so a dangling
+	// symlink at newPath still trips the conflict guard: Stat follows the
+	// link and reports IsNotExist for a broken target, which would let us
+	// silently rename over the user's symlink. Same pattern used by
+	// internal/filesystem/symlink.go's existence checks.
+	if _, statErr := os.Lstat(newPath); statErr == nil {
 		return "", ErrRenameDestExists
 	} else if !os.IsNotExist(statErr) {
 		return "", fmt.Errorf("checking destination %q: %w", newPath, statErr)
