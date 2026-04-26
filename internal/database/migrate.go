@@ -438,11 +438,28 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 		// This catches the case where a loser had a library that the
 		// canonical did not yet know about (the typical Emby+Jellyfin
 		// duplicate scenario).
-		placeholders, args := buildInList(g.loserIDs)
-		args = append([]any{g.canonicalID}, args...)
+		//
+		// Two sources are unioned: (1) any rows already materialized in
+		// artist_libraries for the losers (the M:N source of truth), and
+		// (2) the legacy artists.library_id column for losers that have
+		// not been backfilled into artist_libraries yet. Without (1) a
+		// loser with multiple memberships would only carry one of them.
+		placeholders, inArgs := buildInList(g.loserIDs)
+		args := []any{g.canonicalID}
+		args = append(args, inArgs...)
+		args = append(args, g.canonicalID)
+		args = append(args, inArgs...)
 		//nolint:gosec // G201: placeholders is a "?,?,..." literal built by buildInList from a known-length loop
 		insertSQL := fmt.Sprintf(`
 			INSERT OR IGNORE INTO artist_libraries (artist_id, library_id, source, added_at)
+			SELECT
+				?,
+				al.library_id,
+				al.source,
+				al.added_at
+			FROM artist_libraries al
+			WHERE al.artist_id IN (%s)
+			UNION ALL
 			SELECT
 				?,
 				a.library_id,
@@ -458,7 +475,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 			LEFT JOIN connections c ON c.id = l.connection_id
 			WHERE a.id IN (%s)
 			 AND a.library_id IS NOT NULL AND a.library_id != ''
-		`, placeholders)
+		`, placeholders, placeholders)
 		if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
 			return fmt.Errorf("inserting loser memberships under canonical=%s: %w",
 				g.canonicalID, err)

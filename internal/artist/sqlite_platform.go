@@ -143,14 +143,31 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 	// Alias is "presence_kind" rather than "source" to avoid colliding
 	// with libraries.source in the GROUP BY (SQLite resolves the bare
 	// name to the table column, raising "ambiguous column" otherwise).
-	query := `SELECT al.artist_id, ` + //nolint:gosec // G202: placeholders are "?" literals
+	//
+	// Hybrid OR-fallback: UNION the membership-derived rows with the
+	// legacy artists.library_id projection so artists created by
+	// still-legacy writers (or older fixtures) without an
+	// artist_libraries row are still visible. The legacy branch goes
+	// away when #1214 drops the column.
+	in := strings.Join(placeholders, ",")
+	query := `SELECT artist_id, presence_kind FROM (` + //nolint:gosec // G202: placeholders are "?" literals
+		`SELECT al.artist_id AS artist_id, ` +
 		`CASE WHEN l.connection_id IS NULL THEN 'filesystem' ELSE COALESCE(c.type, '') END AS presence_kind ` +
 		`FROM artist_libraries al ` +
 		`JOIN libraries l ON l.id = al.library_id ` +
 		`LEFT JOIN connections c ON c.id = l.connection_id ` +
-		`WHERE al.artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
-		`GROUP BY al.artist_id, presence_kind`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+		`WHERE al.artist_id IN (` + in + `) ` +
+		`UNION ` +
+		`SELECT a.id AS artist_id, ` +
+		`CASE WHEN l.connection_id IS NULL THEN 'filesystem' ELSE COALESCE(c.type, '') END AS presence_kind ` +
+		`FROM artists a ` +
+		`JOIN libraries l ON l.id = a.library_id ` +
+		`LEFT JOIN connections c ON c.id = l.connection_id ` +
+		`WHERE a.id IN (` + in + `) ` +
+		`  AND a.library_id IS NOT NULL AND a.library_id <> ''` +
+		`)`
+	queryArgs := append(append([]any{}, args...), args...)
+	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("batch getting platform presence: %w", err)
 	}

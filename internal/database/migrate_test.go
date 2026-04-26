@@ -598,11 +598,16 @@ func TestCollapseDuplicatesPreferMBIDOverName(t *testing.T) {
 	seedLibrary(t, db, "lib-fs", "filesystem", "")
 	seedLibrary(t, db, "lib-emby", "import", "conn-emby")
 
-	// Two artists with same MBID -> grouped by MBID. Both happen to have
-	// names that also match a third unrelated artist; the MBID group claims
-	// them both, so the third artist must NOT be folded into a name group.
+	// Two artists with same MBID -> grouped by MBID. A third "Cher" with no
+	// MBID exists on a different library; it must NOT be folded into either
+	// group because (a) it has no MBID to match the MBID group, and (b) the
+	// name-precedence branch excludes any artist already claimed by an MBID
+	// group. Without this third row the test passes even when the
+	// `claimed` filtering in findDuplicateGroupsByName is broken.
+	seedLibrary(t, db, "lib-other", "filesystem", "")
 	seedArtistWithLibrary(t, db, "a-fs", "Cher", "lib-fs", "2026-01-01T00:00:00Z")
 	seedArtistWithLibrary(t, db, "a-emby", "Cher", "lib-emby", "2026-01-02T00:00:00Z")
+	seedArtistWithLibrary(t, db, "a-other", "Cher", "lib-other", "2026-01-03T00:00:00Z")
 	for _, aid := range []string{"a-fs", "a-emby"} {
 		if _, err := db.ExecContext(ctx, `
 			INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
@@ -616,12 +621,21 @@ func TestCollapseDuplicatesPreferMBIDOverName(t *testing.T) {
 		t.Fatalf("collapse: %v", err)
 	}
 
-	// One Cher remains (a-fs canonical).
+	// Two Chers remain: the MBID group's canonical (a-fs) and the
+	// MBID-less standalone (a-other) which name-precedence must leave alone.
 	var n int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists WHERE name = 'Cher'`).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("Cher count = %d, want 1", n)
+	if n != 2 {
+		t.Errorf("Cher count = %d, want 2 (canonical + MBID-less standalone)", n)
+	}
+	// The MBID-less Cher must survive specifically.
+	var stillThere int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artists WHERE id = 'a-other'`).Scan(&stillThere); err != nil {
+		t.Fatalf("count a-other: %v", err)
+	}
+	if stillThere != 1 {
+		t.Errorf("a-other survived = %d, want 1 (MBID-less row must not be folded into MBID group)", stillThere)
 	}
 }

@@ -87,13 +87,17 @@ func run(path string) error {
 
 func seed(ctx context.Context, db *sql.DB) error {
 	stmts := []string{
-		// Connections.
+		// Connections. Seeded as enabled=0/status='disabled' so a live
+		// Stillwater never tries to decrypt the placeholder API key
+		// ('k' is not real ciphertext). The collapse-migration logic
+		// only reads c.type from these rows, which works regardless of
+		// the enabled/status flags.
 		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
 		 VALUES ('conn-emby', 'Emby (UAT)', 'emby', 'http://uat-emby.local',
-		 'k', 1, 'ok', datetime('now'), datetime('now'))`,
+		 'k', 0, 'disabled', datetime('now'), datetime('now'))`,
 		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
 		 VALUES ('conn-jelly', 'Jellyfin (UAT)', 'jellyfin', 'http://uat-jellyfin.local',
-		 'k', 1, 'ok', datetime('now'), datetime('now'))`,
+		 'k', 0, 'disabled', datetime('now'), datetime('now'))`,
 
 		// Libraries: one filesystem, one each per connection.
 		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)

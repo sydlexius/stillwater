@@ -200,10 +200,15 @@ func NewDefaultRepos(db *sql.DB) (
 // alongside the artist row so the artist appears in per-library queries.
 // The source is derived from the target library: a connection-backed
 // library uses the connection type (emby / jellyfin / lidarr); otherwise
-// the artist is recorded as filesystem-sourced. Membership insert is
-// best-effort; FK failures (e.g., the library does not exist in tests
-// that bypass the libraries table) are ignored so the artist row still
-// lands.
+// the artist is recorded as filesystem-sourced.
+//
+// AddDerivingSource silently no-ops when the target library does not
+// exist (its SELECT-driven INSERT yields zero rows in that case), so any
+// error returned here is a real DB-level failure (locked, FK violation
+// on the artist row, etc.) and is treated as fatal. Memberships are
+// load-bearing under M:N -- an artist row without a corresponding
+// membership disappears from per-library views -- so we roll the
+// artist back rather than leaving a half-created record.
 func (s *Service) Create(ctx context.Context, a *Artist) error {
 	if err := s.artists.Create(ctx, a); err != nil {
 		return err
@@ -212,22 +217,22 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		_ = s.artists.Delete(ctx, a.ID) // best-effort rollback
 		return err
 	}
-	s.recordInitialMembershipBestEffort(ctx, a)
+	if err := s.recordInitialMembership(ctx, a); err != nil {
+		_ = s.artists.Delete(ctx, a.ID) // keep create atomic for required data
+		return fmt.Errorf("recording initial library membership: %w", err)
+	}
 	return nil
 }
 
-// recordInitialMembershipBestEffort inserts an artist_libraries row
-// derived from a.LibraryID. The membership repo deduces the source from
-// the target library (filesystem when no connection, otherwise the
-// connection's type) and quietly skips when the library does not exist.
-func (s *Service) recordInitialMembershipBestEffort(ctx context.Context, a *Artist) {
+// recordInitialMembership inserts an artist_libraries row derived from
+// a.LibraryID. The membership repo deduces the source from the target
+// library (filesystem when no connection, otherwise the connection's
+// type) and is a no-op when the library does not exist.
+func (s *Service) recordInitialMembership(ctx context.Context, a *Artist) error {
 	if s.memberships == nil || a.LibraryID == "" {
-		return
+		return nil
 	}
-	if err := s.memberships.AddDerivingSource(ctx, a.ID, a.LibraryID); err != nil {
-		slog.Warn("recording initial library membership",
-			"artist_id", a.ID, "library_id", a.LibraryID, "error", err)
-	}
+	return s.memberships.AddDerivingSource(ctx, a.ID, a.LibraryID)
 }
 
 // GetHealthStats returns aggregate health metrics for non-excluded artists.

@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -288,6 +289,46 @@ func addMembership(t *testing.T, svc *Service, artistID, libraryID, source strin
 	}
 }
 
+// setupPlatformPresenceTestWithDB is a sibling of setupPlatformPresenceTest
+// that also returns the underlying *sql.DB. Several legacy-fallback tests
+// need to insert rows (e.g. artists with only artists.library_id and no
+// artist_libraries membership) that Service.Create cannot produce.
+func setupPlatformPresenceTestWithDB(t *testing.T) (*Service, *sql.DB) {
+	t.Helper()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-1', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-2', 'Test Jellyfin', 'jellyfin', 'http://jf:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-3', 'Test Lidarr', 'lidarr', 'http://lidarr:8686', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-emby', 'lib-emby', '/music', 'regular', 'import', 'conn-1', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-jelly', 'lib-jelly', '/music', 'regular', 'import', 'conn-2', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-lidarr', 'lib-lidarr', '/music', 'regular', 'import', 'conn-3', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+			VALUES ('lib-fs', 'lib-fs', '/music', 'regular', 'manual', NULL, datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return NewService(db), db
+}
+
 func TestGetPlatformPresenceForArtists(t *testing.T) {
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
@@ -428,5 +469,88 @@ func TestGetPlatformPresenceForArtists_AllPlatforms(t *testing.T) {
 	}
 	if !p.HasLidarr {
 		t.Error("expected HasLidarr=true")
+	}
+}
+
+// TestGetPlatformPresenceForArtists_LegacyLibraryIDFallback exercises the
+// hybrid OR-fallback added for the M:N transition. An artist row that
+// still carries only the legacy artists.library_id column (no
+// artist_libraries membership) must still surface its presence; the
+// fallback branch goes away once the column drop in #1214 lands.
+func TestGetPlatformPresenceForArtists_LegacyLibraryIDFallback(t *testing.T) {
+	svc, db := setupPlatformPresenceTestWithDB(t)
+	ctx := context.Background()
+
+	// Create an artist directly via SQL so artist.Service.Create does
+	// not auto-populate artist_libraries. The artists.library_id column
+	// is the only thing pointing at lib-emby for this row.
+	_ = svc
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artists (id, name, sort_name, library_id, path, created_at, updated_at)
+		VALUES ('a-legacy-emby', 'Legacy Emby', 'Legacy Emby', 'lib-emby',
+			'/music/legacy', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding legacy artist: %v", err)
+	}
+
+	// Same shape but pointing at a filesystem (NULL connection_id) library.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artists (id, name, sort_name, library_id, path, created_at, updated_at)
+		VALUES ('a-legacy-fs', 'Legacy FS', 'Legacy FS', 'lib-fs',
+			'/music/legacy-fs', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding legacy fs artist: %v", err)
+	}
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx,
+		[]string{"a-legacy-emby", "a-legacy-fs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pe := result["a-legacy-emby"]
+	if !pe.HasEmby {
+		t.Error("legacy emby artist: expected HasEmby=true via library_id fallback")
+	}
+	if pe.HasFilesystem {
+		t.Error("legacy emby artist: expected HasFilesystem=false")
+	}
+
+	pf := result["a-legacy-fs"]
+	if !pf.HasFilesystem {
+		t.Error("legacy fs artist: expected HasFilesystem=true via library_id fallback")
+	}
+	if pf.HasEmby || pf.HasJellyfin || pf.HasLidarr {
+		t.Errorf("legacy fs artist: expected platform flags all false, got %+v", pf)
+	}
+}
+
+// TestGetPlatformPresenceForArtists_MembershipAndLegacyDeDuplicate verifies
+// that an artist with BOTH an artist_libraries row AND a legacy
+// artists.library_id pointing at the same library is reported once per
+// presence kind (the UNION + GROUP-equivalent semantics dedupe).
+func TestGetPlatformPresenceForArtists_MembershipAndLegacyDeDuplicate(t *testing.T) {
+	svc, db := setupPlatformPresenceTestWithDB(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artists (id, name, sort_name, library_id, path, created_at, updated_at)
+		VALUES ('a-both', 'BothPaths', 'BothPaths', 'lib-emby',
+			'/music/both', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+	addMembership(t, svc, "a-both", "lib-emby", "emby")
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{"a-both"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := result["a-both"]
+	if !p.HasEmby {
+		t.Error("expected HasEmby=true")
+	}
+	if p.HasFilesystem || p.HasJellyfin || p.HasLidarr {
+		t.Errorf("expected only HasEmby, got %+v", p)
 	}
 }
