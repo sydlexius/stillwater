@@ -206,8 +206,11 @@ type PlatformIDRepository interface {
 	// DeleteByArtistID removes all platform ID mappings for the given artist.
 	DeleteByArtistID(ctx context.Context, artistID string) error
 
-	// GetPresenceForArtists returns per-artist platform presence (Emby, Jellyfin,
-	// Lidarr) by joining artist_platform_ids with connections to determine
-	// connection type. Artists with no platform IDs are omitted from the result.
+	// GetPresenceForArtists returns per-artist platform presence (filesystem,
+	// Emby, Jellyfin, Lidarr) derived from artist_libraries memberships joined
+	// with libraries: a NULL library.connection_id maps to HasFilesystem; a
+	// non-NULL connection_id maps to HasEmby/HasJellyfin/HasLidarr based on the
+	// connection type. Artists with no membership rows are omitted from the
+	// result map; the caller treats a missing entry as no presence.
 	GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error)
 }

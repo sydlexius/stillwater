@@ -449,10 +449,12 @@ func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) 
 	return s.memberships.CountForArtist(ctx, artistID)
 }
 
-// Deprecated: use FindByMBIDOrNameUnscoped after the rollout.
 // FindByMBIDOrName finds an artist by MBID first, then falls back to
 // case-insensitive name match, both scoped to the given library.
 // Returns nil, nil when no match is found.
+//
+// Deprecated: use FindByMBIDOrNameUnscoped. Removed alongside the
+// artists.library_id column when the legacy scoped repo surface goes.
 func (s *Service) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
 	a, err := s.artists.FindByMBIDOrName(ctx, mbid, name, libraryID)
 	if err != nil || a == nil {

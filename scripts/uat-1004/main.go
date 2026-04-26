@@ -188,7 +188,7 @@ func report(ctx context.Context, db *sql.DB) error {
 	}
 	fmt.Fprintf(os.Stderr, "seeded:\n")
 	fmt.Fprintf(os.Stderr, " total artists: %d (expect 6 pre-collapse, 3 post-collapse: 12 Stones, Veridia, Skillet)\n", artists)
-	fmt.Fprintf(os.Stderr, " artist_libraries rows: %d (expect 0 pre-collapse, 4 post-collapse: 12s/fs, 12s/emby, 12s/jelly, veridia/fs, veridia/jelly, skillet/emby)\n", memberships)
+	fmt.Fprintf(os.Stderr, " artist_libraries rows: %d (expect 0 pre-collapse, 6 post-collapse: 12s/fs, 12s/emby, 12s/jelly, veridia/fs, veridia/jelly, skillet/emby)\n", memberships)
 	fmt.Fprintf(os.Stderr, " '12 Stones' rows: %d (expect 3 pre-collapse, 1 post-collapse)\n", twelveStones)
 	fmt.Fprintf(os.Stderr, " 'Veridia' rows (case-i): %d (expect 2 pre-collapse, 1 post-collapse)\n", veridia)
 	return nil

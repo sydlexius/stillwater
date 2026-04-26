@@ -363,6 +363,7 @@ func ensureArtistLibrariesMembership(db *sql.DB) error {
 			CASE
 				WHEN c.type = 'emby' THEN 'emby'
 				WHEN c.type = 'jellyfin' THEN 'jellyfin'
+				WHEN c.type = 'lidarr' THEN 'lidarr'
 				ELSE 'filesystem'
 			END,
 			a.created_at
@@ -462,9 +463,39 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 				g.canonicalID, err)
 		}
 
-		// Delete losers. ON DELETE CASCADE removes any remaining FK children
-		// (rows that conflicted on insert/update and were not re-pointed).
+		// Explicitly clean any FK children still owned by losers before the
+		// parent delete. The OR-IGNORE re-point steps above intentionally
+		// leave loser-side rows behind for slots the canonical already
+		// claimed; those rows would normally be reaped by ON DELETE
+		// CASCADE when the loser is deleted, but database.Migrate may run
+		// before EnableForeignKeys (e.g. some test setups), in which case
+		// the cascade does not fire and the rows survive as orphans. The
+		// explicit DELETE is correct under both pragma states.
 		delPh, delArgs := buildInList(g.loserIDs)
+		childTables := []string{
+			"artist_libraries",
+			"artist_provider_ids",
+			"artist_platform_ids",
+			"artist_images",
+			"mb_snapshots",
+			"rule_results",
+			"rule_violations",
+			"artist_aliases",
+			"band_members",
+			"nfo_snapshots",
+			"metadata_changes",
+		}
+		for _, t := range childTables {
+			childSQL := fmt.Sprintf(`DELETE FROM %s WHERE artist_id IN (%s)`, t, delPh) //nolint:gosec // G201: t is a hard-coded literal, delPh is a "?,?,..." literal
+			if _, err := tx.ExecContext(ctx, childSQL, delArgs...); err != nil {
+				return fmt.Errorf("cleaning %s for losers under canonical=%s: %w",
+					t, g.canonicalID, err)
+			}
+		}
+
+		// Delete losers. With FKs ON, ON DELETE CASCADE would also reap
+		// the children above (idempotent); with FKs OFF, the explicit
+		// cleanup above is what kept the schema consistent.
 		deleteSQL := fmt.Sprintf(`DELETE FROM artists WHERE id IN (%s)`, delPh) //nolint:gosec // G201: delPh is a "?,?,..." literal
 		delRes, err := tx.ExecContext(ctx, deleteSQL, delArgs...)
 		if err != nil {

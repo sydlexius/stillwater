@@ -1056,34 +1056,39 @@ func (r *Router) backfillPlatformIDToManualLibs(
 	mbid, name, connectionID, platformArtistID, connArtistID string,
 	manualLibs []library.Library,
 ) {
-	for _, ml := range manualLibs {
-		fsArtist, err := r.artistService.FindByMBIDOrName(ctx, mbid, name, ml.ID)
-		if err != nil {
-			r.logger.Warn("backfill: finding filesystem artist", "name", name, "library", ml.ID, "error", err)
-			continue
-		}
-		if fsArtist == nil || fsArtist.ID == connArtistID {
-			continue
-		}
-		if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
-			// a UNIQUE index on
-			// (connection_id, platform_artist_id) means at most one
-			// artist row can hold a given platform mapping. The
-			// connection-library artist already claimed it before we
-			// got here, so the filesystem-library copy is now
-			// redundant rather than erroneous. Skip silently with a
-			// debug log instead of warning.
-			if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
-				r.logger.Debug("backfill: platform id already held by another artist row, skipping",
-					"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
-				continue
-			}
-			r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
-			continue
-		}
-		r.logger.Debug("backfill: platform id propagated to filesystem artist",
-			"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+	// In the M:N model an artist row is shared across libraries, so the
+	// per-library loop is vestigial; one unscoped lookup resolves the row
+	// that any of the manual libraries would observe. The manualLibs
+	// parameter is retained as a presence guard: skip entirely when the
+	// caller has no manual libraries configured.
+	if len(manualLibs) == 0 {
+		return
 	}
+	fsArtist, err := r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil {
+		r.logger.Warn("backfill: finding filesystem artist", "name", name, "error", err)
+		return
+	}
+	if fsArtist == nil || fsArtist.ID == connArtistID {
+		return
+	}
+	if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
+		// a UNIQUE index on (connection_id, platform_artist_id) means at
+		// most one artist row can hold a given platform mapping. The
+		// connection-library artist already claimed it before we got
+		// here, so the filesystem-library copy is now redundant rather
+		// than erroneous. Skip silently with a debug log instead of
+		// warning.
+		if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
+			r.logger.Debug("backfill: platform id already held by another artist row, skipping",
+				"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+			return
+		}
+		r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
+		return
+	}
+	r.logger.Debug("backfill: platform id propagated to filesystem artist",
+		"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
 }
 
 // manualLibraries returns all libraries with source "manual". Used by scan

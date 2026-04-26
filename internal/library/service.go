@@ -411,12 +411,23 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	// Connection-orphan sweep for artists never in candidateIDs (no
 	// membership row, no library_id pointer, but a mapping on the
 	// just-unlinked connection). Legacy case.
+	//
+	// The COALESCE(a.library_id, '') = '' guard is required during partial
+	// migration: the lines above only cleared library_id pointing at the
+	// library being deleted, so an artist can still legitimately reference
+	// some other surviving library through the legacy column. Without
+	// this guard, a connection-library unlink would silently delete those
+	// artists when their only artist_libraries row had not yet been
+	// backfilled.
 	if connOrphanPruneAllowed {
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM artists
 			WHERE id IN (
-				SELECT ap.artist_id FROM artist_platform_ids ap
+				SELECT ap.artist_id
+				FROM artist_platform_ids ap
+				JOIN artists a ON a.id = ap.artist_id
 				WHERE ap.connection_id = ?
+				 AND COALESCE(a.library_id, '') = ''
 				 AND ap.artist_id NOT IN (
 					SELECT artist_id FROM artist_libraries
 				 )

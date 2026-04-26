@@ -142,13 +142,20 @@ func TestMembershipRemove(t *testing.T) {
 	repo := newSQLiteMembershipRepo(db)
 	ctx := context.Background()
 
-	_ = repo.Add(ctx, "a-1", "lib-fs", "filesystem")
-	_ = repo.Add(ctx, "a-1", "lib-emby", "emby")
+	if err := repo.Add(ctx, "a-1", "lib-fs", "filesystem"); err != nil {
+		t.Fatalf("add fs: %v", err)
+	}
+	if err := repo.Add(ctx, "a-1", "lib-emby", "emby"); err != nil {
+		t.Fatalf("add emby: %v", err)
+	}
 
 	if err := repo.Remove(ctx, "a-1", "lib-emby"); err != nil {
 		t.Fatalf("remove emby: %v", err)
 	}
-	got, _ := repo.CountForArtist(ctx, "a-1")
+	got, err := repo.CountForArtist(ctx, "a-1")
+	if err != nil {
+		t.Fatalf("count after remove: %v", err)
+	}
 	if got != 1 {
 		t.Errorf("after remove count = %d, want 1", got)
 	}
@@ -167,7 +174,9 @@ func TestMembershipCascadeOnArtistDelete(t *testing.T) {
 	repo := newSQLiteMembershipRepo(db)
 	ctx := context.Background()
 
-	_ = repo.Add(ctx, "a-1", "lib-fs", "filesystem")
+	if err := repo.Add(ctx, "a-1", "lib-fs", "filesystem"); err != nil {
+		t.Fatalf("add fs: %v", err)
+	}
 
 	if _, err := db.ExecContext(ctx, `DELETE FROM artists WHERE id = 'a-1'`); err != nil {
 		t.Fatalf("delete artist: %v", err)
