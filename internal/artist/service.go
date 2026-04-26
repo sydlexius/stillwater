@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -89,6 +90,16 @@ type Service struct {
 	history      *HistoryService
 	mbSnapshots  MBSnapshotRepository
 	memberships  MembershipRepository
+
+	// renameMu serializes the destination-conflict check and the on-disk
+	// rename in RenameDirectory so two concurrent rename requests targeting
+	// the same parent cannot both pass their os.Lstat(newPath) check and
+	// race into filesystem.RenameDirAtomic, which assumes dst does not
+	// already exist. Held only across the Lstat+rename critical section,
+	// not the surrounding validation or DB writes; rename is a rare,
+	// user-driven operation, so the coarse single-mutex contention cost is
+	// negligible.
+	renameMu sync.Mutex
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that
@@ -707,15 +718,33 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// link and reports IsNotExist for a broken target, which would let us
 	// silently rename over the user's symlink. Same pattern used by
 	// internal/filesystem/symlink.go's existence checks.
-	if _, statErr := os.Lstat(newPath); statErr == nil {
-		return "", ErrRenameDestExists
-	} else if !os.IsNotExist(statErr) {
-		return "", fmt.Errorf("checking destination %q: %w", newPath, statErr)
-	}
-
+	//
+	// Hold renameMu across the Lstat+RenameDirAtomic pair so a concurrent
+	// rename targeting the same newPath cannot slip a directory in between
+	// our existence check and the actual rename. RenameDirAtomic explicitly
+	// requires dst not to exist, so without serialization the second caller
+	// could clobber or interleave with the first. The closure pins the lock
+	// scope to exactly the existence-check + rename pair so a future
+	// early-return added inside it cannot deadlock the service. External
+	// processes that create newPath without taking this lock are still
+	// possible, but the in-process path is the realistic concurrency vector.
 	oldPath := a.Path
-	if err := filesystem.RenameDirAtomic(oldPath, newPath); err != nil {
-		return "", fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
+	if err := func() error {
+		s.renameMu.Lock()
+		defer s.renameMu.Unlock()
+
+		if _, statErr := os.Lstat(newPath); statErr == nil {
+			return ErrRenameDestExists
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("checking destination %q: %w", newPath, statErr)
+		}
+
+		if err := filesystem.RenameDirAtomic(oldPath, newPath); err != nil {
+			return fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
+		}
+		return nil
+	}(); err != nil {
+		return "", err
 	}
 
 	// Persist the new path with a single-column UPDATE so a concurrent edit to

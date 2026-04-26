@@ -223,36 +223,93 @@ func (r *updateAndDestroyRepo) UpdatePath(_ context.Context, _ string, path stri
 	return errors.New("simulated DB failure with missing newPath")
 }
 
+// concurrentEditRepo wraps a Repository to inject a concurrent column edit
+// between RenameDirectory's hydrated load and its UpdatePath call. The hook
+// runs once on the first UpdatePath: it issues an UpdateField against the
+// underlying repo (changing a non-path column) before delegating the path
+// write. This reproduces the production race where another request mutates
+// the row between our load and our write. With the old full-row
+// s.artists.Update(ctx, a) path, the rename would write the stale snapshot
+// back and revert the injected column; with UpdatePath, only the path
+// column moves, so the injected change must survive.
+type concurrentEditRepo struct {
+	Repository
+	field string
+	value string
+	fired bool
+}
+
+func (r *concurrentEditRepo) UpdatePath(ctx context.Context, id, path string) error {
+	if !r.fired {
+		r.fired = true
+		if err := r.UpdateField(ctx, id, r.field, r.value); err != nil {
+			return err
+		}
+	}
+	return r.Repository.UpdatePath(ctx, id, path)
+}
+
 // TestRenameDirectory_PreservesConcurrentMetadataEdit is the regression test
 // for the CR-Critical concurrent-edit clobber. The hydrated load at the top
 // of RenameDirectory snapshots every column on the artist row. If the rename
 // then writes the row back via the full-row Update path, any column another
 // request mutated in the meantime is silently reverted. We simulate that
-// race by mutating a non-path column (Name) between the load and the write,
-// using the public UpdateName surface, then assert the post-rename row still
-// carries the new Name. With the old s.artists.Update(ctx, a) call this would
-// fail; with UpdatePath it must hold.
+// race by injecting an UpdateField on the Name column from inside the repo
+// decorator's UpdatePath hook, so the concurrent edit lands strictly between
+// the rename's hydrated load and its path-only write. With the old
+// s.artists.Update(ctx, a) call this would fail (the snapshot wins);
+// with UpdatePath it must hold.
 func TestRenameDirectory_PreservesConcurrentMetadataEdit(t *testing.T) {
-	svc, a, _ := renameTestArtist(t, "lib-rename-concurrent")
+	db := setupTestDB(t)
+	root := t.TempDir()
 	ctx := context.Background()
 
-	// Stand in for "another request edited Name between our load and our
-	// write." UpdateField targets only the name column so it does not race
-	// with the path column we are about to mutate.
-	if err := svc.UpdateField(ctx, a.ID, "name", "Concurrently Renamed"); err != nil {
-		t.Fatalf("UpdateField name: %v", err)
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-rename-concurrent', 'lib-rename-concurrent', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		root); err != nil {
+		t.Fatalf("seeding library: %v", err)
 	}
+	dir := filepath.Join(root, "Original Name")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+
+	// Seed via the real Service so the artist row is fully hydrated, then
+	// rebuild a Service whose Repository wrapper injects the concurrent
+	// edit at the right moment.
+	seedSvc := NewService(db)
+	a := testArtist("Original Name", dir)
+	a.LibraryID = "lib-rename-concurrent"
+	a.MusicBrainzID = "5b11f4ce-a62d-471e-81fc-a69a8278c7da"
+	if err := seedSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	artists, providers, members, aliases, images, platformIDs, completeness := NewDefaultRepos(db)
+	racingArtists := &concurrentEditRepo{
+		Repository: artists,
+		field:      "name",
+		value:      "Concurrently Renamed",
+	}
+	svc := NewServiceWithRepos(racingArtists, providers, members, aliases, images, platformIDs, completeness)
 
 	if _, err := svc.RenameDirectory(ctx, a.ID, "Renamed Dir"); err != nil {
 		t.Fatalf("RenameDirectory: %v", err)
 	}
+	if !racingArtists.fired {
+		t.Fatal("concurrent-edit hook never fired; UpdatePath was not invoked between load and persist")
+	}
 
-	after, err := svc.GetByID(ctx, a.ID)
+	after, err := seedSvc.GetByID(ctx, a.ID)
 	if err != nil {
 		t.Fatalf("post-rename GetByID: %v", err)
 	}
 	if after.Name != "Concurrently Renamed" {
 		t.Errorf("Name reverted by rename: got %q, want %q", after.Name, "Concurrently Renamed")
+	}
+	if after.Path != filepath.Join(root, "Renamed Dir") {
+		t.Errorf("Path not updated by rename: got %q", after.Path)
 	}
 }
 
