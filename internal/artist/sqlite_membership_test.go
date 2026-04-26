@@ -190,6 +190,84 @@ func TestMembershipCascadeOnArtistDelete(t *testing.T) {
 	}
 }
 
+// TestMembershipAddDerivingSource exercises the production create path that
+// derives the membership source from the target library's connection type.
+// All three connection-backed types plus the no-connection (filesystem)
+// case are covered, and idempotency is asserted on a repeat call.
+func TestMembershipAddDerivingSource(t *testing.T) {
+	db := openTestDB(t)
+	seedMembershipFixtures(t, db) // gives us lib-fs (filesystem) + lib-emby (emby)
+	repo := newSQLiteMembershipRepo(db)
+	ctx := context.Background()
+
+	// Seed a Jellyfin connection-library and a Lidarr connection-library
+	// alongside the fixture's filesystem and Emby libraries.
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-jf', 'Jellyfin', 'jellyfin', 'http://t', 'k', 1, 'ok', datetime('now'), datetime('now')),
+		       ('conn-lr', 'Lidarr',   'lidarr',   'http://t', 'k', 1, 'ok', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("seeding extra connections: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, source, connection_id, created_at, updated_at)
+		VALUES ('lib-jf', 'lib-jf', '/music', 'regular', 'import', 'conn-jf', datetime('now'), datetime('now')),
+		       ('lib-lr', 'lib-lr', '/music', 'regular', 'import', 'conn-lr', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("seeding extra libraries: %v", err)
+	}
+
+	cases := []struct {
+		libraryID  string
+		wantSource string
+	}{
+		{"lib-fs", "filesystem"},
+		{"lib-emby", "emby"},
+		{"lib-jf", "jellyfin"},
+		{"lib-lr", "lidarr"},
+	}
+	for _, tc := range cases {
+		if err := repo.AddDerivingSource(ctx, "a-1", tc.libraryID); err != nil {
+			t.Fatalf("AddDerivingSource(%s): %v", tc.libraryID, err)
+		}
+	}
+
+	// Repeat call must be a no-op (INSERT OR IGNORE).
+	if err := repo.AddDerivingSource(ctx, "a-1", "lib-fs"); err != nil {
+		t.Fatalf("AddDerivingSource(lib-fs) idempotent: %v", err)
+	}
+
+	memberships, err := repo.ListForArtist(ctx, "a-1")
+	if err != nil {
+		t.Fatalf("ListForArtist: %v", err)
+	}
+	if len(memberships) != len(cases) {
+		t.Fatalf("memberships = %d, want %d", len(memberships), len(cases))
+	}
+
+	bySource := map[string]string{}
+	for _, m := range memberships {
+		bySource[m.Source] = m.LibraryID
+	}
+	for _, tc := range cases {
+		if got := bySource[tc.wantSource]; got != tc.libraryID {
+			t.Errorf("source %q -> library %q, want %q", tc.wantSource, got, tc.libraryID)
+		}
+	}
+
+	// Cascade still works for derived rows.
+	if _, err := db.ExecContext(ctx, `DELETE FROM artists WHERE id = 'a-1'`); err != nil {
+		t.Fatalf("delete artist: %v", err)
+	}
+	if got, err := repo.CountForArtist(ctx, "a-1"); err != nil {
+		t.Fatalf("count after cascade: %v", err)
+	} else if got != 0 {
+		t.Errorf("post-cascade count = %d, want 0", got)
+	}
+}
+
 // TestArtistGetByName verifies the unscoped name lookup is case-insensitive
 // and returns nil when no match exists.
 func TestArtistGetByName(t *testing.T) {

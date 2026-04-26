@@ -117,6 +117,45 @@ func TestFindByMBIDOrNameUnscoped_CrossesLibraries(t *testing.T) {
 	}
 }
 
+// MBID precedence: when an artist with a matching MBID exists alongside a
+// different artist sharing the same name, the MBID match must win.
+// Without this guarantee a regression that fell back to case-insensitive
+// name lookup before MBID would still pass the happy-path tests.
+func TestFindByMBIDOrNameUnscoped_MBIDPrecedence(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibForMNTests(t, ctx, db, "lib-fs", "manual")
+	seedLibForMNTests(t, ctx, db, "lib-emby", "emby")
+
+	mbid := "11111111-2222-3333-4444-555555555555"
+
+	aMBID := testArtist("TieName", "/music/emby/TieName")
+	aMBID.MusicBrainzID = mbid
+	aMBID.LibraryID = "lib-emby"
+	if err := svc.Create(ctx, aMBID); err != nil {
+		t.Fatalf("Create aMBID: %v", err)
+	}
+
+	aName := testArtist("TieName", "/music/fs/TieName")
+	aName.LibraryID = "lib-fs"
+	if err := svc.Create(ctx, aName); err != nil {
+		t.Fatalf("Create aName: %v", err)
+	}
+
+	got, err := svc.FindByMBIDOrNameUnscoped(ctx, mbid, "TieName")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrNameUnscoped: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected artist, got nil")
+	}
+	if got.ID != aMBID.ID {
+		t.Errorf("ID = %q, want %q (MBID match must win over name match)", got.ID, aMBID.ID)
+	}
+}
+
 func TestGetByName_CaseInsensitive(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

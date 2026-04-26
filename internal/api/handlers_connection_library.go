@@ -655,13 +655,10 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Created++
 
 			// Store the platform-to-Stillwater artist ID mapping.
+			// Initial artist_libraries membership is recorded by
+			// artist.Service.Create via AddDerivingSource.
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
-			}
-			// record initial library membership for the
-			// freshly-created artist.
-			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "emby"); memErr != nil {
-				r.logger.Warn("adding emby library membership for new artist", "name", a.Name, "error", memErr)
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
@@ -743,13 +740,10 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Created++
 
 			// Store the platform-to-Stillwater artist ID mapping.
+			// Initial artist_libraries membership is recorded by
+			// artist.Service.Create via AddDerivingSource.
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
-			}
-			// record initial library membership for the
-			// freshly-created artist.
-			if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "jellyfin"); memErr != nil {
-				r.logger.Warn("adding jellyfin library membership for new artist", "name", a.Name, "error", memErr)
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
@@ -806,12 +800,10 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		}
 		result.Created++
 
+		// Initial artist_libraries membership is recorded by
+		// artist.Service.Create via AddDerivingSource.
 		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
-		}
-		// record initial library membership.
-		if memErr := r.artistService.AddLibraryMembership(ctx, a.ID, lib.ID, "lidarr"); memErr != nil {
-			r.logger.Warn("adding lidarr library membership for new artist", "name", a.Name, "error", memErr)
 		}
 		r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), a.ID, manualLibs)
 	}

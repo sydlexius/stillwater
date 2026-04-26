@@ -449,6 +449,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 				CASE
 					WHEN c.type = 'emby' THEN 'emby'
 					WHEN c.type = 'jellyfin' THEN 'jellyfin'
+					WHEN c.type = 'lidarr' THEN 'lidarr'
 					ELSE 'filesystem'
 				END,
 				a.created_at
