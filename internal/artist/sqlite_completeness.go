@@ -25,7 +25,6 @@ SELECT
     a.id,
     a.name,
     a.type,
-    COALESCE(a.library_id, '')  AS library_id,
     a.biography,
     a.genres,
     a.styles,
@@ -63,8 +62,14 @@ WHERE a.is_excluded = 0`
 	var args []any
 
 	if libraryID != "" {
-		query = baseQuery + " AND a.library_id = ?"
-		args = []any{libraryID}
+		query = baseQuery + ` AND (
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = a.id AND al.library_id = ?
+			)
+			OR a.library_id = ?
+		)`
+		args = []any{libraryID, libraryID}
 	} else {
 		query = baseQuery
 	}
@@ -81,7 +86,7 @@ WHERE a.is_excluded = 0`
 		var nfoInt, hasMBIDInt, hasThumbInt, hasFanartInt, hasLogoInt, hasBannerInt int
 
 		if err := rows.Scan(
-			&cr.ID, &cr.Name, &cr.Type, &cr.LibraryID,
+			&cr.ID, &cr.Name, &cr.Type,
 			&cr.Biography, &cr.Genres, &cr.Styles, &cr.Moods, &cr.YearsActive,
 			&cr.Born, &cr.Formed, &cr.Died, &cr.Disbanded,
 			&nfoInt, &hasMBIDInt,
@@ -90,6 +95,10 @@ WHERE a.is_excluded = 0`
 			return nil, fmt.Errorf("scanning completeness row: %w", err)
 		}
 
+		// LibraryID is the filter scope when set. Unfiltered queries leave
+		// it empty because an artist can hold memberships in many libraries
+		// and there is no canonical "the" library to report.
+		cr.LibraryID = libraryID
 		cr.NFOExists = nfoInt == 1
 		cr.HasMBID = hasMBIDInt == 1
 		cr.HasThumb = hasThumbInt == 1
@@ -114,18 +123,24 @@ func (r *sqliteCompletenessRepo) GetLowestCompleteness(ctx context.Context, libr
 	}
 
 	const baseQuery = `
-SELECT id, name, COALESCE(library_id, '') AS library_id, health_score
-FROM artists
-WHERE is_excluded = 0`
+SELECT a.id, a.name, a.health_score
+FROM artists a
+WHERE a.is_excluded = 0`
 
 	var query string
 	var args []any
 
 	if libraryID != "" {
-		query = baseQuery + " AND library_id = ? ORDER BY health_score ASC LIMIT ?"
-		args = []any{libraryID, limit}
+		query = baseQuery + ` AND (
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = a.id AND al.library_id = ?
+			)
+			OR a.library_id = ?
+		) ORDER BY a.health_score ASC LIMIT ?`
+		args = []any{libraryID, libraryID, limit}
 	} else {
-		query = baseQuery + " ORDER BY health_score ASC LIMIT ?"
+		query = baseQuery + " ORDER BY a.health_score ASC LIMIT ?"
 		args = []any{limit}
 	}
 
@@ -138,9 +153,11 @@ WHERE is_excluded = 0`
 	var results []LowestCompletenessArtist
 	for rows.Next() {
 		var a LowestCompletenessArtist
-		if err := rows.Scan(&a.ID, &a.Name, &a.LibraryID, &a.HealthScore); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.HealthScore); err != nil {
 			return nil, fmt.Errorf("scanning lowest completeness row: %w", err)
 		}
+		// LibraryID reflects the filter scope; empty when unfiltered.
+		a.LibraryID = libraryID
 		results = append(results, a)
 	}
 	if err := rows.Err(); err != nil {

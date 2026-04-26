@@ -81,7 +81,7 @@ if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
   exit 1
 fi
 if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \
-    PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go" \
+    PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
     bash "$PATCH_COVERAGE_HELPER"; then
   :
 else

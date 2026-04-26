@@ -1105,3 +1105,75 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 		t.Errorf("sibling orphan count after last library delete = %d, want 0 (prune fires when last library is gone)", orphan)
 	}
 }
+
+// TestDeleteWithArtists_PreservesArtistInOtherLibraries is the issue #1004
+// regression for the M:N model: an artist with membership in the unlinked
+// library AND in another library must survive the unlink. Only the
+// unlinked library's membership row goes; the artist row stays because the
+// other library still observes it. Without this guard, the legacy
+// "WHERE library_id = ?" delete (or even a naive M:N pruner) would erase
+// the artist from under the still-attached library.
+func TestDeleteWithArtists_PreservesArtistInOtherLibraries(t *testing.T) {
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	fsLib := &Library{Name: "Filesystem", Path: dir, Type: TypeRegular, Source: SourceManual}
+	if err := svc.Create(ctx, fsLib); err != nil {
+		t.Fatalf("Create fs library: %v", err)
+	}
+	seedConnection(t, db, "conn-emby", "emby")
+	embyLib := &Library{Name: "Emby Music", Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-1", Source: SourceEmby}
+	if err := svc.Create(ctx, embyLib); err != nil {
+		t.Fatalf("Create emby library: %v", err)
+	}
+
+	// Artist in BOTH libraries via membership rows.
+	seedArtist(t, db, "art-multi", "Radiohead", fsLib.ID)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		VALUES ('art-multi', ?, 'filesystem', datetime('now')),
+		       ('art-multi', ?, 'emby', datetime('now'))
+	`, fsLib.ID, embyLib.ID); err != nil {
+		t.Fatalf("seed memberships: %v", err)
+	}
+	seedPlatformID(t, db, "art-multi", "conn-emby", "emby-radiohead-1")
+
+	// Unlink the Emby library with "delete artists" semantics.
+	if err := svc.DeleteWithArtists(ctx, embyLib.ID); err != nil {
+		t.Fatalf("DeleteWithArtists emby: %v", err)
+	}
+
+	// The artist must survive because filesystem still observes it.
+	var present int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-multi'`).Scan(&present); err != nil {
+		t.Fatalf("count survivor: %v", err)
+	}
+	if present != 1 {
+		t.Errorf("artist count = %d, want 1 (filesystem membership must preserve)", present)
+	}
+
+	// The Emby library's membership row went via cascade.
+	var fsMember, embyMember int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-multi' AND library_id = ?`,
+		fsLib.ID).Scan(&fsMember); err != nil {
+		t.Fatalf("count fs membership: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-multi' AND library_id = ?`,
+		embyLib.ID).Scan(&embyMember); err != nil {
+		t.Fatalf("count emby membership: %v", err)
+	}
+	if fsMember != 1 {
+		t.Errorf("fs membership count = %d, want 1 (must remain)", fsMember)
+	}
+	if embyMember != 0 {
+		t.Errorf("emby membership count = %d, want 0 (cascade should have removed it)", embyMember)
+	}
+}

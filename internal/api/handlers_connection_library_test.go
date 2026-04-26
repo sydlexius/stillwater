@@ -2358,7 +2358,10 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("creating emby library: %v", err)
 	}
 
-	// Populate -- this creates a NEW emby-library artist.
+	// Issue #1004: Emby populate must NOT create a duplicate row when the
+	// inbound artist matches an existing filesystem artist by MBID. The
+	// existing artist gets the Emby platform mapping + an Emby library
+	// membership, and result.Created stays at 0.
 	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
@@ -2366,31 +2369,31 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 		t.Fatalf("populateFromEmbyCtx: %v", err)
 	}
 
-	if result.Created != 1 {
-		t.Fatalf("created = %d, want 1", result.Created)
+	if result.Created != 0 {
+		t.Fatalf("created = %d, want 0 (existing filesystem artist must absorb the import)", result.Created)
 	}
 
-	// The emby-library artist should have a platform ID (existing behavior).
-	embyArtist, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", embyLib.ID)
-	if err != nil || embyArtist == nil {
-		t.Fatalf("looking up emby artist: %v", err)
-	}
-	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
-	if err != nil {
-		t.Fatalf("GetPlatformID (emby): %v", err)
-	}
-	if embyPlatformID != "emby-radiohead-001" {
-		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-radiohead-001")
-	}
-
-	// Issue #1076: only the connection-library artist holds the mapping;
-	// the filesystem artist no longer gets a duplicate.
+	// Filesystem artist now holds the Emby platform mapping.
 	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (fs): %v", err)
 	}
-	if fsPlatformID != "" {
-		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
+	if fsPlatformID != "emby-radiohead-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q (mapping must attach to canonical row)",
+			fsPlatformID, "emby-radiohead-001")
+	}
+
+	// No second Radiohead row was created.
+	memberships, err := router.artistService.LibrariesForArtist(ctx, fsArtist.ID)
+	if err != nil {
+		t.Fatalf("LibrariesForArtist: %v", err)
+	}
+	gotLibs := map[string]string{}
+	for _, m := range memberships {
+		gotLibs[m.LibraryID] = m.Source
+	}
+	if got := gotLibs[embyLib.ID]; got != "emby" {
+		t.Errorf("emby membership source = %q, want emby (memberships=%+v)", got, memberships)
 	}
 }
 
@@ -2859,5 +2862,135 @@ func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 	}
 	if lidarrPlatformID != "42" {
 		t.Errorf("lidarr artist platform ID = %q, want %q", lidarrPlatformID, "42")
+	}
+}
+
+// TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist is the issue #1004
+// killer integration test. With M:N artist_libraries (no per-library scope
+// on dedupe), populating both Emby and Jellyfin against the same on-disk
+// artist must produce ONE artist row carrying both platform mappings and
+// both library memberships, not two parallel rows.
+//
+// Topology under test: no filesystem library (the canonical pre-fix bug
+// scenario). Emby populates first and creates the artist; Jellyfin
+// populates second and absorbs into the existing row.
+func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
+	const mbid = "mbid-12-stones"
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"12 Stones","SortName":"12 Stones",
+				"Id":"emby-12-stones",
+				"Path":"","Overview":"American rock band.",
+				"Genres":["Rock"],"Tags":[],
+				"PremiereDate":"","EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"` + mbid + `"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"12 Stones","SortName":"12 Stones",
+				"Id":"jelly-12-stones",
+				"Path":"/music/12 Stones","Overview":"American rock band.",
+				"Genres":["Rock"],"Tags":[],
+				"PremiereDate":"","EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"` + mbid + `"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby", "Emby", "emby")
+	addTestConnection(t, router, "conn-jelly", "Jellyfin", "jellyfin")
+
+	embyLib := &library.Library{
+		Name: "Emby Music", Type: library.TypeRegular,
+		Source: library.SourceEmby, ConnectionID: "conn-emby", ExternalID: "emby-lib",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("create emby library: %v", err)
+	}
+	jfLib := &library.Library{
+		Name: "Jellyfin Music", Type: library.TypeRegular,
+		Source: library.SourceJellyfin, ConnectionID: "conn-jelly", ExternalID: "jelly-lib",
+	}
+	if err := router.libraryService.Create(ctx, jfLib); err != nil {
+		t.Fatalf("create jellyfin library: %v", err)
+	}
+
+	embyClient := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	jfClient := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	// Emby populates first: creates the canonical artist row.
+	var rEmby populateResult
+	if err := router.populateFromEmbyCtx(ctx, embyClient, embyLib, &rEmby); err != nil {
+		t.Fatalf("emby populate: %v", err)
+	}
+	if rEmby.Created != 1 {
+		t.Errorf("emby created = %d, want 1", rEmby.Created)
+	}
+
+	// Jellyfin populates second: must absorb into the same artist row, not
+	// create a duplicate.
+	var rJF populateResult
+	if err := router.populateFromJellyfinCtx(ctx, jfClient, jfLib, &rJF); err != nil {
+		t.Fatalf("jellyfin populate: %v", err)
+	}
+	if rJF.Created != 0 {
+		t.Errorf("jellyfin created = %d, want 0 (must dedupe to existing artist)", rJF.Created)
+	}
+
+	// Exactly one 12 Stones row exists end-to-end.
+	a, err := router.artistService.GetByMBID(ctx, mbid)
+	if err != nil || a == nil {
+		t.Fatalf("GetByMBID after both populates: a=%v err=%v", a, err)
+	}
+
+	// Both platform mappings live on the canonical row.
+	embyPID, err := router.artistService.GetPlatformID(ctx, a.ID, "conn-emby")
+	if err != nil {
+		t.Fatalf("GetPlatformID emby: %v", err)
+	}
+	if embyPID != "emby-12-stones" {
+		t.Errorf("emby platform id = %q, want emby-12-stones", embyPID)
+	}
+	jfPID, err := router.artistService.GetPlatformID(ctx, a.ID, "conn-jelly")
+	if err != nil {
+		t.Fatalf("GetPlatformID jellyfin: %v", err)
+	}
+	if jfPID != "jelly-12-stones" {
+		t.Errorf("jellyfin platform id = %q, want jelly-12-stones", jfPID)
+	}
+
+	// Both library memberships live on the canonical row.
+	memberships, err := router.artistService.LibrariesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("LibrariesForArtist: %v", err)
+	}
+	gotSources := map[string]string{}
+	for _, m := range memberships {
+		gotSources[m.LibraryID] = m.Source
+	}
+	if gotSources[embyLib.ID] != "emby" {
+		t.Errorf("emby membership source = %q, want emby", gotSources[embyLib.ID])
+	}
+	if gotSources[jfLib.ID] != "jellyfin" {
+		t.Errorf("jellyfin membership source = %q, want jellyfin", gotSources[jfLib.ID])
 	}
 }

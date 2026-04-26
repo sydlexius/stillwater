@@ -274,9 +274,16 @@ func (r *sqliteImageRepo) NewestWriteTimesByArtist(ctx context.Context, libraryI
 		SELECT a.id, MAX(ai.last_written_at)
 		FROM artist_images ai
 		JOIN artists a ON ai.artist_id = a.id
-		WHERE a.library_id = ? AND ai.last_written_at != ''
+		WHERE (
+			EXISTS (
+				SELECT 1 FROM artist_libraries al
+				WHERE al.artist_id = a.id AND al.library_id = ?
+			)
+			OR a.library_id = ?
+		)
+		AND ai.last_written_at != ''
 		GROUP BY a.id`,
-		libraryID,
+		libraryID, libraryID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying newest write times by artist for library %s: %w", libraryID, err)

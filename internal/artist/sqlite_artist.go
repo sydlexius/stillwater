@@ -132,6 +132,41 @@ func (r *sqliteArtistRepo) GetByMBID(ctx context.Context, mbid string) (*Artist,
 	return a, nil
 }
 
+// GetByName performs case-insensitive exact-name lookup with no library
+// scope. Used by connection populate paths to dedupe across all
+// libraries; replaces the older GetByNameAndLibrary call site.
+func (r *sqliteArtistRepo) GetByName(ctx context.Context, name string) (*Artist, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT `+artistColumns+` FROM artists WHERE LOWER(name) = LOWER(?) LIMIT 1`, name)
+	a, err := scanArtist(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting artist by name: %w", err)
+	}
+	return a, nil
+}
+
+// FindByMBIDOrNameUnscoped tries MBID first then case-insensitive name,
+// returning the first match without any library scope. This is the dedupe
+// helper for the unscoped populate path.
+func (r *sqliteArtistRepo) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error) {
+	if mbid != "" {
+		a, err := r.GetByMBID(ctx, mbid)
+		if err != nil {
+			return nil, fmt.Errorf("finding by mbid (unscoped): %w", err)
+		}
+		if a != nil {
+			return a, nil
+		}
+	}
+	if name == "" {
+		return nil, nil
+	}
+	return r.GetByName(ctx, name)
+}
+
 func (r *sqliteArtistRepo) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
 	row := r.db.QueryRowContext(ctx,
 		`SELECT `+artistColumns+` FROM artists
@@ -263,7 +298,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	// UPDATE: they are owned by MarkDirty/MarkRulesEvaluated and racing with
 	// concurrent event-driven dirty marks would silently lose mutations.
 	// The Artist struct still carries these fields for read-side consumers,
-	// but write-side ownership lives in the targeted helpers (#698).
+	// but write-side ownership lives in the targeted helpers.
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE artists SET
 			name = ?, sort_name = ?, type = ?, gender = ?, origin = ?, disambiguation = ?,

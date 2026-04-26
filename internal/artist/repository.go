@@ -10,8 +10,24 @@ type Repository interface {
 	Create(ctx context.Context, a *Artist) error
 	GetByID(ctx context.Context, id string) (*Artist, error)
 	GetByMBID(ctx context.Context, mbid string) (*Artist, error)
+
+	// GetByName looks up an artist by case-insensitive exact name match
+	// without any library scope. connection populates use this
+	// to dedupe across all libraries (the legacy GetByNameAndLibrary scoped
+	// to one library and missed cross-library duplicates).
+	GetByName(ctx context.Context, name string) (*Artist, error)
+
+	// FindByMBIDOrNameUnscoped performs unscoped MBID-then-name lookup,
+	// matching the dedupe priority used by connection populates. Replaces
+	// the library-scoped FindByMBIDOrName.
+	FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error)
+
+	// Deprecated: use GetByMBID. The library-scoped variant remains while
+	// legacy populate paths are migrated; remove with the M:N cleanup.
 	GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error)
+	// Deprecated: use GetByName. See GetByMBIDAndLibrary above.
 	GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error)
+	// Deprecated: use FindByMBIDOrNameUnscoped. See GetByMBIDAndLibrary above.
 	FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error)
 	GetByPath(ctx context.Context, path string) (*Artist, error)
 	List(ctx context.Context, params ListParams) ([]Artist, int, error)
@@ -190,8 +206,11 @@ type PlatformIDRepository interface {
 	// DeleteByArtistID removes all platform ID mappings for the given artist.
 	DeleteByArtistID(ctx context.Context, artistID string) error
 
-	// GetPresenceForArtists returns per-artist platform presence (Emby, Jellyfin,
-	// Lidarr) by joining artist_platform_ids with connections to determine
-	// connection type. Artists with no platform IDs are omitted from the result.
+	// GetPresenceForArtists returns per-artist platform presence (filesystem,
+	// Emby, Jellyfin, Lidarr) derived from artist_libraries memberships joined
+	// with libraries: a NULL library.connection_id maps to HasFilesystem; a
+	// non-NULL connection_id maps to HasEmby/HasJellyfin/HasLidarr based on the
+	// connection type. Artists with no membership rows are omitted from the
+	// result map; the caller treats a missing entry as no presence.
 	GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error)
 }

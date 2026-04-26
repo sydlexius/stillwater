@@ -3,11 +3,37 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/database"
 )
+
+// failingMembershipRepo wraps a real MembershipRepository but returns a
+// fixed error from AddDerivingSource. Used to exercise the Create
+// rollback path when the membership write fails for non-recoverable
+// reasons (locked DB, FK violation, etc.).
+type failingMembershipRepo struct {
+	inner MembershipRepository
+	err   error
+}
+
+func (f *failingMembershipRepo) Add(ctx context.Context, artistID, libraryID, source string) error {
+	return f.inner.Add(ctx, artistID, libraryID, source)
+}
+func (f *failingMembershipRepo) Remove(ctx context.Context, artistID, libraryID string) error {
+	return f.inner.Remove(ctx, artistID, libraryID)
+}
+func (f *failingMembershipRepo) ListForArtist(ctx context.Context, artistID string) ([]LibraryMembership, error) {
+	return f.inner.ListForArtist(ctx, artistID)
+}
+func (f *failingMembershipRepo) CountForArtist(ctx context.Context, artistID string) (int, error) {
+	return f.inner.CountForArtist(ctx, artistID)
+}
+func (f *failingMembershipRepo) AddDerivingSource(ctx context.Context, artistID, libraryID string) error {
+	return f.err
+}
 
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -83,6 +109,57 @@ func TestCreateAndGetByID(t *testing.T) {
 	}
 	if got.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
+	}
+}
+
+// TestCreate_MembershipWriteFailureRollsBack verifies that an unexpected
+// failure from the membership repository during Create rolls the artist
+// row back instead of leaving a half-created record. Under M:N,
+// memberships are load-bearing: an artist row with no membership is
+// invisible to per-library views, so the artist is rolled back rather
+// than persisted in a partial state.
+func TestCreate_MembershipWriteFailureRollsBack(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Need a library row to give Create a real LibraryID target. Without
+	// one, recordInitialMembership early-returns and never calls the
+	// failing AddDerivingSource path.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		VALUES ('lib-fs', 'lib-fs', '/music', 'regular', 'filesystem',
+			datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	// Inject a failing membership repo. Reuse the real one for the other
+	// methods so any incidental reads still work.
+	wantErr := errors.New("simulated membership write failure")
+	svc.SetMembershipRepository(&failingMembershipRepo{
+		inner: newSQLiteMembershipRepo(db),
+		err:   wantErr,
+	})
+
+	a := testArtist("Faker", "/music/Faker")
+	a.LibraryID = "lib-fs"
+	err := svc.Create(ctx, a)
+	if err == nil {
+		t.Fatal("expected Create to return error after membership write failed")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Create error = %v, want wrap of %v", err, wantErr)
+	}
+
+	// Artist row must NOT exist after rollback.
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE name = 'Faker'`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("artist count after rollback = %d, want 0 (membership failure must roll back the artist row)", n)
 	}
 }
 

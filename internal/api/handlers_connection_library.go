@@ -544,6 +544,49 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
+// dedupeForImport finds an existing artist that an inbound platform item
+// (Emby / Jellyfin / Lidarr) should attach to, scanning across ALL
+// libraries. Returns:
+//   - (existing, false): caller attaches platform mapping + library
+//     membership and skips creation
+//   - (nil, false): caller creates a new artist row
+//   - (nil, true): a lookup error or MBID conflict was logged; caller
+//     must increment Skipped and move to the next item
+//
+// Replaces the previous per-library-scoped GetByMBIDAndLibrary +
+// GetByNameAndLibrary lookups, which produced duplicate artist rows when
+// the same real-world artist was imported from multiple libraries (the
+// classic Emby + Jellyfin against the same /music topology).
+func (r *Router) dedupeForImport(
+	ctx context.Context,
+	mbid, name, source string,
+	result *populateResult,
+) (*artist.Artist, bool) {
+	if mbid == "" && name == "" {
+		return nil, false
+	}
+	a, err := r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil {
+		r.logger.Warn("dedup lookup",
+			"mbid", mbid, "name", name, "platform", source, "error", err)
+		result.Skipped++
+		return nil, true
+	}
+	if a == nil {
+		return nil, false
+	}
+	if mbid != "" && a.MusicBrainzID != "" && a.MusicBrainzID != mbid {
+		// Name collision with conflicting MBIDs: two different artists
+		// share a name. Skip to avoid wrong association.
+		r.logger.Warn("mbid conflict during dedup, skipping",
+			"name", name, "platform", source,
+			"platform_mbid", mbid, "existing_mbid", a.MusicBrainzID)
+		result.Skipped++
+		return nil, true
+	}
+	return a, false
+}
+
 func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
@@ -558,35 +601,9 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.dedupeForImport(ctx, mbid, item.Name, "emby", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {
@@ -600,6 +617,12 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				// Store the platform-to-Stillwater artist ID mapping.
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
+				}
+				// record that this Emby library now also
+				// observes the existing artist (filesystem-imported or
+				// Jellyfin-imported, etc.). Idempotent.
+				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "emby"); memErr != nil {
+					r.logger.Warn("adding emby library membership", "name", existing.Name, "error", memErr)
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
@@ -632,6 +655,8 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Created++
 
 			// Store the platform-to-Stillwater artist ID mapping.
+			// Initial artist_libraries membership is recorded by
+			// artist.Service.Create via AddDerivingSource.
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
 			}
@@ -662,35 +687,9 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
-			var existing *artist.Artist
-			if mbid != "" {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-			}
-			if existing == nil {
-				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-				if lookupErr != nil {
-					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
-					result.Skipped++
-					continue
-				}
-				if nameMatch != nil {
-					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
-						// Name matches but MBIDs conflict -- different artists
-						// with the same name. Skip to avoid wrong association.
-						r.logger.Warn("mbid conflict during name dedup, skipping",
-							"name", item.Name, "platform_mbid", mbid,
-							"existing_mbid", nameMatch.MusicBrainzID)
-						result.Skipped++
-						continue
-					}
-					existing = nameMatch
-				}
+			existing, skip := r.dedupeForImport(ctx, mbid, item.Name, "jellyfin", result)
+			if skip {
+				continue
 			}
 
 			if existing != nil {
@@ -704,6 +703,11 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				// Store the platform-to-Stillwater artist ID mapping.
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
+				}
+				// record that this Jellyfin library now also
+				// observes the existing artist. Idempotent.
+				if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "jellyfin"); memErr != nil {
+					r.logger.Warn("adding jellyfin library membership", "name", existing.Name, "error", memErr)
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
@@ -736,6 +740,8 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Created++
 
 			// Store the platform-to-Stillwater artist ID mapping.
+			// Initial artist_libraries membership is recorded by
+			// artist.Service.Create via AddDerivingSource.
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
 			}
@@ -763,38 +769,22 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		result.Total++
 		mbid := la.ForeignArtistID
 
-		if mbid != "" {
-			existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-			if lookupErr != nil {
-				r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
-				result.Skipped++
-				continue
+		existing, skip := r.dedupeForImport(ctx, mbid, la.ArtistName, "lidarr", result)
+		if skip {
+			continue
+		}
+
+		if existing != nil {
+			if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+				r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
 			}
-			if existing != nil {
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
-					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
-				}
-				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
-				result.Skipped++
-				continue
+			// record this Lidarr library's membership.
+			if memErr := r.artistService.AddLibraryMembership(ctx, existing.ID, lib.ID, "lidarr"); memErr != nil {
+				r.logger.Warn("adding lidarr library membership", "name", existing.Name, "error", memErr)
 			}
-		} else {
-			existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
-			if lookupErr != nil {
-				r.logger.Warn("dedup lookup by name", "name", la.ArtistName, "error", lookupErr)
-				result.Skipped++
-				continue
-			}
-			if existing != nil {
-				// Store the platform-to-Stillwater artist ID mapping.
-				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
-					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
-				}
-				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
-				result.Skipped++
-				continue
-			}
+			r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
+			result.Skipped++
+			continue
 		}
 
 		a := &artist.Artist{
@@ -810,7 +800,8 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		}
 		result.Created++
 
-		// Store the platform-to-Stillwater artist ID mapping.
+		// Initial artist_libraries membership is recorded by
+		// artist.Service.Create via AddDerivingSource.
 		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
 		}
@@ -1057,34 +1048,39 @@ func (r *Router) backfillPlatformIDToManualLibs(
 	mbid, name, connectionID, platformArtistID, connArtistID string,
 	manualLibs []library.Library,
 ) {
-	for _, ml := range manualLibs {
-		fsArtist, err := r.artistService.FindByMBIDOrName(ctx, mbid, name, ml.ID)
-		if err != nil {
-			r.logger.Warn("backfill: finding filesystem artist", "name", name, "library", ml.ID, "error", err)
-			continue
-		}
-		if fsArtist == nil || fsArtist.ID == connArtistID {
-			continue
-		}
-		if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
-			// Issue #1076: a UNIQUE index on
-			// (connection_id, platform_artist_id) means at most one
-			// artist row can hold a given platform mapping. The
-			// connection-library artist already claimed it before we
-			// got here, so the filesystem-library copy is now
-			// redundant rather than erroneous. Skip silently with a
-			// debug log instead of warning.
-			if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
-				r.logger.Debug("backfill: platform id already held by another artist row, skipping",
-					"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
-				continue
-			}
-			r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
-			continue
-		}
-		r.logger.Debug("backfill: platform id propagated to filesystem artist",
-			"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+	// In the M:N model an artist row is shared across libraries, so the
+	// per-library loop is vestigial; one unscoped lookup resolves the row
+	// that any of the manual libraries would observe. The manualLibs
+	// parameter is retained as a presence guard: skip entirely when the
+	// caller has no manual libraries configured.
+	if len(manualLibs) == 0 {
+		return
 	}
+	fsArtist, err := r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil {
+		r.logger.Warn("backfill: finding filesystem artist", "name", name, "error", err)
+		return
+	}
+	if fsArtist == nil || fsArtist.ID == connArtistID {
+		return
+	}
+	if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
+		// a UNIQUE index on (connection_id, platform_artist_id) means at
+		// most one artist row can hold a given platform mapping. The
+		// connection-library artist already claimed it before we got
+		// here, so the filesystem-library copy is now redundant rather
+		// than erroneous. Skip silently with a debug log instead of
+		// warning.
+		if errors.Is(setErr, artist.ErrPlatformIDClaimedByAnotherArtist) {
+			r.logger.Debug("backfill: platform id already held by another artist row, skipping",
+				"fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+			return
+		}
+		r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
+		return
+	}
+	r.logger.Debug("backfill: platform id propagated to filesystem artist",
+		"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
 }
 
 // manualLibraries returns all libraries with source "manual". Used by scan

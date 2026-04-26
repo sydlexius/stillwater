@@ -21,7 +21,7 @@ func newSQLitePlatformIDRepo(db *sql.DB) *sqlitePlatformIDRepo {
 func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, platformArtistID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	// Issue #1076: a UNIQUE index on (connection_id, platform_artist_id)
+	// a UNIQUE index on (connection_id, platform_artist_id)
 	// prevents two artist rows from claiming the same platform item.
 	// SQLite supports only one ON CONFLICT clause per INSERT, and the
 	// existing one targets (artist_id, connection_id) for upsert. Detect
@@ -118,9 +118,16 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 	return nil
 }
 
-// GetPresenceForArtists returns a map of artist ID to PlatformPresence by
-// joining artist_platform_ids with connections to determine which platform
-// types each artist has a mapping for. Artists with no mappings are omitted.
+// GetPresenceForArtists returns a map of artist ID to PlatformPresence.
+// presence derives from artist_libraries memberships (the
+// authoritative "currently observed by" record), not from artist_platform_ids
+// (which can lag behind library state -- a library unlink leaves the
+// connection and its mappings intact). One query covers all four presence
+// flags; library.connection_id IS NULL maps to filesystem presence,
+// otherwise the connection's type maps to HasEmby/HasJellyfin/HasLidarr.
+//
+// Artists with no membership rows are omitted from the result map; the
+// caller treats a missing entry as "no presence."
 func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error) {
 	if len(artistIDs) == 0 {
 		return nil, nil
@@ -133,14 +140,34 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 		args[i] = id
 	}
 
-	// Return one row per (artist, connection_type) pair. GROUP BY collapses
-	// multiple connections of the same type into a single row per artist.
-	query := `SELECT ap.artist_id, c.type ` + //nolint:gosec // G202: placeholders are "?" literals
-		`FROM artist_platform_ids ap ` +
-		`JOIN connections c ON c.id = ap.connection_id ` +
-		`WHERE ap.artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
-		`GROUP BY ap.artist_id, c.type`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	// Alias is "presence_kind" rather than "source" to avoid colliding
+	// with libraries.source in the GROUP BY (SQLite resolves the bare
+	// name to the table column, raising "ambiguous column" otherwise).
+	//
+	// Hybrid OR-fallback: UNION the membership-derived rows with the
+	// legacy artists.library_id projection so artists created by
+	// still-legacy writers (or older fixtures) without an
+	// artist_libraries row are still visible. The legacy branch goes
+	// away when #1214 drops the column.
+	in := strings.Join(placeholders, ",")
+	query := `SELECT artist_id, presence_kind FROM (` + //nolint:gosec // G202: placeholders are "?" literals
+		`SELECT al.artist_id AS artist_id, ` +
+		`CASE WHEN l.connection_id IS NULL THEN 'filesystem' ELSE COALESCE(c.type, '') END AS presence_kind ` +
+		`FROM artist_libraries al ` +
+		`JOIN libraries l ON l.id = al.library_id ` +
+		`LEFT JOIN connections c ON c.id = l.connection_id ` +
+		`WHERE al.artist_id IN (` + in + `) ` +
+		`UNION ` +
+		`SELECT a.id AS artist_id, ` +
+		`CASE WHEN l.connection_id IS NULL THEN 'filesystem' ELSE COALESCE(c.type, '') END AS presence_kind ` +
+		`FROM artists a ` +
+		`JOIN libraries l ON l.id = a.library_id ` +
+		`LEFT JOIN connections c ON c.id = l.connection_id ` +
+		`WHERE a.id IN (` + in + `) ` +
+		`  AND a.library_id IS NOT NULL AND a.library_id <> ''` +
+		`)`
+	queryArgs := append(append([]any{}, args...), args...)
+	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("batch getting platform presence: %w", err)
 	}
@@ -148,12 +175,14 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 
 	result := make(map[string]PlatformPresence, len(artistIDs))
 	for rows.Next() {
-		var artistID, connType string
-		if err := rows.Scan(&artistID, &connType); err != nil {
+		var artistID, kind string
+		if err := rows.Scan(&artistID, &kind); err != nil {
 			return nil, fmt.Errorf("scanning platform presence row: %w", err)
 		}
 		p := result[artistID]
-		switch connType {
+		switch kind {
+		case "filesystem":
+			p.HasFilesystem = true
 		case "emby":
 			p.HasEmby = true
 		case "jellyfin":

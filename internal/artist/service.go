@@ -83,6 +83,7 @@ type Service struct {
 	completeness CompletenessRepository
 	history      *HistoryService
 	mbSnapshots  MBSnapshotRepository
+	memberships  MembershipRepository
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that
@@ -132,7 +133,16 @@ func NewService(db *sql.DB) *Service {
 		platformIDs:  newSQLitePlatformIDRepo(db),
 		completeness: newSQLiteCompletenessRepo(db),
 		mbSnapshots:  newSQLiteMBSnapshotRepo(db),
+		memberships:  newSQLiteMembershipRepo(db),
 	}
+}
+
+// SetMembershipRepository attaches a MembershipRepository to the artist
+// Service for the M:N artist-libraries surface. Setter form
+// matches SetMBSnapshotRepository so existing NewServiceWithRepos callers
+// (and their test fakes) keep working without a signature break.
+func (s *Service) SetMembershipRepository(repo MembershipRepository) {
+	s.memberships = repo
 }
 
 // NewServiceWithRepos creates an artist service using the provided repository
@@ -185,6 +195,20 @@ func NewDefaultRepos(db *sql.DB) (
 // Create inserts a new artist and persists its provider IDs and image metadata.
 // If normalized data persistence fails, the artist row is deleted as a
 // best-effort rollback (CASCADE handles child tables).
+//
+// When a.LibraryID is set, an artist_libraries membership is inserted
+// alongside the artist row so the artist appears in per-library queries.
+// The source is derived from the target library: a connection-backed
+// library uses the connection type (emby / jellyfin / lidarr); otherwise
+// the artist is recorded as filesystem-sourced.
+//
+// AddDerivingSource silently no-ops when the target library does not
+// exist (its SELECT-driven INSERT yields zero rows in that case), so any
+// error returned here is a real DB-level failure (locked, FK violation
+// on the artist row, etc.) and is treated as fatal. Memberships are
+// load-bearing under M:N -- an artist row without a corresponding
+// membership disappears from per-library views -- so we roll the
+// artist back rather than leaving a half-created record.
 func (s *Service) Create(ctx context.Context, a *Artist) error {
 	if err := s.artists.Create(ctx, a); err != nil {
 		return err
@@ -193,7 +217,22 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		_ = s.artists.Delete(ctx, a.ID) // best-effort rollback
 		return err
 	}
+	if err := s.recordInitialMembership(ctx, a); err != nil {
+		_ = s.artists.Delete(ctx, a.ID) // keep create atomic for required data
+		return fmt.Errorf("recording initial library membership: %w", err)
+	}
 	return nil
+}
+
+// recordInitialMembership inserts an artist_libraries row derived from
+// a.LibraryID. The membership repo deduces the source from the target
+// library (filesystem when no connection, otherwise the connection's
+// type) and is a no-op when the library does not exist.
+func (s *Service) recordInitialMembership(ctx context.Context, a *Artist) error {
+	if s.memberships == nil || a.LibraryID == "" {
+		return nil
+	}
+	return s.memberships.AddDerivingSource(ctx, a.ID, a.LibraryID)
 }
 
 // GetHealthStats returns aggregate health metrics for non-excluded artists.
@@ -217,7 +256,7 @@ func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 
 // MarkDirty stamps dirty_since for one artist. The rule pipeline picks up
 // artists whose dirty_since is newer than rules_evaluated_at on the next
-// "Run Rules" invocation. See issue #698.
+// "Run Rules" invocation.
 func (s *Service) MarkDirty(ctx context.Context, id string, ts time.Time) error {
 	return s.artists.MarkDirty(ctx, id, ts)
 }
@@ -343,9 +382,84 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 	return a, nil
 }
 
+// GetByName retrieves an artist by case-insensitive exact name match,
+// without library scope. replacement for GetByNameAndLibrary.
+// Returns nil, nil when no match is found.
+func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
+	a, err := s.artists.GetByName(ctx, name)
+	if err != nil || a == nil {
+		return a, err
+	}
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// FindByMBIDOrNameUnscoped tries MBID first, then case-insensitive name,
+// without library scope. replacement for FindByMBIDOrName,
+// used by connection populate paths to dedupe across all libraries.
+// Returns nil, nil when no match is found.
+func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error) {
+	a, err := s.artists.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+	if err != nil || a == nil {
+		return a, err
+	}
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// AddLibraryMembership records that an artist is observed by the given
+// library. Idempotent
+func (s *Service) AddLibraryMembership(ctx context.Context, artistID, libraryID, source string) error {
+	if s.memberships == nil {
+		return nil
+	}
+	return s.memberships.Add(ctx, artistID, libraryID, source)
+}
+
+// RemoveLibraryMembership removes a single (artist, library) pair from the
+// membership table
+func (s *Service) RemoveLibraryMembership(ctx context.Context, artistID, libraryID string) error {
+	if s.memberships == nil {
+		return nil
+	}
+	return s.memberships.Remove(ctx, artistID, libraryID)
+}
+
+// LibrariesForArtist returns every library this artist is currently a
+// member of
+func (s *Service) LibrariesForArtist(ctx context.Context, artistID string) ([]LibraryMembership, error) {
+	if s.memberships == nil {
+		return nil, nil
+	}
+	return s.memberships.ListForArtist(ctx, artistID)
+}
+
+// CountLibrariesForArtist returns the number of libraries this artist is
+// currently a member of. Used by the unlink path to decide whether to
+// prune the artist after a library detachment
+func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) (int, error) {
+	if s.memberships == nil {
+		return 0, nil
+	}
+	return s.memberships.CountForArtist(ctx, artistID)
+}
+
 // FindByMBIDOrName finds an artist by MBID first, then falls back to
 // case-insensitive name match, both scoped to the given library.
 // Returns nil, nil when no match is found.
+//
+// Deprecated: use FindByMBIDOrNameUnscoped. Removed alongside the
+// artists.library_id column when the legacy scoped repo surface goes.
 func (s *Service) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
 	a, err := s.artists.FindByMBIDOrName(ctx, mbid, name, libraryID)
 	if err != nil || a == nil {
@@ -670,8 +784,8 @@ func applyProviderFieldToArtist(a *Artist, providerName, value string) {
 
 // ValidateFieldUpdate returns a non-nil error when the field value is
 // invalid. Validation rules:
-//   - "name" must not be empty or whitespace-only.
-//   - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
+// - "name" must not be empty or whitespace-only.
+// - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
 //
 // All other fields are accepted as-is (free-form text).
 func ValidateFieldUpdate(field, value string) error {

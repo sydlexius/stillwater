@@ -14,3 +14,7 @@ ignore:
   # All extracted helper functions (resetPasswordDB, getDBIntSetting, etc.) are
   # tested separately in cmd/stillwater/main_test.go.
   - "cmd/stillwater/main.go"
+  # One-shot debugging / UAT helper scripts. Not part of the production
+  # binary; scripts/pre-push-gate.sh excludes the same directory from
+  # patch coverage so this keeps gate and codecov aligned.
+  - "scripts/**"
