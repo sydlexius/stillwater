@@ -885,21 +885,25 @@ func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
 			return nil, &provider.ErrNotFound{Provider: provider.NameMusicBrainz, ID: id}
 		},
 	})
+	// Wikidata is intentionally chosen here: the default genres priority
+	// chain (DefaultPriorities()) is [MusicBrainz, LastFM, AudioDB,
+	// Discogs, Spotify, Wikipedia], so Wikidata is NOT auto-appended by
+	// GetPriorities' default-reconciliation. That makes it a true "only
+	// in the FallbackChain, never in the priority list" provider, which
+	// is the exact scenario this test is meant to exercise.
 	registry.Register(&mockProvider{
-		name:    provider.NameAudioDB,
+		name:    provider.NameWikidata,
 		authReq: false,
 		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
-			recordCall(provider.NameAudioDB)
+			recordCall(provider.NameWikidata)
 			return &provider.ArtistMetadata{Genres: []string{"jazz"}}, nil
 		},
 	})
 
 	ctx := context.Background()
-	if err := settings.SetAPIKey(ctx, provider.NameAudioDB, "adb-key"); err != nil {
-		t.Fatalf("SetAPIKey audiodb: %v", err)
-	}
 
-	// Priority list contains only MusicBrainz; AudioDB is only in the chain.
+	// Priority list contains only MusicBrainz; Wikidata is only in the
+	// scraper-config fallback chain.
 	if err := settings.SetPriority(ctx, "genres", []provider.ProviderName{provider.NameMusicBrainz}); err != nil {
 		t.Fatalf("SetPriority: %v", err)
 	}
@@ -910,7 +914,7 @@ func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
 			{Field: FieldGenres, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 		},
 		FallbackChains: []FallbackChain{
-			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameAudioDB}},
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikidata}},
 		},
 	}
 	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
@@ -924,13 +928,104 @@ func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
 	}
 
 	if len(result.Metadata.Genres) == 0 || result.Metadata.Genres[0] != "jazz" {
-		t.Errorf("expected genres from AudioDB chain fallback, got %v", result.Metadata.Genres)
+		t.Errorf("expected genres from Wikidata chain fallback, got %v", result.Metadata.Genres)
 	}
 
 	callMu.Lock()
 	defer callMu.Unlock()
-	if len(callOrder) < 2 || callOrder[0] != provider.NameMusicBrainz || callOrder[1] != provider.NameAudioDB {
-		t.Errorf("expected call order [MusicBrainz, AudioDB], got %v", callOrder)
+	if len(callOrder) < 2 || callOrder[0] != provider.NameMusicBrainz || callOrder[1] != provider.NameWikidata {
+		t.Errorf("expected call order [MusicBrainz, Wikidata], got %v", callOrder)
+	}
+}
+
+// TestExecutorPriorityFallback_AllDisabledSkipsField verifies the
+// configured-empty branch: when a field has a priority configured but every
+// provider is in the Disabled set, the field must be skipped entirely. The
+// regression this guards against is the prior code path falling back to the
+// scraper-config chain on len(priority)==0, which silently re-enabled the
+// providers the user had just disabled.
+func TestExecutorPriorityFallback_AllDisabledSkipsField(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	var callOrder []provider.ProviderName
+	var callMu sync.Mutex
+	recordCall := func(name provider.ProviderName) {
+		callMu.Lock()
+		defer callMu.Unlock()
+		callOrder = append(callOrder, name)
+	}
+
+	// Both providers must exist as registered mocks so the executor can
+	// reach the chain-walking code path. If either were missing it would
+	// short-circuit elsewhere and the test would not actually exercise
+	// the configured-empty branch we care about.
+	registry.Register(&mockProvider{
+		name:    provider.NameMusicBrainz,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameMusicBrainz)
+			return &provider.ArtistMetadata{Genres: []string{"should-not-appear"}}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			recordCall(provider.NameAudioDB)
+			return &provider.ArtistMetadata{Genres: []string{"should-not-appear"}}, nil
+		},
+	})
+
+	ctx := context.Background()
+
+	// Configure the genres priority and then disable every provider in
+	// it. After the default-reconciliation in GetPriorities, the list
+	// is [MusicBrainz, LastFM, AudioDB, Discogs, Spotify, Wikipedia];
+	// disabling all of those leaves EnabledProviders() empty for
+	// "genres". The executor must treat this as "skip the field," NOT
+	// "fall back to the scraper-config chain."
+	if err := settings.SetPriority(ctx, "genres", []provider.ProviderName{provider.NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+	allGenresDefaults := []provider.ProviderName{
+		provider.NameMusicBrainz, provider.NameLastFM, provider.NameAudioDB,
+		provider.NameDiscogs, provider.NameSpotify, provider.NameWikipedia,
+	}
+	if err := settings.SetDisabledProviders(ctx, "genres", allGenresDefaults); err != nil {
+		t.Fatalf("SetDisabledProviders: %v", err)
+	}
+
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldGenres, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			// Chain still mentions MusicBrainz + AudioDB. The bug being
+			// guarded against would route through this chain when
+			// EnabledProviders() returned empty, calling both providers
+			// and merging their results.
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	result, err := exec.ScrapeAll(ctx, "mbid-x", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	if len(result.Metadata.Genres) != 0 {
+		t.Errorf("expected no genres when every provider for the field is disabled, got %v", result.Metadata.Genres)
+	}
+
+	callMu.Lock()
+	defer callMu.Unlock()
+	if len(callOrder) != 0 {
+		t.Errorf("expected zero provider calls for fully-disabled field, got %v", callOrder)
 	}
 }
 

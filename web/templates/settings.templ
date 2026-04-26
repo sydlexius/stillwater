@@ -4613,7 +4613,7 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 templ priorityChipRowInner(pri provider.FieldPriority, available []provider.ProviderName) {
 	<div id={ "priority-row-" + pri.Field } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex items-center gap-3 mb-2">
-			<span class="text-sm font-medium capitalize w-24 shrink-0">{ pri.Field }</span>
+			<span class="text-sm font-medium w-24 shrink-0">{ t(ctx, "field." + pri.Field) }</span>
 			<span class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "settings.priorities.instructions") }</span>
 		</div>
 		<div class="flex flex-wrap gap-2" data-sortable-field={ pri.Field }>

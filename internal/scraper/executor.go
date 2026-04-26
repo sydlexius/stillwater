@@ -71,6 +71,14 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 	if err != nil {
 		return nil, fmt.Errorf("loading provider priorities: %w", err)
 	}
+	// priorityByField records the enabled provider list for every field
+	// that has a priority configured. The map's presence (not just
+	// emptiness) carries meaning: a field absent from the map has no
+	// configuration and falls back to the scraper-config chain, while a
+	// field present with an empty slice means the user explicitly
+	// disabled every provider for that field and the field should be
+	// skipped entirely. Collapsing the two cases would silently
+	// re-enable disabled providers via the chain fallback.
 	priorityByField := make(map[FieldName][]provider.ProviderName, len(priorities))
 	for _, pri := range priorities {
 		priorityByField[FieldName(pri.Field)] = pri.EnabledProviders()
@@ -101,7 +109,16 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		// the user-configured priority list (authoritative) with any providers
 		// from the scraper config's fallback chain that are not yet listed.
 		// The first entry in the resulting list becomes the effective primary.
-		effField, effChain := effectiveFieldOrdering(field, *chain, priorityByField[field.Field])
+		//
+		// hasPriority distinguishes "no priority configured" (fall back to
+		// scraper-config chain) from "priority configured but every
+		// provider disabled" (skip the field entirely so disabled
+		// providers cannot leak back in via the chain).
+		priority, hasPriority := priorityByField[field.Field]
+		if hasPriority && len(priority) == 0 {
+			continue
+		}
+		effField, effChain := effectiveFieldOrdering(field, *chain, priority, hasPriority)
 
 		fr := e.scrapeField(ctx, mbid, name, effField, effChain, available, providerIDs, cache, &mu, result)
 		if fr.Err != nil {
@@ -644,11 +661,14 @@ func containsString(slice []string, s string) bool {
 // already covered are appended so newly registered providers are not silently
 // dropped.
 //
-// When the priority list is empty (e.g. no setting persisted and no defaults
-// for a custom field), the original scraper-config primary and chain are
-// returned unchanged so behavior matches the pre-#1030 path.
-func effectiveFieldOrdering(field FieldConfig, chain FallbackChain, priority []provider.ProviderName) (FieldConfig, FallbackChain) {
-	if len(priority) == 0 {
+// When the field has no priority configured at all (hasPriority=false), the
+// original scraper-config primary and chain are returned unchanged so
+// behavior matches the pre-#1030 path. The "configured but empty" case
+// (hasPriority=true, len(priority)==0) must be handled by the caller -- it
+// means "all providers disabled" and the field should be skipped, never
+// passed to this function.
+func effectiveFieldOrdering(field FieldConfig, chain FallbackChain, priority []provider.ProviderName, hasPriority bool) (FieldConfig, FallbackChain) {
+	if !hasPriority {
 		return field, chain
 	}
 
