@@ -451,6 +451,128 @@ func TestApplyMemberRefresh(t *testing.T) {
 	})
 }
 
+// TestExecuteRefreshAndPostHook_ResolvesBioViolation is the issue #1027
+// regression guard. It exercises the full post-refresh pipeline at the
+// HTTP-handler level (not just the rule package): given an artist with an
+// open bio_missing violation, calling executeRefreshCtx with a provider stub
+// that returns a populated biography MUST cause the subsequent
+// runRulesAfterRefresh call to transition the violation row to resolved.
+//
+// The bug as filed reads as a wiring problem (the post-refresh hook
+// "may not be calling re-eval at all"). Inspection shows the wiring is
+// correct on main: handleArtistRefresh / handleRefreshLink both invoke
+// runRulesAfterRefresh after executeRefreshCtx persists provider data.
+// The W2.B (#1208) fix already resolves stale violation rows when a rule
+// re-evaluates as a pass via persistPassResults -> ResolveViolationIfActive.
+//
+// This integration test pins both pieces together so a future change to the
+// refresh handler (or to the rule pipeline's pass-resolution path) that
+// silently breaks the user-visible "violation clears after refresh" behavior
+// surfaces here as a failing test instead of as another reopened bug.
+func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
+	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
+
+	// Disable every rule except bio_exists so the test is independent of
+	// seed defaults and so unrelated rules cannot mask the assertion by
+	// flipping the persistOK bit on transient FK or fixture issues.
+	ctx := context.Background()
+	rules, err := ruleSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("listing rules: %v", err)
+	}
+	for i := range rules {
+		if rules[i].ID == rule.RuleBioExists {
+			continue
+		}
+		rules[i].Enabled = false
+		if err := ruleSvc.Update(ctx, &rules[i]); err != nil {
+			t.Fatalf("disabling rule %s: %v", rules[i].ID, err)
+		}
+	}
+
+	// Seed an artist with empty biography and a MusicBrainzID so the
+	// refresh handler does not divert to the disambiguation form.
+	a := &artist.Artist{
+		Name:          "Bio Refresh Integration",
+		SortName:      "Bio Refresh Integration",
+		Type:          "person",
+		Path:          "/music/Bio Refresh Integration",
+		MusicBrainzID: "00000000-0000-0000-0000-000000000abc",
+		Biography:     "",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Run the pipeline once to seed the open bio_missing violation row.
+	if _, err := r.pipeline.RunForArtist(ctx, a); err != nil {
+		t.Fatalf("seeding violation via RunForArtist: %v", err)
+	}
+	violations, err := ruleSvc.ListViolationsFiltered(ctx, rule.ViolationListParams{ArtistID: a.ID})
+	if err != nil {
+		t.Fatalf("listing violations after seed: %v", err)
+	}
+	var seeded *rule.RuleViolation
+	for i := range violations {
+		if violations[i].RuleID == rule.RuleBioExists {
+			seeded = &violations[i]
+			break
+		}
+	}
+	if seeded == nil {
+		t.Fatalf("expected bio_missing violation seeded by initial pipeline run")
+	}
+	if seeded.Status != rule.ViolationStatusOpen {
+		t.Fatalf("seeded violation status = %q, want %q", seeded.Status, rule.ViolationStatusOpen)
+	}
+
+	// Wire a stub orchestrator that returns a non-empty biography so
+	// executeRefreshCtx applies the field via ApplyMetadata and Update.
+	stub := &stubScraperExecutor{
+		result: &provider.FetchResult{
+			Metadata: &provider.ArtistMetadata{
+				Biography: "Integration test biography long enough to satisfy the minimum length checker.",
+			},
+			AttemptedFields: []string{"biography"},
+			PopulatedFields: []string{"biography"},
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := provider.NewOrchestrator(nil, nil, logger)
+	orch.SetExecutor(stub)
+	r.orchestrator = orch
+
+	// Execute the same sequence the HTTP handler runs: refresh -> post-hook.
+	if _, err := r.executeRefreshCtx(ctx, a); err != nil {
+		t.Fatalf("executeRefreshCtx: %v", err)
+	}
+	r.runRulesAfterRefresh(ctx, a)
+
+	// The seeded violation row must now be resolved with resolved_at set.
+	got, err := ruleSvc.GetViolationByID(ctx, seeded.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != rule.ViolationStatusResolved {
+		t.Errorf("bio violation status after refresh = %q, want %q",
+			got.Status, rule.ViolationStatusResolved)
+	}
+	if got.ResolvedAt == nil {
+		t.Errorf("resolved_at = nil, want populated after refresh resolves the bio violation")
+	}
+
+	// Sanity check: the persisted artist row carries the new biography. If
+	// this fails the assertion above is meaningless because the refresh
+	// itself dropped the data before re-eval ever saw it.
+	reloaded, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if reloaded.Biography == "" {
+		t.Errorf("biography empty after refresh; ApplyMetadata or Update lost the value")
+	}
+}
+
 // TestRunRulesAfterRefresh_InvokesPipeline verifies that runRulesAfterRefresh
 // calls the pipeline's RunForArtist method with the re-fetched artist.
 func TestRunRulesAfterRefresh_InvokesPipeline(t *testing.T) {
