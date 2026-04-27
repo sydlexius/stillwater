@@ -1022,6 +1022,12 @@ func TestRunApplySuccessSetsRestartRequired(t *testing.T) {
 	// instead: RestartRequired flips false -> true exactly once and never
 	// flips back, so a sufficiently long deadline cannot miss it.
 	waitForRestartRequired(t, svc)
+	// runApply calls markRestartRequired before its final
+	// setState(StateIdle, 100), so the State / Progress assertions below
+	// would otherwise race the goroutine's last setState. waitForIdle
+	// observes applyRunning return to 0 plus the terminal State, which
+	// guarantees runApply has fully exited.
+	waitForIdle(t, svc)
 
 	st := svc.Status()
 	if st.State != StateIdle {
@@ -1458,9 +1464,20 @@ func waitForIdle(t *testing.T, svc *Service) {
 	for time.Now().Before(deadline) {
 		st := svc.Status()
 		if !observedStart {
-			// Activity has begun if the goroutine flipped applyRunning,
-			// or if it has already advanced past StateIdle.
-			if svc.applyRunning.Load() == 1 || (st.State != StateIdle && st.State != StateError) {
+			// Activity has begun if any of these are true:
+			//   * applyRunning is currently 1 (goroutine in flight)
+			//   * State has advanced past the initial idle (still doing
+			//     something or finished with an error)
+			//   * RestartRequired flipped to true (success path already
+			//     hit markRestartRequired and is on its way to the
+			//     final setState(StateIdle, 100))
+			// The third clause matters when waitForIdle is chained after
+			// waitForRestartRequired: by that point the goroutine may
+			// have already cleared applyRunning, so the first two
+			// signals can both be false even though runApply did run.
+			if svc.applyRunning.Load() == 1 ||
+				(st.State != StateIdle && st.State != StateError) ||
+				st.RestartRequired {
 				observedStart = true
 			}
 		}
