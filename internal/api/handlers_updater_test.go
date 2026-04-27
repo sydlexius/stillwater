@@ -230,6 +230,13 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if got := raw["restart_required"]; got != false {
 		t.Errorf(`restart_required = %v, want false`, got)
 	}
+	// pending_version is omitempty in the schema and only meaningful when
+	// restart_required is true. Locking the absence here prevents a stale
+	// tag from leaking into the idle payload via a future struct-tag
+	// regression.
+	if _, ok := raw["pending_version"]; ok {
+		t.Errorf(`unexpected field "pending_version" in idle UpdateStatus: %v`, raw["pending_version"])
+	}
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)
 	}
@@ -348,8 +355,16 @@ func TestHandlePostUpdateApply_RestartRequired(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
 	}
-	if body := w.Body.String(); !strings.Contains(body, "restart required") {
-		t.Errorf("response body = %q, expected restart-required message", body)
+	// Decode the body and check the canonical error string exactly. A
+	// substring match would still pass for a different conflict body that
+	// happens to mention "restart required".
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal conflict body: %v; body: %s", err, w.Body.String())
+	}
+	const wantErr = "restart required before applying another update"
+	if got := payload["error"]; got != wantErr {
+		t.Errorf("error = %v, want %q", got, wantErr)
 	}
 }
 

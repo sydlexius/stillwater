@@ -1443,17 +1443,35 @@ const waitForIdleTimeout = 5 * time.Second
 // waitForIdle polls Status() until the service reaches StateIdle or StateError,
 // failing the test if neither is reached within waitForIdleTimeout. It is used
 // by tests that exercise the async runApply goroutine.
+//
+// A naive "return as soon as State == Idle" would pass instantly: NewService
+// initializes the service at StateIdle, and Apply() returns to the caller
+// before the spawned runApply goroutine has had a chance to call setState.
+// To prove the async path actually ran, we observe applyRunning transition
+// 0 -> 1 -> 0 (Apply sets it to 1 pre-spawn via CompareAndSwap, runApply's
+// `defer Store(0)` clears it on exit). Only after seeing applyRunning back
+// at 0 do we accept an idle/error State as the genuine post-apply state.
 func waitForIdle(t *testing.T, svc *Service) {
 	t.Helper()
 	deadline := time.Now().Add(waitForIdleTimeout)
+	observedStart := false
 	for time.Now().Before(deadline) {
 		st := svc.Status()
-		if st.State == StateIdle || st.State == StateError {
+		if !observedStart {
+			// Activity has begun if the goroutine flipped applyRunning,
+			// or if it has already advanced past StateIdle.
+			if svc.applyRunning.Load() == 1 || (st.State != StateIdle && st.State != StateError) {
+				observedStart = true
+			}
+		}
+		if observedStart && svc.applyRunning.Load() == 0 &&
+			(st.State == StateIdle || st.State == StateError) {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("service did not reach idle/error within %s; state = %q", waitForIdleTimeout, svc.Status().State)
+	t.Fatalf("service did not reach idle/error within %s; observedStart=%v applyRunning=%d state=%q",
+		waitForIdleTimeout, observedStart, svc.applyRunning.Load(), svc.Status().State)
 }
 
 func containsAll(s string, subs ...string) bool {
