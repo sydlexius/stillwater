@@ -139,6 +139,11 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				@components.FilterItem("activity-filters-flyout", "field", "years_active", t(ctx, "field.years_active"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "field", "type", t(ctx, "field.type"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "field", "gender", t(ctx, "field.gender"), "neutral")
+				// Rule auto-fix entries use the synthetic "rule_fix" field so
+				// the activity feed surfaces filesystem/image/NFO repairs the
+				// engine performed automatically (issue #1106). The same
+				// entries also match the existing "rule:*" source filter.
+				@components.FilterItem("activity-filters-flyout", "field", "rule_fix", t(ctx, "field.rule_fix"), "neutral")
 			}
 			@components.FilterSection(t(ctx, "activity.filter_section.trigger_source")) {
 				@components.FilterItem("activity-filters-flyout", "source", "manual", t(ctx, "history.source.manual"), "neutral")

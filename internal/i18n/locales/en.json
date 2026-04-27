@@ -458,6 +458,7 @@
   "field.moods": "Moods",
   "field.musicbrainz_id": "MusicBrainz ID",
   "field.name": "Name",
+  "field.rule_fix": "Rule auto-fix",
   "field.sort_name": "Sort Name",
   "field.spotify_id": "Spotify ID",
   "field.styles": "Styles",

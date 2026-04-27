@@ -320,6 +320,10 @@ func run() error {
 		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, publisher, logger)
+	// Wire the history service so successful auto-fixes appear in the
+	// Recent Activity feed (issue #1106). Setter form keeps NewPipeline's
+	// signature stable for the wide set of test call sites.
+	pipeline.SetHistoryService(historyService)
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)

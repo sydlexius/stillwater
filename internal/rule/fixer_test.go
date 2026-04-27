@@ -2191,3 +2191,342 @@ func TestAttemptFix_GateAllowsOtherCategories(t *testing.T) {
 		t.Errorf("fixer should have run once for metadata category, calls=%d", fixer.calls)
 	}
 }
+
+// candidateDiscoveryFixer is a scoped mock that also implements
+// CandidateDiscoverer so the manual-mode pipeline branch will actually invoke
+// it (and route through DiscoveryOnly). Without this, the pipeline's
+// supportsCandidateDiscovery gate would skip the fixer in manual mode and the
+// test could never reach the recorder. Issue #1106.
+type candidateDiscoveryFixer struct {
+	canFixRuleID string
+	result       *FixResult
+}
+
+func (c *candidateDiscoveryFixer) CanFix(v *Violation) bool {
+	return v.RuleID == c.canFixRuleID
+}
+
+func (c *candidateDiscoveryFixer) Fix(_ context.Context, _ *artist.Artist, v *Violation) (*FixResult, error) {
+	if c.result != nil {
+		out := *c.result
+		out.RuleID = v.RuleID
+		return &out, nil
+	}
+	return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "candidate-discovery noop"}, nil
+}
+
+func (c *candidateDiscoveryFixer) SupportsCandidateDiscovery() bool { return true }
+
+// scopedMockFixer narrows the canFix predicate to a single rule ID and lets
+// the test pin the FixResult for assertions about rule-fix history entries.
+// Unlike mockFixer (which claims every violation), this fixer only handles a
+// targeted rule so the surrounding test can assert "exactly N entries for
+// the rule under test" without bleed-through from peer rules that run in
+// the same pipeline pass. Issue #1106.
+type scopedMockFixer struct {
+	canFixRuleID string
+	result       *FixResult
+	calls        int
+}
+
+func (s *scopedMockFixer) CanFix(v *Violation) bool {
+	return v.RuleID == s.canFixRuleID
+}
+
+func (s *scopedMockFixer) Fix(_ context.Context, _ *artist.Artist, v *Violation) (*FixResult, error) {
+	s.calls++
+	if s.result != nil {
+		// Always reflect the violation's RuleID so a result reused across
+		// multiple rules still records the right rule_id in source.
+		out := *s.result
+		out.RuleID = v.RuleID
+		return &out, nil
+	}
+	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "scoped mock fixed"}, nil
+}
+
+// setupAutoFixHistoryHarness builds a Pipeline + HistoryService wired against
+// a shared test DB and seeds RuleNFOExists in auto mode so the runner
+// exercised by the test will attempt a fix. The fixer narrowly claims
+// RuleNFOExists only, so the test can assert "one rule_fix entry per
+// successful fix of THIS rule" without peer rules contributing extra entries.
+// Issue #1106.
+func setupAutoFixHistoryHarness(t *testing.T, fr *FixResult) (*Pipeline, *artist.HistoryService, *artist.Artist) {
+	t.Helper()
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	historySvc := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(historySvc)
+
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	// Force RuleNFOExists into auto mode so the pipeline auto-fix path
+	// (where the new history hook lives) is exercised. Default is auto
+	// already because the rule definition omits AutomationMode, but the
+	// test pins the mode so a future default-mode change cannot silently
+	// disable this assertion.
+	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting nfo_exists rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeAuto
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Auto-fix Activity Artist",
+		SortName: "Auto-fix Activity Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	fixer := &scopedMockFixer{canFixRuleID: RuleNFOExists, result: fr}
+	logger := testLogger()
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
+	pipeline.SetHistoryService(historySvc)
+	return pipeline, historySvc, a
+}
+
+// TestPipeline_RunForArtist_RecordsAutoFixHistory verifies that a successful
+// auto-fix produces a single Recent Activity entry tagged with the synthetic
+// "rule_fix" field and the canonical "rule:<rule_id>" source so the activity
+// feed surfaces filesystem/image/NFO repairs the engine performed on the
+// user's behalf. Issue #1106.
+func TestPipeline_RunForArtist_RecordsAutoFixHistory(t *testing.T) {
+	pipeline, historySvc, a := setupAutoFixHistoryHarness(t, &FixResult{
+		RuleID:  RuleNFOExists,
+		Fixed:   true,
+		Message: "created artist.nfo for Auto-fix Activity Artist",
+	})
+
+	if _, err := pipeline.RunForArtist(context.Background(), a); err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+
+	// Filter to rule_fix entries. The pre-Update health-score path may also
+	// record other diffs (e.g. biography changes) for fixers that mutate
+	// trackable fields, so we narrow the assertion to the new entry type
+	// rather than asserting "exactly one history row total".
+	changes, _, err := historySvc.ListGlobal(context.Background(), artist.GlobalHistoryFilter{
+		ArtistID: a.ID,
+		Fields:   []string{"rule_fix"},
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("rule_fix history rows = %d, want 1; got: %#v", len(changes), changes)
+	}
+	got := changes[0]
+	if got.Field != "rule_fix" {
+		t.Errorf("Field = %q, want %q", got.Field, "rule_fix")
+	}
+	if got.Source != "rule:"+RuleNFOExists {
+		t.Errorf("Source = %q, want %q", got.Source, "rule:"+RuleNFOExists)
+	}
+	if got.NewValue != "created artist.nfo for Auto-fix Activity Artist" {
+		t.Errorf("NewValue = %q, want the fixer message", got.NewValue)
+	}
+	// rule_fix is intentionally NOT a trackable field, so the activity
+	// feed UI hides the Revert button. Pin the contract here so a future
+	// well-meaning addition to trackableFields cannot silently introduce
+	// a broken Revert affordance for filesystem-mutating auto-fixes.
+	if artist.IsTrackableField("rule_fix") {
+		t.Error("rule_fix must not be a trackable field; the activity feed renders Revert only for trackable fields and rule auto-fixes write to disk")
+	}
+}
+
+// TestPipeline_RunForArtist_NoHistoryWhenFixFails verifies that a failed fix
+// (Fixed=false) does NOT produce a Recent Activity entry. Issue #1106.
+func TestPipeline_RunForArtist_NoHistoryWhenFixFails(t *testing.T) {
+	pipeline, historySvc, a := setupAutoFixHistoryHarness(t, &FixResult{
+		RuleID:  RuleNFOExists,
+		Fixed:   false,
+		Message: "no fixer available",
+	})
+
+	if _, err := pipeline.RunForArtist(context.Background(), a); err != nil {
+		t.Fatalf("RunForArtist: %v", err)
+	}
+
+	changes, _, err := historySvc.ListGlobal(context.Background(), artist.GlobalHistoryFilter{
+		ArtistID: a.ID,
+		Fields:   []string{"rule_fix"},
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Errorf("rule_fix history rows = %d, want 0 for failed fix; got: %#v", len(changes), changes)
+	}
+}
+
+// TestPipeline_NoHistoryWithoutHistoryService verifies that the pipeline
+// continues to work when SetHistoryService has not been called -- the audit
+// trail is best-effort and must not be a wiring requirement that breaks
+// existing test harnesses that omit it. Issue #1106.
+func TestPipeline_NoHistoryWithoutHistoryService(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("GetByID rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeAuto
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("Update rule: %v", err)
+	}
+
+	a := &artist.Artist{Name: "No-History Artist", SortName: "No-History Artist", Path: t.TempDir()}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create artist: %v", err)
+	}
+
+	fixer := &scopedMockFixer{canFixRuleID: RuleNFOExists, result: &FixResult{Fixed: true, Message: "fake"}}
+	logger := testLogger()
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
+	// Intentionally do NOT call pipeline.SetHistoryService. The recorder
+	// must short-circuit cleanly on a nil service.
+
+	if _, err := pipeline.RunForArtist(ctx, a); err != nil {
+		t.Fatalf("RunForArtist with no history service: %v", err)
+	}
+}
+
+// TestPipeline_ManualMode_NoAutoFixHistory verifies that manual-mode
+// candidate discovery does NOT emit a rule_fix history entry. Manual-mode
+// fixers run in DiscoveryOnly mode and return Fixed=false plus a candidate
+// list; the recorder gates on Fixed=true so it must skip these. Issue #1106.
+func TestPipeline_ManualMode_NoAutoFixHistory(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	historySvc := artist.NewHistoryService(db)
+	artistSvc.SetHistoryService(historySvc)
+
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	// RuleFanartExists in manual mode -> candidate discovery, no auto-apply.
+	r, err := ruleSvc.GetByID(ctx, RuleFanartExists)
+	if err != nil {
+		t.Fatalf("GetByID rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("Update rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:          "Manual-mode Artist",
+		SortName:      "Manual-mode Artist",
+		Path:          t.TempDir(),
+		MusicBrainzID: "mbid-manual-mode",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("Create artist: %v", err)
+	}
+
+	candidates := []ImageCandidate{
+		{URL: "http://example/img.jpg", Width: 1920, Height: 1080, Source: "prov", ImageType: "fanart"},
+		{URL: "http://example/img2.jpg", Width: 3840, Height: 2160, Source: "prov", ImageType: "fanart"},
+	}
+	// Returns Fixed=false plus a candidate list, exactly mirroring how a real
+	// manual-mode fixer signals "I have suggestions but did not write".
+	// Manual-mode also requires the fixer to advertise CandidateDiscovery
+	// support; without it the pipeline would skip invocation entirely and
+	// short-circuit before ever reaching the recorder under test.
+	fixer := &candidateDiscoveryFixer{canFixRuleID: RuleFanartExists, result: &FixResult{
+		Fixed:      false,
+		Message:    "found 2 fanart candidates; awaiting user selection",
+		Candidates: candidates,
+	}}
+
+	logger := testLogger()
+	engine := NewEngine(ruleSvc, db, nil, nil, logger)
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, logger)
+	pipeline.SetHistoryService(historySvc)
+
+	if _, err := pipeline.RunRule(ctx, RuleFanartExists); err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	changes, _, err := historySvc.ListGlobal(ctx, artist.GlobalHistoryFilter{
+		ArtistID: a.ID,
+		Fields:   []string{"rule_fix"},
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Errorf("rule_fix history rows = %d, want 0 for manual-mode discovery; got: %#v", len(changes), changes)
+	}
+}
+
+// TestPipeline_RunAll_RecordsAutoFixHistory verifies the same recording path
+// fires for the multi-rule walker (the user-facing "Run Rules" button).
+// Issue #1106.
+func TestPipeline_RunAll_RecordsAutoFixHistory(t *testing.T) {
+	pipeline, historySvc, a := setupAutoFixHistoryHarness(t, &FixResult{
+		RuleID:  RuleNFOExists,
+		Fixed:   true,
+		Message: "fix-all path",
+	})
+
+	if _, err := pipeline.RunAll(context.Background()); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+
+	changes, _, err := historySvc.ListGlobal(context.Background(), artist.GlobalHistoryFilter{
+		ArtistID: a.ID,
+		Fields:   []string{"rule_fix"},
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(changes) == 0 {
+		t.Fatal("expected at least one rule_fix entry after RunAll, got none")
+	}
+	if changes[0].Source != "rule:"+RuleNFOExists {
+		t.Errorf("Source = %q, want %q", changes[0].Source, "rule:"+RuleNFOExists)
+	}
+}
+
+// TestPipeline_RunRule_RecordsAutoFixHistory verifies the recording path also
+// fires for the single-rule walker. Issue #1106.
+func TestPipeline_RunRule_RecordsAutoFixHistory(t *testing.T) {
+	pipeline, historySvc, a := setupAutoFixHistoryHarness(t, &FixResult{
+		RuleID:  RuleNFOExists,
+		Fixed:   true,
+		Message: "single-rule path",
+	})
+
+	if _, err := pipeline.RunRule(context.Background(), RuleNFOExists); err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	changes, _, err := historySvc.ListGlobal(context.Background(), artist.GlobalHistoryFilter{
+		ArtistID: a.ID,
+		Fields:   []string{"rule_fix"},
+	})
+	if err != nil {
+		t.Fatalf("ListGlobal: %v", err)
+	}
+	if len(changes) == 0 {
+		t.Fatal("expected at least one rule_fix entry after RunRule, got none")
+	}
+}
