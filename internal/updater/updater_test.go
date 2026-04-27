@@ -825,6 +825,253 @@ func TestStatusInitial(t *testing.T) {
 	if st.Error != "" {
 		t.Errorf("initial error = %q, want empty", st.Error)
 	}
+	// Pre-condition for the restart-required flag: a fresh Service must NOT
+	// advertise restart_required, otherwise the UI would render the
+	// "restart to finish" banner on first load before any Apply has run.
+	if st.RestartRequired {
+		t.Error("initial RestartRequired = true, want false")
+	}
+	if st.PendingVersion != "" {
+		t.Errorf("initial PendingVersion = %q, want empty", st.PendingVersion)
+	}
+}
+
+// TestMarkRestartRequiredForTestExposesInternalTransition verifies that the
+// exported helper used by cross-package tests in internal/api delegates to
+// the same internal markRestartRequired path. Without this, the helper
+// could drift to a no-op (or set only one of the two fields) and the api
+// package's TestHandleGetUpdateStatus_RestartRequiredSurfaced would
+// silently regress to passing for the wrong reason.
+func TestMarkRestartRequiredForTestExposesInternalTransition(t *testing.T) {
+	svc := buildTestService(t)
+
+	svc.MarkRestartRequiredForTest("v1.0.0")
+
+	st := svc.Status()
+	if !st.RestartRequired || st.PendingVersion != "v1.0.0" {
+		t.Errorf("MarkRestartRequiredForTest did not delegate properly; status = %+v", st)
+	}
+}
+
+// TestMarkRestartRequiredSetsStickyFlag verifies that markRestartRequired
+// sets both fields atomically and that they survive subsequent Status reads.
+// This is the load-bearing post-Apply UI signal for issue #1169: without
+// it the Updates tab cannot distinguish "Apply succeeded, please restart"
+// from "Apply did nothing" (both previously left state=idle with no flag).
+func TestMarkRestartRequiredSetsStickyFlag(t *testing.T) {
+	svc := buildTestService(t)
+
+	svc.markRestartRequired("v1.2.3")
+
+	st := svc.Status()
+	if !st.RestartRequired {
+		t.Fatal("RestartRequired = false, want true after markRestartRequired")
+	}
+	if st.PendingVersion != "v1.2.3" {
+		t.Errorf("PendingVersion = %q, want v1.2.3", st.PendingVersion)
+	}
+
+	// Stickiness: a follow-up Check (or any state mutation that does not
+	// itself touch the flag) must NOT clear restartRequired. The UI banner
+	// has to survive a tab re-open or a sidebar pill refresh, both of
+	// which call /status again. Simulate a state transition to verify
+	// nothing in setState wipes the flag.
+	svc.setState(StateChecking, 0, "")
+	svc.setState(StateIdle, 0, "")
+	st = svc.Status()
+	if !st.RestartRequired {
+		t.Error("RestartRequired = false after setState cycle, want true (must be sticky)")
+	}
+	if st.PendingVersion != "v1.2.3" {
+		t.Errorf("PendingVersion = %q after setState cycle, want v1.2.3 (must be sticky)", st.PendingVersion)
+	}
+}
+
+// TestRestartRequiredNotSetOnRunApplyEarlyExit covers the early-return
+// branches of runApply (no update, fetch failure, checksum failure, etc.):
+// none of them should mark restart-required, because the binary on disk
+// was NOT replaced. This is the negative complement to the
+// markRestartRequired sticky-flag test: if a refactor accidentally moved
+// markRestartRequired earlier in runApply, this test catches it by
+// failing on the no-update branch where no swap actually happened.
+func TestRestartRequiredNotSetOnRunApplyEarlyExit(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Empty release list -> pickLatest returns nil -> runApply exits
+	// through the "no update needed" branch without calling
+	// markRestartRequired. atomicReplaceFile is never reached.
+	releases := []map[string]interface{}{}
+	body, _ := json.Marshal(releases)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	waitForIdle(t, svc)
+
+	st := svc.Status()
+	if st.RestartRequired {
+		t.Error("RestartRequired = true after no-update Apply; expected false (no swap happened)")
+	}
+	if st.PendingVersion != "" {
+		t.Errorf("PendingVersion = %q after no-update Apply, want empty", st.PendingVersion)
+	}
+}
+
+// TestRunApplySuccessSetsRestartRequired drives runApply through its full
+// success path -- download, checksum verification, extract, atomic replace,
+// markRestartRequired, idle 100% -- so the post-Apply UI surface is locked
+// against regressions and the Wave-3 patch-coverage gap on this path is
+// closed.
+//
+// The test stubs `executablePath` (a package var indirecting os.Executable)
+// to point at a temp file under t.TempDir() so atomicReplaceFile rewrites
+// the temp file rather than the test runner binary. Every other step
+// (release fetch, asset download, checksum file, sha256 verify, tar.gz
+// extract) runs the production code path against an httptest server.
+func TestRunApplySuccessSetsRestartRequired(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Swap the executable-path resolver to a real temp file we own.
+	// atomicReplaceFile statics the target's mode, so the file must
+	// exist before runApply reaches it.
+	tmpBin := filepath.Join(t.TempDir(), "stillwater")
+	if err := os.WriteFile(tmpBin, []byte("old binary content"), 0o755); err != nil {
+		t.Fatalf("seeding tmp binary: %v", err)
+	}
+	prevExec := executablePath
+	executablePath = func() (string, error) { return tmpBin, nil }
+	t.Cleanup(func() { executablePath = prevExec })
+
+	// Build the tarball whose extraction will produce the new binary
+	// content. Asset name must match binaryAssetName(tagName) so runApply
+	// picks it up from the release manifest.
+	const tagName = "v999.0.0"
+	const newBinaryContent = "new binary content"
+	var tarBuf bytes.Buffer
+	gw := gzip.NewWriter(&tarBuf)
+	tw := tar.NewWriter(gw)
+	hdr := &tar.Header{Name: "stillwater", Mode: 0o755, Size: int64(len(newBinaryContent))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte(newBinaryContent)); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	tarBytes := tarBuf.Bytes()
+	binAsset := binaryAssetName(tagName)
+	checksumAsset := checksumAssetName(tagName)
+	checksumLine := sha256Hex(tarBytes) + "  " + binAsset + "\n"
+
+	// Mock GitHub: the releases endpoint returns one release whose Assets
+	// point back at this same server's /asset/<name> paths. The asset
+	// endpoint serves the tarball or checksum file depending on the path.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/asset/"+binAsset):
+			w.Header().Set("Content-Type", "application/gzip")
+			_, _ = w.Write(tarBytes)
+		case strings.HasSuffix(r.URL.Path, "/asset/"+checksumAsset):
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(checksumLine))
+		default:
+			// Releases manifest for any path that isn't an asset URL.
+			rels := []githubRelease{{
+				TagName:     tagName,
+				Prerelease:  false,
+				Draft:       false,
+				HTMLURL:     "https://example.invalid/releases/" + tagName,
+				PublishedAt: "2026-01-01T00:00:00Z",
+				Assets: []githubAsset{
+					// downloadBytes requires https://; rewriteHostTransport
+					// rewrites scheme+host at request time so the actual
+					// fetch lands on the http httptest server.
+					{Name: binAsset, BrowserDownloadURL: "https://api.github.com/asset/" + binAsset},
+					{Name: checksumAsset, BrowserDownloadURL: "https://api.github.com/asset/" + checksumAsset},
+				},
+			}}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(rels)
+		}
+	}))
+	defer srv.Close()
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	// Apply() spawns runApply in a goroutine. Polling for an intermediate
+	// state (StateChecking) is racy on fast machines: the success path
+	// goes idle -> checking -> downloading -> applying -> idle, and the
+	// whole sequence can complete inside a single 2ms poll gap, which
+	// makes a transition-watcher that compares against StateIdle never
+	// observe a non-idle reading. Poll the monotonic post-condition
+	// instead: RestartRequired flips false -> true exactly once and never
+	// flips back, so a sufficiently long deadline cannot miss it.
+	waitForRestartRequired(t, svc)
+	// runApply calls markRestartRequired before its final
+	// setState(StateIdle, 100), so the State / Progress assertions below
+	// would otherwise race the goroutine's last setState. waitForIdle
+	// observes applyRunning return to 0 plus the terminal State, which
+	// guarantees runApply has fully exited.
+	waitForIdle(t, svc)
+
+	st := svc.Status()
+	if st.State != StateIdle {
+		t.Fatalf("state = %q, want idle (success path); status = %+v", st.State, st)
+	}
+	if !st.RestartRequired {
+		t.Errorf("RestartRequired = false after successful Apply; want true")
+	}
+	if st.PendingVersion != tagName {
+		t.Errorf("PendingVersion = %q, want %q", st.PendingVersion, tagName)
+	}
+	if st.Progress != 100 {
+		t.Errorf("Progress = %d, want 100", st.Progress)
+	}
+
+	// The temp binary file must have been overwritten with the new content,
+	// proving atomicReplaceFile actually ran end-to-end (not just the
+	// markRestartRequired bookkeeping).
+	got, err := os.ReadFile(tmpBin)
+	if err != nil {
+		t.Fatalf("reading tmp binary after Apply: %v", err)
+	}
+	if string(got) != newBinaryContent {
+		t.Errorf("tmp binary content = %q, want %q", string(got), newBinaryContent)
+	}
+}
+
+// waitForRestartRequired polls Status().RestartRequired until it flips to
+// true. This is race-free on fast machines: markRestartRequired sets the
+// field exactly once and runApply never resets it, so a poll loop cannot
+// miss the transition the way an intermediate-State watcher can miss
+// State values when the whole runApply pipeline completes inside a
+// single sleep gap.
+func waitForRestartRequired(t *testing.T, svc *Service) {
+	t.Helper()
+	deadline := time.Now().Add(waitForIdleTimeout)
+	for time.Now().Before(deadline) {
+		if svc.Status().RestartRequired {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("service did not set RestartRequired within %s; final status = %+v",
+		waitForIdleTimeout, svc.Status())
 }
 
 // TestDownloadBytes exercises the download path with a real HTTPS test server.
@@ -1026,6 +1273,23 @@ func TestApplyAlreadyInProgress(t *testing.T) {
 	}
 }
 
+// TestApplyRestartRequired verifies that Apply short-circuits with
+// ErrRestartRequired once a prior apply has staged a binary, and that it
+// does so without flipping applyRunning (so the caller can keep polling
+// Status without seeing a phantom "running" state).
+func TestApplyRestartRequired(t *testing.T) {
+	svc := buildTestService(t)
+	svc.MarkRestartRequiredForTest("v1.2.3")
+
+	err := svc.Apply(context.Background())
+	if !errors.Is(err, ErrRestartRequired) {
+		t.Fatalf("expected ErrRestartRequired, got %v", err)
+	}
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning leaked to %d after refused Apply; expected 0", got)
+	}
+}
+
 // TestApplyConcurrentRace verifies that exactly one of two concurrent Apply
 // calls succeeds and the other returns ErrAlreadyRunning. Run with -race.
 //
@@ -1106,7 +1370,7 @@ func TestApplyConcurrentRace(t *testing.T) {
 
 	// Release runApply so it can complete and drain its goroutine cleanly.
 	unblock()
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // TestRunApplyNoUpdate exercises the runApply goroutine through the "no update
@@ -1134,7 +1398,7 @@ func TestRunApplyNoUpdate(t *testing.T) {
 
 	// runApply runs in a goroutine. Wait up to 5 seconds for it to return to
 	// idle (it should be nearly instant with a mock server and no downloads).
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // TestRunApplyWithOldRelease covers the newerThan() branch inside runApply:
@@ -1171,25 +1435,43 @@ func TestRunApplyWithOldRelease(t *testing.T) {
 
 	// runApply is fast here: it fetches the mock server, finds no newer
 	// release, and returns to idle. Wait up to 5 seconds for that to happen.
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // --- helpers ---
 
+// waitForIdleTimeout is the deadline waitForIdle imposes on async runApply
+// drains. Pulled out as a const because every existing caller used the same
+// value; if a future test genuinely needs a different timeout, reintroduce
+// the parameter rather than scaling this constant up across the suite.
+const waitForIdleTimeout = 5 * time.Second
+
 // waitForIdle polls Status() until the service reaches StateIdle or StateError,
-// failing the test if neither is reached within the deadline. It is used by
-// tests that exercise the async runApply goroutine.
-func waitForIdle(t *testing.T, svc *Service, timeout time.Duration) {
+// failing the test if neither is reached within waitForIdleTimeout. It is used
+// by tests that exercise the async runApply goroutine.
+//
+// A naive "return as soon as State == Idle" would pass instantly: NewService
+// initializes the service at StateIdle, and Apply() returns to the caller
+// before the spawned runApply goroutine has had a chance to call setState.
+// Apply()'s CompareAndSwap flips applyRunning 0 -> 1 pre-spawn, and runApply's
+// `defer Store(0)` clears it on exit, so observing applyRunning back at 0
+// after Apply() returned nil is itself proof that the goroutine ran to
+// completion. We accept an idle/error State only once that flag has cleared,
+// which also handles the fast no-update / old-release paths where runApply
+// may finish before the first poll.
+func waitForIdle(t *testing.T, svc *Service) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(waitForIdleTimeout)
 	for time.Now().Before(deadline) {
 		st := svc.Status()
-		if st.State == StateIdle || st.State == StateError {
+		if svc.applyRunning.Load() == 0 &&
+			(st.State == StateIdle || st.State == StateError) {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("service did not reach idle/error within %s; state = %q", timeout, svc.Status().State)
+	t.Fatalf("service did not reach idle/error within %s; applyRunning=%d state=%q",
+		waitForIdleTimeout, svc.applyRunning.Load(), svc.Status().State)
 }
 
 func containsAll(s string, subs ...string) bool {

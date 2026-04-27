@@ -218,10 +218,24 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal raw status: %v", err)
 	}
-	for _, key := range []string{"state", "progress", "is_docker", "update_available"} {
+	for _, key := range []string{"state", "progress", "is_docker", "update_available", "restart_required"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("missing required field %q in UpdateStatus", key)
 		}
+	}
+	// Lock the idle-payload contract: restart_required must serialize as
+	// the explicit boolean false, never via omitempty. A future struct-tag
+	// regression would otherwise pass the typed-StatusResult assertion
+	// silently (Go zero-value defaults to false on the typed path).
+	if got := raw["restart_required"]; got != false {
+		t.Errorf(`restart_required = %v, want false`, got)
+	}
+	// pending_version is omitempty in the schema and only meaningful when
+	// restart_required is true. Locking the absence here prevents a stale
+	// tag from leaking into the idle payload via a future struct-tag
+	// regression.
+	if _, ok := raw["pending_version"]; ok {
+		t.Errorf(`unexpected field "pending_version" in idle UpdateStatus: %v`, raw["pending_version"])
 	}
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)
@@ -324,6 +338,33 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 	r.handlePostUpdateApply(w2, req2)
 	if w2.Code != http.StatusConflict {
 		t.Fatalf("second apply: status = %d, want 409; body: %s", w2.Code, w2.Body.String())
+	}
+}
+
+// TestHandlePostUpdateApply_RestartRequired verifies that once a prior apply
+// has staged a binary, a subsequent request returns 409 with the
+// restart-required error message rather than re-running the download path.
+func TestHandlePostUpdateApply_RestartRequired(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w := httptest.NewRecorder()
+	r.handlePostUpdateApply(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	// Decode the body and check the canonical error string exactly. A
+	// substring match would still pass for a different conflict body that
+	// happens to mention "restart required".
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal conflict body: %v; body: %s", err, w.Body.String())
+	}
+	const wantErr = "restart required before applying another update"
+	if got := payload["error"]; got != wantErr {
+		t.Errorf("error = %v, want %q", got, wantErr)
 	}
 }
 
@@ -707,6 +748,82 @@ func TestNormalizeSettingsSectionUpdates(t *testing.T) {
 	got := normalizeSettingsSection("updates")
 	if got != "updates" {
 		t.Errorf("normalizeSettingsSection(\"updates\") = %q, want \"updates\"", got)
+	}
+}
+
+// TestHandleGetUpdateStatus_RestartRequiredSurfaced verifies that
+// /api/v1/updates/status returns restart_required=true and the pending
+// version once the updater service has marked the apply complete. The UI
+// poll loop in pollUpdateStatus distinguishes "post-Apply success" from
+// "idle no-op" purely by reading these fields, so a regression that
+// dropped them from the JSON payload would silently make Apply look like
+// it did nothing again. Issue #1169.
+func TestHandleGetUpdateStatus_RestartRequiredSurfaced(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	// Drive the in-memory flag to the post-Apply state without exercising
+	// runApply (which would attempt to overwrite the test binary). The
+	// updater service exports markRestartRequired through the package; we
+	// call it via the exported wrapper to keep the test in package api.
+	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal raw status: %v", err)
+	}
+	// Required-field contract: restart_required is declared required in
+	// openapi.yaml so it must always be present, not just when true.
+	if _, ok := raw["restart_required"]; !ok {
+		t.Fatal(`missing required field "restart_required" in UpdateStatus`)
+	}
+	if got := raw["restart_required"]; got != true {
+		t.Errorf(`restart_required = %v, want true`, got)
+	}
+	// pending_version is omitempty in the schema; assert presence + value
+	// when restart_required is true so the UI banner can render the
+	// installed tag.
+	pv, ok := raw["pending_version"].(string)
+	if !ok || pv != "v9.9.9" {
+		t.Errorf(`pending_version = %v, want "v9.9.9"`, raw["pending_version"])
+	}
+
+	var st updater.StatusResult
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatalf("unmarshal typed status: %v", err)
+	}
+	if !st.RestartRequired {
+		t.Error("typed StatusResult.RestartRequired = false, want true")
+	}
+	if st.PendingVersion != "v9.9.9" {
+		t.Errorf("typed StatusResult.PendingVersion = %q, want v9.9.9", st.PendingVersion)
+	}
+}
+
+// TestBuildUpdatesTabData_RestartRequired verifies that the server-side
+// render path picks up the restart_required state from the updater
+// service and forwards it to UpdatesTabData. This is what makes the
+// banner visible after a page reload (without waiting for the JS
+// /status fetch to land), and is asserted as a unit because the templ
+// branch reads `data.RestartRequired` directly.
+func TestBuildUpdatesTabData_RestartRequired(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
+
+	data := r.buildUpdatesTabData(context.Background())
+
+	if !data.RestartRequired {
+		t.Error("RestartRequired = false, want true after markRestartRequired")
+	}
+	if data.PendingVersion != "v9.9.9" {
+		t.Errorf("PendingVersion = %q, want v9.9.9", data.PendingVersion)
 	}
 }
 

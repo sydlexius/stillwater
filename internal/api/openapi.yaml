@@ -1273,7 +1273,7 @@ components:
             when the check found no matching release on the current channel.
     UpdateStatus:
       type: object
-      required: [state, progress, is_docker, update_available]
+      required: [state, progress, is_docker, update_available, restart_required]
       properties:
         state:
           type: string
@@ -1310,6 +1310,19 @@ components:
             check has succeeded yet OR when the most recent successful check
             found no matching release on the current channel. The sidebar
             update-available badge uses this URL as the anchor href.
+        restart_required:
+          type: boolean
+          description: >-
+            True after a successful Apply has replaced the on-disk binary. The
+            running process still serves the old version until it is restarted;
+            the UI uses this to show a persistent "restart to finish update"
+            banner. The flag is sticky in-memory and is cleared only when the
+            process actually restarts (which discards the in-memory state).
+        pending_version:
+          type: string
+          description: >-
+            Tag of the binary that was just installed and is waiting for a
+            restart to take effect. Present only when restart_required is true.
     UpdateConfig:
       type: object
       required: [channel, auto_check]
@@ -8335,11 +8348,15 @@ paths:
         progress.
 
         Returns 422 when running inside a Docker container; re-pull the image
-        instead. Returns 409 when an update is already in progress.
+        instead. Returns 409 when an update is already in progress, or when a
+        previous apply has staged a binary that requires a process restart
+        before another apply can run.
 
         **Note:** After a successful apply the process must be restarted manually
         (or via the host process manager) to load the new binary. A future
-        release will add an automatic restart hook.
+        release will add an automatic restart hook. Until then, a successful
+        apply is signalled by `GET /updates/status` returning
+        `restart_required: true` and `pending_version` set to the installed tag.
       operationId: applyUpdate
       requestBody:
         required: false
@@ -8361,7 +8378,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Update already in progress.
+          description: Update already in progress, or restart required from a previous apply.
           content:
             application/json:
               schema:

@@ -66,6 +66,11 @@ func (r *Router) handlePostUpdateApply(w http.ResponseWriter, req *http.Request)
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "update already in progress"})
 			return
 		}
+		if errors.Is(err, updater.ErrRestartRequired) {
+			r.logger.Warn("update apply rejected", "error", err)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "restart required before applying another update"})
+			return
+		}
 		r.logger.Error("update apply failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update apply failed"})
 		return

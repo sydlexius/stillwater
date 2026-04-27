@@ -465,6 +465,11 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 	data.UpdateAvailable = status.UpdateAvailable
 	data.LatestVersion = status.Latest
 	data.ReleaseURL = status.ReleaseURL
+	// Surface the post-Apply restart-required state on first render so users
+	// who navigate away and back to the Updates tab see the persistent
+	// "restart to finish" banner without needing the JS hydrate to run.
+	data.RestartRequired = status.RestartRequired
+	data.PendingVersion = status.PendingVersion
 
 	return data
 }
