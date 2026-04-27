@@ -96,7 +96,7 @@ func TestSettingsUpdatesTab_RestartRequiredVisible(t *testing.T) {
 	data := UpdatesTabData{
 		CurrentVersion:  "v0.9.0",
 		Channel:         "stable",
-		LatestVersion:   "v0.9.5",
+		LatestVersion:   "v0.9.6",
 		UpdateAvailable: true,
 		RestartRequired: true,
 		PendingVersion:  "v0.9.5",

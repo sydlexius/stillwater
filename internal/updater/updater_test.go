@@ -1013,13 +1013,15 @@ func TestRunApplySuccessSetsRestartRequired(t *testing.T) {
 	if err := svc.Apply(ctx); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	// Apply() spawns runApply in a goroutine; the Service starts at
-	// StateIdle so waitForIdle would return instantly without waiting for
-	// the goroutine to actually transition state. Wait for the goroutine
-	// to enter StateChecking (the very first setState call) before then
-	// waiting for the terminal idle/error state.
-	waitForStateTransition(t, svc, StateIdle)
-	waitForIdle(t, svc)
+	// Apply() spawns runApply in a goroutine. Polling for an intermediate
+	// state (StateChecking) is racy on fast machines: the success path
+	// goes idle -> checking -> downloading -> applying -> idle, and the
+	// whole sequence can complete inside a single 2ms poll gap, which
+	// makes a transition-watcher that compares against StateIdle never
+	// observe a non-idle reading. Poll the monotonic post-condition
+	// instead: RestartRequired flips false -> true exactly once and never
+	// flips back, so a sufficiently long deadline cannot miss it.
+	waitForRestartRequired(t, svc)
 
 	st := svc.Status()
 	if st.State != StateIdle {
@@ -1047,22 +1049,23 @@ func TestRunApplySuccessSetsRestartRequired(t *testing.T) {
 	}
 }
 
-// waitForStateTransition polls Status() until the state is no longer
-// `from`, with a short deadline. NewService() initializes the service at
-// StateIdle, so a test that calls Apply() and then immediately calls
-// waitForIdle would race: waitForIdle reads the still-initial StateIdle
-// before the spawned goroutine has had a chance to call setState. Use
-// this helper to wait for the goroutine to actually start.
-func waitForStateTransition(t *testing.T, svc *Service, from State) {
+// waitForRestartRequired polls Status().RestartRequired until it flips to
+// true. This is race-free on fast machines: markRestartRequired sets the
+// field exactly once and runApply never resets it, so a poll loop cannot
+// miss the transition the way an intermediate-State watcher can miss
+// State values when the whole runApply pipeline completes inside a
+// single sleep gap.
+func waitForRestartRequired(t *testing.T, svc *Service) {
 	t.Helper()
 	deadline := time.Now().Add(waitForIdleTimeout)
 	for time.Now().Before(deadline) {
-		if svc.Status().State != from {
+		if svc.Status().RestartRequired {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	t.Fatalf("service did not transition away from %q within %s", from, waitForIdleTimeout)
+	t.Fatalf("service did not set RestartRequired within %s; final status = %+v",
+		waitForIdleTimeout, svc.Status())
 }
 
 // TestDownloadBytes exercises the download path with a real HTTPS test server.
@@ -1261,6 +1264,23 @@ func TestApplyAlreadyInProgress(t *testing.T) {
 	err := svc.Apply(context.Background())
 	if !errors.Is(err, ErrAlreadyRunning) {
 		t.Fatalf("expected ErrAlreadyRunning, got %v", err)
+	}
+}
+
+// TestApplyRestartRequired verifies that Apply short-circuits with
+// ErrRestartRequired once a prior apply has staged a binary, and that it
+// does so without flipping applyRunning (so the caller can keep polling
+// Status without seeing a phantom "running" state).
+func TestApplyRestartRequired(t *testing.T) {
+	svc := buildTestService(t)
+	svc.MarkRestartRequiredForTest("v1.2.3")
+
+	err := svc.Apply(context.Background())
+	if !errors.Is(err, ErrRestartRequired) {
+		t.Fatalf("expected ErrRestartRequired, got %v", err)
+	}
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning leaked to %d after refused Apply; expected 0", got)
 	}
 }
 

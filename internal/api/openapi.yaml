@@ -8348,7 +8348,9 @@ paths:
         progress.
 
         Returns 422 when running inside a Docker container; re-pull the image
-        instead. Returns 409 when an update is already in progress.
+        instead. Returns 409 when an update is already in progress, or when a
+        previous apply has staged a binary that requires a process restart
+        before another apply can run.
 
         **Note:** After a successful apply the process must be restarted manually
         (or via the host process manager) to load the new binary. A future
@@ -8376,7 +8378,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Update already in progress.
+          description: Update already in progress, or restart required from a previous apply.
           content:
             application/json:
               schema:

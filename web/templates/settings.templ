@@ -6423,6 +6423,11 @@ templ updatesTabScript() {
 							renderRestartRequired(d.pending_version || '');
 						} else {
 							restartRow.classList.add('hidden');
+							// Mirror the inverse of renderRestartRequired() so a tab
+							// kept open across a real restart re-enables Check (and
+							// Apply, if the page-load handler doesn't reset it).
+							var checkBtn = document.getElementById('updates-check-btn');
+							if (checkBtn) checkBtn.disabled = false;
 						}
 					}
 					// If an operation is in progress, show its state and start polling.

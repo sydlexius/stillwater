@@ -334,6 +334,25 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 	}
 }
 
+// TestHandlePostUpdateApply_RestartRequired verifies that once a prior apply
+// has staged a binary, a subsequent request returns 409 with the
+// restart-required error message rather than re-running the download path.
+func TestHandlePostUpdateApply_RestartRequired(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w := httptest.NewRecorder()
+	r.handlePostUpdateApply(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); !strings.Contains(body, "restart required") {
+		t.Errorf("response body = %q, expected restart-required message", body)
+	}
+}
+
 func TestHandlePostUpdateCheck_NoNetwork(t *testing.T) {
 	r := testRouterWithUpdater(t)
 

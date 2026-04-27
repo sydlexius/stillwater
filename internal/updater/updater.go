@@ -53,6 +53,13 @@ const (
 // ErrAlreadyRunning is returned by Apply when another apply is already in progress.
 var ErrAlreadyRunning = errors.New("update already in progress")
 
+// ErrRestartRequired is returned by Apply when a previous apply has already
+// staged a new binary and the process has not yet restarted. The in-memory
+// version.Version still reports the pre-apply tag, so without this guard a
+// second Apply call would treat the same release as newer and rerun the full
+// download/replace path on top of the already-staged binary.
+var ErrRestartRequired = errors.New("restart required before applying another update")
+
 // Channel identifies the release channel to track.
 type Channel string
 
@@ -559,6 +566,19 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 func (s *Service) Apply(ctx context.Context) error {
 	if s.isDocker {
 		return fmt.Errorf("binary update is not supported in Docker environments; re-pull the container image instead")
+	}
+
+	// Reject when a prior apply already staged a new binary. version.Version
+	// is a build-time constant that does not change post-Apply, so a second
+	// call would otherwise re-download the same release on top of the staged
+	// one. Read under RLock so a concurrent markRestartRequired observes a
+	// consistent view; we release before the CAS to keep the existing
+	// concurrency contract for ErrAlreadyRunning unchanged.
+	s.mu.RLock()
+	restartRequired := s.restartRequired
+	s.mu.RUnlock()
+	if restartRequired {
+		return ErrRestartRequired
 	}
 
 	// CompareAndSwap atomically checks that no apply is running (0) and sets it
