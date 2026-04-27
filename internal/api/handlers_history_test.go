@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -699,5 +701,358 @@ func TestHandleActivityContent_RendersRow(t *testing.T) {
 	}
 	if !strings.Contains(body, "whitespace-pre-wrap") {
 		t.Error("response missing whitespace-pre-wrap class (multiline rendering regression?)")
+	}
+}
+
+// htmxRevertRequest builds a POST request that mimics the HTMX undo button
+// click. It sets HX-Request, HX-Current-URL, the form-encoded showing hint
+// when non-empty, and the fromActivity routing tag so the handler chooses
+// the correct rendering branch.
+func htmxRevertRequest(t *testing.T, ctx context.Context, changeID, currentURL, showingHint string) *http.Request {
+	t.Helper()
+	body := url.Values{}
+	if showingHint != "" {
+		body.Set("showing", showingHint)
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/v1/history/"+changeID+"/revert",
+		strings.NewReader(body.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", currentURL)
+	req.SetPathValue("id", changeID)
+	return req
+}
+
+// seedHistoryChanges inserts n biography history rows for the given artist.
+// Each row stores OldValue="some-value-N" (a non-empty value distinct from
+// the field's actual current state) so the revert handler can attempt to
+// restore something concrete and successfully record a new revert row. It
+// returns the change IDs ordered most-recent-first (matching List() order).
+func seedHistoryChanges(t *testing.T, svc *artist.HistoryService, artistID string, n int) []string {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		// OldValue is non-empty so reverting will call UpdateField with that
+		// value, which writes through (the artist's biography starts empty)
+		// and creates a new revert history row.
+		oldVal := "old-bio-" + strconv.Itoa(i)
+		newVal := "new-bio-" + strconv.Itoa(i)
+		if err := svc.Record(context.Background(), artistID, "biography", oldVal, newVal, "manual"); err != nil {
+			t.Fatalf("seed history %d: %v", i, err)
+		}
+	}
+	all, _, err := svc.List(context.Background(), artistID, n+10, 0)
+	if err != nil {
+		t.Fatalf("list seeded changes: %v", err)
+	}
+	ids := make([]string, 0, len(all))
+	for _, c := range all {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+// TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint locks in the
+// load-more counter regression: after Load-more on the activity feed, the
+// revert handler must use the client-supplied "showing" hint (DOM row count)
+// rather than activeFilter.Offset+limit, because HX-Current-URL still has
+// offset=0 (the load-more button does not push the URL). With 47 entries
+// seeded and 40 rows rendered (DOM count from a hypothetical second
+// load-more), the OOB counter fragment must reflect 40, not the page-1 size.
+func TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Activity LoadMore Artist")
+	// Seed 47 rows so that 40 visible (after load-more rounds) is plausibly
+	// less than total. The revert will add one more (making total 48), so
+	// the rendered counter should be "40 of 48" with the hint.
+	ids := seedHistoryChanges(t, historySvc, a.ID, 47)
+	if len(ids) != 47 {
+		t.Fatalf("seeded count = %d, want 47", len(ids))
+	}
+
+	// Pick a change ID in the middle of the list. The undo button on the
+	// activity feed posts here.
+	target := ids[10]
+
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+
+	t.Run("uses showing hint over offset+limit when load-more state is implied", func(t *testing.T) {
+		// Browser URL never has offset because load-more does not push it.
+		// hx-vals carries the actual DOM row count: 40.
+		req := htmxRevertRequest(t, ctx, target, "http://localhost:8080/activity", "40")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+		body := w.Body.String()
+		// Counter must reflect the hint (40), not the page-1 size (typically the
+		// configured page size). Total grows by 1 due to the inserted revert row.
+		if !strings.Contains(body, "Showing 40 of 48") {
+			t.Errorf("counter regressed: body missing 'Showing 40 of 48'\nbody: %s", body)
+		}
+	})
+
+	t.Run("falls back to offset+limit when no hint is supplied", func(t *testing.T) {
+		// Re-seed because the previous revert mutated state.
+		a2 := addTestArtist(t, artistSvc, "Activity NoHint Artist")
+		_ = seedHistoryChanges(t, historySvc, a2.ID, 47)
+		// Find a change for a2.
+		all, _, err := historySvc.List(context.Background(), a2.ID, 47, 0)
+		if err != nil || len(all) == 0 {
+			t.Fatalf("List a2: err=%v len=%d", err, len(all))
+		}
+		target2 := all[10].ID
+
+		req := htmxRevertRequest(t, ctx, target2, "http://localhost:8080/activity?artist_id="+a2.ID, "")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+		body := w.Body.String()
+		// Without the hint, fallback uses offset+limit which is the page size
+		// (default 50, but min(showing, total) caps at total). The artist
+		// filter restricts results to a2 only, so the rendered total is 48 and
+		// the fallback showing should equal min(0+50, 48) = 48.
+		if !strings.Contains(body, "Showing 48 of 48") {
+			t.Errorf("fallback counter wrong: body missing 'Showing 48 of 48'\nbody: %s", body)
+		}
+	})
+
+	t.Run("rejects hint when greater than total", func(t *testing.T) {
+		a3 := addTestArtist(t, artistSvc, "Activity HintCap Artist")
+		_ = seedHistoryChanges(t, historySvc, a3.ID, 5)
+		all, _, err := historySvc.List(context.Background(), a3.ID, 5, 0)
+		if err != nil || len(all) == 0 {
+			t.Fatalf("List a3: err=%v len=%d", err, len(all))
+		}
+		target3 := all[0].ID
+
+		// Hint claims 9999 visible rows. Server should reject it.
+		req := htmxRevertRequest(t, ctx, target3,
+			"http://localhost:8080/activity?artist_id="+a3.ID, "9999")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+		body := w.Body.String()
+		// Hint rejected. Fallback applies: min(0+pageSize, 6) = 6.
+		if !strings.Contains(body, "Showing 6 of 6") {
+			t.Errorf("hint cap not enforced: body missing 'Showing 6 of 6'\nbody: %s", body)
+		}
+		// Inversely, the rejected hint must NOT appear.
+		if strings.Contains(body, "Showing 9999") {
+			t.Errorf("body contains rejected hint: %s", body)
+		}
+	})
+
+	t.Run("rejects non-numeric hint", func(t *testing.T) {
+		a4 := addTestArtist(t, artistSvc, "Activity BadHint Artist")
+		_ = seedHistoryChanges(t, historySvc, a4.ID, 5)
+		all, _, err := historySvc.List(context.Background(), a4.ID, 5, 0)
+		if err != nil || len(all) == 0 {
+			t.Fatalf("List a4: err=%v len=%d", err, len(all))
+		}
+		target4 := all[0].ID
+
+		req := htmxRevertRequest(t, ctx, target4,
+			"http://localhost:8080/activity?artist_id="+a4.ID, "not-a-number")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+		body := w.Body.String()
+		// Non-numeric hint silently ignored; fallback applies.
+		if !strings.Contains(body, "Showing 6 of 6") {
+			t.Errorf("non-numeric hint not rejected: body missing 'Showing 6 of 6'\nbody: %s", body)
+		}
+	})
+}
+
+// TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint covers the same
+// regression as the activity test but for the artist detail page's history
+// tab. The fallback path uses len(changes)-1 from a List(limit, 0) call which
+// regresses to the first-page count after the user has loaded additional pages.
+// The hint must override that fallback.
+func TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Artist Tab LoadMore Artist")
+	_ = seedHistoryChanges(t, historySvc, a.ID, 47)
+	all, _, err := historySvc.List(context.Background(), a.ID, 47, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	target := all[10].ID
+
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+
+	t.Run("uses showing hint over len(changes)-1 fallback", func(t *testing.T) {
+		// HX-Current-URL points to the artist detail page (not /activity), so
+		// the fromActivity branch is false and the artist-tab branch runs.
+		req := htmxRevertRequest(t, ctx, target,
+			"http://localhost:8080/artists/"+a.ID, "40")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "Showing 40 of 48") {
+			t.Errorf("artist tab counter regressed: body missing 'Showing 40 of 48'\nbody: %s", body)
+		}
+	})
+
+	t.Run("falls back to len(changes)-1 when no hint", func(t *testing.T) {
+		a2 := addTestArtist(t, artistSvc, "Artist Tab NoHint Artist")
+		_ = seedHistoryChanges(t, historySvc, a2.ID, 5)
+		all2, _, err := historySvc.List(context.Background(), a2.ID, 5, 0)
+		if err != nil || len(all2) == 0 {
+			t.Fatalf("List: err=%v len=%d", err, len(all2))
+		}
+		target2 := all2[0].ID
+
+		req := htmxRevertRequest(t, ctx, target2,
+			"http://localhost:8080/artists/"+a2.ID, "")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+		body := w.Body.String()
+		// total = 6, len(changes) on first page = 6 (fits on default page size),
+		// fallback = len-1 = 5 (the pre-revert visible count).
+		if !strings.Contains(body, "Showing 5 of 6") {
+			t.Errorf("fallback counter wrong: body missing 'Showing 5 of 6'\nbody: %s", body)
+		}
+	})
+}
+
+// TestResolveShowingCount exercises the hint-vs-fallback decision in isolation.
+// This is the helper both render branches (activity feed and artist history
+// tab) call to honor the hx-vals "showing" hint while degrading gracefully
+// when the hint is missing, malformed, or out of range.
+func TestResolveShowingCount(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// includeShowing distinguishes "no showing key in body" from
+	// "showing key present with empty value": both render to the handler
+	// as FormValue("showing") == "" but they exercise different branches
+	// at the HTTP layer, so the table below covers each explicitly.
+	mkReq := func(showing string, includeShowing bool) *http.Request {
+		body := url.Values{}
+		if includeShowing {
+			body.Set("showing", showing)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/x/revert",
+			strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return req
+	}
+
+	cases := []struct {
+		name     string
+		hint     string
+		include  bool
+		fallback int
+		total    int
+		want     int
+	}{
+		{"hint preferred when in range", "40", true, 20, 48, 40},
+		{"hint accepts equal-to-total", "48", true, 20, 48, 48},
+		{"hint accepts boundary 1", "1", true, 20, 48, 1},
+		{"missing hint uses fallback", "", false, 20, 48, 20},
+		{"empty hint uses fallback", "", true, 20, 48, 20},
+		{"non-numeric hint uses fallback", "not-a-number", true, 20, 48, 20},
+		{"zero hint uses fallback", "0", true, 20, 48, 20},
+		{"negative hint uses fallback", "-5", true, 20, 48, 20},
+		{"hint over total uses fallback", "9999", true, 20, 48, 20},
+		{"hint just over total uses fallback", "49", true, 20, 48, 20},
+		{"negative fallback clamped to zero", "", false, -3, 48, 0},
+		{"fallback over total clamped to total", "", false, 99, 48, 48},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveShowingCount(mkReq(tc.hint, tc.include), tc.fallback, tc.total, logger)
+			if got != tc.want {
+				t.Errorf("hint=%q fallback=%d total=%d: got %d, want %d",
+					tc.hint, tc.fallback, tc.total, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("nil logger does not panic on bad hint", func(t *testing.T) {
+		// Defensive: callers may pass a nil logger in tests or stripped
+		// builds. The helper must not panic when logging the bad hint.
+		got := resolveShowingCount(mkReq("garbage", true), 20, 48, nil)
+		if got != 20 {
+			t.Errorf("nil-logger fallback: got %d, want 20", got)
+		}
+	})
+}
+
+// TestHandleRevertHistory_ActivityFromArtistPageRoute covers the routing
+// decision in handleRevertHistory: when HX-Current-URL contains "/activity"
+// the activity-feed fragment is rendered, otherwise the artist-tab fragment.
+// This is the contract the hint relies on to drive the right rendering branch.
+func TestHandleRevertHistory_ActivityFromArtistPageRoute(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Route Test Artist")
+	_ = seedHistoryChanges(t, historySvc, a.ID, 3)
+	all, _, err := historySvc.List(context.Background(), a.ID, 3, 0)
+	if err != nil || len(all) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(all))
+	}
+	target := all[0].ID
+
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+
+	// /activity route -> activity fragment id
+	reqAct := htmxRevertRequest(t, ctx, target, "http://localhost:8080/activity", "")
+	wAct := httptest.NewRecorder()
+	r.handleRevertHistory(wAct, reqAct)
+	bodyAct := wAct.Body.String()
+	// Activity fragment uses #activity-entries, artist tab uses #history-change-list.
+	if !strings.Contains(bodyAct, `id="activity-entries"`) {
+		t.Errorf("activity route did not render activity fragment\nbody: %s", bodyAct)
+	}
+
+	// Reset state for a second revert.
+	a2 := addTestArtist(t, artistSvc, "Route Test Artist 2")
+	_ = seedHistoryChanges(t, historySvc, a2.ID, 3)
+	all2, _, err := historySvc.List(context.Background(), a2.ID, 3, 0)
+	if err != nil || len(all2) == 0 {
+		t.Fatalf("List a2: err=%v len=%d", err, len(all2))
+	}
+	target2 := all2[0].ID
+
+	// /artists/{id} route -> artist-tab fragment id
+	reqArt := htmxRevertRequest(t, ctx, target2, "http://localhost:8080/artists/"+a2.ID, "")
+	wArt := httptest.NewRecorder()
+	r.handleRevertHistory(wArt, reqArt)
+	bodyArt := wArt.Body.String()
+	if !strings.Contains(bodyArt, `id="history-change-list"`) {
+		t.Errorf("artist-page route did not render history tab fragment\nbody: %s", bodyArt)
 	}
 }
