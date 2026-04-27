@@ -1453,42 +1453,25 @@ const waitForIdleTimeout = 5 * time.Second
 // A naive "return as soon as State == Idle" would pass instantly: NewService
 // initializes the service at StateIdle, and Apply() returns to the caller
 // before the spawned runApply goroutine has had a chance to call setState.
-// To prove the async path actually ran, we observe applyRunning transition
-// 0 -> 1 -> 0 (Apply sets it to 1 pre-spawn via CompareAndSwap, runApply's
-// `defer Store(0)` clears it on exit). Only after seeing applyRunning back
-// at 0 do we accept an idle/error State as the genuine post-apply state.
+// Apply()'s CompareAndSwap flips applyRunning 0 -> 1 pre-spawn, and runApply's
+// `defer Store(0)` clears it on exit, so observing applyRunning back at 0
+// after Apply() returned nil is itself proof that the goroutine ran to
+// completion. We accept an idle/error State only once that flag has cleared,
+// which also handles the fast no-update / old-release paths where runApply
+// may finish before the first poll.
 func waitForIdle(t *testing.T, svc *Service) {
 	t.Helper()
 	deadline := time.Now().Add(waitForIdleTimeout)
-	observedStart := false
 	for time.Now().Before(deadline) {
 		st := svc.Status()
-		if !observedStart {
-			// Activity has begun if any of these are true:
-			//   * applyRunning is currently 1 (goroutine in flight)
-			//   * State has advanced past the initial idle (still doing
-			//     something or finished with an error)
-			//   * RestartRequired flipped to true (success path already
-			//     hit markRestartRequired and is on its way to the
-			//     final setState(StateIdle, 100))
-			// The third clause matters when waitForIdle is chained after
-			// waitForRestartRequired: by that point the goroutine may
-			// have already cleared applyRunning, so the first two
-			// signals can both be false even though runApply did run.
-			if svc.applyRunning.Load() == 1 ||
-				(st.State != StateIdle && st.State != StateError) ||
-				st.RestartRequired {
-				observedStart = true
-			}
-		}
-		if observedStart && svc.applyRunning.Load() == 0 &&
+		if svc.applyRunning.Load() == 0 &&
 			(st.State == StateIdle || st.State == StateError) {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("service did not reach idle/error within %s; observedStart=%v applyRunning=%d state=%q",
-		waitForIdleTimeout, observedStart, svc.applyRunning.Load(), svc.Status().State)
+	t.Fatalf("service did not reach idle/error within %s; applyRunning=%d state=%q",
+		waitForIdleTimeout, svc.applyRunning.Load(), svc.Status().State)
 }
 
 func containsAll(s string, subs ...string) bool {
