@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -45,6 +46,12 @@ type ArtistListData struct {
 	LibraryID   string
 	View        string // "table" or "grid"
 	ProfileName string // Active platform profile name for image terminology
+	// IDs reflects the active "Show selected" filter (#1227). When non-empty
+	// the list is restricted to these artist IDs and the toolbar renders a
+	// dismissible chip plus a "Show all" link to clear it. The slice is
+	// preserved across pagination so paging through a large selection
+	// (>1 page) keeps the filter active.
+	IDs []string
 }
 
 // complianceDotClass returns the Tailwind background class for a compliance indicator dot.
@@ -846,28 +853,63 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var applyBtn = document.getElementById('bulk-action-apply');
 					var selectEl = document.getElementById('bulk-action-select');
 					var selectAll = document.getElementById('bulk-select-all');
+					var showSelectedBtn = document.getElementById('bulk-show-selected');
 					var boxes = document.querySelectorAll('#artist-content .sw-bulk-select');
 					var i18nNone = bar.getAttribute('data-i18n-none') || 'None selected';
 					var i18nSelectedOne = bar.getAttribute('data-i18n-selected-one') || '1 selected';
 					var i18nSelectedOther = bar.getAttribute('data-i18n-selected-other') || '{count} selected';
-					if (countEl) {
-						if (selected.size === 0) {
-							countEl.textContent = i18nNone;
-						} else if (selected.size === 1) {
-							countEl.textContent = i18nSelectedOne;
-						} else {
-							countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
-						}
-					}
-					if (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;
-					if (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;
-					// Sync per-row checkboxes with persisted selection state.
+					var i18nSplitOne = bar.getAttribute('data-i18n-selected-split-one') || '{total} selected ({onpage} on this page, 1 elsewhere)';
+					var i18nSplitOther = bar.getAttribute('data-i18n-selected-split-other') || '{total} selected ({onpage} on this page, {offpage} elsewhere)';
+					// Sync per-row checkboxes with persisted selection state and
+					// count the on-page hits in the same pass so the toolbar
+					// count can name how many of the selection are visible vs
+					// off-page (issue #1227). visibleChecked counts checked
+					// boxes among rows currently in the DOM; offPage is the
+					// remainder of the selection that lives on other pages.
 					var visibleChecked = 0;
 					boxes.forEach(function(cb) {
 						var id = cb.getAttribute('data-artist-id');
 						cb.checked = selected.has(id);
 						if (cb.checked) visibleChecked++;
 					});
+					var offPage = selected.size - visibleChecked;
+					if (offPage < 0) offPage = 0;
+					if (countEl) {
+						if (selected.size === 0) {
+							countEl.textContent = i18nNone;
+						} else if (offPage === 0) {
+							if (selected.size === 1) {
+								countEl.textContent = i18nSelectedOne;
+							} else {
+								countEl.textContent = i18nSelectedOther.replace('{count}', String(selected.size));
+							}
+						} else {
+							var tpl = offPage === 1 ? i18nSplitOne : i18nSplitOther;
+							countEl.textContent = tpl
+								.replace('{total}', String(selected.size))
+								.replace('{onpage}', String(visibleChecked))
+								.replace('{offpage}', String(offPage));
+						}
+					}
+					if (applyBtn) applyBtn.disabled = bulkActionRunning || selected.size === 0 || !selectEl || !selectEl.value;
+					if (selectEl) selectEl.disabled = bulkActionRunning || selected.size === 0;
+					// Toggle the "Show selected" affordance: hidden when no
+					// selection exists; visible (as inline-flex) once at least
+					// one item is in the selection store. We use a single
+					// display utility per state to avoid the "two display
+					// classes co-applied, later one wins" cascade trap (memory
+					// feedback_css_cascade_display_utilities).
+					if (showSelectedBtn) {
+						if (selected.size === 0) {
+							showSelectedBtn.classList.add('hidden');
+							showSelectedBtn.classList.remove('inline-flex');
+							showSelectedBtn.disabled = true;
+						} else {
+							showSelectedBtn.classList.remove('hidden');
+							showSelectedBtn.classList.add('inline-flex');
+							showSelectedBtn.disabled = bulkActionRunning;
+						}
+					}
 					// Select-All indeterminate state.
 					var allChecked = false;
 					if (selectAll) {
@@ -1154,6 +1196,29 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					return window.confirm(msg);
 				}
 
+				// "Show selected" affordance (#1227): when sort moves selected
+				// artists off the current page, the toolbar count names how
+				// many are on this page vs elsewhere. Clicking "Show selected"
+				// issues an htmx GET to /artists with the current selection
+				// as `ids=` so the user can review the entire selection in
+				// one place. We reuse htmx.ajax (rather than a plain anchor)
+				// so the swap target stays #artist-content and the existing
+				// afterSwap URL listener pushes the new state onto history.
+				document.body.addEventListener('click', function(ev) {
+					var t = ev.target;
+					if (!t || t.id !== 'bulk-show-selected') return;
+					if (selected.size === 0) return;
+					var ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);
+					var params = buildArtistParams({page: '1', ids: ids.join(',')});
+					if (window.htmx) {
+						window.htmx.ajax('GET', _artistsBp + '/artists', {
+							target: '#artist-content',
+							swap: 'outerHTML',
+							values: params
+						});
+					}
+				});
+
 				document.body.addEventListener('click', function(ev) {
 					var t = ev.target;
 					if (!t || t.id !== 'bulk-action-apply') return;
@@ -1279,6 +1344,22 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// probe the bulk-actions/status endpoint on load so a page
 				// reload mid-action re-attaches the progress pill.
 				document.addEventListener('DOMContentLoaded', function() {
+					// Seed the selection store from any `ids=` URL param so a
+					// reload or shareable-link revisit of /artists?ids=a,b,c
+					// keeps the toolbar count, the "Show selected" affordance,
+					// and the per-row checkboxes consistent with the chip the
+					// server already rendered (#1227). Capped to MAX_BULK_SELECTION
+					// to match the in-memory contract.
+					try {
+						var initialIDs = new URLSearchParams(window.location.search).get('ids');
+						if (initialIDs) {
+							var parts = initialIDs.split(',');
+							for (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {
+								var pid = parts[i].trim();
+								if (pid) selected.add(pid);
+							}
+						}
+					} catch (e) { /* ignore */ }
 					updateBar();
 					// Fire-and-forget status probe. If an action is in flight
 					// the poll attaches; otherwise the pill stays hidden.
@@ -1333,6 +1414,13 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 // is wired to a small client-side controller (initialized in ArtistsPage)
 // that manages checkbox state, Select-All indeterminate, and POSTs the
 // selected IDs to /api/v1/artists/bulk-actions.
+//
+// When a sort change moves selected artists off the current page, the toolbar
+// renders an "X selected (Y on this page, Z elsewhere)" form computed by the
+// JS controller, and exposes a "Show selected" button that filters the list
+// to only the selection (issue #1227). When the selection-filter is active
+// (data.IDs non-empty) the bar instead renders a dismissible chip with a
+// "Show all" link that clears the filter.
 templ BulkActionBar(data ArtistListData) {
 	<div
 		id="bulk-action-bar"
@@ -1342,6 +1430,8 @@ templ BulkActionBar(data ArtistListData) {
 		data-i18n-none={ t(ctx, "artists.bulk.none_selected") }
 		data-i18n-selected-one={ t(ctx, "artists.bulk.selected.one") }
 		data-i18n-selected-other={ t(ctx, "artists.bulk.selected.other") }
+		data-i18n-selected-split-one={ t(ctx, "artists.bulk.selected.split.one") }
+		data-i18n-selected-split-other={ t(ctx, "artists.bulk.selected.split.other") }
 		data-i18n-busy={ t(ctx, "artists.bulk.busy") }
 		data-i18n-failed={ t(ctx, "artists.bulk.failed") }
 		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
@@ -1361,6 +1451,22 @@ templ BulkActionBar(data ArtistListData) {
 		<span id="bulk-selected-count" class="text-sm text-gray-500 dark:text-gray-400" aria-live="polite">
 			{ t(ctx, "artists.bulk.none_selected") }
 		</span>
+		// "Show selected" affordance: visible only when at least one
+		// item is selected. Clicking issues an htmx GET to /artists with
+		// an `ids=` filter (preserving the current view) so the user
+		// can review or paginate through selections that the active sort
+		// pushed onto other pages. The button stays display:none until
+		// the JS controller sees a non-empty selection so a stale page
+		// (no selection) does not flash the affordance on first paint.
+		<button
+			id="bulk-show-selected"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.show_selected.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.show_selected") }
+		</button>
 		<div class="ml-auto">
 			<select
 				id="bulk-action-select"
@@ -1385,6 +1491,70 @@ templ BulkActionBar(data ArtistListData) {
 			</button>
 		</div>
 	</div>
+	if len(data.IDs) > 0 {
+		// Selection-filter chip: only rendered when the server received a
+		// non-empty `ids=` parameter, so it stays in sync with the URL on
+		// reload, htmx swap, or shareable-link revisit. The "Show all"
+		// link drops the `ids` param and re-issues the htmx swap, which
+		// the existing pagination URL listener pushes onto window.location.
+		<div class="flex flex-wrap items-center gap-2 mb-3" aria-label={ t(ctx, "artists.bulk.toolbar") }>
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
+				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
+				<a
+					href={ templ.SafeURL(showAllURL(data)) }
+					hx-get={ showAllURL(data) }
+					hx-target="#artist-content"
+					hx-swap="outerHTML"
+					hx-push-url="true"
+					class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+					aria-label={ t(ctx, "artists.bulk.show_all.aria") }
+					title={ t(ctx, "artists.bulk.show_all") }
+				>
+					<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+						<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+					</svg>
+				</a>
+			</span>
+		</div>
+	}
+}
+
+// showAllURL returns the current artist-list URL with the IDs filter
+// removed. Used by the "Show all" affordance on the selection chip to
+// clear the #1227 filter without losing the user's view, sort, search,
+// or other filter state.
+func showAllURL(data ArtistListData) string {
+	v := url.Values{}
+	if data.Search != "" {
+		v.Set("search", data.Search)
+	}
+	if data.Sort != "" {
+		v.Set("sort", data.Sort)
+	}
+	if data.Order != "" {
+		v.Set("order", data.Order)
+	}
+	if data.Filter != "" {
+		v.Set("filter", data.Filter)
+	}
+	if data.LibraryID != "" {
+		v.Set("library_id", data.LibraryID)
+	}
+	if data.View != "" {
+		v.Set("view", data.View)
+	}
+	for k, state := range data.Filters {
+		if state == "include" {
+			v.Set("filter_"+k, "+y")
+		} else if state == "exclude" {
+			v.Set("filter_"+k, "-y")
+		}
+	}
+	enc := v.Encode()
+	if enc == "" {
+		return basePath() + "/artists"
+	}
+	return basePath() + "/artists?" + enc
 }
 
 templ ArtistTable(data ArtistListData) {

@@ -195,6 +195,21 @@ func buildWhereClause(params ListParams) (string, []any) {
 	var conditions []string
 	var args []any
 
+	// IDs filter (#1227): when present, restrict the result set to exactly
+	// these artist IDs. Used by the bulk-selection "Show selected" affordance
+	// so cross-page selections can be reviewed in one place. Validate() has
+	// already capped the slice to MaxListIDs and dropped empty strings, so
+	// we trust it here. Renders as `artists.id IN (?, ?, ?)` with one bound
+	// parameter per ID.
+	if len(params.IDs) > 0 {
+		placeholders := make([]string, len(params.IDs))
+		for i, id := range params.IDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		conditions = append(conditions, "artists.id IN ("+strings.Join(placeholders, ", ")+")")
+	}
+
 	if params.Search != "" {
 		conditions = append(conditions, "name LIKE ?")
 		args = append(args, "%"+params.Search+"%")
