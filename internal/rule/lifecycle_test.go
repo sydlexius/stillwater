@@ -2,6 +2,8 @@ package rule
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,25 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
+
+// lookupViolationByRuleArtist returns the persisted (id, status) of the
+// rule_violations row keyed by (rule_id, artist_id). The unique index makes
+// this a stable lookup across re-evaluations because UpsertViolation reuses
+// the existing row id on conflict. Returns ("", "", nil) when no row exists.
+func lookupViolationByRuleArtist(ctx context.Context, db *sql.DB, ruleID, artistID string) (string, string, error) {
+	var id, status string
+	err := db.QueryRowContext(ctx,
+		`SELECT id, status FROM rule_violations WHERE rule_id = ? AND artist_id = ?`,
+		ruleID, artistID,
+	).Scan(&id, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return id, status, nil
+}
 
 // TestPipeline_ReEvalPassResolvesStaleViolation exercises issue #1105: when a
 // rule that previously violated now passes (because the underlying condition
@@ -266,6 +287,101 @@ func TestService_DisablingRuleSoftResolvesViolations(t *testing.T) {
 	}
 	if resultsCount != 0 {
 		t.Errorf("rule_results rows for %s = %d, want 0 after manual disable", RuleNFOExists, resultsCount)
+	}
+}
+
+// TestPipeline_BioViolationResolvedAfterBiographyPopulated exercises issue
+// #1027: the post-refresh hook in handlers_refresh.go runs RunForArtist after
+// a successful provider fetch populates Biography. The bio_exists rule should
+// then evaluate as a pass for that artist, and the previously-open
+// rule_violations row must transition to status='resolved'. This test bypasses
+// the HTTP layer and simulates the same sequence directly: seed an open
+// bio_missing violation against an artist with no biography, persist a
+// biography update through the artist service, then run the pipeline and
+// assert the row is resolved with resolved_at populated.
+//
+// Without the W2.B (#1105) resolve-on-pass fix this test would still fail,
+// because the pipeline only resolves rows it produced inline (via the
+// resolvedRows path) and not stale rows whose underlying condition was
+// corrected out-of-band. The test also guards against future regressions in
+// the post-refresh wiring: any change that prevents the pipeline from seeing
+// the persisted Biography (e.g. the post-refresh handler reading a stale
+// in-memory copy instead of GetByID-ing fresh state) would surface here as a
+// re-evaluation that still reports bio_missing and never resolves the row.
+func TestPipeline_BioViolationResolvedAfterBiographyPopulated(t *testing.T) {
+	db := setupTestDB(t)
+	ruleSvc := NewService(db)
+	artistSvc := artist.NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	disableAllRulesExcept(t, db, RuleBioExists)
+
+	// Step 1: insert an artist with empty biography. checkBioExists fires.
+	a := &artist.Artist{
+		Name:      "Bio Refresh",
+		SortName:  "Bio Refresh",
+		Path:      t.TempDir(),
+		Biography: "",
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
+
+	// Step 2: first eval -- bio_missing violation row must exist as 'open'.
+	if _, err := pipeline.RunForArtist(ctx, a); err != nil {
+		t.Fatalf("first RunForArtist: %v", err)
+	}
+	violationID, openStatus, err := lookupViolationByRuleArtist(ctx, db, RuleBioExists, a.ID)
+	if err != nil {
+		t.Fatalf("looking up bio violation after first eval: %v", err)
+	}
+	if violationID == "" {
+		t.Fatalf("expected bio_missing violation row after first eval, got none")
+	}
+	if openStatus != ViolationStatusOpen {
+		t.Fatalf("violation status after first eval = %q, want %q", openStatus, ViolationStatusOpen)
+	}
+
+	// Step 3: simulate provider refresh populating the biography. The
+	// production path is internal/api/handlers_refresh.go executeRefreshCtx,
+	// which calls artist.Service.Update with Biography filled in. We
+	// reproduce the persisted side-effect directly.
+	a.Biography = "Bio Refresh is a rock band formed for testing in 2026."
+	if err := artistSvc.Update(ctx, a); err != nil {
+		t.Fatalf("Update with populated biography: %v", err)
+	}
+
+	// Step 4: re-run the pipeline against the freshly-loaded artist, the
+	// same way runRulesAfterRefresh does (GetByID then RunForArtist). The
+	// bio_exists rule now passes, so persistPassResults must call
+	// ResolveViolationIfActive and transition the row to resolved.
+	fresh, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Update: %v", err)
+	}
+	if fresh.Biography == "" {
+		t.Fatalf("biography did not persist; reloaded artist has empty Biography")
+	}
+	if _, err := pipeline.RunForArtist(ctx, fresh); err != nil {
+		t.Fatalf("post-refresh RunForArtist: %v", err)
+	}
+
+	rv, err := ruleSvc.GetViolationByID(ctx, violationID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if rv.Status != ViolationStatusResolved {
+		t.Errorf("bio violation status after post-refresh eval = %q, want %q",
+			rv.Status, ViolationStatusResolved)
+	}
+	if rv.ResolvedAt == nil {
+		t.Errorf("resolved_at = nil, want populated after post-refresh eval")
 	}
 }
 
