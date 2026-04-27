@@ -450,6 +450,23 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			result.UpdatedArtists++
 			s.mu.Unlock()
 			s.logger.Debug("artist updated", "name", existing.Name, "path", dirPath)
+		} else {
+			// No flag change, so Update() was skipped and the artist_images
+			// registry was not refreshed. Converge it directly so a row that
+			// was deleted out-of-band (#1225) heals on the next visit even
+			// when nothing else about the artist looks different. Mirror the
+			// Update() path's event fanout only when reconciliation actually
+			// repaired drift, so quiet rescans do not flood subscribers.
+			repaired, err := s.artistService.ReconcileImages(ctx, existing)
+			if err != nil {
+				return fmt.Errorf("reconciling artist images: %w", err)
+			}
+			if repaired && s.eventBus != nil {
+				s.eventBus.Publish(event.Event{
+					Type: event.ArtistUpdated,
+					Data: map[string]any{"artist_id": existing.ID},
+				})
+			}
 		}
 	}
 

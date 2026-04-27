@@ -813,6 +813,81 @@ func (s *Service) ClearImageFlag(ctx context.Context, artistID, imageType string
 	return s.images.ClearExistsFlag(ctx, artistID, imageType, slotIndex)
 }
 
+// ReconcileImages converges the artist_images registry to match the image
+// fields on the provided Artist. The caller is responsible for populating the
+// Artist's *Exists, *LowRes, *Placeholder, *Width, *Height, and FanartCount
+// fields from filesystem-truth (e.g. the scanner's detectFiles output) before
+// calling this method.
+//
+// Unlike Update(), ReconcileImages performs ONLY the artist_images upsert and
+// stale-row removal, without touching any other artist columns or normalized
+// tables. The scanner calls this on every directory visit so the registry
+// stays in sync with disk even when the artist row's flags would otherwise
+// show "no change" (issue #1225). Idempotent: replaying with the same Artist
+// is a no-op.
+//
+// Returns true when the registry was actually mutated so the caller can
+// mirror Update()'s ArtistUpdated event fanout only on real repairs.
+func (s *Service) ReconcileImages(ctx context.Context, a *Artist) (bool, error) {
+	if a == nil || a.ID == "" {
+		return false, fmt.Errorf("ReconcileImages: artist ID is required")
+	}
+	desired := extractImageMetadata(a)
+	current, err := s.images.GetForArtist(ctx, a.ID)
+	if err != nil {
+		return false, fmt.Errorf("loading current images for reconciliation: %w", err)
+	}
+	if !imageRegistryDrift(current, desired) {
+		return false, nil
+	}
+	if err := s.images.UpsertAll(ctx, a.ID, desired); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// imageRegistryDrift reports whether the writable fields of `desired` differ
+// from `current`. Provenance columns (PHash, Source, FileFormat,
+// LastWrittenAt) are intentionally ignored because UpsertAll preserves them
+// and they cannot drift from filesystem detection alone.
+func imageRegistryDrift(current, desired []ArtistImage) bool {
+	type key struct {
+		imageType string
+		slot      int
+	}
+	type row struct {
+		exists      bool
+		lowRes      bool
+		placeholder string
+		width       int
+		height      int
+	}
+	index := func(rows []ArtistImage) map[key]row {
+		out := make(map[key]row, len(rows))
+		for _, r := range rows {
+			out[key{r.ImageType, r.SlotIndex}] = row{
+				exists:      r.Exists,
+				lowRes:      r.LowRes,
+				placeholder: r.Placeholder,
+				width:       r.Width,
+				height:      r.Height,
+			}
+		}
+		return out
+	}
+	c, d := index(current), index(desired)
+	if len(c) != len(d) {
+		return true
+	}
+	for k, want := range d {
+		got, ok := c[k]
+		if !ok || got != want {
+			return true
+		}
+	}
+	return false
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API. This includes both direct-column fields (in
 // fieldColumnMap) and provider-ID fields (in providerFieldMap).

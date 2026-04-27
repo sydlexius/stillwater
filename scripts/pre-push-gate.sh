@@ -6,7 +6,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
-COVER_OUT=$(mktemp /tmp/stillwater-cover.XXXXXX.out)
+WORKTREE_BASENAME=$(basename "$(git rev-parse --show-toplevel)")
+GATE_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/stillwater-gate/${WORKTREE_BASENAME}"
+mkdir -p "$GATE_CACHE"
+COVER_OUT=$(mktemp "$GATE_CACHE/cover.XXXXXX.out")
 tmp_openapi=""
 cleanup() {
   rm -f "${COVER_OUT:-}" "${tmp_openapi:-}"
@@ -42,7 +45,7 @@ echo "OK"
 echo ""
 echo "=== OpenAPI breaking changes ==="
 if command -v oasdiff &>/dev/null; then
-  tmp_openapi=$(mktemp /tmp/openapi-base.XXXXXX.yaml)
+  tmp_openapi=$(mktemp "$GATE_CACHE/openapi-base.XXXXXX.yaml")
   if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
     breaking=$(oasdiff breaking "$tmp_openapi" internal/api/openapi.yaml 2>&1 || true)
     if [ -n "$breaking" ]; then

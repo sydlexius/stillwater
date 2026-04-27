@@ -961,3 +961,239 @@ func TestShutdownCancelsInProgressScan(t *testing.T) {
 		t.Error("scan status is still 'running' after Shutdown")
 	}
 }
+
+// setupScannerWithDB is like setupScanner but also returns the underlying
+// SQL handle so tests can simulate registry-vs-disk drift directly.
+func setupScannerWithDB(t *testing.T, libraryPath string) (*Service, *artist.Service, *sql.DB) {
+	t.Helper()
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	scannerSvc := NewService(artistSvc, nil, nil, logger, libraryPath, nil)
+	return scannerSvc, artistSvc, db
+}
+
+// TestScan_ReconcilesArtistImagesRegistry covers issue #1225: when an artist
+// directory has a canonical image on disk but the artist_images registry
+// has lost the row for that slot (post-migration drift, partial backup
+// restore, manual SQL surgery), a subsequent scan must rebuild the row so
+// <image>_exists and extraneous_images cannot disagree on the same canonical
+// file.
+//
+// The scanner achieves this through its existing change-detection +
+// persistNormalized path: hydrateImages reads the now-empty registry, sets
+// existing.FanartExists=false; detectFiles sees fanart.jpg on disk and sets
+// detected.FanartExists=true; the disagreement triggers Update() which calls
+// persistNormalized -> images.UpsertAll, repopulating the row. This test
+// pins that end-to-end recovery as a regression for #1225.
+func TestScan_ReconcilesArtistImagesRegistry(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Reconcile Test", "fanart.jpg")
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	// First scan: artist created, fanart row written.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Reconcile Test"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if !a.FanartExists {
+		t.Fatal("FanartExists should be true after first scan with fanart.jpg present")
+	}
+
+	imgs, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("getting images: %v", err)
+	}
+	hasFanart := false
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			hasFanart = true
+			break
+		}
+	}
+	if !hasFanart {
+		t.Fatal("expected artist_images fanart row after first scan")
+	}
+
+	// Simulate the registry-vs-disk drift in #1225: registry row vanished
+	// while the file is still on disk. Bypass the service layer so the
+	// artists row's other columns are untouched.
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM artist_images WHERE artist_id = ? AND image_type = 'fanart'`, a.ID); err != nil {
+		t.Fatalf("deleting fanart row: %v", err)
+	}
+
+	// Second scan reconciles. With the row deleted, hydrateImages sets
+	// existing.FanartExists=false, detectFiles sees the file and sets
+	// detected.FanartExists=true, so processDirectory marks the artist
+	// changed and Update() repopulates the row via persistNormalized.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	imgs, err = artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("getting images: %v", err)
+	}
+	hasFanart = false
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			hasFanart = true
+			break
+		}
+	}
+	if !hasFanart {
+		t.Fatalf("expected artist_images fanart row to be reconciled by second scan; the registry must converge with disk on every visit (issue #1225)")
+	}
+}
+
+// TestScan_ReconcileImagesOnUnchangedRescan covers the no-flag-change branch
+// of processDirectory: when a second scan finds nothing different about an
+// artist (same flags, same files, same dimensions), the artist_images
+// registry must still converge through ReconcileImages so any silent
+// out-of-band row loss heals on the next visit. Before the fix in this PR
+// the no-change branch did nothing, leaving stale registries permanently
+// stuck unless some other field happened to flip.
+func TestScan_ReconcileImagesOnUnchangedRescan(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Stable Artist", "fanart.jpg")
+	svc, artistSvc, _ := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Stable Artist"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+
+	// Second scan: nothing on disk changed, so processDirectory should hit
+	// the no-flag-change branch and call ReconcileImages directly. The call
+	// must succeed without error and leave the registry intact. Run() returns
+	// the pre-scan snapshot (counters all zero), so we read the finished
+	// snapshot from waitForScan to assert UpdatedArtists stayed at zero.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	finished := waitForScan(t, svc, 5*time.Second)
+	if finished == nil {
+		t.Fatal("waitForScan returned nil after Run 2")
+	}
+	if finished.UpdatedArtists != 0 {
+		t.Errorf("UpdatedArtists = %d, want 0 (rescan should detect no change)", finished.UpdatedArtists)
+	}
+
+	imgs, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("getting images: %v", err)
+	}
+	hasFanart := false
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			hasFanart = true
+		}
+	}
+	if !hasFanart {
+		t.Error("registry must still hold the fanart row after a no-change rescan")
+	}
+}
+
+// TestArtistService_ReconcileImages_IdempotentConvergence pins the contract
+// of the public ReconcileImages method (issue #1225 support API): given an
+// Artist whose image flags reflect filesystem-truth, repeatedly calling
+// ReconcileImages converges the artist_images registry on those flags
+// without duplicating rows or leaving stale rows behind. This is the surface
+// future callers can use for explicit registry repair when they have an
+// authoritative image-flag snapshot to write through.
+func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ctx := context.Background()
+
+	a := &artist.Artist{Name: "Reconcile Idempotent"}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Seed: artist has no rows initially.
+	imgs, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("initial GetImagesForArtist: %v", err)
+	}
+	if len(imgs) != 0 {
+		t.Fatalf("expected 0 image rows, got %d", len(imgs))
+	}
+
+	// Reconcile with a fanart-present model. Registry should grow a row and
+	// the call must report the registry was repaired.
+	a.FanartExists = true
+	a.FanartCount = 1
+	repaired, err := artistSvc.ReconcileImages(ctx, a)
+	if err != nil {
+		t.Fatalf("ReconcileImages (add fanart): %v", err)
+	}
+	if !repaired {
+		t.Error("expected repaired=true when adding the first fanart row")
+	}
+	imgs, err = artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist after add: %v", err)
+	}
+	hasFanart := false
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			hasFanart = true
+		}
+	}
+	if !hasFanart {
+		t.Fatal("ReconcileImages must add a fanart row for FanartExists=true")
+	}
+
+	// Idempotent replay: same model should leave the row intact and report
+	// no repair.
+	repaired, err = artistSvc.ReconcileImages(ctx, a)
+	if err != nil {
+		t.Fatalf("ReconcileImages (replay): %v", err)
+	}
+	if repaired {
+		t.Error("expected repaired=false on idempotent replay")
+	}
+	imgs, err = artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist after replay: %v", err)
+	}
+	if len(imgs) != 1 {
+		t.Errorf("idempotent replay must not duplicate rows, got %d", len(imgs))
+	}
+
+	// Reconcile with all flags cleared: row should be removed and the call
+	// must report a repair.
+	a.FanartExists = false
+	a.FanartCount = 0
+	repaired, err = artistSvc.ReconcileImages(ctx, a)
+	if err != nil {
+		t.Fatalf("ReconcileImages (remove fanart): %v", err)
+	}
+	if !repaired {
+		t.Error("expected repaired=true when removing the fanart row")
+	}
+	imgs, err = artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist after clear: %v", err)
+	}
+	for _, img := range imgs {
+		if img.ImageType == "fanart" {
+			t.Errorf("ReconcileImages must remove fanart row when FanartExists=false, found %+v", img)
+		}
+	}
+}

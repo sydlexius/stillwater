@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/platform"
 
 	_ "modernc.org/sqlite"
 )
@@ -478,6 +479,47 @@ func TestCheckExtraneousImages_NoExtraneous(t *testing.T) {
 	v := checker(context.Background(), &a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for directory with only canonical files, got %v", v)
+	}
+}
+
+// TestCheckExtraneousImages_CrossProfileCanonical_NotFlagged covers issue
+// #1225: when the active platform profile lists backdrop.jpg as the primary
+// fanart name (Emby/Jellyfin), but the user's filesystem has fanart.jpg
+// (Kodi/Plex naming) on disk, the registry's <image>_exists rules report
+// "fanart present" while extraneous_images would historically flag
+// fanart.jpg as non-canonical. Both rules then fire on the same file with
+// contradictory verdicts.
+//
+// The fix unions image.DefaultFileNames into the expected set so any
+// well-known canonical filename across profiles is whitelisted. This test
+// pins that union so the divergence cannot regress.
+func TestCheckExtraneousImages_CrossProfileCanonical_NotFlagged(t *testing.T) {
+	dir := t.TempDir()
+	// fanart.jpg is the Kodi/Plex canonical fanart name; backdrop.jpg is
+	// Emby/Jellyfin. Both are recognized as fanart by the scanner and by
+	// image.DefaultFileNames. Under an Emby profile, only backdrop.jpg
+	// would have been "expected" before the fix, so a fanart.jpg on disk
+	// would be (incorrectly) flagged as extraneous.
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	embyLikeProfile := &platform.Profile{
+		ID:   "emby",
+		Name: "Emby",
+		ImageNaming: platform.ImageNaming{
+			Thumb:  []string{"folder.jpg"},
+			Fanart: []string{"backdrop.jpg"},
+			Logo:   []string{"logo.png"},
+			Banner: []string{"banner.jpg"},
+		},
+	}
+
+	expected := expectedImageFiles(embyLikeProfile, dir)
+	if !expected["fanart.jpg"] {
+		t.Error("fanart.jpg must be in expected set under any profile (cross-profile canonical filename); regression of #1225 fix")
+	}
+	if !expected["backdrop.jpg"] {
+		t.Error("backdrop.jpg must remain in expected set when its profile lists it")
 	}
 }
 

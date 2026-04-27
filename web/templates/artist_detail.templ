@@ -150,11 +150,19 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									templ.KV("ring-1 ring-gray-200 dark:ring-gray-700", !data.Artist.FanartExists),
 									templ.KV("ring-1 ring-white/20 drop-shadow-lg", data.Artist.FanartExists),
 								}
+								onerror="this.style.display='none'"
 							/>
 						}
 						<div>
 							if data.Artist.LogoExists {
-								<h1 class="sr-only">{ data.Artist.Name }</h1>
+								<h1
+									id="artist-logo-fallback"
+									class={
+										"sr-only",
+										templ.KV("text-2xl font-bold", data.Artist.FanartExists),
+										templ.KV("text-white drop-shadow-md", data.Artist.FanartExists),
+									}
+								>{ data.Artist.Name }</h1>
 								<img
 									src={ fmt.Sprintf("%s/api/v1/artists/%s/images/logo/file", assets.BasePath, data.Artist.ID) }
 									alt={ data.Artist.Name }
@@ -162,6 +170,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										"max-h-20 max-w-[300px] object-contain object-left",
 										templ.KV("drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]", data.Artist.FanartExists),
 									}
+									onerror="this.style.display='none';document.getElementById('artist-logo-fallback').classList.remove('sr-only')"
 								/>
 							} else {
 								<h1
