@@ -1254,14 +1254,17 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// Compute the scope token from an htmx request URL. Used in
 				// the afterSwap handler to derive the new scope without
 				// depending on whether the URL-update listener has run yet.
-				// htmx 2.x exposes the request URL on evt.detail.pathInfo
-				// (requestPath / finalRequestPath); both are checked because
-				// hx-vals can rewrite the path between them. Falls through
-				// to the current window.location URL if neither is present.
+				// htmx 2.0.8 exposes the request configuration on
+				// evt.detail.requestConfig.path (the path htmx issued the
+				// request to) and the resolved URL on evt.detail.xhr.responseURL
+				// (post-redirect). We try requestConfig.path first because it
+				// reflects what htmx asked for, fall back to xhr.responseURL,
+				// then finally to window.location if neither is present.
 				function scopeTokenFromRequest(evt) {
 					try {
-						var pi = evt && evt.detail && evt.detail.pathInfo;
-						var path = pi && (pi.finalRequestPath || pi.requestPath);
+						var rc = evt && evt.detail && evt.detail.requestConfig;
+						var xhr = evt && evt.detail && evt.detail.xhr;
+						var path = (rc && rc.path) || (xhr && xhr.responseURL);
 						if (path) {
 							var u = new URL(path, window.location.origin);
 							return tokenFromParams(u.searchParams);

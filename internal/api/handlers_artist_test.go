@@ -186,6 +186,10 @@ func TestArtistsPage_BulkSelectionSurvivesSort(t *testing.T) {
 			// that the issue called out as scope-irrelevant: sort, order,
 			// page, page_size, view. Pin the inclusion list to catch any
 			// drift that would re-introduce a wipe-on-sort regression.
+			// This is an exact-string match against the emitted JS; if the
+			// templ-side condition is reformatted or the variable is
+			// renamed, update this marker rather than converting to AST
+			// parsing (overkill for a contract test).
 			scopeMarker := `if (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0)`
 			if !strings.Contains(body, scopeMarker) {
 				t.Errorf("rendered body missing scope-token allowlist: want %q", scopeMarker)
