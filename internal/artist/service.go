@@ -719,15 +719,20 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// silently rename over the user's symlink. Same pattern used by
 	// internal/filesystem/symlink.go's existence checks.
 	//
-	// Hold renameMu across the Lstat+RenameDirAtomic pair so a concurrent
-	// rename targeting the same newPath cannot slip a directory in between
-	// our existence check and the actual rename. RenameDirAtomic explicitly
-	// requires dst not to exist, so without serialization the second caller
-	// could clobber or interleave with the first. The closure pins the lock
-	// scope to exactly the existence-check + rename pair so a future
-	// early-return added inside it cannot deadlock the service. External
-	// processes that create newPath without taking this lock are still
-	// possible, but the in-process path is the realistic concurrency vector.
+	// Hold renameMu across the entire Lstat -> RenameDirAtomic -> UpdatePath
+	// -> rollback sequence. The lock cannot be released between the on-disk
+	// rename and the DB write: once oldPath is empty, a concurrent rename
+	// could claim it as its own destination, and our rollback (newPath ->
+	// oldPath) would then either fail with "destination exists" or clobber
+	// the concurrent operation. Holding the mutex across the DB write also
+	// keeps two callers from interleaving partial state for the same parent.
+	//
+	// The closure pins the lock scope so any future early-return added
+	// inside it cannot deadlock the service. External processes that mutate
+	// newPath without taking this lock are still possible, but the in-process
+	// path is the realistic concurrency vector. UpdatePath is a single-column
+	// SQLite write, so widening the critical section to cover it does not
+	// add meaningful contention given how rare user-driven renames are.
 	oldPath := a.Path
 	if err := func() error {
 		s.renameMu.Lock()
@@ -742,35 +747,36 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		if err := filesystem.RenameDirAtomic(oldPath, newPath); err != nil {
 			return fmt.Errorf("renaming %q to %q: %w", oldPath, newPath, err)
 		}
+
+		// Persist the new path with a single-column UPDATE so a concurrent
+		// edit to any other field (Name, Locked, etc.) landing between our
+		// hydrated load and this write is not silently reverted. A full-row
+		// s.artists.Update would rewrite every column from the snapshot we
+		// loaded earlier, which could clobber concurrent mutations;
+		// UpdatePath touches only artists.path (and updated_at). We also
+		// avoid s.update() entirely so persistNormalized is not invoked
+		// here -- a path-only rename has no normalized state to refresh,
+		// and skipping it keeps DB and FS in lockstep on the rollback.
+		if updErr := s.artists.UpdatePath(ctx, a.ID, newPath); updErr != nil {
+			// The on-disk rename succeeded but the DB write failed.
+			// Attempt to roll the directory back so the next scan does
+			// not find a directory whose path no longer matches the
+			// artist row. A failed rollback is logged but not returned:
+			// the original error is what the caller needs to surface,
+			// and the operator can reconcile by re-running a scan.
+			if rollbackErr := filesystem.RenameDirAtomic(newPath, oldPath); rollbackErr != nil {
+				slog.Error("rename directory: db update failed and rollback also failed",
+					"artist_id", artistID,
+					"new_path", newPath,
+					"old_path", oldPath,
+					"db_error", updErr,
+					"rollback_error", rollbackErr)
+			}
+			return fmt.Errorf("persisting renamed path: %w", updErr)
+		}
 		return nil
 	}(); err != nil {
 		return "", err
-	}
-
-	// Persist the new path with a single-column UPDATE so a concurrent edit to
-	// any other field (Name, Locked, etc.) landing between our hydrated load
-	// and this write is not silently reverted. A full-row s.artists.Update
-	// would rewrite every column from the snapshot we loaded earlier, which
-	// could clobber concurrent mutations; UpdatePath touches only artists.path
-	// (and updated_at). We also avoid s.update() entirely so persistNormalized
-	// is not invoked here -- a path-only rename has no normalized state to
-	// refresh, and skipping it keeps DB and FS in lockstep on the rollback.
-	if err := s.artists.UpdatePath(ctx, a.ID, newPath); err != nil {
-		// The on-disk rename succeeded but the DB write failed. Attempt to
-		// roll the directory back so the next scan does not find a
-		// directory whose path no longer matches the artist row. A failed
-		// rollback is logged but not returned: the original error is what
-		// the caller needs to surface, and the operator can reconcile by
-		// re-running a scan.
-		if rollbackErr := filesystem.RenameDirAtomic(newPath, oldPath); rollbackErr != nil {
-			slog.Error("rename directory: db update failed and rollback also failed",
-				"artist_id", artistID,
-				"new_path", newPath,
-				"old_path", oldPath,
-				"db_error", err,
-				"rollback_error", rollbackErr)
-		}
-		return "", fmt.Errorf("persisting renamed path: %w", err)
 	}
 	s.markDirtyBestEffort(ctx, a.ID)
 

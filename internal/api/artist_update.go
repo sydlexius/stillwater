@@ -50,17 +50,31 @@ func (r *Router) handleArtistRenameDirectory(w http.ResponseWriter, req *http.Re
 
 	newPath, err := r.artistService.RenameDirectory(req.Context(), artistID, newName)
 	if err != nil {
+		// Log mapped 4xx rejections at Warn so operators can diagnose
+		// rename failures from server logs without reproducing them.
+		// The 5xx default still uses Error. Field naming matches the
+		// rest of internal/api (slog.String("error", err.Error())).
+		logRejected := func(status int) {
+			r.logger.Warn("rename artist directory rejected",
+				slog.String("artist_id", artistID),
+				slog.String("new_dirname", newName),
+				slog.Int("status", status),
+				slog.String("error", err.Error()))
+		}
 		switch {
 		case errors.Is(err, artist.ErrRenameInvalidName), errors.Is(err, artist.ErrRenameNoChange):
+			logRejected(http.StatusBadRequest)
 			writeError(w, req, http.StatusBadRequest, err.Error())
 		case errors.Is(err, artist.ErrNotFound):
 			// RenameDirectory propagates GetByID's not-found sentinel.
 			// Map to 404 so the client distinguishes "no such artist"
 			// from server-side or conflict failures.
+			logRejected(http.StatusNotFound)
 			writeError(w, req, http.StatusNotFound, "artist not found")
 		case errors.Is(err, artist.ErrRenameLocked),
 			errors.Is(err, artist.ErrRenameNoPath),
 			errors.Is(err, artist.ErrRenameDestExists):
+			logRejected(http.StatusConflict)
 			writeError(w, req, http.StatusConflict, err.Error())
 		default:
 			r.logger.Error("renaming artist directory",
