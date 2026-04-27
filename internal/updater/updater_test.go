@@ -924,6 +924,147 @@ func TestRestartRequiredNotSetOnRunApplyEarlyExit(t *testing.T) {
 	}
 }
 
+// TestRunApplySuccessSetsRestartRequired drives runApply through its full
+// success path -- download, checksum verification, extract, atomic replace,
+// markRestartRequired, idle 100% -- so the post-Apply UI surface is locked
+// against regressions and the Wave-3 patch-coverage gap on this path is
+// closed.
+//
+// The test stubs `executablePath` (a package var indirecting os.Executable)
+// to point at a temp file under t.TempDir() so atomicReplaceFile rewrites
+// the temp file rather than the test runner binary. Every other step
+// (release fetch, asset download, checksum file, sha256 verify, tar.gz
+// extract) runs the production code path against an httptest server.
+func TestRunApplySuccessSetsRestartRequired(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Swap the executable-path resolver to a real temp file we own.
+	// atomicReplaceFile statics the target's mode, so the file must
+	// exist before runApply reaches it.
+	tmpBin := filepath.Join(t.TempDir(), "stillwater")
+	if err := os.WriteFile(tmpBin, []byte("old binary content"), 0o755); err != nil {
+		t.Fatalf("seeding tmp binary: %v", err)
+	}
+	prevExec := executablePath
+	executablePath = func() (string, error) { return tmpBin, nil }
+	t.Cleanup(func() { executablePath = prevExec })
+
+	// Build the tarball whose extraction will produce the new binary
+	// content. Asset name must match binaryAssetName(tagName) so runApply
+	// picks it up from the release manifest.
+	const tagName = "v999.0.0"
+	const newBinaryContent = "new binary content"
+	var tarBuf bytes.Buffer
+	gw := gzip.NewWriter(&tarBuf)
+	tw := tar.NewWriter(gw)
+	hdr := &tar.Header{Name: "stillwater", Mode: 0o755, Size: int64(len(newBinaryContent))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte(newBinaryContent)); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	tarBytes := tarBuf.Bytes()
+	binAsset := binaryAssetName(tagName)
+	checksumAsset := checksumAssetName(tagName)
+	checksumLine := sha256Hex(tarBytes) + "  " + binAsset + "\n"
+
+	// Mock GitHub: the releases endpoint returns one release whose Assets
+	// point back at this same server's /asset/<name> paths. The asset
+	// endpoint serves the tarball or checksum file depending on the path.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/asset/"+binAsset):
+			w.Header().Set("Content-Type", "application/gzip")
+			_, _ = w.Write(tarBytes)
+		case strings.HasSuffix(r.URL.Path, "/asset/"+checksumAsset):
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(checksumLine))
+		default:
+			// Releases manifest for any path that isn't an asset URL.
+			rels := []githubRelease{{
+				TagName:     tagName,
+				Prerelease:  false,
+				Draft:       false,
+				HTMLURL:     "https://example.invalid/releases/" + tagName,
+				PublishedAt: "2026-01-01T00:00:00Z",
+				Assets: []githubAsset{
+					// downloadBytes requires https://; rewriteHostTransport
+					// rewrites scheme+host at request time so the actual
+					// fetch lands on the http httptest server.
+					{Name: binAsset, BrowserDownloadURL: "https://api.github.com/asset/" + binAsset},
+					{Name: checksumAsset, BrowserDownloadURL: "https://api.github.com/asset/" + checksumAsset},
+				},
+			}}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(rels)
+		}
+	}))
+	defer srv.Close()
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	// Apply() spawns runApply in a goroutine; the Service starts at
+	// StateIdle so waitForIdle would return instantly without waiting for
+	// the goroutine to actually transition state. Wait for the goroutine
+	// to enter StateChecking (the very first setState call) before then
+	// waiting for the terminal idle/error state.
+	waitForStateTransition(t, svc, StateIdle)
+	waitForIdle(t, svc)
+
+	st := svc.Status()
+	if st.State != StateIdle {
+		t.Fatalf("state = %q, want idle (success path); status = %+v", st.State, st)
+	}
+	if !st.RestartRequired {
+		t.Errorf("RestartRequired = false after successful Apply; want true")
+	}
+	if st.PendingVersion != tagName {
+		t.Errorf("PendingVersion = %q, want %q", st.PendingVersion, tagName)
+	}
+	if st.Progress != 100 {
+		t.Errorf("Progress = %d, want 100", st.Progress)
+	}
+
+	// The temp binary file must have been overwritten with the new content,
+	// proving atomicReplaceFile actually ran end-to-end (not just the
+	// markRestartRequired bookkeeping).
+	got, err := os.ReadFile(tmpBin)
+	if err != nil {
+		t.Fatalf("reading tmp binary after Apply: %v", err)
+	}
+	if string(got) != newBinaryContent {
+		t.Errorf("tmp binary content = %q, want %q", string(got), newBinaryContent)
+	}
+}
+
+// waitForStateTransition polls Status() until the state is no longer
+// `from`, with a short deadline. NewService() initializes the service at
+// StateIdle, so a test that calls Apply() and then immediately calls
+// waitForIdle would race: waitForIdle reads the still-initial StateIdle
+// before the spawned goroutine has had a chance to call setState. Use
+// this helper to wait for the goroutine to actually start.
+func waitForStateTransition(t *testing.T, svc *Service, from State) {
+	t.Helper()
+	deadline := time.Now().Add(waitForIdleTimeout)
+	for time.Now().Before(deadline) {
+		if svc.Status().State != from {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("service did not transition away from %q within %s", from, waitForIdleTimeout)
+}
+
 // TestDownloadBytes exercises the download path with a real HTTPS test server.
 func TestDownloadBytes(t *testing.T) {
 	want := []byte("hello download")

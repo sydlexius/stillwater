@@ -1409,6 +1409,7 @@
   "settings.updates.state_saved": "Settings saved",
   "settings.updates.release_notes": "Release notes",
   "settings.updates.restart_required_body": "The new binary is in place; restart Stillwater to finish updating.",
+  "settings.updates.restart_required_docker_instruction": "Recreate the container to load the new binary (e.g. docker compose up -d --force-recreate stillwater).",
   "settings.updates.restart_required_native_instruction": "Stop and re-run the Stillwater binary (or use your process manager: systemctl restart stillwater).",
   "settings.updates.restart_required_title": "Update installed -- restart to finish",
   "settings.updates.title": "Application Updates",

@@ -5947,7 +5947,16 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 						<div class="mt-1 text-amber-700 dark:text-amber-300" id="updates-restart-required-body">
 							{ t(ctx, "settings.updates.restart_required_body") }
 						</div>
-						if !data.IsDocker {
+						// Render an environment-specific restart instruction so
+						// Docker users see "recreate the container" while native
+						// users see "stop and re-run". Both branches share the
+						// same DOM id so any JS or CSS selector continues to
+						// match either path.
+						if data.IsDocker {
+							<div class="mt-1 text-amber-700 dark:text-amber-300" id="updates-restart-required-instruction">
+								{ t(ctx, "settings.updates.restart_required_docker_instruction") }
+							</div>
+						} else {
 							<div class="mt-1 text-amber-700 dark:text-amber-300" id="updates-restart-required-instruction">
 								{ t(ctx, "settings.updates.restart_required_native_instruction") }
 							</div>
@@ -6039,8 +6048,22 @@ templ updatesTabScript() {
 				updBp = updMeta.content;
 			}
 
+			// restartRequiredActive reports whether the persistent
+			// "restart required" banner is currently visible. Used to gate
+			// updater actions that would otherwise re-surface stale state
+			// against the still-running old version.
+			function restartRequiredActive() {
+				var row = document.getElementById('updates-restart-required-row');
+				return !!(row && !row.classList.contains('hidden'));
+			}
+
 			// checkForUpdates calls the check endpoint and refreshes the UI.
 			window.checkForUpdates = function() {
+				// After Apply staged the new binary, /check would re-run
+				// against the old in-memory version and re-surface the same
+				// "update available" pill the restart-required flow is
+				// suppressing. Skip until restart finishes (issue #1169).
+				if (restartRequiredActive()) return;
 				var btn = document.getElementById('updates-check-btn');
 				setUpdaterStatus('checking', '');
 				if (btn) btn.disabled = true;
@@ -6173,6 +6196,12 @@ templ updatesTabScript() {
 				}
 				var applyBtn = document.getElementById('updates-apply-btn');
 				if (applyBtn) applyBtn.disabled = true;
+				// Disable Check too so the user can't re-run /check against
+				// the old in-memory version and re-surface the update pill.
+				// checkForUpdates() also short-circuits via
+				// restartRequiredActive(); this keeps the visual state in sync.
+				var checkBtn = document.getElementById('updates-check-btn');
+				if (checkBtn) checkBtn.disabled = true;
 			}
 
 			// saveUpdaterConfig persists channel + auto_check.

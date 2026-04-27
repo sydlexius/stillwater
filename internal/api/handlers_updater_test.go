@@ -218,10 +218,17 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal raw status: %v", err)
 	}
-	for _, key := range []string{"state", "progress", "is_docker", "update_available"} {
+	for _, key := range []string{"state", "progress", "is_docker", "update_available", "restart_required"} {
 		if _, ok := raw[key]; !ok {
 			t.Fatalf("missing required field %q in UpdateStatus", key)
 		}
+	}
+	// Lock the idle-payload contract: restart_required must serialize as
+	// the explicit boolean false, never via omitempty. A future struct-tag
+	// regression would otherwise pass the typed-StatusResult assertion
+	// silently (Go zero-value defaults to false on the typed path).
+	if got := raw["restart_required"]; got != false {
+		t.Errorf(`restart_required = %v, want false`, got)
 	}
 	if st.State != updater.StateIdle {
 		t.Errorf("state = %q, want idle", st.State)

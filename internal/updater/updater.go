@@ -670,7 +670,7 @@ func (s *Service) runApply(ctx context.Context) {
 	}
 
 	// Atomic replacement of the running binary.
-	selfPath, err := os.Executable()
+	selfPath, err := executablePath()
 	if err != nil {
 		s.setState(StateError, 0, "resolving executable path: "+err.Error())
 		return
@@ -700,6 +700,15 @@ func (s *Service) runApply(ctx context.Context) {
 	s.markRestartRequired(latest.TagName)
 	s.setState(StateIdle, 100, "")
 }
+
+// executablePath resolves the path of the running binary. Indirected
+// through a package var so tests can stub it: the real os.Executable
+// returns the test binary path, which the runApply success path would
+// then attempt to overwrite (corrupting the test runner). Tests swap
+// this for a temp file under t.TempDir(), letting the full apply flow
+// (download, checksum, extract, atomic replace, markRestartRequired)
+// execute end-to-end without touching the test binary itself.
+var executablePath = os.Executable
 
 // markRestartRequired sets the sticky restart-required flag and the pending
 // version tag. Held under s.mu so a concurrent Status() reader sees both
