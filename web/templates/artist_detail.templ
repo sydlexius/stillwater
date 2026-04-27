@@ -298,6 +298,33 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									@components.IconPhoto("h-4 w-4 text-gray-400")
 									{ t(ctx, "artist.fetch_all_images") }
 								</a>
+								<!-- Explicit "Rename Directory" action. Decoupled from
+									 the Name field edit so users opt in. Prompts for
+									 the new leaf name (default = current basename) and
+									 posts JSON; success reloads the page so the new
+									 path is reflected throughout the UI. The inline
+									 fetch must prepend basePath() and include the
+									 X-CSRF-Token header explicitly because hand-rolled
+									 fetch() bypasses the global htmx:configRequest hook
+									 that wires both for hx-* requests. Only render
+									 when the artist has an on-disk path and is not
+									 locked: the server returns 409 in those cases, so
+									 surfacing the action would dead-end at an alert. -->
+								if data.Artist.Path != "" && !data.Artist.Locked {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										data-rename-prompt={ t(ctx, "artist.rename_directory_prompt") }
+										data-rename-current={ artistDirBasename(data.Artist.Path) }
+										data-rename-url={ "/api/v1/artists/" + data.Artist.ID + "/rename-directory" }
+										data-rename-failed-prefix={ t(ctx, "artist.rename_directory_failed") }
+										onclick="(function(btn){var newName=window.prompt(btn.dataset.renamePrompt, btn.dataset.renameCurrent);if(!newName)return;var bpEl=document.querySelector('meta[name=&quot;htmx-base-path&quot;]');var bp=bpEl?bpEl.content:'';var csrfMatch=document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);var csrf=csrfMatch?csrfMatch[1]:'';fetch(bp+btn.dataset.renameUrl,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},credentials:'same-origin',body:JSON.stringify({new_dirname:newName})}).then(function(resp){if(resp.ok){window.location.reload();return;}return resp.text().then(function(t){var msg=t;try{msg=JSON.parse(t).error||t;}catch(e){}window.alert(btn.dataset.renameFailedPrefix+msg);});}).catch(function(e){window.alert(btn.dataset.renameFailedPrefix+e.message);});})(this)"
+									>
+										@components.IconArrowPath("h-4 w-4 text-gray-400")
+										{ t(ctx, "artist.rename_directory") }
+									</button>
+								}
 								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 								if data.Artist.Locked {
 									<button

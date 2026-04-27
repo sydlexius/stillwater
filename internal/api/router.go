@@ -517,6 +517,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/members", wrapAuth(r.handleClearMembers, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/members/from-provider", wrapAuth(r.handleSaveMembers, authMw))
 	// Refresh and disambiguation routes
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/rename-directory", wrapAuth(r.handleArtistRenameDirectory, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh", wrapAuth(r.handleArtistRefresh, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh/search", wrapAuth(r.handleRefreshSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh/link", wrapAuth(r.handleRefreshLink, authMw))

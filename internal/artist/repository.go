@@ -54,6 +54,12 @@ type Repository interface {
 	// avoiding a full row overwrite that could clobber concurrent mutations.
 	UpdateHealthScore(ctx context.Context, id string, score float64) error
 
+	// UpdatePath sets only the path column for the given artist. Used by the
+	// directory-rename flow so a concurrent metadata edit (Name, Locked, etc.)
+	// landing between the rename's hydrated load and this write is not
+	// silently reverted by a full-row Update.
+	UpdatePath(ctx context.Context, id, path string) error
+
 	// HealthStats returns aggregate health metrics for non-excluded artists.
 	// When libraryID is non-empty, only artists in that library are included.
 	HealthStats(ctx context.Context, libraryID string) (HealthStatsResult, error)

@@ -38,6 +38,27 @@ func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, sco
 	return nil
 }
 
+// UpdatePath sets only the path column. Used by the directory-rename flow to
+// avoid the full-row Update overwriting concurrent edits to other fields like
+// Name or Locked. Mirrors UpdateHealthScore's single-column pattern.
+func (r *sqliteArtistRepo) UpdatePath(ctx context.Context, id, path string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET path = ?, updated_at = ? WHERE id = ?`,
+		path, now, id)
+	if err != nil {
+		return fmt.Errorf("updating path: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return nil
+}
+
 // ListUnevaluatedIDs returns the IDs of non-excluded artists that have never
 // been evaluated (health_evaluated_at IS NULL). This is used by the bootstrap
 // process to identify artists needing initial health score calculation.

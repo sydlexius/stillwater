@@ -531,7 +531,55 @@ templ Layout(title string, assets AssetPaths) {
 					if (evt.detail.xhr && evt.detail.xhr.status === 403) {
 						console.warn('HTMX 403 suppressed:', evt.detail.xhr.responseURL); return;
 					}
-					showToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));
+					// Prefer the response body when the server returned a
+					// human-readable reason (e.g. handlers_fix.go writes the
+					// rule-fixer message into a 422 body so the user learns
+					// "destination 'X' already exists" rather than seeing a
+					// bare HTTP code). Fall back to the status code only when
+					// the body is empty or missing.
+					var msg = '';
+					if (evt.detail.xhr && evt.detail.xhr.responseText) {
+						var body = evt.detail.xhr.responseText;
+						// Try JSON-first so { "error": "..." } envelopes from
+						// writeError survive intact even when the error string
+						// itself contains angle brackets (e.g. an invalid name
+						// the user typed). Tag stripping comes only on the
+						// non-JSON fallback so plain HTML 5xx pages still
+						// render readably.
+						var trimmed = body.trim();
+						var stripped = trimmed;
+						var isJSON = false;
+						if (trimmed.length > 0 && trimmed.charAt(0) === '{') {
+							try {
+								var parsed = JSON.parse(trimmed);
+								if (parsed && typeof parsed.error === 'string') {
+									stripped = parsed.error;
+									isJSON = true;
+								}
+							} catch (e) { /* not JSON; fall through */ }
+						}
+						if (!isJSON) {
+							stripped = body.replace(/<[^>]*>/g, '').trim();
+						}
+						// Decode HTML entities (apostrophes, ampersands, etc.)
+						// that the server escaped via html.EscapeString. A
+						// <textarea> is used because its innerHTML is parsed
+						// as plain text -- any embedded <script> would not
+						// execute -- but entity decoding still happens, so
+						// reading .value gives us the user-readable text.
+						if (stripped.length > 0) {
+							var ta = document.createElement('textarea');
+							ta.innerHTML = stripped;
+							stripped = ta.value;
+						}
+						if (stripped.length > 0 && stripped.length < 500) {
+							msg = stripped;
+						}
+					}
+					if (!msg) {
+						msg = 'Request failed: ' + (evt.detail.xhr.status || 'network error');
+					}
+					showToast(msg);
 				});
 				document.body.addEventListener('htmx:timeout', function() {
 					showToast('Request timed out. Please try again.');

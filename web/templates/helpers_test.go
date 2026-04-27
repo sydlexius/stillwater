@@ -230,3 +230,30 @@ func TestConflictGates(t *testing.T) {
 		}
 	}
 }
+
+// TestArtistDirBasename covers the helper that pre-fills the
+// rename-directory prompt with the leaf component of the artist's
+// filesystem path.
+func TestArtistDirBasename(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty path", "", ""},
+		{"whitespace only", "   ", ""},
+		{"absolute path", "/music/Some Artist", "Some Artist"},
+		{"trailing slash", "/music/Some Artist/", "Some Artist"},
+		{"single segment", "OnlyName", "OnlyName"},
+		{"unicode segment", "/music/上原ひろみ", "上原ひろみ"},
+		{"with leading whitespace", "  /music/Whitespace", "Whitespace"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := artistDirBasename(c.in)
+			if got != c.want {
+				t.Errorf("artistDirBasename(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
