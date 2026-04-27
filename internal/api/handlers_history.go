@@ -137,6 +137,16 @@ func buildGlobalFilter(req *http.Request, limit int) artist.GlobalHistoryFilter 
 // activity and artist-tab render branches share this helper so the validation
 // rules stay in one place.
 func resolveShowingCount(req *http.Request, fallback, total int, logger *slog.Logger) int {
+	// Normalize fallback bounds so callers can't accidentally produce a
+	// "Showing N of M" string with N > M (or N < 0). The hint validation
+	// below clamps the request value, but we also need to clamp the
+	// fallback so a forgetful caller can't bypass that guarantee.
+	if fallback < 0 {
+		fallback = 0
+	}
+	if total >= 0 && fallback > total {
+		fallback = total
+	}
 	v := req.FormValue("showing")
 	if v == "" {
 		return fallback

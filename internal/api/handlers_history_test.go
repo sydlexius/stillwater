@@ -953,9 +953,13 @@ func TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint(t *testing.T) 
 func TestResolveShowingCount(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	mkReq := func(showing string) *http.Request {
+	// includeShowing distinguishes "no showing key in body" from
+	// "showing key present with empty value": both render to the handler
+	// as FormValue("showing") == "" but they exercise different branches
+	// at the HTTP layer, so the table below covers each explicitly.
+	mkReq := func(showing string, includeShowing bool) *http.Request {
 		body := url.Values{}
-		if showing != "" {
+		if includeShowing {
 			body.Set("showing", showing)
 		}
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/x/revert",
@@ -967,25 +971,28 @@ func TestResolveShowingCount(t *testing.T) {
 	cases := []struct {
 		name     string
 		hint     string
+		include  bool
 		fallback int
 		total    int
 		want     int
 	}{
-		{"hint preferred when in range", "40", 20, 48, 40},
-		{"hint accepts equal-to-total", "48", 20, 48, 48},
-		{"hint accepts boundary 1", "1", 20, 48, 1},
-		{"missing hint uses fallback", "", 20, 48, 20},
-		{"empty hint uses fallback", "", 20, 48, 20},
-		{"non-numeric hint uses fallback", "not-a-number", 20, 48, 20},
-		{"zero hint uses fallback", "0", 20, 48, 20},
-		{"negative hint uses fallback", "-5", 20, 48, 20},
-		{"hint over total uses fallback", "9999", 20, 48, 20},
-		{"hint just over total uses fallback", "49", 20, 48, 20},
+		{"hint preferred when in range", "40", true, 20, 48, 40},
+		{"hint accepts equal-to-total", "48", true, 20, 48, 48},
+		{"hint accepts boundary 1", "1", true, 20, 48, 1},
+		{"missing hint uses fallback", "", false, 20, 48, 20},
+		{"empty hint uses fallback", "", true, 20, 48, 20},
+		{"non-numeric hint uses fallback", "not-a-number", true, 20, 48, 20},
+		{"zero hint uses fallback", "0", true, 20, 48, 20},
+		{"negative hint uses fallback", "-5", true, 20, 48, 20},
+		{"hint over total uses fallback", "9999", true, 20, 48, 20},
+		{"hint just over total uses fallback", "49", true, 20, 48, 20},
+		{"negative fallback clamped to zero", "", false, -3, 48, 0},
+		{"fallback over total clamped to total", "", false, 99, 48, 48},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveShowingCount(mkReq(tc.hint), tc.fallback, tc.total, logger)
+			got := resolveShowingCount(mkReq(tc.hint, tc.include), tc.fallback, tc.total, logger)
 			if got != tc.want {
 				t.Errorf("hint=%q fallback=%d total=%d: got %d, want %d",
 					tc.hint, tc.fallback, tc.total, got, tc.want)
@@ -996,7 +1003,7 @@ func TestResolveShowingCount(t *testing.T) {
 	t.Run("nil logger does not panic on bad hint", func(t *testing.T) {
 		// Defensive: callers may pass a nil logger in tests or stripped
 		// builds. The helper must not panic when logging the bad hint.
-		got := resolveShowingCount(mkReq("garbage"), 20, 48, nil)
+		got := resolveShowingCount(mkReq("garbage", true), 20, 48, nil)
 		if got != 20 {
 			t.Errorf("nil-logger fallback: got %d, want 20", got)
 		}
