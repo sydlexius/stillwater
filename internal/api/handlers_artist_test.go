@@ -102,6 +102,112 @@ func TestArtistsPageSortParams(t *testing.T) {
 	}
 }
 
+// TestArtistsPage_BulkSelectionSurvivesSort verifies the markup contract that
+// the client-side bulk-selection store relies on across sort changes. Issue
+// #1081: F1 (gallery) was reported to wipe selection on sort, F2 (table) was
+// reported to keep positional row state instead of artist-id state. The
+// client store keys selection by stable artist ID and re-derives the
+// `cb.checked` DOM state on every htmx swap, which only works if the server
+// (a) always emits a unique `data-artist-id` per row, (b) never bakes a
+// `checked` attribute into the freshly-rendered checkbox HTML, and (c)
+// excludes sort/order/page/page_size/view from the client-side
+// `currentScopeToken` so the sort-triggered swap does not look like a scope
+// change to the selection controller. This test pins (a)-(c) so a future
+// edit cannot regress the behavior described in #1081.
+func TestArtistsPage_BulkSelectionSurvivesSort(t *testing.T) {
+	r, _, artistSvc := testRouterWithLibrary(t)
+
+	// Two artists are enough to assert per-row uniqueness while keeping the
+	// rendered body small.
+	for _, name := range []string{"Zydeco Band", "Alpha Artist"} {
+		if err := artistSvc.Create(context.Background(), &artist.Artist{Name: name}); err != nil {
+			t.Fatalf("creating artist %q: %v", name, err)
+		}
+	}
+	listed, _, err := artistSvc.List(context.Background(), artist.ListParams{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("listing artists: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("len(listed) = %d, want 2", len(listed))
+	}
+
+	// Render both views (table + grid) and assert the same contract for each.
+	for _, view := range []string{"table", "grid"} {
+		t.Run("view="+view, func(t *testing.T) {
+			ctx := middleware.WithTestUserID(context.Background(), "test-user")
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists?view="+view+"&sort=name&order=asc", nil)
+			w := httptest.NewRecorder()
+			r.handleArtistsPage(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d, want 200", w.Code)
+			}
+			body := w.Body.String()
+
+			// (a) Each artist row carries its own `data-artist-id` so the
+			// client store can key by stable ID rather than row position.
+			for _, a := range listed {
+				wantAttr := fmt.Sprintf(`data-artist-id=%q`, a.ID)
+				if !strings.Contains(body, wantAttr) {
+					t.Errorf("rendered body missing %s for artist %q", wantAttr, a.Name)
+				}
+			}
+
+			// (b) No baked-in `checked` attribute on bulk-select inputs.
+			// updateBar() re-derives state after every swap; if the server
+			// pre-checks any box, sort swaps would race against the
+			// re-derivation and produce stale (positional) state.
+			for _, a := range listed {
+				marker := fmt.Sprintf(`data-artist-id=%q`, a.ID)
+				idx := strings.Index(body, marker)
+				if idx < 0 {
+					continue
+				}
+				// Look back to the input tag opening for this row's
+				// checkbox: the marker appears inside the <input ...>
+				// tag that opens a few characters earlier.
+				inputStart := strings.LastIndex(body[:idx], "<input")
+				if inputStart < 0 {
+					t.Errorf("could not locate <input opener for artist %q", a.Name)
+					continue
+				}
+				inputEnd := strings.Index(body[inputStart:], ">")
+				if inputEnd < 0 {
+					t.Errorf("malformed <input tag for artist %q", a.Name)
+					continue
+				}
+				inputTag := body[inputStart : inputStart+inputEnd+1]
+				if strings.Contains(inputTag, " checked") || strings.Contains(inputTag, "checked=") {
+					t.Errorf("bulk-select input has baked-in checked: %s", inputTag)
+				}
+			}
+
+			// (c) The client-side scope-token routine excludes the params
+			// that the issue called out as scope-irrelevant: sort, order,
+			// page, page_size, view. Pin the inclusion list to catch any
+			// drift that would re-introduce a wipe-on-sort regression.
+			scopeMarker := `if (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0)`
+			if !strings.Contains(body, scopeMarker) {
+				t.Errorf("rendered body missing scope-token allowlist: want %q", scopeMarker)
+			}
+			for _, irrelevant := range []string{"'sort'", "'order'", "'page'", "'page_size'", "'view'"} {
+				// The allowlist must NOT mention these as scope keys.
+				// Match within the allowlist line only to avoid catching
+				// hidden inputs and unrelated JS that legitimately
+				// reference these names.
+				lineIdx := strings.Index(body, scopeMarker)
+				if lineIdx < 0 {
+					continue
+				}
+				line := body[lineIdx : lineIdx+len(scopeMarker)]
+				if strings.Contains(line, irrelevant) {
+					t.Errorf("scope-token allowlist must not include %s", irrelevant)
+				}
+			}
+		})
+	}
+}
+
 // TestArtistDetailPage_TabDebugFallback verifies that tab=debug falls back to
 // overview when the setting is disabled, when no connections exist, or when
 // only non-debug-capable (Lidarr) connections exist.
