@@ -142,6 +142,13 @@ type Pipeline struct {
 	writeGateMu sync.RWMutex
 	writeGate   WriteGate
 
+	// historyServiceMu guards historyService for the same reason as
+	// writeGateMu: SetHistoryService can be called after construction so
+	// the auto-fix history-recording read path on every successful fix
+	// must lock against a concurrent setter. Issue #1106.
+	historyServiceMu sync.RWMutex
+	historyService   *artist.HistoryService
+
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
 }
@@ -163,6 +170,58 @@ func (p *Pipeline) getWriteGate() WriteGate {
 	p.writeGateMu.RLock()
 	defer p.writeGateMu.RUnlock()
 	return p.writeGate
+}
+
+// SetHistoryService installs (or replaces) the artist history service the
+// pipeline uses to emit a Recent Activity entry on every successful auto-fix.
+// Passing nil disables history recording -- callers that never configure a
+// history service behave exactly as before. Issue #1106.
+//
+// Setter form (rather than a NewPipeline parameter) keeps the existing
+// constructor signature stable for the wide set of test call sites.
+func (p *Pipeline) SetHistoryService(h *artist.HistoryService) {
+	p.historyServiceMu.Lock()
+	p.historyService = h
+	p.historyServiceMu.Unlock()
+}
+
+// getHistoryService returns the currently installed HistoryService under the
+// historyServiceMu read lock so the auto-fix recorder can read it safely
+// without racing a concurrent SetHistoryService.
+func (p *Pipeline) getHistoryService() *artist.HistoryService {
+	p.historyServiceMu.RLock()
+	defer p.historyServiceMu.RUnlock()
+	return p.historyService
+}
+
+// recordRuleFixHistory emits a single Recent Activity entry for a successful
+// auto-fix. The entry uses the canonical "rule:<rule_id>" source and a
+// dedicated "rule_fix" pseudo-field name so the existing activity feed UI:
+//
+//   - Renders the source label as "Rule: <rule_id>" (history.source.rule_named).
+//   - Hides the Revert button (artist.IsTrackableField returns false for
+//     "rule_fix"), which is intentional: most rule auto-fixes mutate the
+//     filesystem (NFO file, image file, directory rename, extraneous-file
+//     delete) and cannot be safely undone via the field-revert path. The
+//     dedicated FixViolation undo flow (W4.B) handles single-violation
+//     reverts where supported.
+//
+// Errors are warn-logged and never propagated: the history entry is
+// supplementary audit data and must not fail the actual fix.
+//
+// Issue #1106.
+func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID string, fr *FixResult) {
+	if fr == nil || !fr.Fixed {
+		return
+	}
+	h := p.getHistoryService()
+	if h == nil {
+		return
+	}
+	if err := h.Record(ctx, artistID, "rule_fix", "", fr.Message, "rule:"+fr.RuleID); err != nil {
+		p.logger.Warn("recording rule auto-fix history",
+			"rule_id", fr.RuleID, "artist_id", artistID, "error", err)
+	}
 }
 
 // NewPipeline creates a new fix pipeline.
@@ -325,6 +384,11 @@ func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunSc
 				} else {
 					perRuleMetadata = true
 				}
+				// Issue #1106: emit a Recent Activity entry so users see
+				// what the rule engine just did on their behalf. Best-effort;
+				// recordRuleFixHistory warn-logs on failure and never fails
+				// the surrounding fix flow.
+				p.recordRuleFixHistory(ctx, a.ID, fr)
 				resolvedRows = append(resolvedRows, &RuleViolation{
 					RuleID:     v.RuleID,
 					ArtistID:   a.ID,
@@ -573,6 +637,10 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 			} else {
 				metadataFixed = true
 			}
+			// Issue #1106: emit a Recent Activity entry. See the
+			// matching comment + helper docstring in
+			// RunRuleScoped.processArtist.
+			p.recordRuleFixHistory(ctx, a.ID, fr)
 			resolvedRows = append(resolvedRows, &RuleViolation{
 				RuleID:     v.RuleID,
 				ArtistID:   a.ID,
@@ -834,6 +902,10 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 				} else {
 					perArtistMetadata = true
 				}
+				// Issue #1106: emit a Recent Activity entry. See the
+				// matching comment + helper docstring in
+				// RunRuleScoped.processArtist.
+				p.recordRuleFixHistory(ctx, a.ID, fr)
 				resolvedRows = append(resolvedRows, &RuleViolation{
 					RuleID:     v.RuleID,
 					ArtistID:   a.ID,
