@@ -482,7 +482,7 @@ func artistViolationRow(v rule.RuleViolation, artistID string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" class=\"font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" class=\"font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 disabled:opacity-60 disabled:cursor-not-allowed\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -552,7 +552,7 @@ func artistViolationRow(v rule.RuleViolation, artistID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-60 disabled:cursor-not-allowed\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -576,14 +576,22 @@ func artistViolationRow(v rule.RuleViolation, artistID string) templ.Component {
 // artistViolationFix triggers a fix for a violation and refreshes the violations tab.
 func artistViolationFix(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationFix_cbd3`,
-		Function: `function __templ_artistViolationFix_cbd3(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
+		Name: `__templ_artistViolationFix_511b`,
+		Function: `function __templ_artistViolationFix_511b(violationID, artistID){// Localized error strings sourced from data-* on the row, with English
 	// fallback as defense-in-depth (matches the established pattern from
 	// the retired notifications.templ). %s in fix_failed is substituted
 	// with the server-supplied error message.
 	var row = document.getElementById('artist-violation-' + violationID);
 	var fixFailedTpl = (row && row.dataset.fixFailed) || 'Fix failed: %s';
 	var fixNetworkTpl = (row && row.dataset.fixNetwork) || 'Network error applying fix.';
+	// Disable both action buttons in this row for the duration of the
+	// fetch so a rapid second click cannot queue a duplicate POST. The
+	// finally() block re-enables them on every settled outcome (success,
+	// HTTP error, network error) so a transient failure never leaves the
+	// row permanently inert. The dashboard cards use htmx's hx-disabled-elt
+	// attribute to achieve the same guard via the htmx swap pipeline.
+	var actionBtns = row ? row.querySelectorAll('button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"]') : [];
+	for (var i = 0; i < actionBtns.length; i++) { actionBtns[i].disabled = true; }
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/fix', {
@@ -601,22 +609,31 @@ func artistViolationFix(violationID string, artistID string) templ.ComponentScri
 			// would fire two identical GETs back-to-back.
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
-			alert(fixFailedTpl.replace('%s', data.message || ''));
+			// Surface the rule-fixer's reason via the global toast pipeline
+			// (window.showToast in layout.templ) so the user sees the same
+			// styling as every other action error. Falls back to alert()
+			// only when the toast helper is unavailable (e.g. the layout
+			// script failed to load).
+			var failMsg = fixFailedTpl.replace('%s', data.message || '');
+			if (typeof window.showToast === 'function') { window.showToast(failMsg); } else { alert(failMsg); }
 		}
 	}).catch(function(err) {
-		alert(fixNetworkTpl + ' ' + err.message);
+		var netMsg = fixNetworkTpl + ' ' + err.message;
+		if (typeof window.showToast === 'function') { window.showToast(netMsg); } else { alert(netMsg); }
+	}).finally(function() {
+		for (var j = 0; j < actionBtns.length; j++) { actionBtns[j].disabled = false; }
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationFix_cbd3`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_cbd3`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationFix_511b`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationFix_511b`, violationID, artistID),
 	}
 }
 
 // artistViolationDismiss dismisses a violation and refreshes the violations tab.
 func artistViolationDismiss(violationID string, artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_artistViolationDismiss_e8c8`,
-		Function: `function __templ_artistViolationDismiss_e8c8(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
+		Name: `__templ_artistViolationDismiss_fd9a`,
+		Function: `function __templ_artistViolationDismiss_fd9a(violationID, artistID){// Localized prompt sourced from the dismiss button's data-confirm attribute
 	// (set in artistViolationRow). The [data-confirm] filter is required: the
 	// Fix and Dismiss buttons on a fixable/open row share data-violation-id and
 	// data-artist-id, so a selector without it would return the Fix button
@@ -630,6 +647,11 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 	var row = document.getElementById('artist-violation-' + violationID);
 	var dismissFailed = (row && row.dataset.dismissFailed) || 'Failed to dismiss violation.';
 	var dismissNetwork = (row && row.dataset.dismissNetwork) || 'Network error dismissing violation.';
+	// Disable both action buttons in the row while the dismiss request is
+	// in flight; finally() re-enables them so an error path never leaves
+	// the row inert. See artistViolationFix for the same pattern.
+	var actionBtns = row ? row.querySelectorAll('button[data-violation-id="' + violationID + '"][data-artist-id="' + artistID + '"]') : [];
+	for (var i = 0; i < actionBtns.length; i++) { actionBtns[i].disabled = true; }
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(bp + '/api/v1/notifications/' + violationID + '/dismiss', {
@@ -641,14 +663,16 @@ func artistViolationDismiss(violationID string, artistID string) templ.Component
 			// Refresh handled by the page-level listener -- see artistViolationFix above.
 			document.body.dispatchEvent(new CustomEvent('dashboard:action-resolved'));
 		} else {
-			alert(dismissFailed);
+			if (typeof window.showToast === 'function') { window.showToast(dismissFailed); } else { alert(dismissFailed); }
 		}
 	}).catch(function() {
-		alert(dismissNetwork);
+		if (typeof window.showToast === 'function') { window.showToast(dismissNetwork); } else { alert(dismissNetwork); }
+	}).finally(function() {
+		for (var j = 0; j < actionBtns.length; j++) { actionBtns[j].disabled = false; }
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_artistViolationDismiss_e8c8`, violationID, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_e8c8`, violationID, artistID),
+		Call:       templ.SafeScript(`__templ_artistViolationDismiss_fd9a`, violationID, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_artistViolationDismiss_fd9a`, violationID, artistID),
 	}
 }
 
