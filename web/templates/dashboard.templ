@@ -720,7 +720,8 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 						hx-post={ "/api/v1/notifications/" + v.ID + "/fix" }
 						hx-target={ "#action-card-" + v.ID }
 						hx-swap="outerHTML"
-						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors"
+						hx-disabled-elt="this"
+						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 					>
 						{ dashboardFixLabel(ctx, v.RuleID) }
 					</button>
@@ -739,7 +740,8 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 					hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
 					hx-target={ "#action-card-" + v.ID }
 					hx-swap="outerHTML"
-					class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					hx-disabled-elt="this"
+					class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 				>
 					{ t(ctx, "dashboard.dismiss") }
 				</button>

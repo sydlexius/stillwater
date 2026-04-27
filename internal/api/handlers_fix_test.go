@@ -565,6 +565,50 @@ func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
 	}
 }
 
+// TestHandleFixViolation_HTMX_FailureCarriesMessage pins the user-facing
+// error contract: when a fix attempt does not resolve the violation, the
+// HTMX response must be 422 with the rule-fixer's message in the body so
+// the global htmx:responseError listener (in layout.templ) can surface it
+// as a toast. Without this guard a future refactor could silently regress
+// to status-only errors and the dashboard card would fail without
+// explanation.
+func TestHandleFixViolation_HTMX_FailureCarriesMessage(t *testing.T) {
+	const failureMsg = "no image found from any configured provider"
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			// Fixed=false and Dismissed=false drives the failure branch.
+			return &rule.FixResult{RuleID: "thumb_exists", Fixed: false, Message: failureMsg}, nil
+		},
+	}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/test-id/fix", nil)
+	req.SetPathValue("id", "test-id")
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d (Unprocessable Entity); body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+	// Body must contain the user-visible rule-fixer message so the global
+	// toast surface in layout.templ has something to display. We compare
+	// against the HTML-escaped form because handleFixViolation runs the
+	// message through html.EscapeString to stop a malicious provider name
+	// from breaking out of the error toast. The message we picked has no
+	// special characters, so the escaped form equals the raw text.
+	if got := w.Body.String(); got != failureMsg {
+		t.Errorf("body = %q, want %q (the rule-fixer's reason must be the response body verbatim so the global htmx:responseError handler can render it)", got, failureMsg)
+	}
+	// HX-Trigger MUST NOT be set on the failure path: a queue refresh would
+	// destroy the action card before the user could read the toast and
+	// retry, defeating the user-facing error contract.
+	if trigger := w.Header().Get("HX-Trigger"); trigger != "" {
+		t.Errorf("HX-Trigger = %q, want empty on fix-failure path", trigger)
+	}
+}
+
 // TestHandleFixViolation_HTMX_WithUndo verifies that when a fix is applied
 // via HTMX and an undo entry exists, the response contains UndoToast HTML
 // and does NOT set the HX-Trigger header (to avoid destroying the toast).
