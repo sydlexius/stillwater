@@ -77,6 +77,15 @@ type UpdatesTabData struct {
 	LatestVersion   string // Latest version from last check (may be empty if not yet checked)
 	UpdateAvailable bool
 	ReleaseURL      string
+	// RestartRequired is true after a successful Apply replaced the on-disk
+	// binary in this process's lifetime. When true, the Updates tab renders a
+	// persistent "Update installed -- restart to finish" banner instead of
+	// the Apply/Check actions, so users know the Apply succeeded and that a
+	// restart is the only remaining step.
+	RestartRequired bool
+	// PendingVersion is the tag of the installed-but-not-yet-running binary,
+	// shown in the restart-required banner. Empty unless RestartRequired.
+	PendingVersion string
 }
 
 // inboundWebhookURL builds a pre-populated inbound webhook URL for the given
@@ -4974,6 +4983,7 @@ script toggleConnectionForm(connType string) {
 // attributes populated at render time by the ruleToggle*Classes
 // helpers, so this script never hardcodes Tailwind utility names and
 // stays in sync if those helpers change.
+
 script stillwaterManagedAfterRequest(connID string) {
 	var btn = document.getElementById("stillwater-managed-" + connID);
 	if (event.detail.successful) {
@@ -5816,6 +5826,9 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 		data-up-to-date={ t(ctx, "settings.updates.up_to_date") }
 		data-release-notes={ t(ctx, "settings.updates.release_notes") }
 		data-not-checked={ t(ctx, "settings.updates.not_checked") }
+		data-restart-required-title={ t(ctx, "settings.updates.restart_required_title") }
+		data-restart-required-body={ t(ctx, "settings.updates.restart_required_body") }
+		data-restart-required-native-instruction={ t(ctx, "settings.updates.restart_required_native_instruction") }
 	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -5900,6 +5913,48 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 				</div>
 				<div id="updates-error-row" class="hidden mt-1 text-sm text-red-600 dark:text-red-400" role="alert"></div>
 			</div>
+			<!-- Restart-required banner: shown after a successful Apply has staged
+			     the new binary. Always rendered in the DOM so the JS hydrate path
+			     can flip its visibility without templating; on first server-render
+			     after Apply, .hidden is dropped here so users who navigate back to
+			     the tab still see the banner without waiting for the /status
+			     fetch. role=status + aria-live=polite is intentionally weaker
+			     than role=alert: the message is informational ("here is what
+			     happened"), not an error or interruption. -->
+			<div
+				id="updates-restart-required-row"
+				class={
+					"rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700",
+					templ.KV("hidden", !data.RestartRequired),
+				}
+				role="status"
+				aria-live="polite"
+				aria-atomic="true"
+			>
+				<div class="flex items-start gap-3">
+					<svg class="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<div class="flex-1 text-sm">
+						<div class="font-semibold text-amber-800 dark:text-amber-200">
+							{ t(ctx, "settings.updates.restart_required_title") }
+							if data.PendingVersion != "" {
+								<span class="ml-1 font-mono font-normal" id="updates-restart-pending-version">{ data.PendingVersion }</span>
+							} else {
+								<span class="ml-1 font-mono font-normal hidden" id="updates-restart-pending-version"></span>
+							}
+						</div>
+						<div class="mt-1 text-amber-700 dark:text-amber-300" id="updates-restart-required-body">
+							{ t(ctx, "settings.updates.restart_required_body") }
+						</div>
+						if !data.IsDocker {
+							<div class="mt-1 text-amber-700 dark:text-amber-300" id="updates-restart-required-instruction">
+								{ t(ctx, "settings.updates.restart_required_native_instruction") }
+							</div>
+						}
+					</div>
+				</div>
+			</div>
 		</div>
 	</div>
 	<!-- Channel and auto-check settings -->
@@ -5964,7 +6019,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					type="button"
 					id="updates-apply-btn"
 					onclick="applyUpdate()"
-					disabled?={ !data.UpdateAvailable }
+					disabled?={ !data.UpdateAvailable || data.RestartRequired }
 					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
 				>
 					{ t(ctx, "settings.updates.apply_update") }
@@ -6071,8 +6126,18 @@ templ updatesTabScript() {
 						if (d.state === 'idle') {
 							stopUpdaterPoll();
 							clearUpdaterStatus();
-							// Trigger a fresh check to show the new version.
-							checkForUpdates();
+							// Distinguish post-Apply success from idle-no-op: when
+							// the server reports restart_required=true, surface a
+							// persistent "restart to finish" banner and stop here
+							// rather than re-checking GitHub (which would re-show
+							// the same "Update available" pill against the still-
+							// running old version, masking the success). Issue #1169.
+							if (d.restart_required) {
+								renderRestartRequired(d.pending_version || '');
+							} else {
+								// Trigger a fresh check to show the new version.
+								checkForUpdates();
+							}
 						} else if (d.state === 'error') {
 							stopUpdaterPoll();
 							setUpdaterStatus('error', d.error || 'update failed');
@@ -6085,6 +6150,29 @@ templ updatesTabScript() {
 						setUpdaterStatus('error', err.message || 'status failed');
 					});
 				}, 2000);
+			}
+
+			// renderRestartRequired flips the persistent restart-required banner
+			// visible and hard-disables the Apply button. The banner is the same
+			// DOM that the server may have already rendered visible (when the
+			// page is loaded after a successful Apply); both code paths converge
+			// on the same element so a JS-driven flip and an SSR-driven flip
+			// look identical to the user.
+			function renderRestartRequired(pendingVersion) {
+				var row = document.getElementById('updates-restart-required-row');
+				if (row) row.classList.remove('hidden');
+				var pv = document.getElementById('updates-restart-pending-version');
+				if (pv) {
+					if (pendingVersion) {
+						pv.textContent = pendingVersion;
+						pv.classList.remove('hidden');
+					} else {
+						pv.textContent = '';
+						pv.classList.add('hidden');
+					}
+				}
+				var applyBtn = document.getElementById('updates-apply-btn');
+				if (applyBtn) applyBtn.disabled = true;
 			}
 
 			// saveUpdaterConfig persists channel + auto_check.
@@ -6293,6 +6381,19 @@ templ updatesTabScript() {
 							relLinkRow.classList.remove('hidden');
 						} else {
 							relLinkRow.classList.add('hidden');
+						}
+					}
+					// Hydrate the persistent restart-required banner. Because the
+					// flag is sticky in-memory on the server, every /status hit
+					// after a successful Apply re-confirms restart_required=true,
+					// so a page refresh or back/forward navigation does not lose
+					// the success indicator. Issue #1169.
+					var restartRow = document.getElementById('updates-restart-required-row');
+					if (restartRow) {
+						if (d.restart_required) {
+							renderRestartRequired(d.pending_version || '');
+						} else {
+							restartRow.classList.add('hidden');
 						}
 					}
 					// If an operation is in progress, show its state and start polling.

@@ -825,6 +825,103 @@ func TestStatusInitial(t *testing.T) {
 	if st.Error != "" {
 		t.Errorf("initial error = %q, want empty", st.Error)
 	}
+	// Pre-condition for the restart-required flag: a fresh Service must NOT
+	// advertise restart_required, otherwise the UI would render the
+	// "restart to finish" banner on first load before any Apply has run.
+	if st.RestartRequired {
+		t.Error("initial RestartRequired = true, want false")
+	}
+	if st.PendingVersion != "" {
+		t.Errorf("initial PendingVersion = %q, want empty", st.PendingVersion)
+	}
+}
+
+// TestMarkRestartRequiredForTestExposesInternalTransition verifies that the
+// exported helper used by cross-package tests in internal/api delegates to
+// the same internal markRestartRequired path. Without this, the helper
+// could drift to a no-op (or set only one of the two fields) and the api
+// package's TestHandleGetUpdateStatus_RestartRequiredSurfaced would
+// silently regress to passing for the wrong reason.
+func TestMarkRestartRequiredForTestExposesInternalTransition(t *testing.T) {
+	svc := buildTestService(t)
+
+	svc.MarkRestartRequiredForTest("v1.0.0")
+
+	st := svc.Status()
+	if !st.RestartRequired || st.PendingVersion != "v1.0.0" {
+		t.Errorf("MarkRestartRequiredForTest did not delegate properly; status = %+v", st)
+	}
+}
+
+// TestMarkRestartRequiredSetsStickyFlag verifies that markRestartRequired
+// sets both fields atomically and that they survive subsequent Status reads.
+// This is the load-bearing post-Apply UI signal for issue #1169: without
+// it the Updates tab cannot distinguish "Apply succeeded, please restart"
+// from "Apply did nothing" (both previously left state=idle with no flag).
+func TestMarkRestartRequiredSetsStickyFlag(t *testing.T) {
+	svc := buildTestService(t)
+
+	svc.markRestartRequired("v1.2.3")
+
+	st := svc.Status()
+	if !st.RestartRequired {
+		t.Fatal("RestartRequired = false, want true after markRestartRequired")
+	}
+	if st.PendingVersion != "v1.2.3" {
+		t.Errorf("PendingVersion = %q, want v1.2.3", st.PendingVersion)
+	}
+
+	// Stickiness: a follow-up Check (or any state mutation that does not
+	// itself touch the flag) must NOT clear restartRequired. The UI banner
+	// has to survive a tab re-open or a sidebar pill refresh, both of
+	// which call /status again. Simulate a state transition to verify
+	// nothing in setState wipes the flag.
+	svc.setState(StateChecking, 0, "")
+	svc.setState(StateIdle, 0, "")
+	st = svc.Status()
+	if !st.RestartRequired {
+		t.Error("RestartRequired = false after setState cycle, want true (must be sticky)")
+	}
+	if st.PendingVersion != "v1.2.3" {
+		t.Errorf("PendingVersion = %q after setState cycle, want v1.2.3 (must be sticky)", st.PendingVersion)
+	}
+}
+
+// TestRestartRequiredNotSetOnRunApplyEarlyExit covers the early-return
+// branches of runApply (no update, fetch failure, checksum failure, etc.):
+// none of them should mark restart-required, because the binary on disk
+// was NOT replaced. This is the negative complement to the
+// markRestartRequired sticky-flag test: if a refactor accidentally moved
+// markRestartRequired earlier in runApply, this test catches it by
+// failing on the no-update branch where no swap actually happened.
+func TestRestartRequiredNotSetOnRunApplyEarlyExit(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// Empty release list -> pickLatest returns nil -> runApply exits
+	// through the "no update needed" branch without calling
+	// markRestartRequired. atomicReplaceFile is never reached.
+	releases := []map[string]interface{}{}
+	body, _ := json.Marshal(releases)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+
+	if err := svc.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	waitForIdle(t, svc)
+
+	st := svc.Status()
+	if st.RestartRequired {
+		t.Error("RestartRequired = true after no-update Apply; expected false (no swap happened)")
+	}
+	if st.PendingVersion != "" {
+		t.Errorf("PendingVersion = %q after no-update Apply, want empty", st.PendingVersion)
+	}
 }
 
 // TestDownloadBytes exercises the download path with a real HTTPS test server.
@@ -1106,7 +1203,7 @@ func TestApplyConcurrentRace(t *testing.T) {
 
 	// Release runApply so it can complete and drain its goroutine cleanly.
 	unblock()
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // TestRunApplyNoUpdate exercises the runApply goroutine through the "no update
@@ -1134,7 +1231,7 @@ func TestRunApplyNoUpdate(t *testing.T) {
 
 	// runApply runs in a goroutine. Wait up to 5 seconds for it to return to
 	// idle (it should be nearly instant with a mock server and no downloads).
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // TestRunApplyWithOldRelease covers the newerThan() branch inside runApply:
@@ -1171,17 +1268,23 @@ func TestRunApplyWithOldRelease(t *testing.T) {
 
 	// runApply is fast here: it fetches the mock server, finds no newer
 	// release, and returns to idle. Wait up to 5 seconds for that to happen.
-	waitForIdle(t, svc, 5*time.Second)
+	waitForIdle(t, svc)
 }
 
 // --- helpers ---
 
+// waitForIdleTimeout is the deadline waitForIdle imposes on async runApply
+// drains. Pulled out as a const because every existing caller used the same
+// value; if a future test genuinely needs a different timeout, reintroduce
+// the parameter rather than scaling this constant up across the suite.
+const waitForIdleTimeout = 5 * time.Second
+
 // waitForIdle polls Status() until the service reaches StateIdle or StateError,
-// failing the test if neither is reached within the deadline. It is used by
-// tests that exercise the async runApply goroutine.
-func waitForIdle(t *testing.T, svc *Service, timeout time.Duration) {
+// failing the test if neither is reached within waitForIdleTimeout. It is used
+// by tests that exercise the async runApply goroutine.
+func waitForIdle(t *testing.T, svc *Service) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(waitForIdleTimeout)
 	for time.Now().Before(deadline) {
 		st := svc.Status()
 		if st.State == StateIdle || st.State == StateError {
@@ -1189,7 +1292,7 @@ func waitForIdle(t *testing.T, svc *Service, timeout time.Duration) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("service did not reach idle/error within %s; state = %q", timeout, svc.Status().State)
+	t.Fatalf("service did not reach idle/error within %s; state = %q", waitForIdleTimeout, svc.Status().State)
 }
 
 func containsAll(s string, subs ...string) bool {

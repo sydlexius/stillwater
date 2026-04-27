@@ -109,6 +109,16 @@ type StatusResult struct {
 	UpdateAvailable bool   `json:"update_available"`
 	Latest          string `json:"latest,omitempty"`      // latest version tag from last check
 	ReleaseURL      string `json:"release_url,omitempty"` // GitHub release page URL
+	// RestartRequired is true after a successful Apply has replaced the running
+	// binary on disk. It is sticky in-memory: it is set by runApply on success
+	// and is cleared only when the process actually restarts (which discards
+	// the Service entirely). The UI uses this to show a persistent
+	// "restart to finish update" banner after Apply, rather than silently
+	// returning to the pre-Apply Apply/Check row.
+	RestartRequired bool `json:"restart_required"`
+	// PendingVersion is the tag of the binary that was just installed and is
+	// waiting for a restart to take effect. Empty unless RestartRequired is true.
+	PendingVersion string `json:"pending_version,omitempty"`
 }
 
 // githubRelease is a subset of the GitHub Releases API response.
@@ -151,6 +161,14 @@ type Service struct {
 	updateAvailable bool
 	latestVersion   string
 	releaseURL      string // URL to the GitHub release page for the latest version
+
+	// restartRequired and pendingVersion are set by runApply after a
+	// successful binary swap. They are sticky in-memory: nothing else
+	// flips them back, so a user who navigates away and back to the
+	// Updates tab still sees the "restart required" banner. A real
+	// process restart discards the Service and clears them implicitly.
+	restartRequired bool
+	pendingVersion  string
 
 	// configGen is bumped whenever SetConfig invalidates the cache on a
 	// channel change. Check() captures the live value at entry and any
@@ -200,6 +218,15 @@ func (s *Service) SetHTTPClient(c *http.Client) {
 // service into Docker mode).
 func (s *Service) SetDockerForTest(isDocker bool) {
 	s.isDocker = isDocker
+}
+
+// MarkRestartRequiredForTest exposes the internal restart-required transition
+// to tests in other packages (e.g. internal/api) that need to assert the
+// post-Apply UI surface without exercising the full runApply pipeline (which
+// would attempt to overwrite the test binary). Production code does NOT use
+// this; runApply alone calls markRestartRequired after a verified swap.
+func (s *Service) MarkRestartRequiredForTest(version string) {
+	s.markRestartRequired(version)
 }
 
 // detectDocker returns true when the process appears to be running inside a
@@ -417,6 +444,8 @@ func (s *Service) Status() StatusResult {
 		UpdateAvailable: s.updateAvailable,
 		Latest:          s.latestVersion,
 		ReleaseURL:      s.releaseURL,
+		RestartRequired: s.restartRequired,
+		PendingVersion:  s.pendingVersion,
 	}
 	if !s.lastChecked.IsZero() {
 		res.LastChecked = s.lastChecked.UTC().Format(time.RFC3339)
@@ -523,7 +552,10 @@ func (s *Service) Check(ctx context.Context) (CheckResult, error) {
 // Restart hook: after a successful apply, the binary has been replaced on
 // disk but the running process is NOT automatically restarted. A future
 // enhancement should send SIGTERM to self (or call os.Exit) so the process
-// manager (systemd, supervisord) restarts it with the new binary.
+// manager (systemd, supervisord) restarts it with the new binary. In the
+// meantime, Status() reports RestartRequired=true with PendingVersion set
+// to the installed tag, and the Settings UI surfaces a persistent
+// "restart to finish" banner so users know the Apply succeeded.
 func (s *Service) Apply(ctx context.Context) error {
 	if s.isDocker {
 		return fmt.Errorf("binary update is not supported in Docker environments; re-pull the container image instead")
@@ -656,11 +688,28 @@ func (s *Service) runApply(ctx context.Context) {
 
 	s.logger.Info("binary updated successfully", "version", latest.TagName, "path", selfPath)
 
-	// NOTE: Restart hook (stub). A future enhancement should signal the process
-	// to restart so the new binary takes effect. For now, a manual restart is
-	// required. This is acceptable for RC-level delivery; the status endpoint
-	// returns state=idle with no error, and the UI can advise the user to restart.
+	// Surface the post-Apply success state. The binary on disk has been
+	// replaced; the running process still serves the old version until it is
+	// restarted (no in-process re-exec is wired up yet, see #1169 follow-up
+	// for an auto-restart hook). Mark the service as restart-required and
+	// record the tag of the newly installed binary so the UI can show a
+	// persistent "Update installed -- restart Stillwater to finish" banner
+	// and the disabled Apply button instead of bouncing back to the
+	// pre-Apply Apply/Check row (which previously made a successful Apply
+	// look identical to "clicking Apply did nothing").
+	s.markRestartRequired(latest.TagName)
 	s.setState(StateIdle, 100, "")
+}
+
+// markRestartRequired sets the sticky restart-required flag and the pending
+// version tag. Held under s.mu so a concurrent Status() reader sees both
+// fields update atomically; otherwise the UI could observe restartRequired=true
+// with pendingVersion still empty.
+func (s *Service) markRestartRequired(version string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.restartRequired = true
+	s.pendingVersion = version
 }
 
 // fetchReleases calls the GitHub Releases API for this repository. The page
