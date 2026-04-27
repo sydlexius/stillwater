@@ -15,35 +15,35 @@ import (
 // Filter trigger button class sets. Used in both the class attribute (via
 // templ.KV) and data-* attributes so the template is the single source of truth.
 const (
-	filterTriggerActive = "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
+	filterTriggerActive  = "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
 	filterTriggerNeutral = "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-	filterTriggerBadge = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
+	filterTriggerBadge   = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
 )
 
 // LibrarySourceInfo holds display metadata for an imported library's source.
 type LibrarySourceInfo struct {
-	Source string // "emby", "jellyfin", "lidarr"
+	Source         string // "emby", "jellyfin", "lidarr"
 	ConnectionName string // human-readable connection name
 }
 
 // ArtistListData holds the data for the artist list page.
 type ArtistListData struct {
-	Artists []artist.Artist
-	Libraries []library.Library
-	LibrarySources map[string]LibrarySourceInfo // library ID -> source info (only for non-manual)
-	ComplianceMap map[string]artist.ComplianceStatus // artist ID -> compliance status
+	Artists          []artist.Artist
+	Libraries        []library.Library
+	LibrarySources   map[string]LibrarySourceInfo       // library ID -> source info (only for non-manual)
+	ComplianceMap    map[string]artist.ComplianceStatus // artist ID -> compliance status
 	PlatformPresence map[string]artist.PlatformPresence // artist ID -> platform badges
-	Pagination components.PaginationData
-	Search string
-	Sort string
-	Order string
-	Filter string
+	Pagination       components.PaginationData
+	Search           string
+	Sort             string
+	Order            string
+	Filter           string
 	// Filters holds the flyout multi-filter state (key -> "include" or "exclude").
 	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked,
 	// type_person, type_group, type_orchestra, library_{id}.
-	Filters map[string]string
-	LibraryID string
-	View string // "table" or "grid"
+	Filters     map[string]string
+	LibraryID   string
+	View        string // "table" or "grid"
 	ProfileName string // Active platform profile name for image terminology
 }
 
@@ -132,7 +132,7 @@ func jellyfinTooltip(ctx context.Context, src LibrarySourceInfo) string {
 // artistBadge holds the platform name and tooltip for a single badge.
 type artistBadge struct {
 	Platform string
-	Tooltip string
+	Tooltip  string
 }
 
 // computeArtistBadges returns the ordered list of platform badges for an artist.
@@ -1229,11 +1229,16 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// Scope token: filter-identifying params only. If any of
 				// these change across an htmx swap, the user is looking
 				// at a different result set and the previous selection is
-				// no longer meaningful. Pagination and sort do NOT reset
-				// selection so the user can page through filtered results
-				// while preserving their selection.
-				function currentScopeToken() {
-					var p = new URLSearchParams(window.location.search);
+				// no longer meaningful. Pagination, sort, order, and view
+				// do NOT reset selection so the user can re-sort, paginate,
+				// or switch table/grid while preserving their selection.
+				//
+				// Prefer the explicit URLSearchParams source over
+				// window.location.search so the same routine works whether
+				// we are reacting to an htmx swap (where the URL has
+				// already been updated by the listener at line 638) or
+				// computing the initial token at IIFE init.
+				function tokenFromParams(p) {
 					var keys = [];
 					p.forEach(function(_v, k) {
 						if (k === 'search' || k === 'library_id' || k === 'filter' || k.indexOf('filter_') === 0) {
@@ -1242,6 +1247,30 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					});
 					keys.sort();
 					return keys.map(function(k) { return k + '=' + p.get(k); }).join('&');
+				}
+				function currentScopeToken() {
+					return tokenFromParams(new URLSearchParams(window.location.search));
+				}
+				// Compute the scope token from an htmx request URL. Used in
+				// the afterSwap handler to derive the new scope without
+				// depending on whether the URL-update listener has run yet.
+				// htmx 2.0.8 exposes the request configuration on
+				// evt.detail.requestConfig.path (the path htmx issued the
+				// request to) and the resolved URL on evt.detail.xhr.responseURL
+				// (post-redirect). We try requestConfig.path first because it
+				// reflects what htmx asked for, fall back to xhr.responseURL,
+				// then finally to window.location if neither is present.
+				function scopeTokenFromRequest(evt) {
+					try {
+						var rc = evt && evt.detail && evt.detail.requestConfig;
+						var xhr = evt && evt.detail && evt.detail.xhr;
+						var path = (rc && rc.path) || (xhr && xhr.responseURL);
+						if (path) {
+							var u = new URL(path, window.location.origin);
+							return tokenFromParams(u.searchParams);
+						}
+					} catch (e) { /* fall through */ }
+					return currentScopeToken();
 				}
 				var lastScopeToken = currentScopeToken();
 
@@ -1268,7 +1297,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				});
 				document.body.addEventListener('htmx:afterSwap', function(evt) {
 					if (evt.detail.target && evt.detail.target.id === 'artist-content') {
-						var currentToken = currentScopeToken();
+						// Derive the new scope from the htmx request URL so
+						// the comparison does not depend on the URL-update
+						// listener (line 638) having fired first. This keeps
+						// selection stable across sort/order/page/view swaps
+						// (issue #1081 F1) regardless of listener ordering.
+						var currentToken = scopeTokenFromRequest(evt);
 						if (currentToken !== lastScopeToken) {
 							selected.clear();
 							capWarned = false;
@@ -1279,6 +1313,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						// applies, so an old anchor could select an unintended
 						// range on the next shift-click.
 						lastClickedId = null;
+						// Re-derive every checkbox's checked state from the
+						// `selected` Set. The freshly-swapped HTML never
+						// includes a `checked` attribute, so this is what
+						// keeps checkmarks attached to artist IDs (not row
+						// positions) across sort changes (issue #1081 F2).
 						updateBar();
 					}
 				});
