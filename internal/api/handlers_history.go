@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -120,6 +121,46 @@ func buildGlobalFilter(req *http.Request, limit int) artist.GlobalHistoryFilter 
 		Limit:          limit,
 		Offset:         intQuery(req, "offset", 0),
 	}
+}
+
+// resolveShowingCount returns the count to render in the "Showing X of Y"
+// counter on a revert response. The hint argument is the client-reported
+// visible-row count from the undo button's hx-vals (DOM nodes matching the
+// activity/history row prefix). When the hint is a positive integer not
+// exceeding total, it is preferred over fallback because the browser URL
+// does not change after Load-more (so server-side offset+limit underreports
+// the actual visible count). Non-numeric, missing, or out-of-range hints
+// fall back to the caller-supplied value, which is computed from offset+limit
+// (activity feed) or len(changes)-1 (artist history tab) under the assumption
+// that only the first page is loaded. The logger is used to record malformed
+// hints at Debug level for diagnostic visibility without log spam. Both the
+// activity and artist-tab render branches share this helper so the validation
+// rules stay in one place.
+func resolveShowingCount(req *http.Request, fallback, total int, logger *slog.Logger) int {
+	v := req.FormValue("showing")
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		// A non-numeric hint indicates a client-side bug (stale JS or a
+		// tampered request body). Log at Debug so the symptom is visible
+		// in verbose logs without polluting normal output, and keep using
+		// the fallback so the user still sees a counter.
+		if logger != nil {
+			logger.Debug("invalid showing hint in revert request",
+				"value", v, "error", err)
+		}
+		return fallback
+	}
+	if n <= 0 || n > total {
+		// A non-positive count is meaningless (the user clicked undo, so at
+		// least one row was visible). A count exceeding total would render
+		// "Showing N of M" with N > M, which is nonsense; reject and use
+		// the fallback. Both cases also short-circuit a tampered hint.
+		return fallback
+	}
+	return n
 }
 
 // buildGlobalFilterFromURL constructs a GlobalHistoryFilter from a full URL
@@ -400,20 +441,16 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 					limit := r.getUserPageSize(req.Context(), userID, 0)
 					activeFilter.Limit = limit
 					_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
-					// Compute the fallback showing count from offset+limit.
-					showing := activeFilter.Offset + limit
-					if showing > total {
-						showing = total
+					// Compute the fallback showing count from offset+limit. After
+					// Load-more the browser URL does not push offset, so this
+					// fallback only matches reality when no Load-more clicks have
+					// occurred. The client-supplied hx-vals showing hint is
+					// preferred when present.
+					fallback := activeFilter.Offset + limit
+					if fallback > total {
+						fallback = total
 					}
-					// Prefer the client-reported visible count (sent via hx-vals on the
-					// undo button). After load-more the browser URL does not update, so
-					// activeFilter.Offset is 0 and offset+limit underreports the actual
-					// number of rows rendered in the DOM.
-					if v := req.FormValue("showing"); v != "" {
-						if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
-							showing = n
-						}
-					}
+					showing := resolveShowingCount(req, fallback, total, r.logger)
 					renderTempl(w, req, templates.ActivityRevertFragment(changeID, newChange, r.basePath, showing, total))
 					return
 				}
@@ -436,29 +473,13 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				// first page overstates visible rows by 1 when the list
 				// fits on one page. Compensate by subtracting 1 (clamped
 				// at 0). This fallback assumes a single page was loaded;
-				// when load-more has been used, the client hint below is
+				// when Load-more has been used, the hx-vals showing hint is
 				// authoritative.
-				showing := len(changes) - 1
-				if showing < 0 {
-					showing = 0
+				fallback := len(changes) - 1
+				if fallback < 0 {
+					fallback = 0
 				}
-				// Prefer the client-reported visible count when available.
-				// The undo button carries the DOM row count via hx-vals so
-				// the counter stays accurate even when additional pages have
-				// been appended via load-more (in which case len(changes)
-				// underreports actual DOM rows).
-				if v := req.FormValue("showing"); v != "" {
-					if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= total {
-						showing = n
-					} else if err != nil {
-						// Non-numeric hint indicates a client-side bug (stale
-						// JS or tampered request). Log at Debug so it is
-						// visible in verbose logs without polluting normal
-						// output.
-						r.logger.Debug("invalid showing hint in revert request",
-							"value", v, "error", err)
-					}
-				}
+				showing := resolveShowingCount(req, fallback, total, r.logger)
 				renderTempl(w, req, templates.HistoryRevertFragment(changeID, *revertChange, showing, total))
 				return
 			}
