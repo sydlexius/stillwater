@@ -42,18 +42,23 @@ import (
 func (r *Router) handleArtistRenameDirectory(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
 
+	// Log every 4xx rejection (parsing failure, mapped service errors) at
+	// Warn so operators can diagnose rename failures from server logs
+	// without reproducing them. The 5xx default still uses Error. Field
+	// naming matches the rest of internal/api
+	// (slog.String("error", err.Error())).
 	newName, err := extractRenameDirname(req)
 	if err != nil {
+		r.logger.Warn("rename artist directory rejected",
+			slog.String("artist_id", artistID),
+			slog.Int("status", http.StatusBadRequest),
+			slog.String("error", err.Error()))
 		writeError(w, req, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	newPath, err := r.artistService.RenameDirectory(req.Context(), artistID, newName)
 	if err != nil {
-		// Log mapped 4xx rejections at Warn so operators can diagnose
-		// rename failures from server logs without reproducing them.
-		// The 5xx default still uses Error. Field naming matches the
-		// rest of internal/api (slog.String("error", err.Error())).
 		logRejected := func(status int) {
 			r.logger.Warn("rename artist directory rejected",
 				slog.String("artist_id", artistID),

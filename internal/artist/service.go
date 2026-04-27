@@ -673,13 +673,13 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		return "", ErrRenameInvalidName
 	}
 
-	// Hydrated load. s.update() routes through persistNormalized() which
-	// re-writes provider IDs and image rows from the in-memory Artist.
-	// s.artists.GetByID returns a non-hydrated row, so passing that into
-	// s.update() would silently wipe the artist's provider IDs and image
-	// rows. The Service-level GetByID hydrates both, so the round-trip
-	// preserves all normalized state.
-	a, err := s.GetByID(ctx, artistID)
+	// Path-only rename: only Locked, Path, and Name are read from the
+	// loaded artist, and persistence goes through UpdatePath (single-column
+	// UPDATE), not s.update + persistNormalized. The repo-level lookup
+	// returns the same ErrNotFound wrapping as Service.GetByID and skips
+	// the unnecessary provider/image hydration, removing two extra DB
+	// reads and two failure points per rename.
+	a, err := s.artists.GetByID(ctx, artistID)
 	if err != nil {
 		return "", err
 	}
