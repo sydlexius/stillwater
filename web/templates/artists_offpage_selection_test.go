@@ -131,6 +131,17 @@ func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 			if !strings.Contains(body, "aria-label=\"Clear the selection filter and show all artists\"") {
 				t.Errorf("chip missing Show-all dismiss link; body:\n%s", body)
 			}
+			// The dismiss link must carry the data-clear-ids="true"
+			// opt-out so the htmx:configRequest hook does not
+			// re-inject ids= from window.location.search and
+			// silently re-engage the filter the user just cleared.
+			// Without this attribute the hx-get URL still drops ids
+			// (so this test would otherwise pass) but the request
+			// htmx actually issues would carry ids back, defeating
+			// the chip dismiss at runtime.
+			if !strings.Contains(body, `data-clear-ids="true"`) {
+				t.Errorf("chip dismiss link missing data-clear-ids opt-out; body:\n%s", body)
+			}
 			// The hx-get URL must drop the ids param so the next
 			// request returns the unfiltered list. We do not pin the
 			// full URL (it varies by view) but assert ids= is absent.
