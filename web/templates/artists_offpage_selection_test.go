@@ -92,12 +92,12 @@ func TestBulkActionBar_SelectionFilterChip_Hidden(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	body := buf.String()
-	if strings.Contains(body, "showing_selected") {
-		t.Errorf("BulkActionBar rendered the selection-filter chip without IDs; body:\n%s", body)
-	}
-	// The "Show all" affordance must only appear on the chip; no chip => no "Show all".
-	if strings.Contains(body, "Show all") {
-		t.Errorf("BulkActionBar rendered Show-all link without IDs filter; body:\n%s", body)
+	// Anchor on the chip dismiss link's structural marker rather than
+	// the i18n copy ("Show all", "Showing N selected") so the assertion
+	// stays correct under translation/copy churn -- the marker is the
+	// only attribute that uniquely identifies the chip dismiss element.
+	if strings.Contains(body, `data-clear-ids="true"`) {
+		t.Errorf("BulkActionBar rendered selection-filter chip dismiss marker without IDs; body:\n%s", body)
 	}
 }
 
@@ -145,7 +145,14 @@ func TestBulkActionBar_SelectionFilterChip_RendersWhenActive(t *testing.T) {
 			// The hx-get URL must drop the ids param so the next
 			// request returns the unfiltered list. We do not pin the
 			// full URL (it varies by view) but assert ids= is absent.
-			hxIdx := strings.Index(body, `hx-get="`)
+			// Resolve hx-get via the chip's data-clear-ids marker so
+			// future hx-get attributes elsewhere in the toolbar do
+			// not bind this assertion to the wrong element.
+			clearIdx := strings.Index(body, `data-clear-ids="true"`)
+			if clearIdx < 0 {
+				t.Fatalf("chip Show-all link missing data-clear-ids marker; body:\n%s", body)
+			}
+			hxIdx := strings.LastIndex(body[:clearIdx], `hx-get="`)
 			if hxIdx < 0 {
 				t.Fatalf("chip Show-all link missing hx-get; body:\n%s", body)
 			}
