@@ -6,10 +6,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
-WORKTREE_BASENAME=$(basename "$(git rev-parse --show-toplevel)")
-GATE_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/stillwater-gate/${WORKTREE_BASENAME}"
-mkdir -p "$GATE_CACHE"
-COVER_OUT=$(mktemp "$GATE_CACHE/cover.XXXXXX.out")
+# Source the per-worktree run-path helper. Provides $SW_RUN_DIR keyed by the
+# worktree basename so concurrent gate runs in different worktrees write to
+# disjoint paths and can never clobber each other's coverage profiles. See
+# scripts/lib/run-paths.sh for the full rationale.
+. "$SCRIPT_DIR/lib/run-paths.sh"
+
+COVER_OUT="$SW_RUN_DIR/cover.out"
 tmp_openapi=""
 cleanup() {
   rm -f "${COVER_OUT:-}" "${tmp_openapi:-}"
@@ -45,7 +48,7 @@ echo "OK"
 echo ""
 echo "=== OpenAPI breaking changes ==="
 if command -v oasdiff &>/dev/null; then
-  tmp_openapi=$(mktemp "$GATE_CACHE/openapi-base.XXXXXX.yaml")
+  tmp_openapi="$SW_RUN_DIR/openapi-base.yaml"
   if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
     breaking=$(oasdiff breaking "$tmp_openapi" internal/api/openapi.yaml 2>&1 || true)
     if [ -n "$breaking" ]; then

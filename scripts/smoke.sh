@@ -14,9 +14,21 @@
 #   JELLYFIN_URL   -- Jellyfin server URL (used by --roundtrip)
 #   JELLYFIN_API_KEY -- Jellyfin API key  (used by --roundtrip)
 #
-# --full        enables Tier 4 destructive/stateful checks (off by default)
-# --roundtrip   enables Tier 5 NFO roundtrip checks (off by default)
-# --music-path  music directory for roundtrip artist discovery (repeatable)
+# --full              enables Tier 4 destructive/stateful checks (off by default)
+# --roundtrip         enables Tier 5 NFO roundtrip checks (off by default)
+# --writeback-audit   enables Tier 6 post-fetch filesystem audit (off by default;
+#                     requires --full because the audit relies on Tier 4 fetches
+#                     to produce a write to inspect). Detects peer write-back
+#                     duplication (#1180) by snapshotting the artist directory
+#                     before and after an image fetch and asserting the delta
+#                     matches the API-reported saved set exactly.
+# --music-path        music directory for roundtrip artist discovery (repeatable)
+#
+# Environment for --writeback-audit:
+#   SW_WRITEBACK_SETTLE  -- seconds to wait between fetch and post-snapshot for
+#                           any peer write-back to land. Default 5. The #1180
+#                           Caro Emerald repro had write-back arrive within
+#                           550 ms; 5 s is a generous ceiling.
 #
 # Music path precedence (for roundtrip artist filtering):
 #   1. --music-path CLI arguments (highest)
@@ -25,17 +37,25 @@
 
 set -euo pipefail
 
+# Per-worktree run-artifact directory (cookie jar lives here). See
+# scripts/lib/run-paths.sh -- keeps concurrent smoke runs in different
+# worktrees from sharing a cookie file.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/lib/run-paths.sh"
+
 SW_USER="${SW_USER:-admin}"
 SW_PASS="${SW_PASS:-admin}"
 SW_BASE="${SW_BASE:-http://localhost:1973}"
 
 FULL=0
 ROUNDTRIP=0
+WRITEBACK_AUDIT=0
 MUSIC_PATHS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --full) FULL=1; shift ;;
     --roundtrip) ROUNDTRIP=1; shift ;;
+    --writeback-audit) WRITEBACK_AUDIT=1; shift ;;
     --music-path)
       if [[ -z "${2:-}" ]]; then
         echo "ERROR: --music-path requires a value"
@@ -50,7 +70,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "ERROR: unknown argument: $1"
-      echo "Usage: bash scripts/smoke.sh [--full] [--roundtrip] [--music-path PATH ...]"
+      echo "Usage: bash scripts/smoke.sh [--full] [--roundtrip] [--writeback-audit] [--music-path PATH ...]"
       exit 1
       ;;
   esac
@@ -321,6 +341,48 @@ get_mtime() {
   echo "$mtime"
 }
 
+# Pattern allowlist for the writeback audit (Tier 6). Stillwater and known
+# media servers all write image files matching one of these stems; restricting
+# the snapshot keeps user-placed extras (album metadata, .DS_Store) from
+# polluting the delta. Peer write-back observed in #1180 only ever produced
+# files in this set, so widening the pattern would only add false positives.
+AUDIT_IMAGE_PATTERN='^(backdrop|fanart|poster|logo|banner|thumb|clearart|disc|landscape)[0-9]*\.(jpg|jpeg|png)$'
+
+# audit_dir_snapshot DIR -> stdout: lines of "<sha256>\t<filename>" for every
+# image-pattern file in DIR. Returns 0 even when DIR is empty so the caller
+# can diff snapshots without special-casing first-run.
+audit_dir_snapshot() {
+  local dir="$1"
+  if [[ ! -d "$dir" ]]; then
+    return 0
+  fi
+  local f base hash
+  for f in "$dir"/*; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f")
+    if [[ ! "$base" =~ $AUDIT_IMAGE_PATTERN ]]; then
+      continue
+    fi
+    hash=$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')
+    [[ -n "$hash" ]] || continue
+    printf '%s\t%s\n' "$hash" "$base"
+  done
+}
+
+# audit_has_sw_provenance FILE -> exit 0 if the file contains the
+# "stillwater:v1" byte signature embedded by internal/image/exif.go's
+# WriteProvenance, exit 1 otherwise. Used to classify unexpected files:
+# present means Stillwater wrote it (internal bug -- renumbering, race);
+# absent means a peer server wrote it (peer write-back, the #1180 signature).
+# Pure bash plus xxd so the audit has no Go-helper or exiftool dependency.
+audit_has_sw_provenance() {
+  local f="$1"
+  if [[ ! -f "$f" ]]; then
+    return 1
+  fi
+  xxd "$f" 2>/dev/null | grep -q 'stillwater:v1'
+}
+
 # Poll for an NFO file's mtime to change (indicates platform wrote it).
 # Returns 0 if mtime changed within the timeout, 1 if it did not.
 # When original_mtime is "MISSING", any file creation counts as a change.
@@ -378,8 +440,11 @@ echo ""
 echo "--- Tier 1: Core ---"
 echo ""
 
-# Create cookie jar early so the health GET can receive the csrf_token cookie
-COOKIE_JAR=$(mktemp /tmp/smoke-cookies-XXXXXX)
+# Create cookie jar early so the health GET can receive the csrf_token cookie.
+# Deterministic per-worktree path (see scripts/lib/run-paths.sh) -- truncate
+# any leftover from a prior run rather than appending to it.
+COOKIE_JAR="$SW_RUN_DIR/smoke-cookies.jar"
+: > "$COOKIE_JAR"
 
 # Health (public, no auth) -- also seeds the csrf_token cookie
 resp=$(curl -s -c "$COOKIE_JAR" -w "\n%{http_code}" "$SW_BASE/api/v1/health")
@@ -1548,6 +1613,162 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
 
     fi  # RT_SETUP_OK guard
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# Tier 6: Writeback audit (opt-in with --writeback-audit; requires --full)
+# ---------------------------------------------------------------------------
+#
+# Detects peer write-back duplication (#1180) and silent overwrites by
+# snapshotting the artist directory before and after a deterministic image
+# fetch. Any file appearing post-fetch that the API did not report as saved
+# is a regression: either Stillwater renumbered behind our back (internal
+# bug) or a peer media server wrote files we did not ask for (the #1180
+# signature). Each unexpected file is classified by checking for the
+# stillwater:v1 EXIF/PNG provenance string written by internal/image/exif.go.
+#
+# CI does not run smoke today (live-server requirement), so this is an
+# operator-driven gate. Recipe:
+#   bash scripts/smoke.sh --full --writeback-audit \
+#     --music-path /path/to/music
+#
+# The audit is skipped (not failed) when:
+#   - --full was not passed (no fetch was issued, nothing to audit)
+#   - the discovered artist has no filesystem path or is not under any
+#     configured --music-path
+#   - the network fetch itself fails (transport errors are not regressions)
+#
+# Tunables: SW_WRITEBACK_SETTLE seconds (default 5).
+
+if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
+  echo "--- Tier 6: Writeback Audit (--writeback-audit) ---"
+  echo ""
+
+  if [[ "$FULL" -ne 1 ]]; then
+    echo "[SKIP] Writeback audit -- requires --full to issue the fetch under audit"
+  elif [[ -z "$ARTIST_ID" || "$ARTIST_ID" == "unknown" ]]; then
+    echo "[SKIP] Writeback audit -- no test artist available"
+  else
+    # Resolve the artist's filesystem path. The audit refuses to run unless
+    # the path is under a configured --music-path so that an operator running
+    # the audit on a stale or unintended directory cannot accidentally have
+    # the assertion pass against the wrong tree.
+    audit_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID") || audit_detail=""
+    audit_path=$(echo "$audit_detail" | jq -r '.artist.path // empty' 2>/dev/null || true)
+
+    if [[ -z "$audit_path" ]]; then
+      echo "[SKIP] Writeback audit -- artist $ARTIST_ID has no filesystem path"
+    elif ! path_under_music_dirs "$audit_path"; then
+      echo "[SKIP] Writeback audit -- artist path not under configured --music-path"
+    elif [[ ! -d "$audit_path" ]]; then
+      echo "[SKIP] Writeback audit -- artist path $audit_path does not exist on this host"
+    else
+      echo "  Audit path: $audit_path"
+      settle="${SW_WRITEBACK_SETTLE:-5}"
+
+      pre_snapshot=$(audit_dir_snapshot "$audit_path")
+
+      # Fetch a single thumb. Same URL the Tier 4 fetch already exercises so
+      # the audit produces a deterministic write set even on first run.
+      audit_fetch_resp=$(curl -s "${AUTH[@]}" \
+        -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
+        -H "Content-Type: application/json" \
+        -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}') || audit_fetch_resp=""
+
+      audit_saved_thumb=$(echo "$audit_fetch_resp" | jq -r '.saved[]? // empty' 2>/dev/null || true)
+
+      # Settle window: peer write-back observed in #1180 arrived within
+      # 550ms; the configurable default of 5s is a generous ceiling.
+      sleep "$settle"
+
+      post_snapshot=$(audit_dir_snapshot "$audit_path")
+
+      # Build the expected-added set from the API responses. Filenames only;
+      # snapshot lines are "<sha256>\t<filename>" so cut on \t.
+      expected_added_file=$(mktemp "$SW_RUN_DIR/audit-expected.XXXXXX")
+      pre_files_file=$(mktemp "$SW_RUN_DIR/audit-pre.XXXXXX")
+      post_files_file=$(mktemp "$SW_RUN_DIR/audit-post.XXXXXX")
+
+      # The endpoint emits one filename per line via jq above; just copy.
+      printf '%s\n' "$audit_saved_thumb" | sed '/^$/d' | sort -u > "$expected_added_file"
+      printf '%s\n' "$pre_snapshot"  | awk -F'\t' 'NF==2{print $2}' | sort -u > "$pre_files_file"
+      printf '%s\n' "$post_snapshot" | awk -F'\t' 'NF==2{print $2}' | sort -u > "$post_files_file"
+
+      # actual_added = post \ pre. unexpected_added = actual_added \ expected_added.
+      actual_added=$(comm -23 "$post_files_file" "$pre_files_file")
+      printf '%s\n' "$actual_added" | sed '/^$/d' | sort -u > "$post_files_file.actual"
+      unexpected_added=$(comm -23 "$post_files_file.actual" "$expected_added_file")
+
+      # Silent overwrite check: any file present in BOTH pre and post whose
+      # sha256 changed and which is not in the expected_added set has been
+      # rewritten without us asking. This catches the #1180 case where a peer
+      # server overwrites a Stillwater-placed file in addition to the
+      # additive duplication case the directory-delta catches.
+      silent_rewrites=""
+      while IFS=$'\t' read -r post_hash post_name; do
+        [[ -z "$post_name" ]] && continue
+        pre_hash=$(printf '%s\n' "$pre_snapshot" | awk -F'\t' -v n="$post_name" '$2==n{print $1; exit}')
+        if [[ -n "$pre_hash" && "$pre_hash" != "$post_hash" ]]; then
+          if ! grep -Fxq "$post_name" "$expected_added_file"; then
+            silent_rewrites+="$post_name"$'\n'
+          fi
+        fi
+      done <<< "$post_snapshot"
+
+      audit_label="writeback audit on $audit_path"
+
+      if [[ -n "$unexpected_added" ]]; then
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$audit_label -- unexpected files appeared after fetch")
+        echo "[FAIL] $audit_label -- unexpected files appeared:"
+        while IFS= read -r u; do
+          [[ -z "$u" ]] && continue
+          u_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$u" '$2==n{print $1; exit}')
+          # Cross-reference: is this file byte-identical to anything we asked
+          # for? That match is the #1180 fingerprint -- the peer wrote a
+          # rename of our file, not a different image.
+          dup_of=""
+          while IFS= read -r exp; do
+            [[ -z "$exp" ]] && continue
+            exp_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$exp" '$2==n{print $1; exit}')
+            if [[ -n "$exp_hash" && "$exp_hash" == "$u_hash" ]]; then
+              dup_of="$exp"
+              break
+            fi
+          done < "$expected_added_file"
+          provenance="no-stillwater-provenance"
+          if audit_has_sw_provenance "$audit_path/$u"; then
+            provenance="stillwater-provenance-present"
+          fi
+          if [[ -n "$dup_of" ]]; then
+            echo "         $u  sha256=$u_hash  byte-identical-to=$dup_of  $provenance"
+          else
+            echo "         $u  sha256=$u_hash  $provenance"
+          fi
+        done <<< "$unexpected_added"
+      fi
+
+      if [[ -n "$silent_rewrites" ]]; then
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$audit_label -- pre-existing files silently overwritten")
+        echo "[FAIL] $audit_label -- pre-existing files silently overwritten:"
+        while IFS= read -r r; do
+          [[ -z "$r" ]] && continue
+          echo "         $r"
+        done <<< "$silent_rewrites"
+      fi
+
+      if [[ -z "$unexpected_added" && -z "$silent_rewrites" ]]; then
+        expected_count=$(grep -c . "$expected_added_file" 2>/dev/null || echo 0)
+        echo "[PASS] $audit_label -- $expected_count expected files, 0 unexpected, 0 silent rewrites"
+        PASS=$((PASS + 1))
+      fi
+
+      rm -f "$expected_added_file" "$pre_files_file" "$post_files_file" "$post_files_file.actual"
+    fi
+  fi
+
+  echo ""
 fi
 
 # ---------------------------------------------------------------------------
