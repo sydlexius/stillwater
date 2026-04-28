@@ -571,8 +571,57 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
 VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'manual', datetime('now'), datetime('now'));
 
+-- =============================================================================
+-- Foreign files (#1185)
+-- =============================================================================
+-- Files matching media-server image naming patterns that LACK Stillwater's
+-- EXIF provenance tag. These are typically left behind by a peer media server
+-- (Emby, Jellyfin, Kodi) writing artwork to disk, and the foreign-file
+-- scanner records them so the user can review, allowlist, or delete each one.
+-- The scanner only RECORDS to this ledger; it never deletes files. Per-file
+-- deletion is user-triggered through the settings UI.
+CREATE TABLE IF NOT EXISTS foreign_files (
+    id          TEXT NOT NULL PRIMARY KEY,
+    artist_id   TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    file_path   TEXT NOT NULL,
+    file_name   TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(artist_id, file_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_foreign_files_artist ON foreign_files(artist_id);
+CREATE INDEX IF NOT EXISTS idx_foreign_files_detected_at ON foreign_files(detected_at);
+
+-- Permanent allowlist suppressing re-detection. Two scopes:
+--   scope='global'  -- match every artist; artist_id is NULL.
+--   scope='artist'  -- match a specific artist_id. file_name is the basename
+--                      (e.g. "backdrop.jpg") so the allowlist survives a
+--                      directory rename for the same artist.
+-- A NULL artist_id with scope='artist' is rejected by the writer (see
+-- internal/foreign/allowlist.go) so the partial unique indexes stay sound.
+CREATE TABLE IF NOT EXISTS foreign_file_allowlist (
+    id         TEXT NOT NULL PRIMARY KEY,
+    scope      TEXT NOT NULL CHECK (scope IN ('global','artist')),
+    artist_id  TEXT REFERENCES artists(id) ON DELETE CASCADE,
+    file_name  TEXT NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Partial unique indexes: one global entry per file_name, one artist-scoped
+-- entry per (artist_id, file_name). Modeled as two indexes because SQLite
+-- treats NULLs in a UNIQUE constraint as distinct, which would otherwise
+-- allow duplicate global rows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foreign_allowlist_global
+    ON foreign_file_allowlist(file_name) WHERE scope = 'global';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foreign_allowlist_artist
+    ON foreign_file_allowlist(artist_id, file_name) WHERE scope = 'artist';
+
 -- +goose Down
 -- Greenfield schema: full teardown.
+DROP TABLE IF EXISTS foreign_file_allowlist;
+DROP TABLE IF EXISTS foreign_files;
 DROP TABLE IF EXISTS user_preferences;
 DROP TABLE IF EXISTS bulk_job_items;
 DROP TABLE IF EXISTS bulk_jobs;

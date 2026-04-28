@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/foreign"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -146,6 +147,10 @@ type Router struct {
 	i18nBundle            *i18n.Bundle
 	conflictDetector      *conflict.Detector
 	conflictGate          *conflict.Gate
+	// foreignRepo persists foreign-file ledger rows and the allowlist
+	// (#1185). Always non-nil after NewRouter when DB is provided so the
+	// foreign-files settings page never has to special-case a missing dep.
+	foreignRepo *foreign.Repository
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -231,6 +236,14 @@ func NewRouter(deps RouterDeps) *Router {
 				setter.SetWriteGate(r.conflictGate)
 			}
 		}
+	}
+
+	// Foreign-file ledger repository (#1185). The scanner that fills it is
+	// owned by main.go (not the router) so the goroutine is started once on
+	// boot and shut down with the rest of the app; the router only needs
+	// read/write access for the settings handlers and the banner count.
+	if deps.DB != nil {
+		r.foreignRepo = foreign.NewRepository(deps.DB)
 	}
 
 	// Configure the static asset base path used by template helpers (logoSrc, etc.)
@@ -337,6 +350,15 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/conflict-detail", wrapAuth(r.handleGetConnectionConflictDetail, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/conflicts", wrapAuth(r.handleGetConflicts, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/config/conflict-banner", wrapAuth(r.handleGetConflictBanner, authMw))
+	// Foreign-file routes (#1185). Read access is admin-only because the
+	// list page exposes filesystem paths; writes are admin-only because they
+	// mutate disk state (Delete) or change scanner behavior (allowlist).
+	mux.HandleFunc("GET "+bp+"/api/v1/foreign-files", wrapAuth(middleware.RequireAdmin(r.handleForeignFilesList), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/foreign-files/dismiss", wrapAuth(middleware.RequireAdmin(r.handleForeignFilesDismiss), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/foreign-files/{id}/allowlist", wrapAuth(middleware.RequireAdmin(r.handleForeignFileAllowlist), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/foreign-files/{id}/file", wrapAuth(middleware.RequireAdmin(r.handleForeignFileDelete), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/foreign-file-allowlist", wrapAuth(middleware.RequireAdmin(r.handleForeignAllowlistList), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/foreign-file-allowlist/{id}", wrapAuth(middleware.RequireAdmin(r.handleForeignAllowlistRemove), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-summary", wrapAuth(r.handleGetPlatformSummary, authMw))
 	// Connection library discovery/import routes
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))
@@ -585,6 +607,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/dashboard/actions", wrapOptionalAuth(r.handleDashboardActionQueue, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/dashboard/activity", wrapOptionalAuth(r.handleDashboardActivityFeed, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
+	// Foreign-file management pages (#1185). Registered before the catch-all
+	// /settings/{section} redirect so the more-specific routes win.
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapAuth(r.handleForeignFilesPage, authMw))
+	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapAuth(r.handleForeignAllowlistPage, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/{section}", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query()
 		q.Set("tab", req.PathValue("section"))

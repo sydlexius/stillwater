@@ -80,6 +80,37 @@ func renameSafe(oldPath, newPath string) error {
 	return nil
 }
 
+// RemoveFileSafe deletes a single file using a "rename to .removing then
+// unlink" pattern so the unlink is the only operation that can leave a
+// partially-named file behind. This matches the tmp/bak/rename discipline
+// used by WriteFileAtomic in spirit: the visible file disappears in one
+// atomic rename, then the .removing tomb is unlinked. If the rename fails
+// we fall back to a direct os.Remove so callers always get the file gone
+// when possible.
+//
+// Returns os.ErrNotExist (wrapped) when the target does not exist so callers
+// can distinguish "already removed" from a real failure.
+func RemoveFileSafe(target string) error {
+	TraceFSWrite("RemoveFileSafe", target, 0)
+	if _, err := os.Lstat(target); err != nil {
+		return fmt.Errorf("removing %s: %w", target, err)
+	}
+	tomb := target + ".removing"
+	// Best-effort cleanup of any prior tomb left over from a crash.
+	_ = os.Remove(tomb)
+	if err := os.Rename(target, tomb); err != nil {
+		// Fall back to direct removal; better to remove than to abort.
+		if rerr := os.Remove(target); rerr != nil {
+			return fmt.Errorf("removing %s: rename: %w; direct remove: %w", target, err, rerr)
+		}
+		return nil
+	}
+	if err := os.Remove(tomb); err != nil {
+		return fmt.Errorf("removing tomb %s: %w", tomb, err)
+	}
+	return nil
+}
+
 // copyFile copies a file using io.Copy and flushes with fsync.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src) //nolint:gosec // G304: src is from trusted internal path

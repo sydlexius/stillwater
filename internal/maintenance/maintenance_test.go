@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
 	_ "modernc.org/sqlite"
 )
@@ -575,4 +576,64 @@ func TestStartExistsFlagScanner_CanceledDuringStartupDelay(t *testing.T) {
 	if flag != 1 {
 		t.Errorf("startup-delay contract: expected exists_flag=1 (no scan ran), got %d", flag)
 	}
+}
+
+// stubForeignArtistLister implements ForeignArtistLister for the
+// foreign-file scanner tests. Returns no artists so the scanner exercises
+// only its lifecycle code (start, run-once, stop on cancel).
+type stubForeignArtistLister struct{}
+
+func (stubForeignArtistLister) List(_ context.Context, _ artist.ListParams) ([]artist.Artist, int, error) {
+	return nil, 0, nil
+}
+
+func TestStartForeignFileScanner_StopsOnCancel(t *testing.T) {
+	db, dbPath := setupTestDB(t)
+	// Foreign-file scanner needs the foreign tables; create a minimal subset
+	// here rather than running the full migration so the test is fast.
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS foreign_files (
+			id TEXT PRIMARY KEY,
+			artist_id TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			file_name TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL DEFAULT 0,
+			detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(artist_id, file_path))`,
+		`CREATE TABLE IF NOT EXISTS foreign_file_allowlist (
+			id TEXT PRIMARY KEY,
+			scope TEXT NOT NULL,
+			artist_id TEXT,
+			file_name TEXT NOT NULL,
+			note TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		// Use millisecond cadence so the goroutine completes its first
+		// scan immediately, then exits on cancel.
+		svc.StartForeignFileScanner(ctx, stubForeignArtistLister{}, time.Millisecond, time.Millisecond)
+		close(done)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("foreign-file scanner did not stop within 2s of cancel")
+	}
+}
+
+func TestStartForeignFileScanner_NilListerNoOp(t *testing.T) {
+	db, dbPath := setupTestDB(t)
+	svc := NewService(db, dbPath, "", slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// Passing nil should return immediately without panicking.
+	svc.StartForeignFileScanner(context.Background(), nil, 0, 0)
 }

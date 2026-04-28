@@ -99,6 +99,18 @@ type RoundTrip struct {
 	OverlappingPath string `json:"overlapping_path"`
 }
 
+// ForeignFileSummary surfaces the foreign-file ledger size on the global
+// conflict ledger so the banner handler can render the slate/blue warning
+// state in one place. The detector does not write this field; it is
+// populated by the banner handler from the foreign repository before the
+// banner template is rendered. Kept on the same view-side struct so the
+// banner has a single source of truth across all five states.
+type ForeignFileSummary struct {
+	// Count is the number of unallowlisted foreign-file rows currently in
+	// the foreign_files table. Zero suppresses the warning state.
+	Count int `json:"count"`
+}
+
 // Ledger is the aggregated conflict snapshot for every enabled connection
 // plus any round-trip pairings. Produced by Detector.Refresh / Current and
 // consumed by Gate (for enforcement) and the banner handler (for UI).
@@ -106,6 +118,11 @@ type Ledger struct {
 	GeneratedAt time.Time         `json:"generated_at"`
 	Connections []ConnectionState `json:"connections"`
 	RoundTrips  []RoundTrip       `json:"round_trips,omitempty"`
+	// ForeignFiles is populated by the banner handler (not by the
+	// connection detector) with the current foreign-file count. A non-zero
+	// Count enables the slate/blue warning state in BannerState only when
+	// no other (image/nfo/round-trip) state is present.
+	ForeignFiles ForeignFileSummary `json:"foreign_files,omitempty"`
 }
 
 // AnyImageConflict reports whether image writes should be gated globally.
@@ -158,7 +175,7 @@ func (l Ledger) AnyNFOConflict() bool {
 	return false
 }
 
-// BannerState derives the UI banner state (A/B/C/D) from the ledger. States:
+// BannerState derives the UI banner state from the ledger. States:
 //
 //   - "round_trip" (state C, red): round-trip pairings exist; shows
 //     overlapping path.
@@ -168,7 +185,18 @@ func (l Ledger) AnyNFOConflict() bool {
 //     writeback.
 //   - "both" (state A+B composite, amber): both image and NFO writeback.
 //     Rendered as the image-axis variant with NFO noted.
-//   - "clean" (state D, emerald): no conflicts.
+//   - "foreign_files" (state E, slate/blue): no configuration conflict, but
+//     unallowlisted foreign image files were detected by the foreign-file
+//     scanner (#1185). Deliberately NOT amber/red because this is a
+//     warning, not a configuration alarm: nothing is gated, the user is
+//     simply being told that media-server-named files exist without
+//     Stillwater provenance.
+//   - "clean" (state D, emerald): no conflicts and no foreign files.
+//
+// Precedence is highest-severity-wins: round_trip > image/nfo write-back >
+// foreign_files > clean. Foreign-file warnings are intentionally suppressed
+// while a real conflict is active so the user is not shown two banners at
+// once; the foreign-files page remains reachable from the settings sidebar.
 //
 // Callers use this to pick the banner variant; the gate decisions
 // (AnyImageConflict / AnyNFOConflict) remain independent.
@@ -185,9 +213,11 @@ func (l Ledger) BannerState() string {
 		return "image_only"
 	case nfo:
 		return "nfo_only"
-	default:
-		return "clean"
 	}
+	if l.ForeignFiles.Count > 0 {
+		return "foreign_files"
+	}
+	return "clean"
 }
 
 // Marshal returns a JSON encoding of the ledger for wire transport.

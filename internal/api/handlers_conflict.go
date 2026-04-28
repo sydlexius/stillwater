@@ -83,6 +83,10 @@ func (r *Router) handleGetConflictBanner(w http.ResponseWriter, req *http.Reques
 		r.conflictDetector.Invalidate()
 	}
 	ledger := r.conflictDetector.Current(req.Context())
+	// Populate the foreign-file count on the ledger so BannerState can
+	// promote the slate/blue warning state when no real conflict is active.
+	count, _ := r.foreignSummaryForBanner(req.Context())
+	ledger.ForeignFiles = conflict.ForeignFileSummary{Count: count}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ConflictBannerContent(conflictBannerView(ledger)).Render(req.Context(), w); err != nil {
 		r.logger.Warn("rendering conflict banner failed", "error", err)
@@ -495,5 +499,6 @@ func conflictBannerView(l conflict.Ledger) templates.ConflictBannerView {
 	if len(view.Connections) == 1 {
 		view.PrimaryConnectionID = view.Connections[0].ID
 	}
+	view.ForeignFileCount = l.ForeignFiles.Count
 	return view
 }

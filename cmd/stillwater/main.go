@@ -581,6 +581,18 @@ func run() error {
 		go maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
 
+	// Start the foreign-file scanner (#1185). Runs on a multi-hour cadence
+	// (default 6h) because it walks every artist directory and reads each
+	// image's EXIF, which is not free; users can tune via the
+	// foreign_file_scan.interval_hours setting.
+	{
+		foreignHours := getDBIntSetting(db, "foreign_file_scan.interval_hours", 6)
+		if foreignHours <= 0 {
+			foreignHours = 6
+		}
+		go maintenanceService.StartForeignFileScanner(ctx, artistService, time.Duration(foreignHours)*time.Hour, 30*time.Second)
+	}
+
 	// Start session cleanup goroutine
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
