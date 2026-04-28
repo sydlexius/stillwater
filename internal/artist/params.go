@@ -77,11 +77,22 @@ func (p *ListParams) Validate() {
 		p.IDs = p.IDs[:MaxListIDs]
 	}
 	if len(p.IDs) > 0 {
+		// Drop empties AND deduplicate: ?ids=a,a,b would otherwise inflate
+		// the "Showing N selected" chip count above the actual SQL IN-clause
+		// match count and let the same artist consume two slots toward the
+		// MaxListIDs cap. First-seen order is preserved so the chip text
+		// stays stable across reloads.
+		seen := make(map[string]struct{}, len(p.IDs))
 		filtered := p.IDs[:0]
 		for _, id := range p.IDs {
-			if id != "" {
-				filtered = append(filtered, id)
+			if id == "" {
+				continue
 			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			filtered = append(filtered, id)
 		}
 		p.IDs = filtered
 	}

@@ -517,12 +517,14 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
 					var urlParams = new URLSearchParams(window.location.search);
 					urlParams.forEach(function(val, key) {
-						// Carry both filter_* keys (flyout state) and the
-						// ids URL-only param (off-page selection from
-						// "Show selected", #1227) so subsequent search /
-						// sort / view requests do not silently drop the
-						// selection scope and collapse the view.
-						if ((key.indexOf('filter_') === 0 || key === 'ids') && !(key in evt.detail.parameters)) {
+						// Carry only flyout filter_* keys here. The off-page
+						// selection scope (ids, #1227) is carried by
+						// buildArtistParams for htmx.ajax flows and by the
+						// server-rendered hx-get URLs for pagination, so
+						// re-injecting ids from window.location.search would
+						// override the "Show all" chip's intentional
+						// ids-clearing dismiss.
+						if (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {
 							evt.detail.parameters[key] = val;
 						}
 					});
@@ -1376,12 +1378,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					// server already rendered (#1227). Capped to MAX_BULK_SELECTION
 					// to match the in-memory contract.
 					try {
+						// Mirror the server-side parseIDsParam canonical ID
+						// shape (^[A-Za-z0-9_-]{1,64}$, see handlers_artist.go)
+						// so the client store stays consistent with what the
+						// server actually rendered. Without this, a hand-crafted
+						// URL like ?ids=valid,@@ would let the bulk-action POST
+						// later submit @@ and earn a 400 wholesale rejection.
+						var idRe = /^[A-Za-z0-9_-]{1,64}$/;
 						var initialIDs = new URLSearchParams(window.location.search).get('ids');
 						if (initialIDs) {
 							var parts = initialIDs.split(',');
 							for (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {
 								var pid = parts[i].trim();
-								if (pid) selected.add(pid);
+								if (idRe.test(pid)) selected.add(pid);
 							}
 						}
 					} catch (e) { /* ignore */ }

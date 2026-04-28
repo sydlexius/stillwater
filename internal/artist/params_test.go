@@ -44,6 +44,26 @@ func TestListParams_Validate_DropsEmptyIDs(t *testing.T) {
 	}
 }
 
+// TestListParams_Validate_DedupesIDs pins set semantics for the IDs filter.
+// Without dedup, ?ids=a,a,b would let the toolbar chip overstate the result
+// set ("Showing 3 selected" vs the 2 rows the SQL IN-clause actually returns)
+// and let the same artist consume two slots toward MaxListIDs. First-seen
+// order is preserved so the chip text and the SQL bind order stay stable
+// across reloads.
+func TestListParams_Validate_DedupesIDs(t *testing.T) {
+	p := ListParams{IDs: []string{"a", "b", "a", "c", "b"}}
+	p.Validate()
+	want := []string{"a", "b", "c"}
+	if len(p.IDs) != len(want) {
+		t.Fatalf("dedup len = %d, want %d (got %v)", len(p.IDs), len(want), p.IDs)
+	}
+	for i, id := range want {
+		if p.IDs[i] != id {
+			t.Errorf("IDs[%d] = %q, want %q", i, p.IDs[i], id)
+		}
+	}
+}
+
 // TestListParams_Validate_PreservesNilIDs documents that the absent-filter
 // case (nil IDs) survives Validate() unchanged. This is the path every
 // existing caller takes today; a regression here would silently shift the
@@ -51,7 +71,11 @@ func TestListParams_Validate_DropsEmptyIDs(t *testing.T) {
 func TestListParams_Validate_PreservesNilIDs(t *testing.T) {
 	p := ListParams{}
 	p.Validate()
-	if len(p.IDs) != 0 {
-		t.Errorf("Validate populated IDs from nil; got %v", p.IDs)
+	// Identity check, not length: an empty non-nil slice would also pass
+	// len(...) == 0 but would change the SQL builder's nil-vs-empty
+	// branching downstream. The contract this test pins is "nil stays
+	// nil", not "stays empty".
+	if p.IDs != nil {
+		t.Errorf("Validate changed nil IDs to non-nil slice: got %v", p.IDs)
 	}
 }

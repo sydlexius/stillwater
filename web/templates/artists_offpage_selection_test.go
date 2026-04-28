@@ -43,10 +43,16 @@ func TestBulkActionBar_OffPageIndicatorWiring(t *testing.T) {
 	// The "Show selected" affordance must exist with the stable id the
 	// controller wires the click handler to. It also starts hidden so a
 	// fresh page (no selection) does not flash the button on first paint.
+	// Fatal here, not Errorf: if the button is absent, the strings.Index
+	// below returns -1 and body[:idx] would panic, masking the real
+	// assertion failure with a stack trace.
 	if !strings.Contains(body, `id="bulk-show-selected"`) {
-		t.Errorf("BulkActionBar missing #bulk-show-selected button; body:\n%s", body)
+		t.Fatalf("BulkActionBar missing #bulk-show-selected button; body:\n%s", body)
 	}
 	idx := strings.Index(body, `id="bulk-show-selected"`)
+	if idx < 0 {
+		t.Fatalf("could not locate #bulk-show-selected")
+	}
 	// Walk back to the opening <button to confirm it carries the hidden class.
 	btnStart := strings.LastIndex(body[:idx], "<button")
 	if btnStart < 0 {
