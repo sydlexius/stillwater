@@ -450,10 +450,24 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										{ t(ctx, "common.merge") }
 									</button>
 								} else if len(r.Members) > 0 {
+									// Apply button for the Members field. The fetch path
+									// is a raw fetch() (not htmx) because the response
+									// must replace #members-section by id rather than the
+									// modal body itself, so we cannot rely on the global
+									// htmx pipeline. Re-uses the W4.B (#1232) safety
+									// pattern: hx-disabled-elt cannot apply to a non-htmx
+									// click, so the saveMembers script disables the button
+									// on click and re-enables it in finally(). The
+									// disabled:opacity-60 class gives the user visual
+									// feedback that the click was accepted while the POST
+									// is in flight, matching the violation-action surfaces.
 									<button
 										type="button"
-										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										data-apply-members
+										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 										data-members={ membersJSON(r.Members) }
+										data-save-error={ t(ctx, "artist.members_save_failed") }
+										data-network-error={ t(ctx, "artist.members_network_error") }
 										onclick={ saveMembers("/api/v1/artists/"+a.ID+"/members/from-provider", "#members-section-"+a.ID) }
 									>
 										{ t(ctx, "artist.use_this") }
@@ -522,17 +536,49 @@ templ FieldProviderNoChanges(field string) {
 }
 
 // saveMembers posts member data from a provider result to the save endpoint,
-// swaps the members section, and closes the modal.
+// swaps the members section, and closes the modal. Failure paths re-use the
+// W4.B (#1232) safety pattern: the Apply button is disabled for the duration
+// of the fetch so a rapid second click cannot queue a duplicate POST, and
+// every settled outcome (success, HTTP error, network error) re-enables the
+// button via the finally() block so a transient failure never leaves the
+// modal inert. Errors surface through window.showToast (falling back to
+// alert() when the toast helper is unavailable, e.g. when the layout script
+// failed to load) so the user sees the same visual treatment as every other
+// action error in the app.
 
 script saveMembers(url string, targetSelector string) {
 	var btn = this;
+	// Disable the Apply button immediately so a rapid second click cannot
+	// queue a duplicate POST against the same provider payload. The
+	// finally() block re-enables it on every settled outcome.
+	btn.disabled = true;
 	var members = btn.getAttribute('data-members');
+	// Localized failure strings injected via data-attrs by the templ
+	// caller (artist.members_save_failed / artist.members_network_error).
+	// English fallbacks only fire if the button was detached or the i18n
+	// key was missing -- never as the primary user-visible text.
+	var saveErrorPrefix = btn.getAttribute('data-save-error') || 'Failed to save members';
+	var networkError = btn.getAttribute('data-network-error') || 'Network error saving members';
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+	// notify routes a user-facing failure message through the global toast
+	// helper, falling back to a native alert() so the user is never left
+	// wondering why Apply did nothing. Mirrors the pattern in
+	// artist_violations_tab.templ (#1232).
+	var notify = function(msg) {
+		if (typeof window.showToast === 'function') { window.showToast(msg); } else { alert(msg); }
+	};
 	fetch(bp + url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
+			// HX-Request opts the success branch into rendering the
+			// re-rendered MembersSection HTML fragment that we swap into
+			// the target by id. On the error path writeError also routes
+			// by HX-Request and returns the ErrorToast HTML component, so
+			// the script's error parser must accept either an HTML fragment
+			// or a JSON {error: ...} envelope. Mirrors the body-shape
+			// tolerance of the layout.templ htmx:responseError handler.
 			'HX-Request': 'true',
 			'X-CSRF-Token': csrf
 		},
@@ -552,9 +598,44 @@ script saveMembers(url string, targetSelector string) {
 				hideFieldProviderModal();
 			});
 		}
-		window.showToast && window.showToast('Failed to save members (' + r.status + ')');
+		// Prefer the server's reason when present. writeError returns one
+		// of two body shapes depending on HX-Request: an ErrorToast HTML
+		// fragment (we sent HX-Request: true for the success branch) or a
+		// JSON {error: ...} envelope. Accept either so a future contract
+		// flip does not silently regress this surface to a status-only
+		// message. Mirrors the htmx:responseError parser in layout.templ.
+		return r.text().then(function(body) {
+			var msg = saveErrorPrefix + ' (' + r.status + ')';
+			var trimmed = (body || '').trim();
+			var stripped = '';
+			var isJSON = false;
+			if (trimmed.length > 0 && trimmed.charAt(0) === '{') {
+				try {
+					var parsed = JSON.parse(trimmed);
+					if (parsed && typeof parsed.error === 'string') {
+						stripped = parsed.error.trim();
+						isJSON = true;
+					}
+				} catch (e) { /* not JSON; fall through to HTML strip */ }
+			}
+			if (!isJSON && trimmed.length > 0) {
+				// HTML fragment path: strip tags and collapse whitespace so
+				// the ErrorToast wrapper does not leak markup into the
+				// user-visible message.
+				stripped = trimmed.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+			}
+			if (stripped.length > 0 && stripped.length < 500) {
+				msg = saveErrorPrefix + ': ' + stripped;
+			}
+			notify(msg);
+		});
 	}).catch(function() {
-		window.showToast && window.showToast('Network error saving members');
+		notify(networkError);
+	}).finally(function() {
+		// Re-enable on every settled outcome -- without this a single
+		// failure would leave the Apply button permanently inert and the
+		// user would have to refresh the page to retry.
+		btn.disabled = false;
 	});
 }
 
