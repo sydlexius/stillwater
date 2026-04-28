@@ -19,6 +19,12 @@ type OnboardingData struct {
 	CurrentStep        int
 	UnidentifiedCount  int
 	UserAuthProvider   string // "local", "emby", "jellyfin", "oidc", etc.
+	// ConflictPreflightVisible is true when the conflict pre-flight step
+	// (step 5) should be shown. It requires both >=1 library and >=1 enabled
+	// emby/jellyfin/lidarr connection. When false, the step is skipped at
+	// transition time so the user goes directly from connections (step 4)
+	// to discovery (step 6).
+	ConflictPreflightVisible bool
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -63,7 +69,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				})();
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider }>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider } data-conflict-preflight={ boolAttr(data.ConflictPreflightVisible) }>
 			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
@@ -97,9 +103,14 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_connections") }</span>
 						</div>
 						<div id="step-line-4" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
-						<div class="flex items-center gap-2">
+						<div class={ "flex items-center gap-2", templ.KV("hidden", !data.ConflictPreflightVisible) } id="progress-conflict">
 							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
-							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
+							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_conflict") }</span>
+						</div>
+						<div id="step-line-5" class={ "h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8", templ.KV("hidden", !data.ConflictPreflightVisible) }></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-6" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">6</div>
+							<span id="step-label-6" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
 						</div>
 					</div>
 					<!-- Step 0: Introduction -->
@@ -301,8 +312,37 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							class="mt-4"
 						></div>
 					</div>
-					<!-- Step 5: Artist Discovery -->
+					<!-- Step 5: Conflict pre-flight (only when libraries + qualifying connections present) -->
 					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.step_conflict") }</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							{ t(ctx, "onboarding.conflict_check_intro") }
+						</p>
+						<!--
+							The body is HTMX-loaded so the synchronous peer probe (Detector.Refresh)
+							runs only when the user actually transitions into this step. The Continue
+							button is gated by the hidden #ob-conflict-block input that the rendered
+							body sets to "1" when the round-trip (red) state is detected.
+						-->
+						<input type="hidden" id="ob-conflict-block" value=""/>
+						<div
+							id="ob-conflict-body"
+							hx-get="/api/v1/onboarding/conflict-step"
+							hx-trigger="oobeConflictRefresh from:body"
+							hx-swap="innerHTML"
+							hx-target="#ob-conflict-body"
+						>
+							<div class="flex items-center justify-center gap-3 py-8 text-sm text-gray-500 dark:text-gray-400">
+								<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+									<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
+									<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+								</svg>
+								<span>{ t(ctx, "onboarding.conflict_checking") }</span>
+							</div>
+						</div>
+					</div>
+					<!-- Step 6: Artist Discovery -->
+					<div id="wizard-step-6" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 6) }>
 						<!-- Phase 1: Opt-in -->
 						<div id="discovery-opt-in">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
@@ -489,7 +529,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<script>
 				var parsedStep = parseInt(document.body.dataset.currentStep, 10);
 				var currentStep = isNaN(parsedStep) ? 0 : parsedStep;
-				var totalSteps = 5;
+				var totalSteps = 6;
+				// Conflict pre-flight (step 5) is invisible unless server-side
+				// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr
+				// connection. The flag is rendered into a data attribute so JS
+				// can skip the step on next/back without a server round-trip.
+				var conflictPreflightVisible = document.body.dataset.conflictPreflight === '1';
 				var discoveryPhase = 'idle'; // idle, running, review
 				var discoveryPollTimer = null;
 				var discoveryReviewQueue = [];
@@ -523,6 +568,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				function goToStep(step) {
 					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
+					// Skip the conflict pre-flight (step 5) when the gating
+					// preconditions are not satisfied. We need the direction
+					// (forward/back) to know whether to land on 4 or 6.
+					if (step === 5 && !conflictPreflightVisible) {
+						step = step > currentStep ? 6 : 4;
+					}
 					currentStep = step;
 
 					// Step 0 (intro) is outside the progress bar
@@ -565,10 +616,22 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					nextBtn.textContent = step === 0 ? 'Get Started' : 'Next';
 					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
 
-					// Step 5 (discovery) hides Back during progress/review phases.
-					if (step === 5 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
+					// Step 6 (discovery) hides Back during progress/review phases.
+					if (step === 6 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
 						document.getElementById('back-btn').classList.add('hidden');
 					}
+
+					// Step 5 (conflict pre-flight): trigger an HTMX-driven refresh
+					// of the body partial each time the user lands here so we
+					// always show fresh ledger data (peer state may have changed
+					// since OOBE last loaded). The hidden #ob-conflict-block
+					// input is set by the rendered body to "1" when the
+					// round-trip (red) state is active; updateConflictGate()
+					// disables Next while it is "1".
+					if (step === 5) {
+						htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+					}
+					updateConflictGate();
 
 					// Step 2 (platform): auto-select based on auth provider only if no platform is already selected
 					if (step === 2) {
@@ -592,6 +655,35 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						console.warn('Failed to persist onboarding step:', err);
 					});
 				}
+
+				// updateConflictGate disables Next on step 5 when the rendered
+				// conflict body sets the hidden #ob-conflict-block input to "1"
+				// (round-trip / red state). Other states are advisory and leave
+				// Next enabled. Called from goToStep and from htmx:afterSwap on
+				// the conflict body so flipping the per-connection toggle and
+				// re-rendering instantly re-evaluates whether Continue unlocks.
+				function updateConflictGate() {
+					var nextBtn = document.getElementById('next-btn');
+					if (!nextBtn) return;
+					if (currentStep !== 5) return;
+					var blockEl = document.getElementById('ob-conflict-block');
+					var blocked = blockEl && blockEl.value === '1';
+					nextBtn.disabled = !!blocked;
+					if (blocked) {
+						nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
+					} else {
+						nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+					}
+				}
+
+				// Re-evaluate the gate whenever the conflict body finishes
+				// swapping (initial load, manual re-check, or post-toggle
+				// refresh from the per-connection CTA).
+				document.body.addEventListener('htmx:afterSwap', function(evt) {
+					if (evt.detail && evt.detail.target && evt.detail.target.id === 'ob-conflict-body') {
+						updateConflictGate();
+					}
+				});
 
 				function finishWizard() {
 					fetch(basePath + '/api/v1/settings', {

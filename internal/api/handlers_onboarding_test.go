@@ -102,6 +102,7 @@ func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
 		{"step 3", "3", "3"},
 		{"step 4", "4", "4"},
 		{"step 5", "5", "5"},
+		{"step 6", "6", "6"},
 	}
 
 	for _, tt := range tests {

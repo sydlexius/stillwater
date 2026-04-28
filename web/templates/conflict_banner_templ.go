@@ -929,6 +929,559 @@ func conflictBannerRoundTripDanger(v ConflictBannerView) templ.Component {
 	})
 }
 
+// OnboardingConflictView is the view-model for the OOBE pre-flight step
+// rendered by OnboardingConflictBody. It carries the same per-state ledger
+// the persistent banner uses but adds two OOBE-specific fields:
+//   - Blocking: true when Continue must be disabled (round-trip / red).
+//   - ProbeError: human-readable message when no peer could be reached. In
+//     this state the body shows a non-blocking warning per the issue spec
+//     so the user can still proceed (the post-OOBE banner will surface any
+//     residual conflict).
+//
+// The Banner field reuses ConflictBannerView so the per-state body partials
+// can share their copy and CTA wiring with the shipped banner code.
+type OnboardingConflictView struct {
+	Banner     ConflictBannerView
+	Blocking   bool
+	ProbeError string
+}
+
+// OnboardingConflictBody renders the body of the OOBE conflict pre-flight
+// step. It mirrors the persistent banner's state machine (clean / image /
+// nfo / both / round_trip) but with OOBE-flavored copy and an OOBE-specific
+// gating signal: a hidden input the parent page reads to toggle the
+// Continue button.
+func OnboardingConflictBody(v OnboardingConflictView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var40 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var40 == nil {
+			templ_7745c5c3_Var40 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<!--\n\t\tThe hidden ob-conflict-block-state input is read by updateConflictGate()\n\t\tin onboarding.templ. \"1\" means Continue is disabled (round-trip), empty\n\t\tmeans Continue is enabled. We use a sibling node rather than mutating\n\t\t#ob-conflict-block directly so HTMX innerHTML swaps replace the value\n\t\tatomically with the body.\n\t--><input type=\"hidden\" id=\"ob-conflict-block-state\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var41 string
+		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(obConflictBlockValue(v.Blocking))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 369, Col: 91}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" hx-on:htmx:after-swap=\"(function(){var s=document.getElementById('ob-conflict-block-state');var t=document.getElementById('ob-conflict-block');if(s&&t){t.value=s.value;}})()\"><script>\n\t\t(function(){\n\t\t\tvar s = document.getElementById('ob-conflict-block-state');\n\t\t\tvar t = document.getElementById('ob-conflict-block');\n\t\t\tif (s && t) { t.value = s.value; }\n\t\t})();\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if v.ProbeError != "" {
+			templ_7745c5c3_Err = onboardingConflictProbeError(v.ProbeError).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			switch v.Banner.State {
+			case "round_trip":
+				templ_7745c5c3_Err = onboardingConflictRoundTrip(v.Banner).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			case "image_only":
+				templ_7745c5c3_Err = onboardingConflictWarn(v.Banner, "image").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			case "nfo_only":
+				templ_7745c5c3_Err = onboardingConflictWarn(v.Banner, "nfo").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			case "both":
+				templ_7745c5c3_Err = onboardingConflictWarn(v.Banner, "both").Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			default:
+				templ_7745c5c3_Err = onboardingConflictClean().Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<div class=\"mt-4 flex justify-end\"><button type=\"button\" class=\"px-3 py-1.5 rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 inline-flex items-center gap-1.5\" hx-get=\"/api/v1/onboarding/conflict-step?refresh=1\" hx-target=\"#ob-conflict-body\" hx-swap=\"innerHTML\" hx-disabled-elt=\"this\" hx-indicator=\"this\"><svg class=\"htmx-indicator h-3.5 w-3.5 animate-spin\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"3\" stroke-opacity=\"0.25\"></circle> <path d=\"M22 12a10 10 0 0 1-10 10\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\"></path></svg> Re-check</button></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func onboardingConflictClean() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var42 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var42 == nil {
+			templ_7745c5c3_Var42 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<div class=\"rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-4\"><div class=\"flex items-start gap-3\"><span class=\"inline-block h-2 w-2 mt-2 rounded-full bg-emerald-500 ring-4 ring-emerald-400/20 shrink-0\" aria-hidden=\"true\"></span><div><div class=\"text-sm font-medium text-emerald-900 dark:text-emerald-100\">No conflicts detected.</div><p class=\"text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1\">Stillwater and your media servers will not duplicate files. You can continue.</p></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func onboardingConflictWarn(v ConflictBannerView, axis string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var43 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var43 == nil {
+			templ_7745c5c3_Var43 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<div class=\"rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4\"><div class=\"flex items-start gap-3\"><span class=\"inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0 flex-1\"><div class=\"text-sm font-semibold text-amber-900 dark:text-amber-100\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var44 string
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(obConflictWarnTitle(axis))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 431, Col: 101}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</div><p class=\"text-xs text-amber-800/90 dark:text-amber-200/90 mt-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var45 string
+		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(obConflictWarnBody(axis))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 432, Col: 95}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</p>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(v.Connections) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<ul class=\"mt-3 space-y-1.5\" role=\"list\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, c := range v.Connections {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<li class=\"flex flex-wrap items-center justify-between gap-2 rounded bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2\"><div class=\"flex items-center gap-2 min-w-0 text-xs text-amber-900 dark:text-amber-100\"><span class=\"font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var46 string
+				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 438, Col: 43}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "</span> <span class=\"text-amber-700 dark:text-amber-300\">(")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var47 string
+				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(c.Type)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 439, Col: 67}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, ")</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if c.LibraryName != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<span class=\"text-amber-700 dark:text-amber-300\">\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var48 string
+					templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(c.LibraryName)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 441, Col: 75}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\"</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</div><div class=\"flex items-center gap-2 shrink-0\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, onboardingManagedAfterRequest(c.ID))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<button type=\"button\" class=\"px-2.5 py-1 rounded-md bg-amber-500 text-white text-xs font-medium hover:bg-amber-600\" hx-post=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var49 string
+				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/connections/" + c.ID + "/stillwater-managed")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 448, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\" hx-vals=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var50 string
+				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(manageServerFilesPayload(true))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 449, Col: 50}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" hx-swap=\"none\" hx-on:htmx:after-request=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var51 templ.ComponentScript = onboardingManagedAfterRequest(c.ID)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51.Call)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\">Let Stillwater manage</button></div></li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</ul>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "<p class=\"text-xs text-amber-700/80 dark:text-amber-300/80 mt-2\">You can continue without resolving this. The dashboard will show the same warning until you fix it.</p></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func onboardingConflictRoundTrip(v ConflictBannerView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var52 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var52 == nil {
+			templ_7745c5c3_Var52 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div class=\"rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 p-4\"><div class=\"flex items-start gap-3\"><span class=\"inline-block h-2 w-2 mt-2 rounded-full bg-rose-500 ring-4 ring-rose-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0 flex-1\"><div class=\"text-sm font-semibold text-rose-900 dark:text-rose-100\">Round-trip overlap detected.</div><p class=\"text-xs text-rose-800/90 dark:text-rose-200/90 mt-1\">Two of your connections share the same library path. Anything Stillwater writes will round-trip through both servers and produce duplicate files within seconds. Resolve before continuing.</p>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(v.RoundTrips) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<ul class=\"mt-3 space-y-1.5 text-xs text-rose-900 dark:text-rose-100\" role=\"list\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, rt := range v.RoundTrips {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "<li class=\"rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2\"><span class=\"font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var53 string
+				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(rt.AName)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 481, Col: 44}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</span> <span class=\"text-rose-700 dark:text-rose-300\">and </span> <span class=\"font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var54 string
+				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(rt.BName)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 483, Col: 44}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</span> <span class=\"text-rose-700 dark:text-rose-300\">share </span> <code class=\"bg-black/10 dark:bg-black/40 px-1 rounded\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var55 string
+				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(rt.Path)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 485, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "</code></li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</ul>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if len(v.Connections) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "<ul class=\"mt-3 space-y-1.5\" role=\"list\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, c := range v.Connections {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "<li class=\"flex flex-wrap items-center justify-between gap-2 rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2\"><div class=\"flex items-center gap-2 min-w-0 text-xs text-rose-900 dark:text-rose-100\"><span class=\"font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var56 string
+				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 495, Col: 43}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "</span> <span class=\"text-rose-700 dark:text-rose-300\">(")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var57 string
+				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(c.Type)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 496, Col: 65}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, ")</span> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if c.LibraryName != "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<span class=\"text-rose-700 dark:text-rose-300\">\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var58 string
+					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(c.LibraryName)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 498, Col: 73}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\"</span>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</div><div class=\"flex items-center gap-2 shrink-0\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, onboardingManagedAfterRequest(c.ID))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<button type=\"button\" class=\"px-2.5 py-1 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700\" hx-post=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var59 string
+				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/connections/" + c.ID + "/stillwater-managed")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 505, Col: 73}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "\" hx-vals=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var60 string
+				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(manageServerFilesPayload(true))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 506, Col: 50}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\" hx-swap=\"none\" hx-on:htmx:after-request=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var61 templ.ComponentScript = onboardingManagedAfterRequest(c.ID)
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61.Call)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\">Let Stillwater manage</button></div></li>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "</ul>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<p class=\"text-xs text-rose-700 dark:text-rose-300 mt-2 font-medium\">Continue is disabled until this resolves. Re-check after flipping a toggle.</p></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func onboardingConflictProbeError(msg string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var62 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var62 == nil {
+			templ_7745c5c3_Var62 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div class=\"rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4\"><div class=\"flex items-start gap-3\"><span class=\"inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0\" aria-hidden=\"true\"></span><div><div class=\"text-sm font-medium text-amber-900 dark:text-amber-100\">Could not reach all of your servers to check.</div><p class=\"text-xs text-amber-800/80 dark:text-amber-200/80 mt-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var63 string
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 531, Col: 74}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</p><p class=\"text-xs text-amber-800/80 dark:text-amber-200/80 mt-2\">You can continue. The conflict banner on the dashboard will surface any issue once Stillwater can reach the server again.</p></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// onboardingManagedAfterRequest is the OOBE-step counterpart to
+// stillwaterManagedAfterRequest in settings.templ. It refreshes the
+// pre-flight body in place after the toggle POST returns so the new
+// ledger state (and the Continue gate) is visible without a page reload.
+func onboardingManagedAfterRequest(connID string) templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_onboardingManagedAfterRequest_dcbe`,
+		Function: `function __templ_onboardingManagedAfterRequest_dcbe(connID){if (event.detail.successful) {
+		htmx.ajax("GET", "/api/v1/onboarding/conflict-step?refresh=1",
+			{ target: "#ob-conflict-body", swap: "innerHTML" });
+	}
+}`,
+		Call:       templ.SafeScript(`__templ_onboardingManagedAfterRequest_dcbe`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_onboardingManagedAfterRequest_dcbe`, connID),
+	}
+}
+
 // conflictBannerClean renders the emerald state D bar shown when no
 // conflicts are present. A tiny inline script gates rendering on the
 // session-dismissal flag in sessionStorage: once the user clicks X, the
@@ -951,12 +1504,12 @@ func conflictBannerClean() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var40 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var40 == nil {
-			templ_7745c5c3_Var40 = templ.NopComponent
+		templ_7745c5c3_Var64 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var64 == nil {
+			templ_7745c5c3_Var64 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<div id=\"sw-conflict-clean\" class=\"bg-gradient-to-r from-emerald-700/35 to-emerald-800/35 dark:from-emerald-700/35 dark:to-emerald-800/35 backdrop-blur-md border-b border-emerald-300/25 px-6 py-2\" role=\"status\" data-conflict-state=\"clean\"><div class=\"max-w-6xl mx-auto flex items-center gap-3 text-sm\"><span class=\"inline-block h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20\" aria-hidden=\"true\"></span> <span class=\"text-emerald-100 font-medium\">All clear.</span> <span class=\"text-emerald-100/80 flex-1\">No conflict gating is active. No write-back or round-trip overlap detected.</span> <button type=\"button\" class=\"text-emerald-100/80 hover:text-white\" aria-label=\"Dismiss\" onclick=\"(function(b){ try { sessionStorage.setItem('sw_conflict_clean_dismissed','1'); } catch (e) {} var el = b.closest('#sw-conflict-clean'); if (el) el.remove(); })(this)\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div><script>\n\t\t\t(function () {\n\t\t\t\ttry {\n\t\t\t\t\tif (sessionStorage.getItem('sw_conflict_clean_dismissed') === '1') {\n\t\t\t\t\t\tvar el = document.getElementById('sw-conflict-clean');\n\t\t\t\t\t\tif (el) el.remove();\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {}\n\t\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div id=\"sw-conflict-clean\" class=\"bg-gradient-to-r from-emerald-700/35 to-emerald-800/35 dark:from-emerald-700/35 dark:to-emerald-800/35 backdrop-blur-md border-b border-emerald-300/25 px-6 py-2\" role=\"status\" data-conflict-state=\"clean\"><div class=\"max-w-6xl mx-auto flex items-center gap-3 text-sm\"><span class=\"inline-block h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20\" aria-hidden=\"true\"></span> <span class=\"text-emerald-100 font-medium\">All clear.</span> <span class=\"text-emerald-100/80 flex-1\">No conflict gating is active. No write-back or round-trip overlap detected.</span> <button type=\"button\" class=\"text-emerald-100/80 hover:text-white\" aria-label=\"Dismiss\" onclick=\"(function(b){ try { sessionStorage.setItem('sw_conflict_clean_dismissed','1'); } catch (e) {} var el = b.closest('#sw-conflict-clean'); if (el) el.remove(); })(this)\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div><script>\n\t\t\t(function () {\n\t\t\t\ttry {\n\t\t\t\t\tif (sessionStorage.getItem('sw_conflict_clean_dismissed') === '1') {\n\t\t\t\t\t\tvar el = document.getElementById('sw-conflict-clean');\n\t\t\t\t\t\tif (el) el.remove();\n\t\t\t\t\t}\n\t\t\t\t} catch (e) {}\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -342,6 +342,218 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 	</div>
 }
 
+// OnboardingConflictView is the view-model for the OOBE pre-flight step
+// rendered by OnboardingConflictBody. It carries the same per-state ledger
+// the persistent banner uses but adds two OOBE-specific fields:
+//   - Blocking: true when Continue must be disabled (round-trip / red).
+//   - ProbeError: human-readable message when no peer could be reached. In
+//     this state the body shows a non-blocking warning per the issue spec
+//     so the user can still proceed (the post-OOBE banner will surface any
+//     residual conflict).
+//
+// The Banner field reuses ConflictBannerView so the per-state body partials
+// can share their copy and CTA wiring with the shipped banner code.
+type OnboardingConflictView struct {
+	Banner     ConflictBannerView
+	Blocking   bool
+	ProbeError string
+}
+
+// OnboardingConflictBody renders the body of the OOBE conflict pre-flight
+// step. It mirrors the persistent banner's state machine (clean / image /
+// nfo / both / round_trip) but with OOBE-flavored copy and an OOBE-specific
+// gating signal: a hidden input the parent page reads to toggle the
+// Continue button.
+templ OnboardingConflictBody(v OnboardingConflictView) {
+	<!--
+		The hidden ob-conflict-block-state input is read by updateConflictGate()
+		in onboarding.templ. "1" means Continue is disabled (round-trip), empty
+		means Continue is enabled. We use a sibling node rather than mutating
+		#ob-conflict-block directly so HTMX innerHTML swaps replace the value
+		atomically with the body.
+	-->
+	<input type="hidden" id="ob-conflict-block-state" value={ obConflictBlockValue(v.Blocking) } hx-on:htmx:after-swap="(function(){var s=document.getElementById('ob-conflict-block-state');var t=document.getElementById('ob-conflict-block');if(s&&t){t.value=s.value;}})()"/>
+	<script>
+		(function(){
+			var s = document.getElementById('ob-conflict-block-state');
+			var t = document.getElementById('ob-conflict-block');
+			if (s && t) { t.value = s.value; }
+		})();
+	</script>
+	if v.ProbeError != "" {
+		@onboardingConflictProbeError(v.ProbeError)
+	} else {
+		switch v.Banner.State {
+			case "round_trip":
+				@onboardingConflictRoundTrip(v.Banner)
+			case "image_only":
+				@onboardingConflictWarn(v.Banner, "image")
+			case "nfo_only":
+				@onboardingConflictWarn(v.Banner, "nfo")
+			case "both":
+				@onboardingConflictWarn(v.Banner, "both")
+			default:
+				@onboardingConflictClean()
+		}
+	}
+	<div class="mt-4 flex justify-end">
+		<button
+			type="button"
+			class="px-3 py-1.5 rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 inline-flex items-center gap-1.5"
+			hx-get="/api/v1/onboarding/conflict-step?refresh=1"
+			hx-target="#ob-conflict-body"
+			hx-swap="innerHTML"
+			hx-disabled-elt="this"
+			hx-indicator="this"
+		>
+			<svg class="htmx-indicator h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
+				<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+			</svg>
+			Re-check
+		</button>
+	</div>
+}
+
+templ onboardingConflictClean() {
+	<div class="rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 p-4">
+		<div class="flex items-start gap-3">
+			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-emerald-500 ring-4 ring-emerald-400/20 shrink-0" aria-hidden="true"></span>
+			<div>
+				<div class="text-sm font-medium text-emerald-900 dark:text-emerald-100">No conflicts detected.</div>
+				<p class="text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1">
+					Stillwater and your media servers will not duplicate files. You can continue.
+				</p>
+			</div>
+		</div>
+	</div>
+}
+
+templ onboardingConflictWarn(v ConflictBannerView, axis string) {
+	<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
+		<div class="flex items-start gap-3">
+			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
+			<div class="min-w-0 flex-1">
+				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{ obConflictWarnTitle(axis) }</div>
+				<p class="text-xs text-amber-800/90 dark:text-amber-200/90 mt-1">{ obConflictWarnBody(axis) }</p>
+				if len(v.Connections) > 0 {
+					<ul class="mt-3 space-y-1.5" role="list">
+						for _, c := range v.Connections {
+							<li class="flex flex-wrap items-center justify-between gap-2 rounded bg-amber-100/60 dark:bg-amber-900/30 px-3 py-2">
+								<div class="flex items-center gap-2 min-w-0 text-xs text-amber-900 dark:text-amber-100">
+									<span class="font-medium">{ c.Name }</span>
+									<span class="text-amber-700 dark:text-amber-300">({ c.Type })</span>
+									if c.LibraryName != "" {
+										<span class="text-amber-700 dark:text-amber-300">"{ c.LibraryName }"</span>
+									}
+								</div>
+								<div class="flex items-center gap-2 shrink-0">
+									<button
+										type="button"
+										class="px-2.5 py-1 rounded-md bg-amber-500 text-white text-xs font-medium hover:bg-amber-600"
+										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+										hx-vals={ manageServerFilesPayload(true) }
+										hx-swap="none"
+										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
+									>
+										Let Stillwater manage
+									</button>
+								</div>
+							</li>
+						}
+					</ul>
+				}
+				<p class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-2">
+					You can continue without resolving this. The dashboard will show the same warning until you fix it.
+				</p>
+			</div>
+		</div>
+	</div>
+}
+
+templ onboardingConflictRoundTrip(v ConflictBannerView) {
+	<div class="rounded-lg border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 p-4">
+		<div class="flex items-start gap-3">
+			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-rose-500 ring-4 ring-rose-400/20 shrink-0" aria-hidden="true"></span>
+			<div class="min-w-0 flex-1">
+				<div class="text-sm font-semibold text-rose-900 dark:text-rose-100">Round-trip overlap detected.</div>
+				<p class="text-xs text-rose-800/90 dark:text-rose-200/90 mt-1">
+					Two of your connections share the same library path. Anything Stillwater writes will round-trip through both servers and produce duplicate files within seconds. Resolve before continuing.
+				</p>
+				if len(v.RoundTrips) > 0 {
+					<ul class="mt-3 space-y-1.5 text-xs text-rose-900 dark:text-rose-100" role="list">
+						for _, rt := range v.RoundTrips {
+							<li class="rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2">
+								<span class="font-medium">{ rt.AName }</span>
+								<span class="text-rose-700 dark:text-rose-300"> and </span>
+								<span class="font-medium">{ rt.BName }</span>
+								<span class="text-rose-700 dark:text-rose-300"> share </span>
+								<code class="bg-black/10 dark:bg-black/40 px-1 rounded">{ rt.Path }</code>
+							</li>
+						}
+					</ul>
+				}
+				if len(v.Connections) > 0 {
+					<ul class="mt-3 space-y-1.5" role="list">
+						for _, c := range v.Connections {
+							<li class="flex flex-wrap items-center justify-between gap-2 rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2">
+								<div class="flex items-center gap-2 min-w-0 text-xs text-rose-900 dark:text-rose-100">
+									<span class="font-medium">{ c.Name }</span>
+									<span class="text-rose-700 dark:text-rose-300">({ c.Type })</span>
+									if c.LibraryName != "" {
+										<span class="text-rose-700 dark:text-rose-300">"{ c.LibraryName }"</span>
+									}
+								</div>
+								<div class="flex items-center gap-2 shrink-0">
+									<button
+										type="button"
+										class="px-2.5 py-1 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700"
+										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
+										hx-vals={ manageServerFilesPayload(true) }
+										hx-swap="none"
+										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
+									>
+										Let Stillwater manage
+									</button>
+								</div>
+							</li>
+						}
+					</ul>
+				}
+				<p class="text-xs text-rose-700 dark:text-rose-300 mt-2 font-medium">
+					Continue is disabled until this resolves. Re-check after flipping a toggle.
+				</p>
+			</div>
+		</div>
+	</div>
+}
+
+templ onboardingConflictProbeError(msg string) {
+	<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
+		<div class="flex items-start gap-3">
+			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
+			<div>
+				<div class="text-sm font-medium text-amber-900 dark:text-amber-100">Could not reach all of your servers to check.</div>
+				<p class="text-xs text-amber-800/80 dark:text-amber-200/80 mt-1">{ msg }</p>
+				<p class="text-xs text-amber-800/80 dark:text-amber-200/80 mt-2">
+					You can continue. The conflict banner on the dashboard will surface any issue once Stillwater can reach the server again.
+				</p>
+			</div>
+		</div>
+	</div>
+}
+
+// onboardingManagedAfterRequest is the OOBE-step counterpart to
+// stillwaterManagedAfterRequest in settings.templ. It refreshes the
+// pre-flight body in place after the toggle POST returns so the new
+// ledger state (and the Continue gate) is visible without a page reload.
+script onboardingManagedAfterRequest(connID string) {
+	if (event.detail.successful) {
+		htmx.ajax("GET", "/api/v1/onboarding/conflict-step?refresh=1",
+			{ target: "#ob-conflict-body", swap: "innerHTML" });
+	}
+}
+
 // conflictBannerClean renders the emerald state D bar shown when no
 // conflicts are present. A tiny inline script gates rendering on the
 // session-dismissal flag in sessionStorage: once the user clicks X, the
