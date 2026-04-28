@@ -466,6 +466,8 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										data-apply-members
 										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 										data-members={ membersJSON(r.Members) }
+										data-save-error={ t(ctx, "artist.members_save_failed") }
+										data-network-error={ t(ctx, "artist.members_network_error") }
 										onclick={ saveMembers("/api/v1/artists/"+a.ID+"/members/from-provider", "#members-section-"+a.ID) }
 									>
 										{ t(ctx, "artist.use_this") }
@@ -551,6 +553,12 @@ script saveMembers(url string, targetSelector string) {
 	// finally() block re-enables it on every settled outcome.
 	btn.disabled = true;
 	var members = btn.getAttribute('data-members');
+	// Localized failure strings injected via data-attrs by the templ
+	// caller (artist.members_save_failed / artist.members_network_error).
+	// English fallbacks only fire if the button was detached or the i18n
+	// key was missing -- never as the primary user-visible text.
+	var saveErrorPrefix = btn.getAttribute('data-save-error') || 'Failed to save members';
+	var networkError = btn.getAttribute('data-network-error') || 'Network error saving members';
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	// notify routes a user-facing failure message through the global toast
@@ -597,7 +605,7 @@ script saveMembers(url string, targetSelector string) {
 		// flip does not silently regress this surface to a status-only
 		// message. Mirrors the htmx:responseError parser in layout.templ.
 		return r.text().then(function(body) {
-			var msg = 'Failed to save members (' + r.status + ')';
+			var msg = saveErrorPrefix + ' (' + r.status + ')';
 			var trimmed = (body || '').trim();
 			var stripped = '';
 			var isJSON = false;
@@ -617,12 +625,12 @@ script saveMembers(url string, targetSelector string) {
 				stripped = trimmed.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 			}
 			if (stripped.length > 0 && stripped.length < 500) {
-				msg = 'Failed to save members: ' + stripped;
+				msg = saveErrorPrefix + ': ' + stripped;
 			}
 			notify(msg);
 		});
 	}).catch(function() {
-		notify('Network error saving members');
+		notify(networkError);
 	}).finally(function() {
 		// Re-enable on every settled outcome -- without this a single
 		// failure would leave the Apply button permanently inert and the

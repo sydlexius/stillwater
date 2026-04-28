@@ -78,6 +78,8 @@
   "artist.member_original": "(original)",
   "artist.member_present": "present",
   "artist.members": "Members",
+  "artist.members_network_error": "Network error saving members",
+  "artist.members_save_failed": "Failed to save members",
   "artist.moods": "Moods",
   "artist.musicbrainz_id_label": "MusicBrainz ID",
   "artist.no_aliases": "No aliases.",
