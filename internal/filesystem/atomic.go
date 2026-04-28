@@ -92,8 +92,15 @@ func renameSafe(oldPath, newPath string) error {
 // can distinguish "already removed" from a real failure.
 func RemoveFileSafe(target string) error {
 	TraceFSWrite("RemoveFileSafe", target, 0)
-	if _, err := os.Lstat(target); err != nil {
+	info, err := os.Lstat(target)
+	if err != nil {
 		return fmt.Errorf("removing %s: %w", target, err)
+	}
+	// Reject directory targets up front. Without this, the rename-then-unlink
+	// flow can move a directory to "<dir>.removing" and then fail to unlink
+	// it, leaving the user's tree in a half-renamed state.
+	if info.IsDir() {
+		return fmt.Errorf("removing %s: target is a directory", target)
 	}
 	tomb := target + ".removing"
 	// Best-effort cleanup of any prior tomb left over from a crash.

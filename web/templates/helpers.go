@@ -359,14 +359,14 @@ func humanBytes(n int64) string {
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
 	}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB"}
 	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
+	// Cap exp at the last suffix index so values larger than 1 TiB still
+	// scale against TiB (e.g. 1 PiB renders as "1024.0 TiB") rather than
+	// inheriting the next-tier divisor and underreporting.
+	for x := n / unit; x >= unit && exp < len(suffixes)-1; x /= unit {
 		div *= unit
 		exp++
-	}
-	suffixes := []string{"KiB", "MiB", "GiB", "TiB"}
-	if exp >= len(suffixes) {
-		exp = len(suffixes) - 1
 	}
 	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffixes[exp])
 }

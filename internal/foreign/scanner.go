@@ -279,6 +279,11 @@ func (s *Scanner) listForArtist(ctx context.Context, artistID string) ([]Entry, 
 		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.SizeBytes, &detected); err != nil {
 			return nil, fmt.Errorf("scanning artist foreign file row: %w", err)
 		}
+		// Mirror Repository.GetByID/List parsing so DetectedAt is populated
+		// consistently regardless of which read path produced the Entry.
+		if t, perr := time.Parse(time.RFC3339, detected); perr == nil {
+			e.DetectedAt = t
+		}
 		out = append(out, e)
 	}
 	return out, rows.Err()

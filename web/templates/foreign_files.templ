@@ -51,9 +51,7 @@ templ ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) {
 					}
 				</div>
 			</div>
-			<div id="foreign-files-table" class="sw-card rounded-lg p-0 overflow-hidden">
-				@ForeignFilesTable(view)
-			</div>
+			@ForeignFilesTable(view)
 		</div>
 	}
 }
@@ -143,9 +141,7 @@ templ ForeignAllowlistPage(assets AssetPaths, view ForeignAllowlistPageView) {
 					   href="/settings/foreign-files">Back to detected files</a>
 				</div>
 			</div>
-			<div id="foreign-allowlist-table" class="sw-card rounded-lg p-0 overflow-hidden">
-				@ForeignAllowlistTable(view)
-			</div>
+			@ForeignAllowlistTable(view)
 		</div>
 	}
 }

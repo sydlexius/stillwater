@@ -31,6 +31,9 @@ func newTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// :memory: SQLite gives each connection its own database. Pin the pool
+	// to one connection so schema and fixtures are visible to every query.
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	// Minimal schema needed by the tests: artists + foreign_files +
 	// foreign_file_allowlist mirrored from 001_initial_schema.sql.
@@ -332,17 +335,23 @@ func TestScanner_PathlessArtistsSkipped(t *testing.T) {
 func TestScanner_UnreadableDirSkippedNotCleared(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewRepository(db)
-	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x','/no/such/dir')`); err != nil {
+	// Use a real path that is not a directory (a regular file) so ReadDir
+	// returns ENOTDIR rather than ENOENT. ENOENT would also pass through
+	// the skip-don't-clear path but does not exercise the same listing-
+	// error branch that production scanners hit on permission failures.
+	badPath := filepath.Join(t.TempDir(), "not-a-dir")
+	mustWrite(t, badPath, []byte("x"))
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x', ?)`, badPath); err != nil {
 		t.Fatalf("insert artist: %v", err)
 	}
 	// Pre-seed a ledger row for the artist; the scan must NOT remove it
 	// when the dir is unreadable (skip-don't-clear).
 	if err := repo.Upsert(context.Background(), Entry{
-		ArtistID: "a1", FilePath: "/no/such/dir/backdrop.jpg", FileName: "backdrop.jpg",
+		ArtistID: "a1", FilePath: filepath.Join(badPath, "backdrop.jpg"), FileName: "backdrop.jpg",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Name: "x", Path: "/no/such/dir"}}}
+	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Name: "x", Path: badPath}}}
 	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err := scanner.Scan(context.Background()); err != nil {
 		t.Fatalf("Scan: %v", err)

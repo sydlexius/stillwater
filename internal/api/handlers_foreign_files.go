@@ -14,21 +14,25 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// foreignSummaryForBanner is invoked by handleGetConflictBanner so the
-// banner state can include the foreign-file count without forcing the
-// caller to wire two services together. Returns a zero summary if the
-// repo is unavailable (e.g. DB not configured in tests) so the banner
-// degrades silently to its conflict-only behavior.
-func (r *Router) foreignSummaryForBanner(ctx context.Context) (int, time.Time) {
+// foreignSummaryForBanner is invoked by handleGetConflictBanner and
+// handleGetConflicts so the banner state can include the foreign-file
+// count without forcing the caller to wire two services together.
+// Returns 0 if the repo is unavailable (e.g. DB not configured in tests)
+// so the banner degrades silently to its conflict-only behavior. The
+// scanner does not yet persist a last-scan timestamp; previously this
+// function returned time.Now() in that slot which was misleading
+// because callers ignored it anyway, so the timestamp return is dropped
+// rather than fabricated.
+func (r *Router) foreignSummaryForBanner(ctx context.Context) int {
 	if r.foreignRepo == nil {
-		return 0, time.Time{}
+		return 0
 	}
 	n, err := r.foreignRepo.Count(ctx)
 	if err != nil {
 		r.logger.Warn("foreign-file banner count failed", "error", err)
-		return 0, time.Time{}
+		return 0
 	}
-	return n, time.Now().UTC()
+	return n
 }
 
 // handleForeignFilesPage renders /settings/foreign-files. Admin-only; the
@@ -96,6 +100,7 @@ func (r *Router) handleForeignFilesList(w http.ResponseWriter, req *http.Request
 	}
 	entries, err := r.foreignRepo.List(req.Context())
 	if err != nil {
+		r.logger.Error("listing foreign files", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing foreign files"})
 		return
 	}
@@ -123,6 +128,7 @@ func (r *Router) handleForeignFileAllowlist(w http.ResponseWriter, req *http.Req
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "foreign-file row not found"})
 			return
 		}
+		r.logger.Error("loading foreign-file row for allowlist", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading foreign-file row"})
 		return
 	}
@@ -132,6 +138,7 @@ func (r *Router) handleForeignFileAllowlist(w http.ResponseWriter, req *http.Req
 		FileName: entry.FileName,
 		Note:     "added from foreign-files page",
 	}); err != nil {
+		r.logger.Error("writing artist-scoped allowlist", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "writing allowlist"})
 		return
 	}
@@ -163,6 +170,7 @@ func (r *Router) handleForeignFileDelete(w http.ResponseWriter, req *http.Reques
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "foreign-file row not found"})
 			return
 		}
+		r.logger.Error("loading foreign-file row for delete", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading foreign-file row"})
 		return
 	}
@@ -196,6 +204,7 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 	}
 	entries, err := r.foreignRepo.List(req.Context())
 	if err != nil {
+		r.logger.Error("listing foreign files for dismiss", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing foreign files"})
 		return
 	}
@@ -211,16 +220,25 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 			FileName: e.FileName,
 			Note:     "bulk dismiss from banner",
 		}); err != nil {
+			// Skip the ledger delete on failure: clearing the row would hide
+			// the warning even though dismissal was not actually persisted,
+			// and the file would only re-appear on the next scan cycle.
 			r.logger.Warn("dismiss bulk allowlist failed for file", "file", e.FileName, "error", err)
+			continue
 		}
 		if err := r.foreignRepo.DeleteByPath(req.Context(), e.ArtistID, e.FilePath); err != nil && !errors.Is(err, foreign.ErrNotFound) {
 			r.logger.Warn("dismiss ledger cleanup failed", "id", e.ID, "error", err)
 		}
 	}
-	// Render the refreshed banner content so HTMX can swap it. The conflict
-	// detector is independent of the foreign repo so we go through the same
-	// code path as GET /api/v1/config/conflict-banner.
-	r.handleGetConflictBanner(w, req)
+	// Render the empty foreign-files table so HTMX can swap #foreign-files-table
+	// in place. Earlier this called handleGetConflictBanner, but the dismiss
+	// button targets the table, so a banner partial would replace the table
+	// with unrelated content (#1246 review).
+	view := templates.ForeignFilesPageView{}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.ForeignFilesTable(view).Render(req.Context(), w); err != nil {
+		r.logger.Warn("rendering foreign-files table after dismiss failed", "error", err)
+	}
 }
 
 // handleForeignAllowlistList returns the JSON list of allowlist rows.
@@ -233,6 +251,7 @@ func (r *Router) handleForeignAllowlistList(w http.ResponseWriter, req *http.Req
 	}
 	entries, err := r.foreignRepo.ListAllowlist(req.Context())
 	if err != nil {
+		r.logger.Error("listing foreign allowlist", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing allowlist"})
 		return
 	}
@@ -258,6 +277,7 @@ func (r *Router) handleForeignAllowlistRemove(w http.ResponseWriter, req *http.R
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "allowlist entry not found"})
 			return
 		}
+		r.logger.Error("removing foreign allowlist entry", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "removing allowlist entry"})
 		return
 	}

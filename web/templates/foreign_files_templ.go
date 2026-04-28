@@ -77,7 +77,7 @@ func ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) templ.Compon
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div><div id=\"foreign-files-table\" class=\"sw-card rounded-lg p-0 overflow-hidden\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -85,7 +85,7 @@ func ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) templ.Compon
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -145,7 +145,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs("foreign-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 84, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 82, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -158,7 +158,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(r.ArtistName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 85, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 83, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -171,7 +171,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(r.FilePath)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 86, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 84, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -184,7 +184,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(r.FileName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 86, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 84, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -197,7 +197,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(humanBytes(r.SizeBytes))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 87, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 85, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -210,7 +210,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(r.DetectedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 88, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 86, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -223,7 +223,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/foreign-files/" + r.ID + "/allowlist")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 93, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 91, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -236,7 +236,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs("#foreign-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 94, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 92, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -249,7 +249,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/foreign-files/" + r.ID + "/file")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 100, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 98, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -262,7 +262,7 @@ func ForeignFilesTable(view ForeignFilesPageView) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs("#foreign-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 102, Col: 43}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 100, Col: 43}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -337,7 +337,7 @@ func ForeignAllowlistPage(assets AssetPaths, view ForeignAllowlistPageView) temp
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Foreign-file allowlist</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Files listed here are permanently suppressed from foreign-file detection. Remove a row to let it be detected again.</p><div class=\"mt-3\"><a class=\"text-sm text-blue-600 dark:text-blue-400 underline-offset-2 hover:underline\" href=\"/settings/foreign-files\">Back to detected files</a></div></div><div id=\"foreign-allowlist-table\" class=\"sw-card rounded-lg p-0 overflow-hidden\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Foreign-file allowlist</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Files listed here are permanently suppressed from foreign-file detection. Remove a row to let it be detected again.</p><div class=\"mt-3\"><a class=\"text-sm text-blue-600 dark:text-blue-400 underline-offset-2 hover:underline\" href=\"/settings/foreign-files\">Back to detected files</a></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -345,7 +345,7 @@ func ForeignAllowlistPage(assets AssetPaths, view ForeignAllowlistPageView) temp
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -403,7 +403,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("allowlist-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 173, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 169, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -416,7 +416,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(r.Scope)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 174, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 170, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -435,7 +435,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 					var templ_7745c5c3_Var19 string
 					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(r.ArtistName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 179, Col: 23}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 175, Col: 23}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
@@ -449,7 +449,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(r.FileName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 182, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 178, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -462,7 +462,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(r.CreatedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 183, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 179, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -475,7 +475,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/foreign-file-allowlist/" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 188, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 184, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -488,7 +488,7 @@ func ForeignAllowlistTable(view ForeignAllowlistPageView) templ.Component {
 				var templ_7745c5c3_Var23 string
 				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs("#allowlist-row-" + r.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 189, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/foreign_files.templ`, Line: 185, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {

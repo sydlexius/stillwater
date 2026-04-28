@@ -1363,6 +1363,7 @@ components:
         detected_at:
           type: string
           format: date-time
+      required: [id, artist_id, artist_name, file_path, file_name, size_bytes, detected_at]
 
     ForeignAllowlistEntry:
       type: object
@@ -1387,6 +1388,7 @@ components:
         created_at:
           type: string
           format: date-time
+      required: [id, scope, file_name, note, created_at]
 
 paths:
   /health:
@@ -10199,6 +10201,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /foreign-files/dismiss:
     post:
       summary: Bulk allowlist every active foreign file globally
@@ -10212,7 +10220,7 @@ paths:
         - Foreign Files
       responses:
         "200":
-          description: Banner partial (text/html) after dismissal.
+          description: Empty foreign-files table partial (text/html) after dismissal.
           content:
             text/html:
               schema:
@@ -10225,6 +10233,18 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error listing foreign files for dismissal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
           content:
             application/json:
               schema:
@@ -10248,6 +10268,12 @@ paths:
       responses:
         "200":
           description: Allowlisted.
+        "400":
+          description: Missing or invalid foreign-file id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Foreign-file row not found.
           content:
@@ -10262,6 +10288,18 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error writing the allowlist row.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
           content:
             application/json:
               schema:
@@ -10286,6 +10324,12 @@ paths:
       responses:
         "200":
           description: File deleted.
+        "400":
+          description: Missing or invalid foreign-file id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Foreign-file row not found.
           content:
@@ -10306,6 +10350,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Filesystem error during deletion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
           content:
             application/json:
               schema:
@@ -10342,6 +10392,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /foreign-file-allowlist/{id}:
     delete:
       summary: Remove an allowlist entry
@@ -10360,6 +10416,12 @@ paths:
       responses:
         "200":
           description: Allowlist entry removed.
+        "400":
+          description: Missing or invalid allowlist id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Allowlist entry not found.
           content:
@@ -10374,6 +10436,18 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error removing the allowlist entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
           content:
             application/json:
               schema:

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -27,6 +28,9 @@ func newTestRouterWithForeign(t *testing.T) (*Router, *sql.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// :memory: SQLite gives each connection its own database. Pin the pool
+	// to one connection so schema and fixtures are visible to every query.
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	for _, s := range []string{
 		`CREATE TABLE artists (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '')`,
@@ -222,16 +226,14 @@ func TestForeignSummaryForBanner(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	n, ts := r.foreignSummaryForBanner(context.Background())
-	if n != 1 || ts.IsZero() {
-		t.Errorf("foreignSummaryForBanner = %d/%v", n, ts)
+	if got := r.foreignSummaryForBanner(context.Background()); got != 1 {
+		t.Errorf("foreignSummaryForBanner = %d, want 1", got)
 	}
 
-	// nil-repo path returns zero summary.
+	// nil-repo path returns zero count.
 	r2 := &Router{logger: slog.Default()}
-	n, ts = r2.foreignSummaryForBanner(context.Background())
-	if n != 0 || !ts.IsZero() {
-		t.Errorf("nil-repo summary should be zero; got %d/%v", n, ts)
+	if got := r2.foreignSummaryForBanner(context.Background()); got != 0 {
+		t.Errorf("nil-repo summary should be 0; got %d", got)
 	}
 }
 
@@ -246,12 +248,18 @@ func TestHandleForeignFilesDismiss(t *testing.T) {
 		}
 	}
 
-	// Dismiss invokes handleGetConflictBanner internally, which 204s when
-	// no detector is configured -- that's fine; the dismiss work happens
-	// before that call.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
 	rec := httptest.NewRecorder()
 	r.handleForeignFilesDismiss(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("dismiss should return 200 with the empty table partial; got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("dismiss should render HTML; got Content-Type=%q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "foreign-files-table") {
+		t.Errorf("dismiss body should swap the foreign-files table; body=%q", rec.Body.String())
+	}
 
 	count, _ := r.foreignRepo.Count(context.Background())
 	if count != 0 {
