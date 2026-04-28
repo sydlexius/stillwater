@@ -55,9 +55,10 @@ func (p CountParams) toListParams() ListParams {
 }
 
 // MaxListIDs caps the number of artist IDs accepted by the IDs filter.
-// Matches the bulk-action cap (handlers_bulk_actions.MaxBulkActionIDs) so
-// the "Show selected" affordance can never request more rows than the
-// in-memory selection store is allowed to hold.
+// This is the canonical cap: the API bulk-action cap
+// (api.MaxBulkActionIDs) is sourced from this constant so the
+// "Show selected" affordance and the bulk-action endpoint can never
+// disagree on the in-memory selection store's hard limit.
 const MaxListIDs = 1000
 
 // Validate normalizes and validates list parameters.

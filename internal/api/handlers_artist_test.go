@@ -296,10 +296,22 @@ func TestArtistsPage_IDsFilter_Empty(t *testing.T) {
 		{"absent", ""},
 		{"trailing-comma", ","},
 		{"whitespace-only", " , , "},
+		// "malformed" tokens fail the canonical idPattern check and must
+		// be dropped server-side so they never round-trip into the SQL
+		// IN-clause or the "Showing N selected" chip.
+		{"malformed", "@@,!!"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			url := "/artists?view=table&ids=" + neturl.QueryEscape(tc.raw)
+			// "absent" must exercise a genuinely missing ids parameter -- not
+			// ids= with an empty value -- so the handler hits the raw == ""
+			// short-circuit in parseIDsParam rather than the post-split
+			// no-tokens branch. Without this distinction the subtest name
+			// over-promises coverage.
+			url := "/artists?view=table"
+			if tc.name != "absent" {
+				url += "&ids=" + neturl.QueryEscape(tc.raw)
+			}
 			req := httptest.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			w := httptest.NewRecorder()
 			r.handleArtistsPage(w, req)

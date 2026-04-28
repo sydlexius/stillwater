@@ -125,8 +125,12 @@ func parseIDsParam(raw string) []string {
 	parts := strings.Split(raw, ",")
 	ids := make([]string, 0, len(parts))
 	for _, p := range parts {
+		// Match the bulk-actions canonical ID shape so malformed tokens
+		// (whitespace, punctuation, oversized strings) cannot round-trip
+		// through pagination chips into the SQL filter. idPattern is
+		// defined in handlers_bulk_actions.go.
 		p = strings.TrimSpace(p)
-		if p != "" {
+		if idPattern.MatchString(p) {
 			ids = append(ids, p)
 		}
 	}

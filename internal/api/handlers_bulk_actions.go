@@ -16,8 +16,10 @@ import (
 
 // MaxBulkActionIDs caps the number of artist IDs accepted in a single bulk
 // action request. This bounds both memory and run time so a single request
-// cannot monopolize the singleton bulk-action slot indefinitely.
-const MaxBulkActionIDs = 1000
+// cannot monopolize the singleton bulk-action slot indefinitely. Sourced
+// from artist.MaxListIDs so the API request cap and the domain-layer
+// IDs-filter cap stay in lockstep without a comment-only contract.
+const MaxBulkActionIDs = artist.MaxListIDs
 
 // Allowed bulk action types.
 //

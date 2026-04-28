@@ -517,7 +517,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
 					var urlParams = new URLSearchParams(window.location.search);
 					urlParams.forEach(function(val, key) {
-						if (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {
+						// Carry both filter_* keys (flyout state) and the
+						// ids URL-only param (off-page selection from
+						// "Show selected", #1227) so subsequent search /
+						// sort / view requests do not silently drop the
+						// selection scope and collapse the view.
+						if ((key.indexOf('filter_') === 0 || key === 'ids') && !(key in evt.detail.parameters)) {
 							evt.detail.parameters[key] = val;
 						}
 					});
@@ -600,6 +605,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						params[key] = val;
 					}
 				});
+				// Preserve the off-page selection scope (#1227) across
+				// search / sort / view rebuilds. Without this, the URL
+				// rebuild in afterSwap drops ids and the user's "Show
+				// selected" view collapses on the next interaction.
+				var ids = urlParams.get('ids');
+				if (ids) params.ids = ids;
 				return Object.assign(params, overrides);
 			}
 
@@ -651,9 +662,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 
 					var params = buildArtistParams({});
-					// Extract page from the HTMX request URL if present.
+					// Extract page and the off-page selection scope (#1227)
+					// from the HTMX request URL. The "Show selected" click
+					// adds ids; the "Show all" click drops it. The history
+					// rebuild must mirror whichever the request actually
+					// carried so back-navigation restores the right view.
 					try {
 						var reqUrl = new URL(evt.detail.requestInfo.path, window.location.origin);
+						var ids = reqUrl.searchParams.get('ids');
+						if (ids) {
+							params.ids = ids;
+						} else {
+							delete params.ids;
+						}
 						var page = reqUrl.searchParams.get('page');
 						if (page && page !== '1') params.page = page;
 						var pageSize = reqUrl.searchParams.get('page_size');
@@ -1211,7 +1232,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var ids = Array.from(selected).slice(0, MAX_BULK_SELECTION);
 					var params = buildArtistParams({page: '1', ids: ids.join(',')});
 					if (window.htmx) {
-						window.htmx.ajax('GET', _artistsBp + '/artists', {
+						// Root-relative path here -- the document-level
+						// htmx:configRequest hook prepends basePath, so
+						// embedding _artistsBp would double-prefix on
+						// sub-path deployments.
+						window.htmx.ajax('GET', '/artists', {
 							target: '#artist-content',
 							swap: 'outerHTML',
 							values: params
@@ -1501,8 +1526,8 @@ templ BulkActionBar(data ArtistListData) {
 			<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-2.5 py-0.5 text-xs font-medium">
 				{ tn(ctx, "artists.bulk.showing_selected", len(data.IDs)) }
 				<a
-					href={ templ.SafeURL(showAllURL(data)) }
-					hx-get={ showAllURL(data) }
+					href={ templ.SafeURL(basePath() + showAllPath(data)) }
+					hx-get={ showAllPath(data) }
 					hx-target="#artist-content"
 					hx-swap="outerHTML"
 					hx-push-url="true"
@@ -1519,11 +1544,14 @@ templ BulkActionBar(data ArtistListData) {
 	}
 }
 
-// showAllURL returns the current artist-list URL with the IDs filter
+// showAllPath returns the current artist-list path with the IDs filter
 // removed. Used by the "Show all" affordance on the selection chip to
 // clear the #1227 filter without losing the user's view, sort, search,
-// or other filter state.
-func showAllURL(data ArtistListData) string {
+// or other filter state. Returns a root-relative path so the
+// document-level htmx:configRequest hook can prepend basePath() once
+// for HTMX requests; callers wrap with basePath() themselves for
+// non-HTMX href values.
+func showAllPath(data ArtistListData) string {
 	v := url.Values{}
 	if data.Search != "" {
 		v.Set("search", data.Search)
@@ -1552,9 +1580,9 @@ func showAllURL(data ArtistListData) string {
 	}
 	enc := v.Encode()
 	if enc == "" {
-		return basePath() + "/artists"
+		return "/artists"
 	}
-	return basePath() + "/artists?" + enc
+	return "/artists?" + enc
 }
 
 templ ArtistTable(data ArtistListData) {
