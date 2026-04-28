@@ -516,16 +516,22 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			document.body.addEventListener('htmx:configRequest', function(evt) {
 				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
 					var urlParams = new URLSearchParams(window.location.search);
+					// Declarative hx-get flows (search, library dropdown,
+					// view-toggle buttons) drive their request URL purely
+					// from hx-include'd form fields, so the off-page
+					// selection scope (ids, #1227) is not carried unless
+					// this hook re-injects it. The "Show all" chip
+					// intentionally drops ids and opts out via the
+					// data-clear-ids attribute on its hx-get element.
+					var elt = evt.detail.elt;
+					var clearIDs = !!(elt && elt.getAttribute && elt.getAttribute('data-clear-ids') === 'true');
 					urlParams.forEach(function(val, key) {
-						// Carry only flyout filter_* keys here. The off-page
-						// selection scope (ids, #1227) is carried by
-						// buildArtistParams for htmx.ajax flows and by the
-						// server-rendered hx-get URLs for pagination, so
-						// re-injecting ids from window.location.search would
-						// override the "Show all" chip's intentional
-						// ids-clearing dismiss.
 						if (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {
 							evt.detail.parameters[key] = val;
+							return;
+						}
+						if (key === 'ids' && !clearIDs && !('ids' in evt.detail.parameters)) {
+							evt.detail.parameters.ids = val;
 						}
 					});
 				}
@@ -670,7 +676,16 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					// rebuild must mirror whichever the request actually
 					// carried so back-navigation restores the right view.
 					try {
-						var reqUrl = new URL(evt.detail.requestInfo.path, window.location.origin);
+						// Use documented HTMX afterSwap fields. evt.detail.requestConfig.path
+						// is the path htmx issued the request to; xhr.responseURL is the
+						// post-redirect resolved URL. (evt.detail.requestInfo is not part
+						// of the htmx event contract.) Mirrors scopeTokenFromRequest()
+						// below so both handlers derive scope from the same source.
+						var rc = evt.detail.requestConfig;
+						var xhr = evt.detail.xhr;
+						var rawPath = (rc && rc.path) || (xhr && xhr.responseURL);
+						if (!rawPath) throw new Error('no request path');
+						var reqUrl = new URL(rawPath, window.location.origin);
 						var ids = reqUrl.searchParams.get('ids');
 						if (ids) {
 							params.ids = ids;
@@ -1370,30 +1385,36 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// artist content (pagination, filter change, etc.). Also
 				// probe the bulk-actions/status endpoint on load so a page
 				// reload mid-action re-attaches the progress pill.
-				document.addEventListener('DOMContentLoaded', function() {
-					// Seed the selection store from any `ids=` URL param so a
-					// reload or shareable-link revisit of /artists?ids=a,b,c
-					// keeps the toolbar count, the "Show selected" affordance,
-					// and the per-row checkboxes consistent with the chip the
-					// server already rendered (#1227). Capped to MAX_BULK_SELECTION
-					// to match the in-memory contract.
+				// Seed the `selected` Set from the active `?ids=` URL param.
+				// Mirrors the server-side parseIDsParam canonical ID shape
+				// (^[A-Za-z0-9_-]{1,64}$, see handlers_artist.go) so the
+				// client store stays consistent with what the server rendered:
+				// a hand-crafted URL like ?ids=valid,@@ otherwise lets the
+				// bulk-action POST submit @@ and earn a 400 wholesale rejection.
+				// Capped to MAX_BULK_SELECTION to match the in-memory contract.
+				// Idempotent: safe to call after `selected.clear()` on a
+				// scope-token change so the toolbar re-syncs with the
+				// server-rendered chip when ids= survives the swap.
+				function seedSelectedFromURL() {
 					try {
-						// Mirror the server-side parseIDsParam canonical ID
-						// shape (^[A-Za-z0-9_-]{1,64}$, see handlers_artist.go)
-						// so the client store stays consistent with what the
-						// server actually rendered. Without this, a hand-crafted
-						// URL like ?ids=valid,@@ would let the bulk-action POST
-						// later submit @@ and earn a 400 wholesale rejection.
 						var idRe = /^[A-Za-z0-9_-]{1,64}$/;
 						var initialIDs = new URLSearchParams(window.location.search).get('ids');
-						if (initialIDs) {
-							var parts = initialIDs.split(',');
-							for (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {
-								var pid = parts[i].trim();
-								if (idRe.test(pid)) selected.add(pid);
-							}
+						if (!initialIDs) return;
+						var parts = initialIDs.split(',');
+						for (var i = 0; i < parts.length && selected.size < MAX_BULK_SELECTION; i++) {
+							var pid = parts[i].trim();
+							if (idRe.test(pid)) selected.add(pid);
 						}
 					} catch (e) { /* ignore */ }
+				}
+
+				document.addEventListener('DOMContentLoaded', function() {
+					// Seed from any `ids=` URL param so a reload or
+					// shareable-link revisit of /artists?ids=a,b,c keeps the
+					// toolbar count, the "Show selected" affordance, and the
+					// per-row checkboxes consistent with the chip the server
+					// already rendered (#1227).
+					seedSelectedFromURL();
 					updateBar();
 					// Fire-and-forget status probe. If an action is in flight
 					// the poll attaches; otherwise the pill stays hidden.
@@ -1422,6 +1443,15 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							selected.clear();
 							capWarned = false;
 							lastScopeToken = currentToken;
+							// Re-seed from the post-swap URL: if the new
+							// URL still carries an ids param, the scope-clear
+							// above would otherwise leave the toolbar
+							// reporting an empty selection while the
+							// server-rendered selection chip is still
+							// present (search/library/view changes preserve
+							// ids via buildArtistParams + the configRequest
+							// hook, but change other scope keys).
+							seedSelectedFromURL();
 						}
 						// Reset the shift-click anchor on every swap: after
 						// pagination or sort the prior DOM ordering no longer
@@ -1540,6 +1570,7 @@ templ BulkActionBar(data ArtistListData) {
 					hx-target="#artist-content"
 					hx-swap="outerHTML"
 					hx-push-url="true"
+					data-clear-ids="true"
 					class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
 					aria-label={ t(ctx, "artists.bulk.show_all.aria") }
 					title={ t(ctx, "artists.bulk.show_all") }
