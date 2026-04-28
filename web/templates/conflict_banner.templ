@@ -400,7 +400,7 @@ templ OnboardingConflictBody(v OnboardingConflictView) {
 		<button
 			type="button"
 			class="px-3 py-1.5 rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 inline-flex items-center gap-1.5"
-			hx-get="/api/v1/onboarding/conflict-step?refresh=1"
+			hx-post="/api/v1/onboarding/conflict-step?refresh=1"
 			hx-target="#ob-conflict-body"
 			hx-swap="innerHTML"
 			hx-disabled-elt="this"
@@ -454,11 +454,13 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
 										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
+										data-sw-error={ t(ctx, "settings.connections.manage_error") }
 										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
 									>
 										Let Stillwater manage
 									</button>
 								</div>
+								<div id={ "ob-manage-error-" + c.ID } class="hidden basis-full text-xs text-amber-900 dark:text-amber-100 mt-1" role="alert" aria-live="polite"></div>
 							</li>
 						}
 					</ul>
@@ -511,11 +513,13 @@ templ onboardingConflictRoundTrip(v ConflictBannerView) {
 										hx-post={ "/api/v1/connections/" + c.ID + "/stillwater-managed" }
 										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
+										data-sw-error={ t(ctx, "settings.connections.manage_error") }
 										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
 									>
 										Let Stillwater manage
 									</button>
 								</div>
+								<div id={ "ob-manage-error-" + c.ID } class="hidden basis-full text-xs text-rose-900 dark:text-rose-100 mt-1" role="alert" aria-live="polite"></div>
 							</li>
 						}
 					</ul>
@@ -544,13 +548,27 @@ templ onboardingConflictProbeError(msg string) {
 }
 
 // onboardingManagedAfterRequest is the OOBE-step counterpart to
-// stillwaterManagedAfterRequest in settings.templ. It refreshes the
-// pre-flight body in place after the toggle POST returns so the new
-// ledger state (and the Continue gate) is visible without a page reload.
+// stillwaterManagedAfterRequest in settings.templ. On success it
+// refreshes the pre-flight body in place so the new ledger state (and
+// the Continue gate) is visible without a page reload. On failure it
+// surfaces a localized error in the per-connection #ob-manage-error-{id}
+// span, mirroring the data-sw-error pattern used in settings.templ;
+// without this, the round-trip state could leave Continue disabled with
+// no feedback when the toggle POST fails.
 script onboardingManagedAfterRequest(connID string) {
+	var errEl = document.getElementById("ob-manage-error-" + connID);
 	if (event.detail.successful) {
-		htmx.ajax("GET", "/api/v1/onboarding/conflict-step?refresh=1",
+		if (errEl) {
+			errEl.classList.add("hidden");
+			errEl.textContent = "";
+		}
+		htmx.ajax("POST", "/api/v1/onboarding/conflict-step?refresh=1",
 			{ target: "#ob-conflict-body", swap: "innerHTML" });
+	} else if (errEl) {
+		var btn = event.detail.elt;
+		errEl.textContent = (btn && btn.dataset && btn.dataset.swError) ||
+			"Could not update this server-managed setting. Try again or reload the page.";
+		errEl.classList.remove("hidden");
 	}
 }
 

@@ -327,7 +327,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						<input type="hidden" id="ob-conflict-block" value=""/>
 						<div
 							id="ob-conflict-body"
-							hx-get="/api/v1/onboarding/conflict-step"
+							hx-post="/api/v1/onboarding/conflict-step"
 							hx-trigger="oobeConflictRefresh from:body"
 							hx-swap="innerHTML"
 							hx-target="#ob-conflict-body"
@@ -534,7 +534,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr
 				// connection. The flag is rendered into a data attribute so JS
 				// can skip the step on next/back without a server round-trip.
-				var conflictPreflightVisible = document.body.dataset.conflictPreflight === '1';
+				var conflictPreflightVisible = document.body.dataset.conflictPreflight === 'true';
 				var discoveryPhase = 'idle'; // idle, running, review
 				var discoveryPollTimer = null;
 				var discoveryReviewQueue = [];
@@ -665,7 +665,15 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				function updateConflictGate() {
 					var nextBtn = document.getElementById('next-btn');
 					if (!nextBtn) return;
-					if (currentStep !== 5) return;
+					if (currentStep !== 5) {
+						// Clear any disabled state left over from a prior visit
+						// to step 5; otherwise a user who hit a round-trip block
+						// and navigated back would find Next still grayed out
+						// on the unrelated step.
+						nextBtn.disabled = false;
+						nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+						return;
+					}
 					var blockEl = document.getElementById('ob-conflict-block');
 					var blocked = blockEl && blockEl.value === '1';
 					nextBtn.disabled = !!blocked;
@@ -1333,13 +1341,24 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					});
 				}
 
-				// Initialize to the correct step on page load
-				if (currentStep !== 0) {
-					goToStep(currentStep);
+				// Initialize to the correct step on page load. We defer to
+				// DOMContentLoaded so that on direct-resume to step 5, the
+				// htmx.trigger('oobeConflictRefresh') inside goToStep fires
+				// after htmx has scanned the body and bound the
+				// hx-trigger="oobeConflictRefresh from:body" listener; firing
+				// during parsing dispatches into a not-yet-bound listener and
+				// the conflict body never loads.
+				function obInit() {
+					if (currentStep !== 0) {
+						goToStep(currentStep);
+					}
+					syncLibraryTypeHelpText();
 				}
-
-				// Initialize library type help text visibility on page load
-				syncLibraryTypeHelpText();
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', obInit);
+				} else {
+					obInit();
+				}
 			</script>
 		</body>
 	</html>

@@ -11,12 +11,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
-// onboardingConflictRequest creates a GET request that the handler treats
+// onboardingConflictRequest creates a POST request that the handler treats
 // as authenticated. The handler does not consult the user ID, so a bare
-// request is sufficient -- we keep this helper around for future
-// expansion (e.g. CSRF assertion on POST counterparts).
+// request is sufficient. POST is required by the route registration --
+// the endpoint mutates state (settings marker, detector invalidate) and
+// must remain CSRF-eligible.
 func onboardingConflictRequest(target string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req := httptest.NewRequest(http.MethodPost, target, nil)
 	return req
 }
 
@@ -50,7 +51,7 @@ func TestHandleGetOnboardingConflictStep_204WhenDetectorMissing(t *testing.T) {
 	r := &Router{logger: testDiscardLogger()}
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
-	r.handleGetOnboardingConflictStep(w, req)
+	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want 204", w.Code)
 	}
@@ -60,7 +61,7 @@ func TestHandleGetOnboardingConflictStep_RendersCleanBody(t *testing.T) {
 	r := newConflictHarness(t, nil)
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
-	r.handleGetOnboardingConflictStep(w, req)
+	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -81,7 +82,7 @@ func TestHandleGetOnboardingConflictStep_RefreshInvalidatesCache(t *testing.T) {
 	})
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step?refresh=1")
 	w := httptest.NewRecorder()
-	r.handleGetOnboardingConflictStep(w, req)
+	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
 	}
@@ -152,7 +153,7 @@ func TestHandleGetOnboardingConflictStep_PersistsCompletionMarker(t *testing.T) 
 
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
-	r.handleGetOnboardingConflictStep(w, req)
+	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}

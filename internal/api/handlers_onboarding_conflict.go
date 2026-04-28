@@ -28,10 +28,17 @@ func hasQualifyingConflictConnection(conns []connection.Connection) bool {
 	return false
 }
 
-// handleGetOnboardingConflictStep renders the body of the OOBE conflict
+// handlePostOnboardingConflictStep renders the body of the OOBE conflict
 // pre-flight step (#1184). It is HTMX-loaded by onboarding.templ when the
 // user transitions into step 5 so the synchronous peer probe runs lazily
 // rather than on every wizard page render.
+//
+// POST is used (instead of the more typical GET for a render-only fragment)
+// because the handler mutates state on every call: it persists the
+// completion marker and, with ?refresh=1, invalidates the detector cache.
+// Routing it as POST keeps it inside CSRF protection -- a malicious page
+// embedding `<img src=…/conflict-step?refresh=1>` would no longer be able
+// to trigger a settings write or detector invalidation.
 //
 // Behavior:
 //   - ?refresh=1 invalidates the detector cache before rendering, used by
@@ -48,8 +55,8 @@ func hasQualifyingConflictConnection(conns []connection.Connection) bool {
 //     banner endpoint contract) so the OOBE page can render an empty
 //     "all clear" without errors.
 //
-// GET /api/v1/onboarding/conflict-step
-func (r *Router) handleGetOnboardingConflictStep(w http.ResponseWriter, req *http.Request) {
+// POST /api/v1/onboarding/conflict-step
+func (r *Router) handlePostOnboardingConflictStep(w http.ResponseWriter, req *http.Request) {
 	if r.conflictDetector == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
