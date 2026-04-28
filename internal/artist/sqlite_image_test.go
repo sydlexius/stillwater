@@ -341,6 +341,65 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 	}
 }
 
+// TestReconcileImages verifies that ReconcileImages converges the
+// artist_images registry to filesystem-truth without touching other artist
+// columns, and rejects a nil/empty-ID Artist.
+func TestReconcileImages(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Reconcile Test", "/music/ReconcileTest")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	a.ThumbExists = true
+	a.FanartExists = true
+	repaired, err := svc.ReconcileImages(ctx, a)
+	if err != nil {
+		t.Fatalf("ReconcileImages: %v", err)
+	}
+	if !repaired {
+		t.Error("expected repaired=true on first reconciliation from empty registry")
+	}
+
+	images, err := svc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	var sawThumb, sawFanart bool
+	for _, im := range images {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			sawThumb = true
+		}
+		if im.ImageType == "fanart" && im.SlotIndex == 0 && im.Exists {
+			sawFanart = true
+		}
+	}
+	if !sawThumb || !sawFanart {
+		t.Errorf("registry not converged: thumb=%v fanart=%v", sawThumb, sawFanart)
+	}
+
+	// Idempotent replay must report no drift, since the registry already
+	// matches the Artist's image fields.
+	repaired, err = svc.ReconcileImages(ctx, a)
+	if err != nil {
+		t.Fatalf("ReconcileImages (replay): %v", err)
+	}
+	if repaired {
+		t.Error("expected repaired=false on idempotent replay")
+	}
+
+	// Guard rejects nil and empty ID.
+	if _, err := svc.ReconcileImages(ctx, nil); err == nil {
+		t.Error("expected error for nil Artist")
+	}
+	if _, err := svc.ReconcileImages(ctx, &Artist{}); err == nil {
+		t.Error("expected error for empty Artist ID")
+	}
+}
+
 // TestClearExistsFlag verifies that ClearExistsFlag sets the exists_flag to 0
 // for the targeted image slot without affecting other slots.
 func TestClearExistsFlag(t *testing.T) {

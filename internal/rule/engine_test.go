@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 func testLogger() *slog.Logger {
@@ -597,5 +598,135 @@ func TestCachedRules_ConcurrentAccess(t *testing.T) {
 		if results[i].RulesTotal == 0 {
 			t.Errorf("goroutine %d: RulesTotal = 0, expected enabled rules to be evaluated", i)
 		}
+	}
+}
+
+// TestEvaluate_AllImageSlotsPresent_NoImageViolations is the combined
+// regression for issues #1101 and #1225: an artist whose directory contains
+// canonical files for all four image slots (thumb=folder.jpg, fanart=fanart.jpg,
+// logo=logo.png, banner=banner.jpg) and whose registry rows mark all four
+// as exists must produce ZERO image-category rule violations. Before the fix,
+// a path-based extraneous_images run under a profile whose primary fanart name
+// differs (e.g. Emby uses backdrop.jpg) would flag the perfectly canonical
+// fanart.jpg, contradicting the fanart_exists rule that read the registry as
+// "fanart present".
+func TestEvaluate_AllImageSlotsPresent_NoImageViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Disable rules that are not under test here -- we are pinning the
+	// path-based image rules' agreement only. Bio/NFO/MBID failures are
+	// expected (no NFO content, no MBID) and would crowd the assertion.
+	for _, id := range []string{
+		RuleNFOExists,
+		RuleNFOHasMBID,
+		RuleBioExists,
+		RuleArtistIDMismatch,
+		RuleDirectoryNameMismatch,
+		RuleNameLanguagePref,
+		RuleMetadataQuality,
+	} {
+		r, err := svc.GetByID(ctx, id)
+		if err != nil {
+			continue // tolerate missing rule IDs across schema variants
+		}
+		r.Enabled = false
+		if err := svc.Update(ctx, r); err != nil {
+			t.Fatalf("disabling rule %s: %v", id, err)
+		}
+	}
+
+	// Activate an Emby-like profile so makeExtraneousImagesChecker exercises
+	// the alternate-primary branch (backdrop.jpg, not fanart.jpg) that
+	// regressed in #1225. Without a non-nil platform service the checker
+	// silently falls back to the default-name path and would never have
+	// flagged the divergence this test pins.
+	platformSvc := platform.NewService(db)
+	embyLike := &platform.Profile{
+		Name:       "test-emby-naming",
+		NFOEnabled: false,
+		NFOFormat:  "kodi",
+		ImageNaming: platform.ImageNaming{
+			Thumb:  []string{"folder.jpg"},
+			Fanart: []string{"backdrop.jpg", "fanart.jpg"},
+			Logo:   []string{"logo.png", "clearlogo.png"},
+			Banner: []string{"banner.jpg"},
+		},
+		IsActive: true,
+	}
+	if err := platformSvc.Create(ctx, embyLike); err != nil {
+		t.Fatalf("creating platform profile: %v", err)
+	}
+	if err := platformSvc.SetActive(ctx, embyLike.ID); err != nil {
+		t.Fatalf("setting profile active: %v", err)
+	}
+
+	engine := NewEngine(svc, db, platformSvc, nil, testLogger())
+
+	dir := t.TempDir()
+	// Canonical filenames spanning Kodi/Plex/Emby/Jellyfin defaults.
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 600, 600)
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "logo.png"), 800, 310)
+	createTestJPEG(t, filepath.Join(dir, "banner.jpg"), 1200, 220)
+	// Add an artist.nfo so any always-on filesystem rule that probes for
+	// nfo/file shape does not flag this artist incidentally.
+	if err := os.WriteFile(filepath.Join(dir, "artist.nfo"), []byte("<artist></artist>"), 0o600); err != nil {
+		t.Fatalf("writing nfo: %v", err)
+	}
+
+	a := &artist.Artist{
+		ID:           "img-compliant",
+		Name:         "All Slots Present",
+		SortName:     "All Slots Present",
+		Path:         dir,
+		ThumbExists:  true,
+		FanartExists: true,
+		FanartCount:  1,
+		LogoExists:   true,
+		BannerExists: true,
+		// Provide dimensions so resolution rules don't fall back to disk
+		// reads in inconsistent ways across CI runners.
+		ThumbWidth:   600,
+		ThumbHeight:  600,
+		FanartWidth:  1920,
+		FanartHeight: 1080,
+		LogoWidth:    800,
+		LogoHeight:   310,
+		BannerWidth:  1200,
+		BannerHeight: 220,
+	}
+
+	result, err := engine.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	// Pin the invariant: zero image-category violations. Bio/NFO/etc. are
+	// out of scope for this test.
+	for _, v := range result.Violations {
+		if v.Category == "image" {
+			t.Errorf("unexpected image-category violation when all canonical slots are on disk: %s -> %s", v.RuleID, v.Message)
+		}
+	}
+
+	// Specifically pin that fanart_exists and extraneous_images do not
+	// fire together on the same artist (the core #1225 acceptance).
+	var sawFanartExists, sawExtraneous bool
+	for _, v := range result.Violations {
+		if v.RuleID == RuleFanartExists {
+			sawFanartExists = true
+		}
+		if v.RuleID == RuleExtraneousImages {
+			sawExtraneous = true
+		}
+	}
+	if sawFanartExists && sawExtraneous {
+		t.Error("fanart_exists and extraneous_images must not both fire when canonical fanart.jpg is present (issue #1225)")
 	}
 }

@@ -648,19 +648,32 @@ var imageExtensions = map[string]bool{
 // artist directory given the active platform profile and the artist's directory
 // path. Used by both the extraneous images checker and fixer to avoid logic
 // duplication.
+//
+// The set is unioned with image.DefaultFileNames so that any cross-profile
+// canonical filename (e.g. fanart.jpg under an Emby profile whose primary is
+// backdrop.jpg) is treated as expected. This keeps the extraneous_images rule
+// from contradicting the <image>_exists rules on the same canonical file when
+// the user's filesystem uses a different platform's naming convention than the
+// active profile (issue #1225). A canonical image is the single source of
+// truth shared between the registry and disk; declaring it extraneous because
+// it does not match the active profile's PRIMARY name is a profile-vs-disk
+// drift, not a Stillwater hygiene problem.
 func expectedImageFiles(profile *platform.Profile, artistPath string) map[string]bool {
 	expected := make(map[string]bool)
 	expected["artist.nfo"] = true
 
 	imageTypes := []string{"thumb", "fanart", "logo", "banner"}
 	for _, imageType := range imageTypes {
+		// Always include DefaultFileNames so cross-profile canonical names
+		// (e.g. backdrop.jpg AND fanart.jpg) are treated as expected. This
+		// prevents extraneous_images from flagging a file that <image>_exists
+		// considers present (issue #1225).
 		var names []string
 		if profile != nil {
 			names = profile.ImageNaming.NamesForType(imageType)
 		}
-		if len(names) == 0 {
-			names = image.FileNamesForType(image.DefaultFileNames, imageType)
-		}
+		// Union with the default canonical patterns regardless of profile.
+		names = append(names, image.FileNamesForType(image.DefaultFileNames, imageType)...)
 		for _, name := range names {
 			expected[strings.ToLower(name)] = true
 			// Also allow alternate extension variants.
