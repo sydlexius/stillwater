@@ -27,6 +27,7 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
 		Filters:   parseFlyoutFilters(req),
+		IDs:       parseIDsParam(req.URL.Query().Get("ids")),
 	}
 	params.Validate()
 
@@ -110,6 +111,35 @@ func intQuery(r *http.Request, key string, def int) int {
 	return n
 }
 
+// parseIDsParam splits the `ids` query parameter into a slice of artist IDs.
+// The bulk-selection "Show selected" affordance (#1227) emits the in-memory
+// selection set as a comma-separated list (`?ids=a,b,c`) so the user can
+// review or paginate across the cross-page selection. Whitespace and empty
+// segments are trimmed; the artist service's Validate() caps the slice
+// length and stays the canonical truncation point. Returns nil for an
+// empty input so an absent param does not allocate.
+func parseIDsParam(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]string, 0, len(parts))
+	for _, p := range parts {
+		// Match the bulk-actions canonical ID shape so malformed tokens
+		// (whitespace, punctuation, oversized strings) cannot round-trip
+		// through pagination chips into the SQL filter. idPattern is
+		// defined in handlers_bulk_actions.go.
+		p = strings.TrimSpace(p)
+		if idPattern.MatchString(p) {
+			ids = append(ids, p)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
 // handleArtistsPage renders the artist list HTML page.
 // GET /artists
 func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
@@ -128,6 +158,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
 		Filters:   parseFlyoutFilters(req),
+		IDs:       parseIDsParam(req.URL.Query().Get("ids")),
 	}
 	params.Validate()
 
@@ -198,6 +229,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			Filter:      params.Filter,
 			View:        view,
 			LibraryID:   params.LibraryID,
+			IDs:         params.IDs,
 		},
 		ComplianceMap:    complianceMap,
 		PlatformPresence: platformPresence,
@@ -209,6 +241,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		LibraryID:        params.LibraryID,
 		View:             view,
 		ProfileName:      r.getActiveProfileName(req.Context()),
+		IDs:              params.IDs,
 	}
 
 	if r.libraryService != nil {

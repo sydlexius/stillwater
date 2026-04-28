@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"testing"
 
@@ -207,6 +208,122 @@ func TestArtistsPage_BulkSelectionSurvivesSort(t *testing.T) {
 				if strings.Contains(line, irrelevant) {
 					t.Errorf("scope-token allowlist must not include %s", irrelevant)
 				}
+			}
+		})
+	}
+}
+
+// TestArtistsPage_IDsFilter pins the "Show selected" affordance contract
+// from issue #1227. When the URL carries `?ids=a,b,c` the artist list must
+// be restricted to exactly those IDs across both views (table + grid), and
+// must remain disjoint from the unrelated artist a row hidden by the filter
+// would otherwise expose. Without this round-trip the cross-page selection
+// still appears "lost" because the user has no way to focus on it.
+func TestArtistsPage_IDsFilter(t *testing.T) {
+	r, _, artistSvc := testRouterWithLibrary(t)
+
+	// Three artists give the test something to filter against. We pick
+	// names that span the alphabet so a sort=name swap is meaningful even
+	// though we are not exercising sort here -- the asserted behavior is
+	// "ids restricts results regardless of sort/page/view".
+	a1 := &artist.Artist{Name: "Alpha Artist"}
+	a2 := &artist.Artist{Name: "Mid Artist"}
+	a3 := &artist.Artist{Name: "Zulu Artist"}
+	for _, a := range []*artist.Artist{a1, a2, a3} {
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating %q: %v", a.Name, err)
+		}
+	}
+
+	for _, view := range []string{"table", "grid"} {
+		t.Run("view="+view, func(t *testing.T) {
+			ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+			// Restrict the list to a1 + a3 only; a2 must be excluded.
+			url := fmt.Sprintf("/artists?view=%s&ids=%s,%s", view, a1.ID, a3.ID)
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			w := httptest.NewRecorder()
+			r.handleArtistsPage(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+
+			// a1 and a3 must be present (their data-artist-id attribute
+			// is the unambiguous markup signal -- search uses HTML
+			// escaping that could otherwise tangle with the chip text).
+			for _, a := range []*artist.Artist{a1, a3} {
+				marker := fmt.Sprintf(`data-artist-id=%q`, a.ID)
+				if !strings.Contains(body, marker) {
+					t.Errorf("response missing %s for %q", marker, a.Name)
+				}
+			}
+			// a2 (Mid Artist) was excluded by the ids filter and must
+			// not appear in the rendered rows.
+			if strings.Contains(body, fmt.Sprintf(`data-artist-id=%q`, a2.ID)) {
+				t.Errorf("response includes %q (id=%s) which was excluded by the ids filter", a2.Name, a2.ID)
+			}
+
+			// The "Showing N selected" chip surfaces server-side when
+			// ids is in effect, so the user can see at a glance that
+			// they are looking at the selection rather than the full
+			// list. We pin the count to keep the chip in sync with the
+			// filter (a stale count would defeat #1227's UX intent).
+			if !strings.Contains(body, "Showing 2 selected artists") {
+				t.Errorf("response missing 'Showing 2 selected artists' chip; body excerpt: %.500s", body)
+			}
+		})
+	}
+}
+
+// TestArtistsPage_IDsFilter_Empty pins that an empty/whitespace-only `ids`
+// param degrades to the unfiltered listing rather than returning zero rows.
+// The handler treats the absent-or-empty case the same so a browser that
+// strips the param on its own (older htmx, manual URL edits) does not show
+// an empty list with an alarming "Showing 0 selected" chip.
+func TestArtistsPage_IDsFilter_Empty(t *testing.T) {
+	r, _, artistSvc := testRouterWithLibrary(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Solo Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
+	cases := []struct {
+		name string
+		// raw is the *unencoded* form for human readability; we URL-encode
+		// before issuing the request so spaces and trailing commas do not
+		// break httptest.NewRequest's URL parser.
+		raw string
+	}{
+		{"absent", ""},
+		{"trailing-comma", ","},
+		{"whitespace-only", " , , "},
+		// "malformed" tokens fail the canonical idPattern check and must
+		// be dropped server-side so they never round-trip into the SQL
+		// IN-clause or the "Showing N selected" chip.
+		{"malformed", "@@,!!"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// "absent" must exercise a genuinely missing ids parameter -- not
+			// ids= with an empty value -- so the handler hits the raw == ""
+			// short-circuit in parseIDsParam rather than the post-split
+			// no-tokens branch. Without this distinction the subtest name
+			// over-promises coverage.
+			url := "/artists?view=table"
+			if tc.name != "absent" {
+				url += "&ids=" + neturl.QueryEscape(tc.raw)
+			}
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			w := httptest.NewRecorder()
+			r.handleArtistsPage(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			if !strings.Contains(body, "Solo Artist") {
+				t.Errorf("empty-ids should not filter rows out; body excerpt: %.500s", body)
+			}
+			if strings.Contains(body, "Showing ") && strings.Contains(body, "selected artist") {
+				t.Errorf("empty-ids should not render a Showing-N-selected chip; body excerpt: %.500s", body)
 			}
 		})
 	}

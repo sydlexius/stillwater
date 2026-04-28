@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // PaginationData holds the state for pagination controls.
@@ -23,6 +24,10 @@ type PaginationData struct {
 	Status         string // compliance status filter (compliant/non_compliant)
 	HealthScoreMin int    // health score range lower bound (0 = unset)
 	HealthScoreMax int    // health score range upper bound (0 = unset)
+	// IDs propagates the bulk-selection "Show selected" filter through
+	// pagination so paging beyond page 1 of the selected set keeps the
+	// filter active. Empty/nil means no IDs filter is in effect.
+	IDs []string
 }
 
 func (p PaginationData) target() string {
@@ -62,6 +67,11 @@ func (p PaginationData) pageURL(page int) string {
 	}
 	if p.HealthScoreMax > 0 {
 		v.Set("health_max", strconv.Itoa(p.HealthScoreMax))
+	}
+	if len(p.IDs) > 0 {
+		// Comma-separated round-trip with the same shape parseIDsParam
+		// expects on the server side.
+		v.Set("ids", strings.Join(p.IDs, ","))
 	}
 	return p.BaseURL + "?" + v.Encode()
 }

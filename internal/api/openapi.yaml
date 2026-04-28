@@ -1720,6 +1720,17 @@ paths:
           in: query
           schema:
             type: string
+        - name: ids
+          in: query
+          description: |
+            Comma-separated list of artist IDs to restrict the result to.
+            Used by the off-page bulk-selection "Show selected" affordance
+            (#1227). Tokens that do not match the canonical ID shape
+            (^[A-Za-z0-9_-]{1,64}$) are dropped server-side. The slice is
+            capped at 1000 (artist.MaxListIDs) so the chip cannot exceed
+            the bulk-action endpoint's hard limit.
+          schema:
+            type: string
         - name: filter_missing_meta
           in: query
           description: Include (+y) or exclude (-y) artists with missing metadata
