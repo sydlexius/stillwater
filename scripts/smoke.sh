@@ -374,13 +374,15 @@ audit_dir_snapshot() {
 # WriteProvenance, exit 1 otherwise. Used to classify unexpected files:
 # present means Stillwater wrote it (internal bug -- renumbering, race);
 # absent means a peer server wrote it (peer write-back, the #1180 signature).
-# Pure bash plus xxd so the audit has no Go-helper or exiftool dependency.
+# Uses raw-byte grep (LC_ALL=C grep -aFq) rather than xxd|grep because xxd
+# wraps output every 16 bytes; a marker that straddles a wrap boundary would
+# be split across lines and missed.
 audit_has_sw_provenance() {
   local f="$1"
   if [[ ! -f "$f" ]]; then
     return 1
   fi
-  xxd "$f" 2>/dev/null | grep -q 'stillwater:v1'
+  LC_ALL=C grep -aFq 'stillwater:v1' "$f"
 }
 
 # Poll for an NFO file's mtime to change (indicates platform wrote it).
@@ -1670,12 +1672,27 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
 
       # Fetch a single thumb. Same URL the Tier 4 fetch already exercises so
       # the audit produces a deterministic write set even on first run.
-      audit_fetch_resp=$(curl -s "${AUTH[@]}" \
+      # Capture the HTTP code: a curl/server failure must SKIP the audit,
+      # not fall through with an empty expected set (which would otherwise
+      # let any post-fetch state PASS as "no unexpected files" -- the
+      # opposite of what an audit must guarantee).
+      audit_fetch_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
         -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
         -H "Content-Type: application/json" \
-        -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}') || audit_fetch_resp=""
+        -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}') || audit_fetch_resp=$'\n000'
+      audit_fetch_body=$(echo "$audit_fetch_resp" | sed '$d')
+      audit_fetch_code=$(echo "$audit_fetch_resp" | tail -n 1)
 
-      audit_saved_thumb=$(echo "$audit_fetch_resp" | jq -r '.saved[]? // empty' 2>/dev/null || true)
+      if [[ "$audit_fetch_code" != "200" ]]; then
+        echo "[SKIP] Writeback audit -- fetch failed (HTTP $audit_fetch_code)"
+        echo ""
+        # Skip the rest of the audit body without exiting the script.
+        audit_skip=1
+      fi
+
+      if [[ "${audit_skip:-0}" -ne 1 ]]; then
+
+      audit_saved_thumb=$(echo "$audit_fetch_body" | jq -r '.saved[]? // empty' 2>/dev/null || true)
 
       # Settle window: peer write-back observed in #1180 arrived within
       # 550ms; the configurable default of 5s is a generous ceiling.
@@ -1684,20 +1701,30 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
       post_snapshot=$(audit_dir_snapshot "$audit_path")
 
       # Build the expected-added set from the API responses. Filenames only;
-      # snapshot lines are "<sha256>\t<filename>" so cut on \t.
+      # snapshot lines are "<sha256>\t<filename>" so cut on \t. Normalize
+      # any path-shaped .saved entries (current handlers return basenames,
+      # but the OpenAPI contract is loose -- "Filenames of images saved" --
+      # and a future change to dest paths must not turn every legitimate
+      # save into an unexpected_added entry).
       expected_added_file=$(mktemp "$SW_RUN_DIR/audit-expected.XXXXXX")
       pre_files_file=$(mktemp "$SW_RUN_DIR/audit-pre.XXXXXX")
       post_files_file=$(mktemp "$SW_RUN_DIR/audit-post.XXXXXX")
 
-      # The endpoint emits one filename per line via jq above; just copy.
-      printf '%s\n' "$audit_saved_thumb" | sed '/^$/d' | sort -u > "$expected_added_file"
+      printf '%s\n' "$audit_saved_thumb" \
+        | sed '/^$/d' \
+        | awk -F/ '{print $NF}' \
+        | sort -u > "$expected_added_file"
       printf '%s\n' "$pre_snapshot"  | awk -F'\t' 'NF==2{print $2}' | sort -u > "$pre_files_file"
       printf '%s\n' "$post_snapshot" | awk -F'\t' 'NF==2{print $2}' | sort -u > "$post_files_file"
 
       # actual_added = post \ pre. unexpected_added = actual_added \ expected_added.
+      # missing_expected = expected_added \ actual_added: files the API said
+      # it saved but that are not actually on disk after the settle window.
+      # This is the symmetric guarantee that "actual equals expected exactly".
       actual_added=$(comm -23 "$post_files_file" "$pre_files_file")
       printf '%s\n' "$actual_added" | sed '/^$/d' | sort -u > "$post_files_file.actual"
       unexpected_added=$(comm -23 "$post_files_file.actual" "$expected_added_file")
+      missing_expected=$(comm -23 "$expected_added_file" "$post_files_file.actual")
 
       # Silent overwrite check: any file present in BOTH pre and post whose
       # sha256 changed and which is not in the expected_added set has been
@@ -1758,13 +1785,25 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
         done <<< "$silent_rewrites"
       fi
 
-      if [[ -z "$unexpected_added" && -z "$silent_rewrites" ]]; then
+      if [[ -n "$missing_expected" ]]; then
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$audit_label -- API reported saved files that did not appear on disk")
+        echo "[FAIL] $audit_label -- expected files missing on disk:"
+        while IFS= read -r m; do
+          [[ -z "$m" ]] && continue
+          echo "         $m"
+        done <<< "$missing_expected"
+      fi
+
+      if [[ -z "$unexpected_added" && -z "$silent_rewrites" && -z "$missing_expected" ]]; then
         expected_count=$(grep -c . "$expected_added_file" 2>/dev/null || echo 0)
-        echo "[PASS] $audit_label -- $expected_count expected files, 0 unexpected, 0 silent rewrites"
+        echo "[PASS] $audit_label -- $expected_count expected files, 0 unexpected, 0 silent rewrites, 0 missing"
         PASS=$((PASS + 1))
       fi
 
       rm -f "$expected_added_file" "$pre_files_file" "$post_files_file" "$post_files_file.actual"
+
+      fi  # audit_skip guard
     fi
   fi
 

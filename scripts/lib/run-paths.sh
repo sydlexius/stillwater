@@ -48,10 +48,16 @@ if [ -z "$sw_worktree_basename" ] || [ "$sw_worktree_basename" = "/" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
+# Append a short hash of the absolute worktree path so two checkouts that
+# happen to share a basename (e.g. `stillwater` checked out in two parent
+# directories) do not collide on the same SW_RUN_DIR. The hash keeps the
+# basename for human readability while making the path component unique.
+sw_worktree_id="$(printf '%s' "$sw_worktree_root" | shasum -a 256 | awk '{print substr($1,1,12)}')"
+
 SW_RUN_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/stillwater-run"
-SW_RUN_DIR="$SW_RUN_ROOT/$sw_worktree_basename"
+SW_RUN_DIR="$SW_RUN_ROOT/${sw_worktree_basename}-${sw_worktree_id}"
 mkdir -p "$SW_RUN_DIR"
 
-unset sw_worktree_root sw_worktree_basename
+unset sw_worktree_root sw_worktree_basename sw_worktree_id
 
 export SW_RUN_ROOT SW_RUN_DIR
