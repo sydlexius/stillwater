@@ -51,14 +51,19 @@ func hasQualifyingConflictConnection(conns []connection.Connection) bool {
 //     and forth without the peer state having changed. The value is
 //     advisory; the body still re-renders on every transition because peer
 //     reachability can change between steps.
-//   - On detector misconfiguration returns 204 (matches the persistent
-//     banner endpoint contract) so the OOBE page can render an empty
-//     "all clear" without errors.
+//   - On detector misconfiguration renders an empty clean-state body so
+//     the OOBE page sees a real swap (HTMX skips swap and afterSwap on
+//     204 by default, which would leave the spinner up and the gate
+//     stuck closed). The clean body sets ob-conflict-block-state to "0"
+//     so Continue unlocks via the existing afterSwap sync.
 //
 // POST /api/v1/onboarding/conflict-step
 func (r *Router) handlePostOnboardingConflictStep(w http.ResponseWriter, req *http.Request) {
 	if r.conflictDetector == nil {
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := templates.OnboardingConflictBody(templates.OnboardingConflictView{}).Render(req.Context(), w); err != nil {
+			r.logger.Warn("rendering onboarding conflict body (no detector) failed", "error", err)
+		}
 		return
 	}
 	if req.URL.Query().Get("refresh") == "1" {

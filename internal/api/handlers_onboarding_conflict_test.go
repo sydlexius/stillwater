@@ -47,13 +47,25 @@ func TestHasQualifyingConflictConnection(t *testing.T) {
 	}
 }
 
-func TestHandleGetOnboardingConflictStep_204WhenDetectorMissing(t *testing.T) {
+func TestHandleGetOnboardingConflictStep_RendersCleanWhenDetectorMissing(t *testing.T) {
+	// When the detector is unavailable we render the empty clean body
+	// rather than 204. HTMX skips swap+afterSwap on 204 by default, which
+	// would leave the OOBE spinner up forever and the Continue gate stuck
+	// at "1". The clean body sets ob-conflict-block-state to "0" so the
+	// existing afterSwap sync clears the gate.
 	r := &Router{logger: testDiscardLogger()}
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
 	r.handlePostOnboardingConflictStep(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Errorf("status = %d, want 204", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="ob-conflict-block-state"`) && !strings.Contains(body, `id=\"ob-conflict-block-state\"`) {
+		t.Errorf("expected hidden gate input in body; got: %s", body)
+	}
+	if !strings.Contains(body, "No conflicts detected.") {
+		t.Errorf("expected clean-state copy in body; got: %s", body)
 	}
 }
 

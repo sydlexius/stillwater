@@ -566,9 +566,21 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					// await the recompute and avoid landing on a stale
 					// conflictPreflightVisible after a just-saved library
 					// or qualifying connection.
+					//
+					// On non-2xx we throw so the .catch below fires and the
+					// previously-cached visibility is preserved. A naive
+					// `r.ok ? r.json() : []` would treat a transient 401/5xx
+					// as "no libraries / no connections" and hide step 5,
+					// silently dropping the user out of the pre-flight.
 					return Promise.all([
-						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}),
-						fetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];})
+						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){
+							if (!r.ok) throw new Error('libraries: HTTP ' + r.status);
+							return r.json();
+						}),
+						fetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){
+							if (!r.ok) throw new Error('connections: HTTP ' + r.status);
+							return r.json();
+						})
 					]).then(function(results) {
 						var libs = results[0] || [];
 						var conns = results[1] || [];
@@ -688,12 +700,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					// Step 5 (conflict pre-flight): trigger an HTMX-driven refresh
 					// of the body partial each time the user lands here so we
 					// always show fresh ledger data (peer state may have changed
-					// since OOBE last loaded). The hidden #ob-conflict-block
-					// input is set by the rendered body to "1" when the
-					// round-trip (red) state is active; updateConflictGate()
-					// disables Next while it is "1".
+					// since OOBE last loaded). triggerConflictRefresh re-closes
+					// the gate before the request fires so a fast-clicking user
+					// cannot bypass a fresh round-trip block during the in-flight
+					// probe (the input would otherwise still hold the prior
+					// render's "0").
 					if (step === 5) {
-						htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+						triggerConflictRefresh();
 					}
 					updateConflictGate();
 
@@ -762,6 +775,21 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				});
 
+				// triggerConflictRefresh re-closes the Continue gate before
+				// firing the conflict-step request. The hidden input is the
+				// only thing updateConflictGate consults, and the rendered
+				// body only mutates it via the htmx:afterSwap sync. Without
+				// resetting it here, every refresh path (step-5 re-entry,
+				// retry button) would leave Continue enabled in the window
+				// between trigger and swap-in, racing a fresh round-trip
+				// block.
+				function triggerConflictRefresh() {
+					var blockEl = document.getElementById('ob-conflict-block');
+					if (blockEl) blockEl.value = '1';
+					updateConflictGate();
+					htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+				}
+
 				// Error path for the conflict-step HTMX request. Wired via
 				// hx-on::response-error and hx-on::send-error on
 				// #ob-conflict-body. Without this, a non-2xx response or a
@@ -791,7 +819,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					btn.addEventListener('click', function() {
 						btn.disabled = true;
 						if (checkingText) btn.textContent = checkingText;
-						htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+						triggerConflictRefresh();
 					});
 					wrap.appendChild(btn);
 					body.replaceChildren(wrap);
