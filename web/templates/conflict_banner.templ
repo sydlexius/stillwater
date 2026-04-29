@@ -366,20 +366,15 @@ type OnboardingConflictView struct {
 // Continue button.
 templ OnboardingConflictBody(v OnboardingConflictView) {
 	<!--
-		The hidden ob-conflict-block-state input is read by updateConflictGate()
-		in onboarding.templ. "1" means Continue is disabled (round-trip), empty
-		means Continue is enabled. We use a sibling node rather than mutating
-		#ob-conflict-block directly so HTMX innerHTML swaps replace the value
-		atomically with the body.
+		The hidden ob-conflict-block-state input is read by the body-level
+		htmx:afterSwap listener in onboarding.templ, which copies its value
+		into #ob-conflict-block (the gate input that updateConflictGate
+		watches). We use a sibling node rather than mutating
+		#ob-conflict-block directly so HTMX innerHTML swaps replace the
+		value atomically with the body. Sync lives in a single place to
+		avoid drift between paths.
 	-->
-	<input type="hidden" id="ob-conflict-block-state" value={ obConflictBlockValue(v.Blocking) } hx-on:htmx:after-swap="(function(){var s=document.getElementById('ob-conflict-block-state');var t=document.getElementById('ob-conflict-block');if(s&&t){t.value=s.value;}})()"/>
-	<script>
-		(function(){
-			var s = document.getElementById('ob-conflict-block-state');
-			var t = document.getElementById('ob-conflict-block');
-			if (s && t) { t.value = s.value; }
-		})();
-	</script>
+	<input type="hidden" id="ob-conflict-block-state" value={ obConflictBlockValue(v.Blocking) }/>
 	if v.ProbeError != "" {
 		@onboardingConflictProbeError(v.ProbeError)
 	} else {

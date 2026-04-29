@@ -70,10 +70,14 @@ func (r *Router) handlePostOnboardingConflictStep(w http.ResponseWriter, req *ht
 	// may have just enabled the connection in step 4.
 	ledger := r.conflictDetector.Refresh(req.Context())
 
+	probeErr := aggregateProbeError(ledger)
 	view := templates.OnboardingConflictView{
-		Banner:     conflictBannerView(ledger),
-		Blocking:   ledger.BannerState() == "round_trip",
-		ProbeError: aggregateProbeError(ledger),
+		Banner: conflictBannerView(ledger),
+		// When a probe error is shown the body renders the non-blocking
+		// warning panel; clear Blocking so #ob-conflict-block does not
+		// keep Continue disabled in an advisory state.
+		Blocking:   probeErr == "" && ledger.BannerState() == "round_trip",
+		ProbeError: probeErr,
 	}
 
 	// Persist a completion marker so future logic can detect that the

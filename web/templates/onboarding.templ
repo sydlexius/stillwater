@@ -546,6 +546,41 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 				}
 
+				// recomputeConflictPreflight refreshes the cached
+				// conflictPreflightVisible flag by re-reading libraries and
+				// connections from the server. The initial value is snapshotted
+				// from data-conflict-preflight at page load, but in-session
+				// changes (adding the first library, saving the first qualifying
+				// connection) would otherwise leave it stale and the user would
+				// either skip step 5 entirely or land on it without prerequisites.
+				// Mirrors the server gating in handlers.go (len(libs) > 0 AND a
+				// qualifying enabled emby/jellyfin/lidarr connection).
+				function recomputeConflictPreflight() {
+					var hdrs = {'X-CSRF-Token': getCsrfToken()};
+					Promise.all([
+						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}),
+						fetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];})
+					]).then(function(results) {
+						var libs = results[0] || [];
+						var conns = results[1] || [];
+						var hasQualifying = conns.some(function(c) {
+							return c && c.enabled && (c.type === 'emby' || c.type === 'jellyfin' || c.type === 'lidarr');
+						});
+						conflictPreflightVisible = libs.length > 0 && hasQualifying;
+						// Mirror to the data attribute so any later reader (and
+						// goToStep on a fresh visit) sees the up-to-date value.
+						document.body.dataset.conflictPreflight = conflictPreflightVisible ? 'true' : 'false';
+						var progress = document.getElementById('progress-conflict');
+						var line = document.getElementById('step-line-5');
+						if (progress) progress.classList.toggle('hidden', !conflictPreflightVisible);
+						if (line) line.classList.toggle('hidden', !conflictPreflightVisible);
+					}).catch(function() {
+						// Leave the cached value in place on transient failures;
+						// goToStep will still try to render step 5 if the user
+						// navigates there manually.
+					});
+				}
+
 				function removeFromReviewQueue(artistId) {
 					for (var i = 0; i < discoveryReviewQueue.length; i++) {
 						if (discoveryReviewQueue[i].artist_id === artistId) {
@@ -604,9 +639,18 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						}
 						if (line) {
-							line.className = i < step
+							var base = i < step
 								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'
 								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';
+							// Step 5's connector is conditionally hidden by
+							// the template when the conflict pre-flight is
+							// not gated in. Reassigning className here would
+							// drop that hidden class, leaving a dangling
+							// connector before the discovery dot.
+							if (i === 5 && !conflictPreflightVisible) {
+								base = 'hidden ' + base;
+							}
+							line.className = base;
 						}
 					}
 
@@ -686,9 +730,14 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 
 				// Re-evaluate the gate whenever the conflict body finishes
 				// swapping (initial load, manual re-check, or post-toggle
-				// refresh from the per-connection CTA).
+				// refresh from the per-connection CTA). Also mirror the
+				// rendered ob-conflict-block-state into the persistent
+				// #ob-conflict-block input that updateConflictGate watches.
 				document.body.addEventListener('htmx:afterSwap', function(evt) {
 					if (evt.detail && evt.detail.target && evt.detail.target.id === 'ob-conflict-body') {
+						var s = document.getElementById('ob-conflict-block-state');
+						var t = document.getElementById('ob-conflict-block');
+						if (s && t) { t.value = s.value; }
 						updateConflictGate();
 					}
 				});
@@ -773,6 +822,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						if (!res.ok) throw new Error('HTTP ' + res.status);
 						return res.json();
 					}).then(function(libs) {
+						// Library count contributes to step-5 gating; refresh
+						// the cached visibility flag whenever the list mutates.
+						recomputeConflictPreflight();
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
 							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
@@ -1279,6 +1331,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (success) success.classList.remove('hidden');
 					if (btn) btn.classList.add('hidden');
 					document.body.dispatchEvent(new Event('clobberRecheck'));
+					// Saving an emby/jellyfin/lidarr connection is the other half
+					// of the step-5 gate; refresh the cached flag so the user
+					// won't be skipped past the conflict pre-flight.
+					recomputeConflictPreflight();
 					if (dot) {
 						dot.classList.remove('bg-gray-400', 'dark:bg-gray-500');
 						dot.classList.add('bg-green-500');
