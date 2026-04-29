@@ -348,15 +348,24 @@ get_mtime() {
 # files in this set, so widening the pattern would only add false positives.
 AUDIT_IMAGE_PATTERN='^(backdrop|fanart|poster|logo|banner|thumb|clearart|disc|landscape)[0-9]*\.(jpg|jpeg|png)$'
 
-# audit_dir_snapshot DIR -> stdout: lines of "<sha256>\t<filename>" for every
-# image-pattern file in DIR. Returns 0 even when DIR is empty so the caller
-# can diff snapshots without special-casing first-run.
+# audit_dir_snapshot DIR -> stdout: lines of "<mtime>\t<size>\t<sha256>\t<filename>"
+# for every image-pattern file in DIR. The four fields match the evidence
+# objective in #1183: mtime + size + sha256 are the inputs needed to detect
+# silent rewrites (sha changes) AND mismatched-mtime spoofing (peer write
+# back leaves a fresh mtime on a copied file). Returns 0 even when DIR is
+# empty so the caller can diff snapshots without special-casing first-run.
 audit_dir_snapshot() {
   local dir="$1"
   if [[ ! -d "$dir" ]]; then
     return 0
   fi
-  local f base hash
+  # Portable stat: BSD/macOS uses -f, GNU uses -c.
+  local stat_mtime_fmt='-f %m' stat_size_fmt='-f %z'
+  if stat --version &>/dev/null; then
+    stat_mtime_fmt='-c %Y'
+    stat_size_fmt='-c %s'
+  fi
+  local f base hash mtime size
   for f in "$dir"/*; do
     [[ -f "$f" ]] || continue
     base=$(basename "$f")
@@ -365,7 +374,12 @@ audit_dir_snapshot() {
     fi
     hash=$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')
     [[ -n "$hash" ]] || continue
-    printf '%s\t%s\n' "$hash" "$base"
+    # shellcheck disable=SC2086
+    mtime=$(stat $stat_mtime_fmt "$f" 2>/dev/null)
+    # shellcheck disable=SC2086
+    size=$(stat $stat_size_fmt "$f" 2>/dev/null)
+    [[ -n "$mtime" && -n "$size" ]] || continue
+    printf '%s\t%s\t%s\t%s\n' "$mtime" "$size" "$hash" "$base"
   done
 }
 
@@ -1667,14 +1681,22 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
     else
       echo "  Audit path: $audit_path"
       settle="${SW_WRITEBACK_SETTLE:-5}"
+      # Validate the tunable before sleep consumes it. Non-numeric input
+      # (typo, accidental shell expansion) would otherwise crash the script
+      # under set -e and turn a bad env var into a hard stop.
+      if ! [[ "$settle" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        echo "[WARN] SW_WRITEBACK_SETTLE='$settle' is not numeric; falling back to default 5"
+        settle=5
+      fi
 
       pre_snapshot=$(audit_dir_snapshot "$audit_path")
 
-      # Fetch a single thumb. Same URL the Tier 4 fetch already exercises so
-      # the audit produces a deterministic write set even on first run.
-      # Capture the HTTP code: a curl/server failure must SKIP the audit,
-      # not fall through with an empty expected set (which would otherwise
-      # let any post-fetch state PASS as "no unexpected files" -- the
+      # Trigger deterministic writes on BOTH the single-image fetch path
+      # and the multi-URL fanart batch path. #1180's write-back duplication
+      # was observed on fanart, so a thumb-only audit would miss the actual
+      # regression class. Capture HTTP codes so transport failures SKIP
+      # cleanly rather than collapsing into an empty expected set (which
+      # would let any post-fetch state PASS as "no unexpected files" -- the
       # opposite of what an audit must guarantee).
       audit_fetch_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
         -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
@@ -1683,10 +1705,26 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
       audit_fetch_body=$(echo "$audit_fetch_resp" | sed '$d')
       audit_fetch_code=$(echo "$audit_fetch_resp" | tail -n 1)
 
+      audit_batch_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+        -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fanart/fetch-batch" \
+        -H "Content-Type: application/json" \
+        -d '{"urls":[
+          "https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg",
+          "https://upload.wikimedia.org/wikipedia/commons/c/c1/A-ha_in_2010.jpg",
+          "https://upload.wikimedia.org/wikipedia/commons/8/89/A-ha_in_Sopot_2018.jpg",
+          "https://upload.wikimedia.org/wikipedia/en/3/30/A-ha_-_Hunting_High_and_Low.png"
+        ]}') || audit_batch_resp=$'\n000'
+      audit_batch_body=$(echo "$audit_batch_resp" | sed '$d')
+      audit_batch_code=$(echo "$audit_batch_resp" | tail -n 1)
+
       if [[ "$audit_fetch_code" != "200" ]]; then
-        echo "[SKIP] Writeback audit -- fetch failed (HTTP $audit_fetch_code)"
+        echo "[SKIP] Writeback audit -- thumb fetch failed (HTTP $audit_fetch_code)"
         echo ""
         # Skip the rest of the audit body without exiting the script.
+        audit_skip=1
+      elif [[ "$audit_batch_code" != "200" ]]; then
+        echo "[SKIP] Writeback audit -- fanart batch fetch failed (HTTP $audit_batch_code)"
+        echo ""
         audit_skip=1
       fi
 
@@ -1698,8 +1736,16 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
       if [[ "${audit_skip:-0}" -ne 1 ]]; then
         if ! audit_saved_thumb=$(echo "$audit_fetch_body" | jq -er '.saved | arrays | .[]' 2>/dev/null); then
           FAIL=$((FAIL + 1))
-          FAILURES+=("Writeback audit -- fetch response missing valid .saved array")
-          echo "[FAIL] Writeback audit -- fetch response missing valid .saved array"
+          FAILURES+=("Writeback audit -- thumb fetch response missing valid .saved array")
+          echo "[FAIL] Writeback audit -- thumb fetch response missing valid .saved array"
+          audit_skip=1
+        fi
+      fi
+      if [[ "${audit_skip:-0}" -ne 1 ]]; then
+        if ! audit_saved_batch=$(echo "$audit_batch_body" | jq -er '.saved | arrays | .[]' 2>/dev/null); then
+          FAIL=$((FAIL + 1))
+          FAILURES+=("Writeback audit -- fanart batch fetch response missing valid .saved array")
+          echo "[FAIL] Writeback audit -- fanart batch fetch response missing valid .saved array"
           audit_skip=1
         fi
       fi
@@ -1712,22 +1758,23 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
 
       post_snapshot=$(audit_dir_snapshot "$audit_path")
 
-      # Build the expected-added set from the API responses. Filenames only;
-      # snapshot lines are "<sha256>\t<filename>" so cut on \t. Normalize
-      # any path-shaped .saved entries (current handlers return basenames,
-      # but the OpenAPI contract is loose -- "Filenames of images saved" --
-      # and a future change to dest paths must not turn every legitimate
-      # save into an unexpected_added entry).
+      # Build the expected-added set from the union of both fetch responses.
+      # Snapshot lines are "<mtime>\t<size>\t<sha256>\t<filename>" so the
+      # filename column is field 4 (see the awk parses below). Normalize any
+      # path-shaped .saved entries (current handlers return basenames, but
+      # the OpenAPI contract is loose - "Filenames of images saved" - and a
+      # future change to dest paths must not turn every legitimate save
+      # into an unexpected_added entry).
       expected_added_file=$(mktemp "$SW_RUN_DIR/audit-expected.XXXXXX")
       pre_files_file=$(mktemp "$SW_RUN_DIR/audit-pre.XXXXXX")
       post_files_file=$(mktemp "$SW_RUN_DIR/audit-post.XXXXXX")
 
-      printf '%s\n' "$audit_saved_thumb" \
+      { printf '%s\n' "$audit_saved_thumb"; printf '%s\n' "$audit_saved_batch"; } \
         | sed '/^$/d' \
         | awk -F/ '{print $NF}' \
         | sort -u > "$expected_added_file"
-      printf '%s\n' "$pre_snapshot"  | awk -F'\t' 'NF==2{print $2}' | sort -u > "$pre_files_file"
-      printf '%s\n' "$post_snapshot" | awk -F'\t' 'NF==2{print $2}' | sort -u > "$post_files_file"
+      printf '%s\n' "$pre_snapshot"  | awk -F'\t' 'NF==4{print $4}' | sort -u > "$pre_files_file"
+      printf '%s\n' "$post_snapshot" | awk -F'\t' 'NF==4{print $4}' | sort -u > "$post_files_file"
 
       # actual_added = post \ pre. unexpected_added = actual_added \ expected_added.
       # missing_expected = expected_added \ post: files the API said it
@@ -1748,9 +1795,9 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
       # server overwrites a Stillwater-placed file in addition to the
       # additive duplication case the directory-delta catches.
       silent_rewrites=""
-      while IFS=$'\t' read -r post_hash post_name; do
+      while IFS=$'\t' read -r _post_mtime _post_size post_hash post_name; do
         [[ -z "$post_name" ]] && continue
-        pre_hash=$(printf '%s\n' "$pre_snapshot" | awk -F'\t' -v n="$post_name" '$2==n{print $1; exit}')
+        pre_hash=$(printf '%s\n' "$pre_snapshot" | awk -F'\t' -v n="$post_name" '$4==n{print $3; exit}')
         if [[ -n "$pre_hash" && "$pre_hash" != "$post_hash" ]]; then
           if ! grep -Fxq "$post_name" "$expected_added_file"; then
             silent_rewrites+="$post_name"$'\n'
@@ -1766,14 +1813,14 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
         echo "[FAIL] $audit_label -- unexpected files appeared:"
         while IFS= read -r u; do
           [[ -z "$u" ]] && continue
-          u_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$u" '$2==n{print $1; exit}')
+          u_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$u" '$4==n{print $3; exit}')
           # Cross-reference: is this file byte-identical to anything we asked
           # for? That match is the #1180 fingerprint -- the peer wrote a
           # rename of our file, not a different image.
           dup_of=""
           while IFS= read -r exp; do
             [[ -z "$exp" ]] && continue
-            exp_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$exp" '$2==n{print $1; exit}')
+            exp_hash=$(printf '%s\n' "$post_snapshot" | awk -F'\t' -v n="$exp" '$4==n{print $3; exit}')
             if [[ -n "$exp_hash" && "$exp_hash" == "$u_hash" ]]; then
               dup_of="$exp"
               break

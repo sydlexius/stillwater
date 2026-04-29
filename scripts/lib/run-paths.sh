@@ -25,7 +25,10 @@
 #
 # Exports:
 #   SW_RUN_ROOT  -- ${XDG_CACHE_HOME:-$HOME/.cache}/stillwater-run
-#   SW_RUN_DIR   -- $SW_RUN_ROOT/<worktree-basename>, mkdir -p applied
+#   SW_RUN_DIR   -- $SW_RUN_ROOT/<worktree-basename>-<id>, mkdir -p applied
+#                   and chmod 700 applied. <id> is a 12-char sha256 prefix
+#                   of the absolute worktree path so checkouts that share
+#                   a basename do not collide on the same artifact dir.
 #
 # Worktree basename:
 #   - Uses `git rev-parse --show-toplevel` so a script invoked from a
