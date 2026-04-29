@@ -1,0 +1,195 @@
+package templates
+
+// ForeignFileRow is one row rendered in the foreign-files list page.
+// Constructed by the API handler from foreign.Entry; kept on the templates
+// side so the template never imports internal/foreign and the test surface
+// for rendering stays narrow.
+type ForeignFileRow struct {
+	ID         string
+	ArtistID   string
+	ArtistName string
+	FilePath   string
+	FileName   string
+	SizeBytes  int64
+	DetectedAt string
+}
+
+// ForeignFilesPageView is the view model for /settings/foreign-files. Count
+// is duplicated from len(Rows) so the empty-state copy can be selected
+// without recomputing in the template.
+type ForeignFilesPageView struct {
+	Rows  []ForeignFileRow
+	Count int
+}
+
+// ForeignFilesPage renders the list of detected foreign files with per-row
+// Allowlist (artist-scoped) and Delete actions, plus a top-of-page Dismiss
+// button that bulk-allowlists every active entry globally. The page is
+// admin-only and reachable from /settings/foreign-files.
+templ ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) {
+	@Layout("Foreign Files", assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">Foreign image files</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Files matching media-server image-naming patterns that lack Stillwater provenance.
+					Allowlist the ones you want to keep, delete the ones you do not, or dismiss to
+					allowlist them all globally.
+				</p>
+				<div class="mt-3 flex flex-wrap items-center gap-3">
+					<a class="text-sm text-blue-600 dark:text-blue-400 underline-offset-2 hover:underline"
+					   href={ assets.BasePath + "/settings/foreign-files/allowlist" }>Manage allowlist</a>
+					if view.Count > 0 {
+						<button
+							type="button"
+							class="ml-auto px-3 py-1.5 rounded-md bg-slate-700 text-white text-sm hover:bg-slate-600"
+							hx-post="/api/v1/foreign-files/dismiss"
+							hx-confirm="Allowlist every detected foreign file globally?"
+							hx-target="#foreign-files-table"
+							hx-swap="outerHTML"
+						>Dismiss (allowlist all)</button>
+					}
+				</div>
+			</div>
+			@ForeignFilesTable(view)
+		</div>
+	}
+}
+
+// ForeignFilesTable is the table fragment so HTMX swaps can update only the
+// rows after a per-row Allowlist or Delete completes. Empty state renders an
+// inline notice so the user is not left staring at an empty card.
+templ ForeignFilesTable(view ForeignFilesPageView) {
+	<div id="foreign-files-table" class="sw-card rounded-lg p-0 overflow-hidden">
+		if view.Count == 0 {
+			<div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				No foreign image files detected. Stillwater scans your library on a fixed cadence;
+				new entries will appear here automatically.
+			</div>
+		} else {
+			<table class="min-w-full text-sm">
+				<thead class="bg-gray-50 dark:bg-gray-800/50">
+					<tr>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Artist</th>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">File</th>
+						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">Size</th>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Detected</th>
+						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">Actions</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+					for _, r := range view.Rows {
+						<tr id={ "foreign-row-" + r.ID }>
+							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ r.ArtistName }</td>
+							<td class="px-4 py-2 font-mono text-xs text-gray-700 dark:text-gray-300" title={ r.FilePath }>{ r.FileName }</td>
+							<td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{ humanBytes(r.SizeBytes) }</td>
+							<td class="px-4 py-2 text-gray-600 dark:text-gray-400">{ r.DetectedAt }</td>
+							<td class="px-4 py-2 text-right">
+								<button
+									type="button"
+									class="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs hover:bg-blue-100"
+									hx-post={ "/api/v1/foreign-files/" + r.ID + "/allowlist" }
+									hx-target="#foreign-files-table"
+									hx-swap="outerHTML"
+								>Allowlist</button>
+								<button
+									type="button"
+									class="ml-1 px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs hover:bg-rose-100"
+									hx-delete={ "/api/v1/foreign-files/" + r.ID + "/file" }
+									hx-confirm="Permanently delete this file from disk?"
+									hx-target="#foreign-files-table"
+									hx-swap="outerHTML"
+								>Delete</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+// ForeignAllowlistRow is one entry in the allowlist management page.
+type ForeignAllowlistRow struct {
+	ID         string
+	Scope      string
+	ArtistID   string
+	ArtistName string
+	FileName   string
+	Note       string
+	CreatedAt  string
+}
+
+// ForeignAllowlistPageView models /settings/foreign-files/allowlist.
+type ForeignAllowlistPageView struct {
+	Rows []ForeignAllowlistRow
+}
+
+// ForeignAllowlistPage renders the permanent allowlist with per-row Remove.
+// Removing a row makes the file detectable on the next scan.
+templ ForeignAllowlistPage(assets AssetPaths, view ForeignAllowlistPageView) {
+	@Layout("Foreign Files Allowlist", assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">Foreign-file allowlist</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Files listed here are permanently suppressed from foreign-file detection.
+					Remove a row to let it be detected again.
+				</p>
+				<div class="mt-3">
+					<a class="text-sm text-blue-600 dark:text-blue-400 underline-offset-2 hover:underline"
+					   href={ assets.BasePath + "/settings/foreign-files" }>Back to detected files</a>
+				</div>
+			</div>
+			@ForeignAllowlistTable(view)
+		</div>
+	}
+}
+
+// ForeignAllowlistTable is the swappable fragment for the allowlist page.
+templ ForeignAllowlistTable(view ForeignAllowlistPageView) {
+	<div id="foreign-allowlist-table" class="sw-card rounded-lg p-0 overflow-hidden">
+		if len(view.Rows) == 0 {
+			<div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				The allowlist is empty.
+			</div>
+		} else {
+			<table class="min-w-full text-sm">
+				<thead class="bg-gray-50 dark:bg-gray-800/50">
+					<tr>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Scope</th>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Artist</th>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">File name</th>
+						<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Added</th>
+						<th class="px-4 py-2 text-right font-medium text-gray-700 dark:text-gray-300">Actions</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+					for _, r := range view.Rows {
+						<tr id={ "allowlist-row-" + r.ID }>
+							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ r.Scope }</td>
+							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">
+								if r.Scope == "global" {
+									<span class="text-gray-500 dark:text-gray-400 italic">(all artists)</span>
+								} else {
+									{ r.ArtistName }
+								}
+							</td>
+							<td class="px-4 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">{ r.FileName }</td>
+							<td class="px-4 py-2 text-gray-600 dark:text-gray-400">{ r.CreatedAt }</td>
+							<td class="px-4 py-2 text-right">
+								<button
+									type="button"
+									class="px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 text-xs hover:bg-rose-100"
+									hx-delete={ "/api/v1/foreign-file-allowlist/" + r.ID }
+									hx-target="#foreign-allowlist-table"
+									hx-swap="outerHTML"
+								>Remove</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}

@@ -1,10 +1,10 @@
 package templates
 
 // ConflictBannerView is the view model for the conflict gating banner,
-// covering both write-back and round-trip overlap states.
-// State is one of "clean", "image_only", "nfo_only", "both", "round_trip"
-// and maps to the banner variants A/B/C/D from the approved mockup at
-// /tmp/stillwater-conflict-banner-mockup.html. The banner renders above all
+// covering write-back, round-trip overlap, and foreign-file warning states.
+// State is one of "clean", "image_only", "nfo_only", "both", "round_trip",
+// "foreign_files" and maps to the banner variants A/B/C/D plus the new E
+// (slate/blue) variant introduced in #1185. The banner renders above all
 // page content regardless of the viewer's admin role, so the visual
 // treatment must stand on its own without relying on the sidebar chrome.
 type ConflictBannerView struct {
@@ -15,6 +15,10 @@ type ConflictBannerView struct {
 	// CTA ("Let Stillwater manage it" in states A and B). For state C the
 	// CTA flips every contributing connection via a dedicated endpoint.
 	PrimaryConnectionID string
+	// ForeignFileCount is the number of unallowlisted foreign-file rows
+	// currently recorded; non-zero drives the slate/blue warning banner
+	// (state E) when no higher-severity state is active.
+	ForeignFileCount int
 }
 
 // ConflictBannerConn is one connection that contributes to the banner's
@@ -126,6 +130,8 @@ templ ConflictBannerContent(v ConflictBannerView) {
 			@conflictBannerWarn(v, "nfo")
 		case "both":
 			@conflictBannerWarn(v, "both")
+		case "foreign_files":
+			@conflictBannerForeignFiles(v)
 		default:
 			@conflictBannerClean()
 	}
@@ -374,5 +380,50 @@ templ conflictBannerClean() {
 				} catch (e) {}
 			})();
 		</script>
+	</div>
+}
+
+// conflictBannerForeignFiles renders the slate/blue state E bar shown when
+// the foreign-file scanner detected unallowlisted media-server-named files
+// without Stillwater EXIF provenance. Deliberately not amber/red: nothing
+// is gated, this is a heads-up. "Review" links to the management page; the
+// "Dismiss" button bulk-allowlists every currently-active entry globally.
+templ conflictBannerForeignFiles(v ConflictBannerView) {
+	@clearCleanDismissal()
+	<div
+		id="sw-conflict-foreign"
+		class="bg-gradient-to-r from-slate-700/55 to-blue-700/40 dark:from-slate-700/55 dark:to-blue-700/40 backdrop-blur-md border-b border-slate-300/25 px-6 py-3"
+		role="status"
+		aria-label="Foreign image files notice"
+		data-conflict-state="foreign_files"
+	>
+		<div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
+			<div class="flex items-center gap-3 min-w-0 flex-1">
+				<span class="inline-block h-2 w-2 rounded-full bg-blue-300 ring-4 ring-blue-300/20 shrink-0" aria-hidden="true"></span>
+				<div class="min-w-0">
+					<div class="font-semibold text-slate-100">
+						Foreign image files detected
+						<span class="font-normal text-slate-200/90"> { foreignFilesSummary(v.ForeignFileCount) }</span>
+					</div>
+					<div class="text-xs text-slate-200/70 mt-0.5">
+						These files match media-server naming patterns but do not carry Stillwater provenance. Review them on the foreign-files page or dismiss to allowlist all.
+					</div>
+				</div>
+			</div>
+			<div class="flex items-center gap-2 shrink-0">
+				<a
+					href="/settings/foreign-files"
+					class="px-3 py-1.5 rounded-md bg-blue-300 text-slate-900 text-sm font-medium hover:bg-white"
+				>Review</a>
+				<button
+					type="button"
+					class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-slate-100"
+					hx-post="/api/v1/foreign-files/dismiss"
+					hx-target="#conflict-banner"
+					hx-swap="innerHTML"
+					hx-disabled-elt="this"
+				>Dismiss (allowlist all)</button>
+			</div>
+		</div>
 	</div>
 }

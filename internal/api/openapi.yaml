@@ -1338,6 +1338,58 @@ components:
           type: boolean
           description: When true, the updater periodically checks for new releases in the background.
 
+    ForeignFileEntry:
+      type: object
+      description: |
+        One row in the foreign_files ledger. A foreign file is an image whose
+        basename matches a media-server naming pattern but whose EXIF
+        ImageDescription does not carry the Stillwater provenance tag.
+      properties:
+        id:
+          type: string
+        artist_id:
+          type: string
+        artist_name:
+          type: string
+        file_path:
+          type: string
+          description: Absolute path on disk; surfaced verbatim so the UI can show it.
+        file_name:
+          type: string
+          description: Basename, e.g. "backdrop.jpg".
+        size_bytes:
+          type: integer
+          format: int64
+        detected_at:
+          type: string
+          format: date-time
+      required: [id, artist_id, artist_name, file_path, file_name, size_bytes, detected_at]
+
+    ForeignAllowlistEntry:
+      type: object
+      description: |
+        One row in the foreign_file_allowlist table. scope=global matches
+        every artist (artist_id is empty); scope=artist matches a specific
+        artist (artist_id required).
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+          enum: [global, artist]
+        artist_id:
+          type: string
+        artist_name:
+          type: string
+        file_name:
+          type: string
+        note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, scope, file_name, note, created_at]
+
 paths:
   /health:
     get:
@@ -6173,6 +6225,15 @@ paths:
                     type: array
                     items:
                       type: object
+                  foreign_files:
+                    type: object
+                    description: |
+                      Foreign-file summary attached to the ledger by the banner
+                      handler. A non-zero count promotes the banner to the
+                      slate/blue warning state when no real conflict is active.
+                    properties:
+                      count:
+                        type: integer
         "503":
           description: Detector not configured
           content:
@@ -10097,6 +10158,296 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: SSE hub not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-files:
+    get:
+      summary: List detected foreign image files
+      description: |
+        Returns every row in the foreign_files ledger, joined with the owning
+        artist name. Foreign files are images matching media-server naming
+        patterns ("backdrop*", "fanart*", "poster*", "logo*", "banner*",
+        "thumb*", "clearart*", "disc*", "landscape*") that lack Stillwater
+        EXIF provenance. Recorded by the periodic foreign-file scanner; never
+        modified by this endpoint.
+      operationId: listForeignFiles
+      tags:
+        - Foreign Files
+      responses:
+        "200":
+          description: Ledger snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ForeignFileEntry"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-files/dismiss:
+    post:
+      summary: Bulk allowlist every active foreign file globally
+      description: |
+        Inserts a global-scope allowlist row for every distinct file_name
+        currently in the foreign_files ledger and clears the ledger.
+        Subsequent scans suppress those names across every artist. Returns
+        the re-rendered conflict banner so HTMX can swap it in place.
+      operationId: dismissForeignFiles
+      tags:
+        - Foreign Files
+      responses:
+        "200":
+          description: Empty foreign-files table partial (text/html) after dismissal.
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error listing foreign files for dismissal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-files/{id}/allowlist:
+    post:
+      summary: Allowlist a single ledger row (artist-scoped)
+      description: |
+        Adds an artist-scoped allowlist entry matching (entry.artist_id,
+        entry.file_name) and removes the ledger row. The file remains on
+        disk; future scans will not re-record it for that artist.
+      operationId: allowlistForeignFile
+      tags:
+        - Foreign Files
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Allowlisted.
+        "400":
+          description: Missing or invalid foreign-file id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Foreign-file row not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error writing the allowlist row.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-files/{id}/file:
+    delete:
+      summary: Delete the file from disk and clear the ledger row
+      description: |
+        Atomically removes the file from disk via internal/filesystem
+        (rename-to-tomb then unlink) and removes the matching ledger row.
+        Does not create an allowlist entry; the file is gone, so re-detection
+        is moot.
+      operationId: deleteForeignFile
+      tags:
+        - Foreign Files
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File deleted.
+        "400":
+          description: Missing or invalid foreign-file id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Foreign-file row not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Filesystem error during deletion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-file-allowlist:
+    get:
+      summary: List foreign-file allowlist entries
+      operationId: listForeignFileAllowlist
+      tags:
+        - Foreign Files
+      responses:
+        "200":
+          description: Allowlist snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ForeignAllowlistEntry"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /foreign-file-allowlist/{id}:
+    delete:
+      summary: Remove an allowlist entry
+      description: |
+        Removes an allowlist row, re-enabling foreign-file detection for the
+        matching file_name (artist-scoped or global, depending on the row).
+      operationId: removeForeignFileAllowlist
+      tags:
+        - Foreign Files
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Allowlist entry removed.
+        "400":
+          description: Missing or invalid allowlist id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Allowlist entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error removing the allowlist entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Foreign-file scanner not configured.
           content:
             application/json:
               schema:

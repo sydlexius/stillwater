@@ -111,6 +111,28 @@ func TestLedgerBannerStates(t *testing.T) {
 	}
 }
 
+func TestLedgerForeignFilesState(t *testing.T) {
+	// foreign_files state appears only when no real conflict is active.
+	clean := Ledger{ForeignFiles: ForeignFileSummary{Count: 3}}
+	if got := clean.BannerState(); got != "foreign_files" {
+		t.Errorf("clean ledger with foreign files: got %q, want %q", got, "foreign_files")
+	}
+	// A real conflict suppresses the foreign-files state so the user sees
+	// the higher-severity banner instead.
+	withConflict := Ledger{
+		Connections:  []ConnectionState{{Enabled: true, ImageWriteback: true}},
+		ForeignFiles: ForeignFileSummary{Count: 3},
+	}
+	if got := withConflict.BannerState(); got != "image_only" {
+		t.Errorf("conflict + foreign files: got %q, want %q", got, "image_only")
+	}
+	// Zero count keeps the clean state.
+	emptyClean := Ledger{ForeignFiles: ForeignFileSummary{Count: 0}}
+	if got := emptyClean.BannerState(); got != "clean" {
+		t.Errorf("clean ledger w/o foreign files: got %q, want %q", got, "clean")
+	}
+}
+
 func TestLedgerRoundTripPromotesToC(t *testing.T) {
 	l := Ledger{
 		Connections: []ConnectionState{{Enabled: true}},

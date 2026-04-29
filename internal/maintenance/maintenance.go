@@ -11,8 +11,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/foreign"
 	img "github.com/sydlexius/stillwater/internal/image"
 )
+
+// ForeignArtistLister mirrors the small slice of internal/artist that the
+// foreign-file scanner needs. Defined here (and aliased onto foreign.Scanner)
+// so wiring stays inside this package and main.go does not import foreign.
+type ForeignArtistLister = foreign.ArtistLister
 
 // Status holds database maintenance status information.
 type Status struct {
@@ -294,6 +300,30 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 			}
 		}
 	}
+}
+
+// StartForeignFileScanner constructs a foreign-file scanner against the
+// service's *sql.DB and starts it on the given cadence. Owns no scanner
+// state of its own; this method exists so cmd/stillwater/main.go can stand
+// up the scheduler in one call without repeating the wiring.
+//
+// interval defaults to 6 hours when zero is passed; startupDelay defaults
+// to 30 seconds. Both are settable so tests can drive the scanner in
+// milliseconds.
+func (s *Service) StartForeignFileScanner(ctx context.Context, artists ForeignArtistLister, interval, startupDelay time.Duration) {
+	if artists == nil {
+		s.logger.Warn("foreign-file scanner not started: no artist lister provided")
+		return
+	}
+	if interval <= 0 {
+		interval = 6 * time.Hour
+	}
+	if startupDelay <= 0 {
+		startupDelay = 30 * time.Second
+	}
+	repo := foreign.NewRepository(s.db)
+	scanner := foreign.NewScanner(repo, artists, s.logger)
+	scanner.StartScheduler(ctx, interval, startupDelay)
 }
 
 // StartScheduler runs optimize on a fixed interval until the context is canceled.
