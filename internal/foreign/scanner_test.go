@@ -549,17 +549,16 @@ func TestScanner_ContextCanceledMidPagination(t *testing.T) {
 		t.Fatalf("insert artist: %v", err)
 	}
 	page1 := []artist.Artist{{ID: "a1", Name: "x", Path: dir}}
-	// Use a stub that cancels its own context view via a hook: we simulate
-	// by canceling between page-1 processing and the loop's ctx.Err check.
-	// Easiest approach: a lister whose List signals via channel when called.
-	called := make(chan struct{}, 4)
+	// Use a stub that cancels its own context view: signalLister.cancel is
+	// invoked from inside List() on the configured page, so the scanner's
+	// next ctx.Err() check at the top of the pagination loop sees the
+	// cancellation.
 	cancelOnPage := 1
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	listing := signalLister{
 		pages:        map[int][]artist.Artist{1: page1},
 		total:        250,
-		called:       called,
 		cancel:       cancel,
 		cancelOnPage: cancelOnPage,
 	}
@@ -578,16 +577,11 @@ func TestScanner_ContextCanceledMidPagination(t *testing.T) {
 type signalLister struct {
 	pages        map[int][]artist.Artist
 	total        int
-	called       chan<- struct{}
 	cancel       context.CancelFunc
 	cancelOnPage int
 }
 
 func (s signalLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
-	select {
-	case s.called <- struct{}{}:
-	default:
-	}
 	list := s.pages[params.Page]
 	if params.Page == s.cancelOnPage {
 		// Cancel after returning so the scanner sees ctx.Err on the NEXT
