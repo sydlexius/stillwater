@@ -944,6 +944,8 @@
   "onboarding.start_discovery": "Start Discovery",
   "onboarding.conflict_check_intro": "Stillwater can check whether your media servers will fight Stillwater for control of artwork and NFO files in your music library. This takes a few seconds.",
   "onboarding.conflict_checking": "Checking your servers for write-back conflicts...",
+  "onboarding.conflict_check_failed": "Could not reach the server to check for write-back conflicts.",
+  "onboarding.conflict_check_retry": "Try again",
   "onboarding.conflict_clean": "No conflicts detected. Stillwater and your media servers will not duplicate files.",
   "onboarding.conflict_fix_manually": "I will configure this manually",
   "onboarding.conflict_image_saver_on": "is configured to save image files into your library directory.",

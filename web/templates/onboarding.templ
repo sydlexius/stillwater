@@ -331,6 +331,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							hx-trigger="oobeConflictRefresh from:body"
 							hx-swap="innerHTML"
 							hx-target="#ob-conflict-body"
+								hx-on::response-error="onboardingConflictRequestFailed()"
+								hx-on::send-error="onboardingConflictRequestFailed()"
+								data-error-text={ t(ctx, "onboarding.conflict_check_failed") }
+								data-retry-text={ t(ctx, "onboarding.conflict_check_retry") }
+								data-checking-text={ t(ctx, "onboarding.conflict_checking") }
 						>
 							<div class="flex items-center justify-center gap-3 py-8 text-sm text-gray-500 dark:text-gray-400">
 								<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -557,7 +562,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				// qualifying enabled emby/jellyfin/lidarr connection).
 				function recomputeConflictPreflight() {
 					var hdrs = {'X-CSRF-Token': getCsrfToken()};
-					Promise.all([
+					// Returning the promise lets callers (notably goToStep)
+					// await the recompute and avoid landing on a stale
+					// conflictPreflightVisible after a just-saved library
+					// or qualifying connection.
+					return Promise.all([
 						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}),
 						fetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];})
 					]).then(function(results) {
@@ -600,9 +609,20 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
-				function goToStep(step) {
+				async function goToStep(step) {
 					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
+					// When the requested target is step 5, await an
+					// authoritative recompute before deciding whether to
+					// land on 4/5/6. Without this, a user who saves the
+					// last qualifying library/connection and immediately
+					// clicks Next can race the in-flight recompute and
+					// see step 5 wrongly skipped (or wrongly entered).
+					// The recompute swallows its own fetch errors, so the
+					// await never rejects under normal operation.
+					if (step === 5) {
+						try { await recomputeConflictPreflight(); } catch (_) {}
+					}
 					// Skip the conflict pre-flight (step 5) when the gating
 					// preconditions are not satisfied. We need the direction
 					// (forward/back) to know whether to land on 4 or 6.
@@ -741,6 +761,41 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						updateConflictGate();
 					}
 				});
+
+				// Error path for the conflict-step HTMX request. Wired via
+				// hx-on::response-error and hx-on::send-error on
+				// #ob-conflict-body. Without this, a non-2xx response or a
+				// network failure leaves the spinner up forever and the
+				// gate input stuck at "1", which deadlocks Continue. Here
+				// we release the gate so the wizard can advance and surface
+				// a retry UI so the user can re-run the probe without
+				// reloading the page.
+				function onboardingConflictRequestFailed() {
+					var blockEl = document.getElementById('ob-conflict-block');
+					if (blockEl) blockEl.value = '0';
+					updateConflictGate();
+					var body = document.getElementById('ob-conflict-body');
+					if (!body) return;
+					var errorText = body.dataset.errorText || '';
+					var retryText = body.dataset.retryText || 'Retry';
+					var checkingText = body.dataset.checkingText || '';
+					var wrap = document.createElement('div');
+					wrap.className = 'flex flex-col items-center gap-3 py-8 text-sm text-amber-700 dark:text-amber-300';
+					var msg = document.createElement('p');
+					msg.textContent = errorText;
+					wrap.appendChild(msg);
+					var btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'inline-flex items-center rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+					btn.textContent = retryText;
+					btn.addEventListener('click', function() {
+						btn.disabled = true;
+						if (checkingText) btn.textContent = checkingText;
+						htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+					});
+					wrap.appendChild(btn);
+					body.replaceChildren(wrap);
+				}
 
 				function finishWizard() {
 					fetch(basePath + '/api/v1/settings', {
