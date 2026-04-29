@@ -454,6 +454,19 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 									>
 										Let Stillwater manage
 									</button>
+									<!--
+										Secondary CTA for users who do not want Stillwater to flip
+										the remote saver. Links to the connections section of the
+										settings page so they can edit the connection directly.
+										Continue stays enabled in this state; the dashboard banner
+										keeps surfacing the warning until the user resolves it.
+									-->
+									<a
+										class="px-2.5 py-1 rounded-md border border-amber-500 text-amber-900 dark:text-amber-100 text-xs font-medium hover:bg-amber-100/50 dark:hover:bg-amber-900/40"
+										href="/settings#connections"
+									>
+										{ t(ctx, "onboarding.conflict_fix_manually") }
+									</a>
 								</div>
 								<div id={ "ob-manage-error-" + c.ID } class="hidden basis-full text-xs text-amber-900 dark:text-amber-100 mt-1" role="alert" aria-live="polite"></div>
 							</li>

@@ -324,7 +324,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							button is gated by the hidden #ob-conflict-block input that the rendered
 							body sets to "1" when the round-trip (red) state is detected.
 						-->
-						<input type="hidden" id="ob-conflict-block" value=""/>
+						<input type="hidden" id="ob-conflict-block" value="1"/>
 						<div
 							id="ob-conflict-body"
 							hx-post="/api/v1/onboarding/conflict-step"
