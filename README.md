@@ -183,6 +183,19 @@ When `SW_ENCRYPTION_KEY` is left blank, Stillwater generates a random key on fir
 
 If you ever recreate the container with a new appdata path or delete the appdata folder, set `SW_ENCRYPTION_KEY` explicitly in the template to a fixed value so your stored API keys remain decryptable. You can find the auto-generated value in the existing `encryption.key` file before making changes.
 
+## Documentation
+
+Full user-facing documentation lives at the project site,
+<https://sydlexius.github.io/stillwater/>, including installation, getting
+started, how-to guides, troubleshooting, and the full API reference rendered
+from `internal/api/openapi.yaml`.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+environment setup, code style, and pull-request workflow. Participants are
+expected to follow the project [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
 [GPL-3.0](LICENSE)
