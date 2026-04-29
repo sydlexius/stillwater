@@ -1674,6 +1674,13 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
 
     if [[ -z "$audit_path" ]]; then
       echo "[SKIP] Writeback audit -- artist $ARTIST_ID has no filesystem path"
+    elif [[ ${#MUSIC_PATHS[@]} -eq 0 ]]; then
+      # path_under_music_dirs returns true (allow) when MUSIC_PATHS is empty,
+      # which would otherwise bypass the safety contract that forbids
+      # auditing whatever directory the operator's instance happens to expose.
+      # Tier 6 explicitly refuses to touch the filesystem without an
+      # operator-supplied music-path scope.
+      echo "[SKIP] Writeback audit -- requires --music-path or SW_MUSIC_PATH to scope the filesystem check"
     elif ! path_under_music_dirs "$audit_path"; then
       echo "[SKIP] Writeback audit -- artist path not under configured --music-path"
     elif [[ ! -d "$audit_path" ]]; then
