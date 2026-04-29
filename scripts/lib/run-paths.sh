@@ -57,6 +57,11 @@ sw_worktree_id="$(printf '%s' "$sw_worktree_root" | shasum -a 256 | awk '{print 
 SW_RUN_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/stillwater-run"
 SW_RUN_DIR="$SW_RUN_ROOT/${sw_worktree_basename}-${sw_worktree_id}"
 mkdir -p "$SW_RUN_DIR"
+# Lock the dir to 0700 before any caller writes secrets (cookie jars from
+# smoke.sh, coverage profiles, future log dumps). mkdir -p inherits the
+# caller's umask, typically 0755, which would leave these artifacts
+# readable by other local users on permissive home directories.
+chmod 700 "$SW_RUN_DIR"
 
 unset sw_worktree_root sw_worktree_basename sw_worktree_id
 

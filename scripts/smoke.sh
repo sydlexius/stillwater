@@ -1690,9 +1690,21 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
         audit_skip=1
       fi
 
+      # Strict response validation: a 200 with a missing or non-array .saved
+      # is a contract break, not "no expected files". Collapsing it into an
+      # empty set would let a broken handler PASS audit because there'd be
+      # no expectation to fail against. jq -e exits non-zero when the path
+      # selector matches nothing, which is exactly the signal we want.
       if [[ "${audit_skip:-0}" -ne 1 ]]; then
+        if ! audit_saved_thumb=$(echo "$audit_fetch_body" | jq -er '.saved | arrays | .[]' 2>/dev/null); then
+          FAIL=$((FAIL + 1))
+          FAILURES+=("Writeback audit -- fetch response missing valid .saved array")
+          echo "[FAIL] Writeback audit -- fetch response missing valid .saved array"
+          audit_skip=1
+        fi
+      fi
 
-      audit_saved_thumb=$(echo "$audit_fetch_body" | jq -r '.saved[]? // empty' 2>/dev/null || true)
+      if [[ "${audit_skip:-0}" -ne 1 ]]; then
 
       # Settle window: peer write-back observed in #1180 arrived within
       # 550ms; the configurable default of 5s is a generous ceiling.
@@ -1718,13 +1730,17 @@ if [[ "$WRITEBACK_AUDIT" -eq 1 ]]; then
       printf '%s\n' "$post_snapshot" | awk -F'\t' 'NF==2{print $2}' | sort -u > "$post_files_file"
 
       # actual_added = post \ pre. unexpected_added = actual_added \ expected_added.
-      # missing_expected = expected_added \ actual_added: files the API said
-      # it saved but that are not actually on disk after the settle window.
-      # This is the symmetric guarantee that "actual equals expected exactly".
+      # missing_expected = expected_added \ post: files the API said it
+      # saved but that are not present on disk after the settle window.
+      # We diff against the FULL post-snapshot (not actual_added) because
+      # a fetch may legitimately rewrite an existing file -- e.g. Tier 4
+      # already wrote thumb.jpg, the audit re-fetches the same URL, and
+      # the file's basename is in .saved while actual_added is empty.
+      # Treating that as missing would false-FAIL the audit.
       actual_added=$(comm -23 "$post_files_file" "$pre_files_file")
       printf '%s\n' "$actual_added" | sed '/^$/d' | sort -u > "$post_files_file.actual"
       unexpected_added=$(comm -23 "$post_files_file.actual" "$expected_added_file")
-      missing_expected=$(comm -23 "$expected_added_file" "$post_files_file.actual")
+      missing_expected=$(comm -23 "$expected_added_file" "$post_files_file")
 
       # Silent overwrite check: any file present in BOTH pre and post whose
       # sha256 changed and which is not in the expected_added set has been
