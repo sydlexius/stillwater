@@ -26,6 +26,8 @@ jobs:
   build:
     name: Build site
     runs-on: ubuntu-latest
+    env:
+      REDOCLY_CLI_VERSION: 2.30.3
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -51,12 +53,12 @@ jobs:
           node-version: '22'
 
       - name: Lint OpenAPI spec
-        run: npx --yes @redocly/cli@2.30.3 lint internal/api/openapi.yaml
+        run: npx --yes "@redocly/cli@${REDOCLY_CLI_VERSION}" lint internal/api/openapi.yaml
 
       - name: Build API reference
         run: |
           mkdir -p docs/site/site/api
-          npx --yes @redocly/cli@2.30.3 build-docs internal/api/openapi.yaml \
+          npx --yes "@redocly/cli@${REDOCLY_CLI_VERSION}" build-docs internal/api/openapi.yaml \
             --output docs/site/site/api/index.html
 
       - name: Configure Pages
