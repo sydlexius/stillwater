@@ -1,0 +1,36 @@
+# Stillwater
+
+> Stillwater is a self-hosted web application for managing artist and composer
+> metadata (NFO files) and images for Emby, Jellyfin, and Kodi media servers.
+> It is API-first (REST at `/api/v1/`), built in Go with HTMX and Templ, runs
+> as a single binary or Docker container, and stores its state in pure-Go
+> SQLite.
+
+## Docs
+
+- [Project site](https://sydlexius.github.io/stillwater/): user guide, installation, troubleshooting
+- [README](https://github.com/sydlexius/stillwater/blob/main/README.md): quick start, install instructions
+- [Architecture decisions](https://github.com/sydlexius/stillwater/blob/main/docs/architecture-decisions.md): durable design choices
+- [Developer setup](https://github.com/sydlexius/stillwater/blob/main/docs/dev-setup.md): build, test, contribute
+- [Contributing guide](https://github.com/sydlexius/stillwater/blob/main/CONTRIBUTING.md): PR workflow, code style, labels
+- [Code of conduct](https://github.com/sydlexius/stillwater/blob/main/CODE_OF_CONDUCT.md): community standards
+
+## API
+
+- [OpenAPI specification](https://raw.githubusercontent.com/sydlexius/stillwater/main/internal/api/openapi.yaml): full REST API contract
+- [API reference](https://sydlexius.github.io/stillwater/api/): rendered Redoc UI
+
+## Source
+
+- [GitHub repository](https://github.com/sydlexius/stillwater): source, issues, releases
+- [Project instructions for Claude Code](https://github.com/sydlexius/stillwater/blob/main/CLAUDE.md): codebase conventions
+
+## Capabilities
+
+- Read and write artist and composer NFO metadata files
+- Fetch, crop, and organize artist images (thumb, fanart, logo, banner)
+- Pull metadata from MusicBrainz, Fanart.tv, AudioDB, Wikipedia, Wikidata, Spotify, Discogs, Last.fm, and Deezer
+- Connect to Emby, Jellyfin, and Lidarr libraries with API key auth
+- Configurable rule engine (Bliss-inspired) with per-rule manual or auto modes
+- Session-based authentication with API tokens for automation
+- Webhook notifications and SSE event streams

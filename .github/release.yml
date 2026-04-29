@@ -1,0 +1,38 @@
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+      - question
+    authors:
+      - dependabot
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+    - title: Bug Fixes
+      labels:
+        - bug
+    - title: Performance
+      labels:
+        - performance
+    - title: Security
+      labels:
+        - security
+    - title: Documentation
+      labels:
+        - documentation
+    - title: CI / Build
+      labels:
+        - ci
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Refactoring
+      labels:
+        - technical-debt
+        - chore
+    - title: Other Changes
+      labels:
+        - "*"
