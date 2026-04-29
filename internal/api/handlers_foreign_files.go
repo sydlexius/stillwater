@@ -223,7 +223,9 @@ func (r *Router) handleForeignFileDelete(w http.ResponseWriter, req *http.Reques
 // handleForeignFilesDismiss bulk-allowlists every currently-active foreign
 // file globally. Designed for the banner Dismiss button: one click clears
 // the warning state for the rest of the install. Returns the re-rendered
-// banner so HTMX can swap it in place.
+// #foreign-files-table partial (HTML) so HTMX can swap the table container
+// in place; HTMX consumers should target #foreign-files-table, not the
+// conflict banner.
 //
 // POST /api/v1/foreign-files/dismiss
 func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Request) {
