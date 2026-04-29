@@ -9,6 +9,8 @@
 
 Stillwater is a self-hosted web application for managing artist and composer metadata and images for Emby, Jellyfin, and Kodi media servers. It reads and writes NFO files and handles artist artwork, letting you keep your music library metadata clean and consistent from a single interface.
 
+**Project site:** <https://sydlexius.github.io/stillwater/>
+
 ## Features
 
 - Browse and edit artist and composer NFO metadata files

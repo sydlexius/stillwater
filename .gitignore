@@ -49,6 +49,9 @@ docs/plans/
 docs/superpowers/
 .planning/
 
+# MkDocs build output
+docs/site/site/
+
 # Load test results (binary reports, target files)
 tests/load/results/*.bin
 tests/load/results/*.txt

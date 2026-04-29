@@ -1,0 +1,85 @@
+site_name: Stillwater
+site_description: Self-hosted artist and composer metadata management for Emby, Jellyfin, and Kodi
+site_url: https://sydlexius.github.io/stillwater/
+repo_url: https://github.com/sydlexius/stillwater
+repo_name: sydlexius/stillwater
+edit_uri: edit/main/docs/site/src/
+
+docs_dir: src
+site_dir: site
+
+theme:
+  name: material
+  custom_dir: overrides
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+    - content.tooltips
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - awesome-pages
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
+  - redirects:
+      redirect_maps: {}
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sydlexius/stillwater
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - getting-started/index.md
+  - How-to:
+      - how-to/index.md
+  - Reference:
+      - reference/index.md
+  - Troubleshooting:
+      - troubleshooting/index.md
+  - API Reference: api/index.html
