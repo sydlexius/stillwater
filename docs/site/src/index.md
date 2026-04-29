@@ -18,7 +18,7 @@ music library metadata clean and consistent across every media server you run.
 - [Install Stillwater](getting-started/index.md) -- binary, Docker, or Docker Compose.
 - [Connect your media server](getting-started/index.md) -- Emby and Jellyfin.
 - [How-to guides](how-to/index.md) -- common tasks, step by step.
-- [API reference](api/index.html) -- the full REST API at `/api/v1/`.
+- [API reference](api/index.html) -- generated REST API documentation (live endpoints are served under `/api/v1/`).
 
 ## Why Stillwater
 
