@@ -19,6 +19,12 @@ type OnboardingData struct {
 	CurrentStep        int
 	UnidentifiedCount  int
 	UserAuthProvider   string // "local", "emby", "jellyfin", "oidc", etc.
+	// ConflictPreflightVisible is true when the conflict pre-flight step
+	// (step 5) should be shown. It requires both >=1 library and >=1 enabled
+	// emby/jellyfin/lidarr connection. When false, the step is skipped at
+	// transition time so the user goes directly from connections (step 4)
+	// to discovery (step 6).
+	ConflictPreflightVisible bool
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -63,7 +69,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				})();
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider }>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider } data-conflict-preflight={ boolAttr(data.ConflictPreflightVisible) }>
 			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
@@ -97,9 +103,14 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_connections") }</span>
 						</div>
 						<div id="step-line-4" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
-						<div class="flex items-center gap-2">
+						<div class={ "flex items-center gap-2", templ.KV("hidden", !data.ConflictPreflightVisible) } id="progress-conflict">
 							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
-							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
+							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_conflict") }</span>
+						</div>
+						<div id="step-line-5" class={ "h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8", templ.KV("hidden", !data.ConflictPreflightVisible) }></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-6" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">6</div>
+							<span id="step-label-6" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
 						</div>
 					</div>
 					<!-- Step 0: Introduction -->
@@ -301,8 +312,40 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							class="mt-4"
 						></div>
 					</div>
-					<!-- Step 5: Artist Discovery -->
+					<!-- Step 5: Conflict pre-flight (only when libraries + qualifying connections present) -->
 					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.step_conflict") }</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							{ t(ctx, "onboarding.conflict_check_intro") }
+						</p>
+						// The body is HTMX-loaded so the synchronous peer probe (Detector.Refresh)
+						// runs only when the user actually transitions into this step. The Continue
+						// button is gated by the hidden #ob-conflict-block input that the rendered
+						// body sets to "1" when the round-trip (red) state is detected.
+						<input type="hidden" id="ob-conflict-block" value="1"/>
+						<div
+							id="ob-conflict-body"
+							hx-post="/api/v1/onboarding/conflict-step"
+							hx-trigger="oobeConflictRefresh from:body"
+							hx-swap="innerHTML"
+							hx-target="#ob-conflict-body"
+								hx-on::response-error="onboardingConflictRequestFailed()"
+								hx-on::send-error="onboardingConflictRequestFailed()"
+								data-error-text={ t(ctx, "onboarding.conflict_check_failed") }
+								data-retry-text={ t(ctx, "onboarding.conflict_check_retry") }
+								data-checking-text={ t(ctx, "onboarding.conflict_checking") }
+						>
+							<div class="flex items-center justify-center gap-3 py-8 text-sm text-gray-500 dark:text-gray-400">
+								<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+									<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
+									<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+								</svg>
+								<span>{ t(ctx, "onboarding.conflict_checking") }</span>
+							</div>
+						</div>
+					</div>
+					<!-- Step 6: Artist Discovery -->
+					<div id="wizard-step-6" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 6) }>
 						<!-- Phase 1: Opt-in -->
 						<div id="discovery-opt-in">
 							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
@@ -489,7 +532,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<script>
 				var parsedStep = parseInt(document.body.dataset.currentStep, 10);
 				var currentStep = isNaN(parsedStep) ? 0 : parsedStep;
-				var totalSteps = 5;
+				var totalSteps = 6;
+				// Conflict pre-flight (step 5) is invisible unless server-side
+				// gating reports >=1 library AND >=1 enabled emby/jellyfin/lidarr
+				// connection. The flag is rendered into a data attribute so JS
+				// can skip the step on next/back without a server round-trip.
+				var conflictPreflightVisible = document.body.dataset.conflictPreflight === 'true';
 				var discoveryPhase = 'idle'; // idle, running, review
 				var discoveryPollTimer = null;
 				var discoveryReviewQueue = [];
@@ -499,6 +547,57 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 
 				function getCsrfToken() {
 					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+				}
+
+				// recomputeConflictPreflight refreshes the cached
+				// conflictPreflightVisible flag by re-reading libraries and
+				// connections from the server. The initial value is snapshotted
+				// from data-conflict-preflight at page load, but in-session
+				// changes (adding the first library, saving the first qualifying
+				// connection) would otherwise leave it stale and the user would
+				// either skip step 5 entirely or land on it without prerequisites.
+				// Mirrors the server gating in handlers.go (len(libs) > 0 AND a
+				// qualifying enabled emby/jellyfin/lidarr connection).
+				function recomputeConflictPreflight() {
+					var hdrs = {'X-CSRF-Token': getCsrfToken()};
+					// Returning the promise lets callers (notably goToStep)
+					// await the recompute and avoid landing on a stale
+					// conflictPreflightVisible after a just-saved library
+					// or qualifying connection.
+					//
+					// On non-2xx we throw so the .catch below fires and the
+					// previously-cached visibility is preserved. A naive
+					// `r.ok ? r.json() : []` would treat a transient 401/5xx
+					// as "no libraries / no connections" and hide step 5,
+					// silently dropping the user out of the pre-flight.
+					return Promise.all([
+						fetch(basePath + '/api/v1/libraries', {headers: hdrs}).then(function(r){
+							if (!r.ok) throw new Error('libraries: HTTP ' + r.status);
+							return r.json();
+						}),
+						fetch(basePath + '/api/v1/connections', {headers: hdrs}).then(function(r){
+							if (!r.ok) throw new Error('connections: HTTP ' + r.status);
+							return r.json();
+						})
+					]).then(function(results) {
+						var libs = results[0] || [];
+						var conns = results[1] || [];
+						var hasQualifying = conns.some(function(c) {
+							return c && c.enabled && (c.type === 'emby' || c.type === 'jellyfin' || c.type === 'lidarr');
+						});
+						conflictPreflightVisible = libs.length > 0 && hasQualifying;
+						// Mirror to the data attribute so any later reader (and
+						// goToStep on a fresh visit) sees the up-to-date value.
+						document.body.dataset.conflictPreflight = conflictPreflightVisible ? 'true' : 'false';
+						var progress = document.getElementById('progress-conflict');
+						var line = document.getElementById('step-line-5');
+						if (progress) progress.classList.toggle('hidden', !conflictPreflightVisible);
+						if (line) line.classList.toggle('hidden', !conflictPreflightVisible);
+					}).catch(function() {
+						// Leave the cached value in place on transient failures;
+						// goToStep will still try to render step 5 if the user
+						// navigates there manually.
+					});
 				}
 
 				function removeFromReviewQueue(artistId) {
@@ -520,9 +619,38 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
-				function goToStep(step) {
+				// Re-entrancy guard. goToStep is async (it awaits the conflict
+				// preflight recompute when transitioning to step 5), so a
+				// rapid double-click on Next would otherwise launch two
+				// concurrent invocations: both would await, both would
+				// proceed, and the second would clobber currentStep based
+				// on a stale view of the first's outcome. Dropping the
+				// second invocation is the right UX -- the user wanted to
+				// advance once.
+				var goToStepInFlight = false;
+				async function goToStep(step) {
+					if (goToStepInFlight) return;
+					goToStepInFlight = true;
+					try {
 					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
+					// When the requested target is step 5, await an
+					// authoritative recompute before deciding whether to
+					// land on 4/5/6. Without this, a user who saves the
+					// last qualifying library/connection and immediately
+					// clicks Next can race the in-flight recompute and
+					// see step 5 wrongly skipped (or wrongly entered).
+					// The recompute swallows its own fetch errors, so the
+					// await never rejects under normal operation.
+					if (step === 5) {
+						try { await recomputeConflictPreflight(); } catch (_) {}
+					}
+					// Skip the conflict pre-flight (step 5) when the gating
+					// preconditions are not satisfied. We need the direction
+					// (forward/back) to know whether to land on 4 or 6.
+					if (step === 5 && !conflictPreflightVisible) {
+						step = step > currentStep ? 6 : 4;
+					}
 					currentStep = step;
 
 					// Step 0 (intro) is outside the progress bar
@@ -553,9 +681,18 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						}
 						if (line) {
-							line.className = i < step
+							var base = i < step
 								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'
 								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';
+							// Step 5's connector is conditionally hidden by
+							// the template when the conflict pre-flight is
+							// not gated in. Reassigning className here would
+							// drop that hidden class, leaving a dangling
+							// connector before the discovery dot.
+							if (i === 5 && !conflictPreflightVisible) {
+								base = 'hidden ' + base;
+							}
+							line.className = base;
 						}
 					}
 
@@ -565,10 +702,23 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					nextBtn.textContent = step === 0 ? 'Get Started' : 'Next';
 					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
 
-					// Step 5 (discovery) hides Back during progress/review phases.
-					if (step === 5 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
+					// Step 6 (discovery) hides Back during progress/review phases.
+					if (step === 6 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
 						document.getElementById('back-btn').classList.add('hidden');
 					}
+
+					// Step 5 (conflict pre-flight): trigger an HTMX-driven refresh
+					// of the body partial each time the user lands here so we
+					// always show fresh ledger data (peer state may have changed
+					// since OOBE last loaded). triggerConflictRefresh re-closes
+					// the gate before the request fires so a fast-clicking user
+					// cannot bypass a fresh round-trip block during the in-flight
+					// probe (the input would otherwise still hold the prior
+					// render's "0").
+					if (step === 5) {
+						triggerConflictRefresh();
+					}
+					updateConflictGate();
 
 					// Step 2 (platform): auto-select based on auth provider only if no platform is already selected
 					if (step === 2) {
@@ -591,6 +741,101 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}).catch(function(err) {
 						console.warn('Failed to persist onboarding step:', err);
 					});
+					} finally {
+						goToStepInFlight = false;
+					}
+				}
+
+				// updateConflictGate disables Next on step 5 when the rendered
+				// conflict body sets the hidden #ob-conflict-block input to "1"
+				// (round-trip / red state). Other states are advisory and leave
+				// Next enabled. Called from goToStep and from htmx:afterSwap on
+				// the conflict body so flipping the per-connection toggle and
+				// re-rendering instantly re-evaluates whether Continue unlocks.
+				function updateConflictGate() {
+					var nextBtn = document.getElementById('next-btn');
+					if (!nextBtn) return;
+					if (currentStep !== 5) {
+						// Clear any disabled state left over from a prior visit
+						// to step 5; otherwise a user who hit a round-trip block
+						// and navigated back would find Next still grayed out
+						// on the unrelated step.
+						nextBtn.disabled = false;
+						nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+						return;
+					}
+					var blockEl = document.getElementById('ob-conflict-block');
+					var blocked = blockEl && blockEl.value === '1';
+					nextBtn.disabled = !!blocked;
+					if (blocked) {
+						nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
+					} else {
+						nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+					}
+				}
+
+				// Re-evaluate the gate whenever the conflict body finishes
+				// swapping (initial load, manual re-check, or post-toggle
+				// refresh from the per-connection CTA). Also mirror the
+				// rendered ob-conflict-block-state into the persistent
+				// #ob-conflict-block input that updateConflictGate watches.
+				document.body.addEventListener('htmx:afterSwap', function(evt) {
+					if (evt.detail && evt.detail.target && evt.detail.target.id === 'ob-conflict-body') {
+						var s = document.getElementById('ob-conflict-block-state');
+						var t = document.getElementById('ob-conflict-block');
+						if (s && t) { t.value = s.value; }
+						updateConflictGate();
+					}
+				});
+
+				// triggerConflictRefresh re-closes the Continue gate before
+				// firing the conflict-step request. The hidden input is the
+				// only thing updateConflictGate consults, and the rendered
+				// body only mutates it via the htmx:afterSwap sync. Without
+				// resetting it here, every refresh path (step-5 re-entry,
+				// retry button) would leave Continue enabled in the window
+				// between trigger and swap-in, racing a fresh round-trip
+				// block.
+				function triggerConflictRefresh() {
+					var blockEl = document.getElementById('ob-conflict-block');
+					if (blockEl) blockEl.value = '1';
+					updateConflictGate();
+					htmx.trigger('#ob-conflict-body', 'oobeConflictRefresh');
+				}
+
+				// Error path for the conflict-step HTMX request. Wired via
+				// hx-on::response-error and hx-on::send-error on
+				// #ob-conflict-body. Without this, a non-2xx response or a
+				// network failure leaves the spinner up forever and the
+				// gate input stuck at "1", which deadlocks Continue. Here
+				// we release the gate so the wizard can advance and surface
+				// a retry UI so the user can re-run the probe without
+				// reloading the page.
+				function onboardingConflictRequestFailed() {
+					var blockEl = document.getElementById('ob-conflict-block');
+					if (blockEl) blockEl.value = '0';
+					updateConflictGate();
+					var body = document.getElementById('ob-conflict-body');
+					if (!body) return;
+					var errorText = body.dataset.errorText || '';
+					var retryText = body.dataset.retryText || 'Retry';
+					var checkingText = body.dataset.checkingText || '';
+					var wrap = document.createElement('div');
+					wrap.className = 'flex flex-col items-center gap-3 py-8 text-sm text-amber-700 dark:text-amber-300';
+					var msg = document.createElement('p');
+					msg.textContent = errorText;
+					wrap.appendChild(msg);
+					var btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'inline-flex items-center rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+					btn.textContent = retryText;
+					btn.addEventListener('click', function() {
+						btn.disabled = true;
+						if (checkingText) btn.textContent = checkingText;
+						triggerConflictRefresh();
+					});
+					wrap.appendChild(btn);
+					body.replaceChildren(wrap);
 				}
 
 				function finishWizard() {
@@ -666,8 +911,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
+				// Returns a Promise so callers (notably tests and any future
+				// awaiter) can compose with the recompute. Most live callers
+				// fire-and-forget; the goToStep step-5 await closes the
+				// stale-flag race that would otherwise need awaiting here.
 				function refreshLibraryList() {
-					fetch(basePath + '/api/v1/libraries', {
+					return fetch(basePath + '/api/v1/libraries', {
 						headers: {'X-CSRF-Token': getCsrfToken()}
 					}).then(function(res) {
 						if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -676,7 +925,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
 							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
-							return;
+							// Library count contributes to step-5 gating;
+							// refresh the cached visibility flag whenever the
+							// list mutates. Returned so the chain is awaitable.
+							return recomputeConflictPreflight();
 						}
 						var html = '';
 						libs.forEach(function(lib) {
@@ -697,6 +949,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								+ '</div>';
 						});
 						list.innerHTML = html;
+						return recomputeConflictPreflight();
 					}).catch(function() {
 						var list = document.getElementById('ob-library-list');
 						if (list) list.textContent = 'Failed to load libraries. Please refresh the page.';
@@ -1170,6 +1423,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (svg) svg.classList.remove('rotate-180');
 				}
 
+				// Returns the recompute Promise so callers can compose. Most
+				// live callers fire-and-forget; the goToStep step-5 await
+				// closes the stale-flag race that would otherwise need
+				// awaiting here.
 				function onConnectionSaved(connType, xhr) {
 					var form = document.getElementById('ob-conn-form-' + connType);
 					var success = document.getElementById('ob-conn-success-' + connType);
@@ -1179,6 +1436,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (success) success.classList.remove('hidden');
 					if (btn) btn.classList.add('hidden');
 					document.body.dispatchEvent(new Event('clobberRecheck'));
+					// Saving an emby/jellyfin/lidarr connection is the other half
+					// of the step-5 gate; refresh the cached flag so the user
+					// won't be skipped past the conflict pre-flight.
+					var recomputeP = recomputeConflictPreflight();
 					if (dot) {
 						dot.classList.remove('bg-gray-400', 'dark:bg-gray-500');
 						dot.classList.add('bg-green-500');
@@ -1203,6 +1464,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						} catch(e) {}
 					}
+					return recomputeP;
 				}
 
 				function testConnection(connID, connType) {
@@ -1241,13 +1503,24 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					});
 				}
 
-				// Initialize to the correct step on page load
-				if (currentStep !== 0) {
-					goToStep(currentStep);
+				// Initialize to the correct step on page load. We defer to
+				// DOMContentLoaded so that on direct-resume to step 5, the
+				// htmx.trigger('oobeConflictRefresh') inside goToStep fires
+				// after htmx has scanned the body and bound the
+				// hx-trigger="oobeConflictRefresh from:body" listener; firing
+				// during parsing dispatches into a not-yet-bound listener and
+				// the conflict body never loads.
+				function obInit() {
+					if (currentStep !== 0) {
+						goToStep(currentStep);
+					}
+					syncLibraryTypeHelpText();
 				}
-
-				// Initialize library type help text visibility on page load
-				syncLibraryTypeHelpText();
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', obInit);
+				} else {
+					obInit();
+				}
 			</script>
 		</body>
 	</html>

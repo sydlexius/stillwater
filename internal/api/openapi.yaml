@@ -6241,6 +6241,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /onboarding/conflict-step:
+    post:
+      tags: [Connections]
+      summary: Rendered HTML body for the OOBE conflict pre-flight step
+      operationId: postOnboardingConflictStep
+      description: >
+        HTMX-loaded by the onboarding wizard when the user transitions
+        into step 5 (conflict pre-flight, see #1184). Returns the same
+        per-state body partials the persistent banner uses but with
+        OOBE-specific copy and a hidden gate input. Empty-body (204)
+        responses indicate the conflict detector is not configured.
+
+        POST is used because the handler mutates state on every call
+        (writes the conflict_check_completed_at marker; with refresh=1
+        also invalidates the detector cache). Routing as POST keeps the
+        endpoint inside CSRF protection.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Body HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "204":
+          description: Detection unavailable; no content
+
   /config/conflict-banner:
     get:
       tags: [Connections]

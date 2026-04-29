@@ -257,3 +257,38 @@ func TestArtistDirBasename(t *testing.T) {
 		})
 	}
 }
+
+// TestObConflictBlockValue covers the gate-input helper used by the OOBE
+// conflict pre-flight body. The hidden input is read by the wizard's
+// updateConflictGate JS to decide whether Continue must be disabled.
+func TestObConflictBlockValue(t *testing.T) {
+	if got := obConflictBlockValue(true); got != "1" {
+		t.Errorf("blocking=true: got %q, want %q", got, "1")
+	}
+	if got := obConflictBlockValue(false); got != "" {
+		t.Errorf("blocking=false: got %q, want empty", got)
+	}
+}
+
+func TestObConflictWarnTitle(t *testing.T) {
+	cases := map[string]string{
+		"image":   "Server image saver is on.",
+		"nfo":     "Server NFO writer is on.",
+		"both":    "Server image and NFO writers are on.",
+		"unknown": "Server image and NFO writers are on.",
+	}
+	for axis, want := range cases {
+		if got := obConflictWarnTitle(axis); got != want {
+			t.Errorf("axis=%q: got %q, want %q", axis, got, want)
+		}
+	}
+}
+
+func TestObConflictWarnBody(t *testing.T) {
+	for _, axis := range []string{"image", "nfo", "both", "unknown"} {
+		got := obConflictWarnBody(axis)
+		if got == "" {
+			t.Errorf("axis=%q produced empty body", axis)
+		}
+	}
+}

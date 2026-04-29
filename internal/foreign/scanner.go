@@ -2,6 +2,7 @@ package foreign
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -116,19 +117,47 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		}
 	}
 
+	// abortErr distinguishes a clean completion from an early termination
+	// caused by context cancellation or a pagination DB error. Reporting
+	// "scan complete" with partial counts in those cases makes operator
+	// logs misleading -- the scheduler then retries on the next tick
+	// without any error-level signal that the prior run did not finish.
+	var abortErr error
 	process(first)
-	for scanned+skipped < total && ctx.Err() == nil {
+	for scanned+skipped < total {
+		if cerr := ctx.Err(); cerr != nil {
+			abortErr = cerr
+			break
+		}
 		params.Page++
 		more, _, err := s.artists.List(ctx, params)
 		if err != nil {
-			s.logger.Warn("listing artists (page) failed; ending scan early",
-				slog.Int("page", params.Page), slog.Any("error", err))
+			abortErr = fmt.Errorf("listing artists page %d: %w", params.Page, err)
 			break
 		}
 		if len(more) == 0 {
 			break
 		}
 		process(more)
+	}
+
+	if abortErr != nil {
+		// Cancellation is the graceful-shutdown path; log at Info so a normal
+		// stop does not generate Error noise. Any other abort (DB failure
+		// mid-pagination, etc.) keeps Error severity so the operator notices.
+		fields := []any{
+			slog.Int("scanned_artists", scanned),
+			slog.Int("recorded", recorded),
+			slog.Int("cleared", cleared),
+			slog.Int("skipped", skipped),
+			slog.Any("error", abortErr),
+		}
+		if errors.Is(abortErr, context.Canceled) || errors.Is(abortErr, context.DeadlineExceeded) {
+			s.logger.Info("foreign-file scan canceled; counts are partial", fields...)
+		} else {
+			s.logger.Error("foreign-file scan aborted; counts are partial", fields...)
+		}
+		return abortErr
 	}
 
 	s.logger.Info("foreign-file scan complete",
@@ -241,7 +270,18 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 			// continued before upserting), but the row may pre-date the
 			// fix, so re-evaluate here.
 			allowed, err := s.repo.IsAllowlisted(ctx, a.ID, ex.FileName)
-			if err == nil && allowed {
+			if err != nil {
+				// Skip this row; leaving it in place is correct under the
+				// skip-don't-clear policy, but the failure must be visible
+				// so a chronic DB error does not silently freeze the
+				// reconcile loop on every row.
+				s.logger.Warn("checking allowlist for reconcile; leaving row in place",
+					slog.String("artist_id", a.ID),
+					slog.String("file_name", ex.FileName),
+					slog.Any("error", err))
+				continue
+			}
+			if allowed {
 				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
 					s.logger.Warn("clearing allowlisted foreign-file row failed",
 						slog.String("artist_id", a.ID),
@@ -253,7 +293,17 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 				continue
 			}
 			meta, perr := img.ReadProvenance(ex.FilePath)
-			if perr == nil && meta != nil {
+			if perr != nil {
+				// Same skip-don't-clear policy: an unreadable file may be
+				// transient (mid-write, perm flap). Surface the failure
+				// rather than silently leaving the row stale.
+				s.logger.Warn("reading provenance for reconcile; leaving row in place",
+					slog.String("artist_id", a.ID),
+					slog.String("file_path", ex.FilePath),
+					slog.Any("error", perr))
+				continue
+			}
+			if meta != nil {
 				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
 					s.logger.Warn("clearing re-provenanced foreign-file row failed",
 						slog.String("artist_id", a.ID),
@@ -321,7 +371,14 @@ func (s *Scanner) StartScheduler(ctx context.Context, interval, startupDelay tim
 		return
 	case <-time.After(startupDelay):
 	}
-	if err := s.Scan(ctx); err != nil {
+	// Scan logs its own abort detail at Info (cancel) or Error (other);
+	// suppress the wrapper Error log on cancellation so graceful shutdown
+	// is quiet. Other error types are double-logged: once with counts
+	// inside Scan, once here as a summary; the summary is intentional so
+	// the operator sees both the per-iteration record and the scheduler-
+	// level "scan failed" hook in any log filter that excludes Scan's
+	// internal lines.
+	if err := s.Scan(ctx); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		s.logger.Error("initial foreign-file scan failed", slog.Any("error", err))
 	}
 
@@ -333,7 +390,7 @@ func (s *Scanner) StartScheduler(ctx context.Context, interval, startupDelay tim
 			s.logger.Info("foreign-file scanner stopped")
 			return
 		case <-t.C:
-			if err := s.Scan(ctx); err != nil {
+			if err := s.Scan(ctx); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				s.logger.Error("foreign-file scan failed", slog.Any("error", err))
 			}
 		}

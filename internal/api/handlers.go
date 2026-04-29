@@ -1191,6 +1191,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 			currentStep = 4
 		case "5":
 			currentStep = 5
+		case "6":
+			currentStep = 6
 		}
 	}
 
@@ -1233,15 +1235,23 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Warn("failed to lookup user for onboarding auth provider auto-select", "user_id", userID, "error", err)
 	}
 
+	// Compute whether the conflict pre-flight step (#1184) is visible.
+	// Gating: >=1 library configured AND >=1 enabled connection of type
+	// emby/jellyfin/lidarr. When invisible the JS skips step 5 in
+	// goToStep so the user goes straight from connections (4) to
+	// discovery (6) as before this feature shipped.
+	conflictPreflightVisible := len(libs) > 0 && hasQualifyingConflictConnection(conns)
+
 	data := templates.OnboardingData{
-		Libraries:          libs,
-		Profiles:           profiles,
-		ProviderKeys:       providerKeys,
-		WebSearchProviders: webSearchProviders,
-		Connections:        conns,
-		CurrentStep:        currentStep,
-		UnidentifiedCount:  unidentifiedCount,
-		UserAuthProvider:   userAuthProvider,
+		Libraries:                libs,
+		Profiles:                 profiles,
+		ProviderKeys:             providerKeys,
+		WebSearchProviders:       webSearchProviders,
+		Connections:              conns,
+		CurrentStep:              currentStep,
+		UnidentifiedCount:        unidentifiedCount,
+		UserAuthProvider:         userAuthProvider,
+		ConflictPreflightVisible: conflictPreflightVisible,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assetsFor(req), data))
 }

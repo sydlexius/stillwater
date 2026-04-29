@@ -393,6 +393,43 @@ func boolAttr(b bool) string {
 	return "false"
 }
 
+// obConflictBlockValue returns "1" when the OOBE conflict step should
+// disable the Continue button (round-trip) and "" otherwise. The hidden
+// input value is read by updateConflictGate() in onboarding.templ.
+func obConflictBlockValue(blocking bool) string {
+	if blocking {
+		return "1"
+	}
+	return ""
+}
+
+// obConflictWarnTitle returns the OOBE-step heading for amber states.
+// Mirrors warnTitle but with first-time-setup phrasing per the issue spec.
+func obConflictWarnTitle(axis string) string {
+	switch axis {
+	case "image":
+		return "Server image saver is on."
+	case "nfo":
+		return "Server NFO writer is on."
+	default:
+		return "Server image and NFO writers are on."
+	}
+}
+
+// obConflictWarnBody returns the body copy for amber pre-flight states.
+// References fanart-style duplicate file names so the user understands the
+// failure mode without having to read the post-OOBE banner first.
+func obConflictWarnBody(axis string) string {
+	switch axis {
+	case "image":
+		return "Stillwater can write artwork either way, but you will get duplicate files like backdrop1.jpg and fanart2.jpg alongside the names Stillwater chooses."
+	case "nfo":
+		return "Stillwater can write artist.nfo either way, but the server's metadata writer will overwrite Stillwater's edits within seconds, undoing your changes."
+	default:
+		return "Stillwater can manage artwork and NFOs, but the server's savers will produce duplicate files and overwrite Stillwater's edits within seconds."
+	}
+}
+
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
 func disambiguationHxVals(r provider.ArtistSearchResult) string {
 	m := map[string]string{"source": r.Source}

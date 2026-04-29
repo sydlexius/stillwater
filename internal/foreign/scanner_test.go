@@ -3,9 +3,11 @@ package foreign
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -462,4 +464,170 @@ func TestScanner_DeleteByPathErrorDoesNotIncrementCleared(t *testing.T) {
 	// Without the table we can't query Count; the assertion is implicit:
 	// the test exercises the cleared-failure logging path without panicking
 	// or aborting the scan, which is the contract the round-2 fix pins.
+}
+
+// errArtistLister errors on the configured page (1-indexed). Used to drive
+// the Scan abort-with-error paths added in the M46-1184 hardening sweep.
+type errArtistLister struct {
+	pages    map[int][]artist.Artist
+	total    int
+	errOn    int   // page number that should return an error
+	errValue error // error to return on errOn
+}
+
+func (e errArtistLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
+	if params.Page == e.errOn {
+		return nil, 0, e.errValue
+	}
+	if list, ok := e.pages[params.Page]; ok {
+		return list, e.total, nil
+	}
+	return nil, e.total, nil
+}
+
+// TestScanner_FirstListErrorPropagates pins the round-2 Scan() contract:
+// a failure on the very first List call must surface as a wrapped error,
+// not as silent "scan complete with zero counts".
+func TestScanner_FirstListErrorPropagates(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	boom := errors.New("simulated DB outage")
+	listing := errArtistLister{errOn: 1, errValue: boom}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	err := scanner.Scan(context.Background())
+	if err == nil {
+		t.Fatal("expected error from Scan when first List fails; got nil")
+	}
+	if !errors.Is(err, boom) {
+		t.Errorf("Scan should wrap the underlying error; got %v", err)
+	}
+}
+
+// TestScanner_PaginationListErrorAborts pins that a mid-corpus pagination
+// failure aborts the scan with an Error-level summary log and a wrapped
+// error return, rather than the misleading "scan complete" Info that
+// silently shipped before the hardening sweep.
+func TestScanner_PaginationListErrorAborts(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	dir := t.TempDir()
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir); err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	// pageSize is 200; emit page 1 with > 0 artists and a total higher than
+	// page-1 length so the scanner pages forward, then error on page 2.
+	page1 := []artist.Artist{{ID: "a1", Name: "x", Path: dir}}
+	boom := errors.New("page list failure")
+	listing := errArtistLister{
+		pages:    map[int][]artist.Artist{1: page1},
+		total:    250, // > len(page1) so scanner pages
+		errOn:    2,
+		errValue: boom,
+	}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	err := scanner.Scan(context.Background())
+	if err == nil {
+		t.Fatal("expected error from Scan when page 2 fails; got nil")
+	}
+	if !errors.Is(err, boom) {
+		t.Errorf("Scan should wrap the page-list error; got %v", err)
+	}
+	wantPrefix := "listing artists page 2"
+	if msg := err.Error(); !strings.Contains(msg, wantPrefix) {
+		t.Errorf("error message should reference the failing page; got %q", msg)
+	}
+}
+
+// TestScanner_ContextCanceledMidPagination pins that cancellation between
+// pages returns context.Canceled distinctly from the clean-completion path,
+// so StartScheduler can suppress the Error log on graceful shutdown.
+func TestScanner_ContextCanceledMidPagination(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	dir := t.TempDir()
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir); err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	page1 := []artist.Artist{{ID: "a1", Name: "x", Path: dir}}
+	// Use a stub that cancels its own context view: signalLister.cancel is
+	// invoked from inside List() on the configured page, so the scanner's
+	// next ctx.Err() check at the top of the pagination loop sees the
+	// cancellation.
+	cancelOnPage := 1
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	listing := signalLister{
+		pages:        map[int][]artist.Artist{1: page1},
+		total:        250,
+		cancel:       cancel,
+		cancelOnPage: cancelOnPage,
+	}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	err := scanner.Scan(ctx)
+	if err == nil {
+		t.Fatal("expected ctx.Err from Scan after cancellation; got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Scan should return context.Canceled; got %v", err)
+	}
+}
+
+// signalLister cancels its associated context after returning page N,
+// exercising the ctx.Err() branch in Scan's pagination loop.
+type signalLister struct {
+	pages        map[int][]artist.Artist
+	total        int
+	cancel       context.CancelFunc
+	cancelOnPage int
+}
+
+func (s signalLister) List(_ context.Context, params artist.ListParams) ([]artist.Artist, int, error) {
+	list := s.pages[params.Page]
+	if params.Page == s.cancelOnPage {
+		// Cancel after returning so the scanner sees ctx.Err on the NEXT
+		// loop iteration's check.
+		s.cancel()
+	}
+	return list, s.total, nil
+}
+
+// TestScanner_ReconcileIsAllowlistedErrorPreservesRow pins the round-4
+// hardening: when IsAllowlisted errors during the reconcile pass, the
+// scanner must NOT clear the row (skip-don't-clear). Inducing the error by
+// dropping the allowlist table mid-flight is impractical; we drop it
+// before the scan instead, which makes IsAllowlisted error on every call
+// (record AND reconcile passes). The pre-seeded ledger row must survive.
+func TestScanner_ReconcileIsAllowlistedErrorPreservesRow(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	dir := t.TempDir()
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir); err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	// Real foreign file on disk so the row's file is "present" -- the
+	// reconcile loop only consults IsAllowlisted on rows whose file still
+	// exists. Without an on-disk file the row would fall into the
+	// missing-file clear branch.
+	mustWrite(t, filepath.Join(dir, "backdrop.jpg"), []byte("garbage"))
+	if err := repo.Upsert(context.Background(), Entry{
+		ArtistID: "a1", FilePath: filepath.Join(dir, "backdrop.jpg"), FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Drop the allowlist table to force IsAllowlisted to error.
+	if _, err := db.Exec(`DROP TABLE foreign_file_allowlist`); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Name: "x", Path: dir}}}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if err := scanner.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	rows, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Errorf("row must persist when IsAllowlisted errors; got %d rows", len(rows))
+	}
 }
