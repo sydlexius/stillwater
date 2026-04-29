@@ -208,13 +208,29 @@ func (r *Repository) AddAllowlist(ctx context.Context, e AllowlistEntry) error {
 	if err != nil {
 		// Treat unique-constraint failures as benign so callers (e.g. the
 		// banner Dismiss bulk action) can replay safely without surfacing
-		// "duplicate" errors to the user.
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		// "duplicate" errors to the user. Match the specific SQLite phrase
+		// rather than any error containing "unique" (which would absorb
+		// future unrelated errors that mention a column or constraint name
+		// containing the substring).
+		if isUniqueConstraintErr(err) {
 			return nil
 		}
 		return fmt.Errorf("foreign: insert allowlist: %w", err)
 	}
 	return nil
+}
+
+// isUniqueConstraintErr reports whether err is a SQLite UNIQUE-constraint
+// violation. modernc.org/sqlite emits messages of the form
+// "UNIQUE constraint failed: <table>.<col>"; this matcher pins to that
+// exact prefix so unrelated errors that happen to mention "unique"
+// (column names, comment fragments in driver-wrapped errors) are not
+// silently swallowed.
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // RemoveAllowlist deletes an allowlist row by id. Re-detection becomes

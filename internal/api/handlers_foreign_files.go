@@ -168,7 +168,12 @@ func (r *Router) handleForeignFileAllowlist(w http.ResponseWriter, req *http.Req
 		return
 	}
 	if err := r.foreignRepo.DeleteByID(req.Context(), id); err != nil && !errors.Is(err, foreign.ErrNotFound) {
-		r.logger.Warn("removing allowlisted ledger row", "id", id, "error", err)
+		// Error not Warn: the user-facing destructive action (allowlist
+		// write) succeeded but the ledger cleanup failed, so the row will
+		// reappear in the next render. The user is likely to click
+		// Allowlist again and hit a different error path. Surface this
+		// loudly so the operator notices the partial-state.
+		r.logger.Error("removing allowlisted ledger row after successful allowlist write", "id", id, "error", err)
 	}
 	// Render the refreshed table so HTMX swaps #foreign-files-table in place.
 	// Row-level hx-swap="delete" was insufficient: when the last row is
@@ -215,7 +220,11 @@ func (r *Router) handleForeignFileDelete(w http.ResponseWriter, req *http.Reques
 		}
 	}
 	if err := r.foreignRepo.DeleteByID(req.Context(), id); err != nil && !errors.Is(err, foreign.ErrNotFound) {
-		r.logger.Warn("removing ledger row after disk delete", "id", id, "error", err)
+		// Error not Warn: the file is gone from disk but the ledger row
+		// remains, so the next scan will not re-detect (file is absent)
+		// yet the table still shows the entry. This is a partial-state
+		// the operator should see promptly.
+		r.logger.Error("removing ledger row after successful disk delete", "id", id, "error", err)
 	}
 	r.renderForeignFilesTable(w, req, "rendering foreign-files table after delete failed")
 }
@@ -258,7 +267,11 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 			continue
 		}
 		if err := r.foreignRepo.DeleteByPath(req.Context(), e.ArtistID, e.FilePath); err != nil && !errors.Is(err, foreign.ErrNotFound) {
-			r.logger.Warn("dismiss ledger cleanup failed", "id", e.ID, "error", err)
+			// Error not Warn: the global allowlist write succeeded but the
+			// ledger cleanup failed, so the row stays visible. With many
+			// rows in a single dismiss this can cause confusing partial
+			// renders; loud logging helps the operator correlate.
+			r.logger.Error("dismiss ledger cleanup failed after successful allowlist write", "id", e.ID, "error", err)
 		}
 	}
 	// Render the actual remaining rows so HTMX can swap #foreign-files-table

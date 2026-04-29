@@ -660,6 +660,8 @@ templ conflictBannerForeignFiles(v ConflictBannerView) {
 					hx-target="#conflict-banner"
 					hx-swap="innerHTML"
 					hx-disabled-elt="this"
+					hx-on::response-error="alert('Could not dismiss foreign files. Try again or open Review to handle them individually.')"
+					hx-on::send-error="alert('Network error dismissing foreign files. Try again or open Review to handle them individually.')"
 				>Dismiss (allowlist all)</button>
 			</div>
 		</div>

@@ -621,7 +621,19 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
+				// Re-entrancy guard. goToStep is async (it awaits the conflict
+				// preflight recompute when transitioning to step 5), so a
+				// rapid double-click on Next would otherwise launch two
+				// concurrent invocations: both would await, both would
+				// proceed, and the second would clobber currentStep based
+				// on a stale view of the first's outcome. Dropping the
+				// second invocation is the right UX -- the user wanted to
+				// advance once.
+				var goToStepInFlight = false;
 				async function goToStep(step) {
+					if (goToStepInFlight) return;
+					goToStepInFlight = true;
+					try {
 					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
 					// When the requested target is step 5, await an
@@ -731,6 +743,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}).catch(function(err) {
 						console.warn('Failed to persist onboarding step:', err);
 					});
+					} finally {
+						goToStepInFlight = false;
+					}
 				}
 
 				// updateConflictGate disables Next on step 5 when the rendered
@@ -898,20 +913,24 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
+				// Returns a Promise so callers (notably tests and any future
+				// awaiter) can compose with the recompute. Most live callers
+				// fire-and-forget; the goToStep step-5 await closes the
+				// stale-flag race that would otherwise need awaiting here.
 				function refreshLibraryList() {
-					fetch(basePath + '/api/v1/libraries', {
+					return fetch(basePath + '/api/v1/libraries', {
 						headers: {'X-CSRF-Token': getCsrfToken()}
 					}).then(function(res) {
 						if (!res.ok) throw new Error('HTTP ' + res.status);
 						return res.json();
 					}).then(function(libs) {
-						// Library count contributes to step-5 gating; refresh
-						// the cached visibility flag whenever the list mutates.
-						recomputeConflictPreflight();
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
 							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
-							return;
+							// Library count contributes to step-5 gating;
+							// refresh the cached visibility flag whenever the
+							// list mutates. Returned so the chain is awaitable.
+							return recomputeConflictPreflight();
 						}
 						var html = '';
 						libs.forEach(function(lib) {
@@ -932,6 +951,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								+ '</div>';
 						});
 						list.innerHTML = html;
+						return recomputeConflictPreflight();
 					}).catch(function() {
 						var list = document.getElementById('ob-library-list');
 						if (list) list.textContent = 'Failed to load libraries. Please refresh the page.';
@@ -1405,6 +1425,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (svg) svg.classList.remove('rotate-180');
 				}
 
+				// Returns the recompute Promise so callers can compose. Most
+				// live callers fire-and-forget; the goToStep step-5 await
+				// closes the stale-flag race that would otherwise need
+				// awaiting here.
 				function onConnectionSaved(connType, xhr) {
 					var form = document.getElementById('ob-conn-form-' + connType);
 					var success = document.getElementById('ob-conn-success-' + connType);
@@ -1417,7 +1441,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					// Saving an emby/jellyfin/lidarr connection is the other half
 					// of the step-5 gate; refresh the cached flag so the user
 					// won't be skipped past the conflict pre-flight.
-					recomputeConflictPreflight();
+					var recomputeP = recomputeConflictPreflight();
 					if (dot) {
 						dot.classList.remove('bg-gray-400', 'dark:bg-gray-500');
 						dot.classList.add('bg-green-500');
@@ -1442,6 +1466,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						} catch(e) {}
 					}
+					return recomputeP;
 				}
 
 				function testConnection(connID, connType) {

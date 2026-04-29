@@ -47,6 +47,8 @@ templ ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) {
 							hx-confirm="Allowlist every detected foreign file globally?"
 							hx-target="#foreign-files-table"
 							hx-swap="outerHTML"
+							hx-on::response-error="alert('Could not dismiss all foreign files. Refresh and try again.')"
+							hx-on::send-error="alert('Network error dismissing foreign files. Try again.')"
 						>Dismiss (allowlist all)</button>
 					}
 				</div>
@@ -91,6 +93,8 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 									hx-post={ "/api/v1/foreign-files/" + r.ID + "/allowlist" }
 									hx-target="#foreign-files-table"
 									hx-swap="outerHTML"
+									hx-on::response-error="alert('Could not allowlist this file. Refresh and try again.')"
+									hx-on::send-error="alert('Network error. Try again.')"
 								>Allowlist</button>
 								<button
 									type="button"
@@ -99,6 +103,8 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 									hx-confirm="Permanently delete this file from disk?"
 									hx-target="#foreign-files-table"
 									hx-swap="outerHTML"
+									hx-on::response-error="alert('Could not delete this file. It may already be gone, or check filesystem permissions.')"
+									hx-on::send-error="alert('Network error. Try again.')"
 								>Delete</button>
 							</td>
 						</tr>
