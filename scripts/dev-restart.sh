@@ -6,6 +6,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Per-worktree run-artifact directory. The dev log defaults to
+# $SW_RUN_DIR/dev.log unless SW_DEV_LOG is set, so each worktree's dev
+# server writes to its own log path without collision.
+. "$(dirname "$0")/lib/run-paths.sh"
+
 echo "==> Building..."
 make build
 
@@ -35,7 +40,7 @@ else
 fi
 
 echo "==> Launching Stillwater..."
-LOG_FILE="${SW_DEV_LOG:-/tmp/stillwater.log}"
+LOG_FILE="${SW_DEV_LOG:-$SW_RUN_DIR/dev.log}"
 mkdir -p "$(dirname "$LOG_FILE")"
 ./stillwater >"$LOG_FILE" 2>&1 &
 SWPID=$!
