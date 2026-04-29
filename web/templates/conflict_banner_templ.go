@@ -1639,7 +1639,33 @@ func conflictBannerForeignFiles(v ConflictBannerView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</span></div><div class=\"text-xs text-slate-200/70 mt-0.5\">These files match media-server naming patterns but do not carry Stillwater provenance. Review them on the foreign-files page or dismiss to allowlist all.</div></div></div><div class=\"flex items-center gap-2 shrink-0\"><a href=\"/settings/foreign-files\" class=\"px-3 py-1.5 rounded-md bg-blue-300 text-slate-900 text-sm font-medium hover:bg-white\">Review</a> <button type=\"button\" class=\"px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-slate-100\" hx-post=\"/api/v1/foreign-files/dismiss\" hx-target=\"#conflict-banner\" hx-swap=\"innerHTML\" hx-disabled-elt=\"this\" hx-on::response-error=\"alert('Could not dismiss foreign files. Try again or open Review to handle them individually.')\" hx-on::send-error=\"alert('Network error dismissing foreign files. Try again or open Review to handle them individually.')\">Dismiss (allowlist all)</button></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</span></div><div class=\"text-xs text-slate-200/70 mt-0.5\">These files match media-server naming patterns but do not carry Stillwater provenance. Review them on the foreign-files page or dismiss to allowlist all.</div></div></div><div class=\"flex items-center gap-2 shrink-0\"><a href=\"/settings/foreign-files\" class=\"px-3 py-1.5 rounded-md bg-blue-300 text-slate-900 text-sm font-medium hover:bg-white\">Review</a> <button type=\"button\" class=\"px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-slate-100\" hx-post=\"/api/v1/foreign-files/dismiss\" hx-swap=\"none\" hx-disabled-elt=\"this\" data-sw-error=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var72 string
+		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "conflict.dismiss_response_error"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 662, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\" data-sw-net-error=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var73 string
+		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "conflict.dismiss_send_error"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/conflict_banner.templ`, Line: 663, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" hx-on::after-request=\"if(event.detail.successful){htmx.ajax('GET','/api/v1/config/conflict-banner',{target:'#conflict-banner',swap:'innerHTML'});}\" hx-on::response-error=\"alert(this.dataset.swError)\" hx-on::send-error=\"alert(this.dataset.swNetError)\">Dismiss (allowlist all)</button></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -47,8 +47,10 @@ templ ForeignFilesPage(assets AssetPaths, view ForeignFilesPageView) {
 							hx-confirm="Allowlist every detected foreign file globally?"
 							hx-target="#foreign-files-table"
 							hx-swap="outerHTML"
-							hx-on::response-error="alert('Could not dismiss all foreign files. Refresh and try again.')"
-							hx-on::send-error="alert('Network error dismissing foreign files. Try again.')"
+							data-sw-error={ t(ctx, "foreign_files.dismiss_response_error") }
+							data-sw-net-error={ t(ctx, "foreign_files.dismiss_send_error") }
+							hx-on::response-error="alert(this.dataset.swError)"
+							hx-on::send-error="alert(this.dataset.swNetError)"
 						>Dismiss (allowlist all)</button>
 					}
 				</div>
@@ -93,8 +95,10 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 									hx-post={ "/api/v1/foreign-files/" + r.ID + "/allowlist" }
 									hx-target="#foreign-files-table"
 									hx-swap="outerHTML"
-									hx-on::response-error="alert('Could not allowlist this file. Refresh and try again.')"
-									hx-on::send-error="alert('Network error. Try again.')"
+									data-sw-error={ t(ctx, "foreign_files.allowlist_response_error") }
+									data-sw-net-error={ t(ctx, "foreign_files.allowlist_send_error") }
+									hx-on::response-error="alert(this.dataset.swError)"
+									hx-on::send-error="alert(this.dataset.swNetError)"
 								>Allowlist</button>
 								<button
 									type="button"
@@ -103,8 +107,10 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 									hx-confirm="Permanently delete this file from disk?"
 									hx-target="#foreign-files-table"
 									hx-swap="outerHTML"
-									hx-on::response-error="alert('Could not delete this file. It may already be gone, or check filesystem permissions.')"
-									hx-on::send-error="alert('Network error. Try again.')"
+									data-sw-error={ t(ctx, "foreign_files.delete_response_error") }
+									data-sw-net-error={ t(ctx, "foreign_files.delete_send_error") }
+									hx-on::response-error="alert(this.dataset.swError)"
+									hx-on::send-error="alert(this.dataset.swNetError)"
 								>Delete</button>
 							</td>
 						</tr>

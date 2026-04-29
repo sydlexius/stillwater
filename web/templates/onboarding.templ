@@ -318,12 +318,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.conflict_check_intro") }
 						</p>
-						<!--
-							The body is HTMX-loaded so the synchronous peer probe (Detector.Refresh)
-							runs only when the user actually transitions into this step. The Continue
-							button is gated by the hidden #ob-conflict-block input that the rendered
-							body sets to "1" when the round-trip (red) state is detected.
-						-->
+						// The body is HTMX-loaded so the synchronous peer probe (Detector.Refresh)
+						// runs only when the user actually transitions into this step. The Continue
+						// button is gated by the hidden #ob-conflict-block input that the rendered
+						// body sets to "1" when the round-trip (red) state is detected.
 						<input type="hidden" id="ob-conflict-block" value="1"/>
 						<div
 							id="ob-conflict-body"
