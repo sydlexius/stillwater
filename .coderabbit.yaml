@@ -99,6 +99,30 @@ reviews:
           test goroutine must be synchronized (data race)
         - Engine/rule tests should assert relative properties rather than exact
           counts that break when new rules are added
+    - path: "internal/provider/**/*.go"
+      instructions: |
+        Watch for changes that should be reflected on the user-facing docs site
+        (https://sydlexius.github.io/stillwater/). Flag the PR if the change
+        adds, modifies, or removes a provider, capability flag, supported
+        field, or default value AND `docs/site/src/reference/providers.md` is
+        unchanged in the same PR. The provider matrix between
+        `<!-- BEGIN GENERATED: provider-matrix -->` and
+        `<!-- END GENERATED: provider-matrix -->` is auto-generated; narrative
+        prose around it is manual.
+    - path: "internal/connection/**/*.go"
+      instructions: |
+        Check whether the change affects platform connector behavior visible
+        to the user (Emby, Jellyfin, or Lidarr auth, library scan, or
+        write-back semantics). If user-visible behavior changes, flag the PR
+        if neither `docs/site/src/getting-started/connect-*.md` nor
+        `docs/site/src/troubleshooting/platform-auth.md` is updated.
+    - path: "internal/api/openapi.yaml"
+      instructions: |
+        Confirm spec/handler consistency in this PR. The API reference at
+        `https://sydlexius.github.io/stillwater/api/` auto-builds from this
+        spec, so spec correctness is user-visible. Every new response field,
+        enum value, or schema change should have a corresponding handler edit
+        in the same PR; flag any drift between schema and handler signatures.
   tools:
     golangci-lint:
       enabled: true
