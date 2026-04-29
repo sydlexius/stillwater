@@ -223,10 +223,11 @@ func (r *Repository) AddAllowlist(ctx context.Context, e AllowlistEntry) error {
 // isUniqueConstraintErr reports whether err is a SQLite UNIQUE-constraint
 // violation. modernc.org/sqlite emits messages of the form
 // "UNIQUE constraint failed: <table>.<col>"; this matcher pins to that
-// exact prefix so unrelated errors that happen to mention "unique"
-// (column names, comment fragments in driver-wrapped errors) are not
-// silently swallowed. Lowercases the message before comparing to match
-// the convention used in internal/auth/user.go and internal/auth/invite.go.
+// exact phrase (substring match, lowercased) so unrelated errors that
+// happen to mention "unique" (column names, comment fragments in
+// driver-wrapped errors) are not silently swallowed. Lowercases the
+// message before comparing to match the convention used in
+// internal/auth/user.go and internal/auth/invite.go.
 func isUniqueConstraintErr(err error) bool {
 	if err == nil {
 		return false

@@ -365,15 +365,13 @@ type OnboardingConflictView struct {
 // gating signal: a hidden input the parent page reads to toggle the
 // Continue button.
 templ OnboardingConflictBody(v OnboardingConflictView) {
-	<!--
-		The hidden ob-conflict-block-state input is read by the body-level
-		htmx:afterSwap listener in onboarding.templ, which copies its value
-		into #ob-conflict-block (the gate input that updateConflictGate
-		watches). We use a sibling node rather than mutating
-		#ob-conflict-block directly so HTMX innerHTML swaps replace the
-		value atomically with the body. Sync lives in a single place to
-		avoid drift between paths.
-	-->
+	// The hidden ob-conflict-block-state input is read by the body-level
+	// htmx:afterSwap listener in onboarding.templ, which copies its value
+	// into #ob-conflict-block (the gate input that updateConflictGate
+	// watches). We use a sibling node rather than mutating
+	// #ob-conflict-block directly so HTMX innerHTML swaps replace the
+	// value atomically with the body. Sync lives in a single place to
+	// avoid drift between paths.
 	<input type="hidden" id="ob-conflict-block-state" value={ obConflictBlockValue(v.Blocking) }/>
 	if v.ProbeError != "" {
 		@onboardingConflictProbeError(v.ProbeError)
@@ -400,6 +398,7 @@ templ OnboardingConflictBody(v OnboardingConflictView) {
 			hx-swap="innerHTML"
 			hx-disabled-elt="this"
 			hx-indicator="this"
+			hx-on::before-request={ resetOnboardingConflictGate() }
 		>
 			<svg class="htmx-indicator h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 				<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
@@ -454,13 +453,11 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 									>
 										Let Stillwater manage
 									</button>
-									<!--
-										Secondary CTA for users who do not want Stillwater to flip
-										the remote saver. Links to the connections section of the
-										settings page so they can edit the connection directly.
-										Continue stays enabled in this state; the dashboard banner
-										keeps surfacing the warning until the user resolves it.
-									-->
+									// Secondary CTA for users who do not want Stillwater to flip
+									// the remote saver. Links to the connections section of the
+									// settings page so they can edit the connection directly.
+									// Continue stays enabled in this state; the dashboard banner
+									// keeps surfacing the warning until the user resolves it.
 									<a
 										class="px-2.5 py-1 rounded-md border border-amber-500 text-amber-900 dark:text-amber-100 text-xs font-medium hover:bg-amber-100/50 dark:hover:bg-amber-900/40"
 										href="/settings#connections"
@@ -570,6 +567,14 @@ script onboardingManagedAfterRequest(connID string) {
 			errEl.classList.add("hidden");
 			errEl.textContent = "";
 		}
+		// Reset the gate before the refresh request fires so a fast click
+		// during the in-flight probe cannot bypass a freshly-detected
+		// round-trip block. The afterSwap listener will copy the new
+		// ob-conflict-block-state into ob-conflict-block once the body
+		// renders, so any non-blocking final state will reopen Continue.
+		var blockEl = document.getElementById("ob-conflict-block");
+		if (blockEl) blockEl.value = "1";
+		if (typeof updateConflictGate === "function") updateConflictGate();
 		htmx.ajax("POST", "/api/v1/onboarding/conflict-step?refresh=1",
 			{ target: "#ob-conflict-body", swap: "innerHTML" });
 	} else if (errEl) {
@@ -578,6 +583,22 @@ script onboardingManagedAfterRequest(connID string) {
 			"Could not update this server-managed setting. Try again or reload the page.";
 		errEl.classList.remove("hidden");
 	}
+}
+
+// resetOnboardingConflictGate re-closes the OOBE Continue gate before any
+// refresh path that targets #ob-conflict-body fires. Without this, the
+// gate input retains the prior render's value during the in-flight probe,
+// allowing a fast click to bypass a freshly-detected round-trip block.
+// goToStep and the retry button already route through onboarding.templ's
+// triggerConflictRefresh; this script is the conflict_banner-side
+// equivalent for the Re-check button and the toggle success callback,
+// both of which fire their own HTMX request with `?refresh=1` and so
+// cannot reuse triggerConflictRefresh (which dispatches oobeConflictRefresh
+// and would re-fetch from the cached detector instead of forcing a probe).
+script resetOnboardingConflictGate() {
+	var blockEl = document.getElementById("ob-conflict-block");
+	if (blockEl) blockEl.value = "1";
+	if (typeof updateConflictGate === "function") updateConflictGate();
 }
 
 // conflictBannerClean renders the emerald state D bar shown when no
