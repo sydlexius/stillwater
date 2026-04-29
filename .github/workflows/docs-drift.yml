@@ -1,0 +1,158 @@
+name: Docs Drift
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'internal/provider/**'
+      - 'internal/connection/**'
+      - 'internal/scraper/**'
+      - 'internal/api/openapi.yaml'
+      - 'internal/api/handlers_*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: Check docs drift
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        with:
+          filters: |
+            code:
+              - 'internal/provider/**'
+              - 'internal/connection/**'
+              - 'internal/scraper/**'
+              - 'internal/api/openapi.yaml'
+              - 'internal/api/handlers_*'
+            docs:
+              - 'docs/**'
+
+      - name: Apply or clear docs-drift advisory
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          CODE_CHANGED: ${{ steps.filter.outputs.code }}
+          DOCS_CHANGED: ${{ steps.filter.outputs.docs }}
+        with:
+          script: |
+            const MARKER = '<!-- docs-drift-bot -->';
+            const NEEDS_LABEL = 'needs-docs-review';
+            const OPT_OUT_LABEL = 'docs: not-required';
+
+            const codeChanged = process.env.CODE_CHANGED === 'true';
+            const docsChanged = process.env.DOCS_CHANGED === 'true';
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = pr.number;
+
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (err) {
+                if (err.status === 404) {
+                  try {
+                    await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                  } catch (createErr) {
+                    if (createErr.status !== 422) throw createErr;
+                  }
+                } else {
+                  throw err;
+                }
+              }
+            }
+
+            async function findMarkerComment() {
+              const iter = github.paginate.iterator(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number, per_page: 100 }
+              );
+              for await (const { data: comments } of iter) {
+                for (const c of comments) {
+                  if (c.body && c.body.includes(MARKER)) return c;
+                }
+              }
+              return null;
+            }
+
+            async function setLabel(name, present) {
+              const labels = pr.labels.map(l => l.name);
+              const has = labels.includes(name);
+              if (present && !has) {
+                await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [name] });
+              } else if (!present && has) {
+                try {
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+                } catch (err) {
+                  if (err.status !== 404) throw err;
+                }
+              }
+            }
+
+            await ensureLabel(NEEDS_LABEL, 'fbca04', 'Code changed but docs were not updated; please review docs surface');
+            await ensureLabel(OPT_OUT_LABEL, 'c5def5', 'Override the docs-drift advisory; this PR does not need docs changes');
+
+            const optedOut = pr.labels.some(l => l.name === OPT_OUT_LABEL);
+            const driftDetected = codeChanged && !docsChanged && !optedOut;
+            const existing = await findMarkerComment();
+
+            if (driftDetected) {
+              const body = [
+                MARKER,
+                '## Docs drift advisory',
+                '',
+                'This PR touches code surfaces whose user-visible behavior is documented at',
+                '<https://sydlexius.github.io/stillwater/>, but no `docs/` files changed.',
+                'Consider whether any of the following pages need an update:',
+                '',
+                '- Provider list and capabilities (`docs/site/src/reference/providers.md`)',
+                '- Settings reference (`docs/site/src/reference/settings-by-tab.md`)',
+                '- Connect-platform guides (`docs/site/src/getting-started/connect-*.md`)',
+                '- Troubleshooting (`docs/site/src/troubleshooting/platform-auth.md`)',
+                '- API reference auto-built from `internal/api/openapi.yaml`',
+                '',
+                'If no docs change is needed, apply the `docs: not-required` label and this',
+                'advisory will clear on the next workflow run.',
+                '',
+                '_This is a soft advisory and never blocks merge._',
+              ].join('\n');
+
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+              await setLabel(NEEDS_LABEL, true);
+            } else {
+              if (existing) {
+                const cleared = [
+                  MARKER,
+                  '## Docs drift advisory',
+                  '',
+                  optedOut
+                    ? 'Cleared: `docs: not-required` label is set on this PR.'
+                    : (docsChanged
+                        ? 'Cleared: this PR updates `docs/` alongside the code changes.'
+                        : 'Cleared: no docs-sensitive code paths are modified.'),
+                  '',
+                  '_This is a soft advisory and never blocks merge._',
+                ].join('\n');
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: cleared });
+              }
+              await setLabel(NEEDS_LABEL, false);
+            }
