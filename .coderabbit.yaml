@@ -72,6 +72,11 @@ reviews:
         - Descriptions accurately reflect code behavior (not "empty when X" if code
           also makes it non-empty when Y)
         - $ref schemas match the actual response shape
+        The API reference at https://sydlexius.github.io/stillwater/api/
+        auto-builds from this spec, so spec correctness is user-visible. Every
+        new response field, enum value, or schema change should have a
+        corresponding handler edit in the same PR; flag any drift between
+        schema and handler signatures.
     - path: "**/*.go"
       instructions: |
         Check for null/empty edge cases:
@@ -116,13 +121,6 @@ reviews:
         write-back semantics). If user-visible behavior changes, flag the PR
         if neither `docs/site/src/getting-started/connect-*.md` nor
         `docs/site/src/troubleshooting/platform-auth.md` is updated.
-    - path: "internal/api/openapi.yaml"
-      instructions: |
-        Confirm spec/handler consistency in this PR. The API reference at
-        `https://sydlexius.github.io/stillwater/api/` auto-builds from this
-        spec, so spec correctness is user-visible. Every new response field,
-        enum value, or schema change should have a corresponding handler edit
-        in the same PR; flag any drift between schema and handler signatures.
   tools:
     golangci-lint:
       enabled: true

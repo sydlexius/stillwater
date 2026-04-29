@@ -22,6 +22,7 @@ jobs:
     name: Check docs drift
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
       issues: write
     steps:
@@ -65,7 +66,11 @@ jobs:
                 await github.rest.issues.getLabel({ owner, repo, name });
               } catch (err) {
                 if (err.status === 404) {
-                  await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                  try {
+                    await github.rest.issues.createLabel({ owner, repo, name, color, description });
+                  } catch (createErr) {
+                    if (createErr.status !== 422) throw createErr;
+                  }
                 } else {
                   throw err;
                 }
@@ -91,7 +96,11 @@ jobs:
               if (present && !has) {
                 await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [name] });
               } else if (!present && has) {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+                try {
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+                } catch (err) {
+                  if (err.status !== 404) throw err;
+                }
               }
             }
 
