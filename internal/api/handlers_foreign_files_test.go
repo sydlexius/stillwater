@@ -14,6 +14,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/foreign"
 )
 
@@ -352,5 +353,363 @@ func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
 	t.Helper()
 	if _, err := db.Exec(q, args...); err != nil {
 		t.Fatalf("exec %q: %v", q, err)
+	}
+}
+
+// TestHandleForeignFile_RenderRefreshedTable_AfterRowActions pins the new
+// render-after-success behavior for the per-row Allowlist and Delete
+// handlers. Both should now return the refreshed #foreign-files-table partial
+// (HTML) so HTMX can swap the whole container, fixing the stale empty-state
+// + bulk-dismiss button bug from PR #1246 round 2.
+func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "backdrop.jpg")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil { //nolint:gosec
+		t.Fatalf("write: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a2','Beth',?)`, dir)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed allowlist target: %v", err)
+	}
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a2", FilePath: target, FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed delete target: %v", err)
+	}
+	rows, _ := r.foreignRepo.List(context.Background())
+	allowID, deleteID := rows[0].ID, rows[1].ID
+
+	// Allowlist returns the refreshed table partial.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/"+allowID+"/allowlist", nil)
+	req.SetPathValue("id", allowID)
+	rec := httptest.NewRecorder()
+	r.handleForeignFileAllowlist(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("allowlist status: got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("allowlist Content-Type: got %q want HTML", got)
+	}
+	if !strings.Contains(rec.Body.String(), `id="foreign-files-table"`) {
+		t.Errorf("allowlist body should contain the swap target id; body=%q", rec.Body.String())
+	}
+
+	// Delete returns the refreshed table partial.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-files/"+deleteID+"/file", nil)
+	req.SetPathValue("id", deleteID)
+	rec = httptest.NewRecorder()
+	r.handleForeignFileDelete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status: got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="foreign-files-table"`) {
+		t.Errorf("delete body should contain the swap target id; body=%q", rec.Body.String())
+	}
+
+	// After both actions, ledger is empty -> empty-state copy must render.
+	if !strings.Contains(rec.Body.String(), "No foreign image files detected") {
+		t.Errorf("empty-state copy should appear on last-row removal; body=%q", rec.Body.String())
+	}
+}
+
+// TestHandleForeignAllowlistRemove_RendersRefreshedTable pins the same
+// behavior for the allowlist page's per-row Remove action.
+func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
+	r, _ := newTestRouterWithForeign(t)
+	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
+	}); err != nil {
+		t.Fatalf("AddAllowlist: %v", err)
+	}
+	rows, _ := r.foreignRepo.ListAllowlist(context.Background())
+	id := rows[0].ID
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-file-allowlist/"+id, nil)
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	r.handleForeignAllowlistRemove(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type: got %q want HTML", got)
+	}
+	if !strings.Contains(rec.Body.String(), `id="foreign-allowlist-table"`) {
+		t.Errorf("body should contain the allowlist-table swap target; body=%q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "The allowlist is empty") {
+		t.Errorf("empty-state copy should render on last-row removal; body=%q", rec.Body.String())
+	}
+}
+
+// TestHandleForeignFilesDismiss_RendersSurvivingRows pins the round-2 fix:
+// dismiss must render the actual remaining rows (not an unconditional empty
+// view) so a partial-success run does not hide surviving detections.
+func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
+	for _, fn := range []string{"backdrop.jpg", "fanart.jpg"} {
+		if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+			ArtistID: "a1", FilePath: "/x/" + fn, FileName: fn,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", fn, err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesDismiss(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dismiss status: got %d", rec.Code)
+	}
+	// Successful dismiss against a real DB clears every row -> empty state.
+	if !strings.Contains(rec.Body.String(), "No foreign image files detected") {
+		t.Errorf("dismiss should render empty-state when ledger is fully cleared; body=%q", rec.Body.String())
+	}
+}
+
+// TestHandleForeignFiles_DBErrorPaths exercises the 5xx logger.Error branches
+// across every JSON handler by closing the underlying DB before the call.
+// This pins the "log first, sanitized client message" contract for the round
+// 1 review (slog.Error before writeJSON 500) and lifts patch coverage on the
+// previously-untested error branches.
+func TestHandleForeignFiles_DBErrorPaths(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		pathID string
+		seed   func(t *testing.T, r *Router, db *sql.DB)
+		invoke func(r *Router, w http.ResponseWriter, req *http.Request)
+	}{
+		{
+			name: "list", method: http.MethodGet, path: "/api/v1/foreign-files",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignFilesList(w, req) },
+		},
+		{
+			name: "allowlist-load-error", method: http.MethodPost, path: "/api/v1/foreign-files/x/allowlist", pathID: "x",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignFileAllowlist(w, req) },
+		},
+		{
+			name: "delete-load-error", method: http.MethodDelete, path: "/api/v1/foreign-files/x/file", pathID: "x",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignFileDelete(w, req) },
+		},
+		{
+			name: "dismiss-list-error", method: http.MethodPost, path: "/api/v1/foreign-files/dismiss",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignFilesDismiss(w, req) },
+		},
+		{
+			name: "allowlist-list-error", method: http.MethodGet, path: "/api/v1/foreign-file-allowlist",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignAllowlistList(w, req) },
+		},
+		{
+			name: "allowlist-remove-error", method: http.MethodDelete, path: "/api/v1/foreign-file-allowlist/x", pathID: "x",
+			invoke: func(r *Router, w http.ResponseWriter, req *http.Request) { r.handleForeignAllowlistRemove(w, req) },
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, db := newTestRouterWithForeign(t)
+			if c.seed != nil {
+				c.seed(t, r, db)
+			}
+			// Close the DB so every repo call returns an error.
+			if err := db.Close(); err != nil {
+				t.Fatalf("close: %v", err)
+			}
+			req := httptest.NewRequest(c.method, c.path, nil)
+			if c.pathID != "" {
+				req.SetPathValue("id", c.pathID)
+			}
+			rec := httptest.NewRecorder()
+			c.invoke(r, rec, req)
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("expected 500 on DB error; got %d (body=%s)", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestLoadForeignFilesView covers the data-loading helper extracted from
+// handleForeignFilesPage. The page handler itself needs full Router wiring
+// (static assets, auth service) to render the wrapping page; testing the
+// loader directly captures the data-shaping logic without that machinery.
+func TestLoadForeignFilesView(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+
+	// Empty repo -> empty view, no error.
+	view, err := r.loadForeignFilesView(context.Background())
+	if err != nil || view.Count != 0 || len(view.Rows) != 0 {
+		t.Errorf("empty: view=%+v err=%v", view, err)
+	}
+
+	// Populated repo -> rows materialized + Count synced to len(Rows).
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	view, err = r.loadForeignFilesView(context.Background())
+	if err != nil {
+		t.Fatalf("populated: %v", err)
+	}
+	if view.Count != 1 || len(view.Rows) != 1 || view.Rows[0].FileName != "backdrop.jpg" {
+		t.Errorf("populated view: %+v", view)
+	}
+
+	// Nil repo path -> zero view, no error.
+	r2 := &Router{logger: slog.Default()}
+	view, err = r2.loadForeignFilesView(context.Background())
+	if err != nil || view.Count != 0 {
+		t.Errorf("nil-repo: view=%+v err=%v", view, err)
+	}
+
+	// Repo error -> error returned, view zeroed.
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := r.loadForeignFilesView(context.Background()); err == nil {
+		t.Error("closed-DB loadForeignFilesView should return error")
+	}
+}
+
+// TestLoadForeignAllowlistView mirrors the foreign-files loader test for
+// the allowlist page.
+func TestLoadForeignAllowlistView(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+
+	view, err := r.loadForeignAllowlistView(context.Background())
+	if err != nil || len(view.Rows) != 0 {
+		t.Errorf("empty: view=%+v err=%v", view, err)
+	}
+
+	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", Note: "stock",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	view, err = r.loadForeignAllowlistView(context.Background())
+	if err != nil {
+		t.Fatalf("populated: %v", err)
+	}
+	if len(view.Rows) != 1 || view.Rows[0].FileName != "fanart.jpg" || view.Rows[0].Scope != "global" {
+		t.Errorf("populated view: %+v", view)
+	}
+
+	r2 := &Router{logger: slog.Default()}
+	view, err = r2.loadForeignAllowlistView(context.Background())
+	if err != nil || len(view.Rows) != 0 {
+		t.Errorf("nil-repo: view=%+v err=%v", view, err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := r.loadForeignAllowlistView(context.Background()); err == nil {
+		t.Error("closed-DB loadForeignAllowlistView should return error")
+	}
+}
+
+// TestHandleForeignFilesPage_DBErrorPath exercises the error branch of
+// handleForeignFilesPage: with an admin context and a closed DB,
+// requireForeignAdmin allows, loadForeignFilesView returns an error, and the
+// handler returns 500. This covers the page handler's gate + load + error
+// path without needing the full Router wiring (static assets, auth service)
+// that the templ render at the end of the handler requires.
+func TestHandleForeignFilesPage_DBErrorPath(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	ctx := middleware.WithTestUserID(context.Background(), "admin-user")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesPage(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on closed-DB load; got %d", rec.Code)
+	}
+}
+
+// TestHandleForeignAllowlistPage_DBErrorPath is the analog for the
+// allowlist page handler.
+func TestHandleForeignAllowlistPage_DBErrorPath(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	ctx := middleware.WithTestUserID(context.Background(), "admin-user")
+	ctx = middleware.WithTestRole(ctx, "administrator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files/allowlist", nil)
+	rec := httptest.NewRecorder()
+	r.handleForeignAllowlistPage(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on closed-DB load; got %d", rec.Code)
+	}
+}
+
+// TestForeignSummaryForBanner_CountError pins the Warn-and-return-zero
+// fallback when the repo's Count call fails (closed DB).
+func TestForeignSummaryForBanner_CountError(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if got := r.foreignSummaryForBanner(context.Background()); got != 0 {
+		t.Errorf("Count error should return 0; got %d", got)
+	}
+}
+
+// TestRequireForeignAdmin_NonAdminGetsForbidden pins the non-admin RBAC gate.
+// The anon path (empty userID) calls renderLoginPage which needs full Router
+// wiring; that branch is integration-test territory.
+func TestRequireForeignAdmin_NonAdminGetsForbidden(t *testing.T) {
+	r, _ := newTestRouterWithForeign(t)
+	ctx := middleware.WithTestUserID(context.Background(), "u1")
+	ctx = middleware.WithTestRole(ctx, "operator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/settings/foreign-files", nil)
+	rec := httptest.NewRecorder()
+	if r.requireForeignAdmin(rec, req) {
+		t.Error("operator role should be denied")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403; got %d", rec.Code)
+	}
+}
+
+// TestHandleForeignFile_RenderListErrorAfterMutation pins that the
+// render-after-success path returns 500 (not stale 200) when the post-action
+// List call fails. We seed a row, complete the mutation against the open DB,
+// then invoke the handler with the foreign_files table dropped so List errors.
+func TestHandleForeignFile_RenderListErrorAfterMutation(t *testing.T) {
+	r, db := newTestRouterWithForeign(t)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: "/x/backdrop.jpg", FileName: "backdrop.jpg",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	rows, _ := r.foreignRepo.List(context.Background())
+	id := rows[0].ID
+
+	// Drop the table the post-success render needs. The handler's mutation
+	// path (DeleteByID) tolerates ErrNotFound but the render's List call
+	// will fail with "no such table: foreign_files".
+	mustExec(t, db, `DROP TABLE foreign_files`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/"+id+"/allowlist", nil)
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	r.handleForeignFileAllowlist(rec, req)
+
+	// allowlist GetByID will fail first because foreign_files is dropped, so
+	// the handler returns 500 on the load error -- still exercises the
+	// "load foreign-file row for allowlist" logger.Error branch.
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500; got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 }

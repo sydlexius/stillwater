@@ -242,20 +242,38 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 			// fix, so re-evaluate here.
 			allowed, err := s.repo.IsAllowlisted(ctx, a.ID, ex.FileName)
 			if err == nil && allowed {
-				_ = s.repo.DeleteByPath(ctx, a.ID, ex.FilePath)
-				cleared++
+				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
+					s.logger.Warn("clearing allowlisted foreign-file row failed",
+						slog.String("artist_id", a.ID),
+						slog.String("file_path", ex.FilePath),
+						slog.Any("error", derr))
+				} else {
+					cleared++
+				}
 				continue
 			}
 			meta, perr := img.ReadProvenance(ex.FilePath)
 			if perr == nil && meta != nil {
-				_ = s.repo.DeleteByPath(ctx, a.ID, ex.FilePath)
-				cleared++
+				if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
+					s.logger.Warn("clearing re-provenanced foreign-file row failed",
+						slog.String("artist_id", a.ID),
+						slog.String("file_path", ex.FilePath),
+						slog.Any("error", derr))
+				} else {
+					cleared++
+				}
 			}
 			continue
 		}
 		// File is gone from disk -- safe to clear.
-		_ = s.repo.DeleteByPath(ctx, a.ID, ex.FilePath)
-		cleared++
+		if derr := s.repo.DeleteByPath(ctx, a.ID, ex.FilePath); derr != nil {
+			s.logger.Warn("clearing missing-file foreign-file row failed",
+				slog.String("artist_id", a.ID),
+				slog.String("file_path", ex.FilePath),
+				slog.Any("error", derr))
+		} else {
+			cleared++
+		}
 	}
 
 	return recorded, cleared, 0

@@ -35,6 +35,54 @@ func (r *Router) foreignSummaryForBanner(ctx context.Context) int {
 	return n
 }
 
+// loadForeignFilesView builds the page view from the ledger. Returned as a
+// helper (rather than inlined into the page handler) so tests can exercise
+// the data-loading + view-construction logic without wiring the full Router
+// (static assets, auth service, etc.) needed to render the wrapping page.
+// Returns a zero view when the repo is nil so the caller can still render
+// the empty-state copy in tests-without-DB scenarios.
+func (r *Router) loadForeignFilesView(ctx context.Context) (templates.ForeignFilesPageView, error) {
+	view := templates.ForeignFilesPageView{}
+	if r.foreignRepo == nil {
+		return view, nil
+	}
+	entries, err := r.foreignRepo.List(ctx)
+	if err != nil {
+		return view, err
+	}
+	view.Rows = make([]templates.ForeignFileRow, 0, len(entries))
+	for _, e := range entries {
+		view.Rows = append(view.Rows, foreignEntryToRow(e))
+	}
+	view.Count = len(view.Rows)
+	return view, nil
+}
+
+// loadForeignAllowlistView is the analog for the allowlist page.
+func (r *Router) loadForeignAllowlistView(ctx context.Context) (templates.ForeignAllowlistPageView, error) {
+	view := templates.ForeignAllowlistPageView{}
+	if r.foreignRepo == nil {
+		return view, nil
+	}
+	entries, err := r.foreignRepo.ListAllowlist(ctx)
+	if err != nil {
+		return view, err
+	}
+	view.Rows = make([]templates.ForeignAllowlistRow, 0, len(entries))
+	for _, e := range entries {
+		view.Rows = append(view.Rows, templates.ForeignAllowlistRow{
+			ID:         e.ID,
+			Scope:      string(e.Scope),
+			ArtistID:   e.ArtistID,
+			ArtistName: e.ArtistName,
+			FileName:   e.FileName,
+			Note:       e.Note,
+			CreatedAt:  e.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return view, nil
+}
+
 // handleForeignFilesPage renders /settings/foreign-files. Admin-only; the
 // management page exposes destructive actions so we mirror the rest of the
 // settings UI's RBAC.
@@ -42,19 +90,11 @@ func (r *Router) handleForeignFilesPage(w http.ResponseWriter, req *http.Request
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
-	view := templates.ForeignFilesPageView{}
-	if r.foreignRepo != nil {
-		entries, err := r.foreignRepo.List(req.Context())
-		if err != nil {
-			r.logger.Error("listing foreign files for page", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		view.Rows = make([]templates.ForeignFileRow, 0, len(entries))
-		for _, e := range entries {
-			view.Rows = append(view.Rows, foreignEntryToRow(e))
-		}
-		view.Count = len(view.Rows)
+	view, err := r.loadForeignFilesView(req.Context())
+	if err != nil {
+		r.logger.Error("listing foreign files for page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 	renderTempl(w, req, templates.ForeignFilesPage(r.assetsFor(req), view))
 }
@@ -65,26 +105,11 @@ func (r *Router) handleForeignAllowlistPage(w http.ResponseWriter, req *http.Req
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
-	view := templates.ForeignAllowlistPageView{}
-	if r.foreignRepo != nil {
-		entries, err := r.foreignRepo.ListAllowlist(req.Context())
-		if err != nil {
-			r.logger.Error("listing foreign allowlist for page", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		view.Rows = make([]templates.ForeignAllowlistRow, 0, len(entries))
-		for _, e := range entries {
-			view.Rows = append(view.Rows, templates.ForeignAllowlistRow{
-				ID:         e.ID,
-				Scope:      string(e.Scope),
-				ArtistID:   e.ArtistID,
-				ArtistName: e.ArtistName,
-				FileName:   e.FileName,
-				Note:       e.Note,
-				CreatedAt:  e.CreatedAt.Format(time.RFC3339),
-			})
-		}
+	view, err := r.loadForeignAllowlistView(req.Context())
+	if err != nil {
+		r.logger.Error("listing foreign allowlist for page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 	renderTempl(w, req, templates.ForeignAllowlistPage(r.assetsFor(req), view))
 }
@@ -145,7 +170,11 @@ func (r *Router) handleForeignFileAllowlist(w http.ResponseWriter, req *http.Req
 	if err := r.foreignRepo.DeleteByID(req.Context(), id); err != nil && !errors.Is(err, foreign.ErrNotFound) {
 		r.logger.Warn("removing allowlisted ledger row", "id", id, "error", err)
 	}
-	w.WriteHeader(http.StatusOK)
+	// Render the refreshed table so HTMX swaps #foreign-files-table in place.
+	// Row-level hx-swap="delete" was insufficient: when the last row is
+	// removed, only the <tr> disappeared and the empty-state copy plus the
+	// bulk-dismiss button stayed stale (#1246 review round 2).
+	r.renderForeignFilesTable(w, req, "rendering foreign-files table after allowlist failed")
 }
 
 // handleForeignFileDelete deletes the actual file from disk via the
@@ -188,7 +217,7 @@ func (r *Router) handleForeignFileDelete(w http.ResponseWriter, req *http.Reques
 	if err := r.foreignRepo.DeleteByID(req.Context(), id); err != nil && !errors.Is(err, foreign.ErrNotFound) {
 		r.logger.Warn("removing ledger row after disk delete", "id", id, "error", err)
 	}
-	w.WriteHeader(http.StatusOK)
+	r.renderForeignFilesTable(w, req, "rendering foreign-files table after delete failed")
 }
 
 // handleForeignFilesDismiss bulk-allowlists every currently-active foreign
@@ -230,14 +259,49 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 			r.logger.Warn("dismiss ledger cleanup failed", "id", e.ID, "error", err)
 		}
 	}
-	// Render the empty foreign-files table so HTMX can swap #foreign-files-table
-	// in place. Earlier this called handleGetConflictBanner, but the dismiss
-	// button targets the table, so a banner partial would replace the table
-	// with unrelated content (#1246 review).
-	view := templates.ForeignFilesPageView{}
+	// Render the actual remaining rows so HTMX can swap #foreign-files-table
+	// in place. Both AddAllowlist and DeleteByPath in the loop are best-effort
+	// (their errors only log a Warn), so the post-loop state is whatever
+	// survived. Returning an empty view unconditionally would hide surviving
+	// detections until the next refresh and make a partial dismiss look
+	// successful (#1246 review round 2).
+	r.renderForeignFilesTable(w, req, "rendering foreign-files table after dismiss failed")
+}
+
+// renderForeignFilesTable lists the current foreign-files ledger and renders
+// the swappable #foreign-files-table partial. Centralized so the row actions
+// (allowlist / delete) and the bulk dismiss share the same render path; the
+// table fragment is the canonical post-mutation response so HTMX consumers
+// see empty-state copy when the last row is removed and the bulk-dismiss
+// button disappears at the same moment. Caller is required to have already
+// gated on r.foreignRepo != nil; this helper does not re-check.
+func (r *Router) renderForeignFilesTable(w http.ResponseWriter, req *http.Request, errLabel string) {
+	view, err := r.loadForeignFilesView(req.Context())
+	if err != nil {
+		r.logger.Error("listing foreign files for partial render", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing foreign files"})
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.ForeignFilesTable(view).Render(req.Context(), w); err != nil {
-		r.logger.Warn("rendering foreign-files table after dismiss failed", "error", err)
+	if rerr := templates.ForeignFilesTable(view).Render(req.Context(), w); rerr != nil {
+		r.logger.Warn(errLabel, "error", rerr)
+	}
+}
+
+// renderForeignAllowlistTable is the analog for the allowlist page; the
+// per-row Remove action now also returns a refreshed table partial so the
+// empty-state copy appears on last-row removal. Caller must have already
+// gated on r.foreignRepo != nil.
+func (r *Router) renderForeignAllowlistTable(w http.ResponseWriter, req *http.Request, errLabel string) {
+	view, err := r.loadForeignAllowlistView(req.Context())
+	if err != nil {
+		r.logger.Error("listing foreign allowlist for partial render", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing allowlist"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if rerr := templates.ForeignAllowlistTable(view).Render(req.Context(), w); rerr != nil {
+		r.logger.Warn(errLabel, "error", rerr)
 	}
 }
 
@@ -281,7 +345,7 @@ func (r *Router) handleForeignAllowlistRemove(w http.ResponseWriter, req *http.R
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "removing allowlist entry"})
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	r.renderForeignAllowlistTable(w, req, "rendering foreign-allowlist table after remove failed")
 }
 
 // requireForeignAdmin renders an inline 403 for non-admin viewers and
