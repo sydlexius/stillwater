@@ -1,7 +1,3 @@
----
-title: Reference
----
-
 # Reference
 
 Settings, providers, rules, and environment variables. Detailed reference content

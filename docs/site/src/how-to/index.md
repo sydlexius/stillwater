@@ -1,7 +1,3 @@
----
-title: How-to Guides
----
-
 # How-to Guides
 
 Task-oriented guides land in this section as part of issue

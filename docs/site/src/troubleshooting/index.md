@@ -1,7 +1,3 @@
----
-title: Troubleshooting
----
-
 # Troubleshooting
 
 Common issues and their fixes land in this section as part of issue

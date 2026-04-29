@@ -1,5 +1,4 @@
 ---
-title: Stillwater
 description: Self-hosted artist and composer metadata management for Emby, Jellyfin, and Kodi
 hide:
   - navigation

@@ -1,7 +1,3 @@
----
-title: Getting Started
----
-
 # Getting Started
 
 Detailed installation and onboarding guides land in this section as part of issue
