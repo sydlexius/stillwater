@@ -9,7 +9,7 @@ changelog:
     - title: Features
       labels:
         - enhancement
-    - title: Bug Fixes
+    - title: Bug fixes
       labels:
         - bug
     - title: Performance
