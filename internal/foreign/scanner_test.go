@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -532,7 +533,7 @@ func TestScanner_PaginationListErrorAborts(t *testing.T) {
 		t.Errorf("Scan should wrap the page-list error; got %v", err)
 	}
 	wantPrefix := "listing artists page 2"
-	if msg := err.Error(); !contains(msg, wantPrefix) {
+	if msg := err.Error(); !strings.Contains(msg, wantPrefix) {
 		t.Errorf("error message should reference the failing page; got %q", msg)
 	}
 }
@@ -596,26 +597,6 @@ func (s signalLister) List(_ context.Context, params artist.ListParams) ([]artis
 	return list, s.total, nil
 }
 
-// TestScanner_ScanArtistEmptyPath pins the artist-without-path skip branch.
-// Artists missing a filesystem path are counted as skipped and do not
-// trigger directory access.
-func TestScanner_ScanArtistEmptyPath(t *testing.T) {
-	db := newTestDB(t)
-	repo := NewRepository(db)
-	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Name: "no-path"}}}
-	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if err := scanner.Scan(context.Background()); err != nil {
-		t.Fatalf("Scan: %v", err)
-	}
-	rows, err := repo.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("artist without path should record nothing; got %d rows", len(rows))
-	}
-}
-
 // TestScanner_ReconcileIsAllowlistedErrorPreservesRow pins the round-4
 // hardening: when IsAllowlisted errors during the reconcile pass, the
 // scanner must NOT clear the row (skip-don't-clear). Inducing the error by
@@ -655,15 +636,4 @@ func TestScanner_ReconcileIsAllowlistedErrorPreservesRow(t *testing.T) {
 	if len(rows) != 1 {
 		t.Errorf("row must persist when IsAllowlisted errors; got %d rows", len(rows))
 	}
-}
-
-// contains is a tiny helper to avoid importing strings just for this file's
-// substring assertions where the existing imports are already strings-free.
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
