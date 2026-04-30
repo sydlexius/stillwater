@@ -462,3 +462,72 @@ func TestHandleListLibraries_AfterCreate(t *testing.T) {
 		t.Errorf("name = %q, want %q", libs[0].Name, "Music")
 	}
 }
+
+// TestHandleUpdateLibrary_NFOLockData_Toggle covers the new per-library
+// nfo_lock_data field added for issue #1264. Verifies the field defaults to
+// false on Create, that PUT /api/v1/libraries/{id} with nfo_lock_data:true
+// flips it on, and that omitting the field on a subsequent PUT preserves
+// the current value (pointer-typed -> only updated when present in body).
+func TestHandleUpdateLibrary_NFOLockData_Toggle(t *testing.T) {
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Lockable", Path: dir, Type: "regular"}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	if lib.NFOLockData {
+		t.Fatal("default NFOLockData must be false")
+	}
+
+	// PUT with nfo_lock_data:true flips on and round-trips in response.
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"nfo_lock_data":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+	r.handleUpdateLibrary(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var updated library.Library
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !updated.NFOLockData {
+		t.Error("NFOLockData=true did not round-trip in response")
+	}
+
+	// PUT without nfo_lock_data preserves the current value (true).
+	req2 := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"name":"Renamed"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.SetPathValue("id", lib.ID)
+	w2 := httptest.NewRecorder()
+	r.handleUpdateLibrary(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("rename status = %d, body: %s", w2.Code, w2.Body.String())
+	}
+	persisted, err := libSvc.GetByID(context.Background(), lib.ID)
+	if err != nil {
+		t.Fatalf("re-fetch: %v", err)
+	}
+	if !persisted.NFOLockData {
+		t.Error("NFOLockData regressed to false when omitted from PUT body")
+	}
+
+	// PUT with nfo_lock_data:false explicitly disables.
+	req3 := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"nfo_lock_data":false}`))
+	req3.Header.Set("Content-Type", "application/json")
+	req3.SetPathValue("id", lib.ID)
+	w3 := httptest.NewRecorder()
+	r.handleUpdateLibrary(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, body: %s", w3.Code, w3.Body.String())
+	}
+	persisted2, err := libSvc.GetByID(context.Background(), lib.ID)
+	if err != nil {
+		t.Fatalf("re-fetch after disable: %v", err)
+	}
+	if persisted2.NFOLockData {
+		t.Error("NFOLockData=false did not persist on explicit disable")
+	}
+}
