@@ -429,7 +429,16 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			// Re-parse NFO for updated metadata. Skip for locked artists
 			// to avoid overwriting user-curated metadata.
 			if detected.NFOExists && !existing.Locked {
-				s.populateFromNFO(dirPath, existing)
+				if s.populateFromNFO(dirPath, existing) {
+					// Mirror the new-artist path: an NFO carrying
+					// <lockdata>true</lockdata> (set by Stillwater or another
+					// tool) surfaces as an artist-level lock so the UI reflects
+					// that the metadata is locked. One-way (NFO -> artist).
+					existing.Locked = true
+					existing.LockSource = "imported"
+					lockedAt := time.Now().UTC()
+					existing.LockedAt = &lockedAt
+				}
 			}
 
 			now := time.Now().UTC()

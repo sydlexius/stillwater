@@ -1266,7 +1266,7 @@
   "settings.libraries.fs_poll": "Poll",
   "settings.libraries.fs_watch": "Watch",
   "settings.libraries.lock_nfo_label": "Lock NFOs",
-  "settings.libraries.lock_nfo_title": "When on, Stillwater stamps <lockdata>true</lockdata> into every NFO it writes for this library, telling Emby and Jellyfin to refuse metadata refreshes for those artists. Off by default.",
+  "settings.libraries.lock_nfo_title": "When on, Stillwater stamps <lockdata>true</lockdata> into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists, preserving Stillwater's curated values from being overwritten by the platform's own scrapers. Off by default. Tip: artists whose NFO already contains <lockdata>true</lockdata> (set by Stillwater or another tool) are automatically marked as locked at the artist level.",
   "settings.libraries.name_placeholder": "Library name",
   "settings.libraries.path_placeholder": "Path (e.g. /music)",
   "settings.libraries.poll_interval_title": "Poll interval",
