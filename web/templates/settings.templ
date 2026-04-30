@@ -984,6 +984,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							id="settings-library-list"
 							class="space-y-3 mb-4"
 							data-connection-label={ t(ctx, "settings.libraries.connection_badge") }
+							data-empty={ t(ctx, "settings.libraries.empty") }
 							data-lock-nfo-label={ t(ctx, "settings.libraries.lock_nfo_label") }
 							data-lock-nfo-title={ t(ctx, "settings.libraries.lock_nfo_title") }
 							data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
@@ -3247,7 +3248,9 @@ templ settingsLibraryScript() {
 				_escDiv.textContent = lockNfoTitle;
 				var safeLockNfoTitle = _escDiv.innerHTML;
 				if (!libs || libs.length === 0) {
-					list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>';
+					var emptyText = (list && list.dataset.empty) || "No libraries configured.";
+					_escDiv.textContent = emptyText;
+					list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">' + _escDiv.innerHTML + '</p>';
 					return;
 				}
 				var html = "";
@@ -3499,6 +3502,13 @@ templ settingsLibraryScript() {
 			// on the user's click; if the PUT fails we restore it so the UI
 			// never lies about whether future writeback will stamp lockdata.
 			var previous = !enabled;
+			// Disable the input while the PUT is in flight so a rapid
+			// on->off->on sequence cannot race -- without this, an older
+			// request can resolve last and persist a stale value, leaving
+			// the server's nfo_lock_data out of sync with what the UI
+			// shows. Re-enabled in the .finally() handler below regardless
+			// of outcome so the control is never permanently stuck.
+			if (input) input.disabled = true;
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 			fetch(bp + "/api/v1/libraries/" + id, {
 				method: "PUT",
@@ -3514,6 +3524,8 @@ templ settingsLibraryScript() {
 			}).catch(function() {
 				if (input) input.checked = previous;
 				showToast(msgNetErr);
+			}).finally(function() {
+				if (input) input.disabled = false;
 			});
 		}
 

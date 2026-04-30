@@ -835,6 +835,9 @@ func TestMigration002_LibraryNFOLockData_Idempotent(t *testing.T) {
 			count++
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating column info: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("nfo_lock_data column count = %d, want 1 (idempotent re-run must not duplicate)", count)
 	}
