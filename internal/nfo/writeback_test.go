@@ -165,12 +165,15 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 	}
 }
 
-func TestWriteBackArtistNFO_SetsLockData(t *testing.T) {
+// TestWriteBackArtistNFO_LockDataDefaultOff verifies the post-#1264 default:
+// the no-args WriteBackArtistNFO does NOT stamp <lockdata>true</lockdata>.
+// Lock semantics are opt-in per library via WriteBackArtistNFOWithFieldMap.
+func TestWriteBackArtistNFO_LockDataDefaultOff(t *testing.T) {
 	dir := t.TempDir()
 	a := &artist.Artist{
-		ID:       "art-lock",
-		Name:     "Locked Artist",
-		SortName: "Locked Artist",
+		ID:       "art-lock-default",
+		Name:     "Default Lock Artist",
+		SortName: "Default Lock Artist",
 		Path:     dir,
 	}
 
@@ -188,14 +191,61 @@ func TestWriteBackArtistNFO_SetsLockData(t *testing.T) {
 		t.Fatalf("parsing nfo: %v", err)
 	}
 
-	if !parsed.LockData {
-		t.Error("WriteBackArtistNFO should always set LockData=true")
+	if parsed.LockData {
+		t.Error("default WriteBackArtistNFO must not set LockData (issue #1264)")
 	}
 
-	// Also verify the raw XML contains the element
 	output := string(data)
-	if !strings.Contains(output, "<lockdata>true</lockdata>") {
-		t.Errorf("raw NFO output should contain <lockdata>true</lockdata>, got:\n%s", output)
+	if strings.Contains(output, "<lockdata>true</lockdata>") {
+		t.Errorf("raw NFO output must not contain <lockdata>true</lockdata>, got:\n%s", output)
+	}
+}
+
+// TestWriteBackArtistNFOWithFieldMap_LockNFOOptIn verifies the explicit
+// per-library opt-in path: when lockNFO=true is passed, the resulting NFO
+// carries <lockdata>true</lockdata>; when lockNFO=false, it does not.
+func TestWriteBackArtistNFOWithFieldMap_LockNFOOptIn(t *testing.T) {
+	cases := []struct {
+		name    string
+		lockNFO bool
+		want    bool
+	}{
+		{"opt-in stamps lockdata", true, true},
+		{"opt-out omits lockdata", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			a := &artist.Artist{
+				ID:       "art-lock-" + tc.name,
+				Name:     "Lock Opt-In Artist",
+				SortName: "Lock Opt-In Artist",
+				Path:     dir,
+			}
+
+			if err := WriteBackArtistNFOWithFieldMap(
+				context.Background(), a, nil, nil, DefaultFieldMap(), tc.lockNFO,
+			); err != nil {
+				t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+			if err != nil {
+				t.Fatalf("reading nfo: %v", err)
+			}
+			parsed, err := Parse(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("parsing nfo: %v", err)
+			}
+			if parsed.LockData != tc.want {
+				t.Errorf("LockData = %v, want %v", parsed.LockData, tc.want)
+			}
+			output := string(data)
+			contains := strings.Contains(output, "<lockdata>true</lockdata>")
+			if contains != tc.want {
+				t.Errorf("raw <lockdata>true</lockdata> presence = %v, want %v; output:\n%s", contains, tc.want, output)
+			}
+		})
 	}
 }
 
@@ -279,7 +329,7 @@ func TestWriteBackArtistNFOWithFieldMap_MoodsAsStyles(t *testing.T) {
 		GenreSources:    []string{"genres"},
 	}
 
-	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, fm); err != nil {
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, fm, false); err != nil {
 		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
 	}
 
@@ -322,9 +372,9 @@ func TestWriteBackArtistNFOWithFieldMap_MoodsAsStyles(t *testing.T) {
 		t.Error("expected 'Uplifting' in <mood> elements")
 	}
 
-	// LockData should always be set.
-	if !parsed.LockData {
-		t.Error("LockData should be true")
+	// LockData defaults off (issue #1264) -- this case passed lockNFO=false.
+	if parsed.LockData {
+		t.Error("LockData should be false when lockNFO=false")
 	}
 
 	// Stillwater meta should be present.
