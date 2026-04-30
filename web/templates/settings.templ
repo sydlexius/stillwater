@@ -980,7 +980,17 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4">
-						<div id="settings-library-list" class="space-y-3 mb-4" data-connection-label={ t(ctx, "settings.libraries.connection_badge") }>
+						<div
+							id="settings-library-list"
+							class="space-y-3 mb-4"
+							data-connection-label={ t(ctx, "settings.libraries.connection_badge") }
+							data-lock-nfo-label={ t(ctx, "settings.libraries.lock_nfo_label") }
+							data-lock-nfo-title={ t(ctx, "settings.libraries.lock_nfo_title") }
+							data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
+							data-lock-nfo-disabled={ t(ctx, "settings.libraries.lock_nfo_disabled_toast") }
+							data-lock-nfo-failed={ t(ctx, "settings.libraries.lock_nfo_failed_toast") }
+							data-net-error={ t(ctx, "common.network_error") }
+						>
 							for _, lib := range data.Libraries {
 								@settingsLibraryRow(lib)
 							}
@@ -3231,9 +3241,17 @@ templ settingsLibraryScript() {
 				// string rendered into a data attribute, but it is concatenated
 				// into innerHTML below so escape it to neutralize any future
 				// locale value that contains HTML-special characters.
-				var _connLabelEsc = document.createElement("div");
-				_connLabelEsc.textContent = connectionLabel;
-				var safeConnectionLabel = _connLabelEsc.innerHTML;
+				var _escDiv = document.createElement("div");
+				_escDiv.textContent = connectionLabel;
+				var safeConnectionLabel = _escDiv.innerHTML;
+				// Same escape applied to the Lock NFOs label and tooltip,
+				// which are also concatenated into innerHTML below.
+				var lockNfoLabel = (list && list.dataset.lockNfoLabel) || "Lock NFOs";
+				var lockNfoTitle = (list && list.dataset.lockNfoTitle) || "";
+				_escDiv.textContent = lockNfoLabel;
+				var safeLockNfoLabel = _escDiv.innerHTML;
+				_escDiv.textContent = lockNfoTitle;
+				var safeLockNfoTitle = _escDiv.innerHTML;
 				if (!libs || libs.length === 0) {
 					list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>';
 					return;
@@ -3282,6 +3300,24 @@ templ settingsLibraryScript() {
 								+ '</select>';
 						}
 					}
+					// Lock NFOs toggle. Server-rendered rows include this via
+					// settingsLibraryRow; replicate it here so client-side
+					// refreshes (refreshSettingsLibraryList) preserve the
+					// control instead of stripping it until the next full
+					// page load.
+					var lockNfo = '';
+					if (lib.path) {
+						var helpId = 'lock-nfo-help-' + lib.id;
+						var checked = lib.nfo_lock_data ? ' checked' : '';
+						lockNfo = '<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer" title="' + safeLockNfoTitle + '">'
+							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this.checked)"/>'
+							+ '<span>' + safeLockNfoLabel + '</span>'
+							+ '<span tabindex="0" role="img" class="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 cursor-help" title="' + safeLockNfoTitle + '" aria-label="' + safeLockNfoTitle + '">'
+							+ '<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>'
+							+ '</span>'
+							+ '<span id="' + helpId + '" class="sr-only">' + safeLockNfoTitle + '</span>'
+							+ '</label>';
+					}
 					var populateBtn = '';
 					if (lib.connection_id) {
 						populateBtn = '<button type="button" id="populate-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;populate&apos;)">'
@@ -3306,6 +3342,7 @@ templ settingsLibraryScript() {
 						+ '</div>'
 						+ '<div class="flex items-center gap-2">'
 						+ modeSelect
+						+ lockNfo
 						+ populateBtn
 						+ scanBtn
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
@@ -3446,6 +3483,16 @@ templ settingsLibraryScript() {
 		}
 
 		function updateLibraryLockNFO(id, enabled) {
+			// Read translated toast text from the library list container's
+			// dataset (set by templ at render time). The fallback strings are
+			// only used if the container is missing or the data attribute is
+			// absent -- both indicate a template/render bug, not a user-
+			// observable English fallback.
+			var list = document.getElementById("settings-library-list");
+			var msgEnabled = (list && list.dataset.lockNfoEnabled) || "NFO locking enabled for library";
+			var msgDisabled = (list && list.dataset.lockNfoDisabled) || "NFO locking disabled for library";
+			var msgFailed = (list && list.dataset.lockNfoFailed) || "Failed to update NFO locking";
+			var msgNetErr = (list && list.dataset.netError) || "Network error";
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 			fetch(bp + "/api/v1/libraries/" + id, {
 				method: "PUT",
@@ -3453,12 +3500,12 @@ templ settingsLibraryScript() {
 				body: JSON.stringify({nfo_lock_data: enabled})
 			}).then(function(res) {
 				if (res.ok) {
-					showSuccessToast(enabled ? "NFO locking enabled for library" : "NFO locking disabled for library");
+					showSuccessToast(enabled ? msgEnabled : msgDisabled);
 				} else {
-					showToast("Failed to update NFO locking");
+					showToast(msgFailed);
 				}
 			}).catch(function() {
-				showToast("Network error");
+				showToast(msgNetErr);
 			});
 		}
 

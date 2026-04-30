@@ -196,8 +196,8 @@ func TestWriteBackArtistNFO_LockDataDefaultOff(t *testing.T) {
 	}
 
 	output := string(data)
-	if strings.Contains(output, "<lockdata>true</lockdata>") {
-		t.Errorf("raw NFO output must not contain <lockdata>true</lockdata>, got:\n%s", output)
+	if strings.Contains(output, "<lockdata>") {
+		t.Errorf("raw NFO output must not contain any <lockdata> element, got:\n%s", output)
 	}
 }
 
@@ -241,9 +241,15 @@ func TestWriteBackArtistNFOWithFieldMap_LockNFOOptIn(t *testing.T) {
 				t.Errorf("LockData = %v, want %v", parsed.LockData, tc.want)
 			}
 			output := string(data)
-			contains := strings.Contains(output, "<lockdata>true</lockdata>")
+			// The opt-out contract is "no <lockdata> element at all," not
+			// merely "no <lockdata>true</lockdata>." Asserting on the bare
+			// opening tag catches a regression that emits
+			// <lockdata>false</lockdata>, which would still mislead
+			// downstream tooling that treats element presence as the
+			// "managed by the writer" signal.
+			contains := strings.Contains(output, "<lockdata>")
 			if contains != tc.want {
-				t.Errorf("raw <lockdata>true</lockdata> presence = %v, want %v; output:\n%s", contains, tc.want, output)
+				t.Errorf("raw <lockdata> element presence = %v, want %v; output:\n%s", contains, tc.want, output)
 			}
 		})
 	}

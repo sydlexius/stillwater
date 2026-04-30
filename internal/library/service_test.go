@@ -1410,6 +1410,12 @@ func TestFindForArtistPath(t *testing.T) {
 	base := t.TempDir()
 	musicDir := filepath.Join(base, "music")
 	jazzDir := filepath.Join(musicDir, "jazz")
+	// jazzfusionDir exists on disk but is intentionally NOT registered as a
+	// library: this lets the "sibling-name-prefix" case prove that
+	// FindForArtistPath does NOT incorrectly accept "/music/jazz" as a
+	// prefix of "/music/jazzfusion/...". With a real jazzfusion library
+	// registered, the lookup would always succeed regardless of any
+	// prefix-collision bug, hiding the regression.
 	jazzfusionDir := filepath.Join(musicDir, "jazzfusion")
 	for _, d := range []string{musicDir, jazzDir, jazzfusionDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -1419,9 +1425,8 @@ func TestFindForArtistPath(t *testing.T) {
 
 	parent := &Library{Name: "All Music", Path: musicDir, Type: TypeRegular}
 	jazz := &Library{Name: "Jazz", Path: jazzDir, Type: TypeRegular}
-	jazzfusion := &Library{Name: "Jazz Fusion", Path: jazzfusionDir, Type: TypeRegular}
 	pathless := &Library{Name: "API Only", Path: "", Type: TypeRegular}
-	for _, lib := range []*Library{parent, jazz, jazzfusion, pathless} {
+	for _, lib := range []*Library{parent, jazz, pathless} {
 		if err := svc.Create(ctx, lib); err != nil {
 			t.Fatalf("Create %s: %v", lib.Name, err)
 		}
@@ -1433,7 +1438,7 @@ func TestFindForArtistPath(t *testing.T) {
 		want       string
 	}{
 		{"longest-prefix wins (jazz beats parent)", filepath.Join(jazzDir, "Coltrane"), jazz.ID},
-		{"sibling-name-prefix not matched", filepath.Join(jazzfusionDir, "Weather Report"), jazzfusion.ID},
+		{"sibling-prefix falls back to parent", filepath.Join(jazzfusionDir, "Weather Report"), parent.ID},
 		{"parent claim when no nested match", filepath.Join(musicDir, "rock", "Beatles"), parent.ID},
 		{"unowned path returns nil", filepath.Join(base, "elsewhere", "Mystery"), ""},
 		{"empty artist path returns nil", "", ""},

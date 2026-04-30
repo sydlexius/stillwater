@@ -5794,6 +5794,9 @@ paths:
                 type:
                   type: string
                   enum: [regular, classical]
+                nfo_lock_data:
+                  type: boolean
+                  description: When true, NFOs written for artists in this library carry <lockdata>true</lockdata>. Off by default; opt-in per library (issue #1264). Accepts the standard form-checkbox values "true", "false", "1", "0", "on" (parsed via strconv.ParseBool plus "on" as the unchecked-checkbox compatibility value).
       responses:
         "200":
           description: Library updated
