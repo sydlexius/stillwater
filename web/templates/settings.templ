@@ -3134,19 +3134,13 @@ templ settingsLibraryRow(lib library.Library) {
 						aria-describedby={ "lock-nfo-help-" + lib.ID }
 					/>
 					<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
-					<span
-						tabindex="0"
-						role="img"
-						class="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 cursor-help"
-						title={ t(ctx, "settings.libraries.lock_nfo_title") }
-						aria-label={ t(ctx, "settings.libraries.lock_nfo_title") }
-					>
-						<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+					<span aria-hidden="true" class="inline-flex items-center text-gray-400 dark:text-gray-500 cursor-help">
+						<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
 							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
 						</svg>
 					</span>
-					<span id={ "lock-nfo-help-" + lib.ID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_title") }</span>
 				</label>
+				<span id={ "lock-nfo-help-" + lib.ID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_title") }</span>
 			}
 			if lib.ConnectionID != "" {
 				<button
@@ -3190,7 +3184,7 @@ script settingsUpdatePollInterval(id string) {
 }
 
 script settingsUpdateLockNFO(id string) {
-	updateLibraryLockNFO(id, !!event.target.checked);
+	updateLibraryLockNFO(id, event.target, !!event.target.checked);
 }
 
 script settingsDeleteLibrary(id string) {
@@ -3303,20 +3297,27 @@ templ settingsLibraryScript() {
 					// Lock NFOs toggle. Server-rendered rows include this via
 					// settingsLibraryRow; replicate it here so client-side
 					// refreshes (refreshSettingsLibraryList) preserve the
-					// control instead of stripping it until the next full
-					// page load.
+					// control. The icon span is decorative (aria-hidden,
+					// no tabindex/aria-label) so it does not pollute the
+					// checkbox's accessible name; the long help text is
+					// supplied via aria-describedby on the input,
+					// referencing an sr-only sibling that lives OUTSIDE
+					// the <label> for the same reason. Keep this layout
+					// in sync with the templ-rendered settingsLibraryRow.
+					// onchange passes `this` so updateLibraryLockNFO can
+					// revert the checkbox if the PUT fails.
 					var lockNfo = '';
 					if (lib.path) {
 						var helpId = 'lock-nfo-help-' + lib.id;
 						var checked = lib.nfo_lock_data ? ' checked' : '';
 						lockNfo = '<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer" title="' + safeLockNfoTitle + '">'
-							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this.checked)"/>'
+							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this, this.checked)"/>'
 							+ '<span>' + safeLockNfoLabel + '</span>'
-							+ '<span tabindex="0" role="img" class="inline-flex items-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 cursor-help" title="' + safeLockNfoTitle + '" aria-label="' + safeLockNfoTitle + '">'
-							+ '<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>'
+							+ '<span aria-hidden="true" class="inline-flex items-center text-gray-400 dark:text-gray-500 cursor-help">'
+							+ '<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>'
 							+ '</span>'
-							+ '<span id="' + helpId + '" class="sr-only">' + safeLockNfoTitle + '</span>'
-							+ '</label>';
+							+ '</label>'
+							+ '<span id="' + helpId + '" class="sr-only">' + safeLockNfoTitle + '</span>';
 					}
 					var populateBtn = '';
 					if (lib.connection_id) {
@@ -3482,7 +3483,7 @@ templ settingsLibraryScript() {
 			});
 		}
 
-		function updateLibraryLockNFO(id, enabled) {
+		function updateLibraryLockNFO(id, input, enabled) {
 			// Read translated toast text from the library list container's
 			// dataset (set by templ at render time). The fallback strings are
 			// only used if the container is missing or the data attribute is
@@ -3493,6 +3494,11 @@ templ settingsLibraryScript() {
 			var msgDisabled = (list && list.dataset.lockNfoDisabled) || "NFO locking disabled for library";
 			var msgFailed = (list && list.dataset.lockNfoFailed) || "Failed to update NFO locking";
 			var msgNetErr = (list && list.dataset.netError) || "Network error";
+			// Capture the previous state before the optimistic UI update
+			// is allowed to stand. The browser already flipped `input.checked`
+			// on the user's click; if the PUT fails we restore it so the UI
+			// never lies about whether future writeback will stamp lockdata.
+			var previous = !enabled;
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 			fetch(bp + "/api/v1/libraries/" + id, {
 				method: "PUT",
@@ -3502,9 +3508,11 @@ templ settingsLibraryScript() {
 				if (res.ok) {
 					showSuccessToast(enabled ? msgEnabled : msgDisabled);
 				} else {
+					if (input) input.checked = previous;
 					showToast(msgFailed);
 				}
 			}).catch(function() {
+				if (input) input.checked = previous;
 				showToast(msgNetErr);
 			});
 		}
