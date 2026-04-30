@@ -40,11 +40,13 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("running migrations: %w", err)
 	}
 
-	// Policy: all schema lives in 001_initial_schema.sql (never adds new
-	// migration files). Goose only runs 001 once per DB, so columns added
-	// to that file do not appear on DBs that already recorded 001 as done.
-	// The helpers below bridge that gap by applying idempotent ALTER TABLE
-	// statements at runtime for each post-freeze column addition.
+	// Policy: 001_initial_schema.sql is the v1.0.0 baseline and is now
+	// frozen. Post-v1.0 schema changes ship as new additive migration
+	// files (002_*, 003_*, ...) so goose tracks them per-database and
+	// fresh deploys + upgrades converge on the same final schema. The
+	// ensureConnectionColumns helper below pre-dates that policy and is
+	// retained for the connection columns it already covers; new
+	// additions should use migration files instead.
 	if err := ensureConnectionColumns(db); err != nil {
 		return fmt.Errorf("ensuring connection columns: %w", err)
 	}

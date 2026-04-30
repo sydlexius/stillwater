@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +127,7 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		Type           string `json:"type"`
 		FSWatch        *int   `json:"fs_watch"`
 		FSPollInterval *int   `json:"fs_poll_interval"`
+		NFOLockData    *bool  `json:"nfo_lock_data"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -136,6 +138,27 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		body.Name = req.FormValue("name") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
 		body.Path = req.FormValue("path") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
 		body.Type = req.FormValue("type")
+		// Only treat nfo_lock_data as present when the form actually
+		// carried the key, so an absent field preserves the existing
+		// value (parity with the JSON pointer-as-tristate semantics
+		// below). Accept the usual boolean strings plus "on" (browsers
+		// post "on" for a checked unnamed-value checkbox). The
+		// FormValue calls above have already triggered ParseForm, so
+		// req.PostForm is populated; we read it directly to distinguish
+		// "absent key" (preserve) from "present and empty" (reject).
+		if vs, ok := req.PostForm["nfo_lock_data"]; ok && len(vs) > 0 {
+			raw := strings.ToLower(strings.TrimSpace(vs[0]))
+			var v bool
+			if raw == "on" {
+				v = true
+			} else if parsed, err := strconv.ParseBool(raw); err == nil {
+				v = parsed
+			} else {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "nfo_lock_data must be a boolean"})
+				return
+			}
+			body.NFOLockData = &v
+		}
 	}
 
 	if body.Name != "" {
@@ -174,6 +197,9 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		existing.FSPollInterval = *body.FSPollInterval
+	}
+	if body.NFOLockData != nil {
+		existing.NFOLockData = *body.NFOLockData
 	}
 
 	if err := r.libraryService.Update(req.Context(), existing); err != nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
@@ -34,6 +35,7 @@ const (
 type Deps struct {
 	ArtistService      artistPlatformLister
 	ConnectionService  connectionGetter
+	LibraryService     libraryResolver
 	NFOSnapshotService *nfo.SnapshotService
 	NFOSettingsService *nfo.NFOSettingsService
 	PlatformService    namingConfigProvider
@@ -49,6 +51,7 @@ type Deps struct {
 type Publisher struct {
 	artistService      artistPlatformLister
 	connectionService  connectionGetter
+	libraryService     libraryResolver
 	nfoSnapshotService *nfo.SnapshotService
 	nfoSettingsService *nfo.NFOSettingsService
 	platformService    namingConfigProvider
@@ -67,6 +70,15 @@ type connectionGetter interface {
 	GetByID(ctx context.Context, id string) (*connection.Connection, error)
 }
 
+// libraryResolver looks up the library that owns an artist's filesystem path
+// so the publisher can apply per-library NFO settings (NFOLockData today,
+// possibly more per-library NFO knobs later). Implemented by *library.Service.
+// Returning nil + nil err is the "no owning library" case -- the publisher
+// falls back to default (off) behavior.
+type libraryResolver interface {
+	FindForArtistPath(ctx context.Context, artistPath string) (*library.Library, error)
+}
+
 type namingConfigProvider interface {
 	GetActive(ctx context.Context) (*platform.Profile, error)
 }
@@ -81,6 +93,7 @@ func New(d Deps) *Publisher {
 	return &Publisher{
 		artistService:      d.ArtistService,
 		connectionService:  d.ConnectionService,
+		libraryService:     d.LibraryService,
 		nfoSnapshotService: d.NFOSnapshotService,
 		nfoSettingsService: d.NFOSettingsService,
 		platformService:    d.PlatformService,
@@ -88,6 +101,28 @@ func New(d Deps) *Publisher {
 		imageCacheDir:      d.ImageCacheDir,
 		logger:             d.Logger,
 	}
+}
+
+// resolveLockNFO returns the per-library NFOLockData setting for the artist's
+// owning library, or false when no library claims the path. The lookup is
+// best-effort: any error or unset library defaults to false (the safe,
+// pre-#1264 default of "do not stamp lockdata").
+func (p *Publisher) resolveLockNFO(ctx context.Context, a *artist.Artist) bool {
+	if p.libraryService == nil || a == nil || a.Path == "" {
+		return false
+	}
+	lib, err := p.libraryService.FindForArtistPath(ctx, a.Path)
+	if err != nil {
+		p.logger.Warn("resolving owning library for NFO lock setting; defaulting to off",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()),
+		)
+		return false
+	}
+	if lib == nil {
+		return false
+	}
+	return lib.NFOLockData
 }
 
 // PublishMetadata writes the artist's NFO file and pushes metadata to all
@@ -147,7 +182,8 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		}
 	}
 
-	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm); err != nil {
+	lockNFO := p.resolveLockNFO(ctx, a)
+	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm, lockNFO); err != nil {
 		p.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),
 			slog.String("artist_name", a.Name),

@@ -1197,3 +1197,120 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 		}
 	}
 }
+
+// TestScan_LockDataImportedOnRescan verifies that <lockdata>true</lockdata>
+// added to an existing artist's NFO (e.g. by another tool, or a later
+// Stillwater write under a per-library NFOLockData=true setting) is mirrored
+// to the artist-level Locked flag on the next scan, so the artist UI reflects
+// that the metadata is locked. Regression coverage for the rescan path that
+// previously discarded populateFromNFO's lockdata return value.
+func TestScan_LockDataImportedOnRescan(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Portishead")
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	// First scan: bare directory, no NFO. Artist starts unlocked.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Portishead"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if a.Locked {
+		t.Fatal("artist should start unlocked when no NFO exists")
+	}
+
+	// Drop in an NFO with lockdata=true (simulating an external tool, or a
+	// downstream Stillwater write under NFOLockData=true).
+	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Portishead</name>
+  <lockdata>true</lockdata>
+</artist>`
+	nfoPath := filepath.Join(libDir, "Portishead", "artist.nfo")
+	if err := os.WriteFile(nfoPath, []byte(nfoContent), 0o644); err != nil {
+		t.Fatalf("writing nfo: %v", err)
+	}
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ = artistSvc.GetByPath(ctx, filepath.Join(libDir, "Portishead"))
+	if a == nil {
+		t.Fatal("artist not found after second scan")
+	}
+	if !a.Locked {
+		t.Error("Locked should be true after rescan picked up <lockdata>true</lockdata>")
+	}
+	if a.LockSource != "imported" {
+		t.Errorf("LockSource = %q, want \"imported\"", a.LockSource)
+	}
+	if a.LockedAt == nil {
+		t.Error("LockedAt should be set after lockdata import")
+	}
+}
+
+// TestScan_NoLockDataLeavesUnlocked guards against a false positive: an NFO
+// without <lockdata> (or with lockdata=false) must not flip the artist into
+// the locked state on rescan. Two NFO variants are exercised in sequence so
+// both the missing-tag and the explicit-false parsing branches are covered.
+func TestScan_NoLockDataLeavesUnlocked(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Massive Attack")
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	nfoPath := filepath.Join(libDir, "Massive Attack", "artist.nfo")
+
+	cases := []struct {
+		name string
+		nfo  string
+	}{
+		{
+			name: "missing lockdata",
+			nfo: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Massive Attack</name>
+  <biography>Bristol trip-hop pioneers.</biography>
+</artist>`,
+		},
+		{
+			name: "explicit lockdata false",
+			nfo: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Massive Attack</name>
+  <lockdata>false</lockdata>
+</artist>`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(nfoPath, []byte(tc.nfo), 0o644); err != nil {
+				t.Fatalf("writing nfo: %v", err)
+			}
+			if _, err := svc.Run(ctx); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			waitForScan(t, svc, 5*time.Second)
+
+			a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Massive Attack"))
+			if a == nil {
+				t.Fatal("artist not found")
+			}
+			if a.Locked {
+				t.Errorf("Locked must remain false for %q NFO", tc.name)
+			}
+		})
+	}
+}

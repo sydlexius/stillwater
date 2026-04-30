@@ -48,6 +48,7 @@ type Library struct {
 	SharedFSStatus         string    `json:"shared_fs_status"`              // "none", "suspected", "confirmed", "" (empty = unknown)
 	SharedFSEvidence       string    `json:"shared_fs_evidence"`            // JSON array of evidence strings
 	SharedFSPeerLibraryIDs string    `json:"shared_fs_peer_library_ids"`    // Comma-separated library IDs
+	NFOLockData            bool      `json:"nfo_lock_data"`                 // When true, NFOs written for artists in this library carry <lockdata>true</lockdata>; opt-in, default false (issue #1264)
 	FSNotifySupported      bool      `json:"fs_notify_supported,omitempty"` // Runtime-only, not stored in DB
 	CreatedAt              time.Time `json:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at"`

@@ -519,6 +519,9 @@ components:
         shared_fs_peer_library_ids:
           type: string
           description: Comma-separated IDs of peer libraries associated with the shared-filesystem evidence
+        nfo_lock_data:
+          type: boolean
+          description: When true, NFOs written for artists in this library carry <lockdata>true</lockdata>, telling Emby and Jellyfin to refuse metadata refreshes for those artists. Off (false) by default; opt-in per library.
         fs_notify_supported:
           type: boolean
           description: Whether the OS supports inotify/fsevents for this path.
@@ -5777,6 +5780,9 @@ paths:
                 fs_poll_interval:
                   type: integer
                   description: Seconds between polls (60, 300, 900, or 1800)
+                nfo_lock_data:
+                  type: boolean
+                  description: When true, NFOs written for artists in this library carry <lockdata>true</lockdata>. Off by default; opt-in per library (issue #1264).
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -5788,6 +5794,9 @@ paths:
                 type:
                   type: string
                   enum: [regular, classical]
+                nfo_lock_data:
+                  type: boolean
+                  description: When true, NFOs written for artists in this library carry <lockdata>true</lockdata>. Off by default; opt-in per library (issue #1264). Accepts "true"/"false", "1"/"0" (parsed via strconv.ParseBool), and "on" (the default value a checked browser checkbox submits when no explicit value attribute is set). Omit the key entirely to preserve the current setting; an unchecked HTML checkbox simply omits the field.
       responses:
         "200":
           description: Library updated

@@ -298,6 +298,7 @@ func run() error {
 	publisher := publish.New(publish.Deps{
 		ArtistService:      artistService,
 		ConnectionService:  connectionService,
+		LibraryService:     libraryService,
 		NFOSnapshotService: nfoSnapshotService,
 		NFOSettingsService: nfoSettingsService,
 		PlatformService:    platformService,

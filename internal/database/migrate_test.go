@@ -789,3 +789,56 @@ func TestCollapseDuplicates_CreatedAtMixedFormatsPickEarliest(t *testing.T) {
 		t.Errorf("canonical = %q, want a-rfc (chronologically earliest after datetime() normalization)", survivor)
 	}
 }
+
+// TestMigration002_LibraryNFOLockData_Idempotent verifies that the 002
+// migration adds the nfo_lock_data column on a fresh DB and is a no-op on
+// re-run (goose tracks 002 as applied; ALTER TABLE is not replayed). Re-
+// running Migrate must succeed; the column must not be duplicated;
+// pre-existing rows must retain their values.
+func TestMigration002_LibraryNFOLockData_Idempotent(t *testing.T) {
+	db := openMigratedDB(t)
+
+	if _, err := db.Exec(`
+		INSERT INTO libraries (id, name, path, type, source, external_id, fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at)
+		VALUES ('lib-a', 'Existing', '/music', 'regular', 'manual', '', 0, 60, 1, datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("re-running Migrate: %v", err)
+	}
+
+	var lock int
+	if err := db.QueryRow(`SELECT nfo_lock_data FROM libraries WHERE id = 'lib-a'`).Scan(&lock); err != nil {
+		t.Fatalf("querying back: %v", err)
+	}
+	if lock != 1 {
+		t.Errorf("nfo_lock_data after re-migrate = %d, want 1 (existing value preserved)", lock)
+	}
+
+	rows, err := db.Query(`PRAGMA table_info(libraries)`)
+	if err != nil {
+		t.Fatalf("PRAGMA table_info: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	count := 0
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			t.Fatalf("scanning column info: %v", err)
+		}
+		if name == "nfo_lock_data" {
+			count++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating column info: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("nfo_lock_data column count = %d, want 1 (idempotent re-run must not duplicate)", count)
+	}
+}

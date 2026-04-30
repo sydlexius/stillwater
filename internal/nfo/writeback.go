@@ -19,12 +19,17 @@ import (
 // overwriting (best effort -- snapshot failure does not prevent the write). The
 // write uses the atomic tmp/bak/rename pattern via filesystem.WriteFileAtomic.
 //
+// LockData defaults to false: the resulting NFO does NOT carry
+// <lockdata>true</lockdata>, so Emby/Jellyfin metadata refreshes will not be
+// blocked. Callers that want to opt into the lock semantic must use
+// WriteBackArtistNFOWithFieldMap with lockNFO=true (issue #1264).
+//
 // The returned error is non-nil only when the NFO file itself could not be
 // written. Snapshot errors are logged at Warn level when a logger is provided
 // but never prevent the write. When logger is nil, snapshot errors are
 // swallowed silently.
 func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger) error {
-	return WriteBackArtistNFOWithFieldMap(ctx, a, ss, logger, DefaultFieldMap())
+	return WriteBackArtistNFOWithFieldMap(ctx, a, ss, logger, DefaultFieldMap(), false)
 }
 
 // WriteBackArtistNFOWithFieldMap writes the artist's current metadata to an
@@ -32,8 +37,14 @@ func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotServi
 // styles, and moods are mapped to NFO XML elements. This enables
 // platform-specific output (e.g., writing moods as <style> for Emby/Jellyfin).
 //
-// Behavior is identical to WriteBackArtistNFO except for the field mapping.
-func WriteBackArtistNFOWithFieldMap(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger, fm NFOFieldMap) error {
+// lockNFO controls whether <lockdata>true</lockdata> is stamped into the
+// output. The publisher resolves this from the owning library's NFOLockData
+// setting (default false). Stamping lockdata tells Emby/Jellyfin to refuse
+// metadata refreshes for the artist; opt in only when that is desired.
+//
+// The <stillwater> provenance element is always written so external
+// overwrites can be detected on read regardless of the lock setting.
+func WriteBackArtistNFOWithFieldMap(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger, fm NFOFieldMap, lockNFO bool) error {
 	if a == nil {
 		return fmt.Errorf("write artist nfo: artist is nil")
 	}
@@ -61,11 +72,13 @@ func WriteBackArtistNFOWithFieldMap(ctx context.Context, a *artist.Artist, ss *S
 
 	nfoData := FromArtistWithFieldMap(a, fm)
 
-	// Always lock the NFO to prevent Emby/Jellyfin from overwriting it
-	// on subsequent metadata refreshes.
-	nfoData.LockData = true
+	// Lockdata is opt-in per library (issue #1264). The previous unconditional
+	// stamp blocked Emby/Jellyfin refreshes for every artist Stillwater wrote.
+	nfoData.LockData = lockNFO
 
-	// Stamp provenance so external overwrites can be detected.
+	// Stamp provenance so external overwrites can be detected. Independent of
+	// the lock setting -- harmless metadata that lets future detect-and-rewrite
+	// flows recognize a Stillwater-authored file.
 	nfoData.Stillwater = &StillwaterMeta{
 		Version: StillwaterVersion,
 		Written: time.Now().UTC().Format(time.RFC3339),

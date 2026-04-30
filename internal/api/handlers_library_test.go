@@ -462,3 +462,157 @@ func TestHandleListLibraries_AfterCreate(t *testing.T) {
 		t.Errorf("name = %q, want %q", libs[0].Name, "Music")
 	}
 }
+
+// TestHandleUpdateLibrary_NFOLockData_Toggle covers the new per-library
+// nfo_lock_data field added for issue #1264. Verifies the field defaults to
+// false on Create, that PUT /api/v1/libraries/{id} with nfo_lock_data:true
+// flips it on, and that omitting the field on a subsequent PUT preserves
+// the current value (pointer-typed -> only updated when present in body).
+func TestHandleUpdateLibrary_NFOLockData_Toggle(t *testing.T) {
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Lockable", Path: dir, Type: "regular"}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	if lib.NFOLockData {
+		t.Fatal("default NFOLockData must be false")
+	}
+
+	// PUT with nfo_lock_data:true flips on and round-trips in response.
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"nfo_lock_data":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+	r.handleUpdateLibrary(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var updated library.Library
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if !updated.NFOLockData {
+		t.Error("NFOLockData=true did not round-trip in response")
+	}
+
+	// PUT without nfo_lock_data preserves the current value (true).
+	req2 := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"name":"Renamed"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.SetPathValue("id", lib.ID)
+	w2 := httptest.NewRecorder()
+	r.handleUpdateLibrary(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("rename status = %d, body: %s", w2.Code, w2.Body.String())
+	}
+	persisted, err := libSvc.GetByID(context.Background(), lib.ID)
+	if err != nil {
+		t.Fatalf("re-fetch: %v", err)
+	}
+	if !persisted.NFOLockData {
+		t.Error("NFOLockData regressed to false when omitted from PUT body")
+	}
+
+	// PUT with nfo_lock_data:false explicitly disables.
+	req3 := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"nfo_lock_data":false}`))
+	req3.Header.Set("Content-Type", "application/json")
+	req3.SetPathValue("id", lib.ID)
+	w3 := httptest.NewRecorder()
+	r.handleUpdateLibrary(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, body: %s", w3.Code, w3.Body.String())
+	}
+	// Decode the handler echo and assert the toggled-off value before the
+	// re-fetch, so a regression that persists the wrong value but echoes
+	// the prior value (or vice versa) is caught at the handler boundary.
+	var echoed library.Library
+	if err := json.Unmarshal(w3.Body.Bytes(), &echoed); err != nil {
+		t.Fatalf("decoding disable response: %v; body: %s", err, w3.Body.String())
+	}
+	if echoed.NFOLockData {
+		t.Error("handler echo: NFOLockData should be false after explicit disable")
+	}
+	persisted2, err := libSvc.GetByID(context.Background(), lib.ID)
+	if err != nil {
+		t.Fatalf("re-fetch after disable: %v", err)
+	}
+	if persisted2.NFOLockData {
+		t.Error("NFOLockData=false did not persist on explicit disable")
+	}
+}
+
+// TestHandleUpdateLibrary_FormEncoded_NFOLockData covers the
+// application/x-www-form-urlencoded path for nfo_lock_data, which OpenAPI
+// documents alongside the JSON body. Regression coverage for the gap where
+// the form branch silently dropped the field while the JSON branch wired it
+// through.
+func TestHandleUpdateLibrary_FormEncoded_NFOLockData(t *testing.T) {
+	r, libSvc, _ := testRouterWithLibrary(t)
+	libDir := t.TempDir()
+	lib := &library.Library{Name: "FormPath", Path: libDir, Type: library.TypeRegular}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"true", "nfo_lock_data=true", true},
+		{"on (browser checkbox)", "nfo_lock_data=on", true},
+		{"1", "nfo_lock_data=1", true},
+		{"false", "nfo_lock_data=false", false},
+		{"0", "nfo_lock_data=0", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.SetPathValue("id", lib.ID)
+			w := httptest.NewRecorder()
+			r.handleUpdateLibrary(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body: %s", w.Code, w.Body.String())
+			}
+			persisted, err := libSvc.GetByID(context.Background(), lib.ID)
+			if err != nil {
+				t.Fatalf("re-fetch: %v", err)
+			}
+			if persisted.NFOLockData != tc.want {
+				t.Errorf("NFOLockData = %v after %q form post, want %v", persisted.NFOLockData, tc.body, tc.want)
+			}
+		})
+	}
+
+	// Invalid value rejected with 400.
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader("nfo_lock_data=maybe"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+	r.handleUpdateLibrary(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("invalid form value status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+
+	// Absent field preserves prior value (tristate parity with JSON).
+	if err := libSvc.Update(context.Background(), &library.Library{ID: lib.ID, Name: "FormPath", Path: libDir, Type: library.TypeRegular, NFOLockData: true}); err != nil {
+		t.Fatalf("seeding NFOLockData=true: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader("name=FormPath"))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req2.SetPathValue("id", lib.ID)
+	w2 := httptest.NewRecorder()
+	r.handleUpdateLibrary(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("absent-field status = %d, body: %s", w2.Code, w2.Body.String())
+	}
+	preserved, err := libSvc.GetByID(context.Background(), lib.ID)
+	if err != nil {
+		t.Fatalf("re-fetch: %v", err)
+	}
+	if !preserved.NFOLockData {
+		t.Error("absent nfo_lock_data form key must preserve existing true value, got false")
+	}
+}

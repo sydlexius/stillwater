@@ -1348,3 +1348,119 @@ func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiConnArtist(t *testing.T
 		t.Errorf("emby mapping count = %d, want 0 (stale platform_id must be cleaned even when artist survives via other-conn mapping)", embyMap)
 	}
 }
+
+// TestNFOLockData_RoundTrip verifies the new per-library NFOLockData column
+// (issue #1264) round-trips through Create, Update, scan, and re-fetch.
+// Default is false; explicit true persists; flipping back to false persists.
+func TestNFOLockData_RoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Lock Test", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Create: %v", err)
+	}
+	if got.NFOLockData {
+		t.Error("default NFOLockData must be false on Create (issue #1264)")
+	}
+
+	got.NFOLockData = true
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("Update enable: %v", err)
+	}
+
+	got2, err := svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID after enable: %v", err)
+	}
+	if !got2.NFOLockData {
+		t.Error("NFOLockData=true did not persist through Update")
+	}
+
+	got2.NFOLockData = false
+	if err := svc.Update(ctx, got2); err != nil {
+		t.Fatalf("Update disable: %v", err)
+	}
+	got3, err := svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID after disable: %v", err)
+	}
+	if got3.NFOLockData {
+		t.Error("NFOLockData=false did not persist on flip-back")
+	}
+}
+
+// TestFindForArtistPath covers the publisher's mechanism for resolving which
+// library owns a given artist path. Verifies (1) longest-prefix wins on
+// nested libraries, (2) sibling-name-prefix collisions are not matched
+// (parent /music/jazz must not claim /music/jazzfusion/album), (3) pathless
+// libraries are skipped, and (4) absent ownership returns nil + nil.
+func TestFindForArtistPath(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	base := t.TempDir()
+	musicDir := filepath.Join(base, "music")
+	jazzDir := filepath.Join(musicDir, "jazz")
+	// jazzfusionDir exists on disk but is intentionally NOT registered as a
+	// library: this lets the "sibling-name-prefix" case prove that
+	// FindForArtistPath does NOT incorrectly accept "/music/jazz" as a
+	// prefix of "/music/jazzfusion/...". With a real jazzfusion library
+	// registered, the lookup would always succeed regardless of any
+	// prefix-collision bug, hiding the regression.
+	jazzfusionDir := filepath.Join(musicDir, "jazzfusion")
+	for _, d := range []string{musicDir, jazzDir, jazzfusionDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	parent := &Library{Name: "All Music", Path: musicDir, Type: TypeRegular}
+	jazz := &Library{Name: "Jazz", Path: jazzDir, Type: TypeRegular}
+	pathless := &Library{Name: "API Only", Path: "", Type: TypeRegular}
+	for _, lib := range []*Library{parent, jazz, pathless} {
+		if err := svc.Create(ctx, lib); err != nil {
+			t.Fatalf("Create %s: %v", lib.Name, err)
+		}
+	}
+
+	cases := []struct {
+		name       string
+		artistPath string
+		want       string
+	}{
+		{"longest-prefix wins (jazz beats parent)", filepath.Join(jazzDir, "Coltrane"), jazz.ID},
+		{"sibling-prefix falls back to parent", filepath.Join(jazzfusionDir, "Weather Report"), parent.ID},
+		{"parent claim when no nested match", filepath.Join(musicDir, "rock", "Beatles"), parent.ID},
+		{"unowned path returns nil", filepath.Join(base, "elsewhere", "Mystery"), ""},
+		{"empty artist path returns nil", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := svc.FindForArtistPath(ctx, tc.artistPath)
+			if err != nil {
+				t.Fatalf("FindForArtistPath(%q): %v", tc.artistPath, err)
+			}
+			if tc.want == "" {
+				if got != nil {
+					t.Errorf("FindForArtistPath(%q) = %q, want nil", tc.artistPath, got.ID)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("FindForArtistPath(%q) returned nil, want %q", tc.artistPath, tc.want)
+			}
+			if got.ID != tc.want {
+				t.Errorf("FindForArtistPath(%q) = %q, want %q", tc.artistPath, got.ID, tc.want)
+			}
+		})
+	}
+}
