@@ -49,6 +49,10 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("ensuring connection columns: %w", err)
 	}
 
+	if err := ensureLibraryColumns(db); err != nil {
+		return fmt.Errorf("ensuring library columns: %w", err)
+	}
+
 	// legacy code paths (or sessions without
 	// PRAGMA foreign_keys=ON) left orphan rows in artist_platform_ids whose
 	// artist_id or connection_id no longer exist. Sweep them at startup so the
@@ -136,6 +140,21 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 		return fmt.Errorf("inserting rule_results backfill rows: %w", err)
 	}
 	return nil
+}
+
+// ensureLibraryColumns idempotently adds columns that were appended to the
+// libraries table after the 001 migration was first applied on a deployed
+// instance. Mirrors ensureConnectionColumns: each column is guarded by
+// PRAGMA table_info so re-running Migrate is a cheap no-op.
+//
+// nfo_lock_data was added to address a regression where every NFO Stillwater
+// wrote was unconditionally stamped with <lockdata>true</lockdata>, telling
+// downstream Emby/Jellyfin instances to refuse metadata refreshes for those
+// artists. Default 0 (off) makes existing libraries opt-in via the Libraries
+// settings UI, restoring the pre-bug "Stillwater writes the file but does
+// not pin it" behavior unless the user explicitly opts in.
+func ensureLibraryColumns(db *sql.DB) error {
+	return ensureColumn(db, "libraries", "nfo_lock_data", "INTEGER NOT NULL DEFAULT 0")
 }
 
 // ensureConnectionColumns idempotently adds columns that were appended to

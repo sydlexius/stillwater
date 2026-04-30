@@ -5,13 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
-const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, created_at, updated_at`
+const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, nfo_lock_data, created_at, updated_at`
 
 // Service provides library data operations.
 type Service struct {
@@ -59,13 +61,14 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, nfo_lock_data, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lib.ID, lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
 		lib.FSWatch, lib.FSPollInterval,
 		lib.SharedFSStatus, lib.SharedFSEvidence, lib.SharedFSPeerLibraryIDs,
+		boolToInt(lib.NFOLockData),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -170,13 +173,14 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = time.Now().UTC()
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ?
+		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, nfo_lock_data = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
 		lib.FSWatch, lib.FSPollInterval,
 		lib.SharedFSStatus, lib.SharedFSEvidence, lib.SharedFSPeerLibraryIDs,
+		boolToInt(lib.NFOLockData),
 		lib.UpdatedAt.Format(time.RFC3339),
 		lib.ID,
 	)
@@ -516,6 +520,7 @@ func (s *Service) CountArtistsByConnectionID(ctx context.Context, connectionID s
 func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	var lib Library
 	var connectionID sql.NullString
+	var nfoLockData int
 	var createdAt, updatedAt string
 
 	err := row.Scan(
@@ -523,6 +528,7 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 		&lib.Source, &connectionID, &lib.ExternalID,
 		&lib.FSWatch, &lib.FSPollInterval,
 		&lib.SharedFSStatus, &lib.SharedFSEvidence, &lib.SharedFSPeerLibraryIDs,
+		&nfoLockData,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -532,10 +538,21 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	if connectionID.Valid {
 		lib.ConnectionID = connectionID.String
 	}
+	lib.NFOLockData = nfoLockData != 0
 	lib.CreatedAt = dbutil.ParseTime(createdAt)
 	lib.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &lib, nil
+}
+
+// boolToInt maps a Go bool to the 0/1 int representation SQLite uses for
+// boolean columns. Inline rather than a package helper because this package
+// is the only consumer.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // SetSharedFSStatus updates the shared-filesystem status, evidence, and peer
@@ -611,6 +628,58 @@ func isValidSharedFSStatus(s string) bool {
 	default:
 		return false
 	}
+}
+
+// FindForArtistPath returns the library whose Path is the longest filesystem
+// prefix of artistPath, or nil when no library claims the path. Used by the
+// publisher to resolve which library's per-library settings (e.g. NFOLockData)
+// govern an artist's NFO write.
+//
+// Pathless libraries are skipped because they cannot own a filesystem path.
+// Path comparison is exact-prefix on cleaned paths plus a separator boundary,
+// so "/music/jazz" does not match an artist whose path is "/music/jazzfusion".
+func (s *Service) FindForArtistPath(ctx context.Context, artistPath string) (*Library, error) {
+	if artistPath == "" {
+		return nil, nil
+	}
+	cleanedArtist := filepath.Clean(artistPath)
+
+	libs, err := s.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing libraries to resolve artist path: %w", err)
+	}
+
+	var best *Library
+	for i := range libs {
+		lib := &libs[i]
+		if lib.Path == "" {
+			continue
+		}
+		cleanedLib := filepath.Clean(lib.Path)
+		if !pathContains(cleanedLib, cleanedArtist) {
+			continue
+		}
+		if best == nil || len(cleanedLib) > len(filepath.Clean(best.Path)) {
+			best = lib
+		}
+	}
+	return best, nil
+}
+
+// pathContains reports whether parent is an ancestor of, or equal to, child
+// using filesystem path semantics. Both inputs are expected to be cleaned.
+// The check is a prefix match guarded by a separator boundary so siblings
+// with shared name prefixes do not match (e.g. parent="/music/jazz" does not
+// claim child="/music/jazzfusion/album").
+func pathContains(parent, child string) bool {
+	if parent == child {
+		return true
+	}
+	withSep := parent
+	if !strings.HasSuffix(parent, string(filepath.Separator)) {
+		withSep = parent + string(filepath.Separator)
+	}
+	return strings.HasPrefix(child, withSep)
 }
 
 // HasLocalLibrary reports whether at least one library has a non-empty filesystem
