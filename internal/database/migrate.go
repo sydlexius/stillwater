@@ -40,17 +40,15 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("running migrations: %w", err)
 	}
 
-	// Policy: all schema lives in 001_initial_schema.sql (never adds new
-	// migration files). Goose only runs 001 once per DB, so columns added
-	// to that file do not appear on DBs that already recorded 001 as done.
-	// The helpers below bridge that gap by applying idempotent ALTER TABLE
-	// statements at runtime for each post-freeze column addition.
+	// Policy: 001_initial_schema.sql is the v1.0.0 baseline and is now
+	// frozen. Post-v1.0 schema changes ship as new additive migration
+	// files (002_*, 003_*, ...) so goose tracks them per-database and
+	// fresh deploys + upgrades converge on the same final schema. The
+	// ensureConnectionColumns helper below pre-dates that policy and is
+	// retained for the connection columns it already covers; new
+	// additions should use migration files instead.
 	if err := ensureConnectionColumns(db); err != nil {
 		return fmt.Errorf("ensuring connection columns: %w", err)
-	}
-
-	if err := ensureLibraryColumns(db); err != nil {
-		return fmt.Errorf("ensuring library columns: %w", err)
 	}
 
 	// legacy code paths (or sessions without
@@ -140,21 +138,6 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 		return fmt.Errorf("inserting rule_results backfill rows: %w", err)
 	}
 	return nil
-}
-
-// ensureLibraryColumns idempotently adds columns that were appended to the
-// libraries table after the 001 migration was first applied on a deployed
-// instance. Mirrors ensureConnectionColumns: each column is guarded by
-// PRAGMA table_info so re-running Migrate is a cheap no-op.
-//
-// nfo_lock_data was added to address a regression where every NFO Stillwater
-// wrote was unconditionally stamped with <lockdata>true</lockdata>, telling
-// downstream Emby/Jellyfin instances to refuse metadata refreshes for those
-// artists. Default 0 (off) makes existing libraries opt-in via the Libraries
-// settings UI, restoring the pre-bug "Stillwater writes the file but does
-// not pin it" behavior unless the user explicitly opts in.
-func ensureLibraryColumns(db *sql.DB) error {
-	return ensureColumn(db, "libraries", "nfo_lock_data", "INTEGER NOT NULL DEFAULT 0")
 }
 
 // ensureConnectionColumns idempotently adds columns that were appended to

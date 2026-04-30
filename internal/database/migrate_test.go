@@ -790,11 +790,12 @@ func TestCollapseDuplicates_CreatedAtMixedFormatsPickEarliest(t *testing.T) {
 	}
 }
 
-// TestEnsureLibraryColumns_Idempotent verifies the helper that backfills the
-// nfo_lock_data column on libraries is a no-op when the column already
-// exists. Re-running Migrate must succeed; the column must not be duplicated;
+// TestMigration002_LibraryNFOLockData_Idempotent verifies that the 002
+// migration adds the nfo_lock_data column on a fresh DB and is a no-op on
+// re-run (goose tracks 002 as applied; ALTER TABLE is not replayed). Re-
+// running Migrate must succeed; the column must not be duplicated;
 // pre-existing rows must retain their values.
-func TestEnsureLibraryColumns_Idempotent(t *testing.T) {
+func TestMigration002_LibraryNFOLockData_Idempotent(t *testing.T) {
 	db := openMigratedDB(t)
 
 	if _, err := db.Exec(`
