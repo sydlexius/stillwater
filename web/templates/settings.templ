@@ -3115,6 +3115,15 @@ templ settingsLibraryRow(lib library.Library) {
 						<option value="1800" selected?={ lib.FSPollInterval == 1800 }>30m</option>
 					</select>
 				}
+				<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer" title={ t(ctx, "settings.libraries.lock_nfo_title") }>
+					<input
+						type="checkbox"
+						class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"
+						checked?={ lib.NFOLockData }
+						onchange={ settingsUpdateLockNFO(lib.ID) }
+					/>
+					{ t(ctx, "settings.libraries.lock_nfo_label") }
+				</label>
 			}
 			if lib.ConnectionID != "" {
 				<button
@@ -3155,6 +3164,10 @@ script settingsUpdateFSMode(id string) {
 
 script settingsUpdatePollInterval(id string) {
 	updateLibraryPollInterval(id, parseInt(event.target.value, 10));
+}
+
+script settingsUpdateLockNFO(id string) {
+	updateLibraryLockNFO(id, !!event.target.checked);
 }
 
 script settingsDeleteLibrary(id string) {
@@ -3413,6 +3426,23 @@ templ settingsLibraryScript() {
 					showSuccessToast("Poll interval updated");
 				} else {
 					showToast("Failed to update poll interval");
+				}
+			}).catch(function() {
+				showToast("Network error");
+			});
+		}
+
+		function updateLibraryLockNFO(id, enabled) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch(bp + "/api/v1/libraries/" + id, {
+				method: "PUT",
+				headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+				body: JSON.stringify({nfo_lock_data: enabled})
+			}).then(function(res) {
+				if (res.ok) {
+					showSuccessToast(enabled ? "NFO locking enabled for library" : "NFO locking disabled for library");
+				} else {
+					showToast("Failed to update NFO locking");
 				}
 			}).catch(function() {
 				showToast("Network error");

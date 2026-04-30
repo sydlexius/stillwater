@@ -1265,6 +1265,8 @@
   "settings.libraries.fs_off": "Off",
   "settings.libraries.fs_poll": "Poll",
   "settings.libraries.fs_watch": "Watch",
+  "settings.libraries.lock_nfo_label": "Lock NFOs",
+  "settings.libraries.lock_nfo_title": "When on, Stillwater stamps <lockdata>true</lockdata> into every NFO it writes for this library, telling Emby and Jellyfin to refuse metadata refreshes for those artists. Off by default.",
   "settings.libraries.name_placeholder": "Library name",
   "settings.libraries.path_placeholder": "Path (e.g. /music)",
   "settings.libraries.poll_interval_title": "Poll interval",

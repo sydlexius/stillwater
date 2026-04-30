@@ -126,6 +126,7 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		Type           string `json:"type"`
 		FSWatch        *int   `json:"fs_watch"`
 		FSPollInterval *int   `json:"fs_poll_interval"`
+		NFOLockData    *bool  `json:"nfo_lock_data"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -174,6 +175,9 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		existing.FSPollInterval = *body.FSPollInterval
+	}
+	if body.NFOLockData != nil {
+		existing.NFOLockData = *body.NFOLockData
 	}
 
 	if err := r.libraryService.Update(req.Context(), existing); err != nil {
