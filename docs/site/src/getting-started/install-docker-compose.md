@@ -58,7 +58,7 @@ volumes:
 
 ## Customize the compose file
 
-Three required edits before you bring it up:
+Two required edits before you start the stack, plus one recommended:
 
 1. **Replace `/path/to/your/music`** with the absolute path to your music library on the host. For example, `/srv/media/music` or `/Users/you/Music`.
 
