@@ -43,7 +43,7 @@ Proxies with default body-size limits below 25 MB will return 413 Payload Too La
 
 ### 4. Long read timeouts for scanner and bulk operations
 
-The library scanner and bulk-action endpoints can run for several minutes against large libraries. The LSIO sample configs ship with `proxy_read_timeout 600s` (10 minutes), which is a reasonable default. Shorter timeouts (some proxies default to 30 or 60 seconds) will return 504 Gateway Timeout mid-operation while Stillwater is still working.
+The library scanner and bulk-action endpoints can run for a long time against large libraries. Stillwater's own server-side write timeout is 180 seconds, so set proxy read/send timeouts above that. The LSIO sample configs ship with `proxy_read_timeout 600s` (10 minutes) as conservative headroom; shorter timeouts (some proxies default to 30 or 60 seconds) will return 504 Gateway Timeout mid-operation while Stillwater is still working.
 
 ### 5. `X-Forwarded-Proto` header forwarded
 
@@ -276,10 +276,10 @@ Expected: an immediate `event: connected` followed by periodic heartbeats. If yo
 dd if=/dev/zero of=/tmp/big.jpg bs=1M count=20
 curl -X POST -H "Cookie: <your_session_cookie>" \
     -F "image=@/tmp/big.jpg" \
-    https://stillwater.example.com/api/v1/...
+    "https://stillwater.example.com/api/v1/artists/<artist-id>/images/upload"
 ```
 
-(Replace `...` with a real upload endpoint from the OpenAPI spec.) Expected: a Stillwater-side validation error or success, NOT a 413 from the proxy.
+Substitute any artist ID from your library for `<artist-id>`. Expected: a Stillwater-side validation error or success, NOT a 413 from the proxy.
 
 ## Troubleshooting
 
@@ -289,7 +289,7 @@ curl -X POST -H "Cookie: <your_session_cookie>" \
 
 - **Image uploads return 413 Payload Too Large.** The proxy's body limit is below 25 MB. Set `client_max_body_size 25m` (Nginx), or raise the equivalent setting on whichever proxy you use. Stillwater itself accepts up to 25 MB on image upload endpoints.
 
-- **Long-running operations (scanner, bulk fix-all) abort with 504 Gateway Timeout.** Proxy read timeout is too short. Raise it to at least 600 seconds. The LSIO samples use that value and it's a sensible floor.
+- **Long-running operations (scanner, bulk fix-all) abort with 504 Gateway Timeout.** Proxy read timeout is too short. Raise it above Stillwater's 180-second server write timeout; 600 seconds (matching the LSIO samples) is a conservative recommendation.
 
 - **OIDC login redirects to `http://` instead of `https://` and the auth flow fails.** Stillwater is constructing the OIDC redirect URI from request scheme detection. With TLS terminated upstream, it depends entirely on `X-Forwarded-Proto` to know it's serving HTTPS. Forward the header.
 

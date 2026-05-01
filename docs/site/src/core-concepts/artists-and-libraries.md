@@ -31,7 +31,8 @@ Each library has a few key properties:
 ### Library sources
 
 - **Manual** -- you typed in the path. Stillwater owns it end-to-end.
-- **Emby / Jellyfin** -- imported from a [connection](../getting-started/connect-emby.md). The library remembers which platform library it mirrors so refreshes know who to ask.
+- **Emby** -- imported from an [Emby connection](../getting-started/connect-emby.md). The library remembers which platform library it mirrors so refreshes know who to ask.
+- **Jellyfin** -- imported from a [Jellyfin connection](../getting-started/connect-jellyfin.md). Same import semantics as Emby.
 - **Lidarr** -- imported from a Lidarr instance (a music-focused PVR).
 
 A single Stillwater install can hold many libraries from many sources at once. They are independent: one library's filesystem watch settings, NFO write policy, or rule outcomes have no effect on another's.

@@ -118,11 +118,12 @@ If you pinned a version tag, edit the `image:` line first, then run the same two
 
 ## Backups
 
-The `stillwater-data` named volume holds everything Stillwater needs to restore: database, encryption key, config. Back it up with a one-shot tar container:
+The `stillwater-data` named volume holds everything Stillwater needs to restore: database, encryption key, config. Back it up with a one-shot tar container. Compose prefixes named volumes with the project name (the project directory's basename, by default), so the example below discovers the actual volume name dynamically:
 
 ```bash
+VOL=$(docker volume ls --format '{{.Name}}' | grep '_stillwater-data$' | head -n1)
 docker run --rm \
-  -v stillwater_stillwater-data:/data \
+  -v "${VOL}:/data" \
   -v "$PWD":/backup \
   alpine tar czf "/backup/stillwater-$(date +%F).tar.gz" -C /data .
 ```

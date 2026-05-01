@@ -72,13 +72,43 @@ Switch channels under Settings > Updates (channel selector). Switching does not 
 
 ## Verifying releases
 
-Stillwater publishes signed releases. Verify the binary matches the expected SHA256 by:
+Each release publishes a `checksums.txt` (SHA256 hashes) and a cosign keyless signature for it (`checksums.txt.sigstore.json`). Docker images are also signed with cosign keyless and have SLSA build provenance attached.
 
-1. Downloading the release's `checksums.txt` from the GitHub Release page.
-2. Running `shasum -a 256 stillwater-...` against the binary you have.
-3. Comparing the result to the line in `checksums.txt`.
+### Native binaries
 
-For Docker images, content addressability comes from the digest -- pin to `image@sha256:...` instead of a tag if you need exact reproducibility.
+For a basic integrity check, compare SHA256:
+
+1. Download the release's `checksums.txt` from the GitHub Release page.
+2. Run `shasum -a 256 stillwater-...` against the binary you have.
+3. Compare the result to the line in `checksums.txt`.
+
+For end-to-end signature verification, also verify `checksums.txt` itself with [cosign](https://docs.sigstore.dev/cosign/installation/):
+
+```bash
+cosign verify-blob \
+    --bundle checksums.txt.sigstore.json \
+    --certificate-identity-regexp 'https://github.com/sydlexius/stillwater/' \
+    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+    checksums.txt
+```
+
+A `Verified OK` result confirms the checksums file was produced by the official release workflow.
+
+### Docker images
+
+Pull by digest for exact reproducibility:
+
+```bash
+docker pull ghcr.io/sydlexius/stillwater@sha256:<digest>
+```
+
+Or verify the cosign signature directly:
+
+```bash
+cosign verify ghcr.io/sydlexius/stillwater:<version> \
+    --certificate-identity-regexp 'https://github.com/sydlexius/stillwater/' \
+    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
 
 ## Rolling back
 

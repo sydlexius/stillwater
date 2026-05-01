@@ -10,10 +10,10 @@ Stillwater is configured by a small YAML file plus environment-variable override
 
 | Variable | YAML field | Default | Notes |
 |---|---|---|---|
-| `SW_CONFIG_PATH` | -- | unset | Path to a YAML config file. When unset, Stillwater starts with defaults plus environment overrides only. |
-| `SW_PORT` | `server.port` | `1973` | TCP port. Must be 1-65535; an invalid value is rejected at startup. |
+| `SW_CONFIG_PATH` | -- | `/config/config.yaml` | Path to a YAML config file. When unset, Stillwater attempts to read `/config/config.yaml`; if that file does not exist, it starts with defaults plus environment overrides only. |
+| `SW_PORT` | `server.port` | `1973` | TCP port. Non-numeric values are silently ignored; numeric values outside `1-65535` are rejected at startup by config validation. |
 | `SW_BASE_PATH` | `server.base_path` | `/` | URL prefix for subfolder reverse-proxy deployments (e.g. `/stillwater`). When set from the environment, the Settings UI marks the field read-only with a "managed by environment" badge so a config-as-code deployment can't be silently overridden through the UI. |
-| `SW_DB_PATH` | `database.path` | `/config/stillwater.db` | SQLite file path. Required. |
+| `SW_DB_PATH` | `database.path` | `/config/stillwater.db` | SQLite file path. Optional; defaults to `/config/stillwater.db`. |
 | `SW_SESSION_SECRET` | `auth.session_secret` | unset | Long random string used to sign session cookies. When unset, Stillwater generates one on first run and persists it in the config directory. Set this only when you need sessions to survive across fresh container deployments with no persistent volume. |
 | `SW_ENCRYPTION_KEY` | `encryption.key` | unset | Key used to encrypt provider API keys at rest. When unset, Stillwater generates one on first run and persists it in the config directory. Set this only when restoring from a backup that was encrypted with a known key. |
 | `SW_MUSIC_PATH` | `music.library_path` | `/music` | Default library path used when no library is configured yet. Once you've added libraries through the UI, this is informational. |
@@ -22,7 +22,7 @@ Stillwater is configured by a small YAML file plus environment-variable override
 | `SW_BACKUP_RETENTION` | `backup.retention_count` | `7` | Number of recent backups to keep. Older backups are pruned after each successful new backup. Must be a positive number; non-positive values are silently ignored. |
 | `SW_BACKUP_INTERVAL` | `backup.interval_hours` | `24` | Hours between automated backups. Must be a positive number; non-positive values are silently ignored. |
 | `SW_BACKUP_ENABLED` | `backup.enabled` | `true` | Set to `true` or `1` to enable automated backups; any other value disables them. |
-| `SW_LOG_LEVEL` | `logging.level` | `info` | One of `debug`, `info`, `warn`, `error`. The runtime can also raise/lower the live level via the Logs settings tab without restart. |
+| `SW_LOG_LEVEL` | `logging.level` | `info` | One of `trace`, `debug`, `info`, `warn`, `error`. The runtime can also raise/lower the live level via the Logs settings tab without restart. |
 | `SW_LOG_FORMAT` | `logging.format` | `json` | `json` for log aggregators; `text` for friendlier console output. |
 
 ## YAML configuration file

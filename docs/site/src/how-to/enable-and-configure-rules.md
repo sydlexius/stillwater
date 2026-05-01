@@ -113,4 +113,4 @@ before disabling. Disable is for rules that don't apply to your collection at al
 
 - [Rules concept](../core-concepts/rules.md)
 - [Rules catalogue](../reference/rules-catalogue.md) -- every built-in rule and its knobs.
-- [Run scans](run-scans.md) -- discovery is what populates the artists rules then check.
+- [Run scans](run-scans.md) -- discovery populates the artist set that rules then evaluate.

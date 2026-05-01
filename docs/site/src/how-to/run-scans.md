@@ -28,7 +28,7 @@ The scan is **incremental** -- only changed directories are processed. A library
 
 ### "Scan all"
 
-To kick off scans for every library at once, use the **Scan all** button at the top of the Libraries tab. This is just a loop over the per-library scans; each library still runs its own scan independently.
+To kick off scans for every library at once, use the **Scan all** button at the top of the Libraries tab. Stillwater runs at most one scan at a time globally, so this enqueues the libraries one after another rather than running them in parallel.
 
 ## Schedule recurring scans
 
@@ -82,7 +82,7 @@ So the typical workflow on a new library is: scan to discover artists -> refresh
 
 ## Concurrent-scan safety
 
-Stillwater allows one scan per library at a time. A second click on the same library while a scan is running is rejected with a brief message; the running scan keeps going. Different libraries can scan in parallel without conflict.
+Stillwater allows only one scan at a time across all libraries. A second click while any scan is running is rejected with a brief message; the running scan keeps going. **Scan all** (described above) takes advantage of this by walking the libraries sequentially.
 
 ## When the watcher fires
 
