@@ -133,7 +133,7 @@ if [ "$(printf '%s\n' "${VOL}" | wc -l | tr -d ' ')" -gt 1 ]; then
   exit 1
 fi
 docker run --rm \
-  -v "${VOL}:/data" \
+  -v "${VOL}:/data:ro" \
   -v "$PWD":/backup \
   alpine tar czf "/backup/stillwater-$(date +%F).tar.gz" -C /data .
 ```
