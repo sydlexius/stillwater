@@ -25,3 +25,6 @@ config:
   MD041: false
   # Allow compact table pipe style
   MD060: false
+  # Allow mixed code-block styles -- nested list items use indented blocks,
+  # standalone examples use fenced blocks
+  MD046: false

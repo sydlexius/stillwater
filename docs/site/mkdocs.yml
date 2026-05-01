@@ -72,14 +72,45 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/sydlexius/stillwater
 
+extra_css:
+  - stylesheets/extra.css
+
 nav:
   - Home: index.md
   - Getting Started:
       - getting-started/index.md
+      - Install (Docker Compose): getting-started/install-docker-compose.md
+      - Install (binary): getting-started/install-binary.md
+      - Install (Unraid): getting-started/install-unraid.md
+      - First-run setup: getting-started/first-run-oobe.md
+      - Connect Emby: getting-started/connect-emby.md
+      - Connect Jellyfin: getting-started/connect-jellyfin.md
+  - Core concepts:
+      - core-concepts/index.md
+      - Artists and libraries: core-concepts/artists-and-libraries.md
+      - NFO files: core-concepts/nfo-files.md
+      - Images: core-concepts/images.md
+      - Providers: core-concepts/providers.md
+      - Rules: core-concepts/rules.md
+      - Field locks: core-concepts/field-locks.md
   - How-to:
       - how-to/index.md
+      - Run scans: how-to/run-scans.md
+      - Edit an artist: how-to/edit-artist.md
+      - Refresh metadata: how-to/refresh-metadata.md
+      - Fetch and crop images: how-to/fetch-and-crop-images.md
+      - Configure provider priorities: how-to/configure-provider-priorities.md
+      - Enable and configure rules: how-to/enable-and-configure-rules.md
+      - Export and import settings: how-to/export-import-settings.md
+      - Update Stillwater: how-to/self-update.md
+      - Reverse proxy: how-to/reverse-proxy.md
   - Reference:
       - reference/index.md
+      - Settings, by tab: reference/settings-by-tab.md
+      - Rules catalogue: reference/rules-catalogue.md
+      - Providers: reference/providers.md
+      - Environment variables: reference/environment-variables.md
   - Troubleshooting:
       - troubleshooting/index.md
+      - Platform authentication: troubleshooting/platform-auth.md
   - API Reference: api/index.html
