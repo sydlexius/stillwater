@@ -121,7 +121,18 @@ If you pinned a version tag, edit the `image:` line first, then run the same two
 The `stillwater-data` named volume holds everything Stillwater needs to restore: database, encryption key, config. Back it up with a one-shot tar container. Compose prefixes named volumes with the project name (the project directory's basename, by default), so the example below discovers the actual volume name dynamically:
 
 ```bash
-VOL=$(docker volume ls --format '{{.Name}}' | grep '_stillwater-data$' | head -n1)
+VOL=$(docker volume ls --format '{{.Name}}' | grep '_stillwater-data$')
+if [ -z "${VOL}" ]; then
+  echo "No volume matching '*_stillwater-data' found." >&2
+  echo "Run 'docker volume ls' and pick the right name, or set COMPOSE_PROJECT_NAME / use 'docker compose -p' to disambiguate." >&2
+  exit 1
+fi
+if [ "$(echo "${VOL}" | wc -l | tr -d ' ')" -gt 1 ]; then
+  echo "Multiple matching volumes:" >&2
+  echo "${VOL}" >&2
+  echo "Set VOL=<exact_name> manually before running this command." >&2
+  exit 1
+fi
 docker run --rm \
   -v "${VOL}:/data" \
   -v "$PWD":/backup \

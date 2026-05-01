@@ -76,7 +76,7 @@ Disabling the toggle later (or deleting the connection) restores Jellyfin's prev
 
 ### When the toggle is moot
 
-If your Jellyfin connection is API-push only (no shared filesystem mount), Stillwater isn't writing files to disk for that library in the first place. There's nothing to clobber and the detector won't close the gate even when Jellyfin's writer is on. Stillwater also automatically disables its filesystem-dependent rules in this configuration (currently the "NFO exists" rule), so you won't see false violations against artists that don't live on disk. Let Jellyfin do its own NFO and art saving if that's how the rest of your stack works.
+If your Jellyfin connection is API-push only (no shared filesystem mount), Stillwater isn't writing files to disk for that library in the first place. There's nothing to clobber and the detector won't close the gate even when Jellyfin's writer is on. Stillwater also automatically disables its filesystem-dependent rules in this configuration (e.g. the "NFO exists" rule), so you won't see false violations against artists that don't live on disk. Let Jellyfin do its own NFO and art saving if that's how the rest of your stack works.
 
 ## Choosing a delivery mode
 
