@@ -138,7 +138,7 @@ docker run --rm \
   alpine tar czf "/backup/stillwater-$(date +%F).tar.gz" -C /data .
 ```
 
-Stillwater also has a built-in scheduled backup feature. Enable it via the web UI or these env vars:
+Scheduled backups are on by default. Tune them via the web UI or these env vars:
 
 ```yaml
 - SW_BACKUP_ENABLED=true
