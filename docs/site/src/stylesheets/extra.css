@@ -1,0 +1,10 @@
+/* Bottom-align the trailing link in grid cards so calls-to-action sit on a
+   common baseline regardless of description length. */
+.md-typeset .grid.cards > ul > li {
+  display: flex;
+  flex-direction: column;
+}
+
+.md-typeset .grid.cards > ul > li > p:last-child {
+  margin-top: auto;
+}
