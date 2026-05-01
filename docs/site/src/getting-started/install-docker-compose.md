@@ -127,9 +127,8 @@ if [ -z "${VOL}" ]; then
   echo "Run 'docker volume ls' and pick the right name, or set COMPOSE_PROJECT_NAME / use 'docker compose -p' to disambiguate." >&2
   exit 1
 fi
-if [ "$(echo "${VOL}" | wc -l | tr -d ' ')" -gt 1 ]; then
-  echo "Multiple matching volumes:" >&2
-  echo "${VOL}" >&2
+if [ "$(printf '%s\n' "${VOL}" | wc -l | tr -d ' ')" -gt 1 ]; then
+  printf 'Multiple matching volumes:\n%s\n' "${VOL}" >&2
   echo "Set VOL=<exact_name> manually before running this command." >&2
   exit 1
 fi
@@ -143,8 +142,8 @@ Stillwater also has a built-in scheduled backup feature. Enable it via the web U
 
 ```yaml
 - SW_BACKUP_ENABLED=true
-- SW_BACKUP_INTERVAL=24
-- SW_BACKUP_RETENTION=7
+- SW_BACKUP_INTERVAL=24   # hours between scheduled backups
+- SW_BACKUP_RETENTION=7   # number of recent backups to keep
 ```
 
 Backups land in `/config/backups` inside the volume by default.

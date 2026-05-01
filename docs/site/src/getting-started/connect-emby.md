@@ -65,7 +65,7 @@ When the detector finds that situation, Stillwater **closes its own write gate**
 To clear the gate when it does close, flip **Let Stillwater manage artwork and NFO files on this server** ON for the connection cited in the banner. You do not need to log into Emby and change settings yourself. Stillwater handles the change for you:
 
 1. Snapshots Emby's current library options into the connection record so they can be restored later.
-2. PATCHes Emby's library options to disable its NFO saver and image saver (`SaveLocalMetadata=false`).
+2. Updates Emby's library options to disable its NFO saver and image saver (`SaveLocalMetadata=false`).
 3. Becomes the sole writer for NFO files and artwork in that library on disk.
 4. The conflict banner clears on the next detector refresh; image and NFO auto-fixes resume.
 
