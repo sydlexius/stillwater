@@ -23,7 +23,7 @@ When you want a fresh image for one slot from your configured providers:
 
 The saved file goes into the artist's directory under the canonical filename for the slot. Existing image is replaced (after a brief backup, in case you want to undo).
 
-<!-- SCREENSHOT: Image candidates view | state: 4 thumb candidates from different providers | annotation: provider attribution + dimensions + select action -->
+![Image search results for an artist's thumb: a grid of candidate images from Wikidata, Fanart.tv, Deezer, TheAudioDB, and Discogs. Each card shows the provider badge, image kind, dimensions, and Save / Compare / Crop actions. Smaller candidates are tagged "Low resolution"](../assets/screenshots/image-candidates.jpg)
 
 ## Fetch from web search
 
@@ -81,7 +81,8 @@ To add another fanart:
 
 To reorder:
 
-- Drag fanart thumbnails to reorder. The first one is primary -- the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
+- On the artist page, click a fanart thumbnail to make it the primary -- the rest keep their existing order behind it.
+- For finer control, open the artist's image search page (the same place you fetch new fanart from). The fanart gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
 
 To delete:
 
@@ -89,9 +90,9 @@ To delete:
 
 To delete many at once:
 
-- Click **Select** on the fanart strip, check the ones to remove, click **Delete selected**.
+- On the image search page's fanart gallery, tick the checkbox on each fanart you want to remove, then click **Delete selected**.
 
-<!-- SCREENSHOT: Fanart strip | state: 5 fanarts with 1 selected for deletion + reorder handles | annotation: select / drag / delete affordances -->
+![Fanart management gallery on the image search page: five fanart cards in a grid, each with a select checkbox, filename, dimensions, file size, up/down move buttons, and a red delete X. The first card is checked, surfacing a red "Delete 1 selected" button at the top right](../assets/screenshots/image-fanart-gallery.jpg)
 
 ## Comparison view
 
@@ -115,4 +116,4 @@ If a slot's Find action shows no candidates:
 
 - [Images concept](../core-concepts/images.md) for the slots and platform terminology.
 - [Configure provider priorities](configure-provider-priorities.md) for setting which providers Stillwater asks first.
-- [Edit an artist](edit-artist.md) for image locks and reordering shortcuts.
+- [Edit an artist](edit-artist.md) for fanart-reorder shortcuts and the in-place edit affordances.

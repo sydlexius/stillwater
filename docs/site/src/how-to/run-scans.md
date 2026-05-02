@@ -2,7 +2,7 @@
 description: Trigger filesystem and platform scans, schedule recurring runs, monitor progress.
 ---
 
-<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/library.templ (Scan button, schedule UI). -->
+<!-- code: internal/scanner/scanner.go (Run, runScan, processDirectory, detectRemoved), internal/api/handlers_scan*.go (POST /api/v1/scans, GET /api/v1/scans/current), internal/watcher/watcher.go (filesystem watch + poll triggering scans), web/templates/settings.templ (per-library Scan Library / Re-sync Artists buttons in the Libraries tab). -->
 
 # Run scans
 
@@ -16,34 +16,51 @@ This page covers triggering each one manually plus setting up recurrences.
 
 ## Run a manual filesystem scan
 
-1. Go to **Libraries** in the sidebar.
+The trigger depends on whether the library is **manual** (you typed in the path) or **imported** (linked to an Emby/Jellyfin/Lidarr connection).
+
+### Imported libraries
+
+1. Open **Settings > Libraries**.
 2. Find the library you want to scan in the list.
-3. Click **Scan** on its row.
+3. Click **Scan Library** on its row.
 
 The scan starts in the background. The library row shows a spinner; an event banner appears with progress. When it finishes, the row updates with new artist counts.
 
-<!-- SCREENSHOT: Libraries list during scan | state: one library with spinner + progress banner | annotation: scan trigger button + progress feedback -->
+### Manual libraries
 
-The scan is **incremental** -- only changed directories are processed. A library with 4,000 artists where nothing has moved finishes quickly because Stillwater compares directory modification times against its last scan.
+A manual library row has no per-row **Scan Library** button. The supported triggers for a manual library today are:
 
-### "Scan all"
+- **Filesystem watching.** Turn the row's **Filesystem monitoring mode** dropdown on (Watch, Poll, or Watch + Poll). Stillwater scans automatically when the watcher detects a new or removed artist directory -- see [Schedule recurring scans](#schedule-recurring-scans) below.
+- **Per-artist bulk scan.** Open **Artists** in the sidebar, optionally filter to a subset, select the artists you want to (re)scan, then pick **Scan** in the bulk-action menu. This re-scans the selected artists' directories.
 
-To kick off scans for every library at once, use the **Scan all** button at the top of the Libraries tab. Stillwater runs at most one scan at a time globally, so this enqueues the libraries one after another rather than running them in parallel.
+The scan is **incremental** in both cases -- only changed directories are processed. A library with 4,000 artists where nothing has moved finishes quickly because Stillwater compares directory modification times against its last scan.
+
+**Where to find Settings > Libraries:**
+
+![Settings tabs nav with the Libraries tab active](../assets/screenshots/nav-settings-tabs-libraries.png){ width="640" }
+
+![Two manual library rows showing the Filesystem monitoring mode dropdown, Lock NFOs checkbox, and Remove action; an Add Library button sits at the bottom](../assets/screenshots/settings-libraries-list.png)
+
+### Scanning every library
+
+There is no single "scan everything" button today. For imported libraries, click **Scan Library** on each row in turn. Stillwater runs at most one scan at a time globally, so a second click while one is in flight is rejected with a brief message; once the running scan finishes, click the next row.
+
+For manual libraries the same constraints apply -- coverage comes from leaving the watcher on across all libraries and letting filesystem changes trigger the scans.
 
 ## Schedule recurring scans
 
 For libraries on auto-pilot, recurring scans keep the catalog fresh without you clicking anything.
 
-1. Go to **Libraries**.
-2. On the library row, open the watch settings.
-3. Pick a watch mode:
+1. Open **Settings > Libraries**.
+2. On the library row, find the **Filesystem monitoring mode** dropdown (it sits next to the per-library actions).
+3. Pick a mode:
    - **Off** -- no automatic scans. You trigger manually.
    - **Watch** -- the operating system tells Stillwater the moment a directory appears or disappears. Best on local filesystems.
    - **Poll** -- Stillwater snapshots the directory listing every few minutes and diffs. Required for many network mounts.
-   - **Both** -- watch + poll. Watch fires fast, poll catches anything the watcher misses.
-4. If you picked Poll or Both, set the interval (1, 5, 15, or 30 minutes).
+   - **Watch + Poll** -- watch fires fast, poll catches anything the watcher misses.
+4. If you picked Poll or Watch + Poll, a second dropdown appears for the interval. Pick 1m, 5m, 15m, or 30m.
 
-<!-- SCREENSHOT: Library row > watch settings | state: poll mode selected with 5-minute interval | annotation: where the watch toggle lives -->
+![A library row's right-aligned controls: Filesystem monitoring mode dropdown (Watch active), Lock NFOs checkbox, Remove action](../assets/screenshots/settings-libraries-row-controls.png)
 
 Stillwater probes each path on startup to decide whether watch mode is supported. The UI shows the result so you don't pick a mode that won't fire.
 
@@ -51,8 +68,8 @@ Stillwater probes each path on startup to decide whether watch mode is supported
 
 When you've connected Emby, Jellyfin, or Lidarr, you can pull the platform's artist list instead of (or in addition to) walking the disk.
 
-1. Go to **Libraries** and find a library imported from a platform connection.
-2. Click **Refresh from platform**.
+1. Open **Settings > Libraries** and find a library imported from a platform connection.
+2. Click **Re-sync Artists** on its row.
 
 Stillwater queries the platform's library and reconciles with what it has stored. New platform-side artists appear in Stillwater (pathless if they don't have a directory on disk yet); deleted ones are removed.
 
@@ -82,7 +99,7 @@ So the typical workflow on a new library is: scan to discover artists -> refresh
 
 ## Concurrent-scan safety
 
-Stillwater allows only one scan at a time across all libraries. A second click while any scan is running is rejected with a brief message; the running scan keeps going. **Scan all** (described above) takes advantage of this by walking the libraries sequentially.
+Stillwater allows only one scan at a time across all libraries. A second click while any scan is running is rejected with a brief message; the running scan keeps going. The same constraint applies whether the scan was triggered manually, by the watcher, or by a recurring poll.
 
 ## When the watcher fires
 

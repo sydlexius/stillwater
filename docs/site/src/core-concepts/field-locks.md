@@ -9,7 +9,7 @@ description: How locks protect artist metadata from being overwritten by automat
 
 A **lock** is Stillwater's way of saying "don't touch this." It keeps your manual edits from being overwritten the next time a provider refresh runs, a rule fixer fires, or a connected platform pushes its own metadata.
 
-There are three layers of locks, used together. Each protects against different overwrite paths.
+There are two layers of locks, plus a library-wide switch. Each protects against different overwrite paths.
 
 ## Layer 1: artist lock (the big switch)
 
@@ -34,11 +34,19 @@ You pin a field (biography, sort name, born year, ...) and Stillwater's refresh,
 
 Field locks coexist with the artist-level lock. Unlocking the artist doesn't clear field locks; they're independent layers.
 
-<!-- SCREENSHOT: Artist detail | state: artist with mixed field locks (biography pinned, genres unlocked, dates pinned) | annotation: per-field lock indicators -->
+**Where to find the lock controls:** open an artist from the **Artists** sidebar item; lock icons sit next to the Biography heading, each tag-group label (Genres / Styles / Moods), and every field in the Details panel.
 
-## Layer 3: per-image locks
+A locked field swaps its lock icon for an amber closed lock and **hides the edit pencil and overflow menu**, so the value can't be changed by accident. Hover the demo below to see the same field switch from unlocked to locked:
 
-Images get their own locks. A locked image survives a "fetch from providers" or a Fix-all run that would otherwise replace it. Per-image, not per-slot: an artist can have a locked thumb and an unlocked fanart -- automated runs replace the fanart with a higher-resolution candidate while leaving the thumb you personally chose alone.
+<div class="sw-hover-swap" tabindex="0" markdown="span">
+![Name field unlocked: gray open lock, edit pencil, and overflow menu, with '12 Stones' as the value](../assets/screenshots/artist-field-name-unlocked.png)
+![Name field locked: amber closed lock and no edit affordances; '12 Stones' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+<span class="sw-hover-hint">Hover to lock</span>
+</div>
+
+For context, here's the whole Overview panel showing where the lock controls live -- next to the Biography header, each Tags group, and every Detail-panel row:
+
+![Artist Overview panel: Biography card with a lock icon in the header, Tags card with per-group locks on Genres / Styles / Moods, Details panel listing Name / Sort Name / Disambiguation / Type / Formed / Born / Disbanded / Died / Years Active / Origin -- each row with its own lock and edit affordances](../assets/screenshots/artist-overview-fields.jpg)
 
 ## Library-wide: NFO lockdata switch
 

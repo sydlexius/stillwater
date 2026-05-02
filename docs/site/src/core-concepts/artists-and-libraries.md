@@ -25,7 +25,7 @@ Each library has a few key properties:
 
 ### Library types
 
-- **Regular** -- the default. One artist per directory; the directory name is treated as the artist name. Designed for typical Emby / Jellyfin / Plex layouts. Use this for all new libraries.
+- **Regular** -- the default. One artist per directory; the directory name is treated as the artist name. Designed for typical music libraries -- one artist per top-level directory, the layout Emby, Jellyfin, Kodi, and Lidarr all expect. Use this for all new libraries.
 - **Classical** -- a legacy type, scheduled for removal in v1.3.0 ([#1271](https://github.com/sydlexius/stillwater/issues/1271)). The original intent was to treat composers as the headline entity, but in practice the metadata fallback chain treats composers, performers, orchestras, and ensembles uniformly. In the default configuration, Classical and Regular libraries behave identically. Existing Classical libraries continue to work; an in-place "Convert to Regular" action is available before the v1.3.0 removal lands.
 
 ### Library sources
@@ -53,7 +53,11 @@ Two modes, mostly there for filesystems that fast notifications can't reach:
 
 Stillwater probes each path on startup to decide whether fast notifications work, and the UI shows the result so you don't have to guess.
 
-<!-- SCREENSHOT: Settings > Libraries | state: one regular Emby-imported library + one manual classical library, both with watch enabled | annotation: type, source, watch mode, lockdata badge -->
+**Where to find Settings > Libraries:**
+
+![Settings tabs nav with the Libraries tab active](../assets/screenshots/nav-settings-tabs-libraries.png){ width="640" }
+
+![Manual library rows showing name, path, type badge, watch dropdown, Lock NFOs toggle, Remove action; Add Library button at the bottom](../assets/screenshots/settings-libraries-list.png)
 
 ## Artists
 

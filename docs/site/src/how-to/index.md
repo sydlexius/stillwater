@@ -20,7 +20,7 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     ---
 
-    Change metadata by hand, lock fields you've curated, manage per-image locks.
+    Change metadata by hand, lock fields you've curated, override provider IDs.
 
     [Read more](edit-artist.md)
 

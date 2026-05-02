@@ -34,7 +34,7 @@ The key has full administrator access on the Emby server. Treat it like a passwo
 
 ## Connect Stillwater to Emby
 
-In Stillwater, open **Settings** > **Connections** (or, during first-time setup, the Server Connections wizard step). Click **Add connection** and pick **Emby**.
+In Stillwater, open **Settings** > **Connections** (or, during first-time setup, the Server Connections wizard step). Three connection cards are pre-shown -- Emby, Jellyfin, Lidarr. On the **Emby** card, click **Configure**.
 
 Fill in three fields:
 
@@ -42,7 +42,7 @@ Fill in three fields:
 - **URL.** The full URL to the Emby server, including scheme and port. Examples: `http://192.168.1.100:8096`, `https://emby.example.com`. Use the hostname Stillwater can reach from its own network position; if Stillwater is in Docker on a different host than Emby, this is usually the LAN IP, not `localhost`.
 - **API key.** Paste the key from the previous section.
 
-Click **Test connection**. Stillwater verifies the URL is reachable and the API key is valid. On success, it resolves a user ID on the server (used to scope subsequent metadata edits) and saves the connection.
+Click **Test**. Stillwater verifies the URL is reachable and the API key is valid. On success, it resolves a user ID on the server (used to scope subsequent metadata edits) and saves the connection.
 
 ## What the connection enables
 
