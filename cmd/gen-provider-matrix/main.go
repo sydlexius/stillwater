@@ -181,21 +181,41 @@ func renderYesNo(b bool) string {
 // renderFields joins the provider's declared metadata fields with commas.
 // Declaration order is preserved so registries can group related fields
 // (born/formed/died/disbanded) for readability. Returns "Image only" when no
-// metadata fields are declared (e.g., Fanart.tv).
+// metadata fields are declared (e.g., Fanart.tv). Field names are emitted in
+// user-facing form: snake_case identifiers are detokenized into space-separated
+// words with sentence-case capitalization (e.g., sort_name -> Sort name).
 func renderFields(fields []string) string {
 	if len(fields) == 0 {
 		return "Image only"
 	}
-	return strings.Join(fields, ", ")
+	out := make([]string, len(fields))
+	for i, f := range fields {
+		out[i] = friendlyFieldName(f)
+	}
+	return strings.Join(out, ", ")
 }
 
 // renderImages joins the provider's declared image types. Returns "None" for
-// metadata-only providers.
+// metadata-only providers. Image type identifiers are emitted as-is (lowercase,
+// matching the convention used elsewhere in user docs: thumb, fanart, hdlogo,
+// widethumb, etc.).
 func renderImages(images []string) string {
 	if len(images) == 0 {
 		return "None"
 	}
 	return strings.Join(images, ", ")
+}
+
+// friendlyFieldName converts a snake_case metadata-field identifier into the
+// sentence-case user-facing form used in docs prose (sort_name -> "Sort name",
+// years_active -> "Years active"). Identifiers without underscores are returned
+// with only the first letter capitalized (name -> "Name").
+func friendlyFieldName(s string) string {
+	if s == "" {
+		return s
+	}
+	spaced := strings.ReplaceAll(s, "_", " ")
+	return strings.ToUpper(spaced[:1]) + spaced[1:]
 }
 
 // replaceBetweenMarkers returns src with the region between begin and end
