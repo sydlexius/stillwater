@@ -8,7 +8,10 @@ import (
 )
 
 func TestRenderMatrix_HappyPath(t *testing.T) {
-	got := renderMatrix(provider.AllProviderNames(), provider.ProviderCapabilities())
+	got, err := renderMatrix(provider.AllProviderNames(), provider.ProviderCapabilities())
+	if err != nil {
+		t.Fatalf("renderMatrix: %v", err)
+	}
 
 	// Header is fixed.
 	wantHeader := "| Provider | Tier | Sign-up | Rate limit | Mirror | Metadata fields | Image types |\n|---|---|---|---|---|---|---|\n"
@@ -118,5 +121,21 @@ func TestRenderSignup(t *testing.T) {
 	}
 	if got := renderSignup("https://example.com/key"); got != "[Sign up](https://example.com/key)" {
 		t.Errorf("unexpected sign-up rendering: %q", got)
+	}
+}
+
+func TestRenderMatrix_MissingCapabilityIsError(t *testing.T) {
+	// Drift between AllProviderNames() and ProviderCapabilities() must fail
+	// generation loudly rather than silently dropping the provider's row.
+	names := []provider.ProviderName{provider.NameMusicBrainz, "ghost-provider"}
+	caps := map[provider.ProviderName]provider.ProviderCapability{
+		provider.NameMusicBrainz: provider.ProviderCapabilities()[provider.NameMusicBrainz],
+	}
+	_, err := renderMatrix(names, caps)
+	if err == nil {
+		t.Fatal("expected error when a name has no capability declaration")
+	}
+	if !strings.Contains(err.Error(), "ghost-provider") {
+		t.Errorf("error should name the missing provider; got %v", err)
 	}
 }

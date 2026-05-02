@@ -61,7 +61,10 @@ func run(outPath string, checkOnly bool) error {
 		return fmt.Errorf("read %s: %w", outPath, err)
 	}
 
-	rendered := renderMatrix(provider.AllProviderNames(), provider.ProviderCapabilities())
+	rendered, err := renderMatrix(provider.AllProviderNames(), provider.ProviderCapabilities())
+	if err != nil {
+		return fmt.Errorf("render matrix: %w", err)
+	}
 	updated, err := replaceBetweenMarkers(existing, beginMarker, endMarker, rendered)
 	if err != nil {
 		return fmt.Errorf("update %s: %w", outPath, err)
@@ -84,10 +87,14 @@ func run(outPath string, checkOnly bool) error {
 }
 
 // renderMatrix returns the Markdown table body (without surrounding markers)
-// for the providers in names, looked up in caps. Providers absent from caps
-// are skipped, as is the AllMusic adapter (not part of AllProviderNames in
-// practice, but defensively skipped here).
-func renderMatrix(names []provider.ProviderName, caps map[provider.ProviderName]provider.ProviderCapability) string {
+// for the providers in names, looked up in caps. The AllMusic adapter is
+// defensively skipped (it is not part of AllProviderNames in normal builds;
+// see project_allmusic_cleanup / issue #1275). A provider that appears in
+// names but lacks a capability declaration in caps is treated as a hard error
+// so drift between AllProviderNames() and ProviderCapabilities() fails the
+// `make generate-docs` / `-check` pipeline loudly instead of silently dropping
+// the row from docs.
+func renderMatrix(names []provider.ProviderName, caps map[provider.ProviderName]provider.ProviderCapability) (string, error) {
 	var b strings.Builder
 	b.WriteString("| Provider | Tier | Sign-up | Rate limit | Mirror | Metadata fields | Image types |\n")
 	b.WriteString("|---|---|---|---|---|---|---|\n")
@@ -97,7 +104,7 @@ func renderMatrix(names []provider.ProviderName, caps map[provider.ProviderName]
 		}
 		c, ok := caps[name]
 		if !ok {
-			continue
+			return "", fmt.Errorf("missing capability declaration for provider %q in ProviderCapabilities()", name)
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n",
 			name.DisplayName(),
@@ -109,7 +116,7 @@ func renderMatrix(names []provider.ProviderName, caps map[provider.ProviderName]
 			renderImages(c.SupportedImages),
 		)
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 func renderTier(t provider.AccessTier) string {
