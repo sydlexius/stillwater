@@ -122,6 +122,61 @@ func TestHandleUpdateSettings_LocalAuthEnabled(t *testing.T) {
 	}
 }
 
+// TestHandleUpdateSettings_BasePath_Invalid verifies the validation rules
+// for the editable SW_BASE_PATH override (#1005). Each case covers a rule
+// the API documents: must start with "/", must not end with "/", must use
+// the allowed character set.
+func TestHandleUpdateSettings_BasePath_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"missing leading slash", "stillwater"},
+		{"trailing slash", "/stillwater/"},
+		{"disallowed chars (space)", "/still water"},
+		{"disallowed chars (dot)", "/v1.2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := testRouter(t)
+			body := `{"server.base_path": "` + tt.value + `"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for %q, got %d: %s", tt.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestHandleUpdateSettings_BasePath_Valid covers the accepted shapes:
+// the canonical "/" and a typical sub-path with hyphens/underscores.
+func TestHandleUpdateSettings_BasePath_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"root", "/"},
+		{"empty (coerced to /)", ""},
+		{"simple sub-path", "/stillwater"},
+		{"hyphen sub-path", "/my-app"},
+		{"nested", "/apps/stillwater"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := testRouter(t)
+			body := `{"server.base_path": "` + tt.value + `"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %q, got %d: %s", tt.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestHandleUpdateSettings_Threshold_Valid(t *testing.T) {
 	tests := []struct {
 		name  string

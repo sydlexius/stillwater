@@ -121,6 +121,17 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// Validate check interval. Zero is coerced to the default at the service
+	// layer (matches GetConfig defaulting) so API clients that omit the field
+	// receive sane behavior; an explicit negative value is rejected here so
+	// the UI gets an actionable 400 rather than a 500 from the service layer.
+	if body.CheckIntervalHours < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "check_interval_hours must be at least 1",
+		})
+		return
+	}
+
 	if err := r.updaterService.SetConfig(req.Context(), body); err != nil {
 		r.logger.Error("saving updater config", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

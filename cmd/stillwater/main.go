@@ -364,6 +364,27 @@ func run() error {
 	// Initialize self-update service
 	updaterService := updater.NewService(db, logger)
 
+	// Apply persisted SW_BASE_PATH override from settings (#1005). The env
+	// var still wins: when SW_BASE_PATH is set, BasePathFromEnv is true and
+	// we leave the value alone so operator-managed deployments stay
+	// deterministic. Otherwise the saved override (if any) replaces the
+	// YAML/default value before the router is built; the HTTP mux is wired
+	// from this value at startup and cannot rebind on the fly, so the UI
+	// surfaces a "restart required" banner after a save.
+	if !cfg.Server.BasePathFromEnv {
+		if override := getDBStringSetting(db, context.Background(), "server.base_path", ""); override != "" {
+			normalized := strings.TrimRight(override, "/")
+			if normalized == "/" {
+				normalized = ""
+			}
+			if normalized != cfg.Server.BasePath {
+				logger.Info("applying persisted base_path override",
+					"previous", cfg.Server.BasePath, "override", normalized)
+				cfg.Server.BasePath = normalized
+			}
+		}
+	}
+
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
@@ -614,6 +635,13 @@ func run() error {
 	if ruleScheduler != nil {
 		go ruleScheduler.Start(ctx, time.Duration(ruleScheduleMinutes)*time.Minute)
 	}
+
+	// Start updater background scheduler. The loop respects the persisted
+	// updater.enabled / updater.auto_check toggles on each tick, so an admin
+	// who toggles auto-check from the Settings UI sees the next tick honor
+	// the new value without a restart. The cadence is also reread per tick
+	// so changing check_interval_hours takes effect on the very next cycle.
+	go updaterService.StartScheduler(ctx)
 
 	// Start filesystem watcher for libraries with fs_watch enabled
 	{

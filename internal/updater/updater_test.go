@@ -1483,6 +1483,121 @@ func containsAll(s string, subs ...string) bool {
 	return true
 }
 
+// TestGetConfigDefaultsForNewFields covers the defaults exposed by GetConfig
+// when the new keys (#1117) are absent from the settings table. A fresh
+// install must look "enabled, manual-check, 24h cadence" so existing users
+// are not silently muted by a new field.
+func TestGetConfigDefaultsForNewFields(t *testing.T) {
+	svc := buildTestService(t)
+	cfg, err := svc.GetConfig(context.Background())
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Error("default Enabled should be true")
+	}
+	if cfg.AutoUpdate {
+		t.Error("default AutoUpdate should be false")
+	}
+	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("default CheckIntervalHours = %d, want %d",
+			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
+// TestSetConfigPersistsAllFields covers the round-trip of every new knob:
+// Enabled, AutoUpdate, and CheckIntervalHours must survive a SetConfig +
+// GetConfig pair so the UI can rely on values it just saved being read back.
+func TestSetConfigPersistsAllFields(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	want := Config{
+		Channel:            ChannelPrerelease,
+		Enabled:            false,
+		AutoCheck:          true,
+		AutoUpdate:         true,
+		CheckIntervalHours: 6,
+	}
+	if err := svc.SetConfig(ctx, want); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	got, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.Channel != want.Channel {
+		t.Errorf("Channel = %q, want %q", got.Channel, want.Channel)
+	}
+	if got.Enabled != want.Enabled {
+		t.Errorf("Enabled = %v, want %v", got.Enabled, want.Enabled)
+	}
+	if got.AutoCheck != want.AutoCheck {
+		t.Errorf("AutoCheck = %v, want %v", got.AutoCheck, want.AutoCheck)
+	}
+	if got.AutoUpdate != want.AutoUpdate {
+		t.Errorf("AutoUpdate = %v, want %v", got.AutoUpdate, want.AutoUpdate)
+	}
+	if got.CheckIntervalHours != want.CheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want %d",
+			got.CheckIntervalHours, want.CheckIntervalHours)
+	}
+}
+
+// TestSetConfigCoercesZeroInterval verifies that a zero CheckIntervalHours
+// is silently coerced to the default rather than rejected. Older clients and
+// the API handler test fixtures predate this field; coercion keeps them
+// from breaking.
+func TestSetConfigCoercesZeroInterval(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, CheckIntervalHours: 0}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	got, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want default %d",
+			got.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
+// TestSetConfigRejectsNegativeInterval verifies the error path so an explicit
+// garbage write (negative hours) is not silently coerced.
+func TestSetConfigRejectsNegativeInterval(t *testing.T) {
+	svc := buildTestService(t)
+	err := svc.SetConfig(context.Background(), Config{Channel: ChannelStable, CheckIntervalHours: -1})
+	if err == nil {
+		t.Fatal("expected error for negative CheckIntervalHours")
+	}
+}
+
+// TestStartSchedulerStopsOnContextCancel verifies the scheduler exits
+// promptly when its context is canceled. Without a working stop path the
+// goroutine would leak across process shutdowns.
+func TestStartSchedulerStopsOnContextCancel(t *testing.T) {
+	svc := buildTestService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		svc.StartScheduler(ctx)
+		close(done)
+	}()
+
+	// Give the scheduler a moment to enter the select{} loop, then cancel.
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+		// Good: returned after cancel.
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartScheduler did not return after context cancel")
+	}
+}
+
 // rewriteHostTransport rewrites all request URLs to point at a specific base
 // server, regardless of the original host. Used in tests to intercept GitHub
 // API calls without DNS overrides.

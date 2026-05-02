@@ -177,6 +177,67 @@ func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
 	}
 }
 
+// TestHandlePutUpdateConfig_AllNewFields verifies that the W2.E knobs
+// (#1117) round-trip through the handler: enabled, auto_update, and
+// check_interval_hours must be persisted alongside channel/auto_check.
+// Without this guard a future schema drift could silently drop one of
+// the new fields and the UI would re-send stale defaults on every save.
+func TestHandlePutUpdateConfig_AllNewFields(t *testing.T) {
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"prerelease","enabled":false,"auto_check":true,"auto_update":true,"check_interval_hours":6}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d", getW.Code)
+	}
+	var persisted updater.Config
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if persisted.Enabled {
+		t.Error("Enabled should round-trip as false")
+	}
+	if !persisted.AutoCheck {
+		t.Error("AutoCheck should round-trip as true")
+	}
+	if !persisted.AutoUpdate {
+		t.Error("AutoUpdate should round-trip as true")
+	}
+	if persisted.CheckIntervalHours != 6 {
+		t.Errorf("CheckIntervalHours = %d, want 6", persisted.CheckIntervalHours)
+	}
+}
+
+// TestHandlePutUpdateConfig_NegativeInterval verifies the 400 path for an
+// out-of-range check_interval_hours value. Zero is intentionally NOT tested
+// here because the handler+service coerce zero to the default; only
+// explicitly-invalid (negative) values should be rejected.
+func TestHandlePutUpdateConfig_NegativeInterval(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	body := `{"channel":"stable","check_interval_hours":-5}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handlePutUpdateConfig(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
 func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
