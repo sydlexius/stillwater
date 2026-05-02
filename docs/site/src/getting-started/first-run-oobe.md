@@ -104,7 +104,7 @@ Three outcomes:
 
 - **Green (no conflicts):** the wizard lets you continue.
 - **Yellow (recoverable):** Stillwater detected pre-existing NFO files but believes its writes will be safe. You can continue.
-- **Red (blocking):** Stillwater detected configuration that would cause its writes to be overwritten by your media server, or that would overwrite NFO content the server appears to be authoritative on. The Continue button is disabled until you resolve the issue. The page suggests specific fixes (typically toggling a server-side setting or enabling per-library lock).
+- **Red (blocking):** Stillwater detected configuration that would cause its writes to be overwritten by your media server, or that would overwrite NFO content the server appears to be authoritative on. The Continue button is disabled until you resolve the issue. The page suggests specific fixes (typically toggling a server-side setting or enabling the library-wide NFO `lockdata` switch).
 
 If the probe fails to reach the server, you'll see a retry button. Failed probes do not block the wizard; you can continue and revisit Settings later.
 

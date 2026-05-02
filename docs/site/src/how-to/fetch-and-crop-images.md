@@ -81,7 +81,7 @@ To add another fanart:
 
 To reorder:
 
-- On the artist page, click a fanart thumbnail to make it the primary -- the rest keep their existing order behind it.
+- On the artist page, hover any non-primary fanart in the gallery; a star button appears on the overlay. Click the star to promote that fanart to primary -- the rest keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox; the star is the promotion control.)
 - For finer control, open the artist's image search page (the same place you fetch new fanart from). The fanart gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
 
 To delete:
