@@ -8,3 +8,81 @@
 .md-typeset .grid.cards > ul > li > p:last-child {
   margin-top: auto;
 }
+
+/* --- Screenshot framing -------------------------------------------------
+   Soft border + rounded corners + drop shadow on every screenshot embed.
+   Theme-aware so the frame reads correctly against both palettes.
+   Targets <img> inside the page body only -- not nav icons, social links,
+   or the site logo. */
+.md-typeset img {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--md-default-bg-color);
+}
+
+[data-md-color-scheme="slate"] .md-typeset img {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* --- Hover state-swap demo ---------------------------------------------
+   A two-image stack where the second image is layered on top of the first
+   and revealed on hover. Used to demonstrate UI state changes (e.g. the
+   lock toggle) without forcing the reader to imagine the after-state.
+   Both images must have identical rendered dimensions for the swap to
+   stay aligned. */
+.sw-hover-swap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;          /* avoid extra inline gap below the images */
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--md-default-bg-color);
+  overflow: hidden;        /* clip both stacked images to the wrapper's rounded frame */
+}
+
+[data-md-color-scheme="slate"] .sw-hover-swap {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+}
+
+.sw-hover-swap img {
+  display: block;
+  margin: 0;
+  /* Disable the universal screenshot frame on the inner images; the wrapper
+     supplies the frame so the two stacked images line up edge-to-edge. */
+  border: none !important;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
+.sw-hover-swap .sw-hover-after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}
+
+.sw-hover-swap:hover .sw-hover-after,
+.sw-hover-swap:focus-within .sw-hover-after {
+  opacity: 1;
+}
+
+.sw-hover-swap .sw-hover-hint {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--md-default-fg-color--light);
+  font-style: italic;
+  text-align: center;
+}
+
+.sw-hover-swap:hover .sw-hover-hint,
+.sw-hover-swap:focus-within .sw-hover-hint {
+  visibility: hidden;
+}

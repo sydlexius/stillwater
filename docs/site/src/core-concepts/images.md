@@ -43,12 +43,14 @@ The full [rules catalogue](../reference/rules-catalogue.md) lists every image ru
 
 Fanart is the only slot that supports more than one image per artist. Stillwater stores them as numbered files alongside the primary, with platform-specific numbering:
 
-- **Emby / Jellyfin / Plex:** `fanart.jpg`, `fanart2.jpg`, `fanart3.jpg`, ...
+- **Emby / Jellyfin:** `fanart.jpg`, `fanart2.jpg`, `fanart3.jpg`, ...
 - **Kodi:** `fanart.jpg`, `fanart1.jpg`, `fanart2.jpg`, ...
 
 The artist record reflects how many fanart files exist on disk. Other slots are single-image: writing a new thumb replaces the previous one.
 
-<!-- SCREENSHOT: Artist detail > Images tab | state: artist with 3 fanarts, 1 thumb, 1 logo, no banner | annotation: multi-fanart strip + per-slot status -->
+**Where to find the Images tab:** click an artist in the **Artists** sidebar item, then switch to the artist's **Images** sub-tab.
+
+![Artist detail Images tab showing all four image slots: Primary (1:1), Backdrop with five fanart variants (the first marked Primary), Logo (transparent PNG), and Banner (4:1)](../assets/screenshots/artist-images-tab.jpg)
 
 ## Where the images come from
 
@@ -64,7 +66,7 @@ After fetch, you can crop the result in-browser before saving. The cropper is th
 
 The same image slot has different names in different platforms:
 
-| Stillwater slot | Kodi / Plex | Emby / Jellyfin |
+| Stillwater slot | Kodi | Emby / Jellyfin |
 |---|---|---|
 | Thumb | Folder | Primary |
 | Fanart | Fanart | Backdrop |

@@ -27,13 +27,13 @@ Whichever method you pick, **the first user created is always an administrator**
 
 After the admin user is created, Stillwater redirects you to the setup wizard at `/setup/wizard`.
 
-## Wizard step 1: Welcome
+## Welcome (intro)
 
 A brief overview of what Stillwater does (metadata curation, image management, multi-provider fallback, multi-platform delivery, rule engine, scanner). No fields to fill in. Read or skip; click **Next**.
 
-This step sits outside the progress bar; the wizard's numbered steps start with Music Libraries.
+This intro page sits outside the wizard's numbered progress bar; the numbered steps below start at the Music Libraries step.
 
-## Wizard step 2: Music Libraries
+## Wizard step 1: Music Libraries
 
 Add one or more music library directories. For each library, you'll provide:
 
@@ -53,7 +53,7 @@ Stillwater validates that the path exists and is writable before letting you sav
 
 You can add more libraries later under **Settings** > **Libraries**.
 
-## Wizard step 3: Platform Profile
+## Wizard step 2: Platform Profile
 
 Pick the platform you primarily target: Emby, Jellyfin, Kodi, Plex, or another supported profile. The profile controls:
 
@@ -61,11 +61,11 @@ Pick the platform you primarily target: Emby, Jellyfin, Kodi, Plex, or another s
 - Default rules and validations geared to that platform's behavior.
 - Image-format and resolution preferences.
 
-You can run Stillwater against multiple platforms at once by combining the profile choice here with the per-server connections in step 5. The profile sets the *primary* dialect.
+You can run Stillwater against multiple platforms at once by combining the profile choice here with the per-server connections in step 4. The profile sets the *primary* dialect.
 
 If you signed in with Emby or Jellyfin during admin setup, the wizard pre-selects the matching profile.
 
-## Wizard step 4: Provider API keys
+## Wizard step 3: Provider API keys
 
 Stillwater queries up to ten metadata providers in a per-field fallback chain. Some providers work without an API key (MusicBrainz, Wikipedia, Wikidata, AudioDB's free tier). Others require keys you create on each provider's developer portal:
 
@@ -79,13 +79,13 @@ There's also a separate **Web image search** subsection at the bottom of this st
 
 You can add or update keys later under **Settings** > **Providers**.
 
-## Wizard step 5: Server connections
+## Wizard step 4: Server connections
 
 Connect Stillwater to your media server(s) and (optionally) Lidarr. The wizard shows a card per supported connection type:
 
 - **Emby.** Stillwater imports artists from Emby's library, pushes metadata edits via the Emby API, can trigger Emby refreshes, and reads MusicBrainz IDs that Emby has already resolved.
 - **Jellyfin.** Same set of capabilities as Emby, against a Jellyfin server.
-- **Lidarr.** Read-only. Used for detecting NFO settings and reading platform-level metadata profiles. Lidarr does not provide a library to scan; that comes from your library directories in step 2.
+- **Lidarr.** Read-only. Used for detecting NFO settings and reading platform-level metadata profiles. Lidarr does not provide a library to scan; that comes from your library directories in step 1.
 
 For each connection you'll need:
 
@@ -96,19 +96,19 @@ After you save a connection, the wizard runs a "clobber check" against it to loo
 
 You can skip this step if you only use NFO writeback. You can also add or remove connections later under **Settings** > **Connections**.
 
-## Wizard step 6: Conflict pre-flight (conditional)
+## Wizard step 5: Conflict pre-flight (conditional)
 
-This step only appears when you have **both** at least one library configured (step 2) **and** at least one connection that overlaps with that library (step 5). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
+This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 4). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
 
 Three outcomes:
 
 - **Green (no conflicts):** the wizard lets you continue.
 - **Yellow (recoverable):** Stillwater detected pre-existing NFO files but believes its writes will be safe. You can continue.
-- **Red (blocking):** Stillwater detected configuration that would cause its writes to be overwritten by your media server, or that would overwrite NFO content the server appears to be authoritative on. The Continue button is disabled until you resolve the issue. The page suggests specific fixes (typically toggling a server-side setting or enabling per-library lock).
+- **Red (blocking):** Stillwater detected configuration that would cause its writes to be overwritten by your media server, or that would overwrite NFO content the server appears to be authoritative on. The Continue button is disabled until you resolve the issue. The page suggests specific fixes (typically toggling a server-side setting or enabling the library-wide NFO `lockdata` switch).
 
 If the probe fails to reach the server, you'll see a retry button. Failed probes do not block the wizard; you can continue and revisit Settings later.
 
-## Wizard step 7: Artist discovery
+## Wizard step 6: Artist discovery
 
 A two-phase final step.
 

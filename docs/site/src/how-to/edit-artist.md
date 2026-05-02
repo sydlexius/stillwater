@@ -1,8 +1,8 @@
 ---
-description: Change artist metadata by hand, lock fields you've curated, manage per-image locks.
+description: Change artist metadata by hand, lock fields you've curated, override provider IDs.
 ---
 
-<!-- code: internal/api/router.go (PATCH /api/v1/artists/{id}/fields/{field}; POST/DELETE /api/v1/artists/{id}/lock + field-locks + image-locks), internal/api/handlers_field_update*.go, internal/api/handlers_locks*.go, web/templates/artist.templ. -->
+<!-- code: internal/api/router.go (PATCH /api/v1/artists/{id}/fields/{field}; POST/DELETE /api/v1/artists/{id}/lock + field-locks), internal/api/handlers_field_update*.go, internal/api/handlers_locks*.go, web/templates/artist.templ. -->
 
 # Edit an artist
 
@@ -10,18 +10,22 @@ Most metadata in Stillwater comes from providers. Sometimes you want to override
 
 ## Edit a single field
 
+Each field has its own row of small icons next to its label: an open-lock toggle, an edit pencil, and a `…` overflow menu. The pencil is the entry point for editing.
+
+![A Detail-panel field row: label, open-lock icon (gray), edit pencil icon, overflow menu, and the field value below](../assets/screenshots/artist-field-row-actions.png){ width="420" }
+
 1. Open the artist's page.
-2. Click the field you want to change. Most fields edit in place: name, sort name, biography, born / formed dates, etc.
-3. Type the new value.
-4. Press **Enter** (or click outside the field) to save.
+2. Click the **pencil** icon next to the field you want to change. Biography and the tag groups (Genres, Styles, Moods) put the pencil in the card header; Detail-panel fields (Name, Born, Type, etc.) put it next to the field label.
+3. The field swaps to an inline editor. Type the new value.
+4. Press **Enter** (or click **Save**) to commit, or **Esc** / **Cancel** to back out.
 
-The field saves immediately -- no separate "Save changes" button. The change appears in the artist's history alongside provider attributions.
+The field saves immediately -- no separate "Save changes" button at the page level. The change appears in the artist's history alongside provider attributions.
 
-<!-- SCREENSHOT: Artist detail | state: biography being edited inline | annotation: click-to-edit + save indicator -->
+![Biography card in inline edit mode: a textarea pre-filled with the current bio text, with Save (blue) and Cancel buttons below](../assets/screenshots/artist-bio-edit.png)
 
 ### Editing list fields
 
-Genres, styles, and moods are list fields. Click to add a new value, click the X on a chip to remove one. The order matters for some platforms (the first genre is often the "primary" one); drag to reorder.
+Genres, styles, and moods are list fields. Their inline editor lets you type a new value into a text input to add it; click the **X** on an existing chip to remove one. The order matters for some platforms (the first genre is often the "primary" one).
 
 ## Lock the artist
 
@@ -38,33 +42,27 @@ To unlock, click the lock button again.
 
 Sometimes you want most of an artist's metadata to refresh from providers, but two or three fields you've curated should stay put.
 
-1. On the artist's page, hover the field. A small lock icon appears next to it.
-2. Click the lock icon to pin the field.
-3. The lock icon turns solid; the field is now skipped on future refreshes.
+1. On the artist's page, find the field you want to pin. A small open-lock icon (gray) sits next to its label.
+2. Click the lock icon. It immediately switches to a closed amber lock; the field is now skipped on future refreshes.
+3. While locked, the field's edit pencil and overflow menu disappear -- you can't accidentally change a pinned value. Click the closed lock again to unlock.
+
+<div class="sw-hover-swap" tabindex="0" markdown="span">
+![Name field unlocked: gray open lock, edit pencil, and overflow menu](../assets/screenshots/artist-field-name-unlocked.png)
+![Name field locked: amber closed lock, no edit affordances](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
+<span class="sw-hover-hint">Hover or focus to lock</span>
+</div>
 
 Per-field locks are independent of the whole-artist lock. You can have an unlocked artist with three pinned fields, or a locked artist with the lock removed from one field (rarely useful, but supported).
-
-## Lock an image
-
-Per-image locks survive provider fetches and Fix-all runs that would otherwise replace the image.
-
-1. Open the artist's **Images** tab.
-2. Click the lock icon on the image you want to keep.
-3. The lock icon turns solid; the image is now pinned.
-
-Per-image, not per-slot: you can have a locked thumb and an unlocked fanart on the same artist, so refreshes will replace the fanart with a higher-resolution candidate while leaving your chosen thumb alone.
-
-<!-- SCREENSHOT: Artist detail > Images tab | state: thumb locked, fanart unlocked, logo locked | annotation: per-image lock state -->
 
 ## Reorder fanart
 
 When an artist has multiple fanart images, the first one is "primary" -- it's the one shown in slideshow positions where only one fanart fits.
 
 1. Open the artist's **Images** tab.
-2. Drag fanart thumbnails to reorder them.
-3. The order saves immediately and the files on disk are renumbered to match.
+2. Hover (or focus) any non-primary fanart in the gallery. A small star button appears on the overlay. Click the star to promote that fanart to primary; the others keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox for full-size viewing -- the star is the promotion control.)
+3. For finer rearrangement, open the image search page (the same place you fetch new fanart) and use the up/down buttons in the fanart gallery there. The order saves immediately and the files on disk are renumbered to match.
 
-Renumbering follows the platform profile's convention -- so the same drag yields `fanart.jpg, fanart2.jpg, fanart3.jpg` for Emby/Jellyfin, or `fanart.jpg, fanart1.jpg, fanart2.jpg` for Kodi.
+Renumbering follows the platform profile's convention -- so the resulting order yields `fanart.jpg, fanart2.jpg, fanart3.jpg` for Emby/Jellyfin, or `fanart.jpg, fanart1.jpg, fanart2.jpg` for Kodi.
 
 ## Manually upload an image
 
@@ -104,6 +102,6 @@ There's no global "undo." Two ways to recover:
 
 ## See also
 
-- [Field locks](../core-concepts/field-locks.md) for the bigger picture on the three lock layers.
+- [Field locks](../core-concepts/field-locks.md) for the bigger picture on the two lock layers plus the library-wide NFO lockdata switch.
 - [Refresh metadata](refresh-metadata.md) when you want providers to overwrite unlocked fields.
 - [Fetch and crop images](fetch-and-crop-images.md) for image-specific workflows.

@@ -18,7 +18,7 @@ Settings > Connections shows a card per platform connection (Emby, Jellyfin, Lid
 
 Click into the card to see the underlying error message.
 
-<!-- SCREENSHOT: Settings > Connections | state: one green Emby + one red Jellyfin (auth failed) + one amber Lidarr (warning) | annotation: status indicators + click-to-expand -->
+![Settings > Connections: three service connection cards (Emby, Jellyfin, Lidarr) shown in the healthy steady state, each with a green dot, plus inline Test / Discover Libraries / Delete actions; the same dot turns amber for warnings or red for authentication / reachability failures described in the bullets above](../assets/screenshots/settings-connections-cards.png)
 
 ## "Authentication failed" / 401 Unauthorized
 
@@ -98,9 +98,9 @@ The site-wide banner reading "NFO file writes paused" means the conflict gate ha
 
 The banner clears within seconds of resolving the conflict.
 
-## Refresh from platform returns nothing new
+## Re-sync Artists returns nothing new
 
-You connected the platform, you clicked "Refresh from platform", but no new artists appeared.
+You connected the platform, you clicked **Re-sync Artists** on the library row, but no new artists appeared.
 
 **Check:**
 
