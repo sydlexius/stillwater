@@ -81,7 +81,7 @@ To add another fanart:
 
 To reorder:
 
-- On the artist page, hover any non-primary fanart in the gallery; a star button appears on the overlay. Click the star to promote that fanart to primary -- the rest keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox; the star is the promotion control.)
+- On the artist page, hover (or focus) any non-primary fanart in the gallery; a star button appears on the overlay. Click the star to promote that fanart to primary -- the rest keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox; the star is the promotion control.)
 - For finer control, open the artist's image search page (the same place you fetch new fanart from). The fanart gallery there shows each fanart with up and down buttons; click them to reshuffle. The first fanart is primary, and the file numbering on disk follows the order, with the platform's convention applied (Emby/Jellyfin uses `fanart.jpg, fanart2.jpg, ...`; Kodi uses `fanart.jpg, fanart1.jpg, ...`).
 
 To delete:
@@ -90,7 +90,7 @@ To delete:
 
 To delete many at once:
 
-- On the image search page's fanart gallery, tick the checkbox on each fanart you want to remove, then click **Delete selected**.
+- On the image search page's fanart gallery, tick the checkbox on each fanart you want to remove, then click **Delete selected** (the button label updates to **Delete N selected** as soon as you've ticked at least one).
 
 ![Fanart management gallery on the image search page: five fanart cards in a grid, each with a select checkbox, filename, dimensions, file size, up/down move buttons, and a red delete X. The first card is checked, surfacing a red "Delete 1 selected" button at the top right](../assets/screenshots/image-fanart-gallery.jpg)
 

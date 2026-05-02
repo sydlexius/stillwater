@@ -59,7 +59,7 @@ Per-field locks are independent of the whole-artist lock. You can have an unlock
 When an artist has multiple fanart images, the first one is "primary" -- it's the one shown in slideshow positions where only one fanart fits.
 
 1. Open the artist's **Images** tab.
-2. Hover any non-primary fanart in the gallery. A small star button appears on the overlay. Click the star to promote that fanart to primary; the others keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox for full-size viewing -- the star is the promotion control.)
+2. Hover (or focus) any non-primary fanart in the gallery. A small star button appears on the overlay. Click the star to promote that fanart to primary; the others keep their existing order behind it. (Clicking the thumbnail itself opens the lightbox for full-size viewing -- the star is the promotion control.)
 3. For finer rearrangement, open the image search page (the same place you fetch new fanart) and use the up/down buttons in the fanart gallery there. The order saves immediately and the files on disk are renumbered to match.
 
 Renumbering follows the platform profile's convention -- so the resulting order yields `fanart.jpg, fanart2.jpg, fanart3.jpg` for Emby/Jellyfin, or `fanart.jpg, fanart1.jpg, fanart2.jpg` for Kodi.
