@@ -90,13 +90,22 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 			continue
 		}
 
+		// Normalize the inbound source first so the remap decision and the
+		// persisted row use the same value. validLibrarySource clamps unknown
+		// future values to "manual"; using the raw le.Source for the remap
+		// check while writing the normalized value would otherwise leave the
+		// row in an inconsistent state (e.g., source="manual" with a non-NULL
+		// connection_id, or a missing-connection skip for a row that would
+		// have persisted as manual).
+		source := validLibrarySource(le.Source)
+
 		// Resolve connection_id for non-manual libraries by remapping (type, url)
 		// to a local connection. Manual libraries carry no connection reference.
 		var connectionID string
-		if le.Source != "manual" && le.Source != "" {
+		if source != "manual" {
 			if le.ConnectionType == "" || le.ConnectionURL == "" {
 				slog.Warn("import: skipping library missing connection reference",
-					"library", le.Name, "source", le.Source)
+					"library", le.Name, "source", source)
 				result.LibrariesSkipped++
 				continue
 			}
@@ -135,7 +144,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				id, le.Name, le.Path, validLibraryType(le.Type),
-				validLibrarySource(le.Source), dbutil.NullableString(connectionID), le.ExternalID,
+				source, dbutil.NullableString(connectionID), le.ExternalID,
 				le.FSWatch, validPollInterval(le.FSPollInterval),
 				boolToInt(le.NFOLockData), now, now,
 			); err != nil {
@@ -152,7 +161,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 				WHERE id = ?
 			`,
 				le.Path, validLibraryType(le.Type),
-				validLibrarySource(le.Source), dbutil.NullableString(connectionID), le.ExternalID,
+				source, dbutil.NullableString(connectionID), le.ExternalID,
 				le.FSWatch, validPollInterval(le.FSPollInterval),
 				boolToInt(le.NFOLockData), now, existingID,
 			); err != nil {

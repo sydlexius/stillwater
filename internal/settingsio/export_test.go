@@ -927,8 +927,11 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if envelope.Version != "1.2" {
 		t.Errorf("envelope version: got %q, want 1.2", envelope.Version)
 	}
-	if envelope.Summary == nil || envelope.Summary.Libraries != 2 {
-		t.Errorf("summary libraries: got %+v, want 2", envelope.Summary)
+	if envelope.Summary == nil {
+		t.Fatal("expected non-nil export summary")
+	}
+	if envelope.Summary.Libraries != 2 {
+		t.Errorf("summary libraries: got %d, want 2", envelope.Summary.Libraries)
 	}
 	if envelope.Summary.APITokens != 1 {
 		t.Errorf("summary api_tokens: got %d, want 1", envelope.Summary.APITokens)

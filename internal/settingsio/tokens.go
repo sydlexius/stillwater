@@ -119,13 +119,17 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 		case err != nil:
 			return fmt.Errorf("looking up api token by hash: %w", err)
 		default:
+			// Restore created_at on conflict update so the exported audit
+			// metadata is preserved when the same token_hash already exists
+			// on the target. Without this the local row keeps its original
+			// timestamp, drifting from the source instance's record.
 			if _, err := s.db.ExecContext(ctx, `
 				UPDATE api_tokens SET
-					name = ?, scopes = ?, user_id = ?,
+					name = ?, scopes = ?, user_id = ?, created_at = ?,
 					last_used_at = ?, revoked_at = ?, status = ?
 				WHERE id = ?
 			`,
-				te.Name, validTokenScopes(te.Scopes), userID,
+				te.Name, validTokenScopes(te.Scopes), userID, te.CreatedAt,
 				dbutil.NullableString(te.LastUsedAt),
 				dbutil.NullableString(te.RevokedAt),
 				validTokenStatus(te.Status),
@@ -150,13 +154,15 @@ func validTokenScopes(s string) string {
 }
 
 // validTokenStatus normalizes the status field to one of the two recognized
-// values. An unknown status (tampered or future-version payload) defaults to
-// "active" so the row remains usable rather than being silently disabled.
+// values. Auth material must fail closed: an unknown status (tampered payload,
+// a legacy value like "archived" from an older schema, or a future-version
+// status this build doesn't recognize) defaults to "revoked" so the imported
+// token cannot authenticate until an operator explicitly re-enables it.
 func validTokenStatus(s string) string {
 	switch s {
 	case "active", "revoked":
 		return s
 	default:
-		return "active"
+		return "revoked"
 	}
 }
