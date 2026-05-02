@@ -103,6 +103,13 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		// to a local connection. Manual libraries carry no connection reference.
 		var connectionID string
 		if source != "manual" {
+			// Defensive guard: NewService always wires connectionSvc today, but
+			// a nil here would panic on the GetByTypeAndURL call below. Surface
+			// a clear error instead so a misconfigured Service fails fast and
+			// loud rather than crashing mid-import.
+			if s.connectionSvc == nil {
+				return fmt.Errorf("importing library %q: connection service is required for source %q", le.Name, source)
+			}
 			if le.ConnectionType == "" || le.ConnectionURL == "" {
 				slog.Warn("import: skipping library missing connection reference",
 					"library", le.Name, "source", source)
