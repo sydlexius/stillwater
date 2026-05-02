@@ -13,7 +13,18 @@ A **provider** is an external metadata source Stillwater queries for an artist's
 The table below is generated from the live provider registry. Don't edit it directly -- regenerate with `make generate-docs` after changes to the registry or any provider package.
 
 <!-- BEGIN GENERATED: provider-matrix -->
-*The provider matrix is generated at build time. To preview without running the generator, see [providers in core concepts](../core-concepts/providers.md) for the high-level list.*
+| Provider | Tier | Sign-up | Rate limit | Mirror | Metadata fields | Image types |
+|---|---|---|---|---|---|---|
+| MusicBrainz | Free | Not required | 1/sec | Yes | name, sort_name, type, gender, disambiguation, origin, born, formed, died, disbanded, years_active, genres, styles, moods, members, aliases | None |
+| Wikipedia | Free | Not required | 5/sec | No | name, biography, years_active, origin, genres, members | None |
+| Fanart.tv | Free key | [Sign up](https://fanart.tv/get-an-api-key/) | 3/sec | No | Image only | thumb, fanart, logo, hdlogo, banner |
+| TheAudioDB | Freemium | [Sign up](https://www.theaudiodb.com/pricing) | 30/min | No | name, gender, origin, biography, genres, styles, moods, born, formed, died, disbanded, aliases | thumb, logo, widethumb, banner, fanart |
+| Discogs | Free key | [Sign up](https://www.discogs.com/settings/developers) | 1/sec, 1000/day | No | name, biography, aliases, members | thumb |
+| Last.fm | Free key | [Sign up](https://www.last.fm/api/account/create) | 5/sec | No | name, biography, genres, styles, moods, similar_artists | None |
+| Wikidata | Free | Not required | 5/sec | No | name, formed, disbanded, origin, genres | thumb, logo |
+| Deezer | Free | Not required | 5/sec | No | name | thumb |
+| Genius | Free key | [Sign up](https://genius.com/api-clients) | 5/sec | No | name, biography, aliases | None |
+| Spotify | Paid | [Sign up](https://developer.spotify.com/dashboard) | 5/sec | No | name, genres | thumb |
 <!-- END GENERATED: provider-matrix -->
 
 ## How the fallback chain works

@@ -22,4 +22,14 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
+# Verify the docs provider matrix is in sync with the live registry. The
+# generator runs in -check mode and exits non-zero if regeneration is needed.
+# Skip silently if the docs file is absent (e.g., a docs-stripped checkout).
+if [ -f docs/site/src/reference/providers.md ]; then
+  if ! go run ./cmd/gen-provider-matrix -check; then
+    echo "ERROR: docs/site/src/reference/providers.md is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"
