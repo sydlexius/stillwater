@@ -1072,6 +1072,75 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	}
 }
 
+// TestImport_LibrarySkipsOnMissingConnection tampers with a v1.2 envelope so
+// the platform-bound library references a connection that is not part of the
+// payload, exercising the missing-connection skip path in isolation. Without
+// this, the LibrariesSkipped counter has no positive-case assertion (the
+// happy-path test in TestRoundTrip_LibrariesAndTokens always finds the
+// connection because it is imported alongside the library).
+func TestImport_LibrarySkipsOnMissingConnection(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	envelope, err := svc.Export(ctx, "skip-test")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, "skip-test")
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Inject a platform-bound library whose connection is not present in the
+	// payload's Connections list. The importer must skip with a warning rather
+	// than fail.
+	payload.Libraries = append(payload.Libraries, LibraryExport{
+		Name:           "Orphan Lib",
+		Type:           "regular",
+		Source:         "emby",
+		ConnectionType: "emby",
+		ConnectionURL:  "http://nowhere.invalid:8096",
+		FSPollInterval: 60,
+	})
+	modified, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	newData, newSalt, err := encryptWithPassphrase(modified, "skip-test")
+	if err != nil {
+		t.Fatalf("re-encrypt: %v", err)
+	}
+	envelope.Data = newData
+	envelope.Salt = newSalt
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	res, err := svc2.Import(ctx, envelope, "skip-test")
+	if err != nil {
+		t.Fatalf("Import should succeed despite missing connection, got: %v", err)
+	}
+	if res.LibrariesSkipped != 1 {
+		t.Errorf("LibrariesSkipped: got %d, want 1", res.LibrariesSkipped)
+	}
+	// Confirm the orphan library was not silently inserted.
+	var count int
+	if err := db2.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE name = 'Orphan Lib'`).Scan(&count); err != nil {
+		t.Fatalf("counting orphan library rows: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("orphan library was inserted despite missing connection: count=%d", count)
+	}
+}
+
 func TestEnvelope_JSON(t *testing.T) {
 	env := Envelope{
 		Version:    "1.0",
