@@ -1427,8 +1427,6 @@
   "settings.updates.apply_update": "Apply Update",
   "settings.updates.auto_check": "Automatic update checks",
   "settings.updates.auto_check_desc": "Periodically check for new releases in the background at the cadence below.",
-  "settings.updates.auto_update": "Auto-apply updates (advanced)",
-  "settings.updates.auto_update_desc": "Mark detected updates for automatic install. Reserved for future fully-automated installs; today the badge still requires a manual Apply.",
   "settings.updates.channel": "Release channel",
   "settings.updates.channel_desc": "Stable tracks only non-prerelease versions. Prerelease includes release candidates. Nightly tracks date-stamped builds from the default branch.",
   "settings.updates.channel_nightly": "Nightly",

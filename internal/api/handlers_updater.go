@@ -58,6 +58,18 @@ func (r *Router) handlePostUpdateApply(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// Honor the Enabled kill switch: when the operator has explicitly
+	// disabled the updater, manual Apply is rejected too. The schema
+	// description for `enabled` advertises this contract and the UI Apply
+	// button is disabled when Enabled=false; this is the server-side
+	// enforcement so a direct API call cannot bypass the toggle.
+	if cfg, err := r.updaterService.GetConfig(req.Context()); err == nil && !cfg.Enabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "updater is disabled; enable it under Settings > Updates before applying",
+		})
+		return
+	}
+
 	// Detach from the request context so the async goroutine is not canceled
 	// when the HTTP response is sent and the request context is canceled.
 	if err := r.updaterService.Apply(context.WithoutCancel(req.Context())); err != nil {

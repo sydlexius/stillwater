@@ -178,14 +178,15 @@ func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
 }
 
 // TestHandlePutUpdateConfig_AllNewFields verifies that the W2.E knobs
-// (#1117) round-trip through the handler: enabled, auto_update, and
-// check_interval_hours must be persisted alongside channel/auto_check.
-// Without this guard a future schema drift could silently drop one of
-// the new fields and the UI would re-send stale defaults on every save.
+// (#1117) round-trip through the handler: enabled and check_interval_hours
+// must be persisted alongside channel/auto_check. Without this guard a
+// future schema drift could silently drop one of the new fields and the
+// UI would re-send stale defaults on every save. AutoUpdate is intentionally
+// not in this PR (see #1284 for the auto-Apply work split-out).
 func TestHandlePutUpdateConfig_AllNewFields(t *testing.T) {
 	r := testRouterWithUpdater(t)
 
-	body := `{"channel":"prerelease","enabled":false,"auto_check":true,"auto_update":true,"check_interval_hours":6}`
+	body := `{"channel":"prerelease","enabled":false,"auto_check":true,"check_interval_hours":6}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -213,11 +214,32 @@ func TestHandlePutUpdateConfig_AllNewFields(t *testing.T) {
 	if !persisted.AutoCheck {
 		t.Error("AutoCheck should round-trip as true")
 	}
-	if !persisted.AutoUpdate {
-		t.Error("AutoUpdate should round-trip as true")
-	}
 	if persisted.CheckIntervalHours != 6 {
 		t.Errorf("CheckIntervalHours = %d, want 6", persisted.CheckIntervalHours)
+	}
+}
+
+// TestHandlePostUpdateApply_RejectedWhenDisabled verifies the new server-side
+// gate: when Enabled is false in the persisted config, manual Apply returns
+// 403 instead of starting the update. This mirrors the schema description
+// for `enabled` and matches the UI's disabled-Apply-button rendering when
+// the kill switch is off.
+func TestHandlePostUpdateApply_RejectedWhenDisabled(t *testing.T) {
+	r := testRouterWithUpdater(t)
+	if err := r.updaterService.SetConfig(context.Background(), updater.Config{
+		Channel:            updater.ChannelStable,
+		Enabled:            false,
+		AutoCheck:          false,
+		CheckIntervalHours: 24,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)
+	w := httptest.NewRecorder()
+	r.handlePostUpdateApply(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403 when updater disabled, got %d; body: %s", w.Code, w.Body.String())
 	}
 }
 

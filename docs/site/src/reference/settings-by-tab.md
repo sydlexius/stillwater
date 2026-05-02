@@ -2,7 +2,7 @@
 description: A guided tour of every tab in Settings -- what each section does, where to find specific knobs, and notable behaviors.
 ---
 
-<!-- code: web/templates/settings.templ (settingsTabs() at line 140 enumerates the 11 tabs; each panel keyed by data-tab-panel="..."). Inventory verified 2026-04-30 against main; Updates-tab fields re-verified 2026-05-01 with W2.E (#1117) landing the enabled toggle, check-interval selector, auto-update toggle, and the background scheduler that consumes auto-check; General-tab base-path field is editable when SW_BASE_PATH is unset (#1005). -->
+<!-- code: web/templates/settings.templ (settingsTabs() at line 140 enumerates the 11 tabs; each panel keyed by data-tab-panel="..."). Inventory verified 2026-04-30 against main; Updates-tab fields re-verified 2026-05-01 with W2.E (#1117) landing the enabled toggle, check-interval selector, and the background scheduler that consumes auto-check (auto-apply is split out to #1284); General-tab base-path field is editable when SW_BASE_PATH is unset (#1005). -->
 
 # Settings, by tab
 
@@ -124,7 +124,8 @@ Stillwater's self-updater (when running natively) or version status (when runnin
 - **Restart required** banner (amber) when an applied update is staged and waiting for a restart.
 - **Updater enabled** toggle -- top-level kill switch. When off, the background loop is a no-op and the Apply button is disabled.
 - **Channel** selector -- choose stable, prerelease, or nightly. Your next check (and any Apply) uses the selected channel.
-- **Auto-check** toggle -- when on, the background scheduler polls GitHub at the configured interval. Idle ticks are cheap; the loop respects the toggle on every cycle so changes take effect without a restart.
-- **Check interval** dropdown -- how often the background loop polls GitHub: every hour, 6 hours, 12 hours, 24 hours (default), or 7 days. The minimum accepted by the API is 1 hour.
-- **Auto-apply updates (advanced)** toggle -- reserved for future fully-automated installs. Today the badge still requires a manual Apply click; the toggle records the operator's intent.
+- **Auto-check** toggle -- when on, the background scheduler polls GitHub at the configured interval. The loop reads its config once per tick, so toggle changes take effect on the next scheduled tick rather than instantly; restart the process for immediate effect on long initial intervals.
+- **Check interval** dropdown -- how often the background loop polls GitHub: every hour, 6 hours, 12 hours, 24 hours (default), or 7 days. The minimum accepted by the API is 1 hour. If a custom value (set via direct API call) is persisted, the dropdown shows it as a "(custom)" entry so it isn't lost on Save.
 - **Save** button -- persists all of the above in one PUT to `/api/v1/updates/config`.
+
+Auto-apply (automatic install of detected updates on the non-Docker path) isn't yet exposed; that work needs a confirmation flow, last-applied status display, and a skip-this-version affordance to be responsible to ship, and is tracked separately. Today an update is detected by the background check, surfaced in the badge and the version row, and installed by clicking Apply.

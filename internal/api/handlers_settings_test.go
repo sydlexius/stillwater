@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -151,17 +152,20 @@ func TestHandleUpdateSettings_BasePath_Invalid(t *testing.T) {
 }
 
 // TestHandleUpdateSettings_BasePath_Valid covers the accepted shapes:
-// the canonical "/" and a typical sub-path with hyphens/underscores.
+// the canonical "/" and a typical sub-path with hyphens/underscores. The
+// follow-up GET asserts the canonical persisted form so a regression that
+// returns 200 but stores a non-canonical value still fails.
 func TestHandleUpdateSettings_BasePath_Valid(t *testing.T) {
 	tests := []struct {
-		name  string
-		value string
+		name      string
+		value     string
+		canonical string // expected persisted value after canonicalization
 	}{
-		{"root", "/"},
-		{"empty (coerced to /)", ""},
-		{"simple sub-path", "/stillwater"},
-		{"hyphen sub-path", "/my-app"},
-		{"nested", "/apps/stillwater"},
+		{"root", "/", "/"},
+		{"empty (coerced to /)", "", "/"},
+		{"simple sub-path", "/stillwater", "/stillwater"},
+		{"hyphen sub-path", "/my-app", "/my-app"},
+		{"nested", "/apps/stillwater", "/apps/stillwater"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,6 +176,22 @@ func TestHandleUpdateSettings_BasePath_Valid(t *testing.T) {
 			r.handleUpdateSettings(w, req)
 			if w.Code != http.StatusOK {
 				t.Fatalf("expected 200 for %q, got %d: %s", tt.value, w.Code, w.Body.String())
+			}
+
+			// Follow-up GET to assert the canonical persisted value.
+			getReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+			getW := httptest.NewRecorder()
+			r.handleGetSettings(getW, getReq)
+			if getW.Code != http.StatusOK {
+				t.Fatalf("GET /settings: status %d, body %s", getW.Code, getW.Body.String())
+			}
+			var settings map[string]any
+			if err := json.Unmarshal(getW.Body.Bytes(), &settings); err != nil {
+				t.Fatalf("unmarshal settings: %v", err)
+			}
+			got, _ := settings["server.base_path"].(string)
+			if got != tt.canonical {
+				t.Errorf("persisted server.base_path = %q, want canonical %q", got, tt.canonical)
 			}
 		})
 	}

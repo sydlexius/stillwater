@@ -460,7 +460,6 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 		data.Channel = string(cfg.Channel)
 		data.Enabled = cfg.Enabled
 		data.AutoCheck = cfg.AutoCheck
-		data.AutoUpdate = cfg.AutoUpdate
 		data.CheckIntervalHours = cfg.CheckIntervalHours
 	}
 

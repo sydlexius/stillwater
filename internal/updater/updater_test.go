@@ -1496,9 +1496,6 @@ func TestGetConfigDefaultsForNewFields(t *testing.T) {
 	if !cfg.Enabled {
 		t.Error("default Enabled should be true")
 	}
-	if cfg.AutoUpdate {
-		t.Error("default AutoUpdate should be false")
-	}
 	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
 		t.Errorf("default CheckIntervalHours = %d, want %d",
 			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
@@ -1506,8 +1503,9 @@ func TestGetConfigDefaultsForNewFields(t *testing.T) {
 }
 
 // TestSetConfigPersistsAllFields covers the round-trip of every new knob:
-// Enabled, AutoUpdate, and CheckIntervalHours must survive a SetConfig +
-// GetConfig pair so the UI can rely on values it just saved being read back.
+// Enabled and CheckIntervalHours must survive a SetConfig + GetConfig pair
+// so the UI can rely on values it just saved being read back. AutoUpdate
+// is intentionally not in this PR (see #1284 for the auto-Apply work).
 func TestSetConfigPersistsAllFields(t *testing.T) {
 	svc := buildTestService(t)
 	ctx := context.Background()
@@ -1515,7 +1513,6 @@ func TestSetConfigPersistsAllFields(t *testing.T) {
 		Channel:            ChannelPrerelease,
 		Enabled:            false,
 		AutoCheck:          true,
-		AutoUpdate:         true,
 		CheckIntervalHours: 6,
 	}
 	if err := svc.SetConfig(ctx, want); err != nil {
@@ -1533,9 +1530,6 @@ func TestSetConfigPersistsAllFields(t *testing.T) {
 	}
 	if got.AutoCheck != want.AutoCheck {
 		t.Errorf("AutoCheck = %v, want %v", got.AutoCheck, want.AutoCheck)
-	}
-	if got.AutoUpdate != want.AutoUpdate {
-		t.Errorf("AutoUpdate = %v, want %v", got.AutoUpdate, want.AutoUpdate)
 	}
 	if got.CheckIntervalHours != want.CheckIntervalHours {
 		t.Errorf("CheckIntervalHours = %d, want %d",

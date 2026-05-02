@@ -73,7 +73,6 @@ type UpdatesTabData struct {
 	Channel            string // "stable" | "prerelease" | "nightly"
 	Enabled            bool   // Top-level updater kill switch
 	AutoCheck          bool
-	AutoUpdate         bool
 	CheckIntervalHours int    // Background auto-check cadence; minimum 1
 	IsDocker           bool   // When true, hide binary apply controls
 	LastChecked        string // RFC 3339 or empty
@@ -680,14 +679,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-3">
-						<label for="base-path-field" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+						<label id="base-path-field-label" for="base-path-field" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 							SW_BASE_PATH
 						</label>
 						if data.BasePathEnvOverride {
 							<input
 								type="text"
 								id="base-path-field"
-								aria-label="Base path"
+								aria-labelledby="base-path-field-label"
 								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 cursor-not-allowed"
 								if data.BasePath != "" {
 									value={ data.BasePath }
@@ -703,7 +702,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<input
 								type="text"
 								id="base-path-field"
-								aria-label="Base path"
+								aria-labelledby="base-path-field-label"
 								placeholder="/"
 								pattern="^/?[a-zA-Z0-9_\-/]*$"
 								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2950,10 +2949,12 @@ templ basePathSaveScript() {
 				if (!input) return;
 				var val = (input.value || '').trim();
 
-				// Normalise: empty input means "/"; we accept "/" but persist
-				// it as the empty string the validator expects so the server
-				// stores a canonical form.
-				if (val === '' || val === '/') {
+				// Normalise: an empty input is treated as the root "/" so the
+				// PUT body always carries an explicit, meaningful value. The
+				// server-side validator then trims any trailing slash and
+				// stores the canonical form (empty string for root, leading
+				// slash preserved for any other prefix).
+				if (val === '') {
 					val = '/';
 				}
 
@@ -6073,6 +6074,21 @@ templ updaterIntervalOption(value, current int, label string) {
 	}
 }
 
+// isKnownInterval reports whether v matches one of the enum values rendered
+// by the check-interval <select>. When the persisted CheckIntervalHours is
+// outside this set (e.g., set via direct API call to a custom cadence), the
+// template renders a sentinel "(custom)" option so a Save without explicit
+// interval change does not silently overwrite the persisted value with the
+// browser's first-option fallback.
+func isKnownInterval(v int) bool {
+	switch v {
+	case 1, 6, 12, 24, 168:
+		return true
+	default:
+		return false
+	}
+}
+
 // settingsUpdatesTab renders the Updates tab content.
 templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	// Hidden element carrying translated labels for the updater JS.
@@ -6271,10 +6287,13 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					t(ctx, "settings.updates.auto_check_desc"),
 				)
 			</div>
-			<!-- Check interval selector. The select is a fixed enum to keep the
-			     UI simple and keep the request payload small; the API accepts
-			     any integer >= 1, so power users can hit the endpoint directly
-			     for non-listed cadences. -->
+			<!-- Check interval selector. The select is a fixed enum to keep
+			     the UI simple and keep the request payload small; the API
+			     accepts any integer >= 1, so power users can hit the
+			     endpoint directly for non-listed cadences. If the persisted
+			     CheckIntervalHours is not in the enum, a "(custom)" option
+			     is rendered so Save does not silently overwrite it with the
+			     browser's first-option fallback. -->
 			<div class="flex items-center justify-between gap-4">
 				<div>
 					<label for="updates-check-interval" class="block text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.check_interval") }</label>
@@ -6285,22 +6304,15 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					name="updates_check_interval"
 					class="block w-44 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				>
+					if !isKnownInterval(data.CheckIntervalHours) {
+						<option value={ strconv.Itoa(data.CheckIntervalHours) } selected>{ fmt.Sprintf("%dh (custom)", data.CheckIntervalHours) }</option>
+					}
 					@updaterIntervalOption(1, data.CheckIntervalHours, t(ctx, "settings.updates.interval_1h"))
 					@updaterIntervalOption(6, data.CheckIntervalHours, t(ctx, "settings.updates.interval_6h"))
 					@updaterIntervalOption(12, data.CheckIntervalHours, t(ctx, "settings.updates.interval_12h"))
 					@updaterIntervalOption(24, data.CheckIntervalHours, t(ctx, "settings.updates.interval_24h"))
 					@updaterIntervalOption(168, data.CheckIntervalHours, t(ctx, "settings.updates.interval_7d"))
 				</select>
-			</div>
-			<!-- Auto-update toggle (informational; today the loop only auto-checks). -->
-			<div class="flex items-center justify-between gap-4">
-				@components.Toggle(
-					"updates-auto-update",
-					"updates_auto_update",
-					data.AutoUpdate,
-					t(ctx, "settings.updates.auto_update"),
-					t(ctx, "settings.updates.auto_update_desc"),
-				)
 			</div>
 			<!-- Save button -->
 			<div class="flex justify-end pt-2">
@@ -6333,7 +6345,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					type="button"
 					id="updates-apply-btn"
 					onclick="applyUpdate()"
-					disabled?={ !data.UpdateAvailable || data.RestartRequired }
+					disabled?={ !data.Enabled || !data.UpdateAvailable || data.RestartRequired }
 					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
 				>
 					{ t(ctx, "settings.updates.apply_update") }
@@ -6509,18 +6521,16 @@ templ updatesTabScript() {
 				if (checkBtn) checkBtn.disabled = true;
 			}
 
-			// saveUpdaterConfig persists channel + enabled + auto-check + auto-update + interval.
+			// saveUpdaterConfig persists channel + enabled + auto-check + interval.
 			// Read the checked radio, not the first radio, or Save always sends "stable".
 			window.saveUpdaterConfig = function() {
 				var channelEl = document.querySelector('[name="updates_channel"]:checked');
 				var enabledEl = document.getElementById('updates-enabled');
 				var autoEl = document.getElementById('updates-auto-check');
-				var autoUpdateEl = document.getElementById('updates-auto-update');
 				var intervalEl = document.getElementById('updates-check-interval');
 				var channel = channelEl ? channelEl.value : 'stable';
 				var enabled = enabledEl ? enabledEl.checked : true;
 				var autoCheck = autoEl ? autoEl.checked : false;
-				var autoUpdate = autoUpdateEl ? autoUpdateEl.checked : false;
 				var interval = intervalEl ? parseInt(intervalEl.value, 10) : 24;
 				if (!interval || interval < 1) {
 					interval = 24;
@@ -6536,7 +6546,6 @@ templ updatesTabScript() {
 						channel: channel,
 						enabled: enabled,
 						auto_check: autoCheck,
-						auto_update: autoUpdate,
 						check_interval_hours: interval
 					})
 				})

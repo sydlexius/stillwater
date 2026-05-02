@@ -377,7 +377,17 @@ func run() error {
 			if normalized == "/" {
 				normalized = ""
 			}
-			if normalized != cfg.Server.BasePath {
+			// Validate before applying. The HTTP mux composes routes as
+			// basePath+"/api/v1/..." so a malformed override (missing
+			// leading "/") would poison every route pattern and the
+			// process would fail to start with an opaque mux error.
+			// Warn-and-ignore so a corrupt persisted value cannot lock
+			// operators out -- they can repair it via SW_BASE_PATH env or
+			// by editing the settings table directly.
+			if normalized != "" && !strings.HasPrefix(normalized, "/") {
+				logger.Warn("ignoring invalid persisted base_path override (must be empty or start with /)",
+					"override", override)
+			} else if normalized != cfg.Server.BasePath {
 				logger.Info("applying persisted base_path override",
 					"previous", cfg.Server.BasePath, "override", normalized)
 				cfg.Server.BasePath = normalized

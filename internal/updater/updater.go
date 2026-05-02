@@ -15,8 +15,11 @@
 //   - updater.channel:              "stable" | "prerelease" | "nightly"  (default: "stable")
 //   - updater.enabled:              "true" | "false"                     (default: "true")
 //   - updater.auto_check:           "true" | "false"                     (default: "false")
-//   - updater.auto_update:          "true" | "false"                     (default: "false")
 //   - updater.check_interval_hours: integer string, minimum 1            (default: "24")
+//
+// Auto-Apply (automatic install on the non-Docker path) is intentionally
+// omitted: it requires a confirmation flow, last-applied status display, and
+// a skip-this-version affordance to be responsible to ship. Tracked as #1284.
 package updater
 
 import (
@@ -53,7 +56,6 @@ const (
 	SettingChannel            = "updater.channel"
 	SettingEnabled            = "updater.enabled"
 	SettingAutoCheck          = "updater.auto_check"
-	SettingAutoUpdate         = "updater.auto_update"
 	SettingCheckIntervalHours = "updater.check_interval_hours"
 )
 
@@ -112,21 +114,21 @@ const (
 
 // Config holds user-configurable update preferences.
 //
-// Three orthogonal knobs gate the background loop:
+// Two orthogonal knobs gate the background loop:
 //
 //   - Enabled: top-level kill switch. When false, the background loop is a
-//     no-op regardless of AutoCheck/AutoUpdate.
+//     no-op AND manual Apply is rejected (the API surface gates on Enabled
+//     so an admin who flips this off is fully opted out of in-app updates).
 //   - AutoCheck: when true and Enabled is also true, the background loop
 //     polls GitHub at CheckIntervalHours.
-//   - AutoUpdate: when true and an auto-check finds an applicable update on
-//     the non-Docker path, the loop calls Apply automatically. Off by
-//     default; an admin opting in accepts that the running process will be
-//     left in a "restart required" state without further interaction.
+//
+// AutoUpdate (automatic Apply on the non-Docker path) is tracked separately
+// in #1284 alongside the safety surface it requires (confirmation flow,
+// last-applied status display, skip-this-version affordance).
 type Config struct {
 	Channel            Channel `json:"channel"`
 	Enabled            bool    `json:"enabled"`
 	AutoCheck          bool    `json:"auto_check"`
-	AutoUpdate         bool    `json:"auto_update"`
 	CheckIntervalHours int     `json:"check_interval_hours"`
 }
 
@@ -341,23 +343,21 @@ func detectDocker() bool {
 //
 // Defaults:
 //   - Channel:            ChannelStable
-//   - Enabled:            true (the updater itself is on; AutoCheck/AutoUpdate
-//     are still individually opt-in)
+//   - Enabled:            true (the updater itself is on; AutoCheck is
+//     still individually opt-in)
 //   - AutoCheck:          false
-//   - AutoUpdate:         false
 //   - CheckIntervalHours: DefaultCheckIntervalHours (24h)
 func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	cfg := Config{
 		Channel:            ChannelStable,
 		Enabled:            true,
 		AutoCheck:          false,
-		AutoUpdate:         false,
 		CheckIntervalHours: DefaultCheckIntervalHours,
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)`,
-		SettingChannel, SettingEnabled, SettingAutoCheck, SettingAutoUpdate, SettingCheckIntervalHours)
+		`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)`,
+		SettingChannel, SettingEnabled, SettingAutoCheck, SettingCheckIntervalHours)
 	if err != nil {
 		return cfg, fmt.Errorf("querying updater config: %w", err)
 	}
@@ -390,8 +390,6 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 			cfg.Enabled = v == "true"
 		case SettingAutoCheck:
 			cfg.AutoCheck = v == "true"
-		case SettingAutoUpdate:
-			cfg.AutoUpdate = v == "true"
 		case SettingCheckIntervalHours:
 			n, err := strconv.Atoi(v)
 			if err != nil || n < MinCheckIntervalHours {
@@ -450,10 +448,6 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.AutoCheck {
 		autoCheck = "true"
 	}
-	autoUpdate := "false"
-	if cfg.AutoUpdate {
-		autoUpdate = "true"
-	}
 
 	// Read the previous channel so we only invalidate the cache when the
 	// channel truly changed. Saving config with the same channel (e.g.
@@ -474,7 +468,6 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 		{SettingChannel, string(cfg.Channel)},
 		{SettingEnabled, enabled},
 		{SettingAutoCheck, autoCheck},
-		{SettingAutoUpdate, autoUpdate},
 		{SettingCheckIntervalHours, strconv.Itoa(cfg.CheckIntervalHours)},
 	} {
 		if _, err := tx.ExecContext(ctx,
@@ -1122,19 +1115,18 @@ func atomicReplaceFile(target string, newContent []byte) error {
 // Behavior on each tick:
 //
 //   - Reload the live Config from settings so admins can change cadence /
-//     toggle Enabled / toggle AutoCheck without restarting the process.
-//   - When Enabled and AutoCheck are both true, run Check(). When AutoUpdate
-//     is also true, the resulting CheckResult does NOT trigger a side-effect
-//     here -- the existing Apply path is the supported way to install.
-//     A future enhancement may auto-Apply, but the safer default is to
-//     surface the "update available" badge and let the operator click
-//     Apply (which still works manually). This keeps automatic on-disk
-//     binary mutation behind an explicit operator action while satisfying
-//     the auto-check half of the toggle.
+//     toggle Enabled / toggle AutoCheck.
+//   - When Enabled and AutoCheck are both true, run Check(). The result
+//     populates the in-memory cache that drives the sidebar "update
+//     available" pill; manual Apply remains the operator-driven path.
 //
-// The ticker cadence is recomputed from CheckIntervalHours each tick: if the
-// admin lowers the interval from 24h to 6h, the next tick fires after the
-// new shorter interval rather than waiting out the old one.
+// Cadence-change limitation: the loop recomputes CheckIntervalHours only
+// after the current timer fires. Lowering the interval from 24h to 1h via
+// SetConfig still waits out the old 24h timer before the new cadence takes
+// effect. Same for toggling Enabled false then true mid-tick. For immediate
+// effect on a long initial interval, restart the process. A proper
+// wake-on-config-change implementation (configChange channel + select +
+// timer.Stop/Drain/Reset) is tracked in #1285.
 func (s *Service) StartScheduler(ctx context.Context) {
 	// Initial read picks up the persisted interval. Fall back to the
 	// default on read error so a transient DB hiccup at startup does
