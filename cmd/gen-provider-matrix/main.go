@@ -1,8 +1,9 @@
 // Command gen-provider-matrix renders the "Supported Providers" capability
-// matrix in docs/site/src/reference/providers.md from the live provider
-// registry. It walks AllProviderNames() in display order, reads each
-// provider's ProviderCapability, and writes a Markdown table between the
-// well-known BEGIN/END markers in the docs file.
+// matrix in docs/site/src/reference/providers.md from the static provider
+// declarations in internal/provider (provider.AllProviderNames() for display
+// order and provider.ProviderCapabilities() for per-provider capability data).
+// It does not introspect the runtime provider.Registry. It writes a Markdown
+// table between the well-known BEGIN/END markers in the docs file.
 //
 // Usage:
 //
@@ -24,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -75,7 +77,7 @@ func run(outPath string, checkOnly bool) error {
 	if bytes.Equal(existing, updated) {
 		return nil
 	}
-	if err := os.WriteFile(outPath, updated, 0o600); err != nil {
+	if err := filesystem.WriteFileAtomic(outPath, updated, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 	return nil
@@ -199,11 +201,15 @@ func renderFields(fields []string) string {
 // metadata-only providers. Image type identifiers are emitted as-is (lowercase,
 // matching the convention used elsewhere in user docs: thumb, fanart, hdlogo,
 // widethumb, etc.).
-func renderImages(images []string) string {
+func renderImages(images []provider.ImageType) string {
 	if len(images) == 0 {
 		return "None"
 	}
-	return strings.Join(images, ", ")
+	parts := make([]string, len(images))
+	for i, img := range images {
+		parts[i] = string(img)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // friendlyFieldName converts a snake_case metadata-field identifier into the
@@ -230,13 +236,15 @@ func replaceBetweenMarkers(src []byte, begin, end, body string) ([]byte, error) 
 	if beginIdx < 0 {
 		return nil, fmt.Errorf("begin marker %q not found", begin)
 	}
-	endIdx := bytes.Index(src, []byte(end))
-	if endIdx < 0 {
-		return nil, fmt.Errorf("end marker %q not found", end)
+	// Search for the end marker only after the begin marker so an incidental
+	// occurrence of the end marker text earlier in the file (for example, in a
+	// fenced code block illustrating the convention) cannot be mistaken for
+	// the closing marker.
+	relEndIdx := bytes.Index(src[beginIdx:], []byte(end))
+	if relEndIdx < 0 {
+		return nil, fmt.Errorf("end marker %q not found after begin marker", end)
 	}
-	if endIdx < beginIdx {
-		return nil, fmt.Errorf("end marker appears before begin marker")
-	}
+	endIdx := beginIdx + relEndIdx
 
 	body = strings.TrimRight(body, "\n")
 	var out bytes.Buffer

@@ -39,9 +39,11 @@ type ProviderCapability struct {
 	SupportedFields []string `json:"supported_fields,omitempty"`
 
 	// SupportedImages lists the image types this provider's GetImages can
-	// return. Values use the ImageType constants ("thumb", "fanart", "logo",
-	// "hdlogo", "banner", "widethumb"). Empty for metadata-only providers.
-	SupportedImages []string `json:"supported_images,omitempty"`
+	// return, drawn from the ImageType constants below (ImageThumb, ImageFanart,
+	// ImageLogo, ImageHDLogo, ImageBanner, ImageWideThumb, ImageBackground).
+	// Typed as []ImageType so capability declarations cannot drift from the
+	// canonical set. Empty for metadata-only providers.
+	SupportedImages []ImageType `json:"supported_images,omitempty"`
 }
 
 // ProviderCapabilities returns the known capability metadata for each provider.
@@ -66,7 +68,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:            TierFreeKey,
 			HelpURL:         "https://fanart.tv/get-an-api-key/",
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 3},
-			SupportedImages: []string{"thumb", "fanart", "logo", "hdlogo", "banner"},
+			SupportedImages: []ImageType{ImageThumb, ImageFanart, ImageLogo, ImageHDLogo, ImageBanner},
 		},
 		NameAudioDB: {
 			Tier:      TierFreemium,
@@ -77,14 +79,14 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 				"genres", "styles", "moods",
 				"born", "formed", "died", "disbanded", "aliases",
 			},
-			SupportedImages: []string{"thumb", "logo", "widethumb", "banner", "fanart"},
+			SupportedImages: []ImageType{ImageThumb, ImageLogo, ImageWideThumb, ImageBanner, ImageFanart},
 		},
 		NameDiscogs: {
 			Tier:            TierFreeKey,
 			HelpURL:         "https://www.discogs.com/settings/developers",
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 1, RequestsPerDay: 1000},
 			SupportedFields: []string{"name", "biography", "aliases", "members"},
-			SupportedImages: []string{"thumb"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 		NameLastFM: {
 			Tier:      TierFreeKey,
@@ -98,7 +100,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:            TierFree,
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
 			SupportedFields: []string{"name", "formed", "disbanded", "origin", "genres"},
-			SupportedImages: []string{"thumb", "logo"},
+			SupportedImages: []ImageType{ImageThumb, ImageLogo},
 		},
 		NameDuckDuckGo: {
 			Tier:      TierFree,
@@ -108,7 +110,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:            TierFree,
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
 			SupportedFields: []string{"name"},
-			SupportedImages: []string{"thumb"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 		NameGenius: {
 			Tier:            TierFreeKey,
@@ -126,7 +128,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			HelpURL:         "https://developer.spotify.com/dashboard",
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
 			SupportedFields: []string{"name", "genres"},
-			SupportedImages: []string{"thumb"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 	}
 }

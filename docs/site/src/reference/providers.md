@@ -10,7 +10,7 @@ A **provider** is an external metadata source Stillwater queries for an artist's
 
 ## Capability matrix
 
-The table below is generated from the live provider registry. Don't edit it directly -- regenerate with `make generate-docs` after changes to the registry or any provider package.
+The table below is generated from the provider definitions in the codebase. Don't edit it directly -- regenerate with `make generate-docs` after changes to the registry or any provider package.
 
 <!-- BEGIN GENERATED: provider-matrix -->
 | Provider | Tier | Sign-up | Rate limit | Mirror | Metadata fields | Image types |
