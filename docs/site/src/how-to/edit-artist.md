@@ -49,7 +49,7 @@ Sometimes you want most of an artist's metadata to refresh from providers, but t
 <div class="sw-hover-swap" tabindex="0" markdown="span">
 ![Name field unlocked: gray open lock, edit pencil, and overflow menu](../assets/screenshots/artist-field-name-unlocked.png)
 ![Name field locked: amber closed lock, no edit affordances](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
-<span class="sw-hover-hint">Hover to lock</span>
+<span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
 Per-field locks are independent of the whole-artist lock. You can have an unlocked artist with three pinned fields, or a locked artist with the lock removed from one field (rarely useful, but supported).

@@ -36,15 +36,25 @@
   position: relative;
   display: inline-block;
   line-height: 0;          /* avoid extra inline gap below the images */
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--md-default-bg-color);
+  overflow: hidden;        /* clip both stacked images to the wrapper's rounded frame */
+}
+
+[data-md-color-scheme="slate"] .sw-hover-swap {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
 }
 
 .sw-hover-swap img {
   display: block;
   margin: 0;
   /* Disable the universal screenshot frame on the inner images; the wrapper
-     supplies its own frame so the two stacked images line up edge-to-edge. */
+     supplies the frame so the two stacked images line up edge-to-edge. */
   border: none !important;
-  border-radius: 4px;
+  border-radius: 0;
   box-shadow: none !important;
 }
 

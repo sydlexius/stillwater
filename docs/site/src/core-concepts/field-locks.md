@@ -41,7 +41,7 @@ A locked field swaps its lock icon for an amber closed lock and **hides the edit
 <div class="sw-hover-swap" tabindex="0" markdown="span">
 ![Name field unlocked: gray open lock, edit pencil, and overflow menu, with '12 Stones' as the value](../assets/screenshots/artist-field-name-unlocked.png)
 ![Name field locked: amber closed lock and no edit affordances; '12 Stones' is still visible but no longer editable](../assets/screenshots/artist-field-name-locked.png){ .sw-hover-after }
-<span class="sw-hover-hint">Hover to lock</span>
+<span class="sw-hover-hint">Hover or focus to lock</span>
 </div>
 
 For context, here's the whole Overview panel showing where the lock controls live -- next to the Biography header, each Tags group, and every Detail-panel row:

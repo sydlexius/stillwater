@@ -18,7 +18,7 @@ Settings > Connections shows a card per platform connection (Emby, Jellyfin, Lid
 
 Click into the card to see the underlying error message.
 
-![Settings > Connections: three service connection cards (Emby, Jellyfin, Lidarr) each with a green dot indicating a healthy connection and inline Test / Discover Libraries / Delete actions](../assets/screenshots/settings-connections-cards.png)
+![Settings > Connections: three service connection cards (Emby, Jellyfin, Lidarr) shown in the healthy steady state, each with a green dot, plus inline Test / Discover Libraries / Delete actions; the same dot turns amber for warnings or red for authentication / reachability failures described in the bullets above](../assets/screenshots/settings-connections-cards.png)
 
 ## "Authentication failed" / 401 Unauthorized
 

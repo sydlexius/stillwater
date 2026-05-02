@@ -85,7 +85,7 @@ Connect Stillwater to your media server(s) and (optionally) Lidarr. The wizard s
 
 - **Emby.** Stillwater imports artists from Emby's library, pushes metadata edits via the Emby API, can trigger Emby refreshes, and reads MusicBrainz IDs that Emby has already resolved.
 - **Jellyfin.** Same set of capabilities as Emby, against a Jellyfin server.
-- **Lidarr.** Read-only. Used for detecting NFO settings and reading platform-level metadata profiles. Lidarr does not provide a library to scan; that comes from your library directories in step 2.
+- **Lidarr.** Read-only. Used for detecting NFO settings and reading platform-level metadata profiles. Lidarr does not provide a library to scan; that comes from your library directories in step 1.
 
 For each connection you'll need:
 
@@ -98,7 +98,7 @@ You can skip this step if you only use NFO writeback. You can also add or remove
 
 ## Wizard step 5: Conflict pre-flight (conditional)
 
-This step only appears when you have **both** at least one library configured (step 1) **and** at least one connection that overlaps with that library (step 4). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
+This step only appears when you have **both** at least one library configured (step 1) **and** at least one enabled Emby, Jellyfin, or Lidarr connection (step 4). When it appears, Stillwater runs a synchronous probe to look for existing NFO files or lockdata flags that would clash with what it's about to write.
 
 Three outcomes:
 
