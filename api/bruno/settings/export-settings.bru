@@ -1,0 +1,56 @@
+meta {
+  name: Export Settings
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/settings/export
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "passphrase": "round-trip-test-passphrase"
+  }
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("envelope is version 1.2", function() {
+    expect(res.body.version).to.equal("1.2");
+  });
+
+  test("data and salt are present", function() {
+    expect(res.body.data).to.be.a("string");
+    expect(res.body.salt).to.be.a("string");
+    expect(res.body.data.length).to.be.greaterThan(0);
+    expect(res.body.salt.length).to.be.greaterThan(0);
+  });
+
+  test("summary surfaces libraries and api_tokens counters", function() {
+    expect(res.body.summary).to.be.an("object");
+    expect(res.body.summary).to.have.property("libraries");
+    expect(res.body.summary).to.have.property("api_tokens");
+  });
+
+  test("plaintext data does not appear in outer envelope", function() {
+    var serialized = JSON.stringify(res.body);
+    expect(serialized.indexOf("round-trip-test-passphrase")).to.equal(-1);
+  });
+}
+
+script:post-response {
+  // Stash the envelope so import-settings.bru can replay the exact bytes
+  // back through the API in the same Bruno run, exercising the v1.2
+  // round-trip end-to-end.
+  bru.setVar("lastExportedEnvelope", JSON.stringify(res.body));
+}
