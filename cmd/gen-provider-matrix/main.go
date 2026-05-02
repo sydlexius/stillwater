@@ -10,8 +10,10 @@
 //	go run ./cmd/gen-provider-matrix -check       # exit non-zero if regen needed
 //	go run ./cmd/gen-provider-matrix -output FILE # write to a different file
 //
-// AllMusic is intentionally skipped: the adapter exists but is not currently
-// part of AllProviderNames(), so the matrix only reflects in-use providers.
+// AllMusic is intentionally excluded: the adapter exists in
+// internal/provider/allmusic but is not part of AllProviderNames() in normal
+// builds. The renderer also filters it defensively in case the registry order
+// changes; see project_allmusic_cleanup / issue #1275.
 package main
 
 import (
@@ -176,25 +178,24 @@ func renderYesNo(b bool) string {
 	return "No"
 }
 
+// renderFields joins the provider's declared metadata fields with commas.
+// Declaration order is preserved so registries can group related fields
+// (born/formed/died/disbanded) for readability. Returns "Image only" when no
+// metadata fields are declared (e.g., Fanart.tv).
 func renderFields(fields []string) string {
 	if len(fields) == 0 {
 		return "Image only"
 	}
-	// Preserve declaration order so providers can group related fields
-	// (born/formed/died/disbanded) for readability. Defensive copy avoids
-	// mutating the registry slice.
-	out := make([]string, len(fields))
-	copy(out, fields)
-	return strings.Join(out, ", ")
+	return strings.Join(fields, ", ")
 }
 
+// renderImages joins the provider's declared image types. Returns "None" for
+// metadata-only providers.
 func renderImages(images []string) string {
 	if len(images) == 0 {
 		return "None"
 	}
-	out := make([]string, len(images))
-	copy(out, images)
-	return strings.Join(out, ", ")
+	return strings.Join(images, ", ")
 }
 
 // replaceBetweenMarkers returns src with the region between begin and end
