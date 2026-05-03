@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -1141,6 +1142,115 @@ func TestImport_LibrarySkipsOnMissingConnection(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("orphan library was inserted despite missing connection: count=%d", count)
+	}
+}
+
+// TestImport_LibraryReconcilesOnRemoteIdentityCollision exercises the
+// secondary-key fallback: the importer must locate an existing target row
+// by (connection_id, external_id) when the imported name is new on the
+// target. Without that branch the INSERT would fail on the partial unique
+// index in migrations/001 (line 148) and abort the entire settings import,
+// which is the realistic case for two Stillwater instances sharing one
+// media server when the local operator has renamed a library before
+// importing a peer's snapshot.
+func TestImport_LibraryReconcilesOnRemoteIdentityCollision(t *testing.T) {
+	ctx := context.Background()
+
+	// Source: build an envelope containing a library named "Library A"
+	// owned by an Emby connection with external_id "remote-42".
+	srcDB := setupTestDB(t)
+	srcProv, srcConn, srcPlat, srcWH := newTestServices(t, srcDB)
+	srcSvc := NewService(srcDB, srcProv, srcConn, srcPlat, srcWH)
+
+	srcConnObj := &connection.Connection{
+		Name: "Shared Emby", Type: "emby",
+		URL: "http://shared.example:8096", APIKey: "src-key", Enabled: true,
+	}
+	if err := srcConn.Create(ctx, srcConnObj); err != nil {
+		t.Fatalf("source connection: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := srcDB.ExecContext(ctx, `
+		INSERT INTO libraries (
+			id, name, path, type, source, connection_id, external_id,
+			fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		uuid.New().String(), "Library A", "/music/lib-a", "regular", "emby",
+		srcConnObj.ID, "remote-42", 0, 60, 0, now, now,
+	); err != nil {
+		t.Fatalf("seeding source library: %v", err)
+	}
+
+	envelope, err := srcSvc.Export(ctx, "collide")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Target: same connection (so import-time remap finds it) and a library
+	// already holding the (connection_id, external_id) pair under a DIFFERENT
+	// local name. The importer must reconcile rather than abort.
+	tgtDB := setupTestDB(t)
+	tgtProv, tgtConn, tgtPlat, tgtWH := newTestServices(t, tgtDB)
+	tgtSvc := NewService(tgtDB, tgtProv, tgtConn, tgtPlat, tgtWH)
+
+	tgtConnObj := &connection.Connection{
+		Name: "Shared Emby", Type: "emby",
+		URL: "http://shared.example:8096", APIKey: "tgt-key", Enabled: true,
+	}
+	if err := tgtConn.Create(ctx, tgtConnObj); err != nil {
+		t.Fatalf("target connection: %v", err)
+	}
+	preExistingID := uuid.New().String()
+	if _, err := tgtDB.ExecContext(ctx, `
+		INSERT INTO libraries (
+			id, name, path, type, source, connection_id, external_id,
+			fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		preExistingID, "Library Renamed Locally", "/music/local",
+		"regular", "emby", tgtConnObj.ID, "remote-42", 0, 60, 0, now, now,
+	); err != nil {
+		t.Fatalf("seeding target library: %v", err)
+	}
+
+	res, err := tgtSvc.Import(ctx, envelope, "collide")
+	if err != nil {
+		t.Fatalf("Import must reconcile, not abort, on remote-identity collision: %v", err)
+	}
+	if res.Libraries != 1 {
+		t.Errorf("Libraries imported: got %d, want 1", res.Libraries)
+	}
+	if res.LibrariesSkipped != 0 {
+		t.Errorf("LibrariesSkipped: got %d, want 0", res.LibrariesSkipped)
+	}
+
+	// Reconcile policy: the existing row's id is preserved, and its name is
+	// updated to the imported payload's name. This is the "import payload
+	// wins" rule used elsewhere in the import path.
+	var (
+		count int
+		name  string
+		id    string
+	)
+	if err := tgtDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE connection_id = ? AND external_id = ?`,
+		tgtConnObj.ID, "remote-42").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("library row count for remote identity: got %d, want 1 (no duplicate, no skip)", count)
+	}
+	if err := tgtDB.QueryRowContext(ctx,
+		`SELECT id, name FROM libraries WHERE connection_id = ? AND external_id = ?`,
+		tgtConnObj.ID, "remote-42").Scan(&id, &name); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if id != preExistingID {
+		t.Errorf("row id: got %q, want pre-existing %q (reconcile must preserve id)", id, preExistingID)
+	}
+	if name != "Library A" {
+		t.Errorf("row name: got %q, want %q (import payload should win)", name, "Library A")
 	}
 }
 

@@ -144,6 +144,35 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		err := s.db.QueryRowContext(ctx,
 			`SELECT id FROM libraries WHERE name = ?`, le.Name,
 		).Scan(&existingID)
+		// When the name lookup misses, fall back to the secondary unique
+		// identity (connection_id, external_id). The partial unique index
+		// on those two columns (migrations/001 line 148, with WHERE
+		// connection_id IS NOT NULL AND external_id <> '') means an INSERT
+		// with the imported (connection, external_id) pair would otherwise
+		// abort the entire settings import on a target that already holds
+		// the same remote library under a different name -- the realistic
+		// case being two Stillwater instances sharing one media server
+		// where the operator renamed a library locally before importing a
+		// peer's snapshot. Reconcile by treating the secondary-key hit as
+		// the existing row; the imported payload's name wins on the
+		// subsequent UPDATE, matching the existing "import payload wins"
+		// policy used elsewhere on this path. Skip the secondary lookup
+		// when either identifier is empty (the partial index excludes
+		// those rows, so a hit is impossible).
+		if errors.Is(err, sql.ErrNoRows) && connectionID != "" && le.ExternalID != "" {
+			var byRemoteID string
+			remoteErr := s.db.QueryRowContext(ctx,
+				`SELECT id FROM libraries WHERE connection_id = ? AND external_id = ?`,
+				connectionID, le.ExternalID,
+			).Scan(&byRemoteID)
+			switch {
+			case remoteErr == nil:
+				existingID = byRemoteID
+				err = nil
+			case !errors.Is(remoteErr, sql.ErrNoRows):
+				return fmt.Errorf("looking up library by remote identity %q: %w", le.Name, remoteErr)
+			}
+		}
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			// Insert new
@@ -164,14 +193,20 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 		case err != nil:
 			return fmt.Errorf("looking up library %q: %w", le.Name, err)
 		default:
-			// Update existing
+			// Update existing. `name` is included in SET so the
+			// secondary-key reconcile path (existingID resolved by
+			// (connection_id, external_id) when the name lookup missed)
+			// renames the row to the imported payload's name. The
+			// name-lookup branch above writes the same value back, so the
+			// SET is a no-op there. This implements the "import payload
+			// wins" policy that the rest of the import path follows.
 			if _, err := s.db.ExecContext(ctx, `
 				UPDATE libraries SET
-					path = ?, type = ?, source = ?, connection_id = ?, external_id = ?,
+					name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?,
 					fs_watch = ?, fs_poll_interval = ?, nfo_lock_data = ?, updated_at = ?
 				WHERE id = ?
 			`,
-				le.Path, validLibraryType(le.Type),
+				le.Name, le.Path, validLibraryType(le.Type),
 				source, dbutil.NullableString(connectionID), le.ExternalID,
 				validFSWatch(le.FSWatch), validPollInterval(le.FSPollInterval),
 				boolToInt(le.NFOLockData), now, existingID,
