@@ -688,6 +688,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						class="hidden"
 						data-error-must-start-slash={ t(ctx, "settings.base_path.error_must_start_slash") }
 						data-error-must-not-end-slash={ t(ctx, "settings.base_path.error_must_not_end_slash") }
+						data-error-protocol-relative={ t(ctx, "settings.base_path.error_protocol_relative") }
 						data-error-charset={ t(ctx, "settings.base_path.error_charset") }
 						data-error-save-failed={ t(ctx, "settings.base_path.error_save_failed") }
 						data-error-network={ t(ctx, "settings.base_path.error_network") }
@@ -718,7 +719,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								id="base-path-field"
 								aria-labelledby="base-path-field-label"
 								placeholder="/"
-								pattern="^/?[a-zA-Z0-9_\-/]*$"
+								pattern="^/(?:[a-zA-Z0-9_\-]+(?:/[a-zA-Z0-9_\-]+)*)?$"
 								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 								if data.BasePath != "" {
 									value={ data.BasePath }
@@ -2972,6 +2973,7 @@ templ basePathSaveScript() {
 				var ds = (i18n && i18n.dataset) || {};
 				var msgStart = ds.errorMustStartSlash || 'Base path must start with "/".';
 				var msgEnd = ds.errorMustNotEndSlash || 'Base path must not end with "/".';
+				var msgProtocolRelative = ds.errorProtocolRelative || 'Base path must not start with "//" or "/\\".';
 				var msgCharset = ds.errorCharset || 'Base path may only contain letters, numbers, hyphens, underscores, and slashes.';
 				var msgSaveFailed = ds.errorSaveFailed || 'Save failed.';
 				var msgNetwork = ds.errorNetwork || 'Network error.';
@@ -2997,11 +2999,21 @@ templ basePathSaveScript() {
 					showError(msgStart);
 					return;
 				}
+				// Mirror the server's isValidPersistedBasePath: a second
+				// character of "/" or "\\" is rejected to refuse protocol-
+				// relative-style and Windows-separator-prefixed values that
+				// would otherwise pass the leading-slash test, save
+				// successfully, and silently fail to take effect on next
+				// process restart.
+				if (val.length > 1 && (val.charAt(1) === '/' || val.charAt(1) === '\\')) {
+					showError(msgProtocolRelative);
+					return;
+				}
 				if (val.length > 1 && val.charAt(val.length - 1) === '/') {
 					showError(msgEnd);
 					return;
 				}
-				if (!/^\/[a-zA-Z0-9_\-\/]*$/.test(val)) {
+				if (!/^\/(?:[a-zA-Z0-9_\-]+(?:\/[a-zA-Z0-9_\-]+)*)?$/.test(val)) {
 					showError(msgCharset);
 					return;
 				}
@@ -6332,7 +6344,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					class="block w-44 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 				>
 					if !isKnownInterval(data.CheckIntervalHours) {
-						<option value={ strconv.Itoa(data.CheckIntervalHours) } selected>{ fmt.Sprintf("%dh (custom)", data.CheckIntervalHours) }</option>
+						<option value={ strconv.Itoa(data.CheckIntervalHours) } selected>{ tf(ctx, "settings.updates.interval_custom", data.CheckIntervalHours) }</option>
 					}
 					@updaterIntervalOption(1, data.CheckIntervalHours, t(ctx, "settings.updates.interval_1h"))
 					@updaterIntervalOption(6, data.CheckIntervalHours, t(ctx, "settings.updates.interval_6h"))
