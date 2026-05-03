@@ -121,10 +121,14 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 				return fmt.Errorf("looking up connection for library %q: %w", le.Name, err)
 			}
 			if conn == nil {
+				// Connection URLs may embed credentials (e.g. http://user:pass@host)
+				// or sensitive query params, so the URL value itself is omitted from
+				// the warning. A boolean presence flag is enough to disambiguate
+				// "connection reference absent on target" from "no reference given".
 				slog.Warn("import: skipping library whose connection is absent on target",
 					"library", le.Name,
 					"connection_type", le.ConnectionType,
-					"connection_url", le.ConnectionURL,
+					"connection_url_present", le.ConnectionURL != "",
 				)
 				result.LibrariesSkipped++
 				continue
@@ -152,7 +156,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 			`,
 				id, le.Name, le.Path, validLibraryType(le.Type),
 				source, dbutil.NullableString(connectionID), le.ExternalID,
-				le.FSWatch, validPollInterval(le.FSPollInterval),
+				validFSWatch(le.FSWatch), validPollInterval(le.FSPollInterval),
 				boolToInt(le.NFOLockData), now, now,
 			); err != nil {
 				return fmt.Errorf("inserting library %q: %w", le.Name, err)
@@ -169,7 +173,7 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 			`,
 				le.Path, validLibraryType(le.Type),
 				source, dbutil.NullableString(connectionID), le.ExternalID,
-				le.FSWatch, validPollInterval(le.FSPollInterval),
+				validFSWatch(le.FSWatch), validPollInterval(le.FSPollInterval),
 				boolToInt(le.NFOLockData), now, existingID,
 			); err != nil {
 				return fmt.Errorf("updating library %q: %w", le.Name, err)
@@ -217,6 +221,19 @@ func validPollInterval(v int) int {
 	default:
 		return 60
 	}
+}
+
+// validFSWatch clamps the imported fs_watch flag to the canonical 0/1 the
+// schema stores. The column is declared INTEGER without a CHECK, so a tampered
+// or future-version export carrying any non-zero value would otherwise be
+// persisted verbatim and could surprise consumers that compare against 1
+// rather than truthiness. Mirrors the boundary-clamping pattern used by
+// validLibraryType / validLibrarySource / validPollInterval.
+func validFSWatch(v int) int {
+	if v != 0 {
+		return 1
+	}
+	return 0
 }
 
 // boolToInt converts a Go bool to the integer representation SQLite expects
