@@ -387,7 +387,7 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 			// Stored only when explicitly toggled; absence keeps the
 			// "enabled" default so existing installs are not silently
 			// disabled when the new key rolls out. ParseBool (rather than
-			// `v == "true"`) accepts the broader set of strconv-recognised
+			// `v == "true"`) accepts the broader set of strconv-recognized
 			// values written by older or out-of-band migrations ("1",
 			// "TRUE", "T", etc.); a malformed value preserves the default
 			// rather than silently flipping the kill switch off.
