@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -856,6 +857,400 @@ func TestImport_EmptyData(t *testing.T) {
 	_, err := svc.Import(ctx, env, "any-passphrase")
 	if err == nil {
 		t.Error("expected error for empty data")
+	}
+}
+
+// TestRoundTrip_LibrariesAndTokens covers the v1.2 envelope additions:
+// libraries (with both manual and connection-bound flavors, exercising the
+// (type, url) -> connection_id remap on import) and api_tokens (verifying the
+// hash round-trips, the username -> user_id remap, and the missing-user skip
+// path). A second target DB without the matching connection / user verifies
+// the skip counters increment instead of the import aborting.
+func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	// Seed a connection that a sourced library will reference.
+	c := &connection.Connection{
+		Name:    "Source Emby",
+		Type:    "emby",
+		URL:     "http://emby.local:8096",
+		APIKey:  "src-key",
+		Enabled: true,
+	}
+	if err := connSvc.Create(ctx, c); err != nil {
+		t.Fatalf("creating source connection: %v", err)
+	}
+
+	// Seed a manual library and a connection-bound library directly via SQL
+	// so we bypass library.Service path-existence validation (the test
+	// process does not have arbitrary fixture paths on disk).
+	now := time.Now().UTC().Format(time.RFC3339)
+	manualID := "lib-manual"
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at)
+		VALUES (?, 'Manual Music', '/srv/music', 'regular', 'manual', NULL, '', 1, 60, 1, ?, ?)`,
+		manualID, now, now); err != nil {
+		t.Fatalf("seeding manual library: %v", err)
+	}
+	embyLibID := "lib-emby"
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at)
+		VALUES (?, 'Emby Library', '', 'classical', 'emby', ?, 'ext-1', 0, 300, 0, ?, ?)`,
+		embyLibID, c.ID, now, now); err != nil {
+		t.Fatalf("seeding emby library: %v", err)
+	}
+
+	// Seed a user and an api token owned by that user. The token_hash is a
+	// fixed string so the import-side equality assertion is exact.
+	userID := "u-token-owner"
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO users (id, username, role) VALUES (?, 'tokenowner', 'admin')`,
+		userID); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+	tokenHash := "stable-bcrypt-hash-for-test"
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO api_tokens (id, name, token_hash, scopes, user_id, created_at, status)
+		VALUES (?, 'CI Token', ?, 'read,write', ?, ?, 'active')`,
+		"tok-1", tokenHash, userID, now); err != nil {
+		t.Fatalf("seeding api token: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	passphrase := "rt-libs-tokens"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if envelope.Version != "1.2" {
+		t.Errorf("envelope version: got %q, want 1.2", envelope.Version)
+	}
+	if envelope.Summary == nil {
+		t.Fatal("expected non-nil export summary")
+	}
+	if envelope.Summary.Libraries != 2 {
+		t.Errorf("summary libraries: got %d, want 2", envelope.Summary.Libraries)
+	}
+	if envelope.Summary.APITokens != 1 {
+		t.Errorf("summary api_tokens: got %d, want 1", envelope.Summary.APITokens)
+	}
+
+	// Decrypt and confirm the LibraryExport carries the connection's
+	// (type, url) but no internal connection_id field.
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(payload.Libraries) != 2 {
+		t.Fatalf("payload libraries: got %d, want 2", len(payload.Libraries))
+	}
+	var foundEmby bool
+	for _, le := range payload.Libraries {
+		if le.Name == "Emby Library" {
+			foundEmby = true
+			if le.ConnectionType != "emby" || le.ConnectionURL != "http://emby.local:8096" {
+				t.Errorf("connection ref not embedded: %+v", le)
+			}
+		}
+	}
+	if !foundEmby {
+		t.Error("Emby Library missing from payload")
+	}
+	if len(payload.APITokens) != 1 || payload.APITokens[0].TokenHash != tokenHash {
+		t.Fatalf("api token hash not exported: %+v", payload.APITokens)
+	}
+	if payload.APITokens[0].Username != "tokenowner" {
+		t.Errorf("token username: got %q, want tokenowner", payload.APITokens[0].Username)
+	}
+
+	// --- Target #1: matching connection + matching user. Both libraries
+	// import; the token round-trips with the same hash.
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	// Seed the target with a connection at the same (type, url) but a
+	// different ID, so the remap is genuinely exercised.
+	c2 := &connection.Connection{
+		Name:    "Target Emby",
+		Type:    "emby",
+		URL:     "http://emby.local:8096",
+		APIKey:  "tgt-key",
+		Enabled: true,
+	}
+	if err := connSvc2.Create(ctx, c2); err != nil {
+		t.Fatalf("seeding target connection: %v", err)
+	}
+	if _, err := db2.ExecContext(ctx,
+		`INSERT INTO users (id, username, role) VALUES ('u-target', 'tokenowner', 'admin')`); err != nil {
+		t.Fatalf("seeding target user: %v", err)
+	}
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+	res, err := svc2.Import(ctx, envelope, passphrase)
+	if err != nil {
+		t.Fatalf("Import (target #1): %v", err)
+	}
+	if res.Libraries != 2 {
+		t.Errorf("target #1 libraries imported: got %d, want 2", res.Libraries)
+	}
+	if res.LibrariesSkipped != 0 {
+		t.Errorf("target #1 libraries skipped: got %d, want 0", res.LibrariesSkipped)
+	}
+	if res.APITokens != 1 || res.APITokensSkipped != 0 {
+		t.Errorf("target #1 tokens: imported=%d skipped=%d, want 1/0", res.APITokens, res.APITokensSkipped)
+	}
+	// Verify the imported emby library's connection_id was remapped to the
+	// target's connection (not the source's), and that the hash and remapped
+	// user_id survived.
+	var importedConnID sql.NullString
+	if err := db2.QueryRowContext(ctx,
+		`SELECT connection_id FROM libraries WHERE name = 'Emby Library'`).Scan(&importedConnID); err != nil {
+		t.Fatalf("scanning imported emby library: %v", err)
+	}
+	if !importedConnID.Valid || importedConnID.String != c2.ID {
+		t.Errorf("connection_id remap: got %v, want %s", importedConnID, c2.ID)
+	}
+	var (
+		gotHash   string
+		gotUserID string
+	)
+	if err := db2.QueryRowContext(ctx,
+		`SELECT token_hash, user_id FROM api_tokens WHERE name = 'CI Token'`).Scan(&gotHash, &gotUserID); err != nil {
+		t.Fatalf("scanning imported token: %v", err)
+	}
+	if gotHash != tokenHash {
+		t.Errorf("token hash drift: got %q, want %q", gotHash, tokenHash)
+	}
+	if gotUserID != "u-target" {
+		t.Errorf("user_id remap: got %q, want u-target", gotUserID)
+	}
+
+	// --- Target #2: no matching connection, no matching user. Both
+	// platform-bound rows must be skipped (not error out); the manual
+	// library still imports.
+	db3 := setupTestDB(t)
+	provSettings3, connSvc3, platSvc3, whSvc3 := newTestServices(t, db3)
+	svc3 := NewService(db3, provSettings3, connSvc3, platSvc3, whSvc3)
+	res3, err := svc3.Import(ctx, envelope, passphrase)
+	if err != nil {
+		t.Fatalf("Import (target #2): %v", err)
+	}
+	// The connection itself imports normally, so the emby library's lookup
+	// would actually succeed -- target #2 must NOT carry the connection.
+	// The Import call above seeds the connection from the payload first,
+	// which means the library lookup will find it. Confirm libraries
+	// imported and assert the missing-user skip on the token instead.
+	if res3.Libraries != 2 {
+		t.Errorf("target #2 libraries imported: got %d, want 2 (connection imported alongside)", res3.Libraries)
+	}
+	if res3.APITokens != 0 || res3.APITokensSkipped != 1 {
+		t.Errorf("target #2 tokens: imported=%d skipped=%d, want 0/1 (no matching user)", res3.APITokens, res3.APITokensSkipped)
+	}
+
+	// --- Target #3: idempotency. Re-importing into target #1 must not
+	// duplicate libraries or tokens (both upsert on natural key).
+	res1b, err := svc2.Import(ctx, envelope, passphrase)
+	if err != nil {
+		t.Fatalf("Import (idempotent): %v", err)
+	}
+	if res1b.Libraries != 2 {
+		t.Errorf("idempotent libraries count: got %d, want 2", res1b.Libraries)
+	}
+	var libCount, tokCount int
+	if err := db2.QueryRowContext(ctx, `SELECT COUNT(*) FROM libraries`).Scan(&libCount); err != nil {
+		t.Fatalf("counting libraries after re-import: %v", err)
+	}
+	if libCount != 2 {
+		t.Errorf("library row count drift after re-import: got %d, want 2", libCount)
+	}
+	if err := db2.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens`).Scan(&tokCount); err != nil {
+		t.Fatalf("counting tokens after re-import: %v", err)
+	}
+	if tokCount != 1 {
+		t.Errorf("api_token row count drift after re-import: got %d, want 1", tokCount)
+	}
+}
+
+// TestImport_LibrarySkipsOnMissingConnection tampers with a v1.2 envelope so
+// the platform-bound library references a connection that is not part of the
+// payload, exercising the missing-connection skip path in isolation. Without
+// this, the LibrariesSkipped counter has no positive-case assertion (the
+// happy-path test in TestRoundTrip_LibrariesAndTokens always finds the
+// connection because it is imported alongside the library).
+func TestImport_LibrarySkipsOnMissingConnection(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	envelope, err := svc.Export(ctx, "skip-test")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, "skip-test")
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Inject a platform-bound library whose connection is not present in the
+	// payload's Connections list. The importer must skip with a warning rather
+	// than fail.
+	payload.Libraries = append(payload.Libraries, LibraryExport{
+		Name:           "Orphan Lib",
+		Type:           "regular",
+		Source:         "emby",
+		ConnectionType: "emby",
+		ConnectionURL:  "http://nowhere.invalid:8096",
+		FSPollInterval: 60,
+	})
+	modified, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	newData, newSalt, err := encryptWithPassphrase(modified, "skip-test")
+	if err != nil {
+		t.Fatalf("re-encrypt: %v", err)
+	}
+	envelope.Data = newData
+	envelope.Salt = newSalt
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	res, err := svc2.Import(ctx, envelope, "skip-test")
+	if err != nil {
+		t.Fatalf("Import should succeed despite missing connection, got: %v", err)
+	}
+	if res.LibrariesSkipped != 1 {
+		t.Errorf("LibrariesSkipped: got %d, want 1", res.LibrariesSkipped)
+	}
+	// Confirm the orphan library was not silently inserted.
+	var count int
+	if err := db2.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE name = 'Orphan Lib'`).Scan(&count); err != nil {
+		t.Fatalf("counting orphan library rows: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("orphan library was inserted despite missing connection: count=%d", count)
+	}
+}
+
+// TestImport_LibraryReconcilesOnRemoteIdentityCollision exercises the
+// secondary-key fallback: the importer must locate an existing target row
+// by (connection_id, external_id) when the imported name is new on the
+// target. Without that branch the INSERT would fail on the partial unique
+// index in migrations/001 (line 148) and abort the entire settings import,
+// which is the realistic case for two Stillwater instances sharing one
+// media server when the local operator has renamed a library before
+// importing a peer's snapshot.
+func TestImport_LibraryReconcilesOnRemoteIdentityCollision(t *testing.T) {
+	ctx := context.Background()
+
+	// Source: build an envelope containing a library named "Library A"
+	// owned by an Emby connection with external_id "remote-42".
+	srcDB := setupTestDB(t)
+	srcProv, srcConn, srcPlat, srcWH := newTestServices(t, srcDB)
+	srcSvc := NewService(srcDB, srcProv, srcConn, srcPlat, srcWH)
+
+	srcConnObj := &connection.Connection{
+		Name: "Shared Emby", Type: "emby",
+		URL: "http://shared.example:8096", APIKey: "src-key", Enabled: true,
+	}
+	if err := srcConn.Create(ctx, srcConnObj); err != nil {
+		t.Fatalf("source connection: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := srcDB.ExecContext(ctx, `
+		INSERT INTO libraries (
+			id, name, path, type, source, connection_id, external_id,
+			fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		uuid.New().String(), "Library A", "/music/lib-a", "regular", "emby",
+		srcConnObj.ID, "remote-42", 0, 60, 0, now, now,
+	); err != nil {
+		t.Fatalf("seeding source library: %v", err)
+	}
+
+	envelope, err := srcSvc.Export(ctx, "collide")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Target: same connection (so import-time remap finds it) and a library
+	// already holding the (connection_id, external_id) pair under a DIFFERENT
+	// local name. The importer must reconcile rather than abort.
+	tgtDB := setupTestDB(t)
+	tgtProv, tgtConn, tgtPlat, tgtWH := newTestServices(t, tgtDB)
+	tgtSvc := NewService(tgtDB, tgtProv, tgtConn, tgtPlat, tgtWH)
+
+	tgtConnObj := &connection.Connection{
+		Name: "Shared Emby", Type: "emby",
+		URL: "http://shared.example:8096", APIKey: "tgt-key", Enabled: true,
+	}
+	if err := tgtConn.Create(ctx, tgtConnObj); err != nil {
+		t.Fatalf("target connection: %v", err)
+	}
+	preExistingID := uuid.New().String()
+	if _, err := tgtDB.ExecContext(ctx, `
+		INSERT INTO libraries (
+			id, name, path, type, source, connection_id, external_id,
+			fs_watch, fs_poll_interval, nfo_lock_data, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		preExistingID, "Library Renamed Locally", "/music/local",
+		"regular", "emby", tgtConnObj.ID, "remote-42", 0, 60, 0, now, now,
+	); err != nil {
+		t.Fatalf("seeding target library: %v", err)
+	}
+
+	res, err := tgtSvc.Import(ctx, envelope, "collide")
+	if err != nil {
+		t.Fatalf("Import must reconcile, not abort, on remote-identity collision: %v", err)
+	}
+	if res.Libraries != 1 {
+		t.Errorf("Libraries imported: got %d, want 1", res.Libraries)
+	}
+	if res.LibrariesSkipped != 0 {
+		t.Errorf("LibrariesSkipped: got %d, want 0", res.LibrariesSkipped)
+	}
+
+	// Reconcile policy: the existing row's id is preserved, and its name is
+	// updated to the imported payload's name. This is the "import payload
+	// wins" rule used elsewhere in the import path.
+	var (
+		count int
+		name  string
+		id    string
+	)
+	if err := tgtDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE connection_id = ? AND external_id = ?`,
+		tgtConnObj.ID, "remote-42").Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("library row count for remote identity: got %d, want 1 (no duplicate, no skip)", count)
+	}
+	if err := tgtDB.QueryRowContext(ctx,
+		`SELECT id, name FROM libraries WHERE connection_id = ? AND external_id = ?`,
+		tgtConnObj.ID, "remote-42").Scan(&id, &name); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if id != preExistingID {
+		t.Errorf("row id: got %q, want pre-existing %q (reconcile must preserve id)", id, preExistingID)
+	}
+	if name != "Library A" {
+		t.Errorf("row name: got %q, want %q (import payload should win)", name, "Library A")
 	}
 }
 

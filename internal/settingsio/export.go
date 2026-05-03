@@ -33,7 +33,9 @@ const pbkdf2Iterations = 600_000
 //   - "1.0": original format (settings, connections, platform profiles, webhooks,
 //     provider keys, priorities)
 //   - "1.1": adds rules, scraper_configs, user_preferences, plaintext summary
-const CurrentEnvelopeVersion = "1.1"
+//   - "1.2": adds libraries (connection refs remapped by type+url) and api_tokens
+//     (token_hash + metadata only; never plaintext)
+const CurrentEnvelopeVersion = "1.2"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -41,6 +43,7 @@ const CurrentEnvelopeVersion = "1.1"
 var supportedEnvelopeVersions = map[string]bool{
 	"1.0": true,
 	"1.1": true,
+	"1.2": true,
 }
 
 // ErrWrongPassphrase is returned by Import when the AES-GCM tag verification
@@ -77,6 +80,8 @@ type Payload struct {
 	Rules              []RuleExport          `json:"rules,omitempty"`
 	ScraperConfigs     []ScraperConfigExport `json:"scraper_configs,omitempty"`
 	UserPreferences    []UserPrefsExport     `json:"user_preferences,omitempty"`
+	Libraries          []LibraryExport       `json:"libraries,omitempty"`
+	APITokens          []APITokenExport      `json:"api_tokens,omitempty"`
 }
 
 // ConnectionExport is a connection with its API key decrypted for export.
@@ -126,17 +131,24 @@ type UserPrefsExport struct {
 	Preferences map[string]string `json:"preferences"`
 }
 
-// ImportResult summarizes what was imported.
+// ImportResult summarizes what was imported. Skip counters track rows that
+// were intentionally omitted (e.g. a library whose connection is missing on
+// the target, or a token whose owning user is absent); they let callers
+// surface a per-domain "imported / skipped" breakdown without reparsing logs.
 type ImportResult struct {
-	Settings        int `json:"settings"`
-	Connections     int `json:"connections"`
-	Profiles        int `json:"platform_profiles"`
-	Webhooks        int `json:"webhooks"`
-	ProviderKeys    int `json:"provider_keys"`
-	Priorities      int `json:"priorities"`
-	Rules           int `json:"rules"`
-	ScraperConfigs  int `json:"scraper_configs"`
-	UserPreferences int `json:"user_preferences"`
+	Settings         int `json:"settings"`
+	Connections      int `json:"connections"`
+	Profiles         int `json:"platform_profiles"`
+	Webhooks         int `json:"webhooks"`
+	ProviderKeys     int `json:"provider_keys"`
+	Priorities       int `json:"priorities"`
+	Rules            int `json:"rules"`
+	ScraperConfigs   int `json:"scraper_configs"`
+	UserPreferences  int `json:"user_preferences"`
+	Libraries        int `json:"libraries"`
+	LibrariesSkipped int `json:"libraries_skipped,omitempty"`
+	APITokens        int `json:"api_tokens"`
+	APITokensSkipped int `json:"api_tokens_skipped,omitempty"`
 }
 
 // Service handles settings export and import.
@@ -312,6 +324,25 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	}
 	payload.UserPreferences = userPrefs
 
+	// Collect libraries. Connection IDs are not exported; instead the owning
+	// connection's (type, url) is carried so the target instance can remap to
+	// its own locally-generated connection_id during import.
+	libs, err := s.exportLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("exporting libraries: %w", err)
+	}
+	payload.Libraries = libs
+
+	// Collect API tokens. Only the stored hash + metadata are exported (the
+	// plaintext is never persisted in the DB and so cannot be exported even
+	// in principle). user_id is replaced with the owner's username for
+	// cross-instance portability, mirroring user_preferences.
+	tokens, err := s.exportAPITokens(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("exporting api tokens: %w", err)
+	}
+	payload.APITokens = tokens
+
 	// Marshal and encrypt payload
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -341,6 +372,8 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			// UserPreferences counts total (user, key) pairs so export Summary
 			// matches the counter import increments per upserted row.
 			UserPreferences: countUserPreferences(payload.UserPreferences),
+			Libraries:       len(payload.Libraries),
+			APITokens:       len(payload.APITokens),
 		},
 	}
 
@@ -554,6 +587,18 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 	// that do not exist on this instance are silently skipped.
 	if err := s.importUserPreferences(ctx, payload.UserPreferences, result); err != nil {
 		return nil, fmt.Errorf("importing user preferences: %w", err)
+	}
+
+	// Import libraries. Must run AFTER connections so the (type, url) -> id
+	// remap can resolve to the freshly-imported connection rows.
+	if err := s.importLibraries(ctx, payload.Libraries, result); err != nil {
+		return nil, fmt.Errorf("importing libraries: %w", err)
+	}
+
+	// Import API tokens. Must run AFTER user_preferences so the username ->
+	// user_id lookup sees the final user set on the target instance.
+	if err := s.importAPITokens(ctx, payload.APITokens, result); err != nil {
+		return nil, fmt.Errorf("importing api tokens: %w", err)
 	}
 
 	return result, nil

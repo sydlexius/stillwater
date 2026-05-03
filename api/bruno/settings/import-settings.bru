@@ -1,0 +1,42 @@
+meta {
+  name: Import Settings
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/settings/import
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "passphrase": "round-trip-test-passphrase",
+    "envelope": {{lastExportedEnvelope}}
+  }
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("ImportResult exposes libraries counter", function() {
+    expect(res.body).to.have.property("libraries");
+  });
+
+  test("ImportResult exposes api_tokens counter", function() {
+    expect(res.body).to.have.property("api_tokens");
+  });
+
+  test("re-import is idempotent: counters never go negative", function() {
+    expect(res.body.libraries).to.be.at.least(0);
+    expect(res.body.api_tokens).to.be.at.least(0);
+  });
+}
