@@ -386,10 +386,24 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 		case SettingEnabled:
 			// Stored only when explicitly toggled; absence keeps the
 			// "enabled" default so existing installs are not silently
-			// disabled when the new key rolls out.
-			cfg.Enabled = v == "true"
+			// disabled when the new key rolls out. ParseBool (rather than
+			// `v == "true"`) accepts the broader set of strconv-recognised
+			// values written by older or out-of-band migrations ("1",
+			// "TRUE", "T", etc.); a malformed value preserves the default
+			// rather than silently flipping the kill switch off.
+			if b, err := strconv.ParseBool(v); err == nil {
+				cfg.Enabled = b
+			} else {
+				s.logger.Warn("invalid updater.enabled value in settings; keeping default",
+					"stored_value", v)
+			}
 		case SettingAutoCheck:
-			cfg.AutoCheck = v == "true"
+			if b, err := strconv.ParseBool(v); err == nil {
+				cfg.AutoCheck = b
+			} else {
+				s.logger.Warn("invalid updater.auto_check value in settings; keeping default",
+					"stored_value", v)
+			}
 		case SettingCheckIntervalHours:
 			n, err := strconv.Atoi(v)
 			if err != nil || n < MinCheckIntervalHours {

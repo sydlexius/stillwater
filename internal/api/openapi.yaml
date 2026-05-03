@@ -1361,9 +1361,10 @@ components:
           description: >-
             How often the background auto-check loop polls GitHub, in hours.
             The persisted minimum is 1; a request value of 0 is coerced to
-            the default (24) by the handler so older clients that omit the
-            field still validate. Minimum 1 is enforced on PUT validation
-            for any explicit value greater than 0.
+            the default (24) by the service layer (the handler only rejects
+            negative values; the coercion runs inside Service.SetConfig so
+            older clients that omit the field still validate). Negative
+            values are rejected on PUT with a 400.
 
     ForeignFileEntry:
       type: object

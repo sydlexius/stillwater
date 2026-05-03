@@ -384,9 +384,20 @@ func run() error {
 			// Warn-and-ignore so a corrupt persisted value cannot lock
 			// operators out -- they can repair it via SW_BASE_PATH env or
 			// by editing the settings table directly.
-			if normalized != "" && !strings.HasPrefix(normalized, "/") {
-				logger.Warn("ignoring invalid persisted base_path override (must be empty or start with /)",
-					"override", override)
+			//
+			// The persisted value reaches mux pattern composition without a
+			// second pass through the API handler's charset filter, so this
+			// loader must reject the same things directly: a missing leading
+			// "/", a leading "//" or "/\\" (CodeQL "bad redirect check" --
+			// schema-relative URLs and Windows-style separators that could
+			// be reflected back in router/redirect contexts), and any
+			// character outside the API-validated set. The empty string is
+			// the canonical "no override" sentinel and is allowed through.
+			if normalized != "" && !isValidPersistedBasePath(normalized) {
+				logger.Warn("ignoring invalid persisted base_path override",
+					"override", override,
+					"reason", "must start with single \"/\" and contain only letters, digits, hyphens, underscores, and slashes",
+				)
 			} else if normalized != cfg.Server.BasePath {
 				logger.Info("applying persisted base_path override",
 					"previous", cfg.Server.BasePath, "override", normalized)
@@ -1085,6 +1096,34 @@ func getDBBoolSetting(db *sql.DB, key string, fallback bool) bool {
 		return fallback
 	}
 	return v == "true" || v == "1"
+}
+
+// isValidPersistedBasePath mirrors the API handler's server.base_path
+// validation (handlers_settings.go) so a value loaded from the settings
+// table at boot is held to the same rules a fresh PUT would have to pass.
+// The persisted value is composed directly into mux route patterns and may
+// surface in router-side redirect contexts, so a leading "//" or "/\\"
+// (CodeQL "bad redirect check") and unexpected characters must be refused
+// rather than warn-and-applied. Caller is responsible for stripping the
+// trailing slash and treating "" as "no override"; this function assumes
+// the input has at least one character.
+func isValidPersistedBasePath(s string) bool {
+	if !strings.HasPrefix(s, "/") {
+		return false
+	}
+	if len(s) >= 2 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	for _, c := range s {
+		ok := (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '/'
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // getDBIntSetting reads an integer setting directly from the database.

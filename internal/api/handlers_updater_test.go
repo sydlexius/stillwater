@@ -247,16 +247,25 @@ func TestHandlePostUpdateApply_RejectedWhenDisabled(t *testing.T) {
 // out-of-range check_interval_hours value. Zero is intentionally NOT tested
 // here because the handler+service coerce zero to the default; only
 // explicitly-invalid (negative) values should be rejected.
+//
+// The payload includes auto_check explicitly so a regression that, e.g.,
+// stopped accepting partial bodies couldn't masquerade as the negative-
+// interval rejection: with both schema-required fields present, the only
+// path to 400 is the negative check_interval_hours validation, and the
+// body assertion below pins which field was rejected.
 func TestHandlePutUpdateConfig_NegativeInterval(t *testing.T) {
 	r := testRouterWithUpdater(t)
-	body := `{"channel":"stable","check_interval_hours":-5}`
+	body := `{"channel":"stable","auto_check":false,"check_interval_hours":-5}`
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.handlePutUpdateConfig(w, req)
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", w.Code)
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "check_interval_hours") {
+		t.Fatalf("400 body should identify check_interval_hours; got: %s", w.Body.String())
 	}
 }
 
