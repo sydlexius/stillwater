@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# pre-push hook: runs scripts/pre-push-gate.sh so a push is blocked when
+# tests fail, generated files are stale, OpenAPI drifts, or patch coverage
+# falls below the 70 percent threshold defined in codecov.yml.
+#
+# Rationale: the gate is the single source of truth for "is this branch
+# ready to push." Without a hook, running it is voluntary, which makes
+# coverage claims unverifiable. Pushing through a failed gate requires
+# --no-verify, which is forbidden by project policy and leaves a clear
+# audit trail.
+#
+# Skip with: git push --no-verify (do not do this).
+#
+# The hook is installed by `make hooks`, which sets core.hooksPath to
+# this directory so worktrees inherit it without per-worktree setup.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GATE="$REPO_ROOT/scripts/pre-push-gate.sh"
+
+if [ ! -x "$GATE" ]; then
+    echo "pre-push: $GATE not found or not executable" >&2
+    exit 1
+fi
+
+echo "pre-push: running scripts/pre-push-gate.sh ..."
+exec bash "$GATE"

@@ -208,6 +208,9 @@ func renderCatalogue(rules []rule.Rule) string {
 			fixable := "Detection-only"
 			if entry.FixBehavior != "" {
 				fixable = "Yes"
+				if entry.Conditional {
+					fixable = "Sometimes"
+				}
 			}
 			fmt.Fprintf(&b, "| [%s](#%s) | %s | %s | %s |\n",
 				r.Name,

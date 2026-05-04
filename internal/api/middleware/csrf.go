@@ -65,11 +65,15 @@ func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := c.generate()
-	http.SetCookie(w, &http.Cookie{
+	// gosec G124: HttpOnly is intentionally false because the HTMX client must
+	// read the cookie value to send it back as the X-CSRF-Token header.
+	// Secure is derived from request scheme so plain-HTTP dev installs work.
+	// SameSite=Strict provides the cross-origin protection.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly intentionally false (JS-readable); SameSite=Strict + Secure-on-HTTPS protect the token.
 		Name:     csrfCookieName,
 		Value:    token,
 		Path:     "/",
-		HttpOnly: false, // JS needs to read this for HTMX headers
+		HttpOnly: false,
 		SameSite: http.SameSiteStrictMode,
 		Secure:   isSecureRequest(r),
 	})

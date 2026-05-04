@@ -19,9 +19,9 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Yes |
 | [Biography exists](#biography-exists) | Metadata | Enabled, auto | Yes |
 | [Artist/ID mismatch](#artistid-mismatch) | Metadata | Disabled, manual | Detection-only |
-| [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Yes |
+| [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Sometimes |
 | [Metadata quality](#metadata-quality) | Metadata | Enabled, manual | Yes |
-| [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Yes |
+| [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Sometimes |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
@@ -32,7 +32,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Logo minimum width](#logo-minimum-width) | Image | Disabled, auto | Yes |
 | [Banner image exists](#banner-image-exists) | Image | Disabled, auto | Yes |
 | [Banner minimum resolution](#banner-minimum-resolution) | Image | Disabled, auto | Yes |
-| [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Yes |
+| [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Sometimes |
 | [No duplicate images](#no-duplicate-images) | Image | Disabled, auto | Detection-only |
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
@@ -113,6 +113,7 @@ Artist directory name should match the canonical artist name
 
 - Requires a local library path; skipped for pathless artists.
 - Rename is skipped if the target directory already exists to avoid clobbering another artist's folder.
+- Rename is skipped on shared-filesystem libraries to avoid collisions with the platform's own filesystem operations.
 
 ---
 

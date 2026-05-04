@@ -60,27 +60,44 @@ func TestRenderCatalogue_CategoryOrder(t *testing.T) {
 	}
 }
 
-// TestRenderCatalogue_FixableVsDetectionOnly checks that rules with non-empty
-// FixBehavior are marked "Yes" and detection-only rules are marked
-// "Detection-only".
+// TestRenderCatalogue_FixableVsDetectionOnly checks that the rendered "Fix"
+// section count matches the number of detection-only rules in the registry,
+// and that the at-a-glance table assigns the right "Fixable" label per rule.
+//
+// The previous form of this test only asserted that "No automated fix."
+// appeared anywhere in the output, which would silently pass if a fixable
+// rule regressed to detection-only as long as one detection-only rule still
+// rendered. Counting equality catches per-rule rendering regressions.
 func TestRenderCatalogue_FixableVsDetectionOnly(t *testing.T) {
-	got := renderCatalogue(rule.DefaultRules())
+	rules := rule.DefaultRules()
+	got := renderCatalogue(rules)
 
-	detectionOnly := []string{
-		rule.RuleArtistIDMismatch,
-		rule.RuleBackdropMinCount,
-		rule.RuleImageDuplicate,
+	wantDetectionOnly := 0
+	wantSometimes := 0
+	wantYes := 0
+	for _, r := range rules {
+		entry := rule.CatalogueEntry(r.ID)
+		switch {
+		case entry.FixBehavior == "":
+			wantDetectionOnly++
+		case entry.Conditional:
+			wantSometimes++
+		default:
+			wantYes++
+		}
 	}
-	for _, id := range detectionOnly {
-		entry := rule.CatalogueEntry(id)
-		if entry.FixBehavior != "" {
-			// Test assumption is wrong; skip.
-			continue
-		}
-		if !strings.Contains(got, "No automated fix.") {
-			t.Errorf("expected 'No automated fix.' somewhere in output for detection-only rules")
-			break
-		}
+
+	if c := strings.Count(got, "No automated fix."); c != wantDetectionOnly {
+		t.Errorf("rendered detection-only count = %d, want %d", c, wantDetectionOnly)
+	}
+	// "| Sometimes |" and "| Yes |" appear in the at-a-glance table only
+	// (one row per rule). Count both columns to verify the binary "any
+	// non-empty FixBehavior is Yes" regression cannot recur.
+	if c := strings.Count(got, "| Sometimes |"); c != wantSometimes {
+		t.Errorf("rendered Sometimes count = %d, want %d", c, wantSometimes)
+	}
+	if c := strings.Count(got, "| Yes |"); c != wantYes {
+		t.Errorf("rendered Yes count = %d, want %d", c, wantYes)
 	}
 }
 

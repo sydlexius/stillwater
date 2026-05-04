@@ -6,6 +6,11 @@ type RuleCatalogueEntry struct {
 	// FixBehavior describes what the automated fixer does.
 	// Empty string means no automated fix (detection-only).
 	FixBehavior string
+	// Conditional reports whether the fixer can refuse to act for some
+	// violations of this rule (e.g. shared-filesystem libraries, missing
+	// localized aliases, manual-only modes). When true the catalogue renders
+	// the rule as "Sometimes" rather than "Yes" in the at-a-glance table.
+	Conditional bool
 	// Caveats lists known limitations or gotchas. May be nil.
 	Caveats []string
 }
@@ -27,9 +32,11 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 	},
 	RuleDirectoryNameMismatch: {
 		FixBehavior: "Renames the directory on disk to match the canonical artist name.",
+		Conditional: true,
 		Caveats: []string{
 			"Requires a local library path; skipped for pathless artists.",
 			"Rename is skipped if the target directory already exists to avoid clobbering another artist's folder.",
+			"Rename is skipped on shared-filesystem libraries to avoid collisions with the platform's own filesystem operations.",
 		},
 	},
 	RuleArtistIDMismatch: {
@@ -37,6 +44,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 	},
 	RuleNameLanguagePref: {
 		FixBehavior: "Updates the artist's stored name to the preferred-language form when one is available from MusicBrainz.",
+		Conditional: true,
 		Caveats: []string{
 			"Only resolves when MusicBrainz returns a locale-specific alias; no change is made if no alias matches.",
 		},
@@ -82,6 +90,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 	},
 	RuleExtraneousImages: {
 		FixBehavior: "Deletes image files from the artist directory that do not match any recognized Stillwater filename pattern.",
+		Conditional: true,
 		Caveats: []string{
 			"Runs in manual mode only; never auto-deletes files.",
 		},

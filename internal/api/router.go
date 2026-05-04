@@ -600,7 +600,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		if req.URL.RawQuery != "" {
 			target = target + "?" + req.URL.RawQuery
 		}
-		http.Redirect(w, req, target, http.StatusMovedPermanently)
+		// gosec G710: target's path is server-controlled (r.basePath +
+		// /reports/compliance); only the query string is carried through from
+		// the request, which cannot redirect off-origin.
+		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
 	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity", wrapOptionalAuth(r.handleActivityPage, optAuthMw))
@@ -619,7 +622,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		if encoded := q.Encode(); encoded != "" {
 			target += "?" + encoded
 		}
-		http.Redirect(w, req, target, http.StatusMovedPermanently)
+		// gosec G710: path is server-built (r.basePath + /settings); query
+		// originates from the request but cannot redirect off-origin.
+		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the encoded query flows from req.
 	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/preferences", wrapOptionalAuth(r.handleUserPreferencesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))
