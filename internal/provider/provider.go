@@ -31,61 +31,104 @@ type ProviderCapability struct {
 	HelpURL         string         `json:"help_url,omitempty"`
 	RateLimit       *RateLimitInfo `json:"rate_limit,omitempty"`
 	SupportsBaseURL bool           `json:"supports_base_url,omitempty"`
+
+	// SupportedFields lists the ArtistMetadata fields this provider's GetArtist
+	// populates. Field names use the same JSON tag values as ArtistMetadata
+	// (lowercase snake_case); for example "biography", "sort_name", "genres".
+	// Used by cmd/gen-provider-matrix to render the docs capability matrix.
+	SupportedFields []string `json:"supported_fields,omitempty"`
+
+	// SupportedImages lists the image types this provider's GetImages can
+	// return, drawn from the ImageType constants below (ImageThumb, ImageFanart,
+	// ImageLogo, ImageHDLogo, ImageBanner, ImageWideThumb, ImageBackground).
+	// Typed as []ImageType so capability declarations cannot drift from the
+	// canonical set. Empty for metadata-only providers.
+	SupportedImages []ImageType `json:"supported_images,omitempty"`
 }
 
 // ProviderCapabilities returns the known capability metadata for each provider.
+//
+// SupportedFields and SupportedImages are static declarations of what each
+// provider's GetArtist and GetImages return. They are read by
+// cmd/gen-provider-matrix to render the docs capability matrix. When a provider
+// changes its coverage, update the declaration here and run `make generate-docs`.
 func ProviderCapabilities() map[ProviderName]ProviderCapability {
 	return map[ProviderName]ProviderCapability{
 		NameMusicBrainz: {
 			Tier:            TierFree,
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 1},
 			SupportsBaseURL: true,
+			SupportedFields: []string{
+				"name", "sort_name", "type", "gender", "disambiguation", "origin",
+				"born", "formed", "died", "disbanded", "years_active",
+				"genres", "styles", "moods", "members", "aliases",
+			},
 		},
 		NameFanartTV: {
-			Tier:      TierFreeKey,
-			HelpURL:   "https://fanart.tv/get-an-api-key/",
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 3},
+			Tier:            TierFreeKey,
+			HelpURL:         "https://fanart.tv/get-an-api-key/",
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 3},
+			SupportedImages: []ImageType{ImageThumb, ImageFanart, ImageLogo, ImageHDLogo, ImageBanner},
 		},
 		NameAudioDB: {
 			Tier:      TierFreemium,
 			HelpURL:   "https://www.theaudiodb.com/pricing",
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 0.5}, // free tier: 30 req/min
+			SupportedFields: []string{
+				"name", "gender", "origin", "biography",
+				"genres", "styles", "moods",
+				"born", "formed", "died", "disbanded", "aliases",
+			},
+			SupportedImages: []ImageType{ImageThumb, ImageLogo, ImageWideThumb, ImageBanner, ImageFanart},
 		},
 		NameDiscogs: {
-			Tier:      TierFreeKey,
-			HelpURL:   "https://www.discogs.com/settings/developers",
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 1, RequestsPerDay: 1000},
+			Tier:            TierFreeKey,
+			HelpURL:         "https://www.discogs.com/settings/developers",
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 1, RequestsPerDay: 1000},
+			SupportedFields: []string{"name", "biography", "aliases", "members"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 		NameLastFM: {
 			Tier:      TierFreeKey,
 			HelpURL:   "https://www.last.fm/api/account/create",
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{
+				"name", "biography", "genres", "styles", "moods", "similar_artists",
+			},
 		},
 		NameWikidata: {
-			Tier:      TierFree,
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			Tier:            TierFree,
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{"name", "formed", "disbanded", "origin", "genres"},
+			SupportedImages: []ImageType{ImageThumb, ImageLogo},
 		},
 		NameDuckDuckGo: {
 			Tier:      TierFree,
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 1},
 		},
 		NameDeezer: {
-			Tier:      TierFree,
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			Tier:            TierFree,
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{"name"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 		NameGenius: {
-			Tier:      TierFreeKey,
-			HelpURL:   "https://genius.com/api-clients",
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			Tier:            TierFreeKey,
+			HelpURL:         "https://genius.com/api-clients",
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{"name", "biography", "aliases"},
 		},
 		NameWikipedia: {
-			Tier:      TierFree,
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			Tier:            TierFree,
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{"name", "biography", "years_active", "origin", "genres", "members"},
 		},
 		NameSpotify: {
-			Tier:      TierPaid,
-			HelpURL:   "https://developer.spotify.com/dashboard",
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+			Tier:            TierPaid,
+			HelpURL:         "https://developer.spotify.com/dashboard",
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
+			SupportedFields: []string{"name", "genres"},
+			SupportedImages: []ImageType{ImageThumb},
 		},
 	}
 }

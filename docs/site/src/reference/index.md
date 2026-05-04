@@ -28,7 +28,7 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
     ---
 
-    The capability matrix (generated from the live registry), the fallback chain semantics, per-field aggregation, and the auth tiers.
+    The capability matrix (generated from the provider definitions in the codebase), the fallback chain semantics, per-field aggregation, and the auth tiers.
 
     [Read more](providers.md)
 
