@@ -143,6 +143,25 @@ func TestHandleFixAll_StartsJob(t *testing.T) {
 	if resp["total"] != float64(2) {
 		t.Errorf("total = %v, want 2", resp["total"])
 	}
+
+	// Wait for the background goroutine to finish so cleanup does not race
+	// with router-state mutations after the test returns.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		r.fixAllMu.RLock()
+		p := r.fixAllProgress
+		r.fixAllMu.RUnlock()
+		if p == nil {
+			break
+		}
+		p.mu.RLock()
+		done := p.Status == "completed"
+		p.mu.RUnlock()
+		if done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestHandleFixAll_NoFixable(t *testing.T) {

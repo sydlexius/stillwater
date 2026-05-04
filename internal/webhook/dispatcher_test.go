@@ -36,12 +36,14 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 
 	var mu sync.Mutex
 	var received map[string]any
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		defer mu.Unlock()
 		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
+		close(done)
 	}))
 	defer srv.Close()
 
@@ -63,7 +65,11 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 		Data:      map[string]any{"artists": float64(42)},
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -81,12 +87,14 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 
 	var mu sync.Mutex
 	var received map[string]any
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		defer mu.Unlock()
 		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
+		close(done)
 	}))
 	defer srv.Close()
 
@@ -108,7 +116,11 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 		Data:      map[string]any{"message": "Scan finished"},
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -234,10 +246,11 @@ func TestDispatcher_NoMatchingWebhooks(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcher(svc, logger)
-	// Should not panic or hang
+	// Should not panic or hang. No webhook matches ScanCompleted (the
+	// registered webhook listens for bulk.completed), so HandleEvent spawns
+	// no delivery goroutines and there is nothing to wait on.
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.ScanCompleted,
 		Timestamp: time.Now().UTC(),
 	})
-	time.Sleep(50 * time.Millisecond)
 }

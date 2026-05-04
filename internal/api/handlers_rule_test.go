@@ -331,11 +331,6 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 	t.Parallel()
 	blockCh := make(chan struct{})
-	// Register cleanup immediately so a later t.Fatalf cannot strand the
-	// blocked goroutine. Closing an already-closed channel panics, so this
-	// must only run once -- t.Cleanup is guaranteed to fire exactly once per
-	// registration and close(blockCh) at the bottom of the test is removed.
-	t.Cleanup(func() { close(blockCh) })
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
 			<-blockCh
@@ -347,6 +342,10 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 	r, _ := testRouterWithStubPipeline(t, &stub2.stubPipeline)
 	// Swap the pipeline to the blocking variant so handleRunAllRules waits.
 	r.pipeline = stub2
+	// Register the unblock AFTER router setup so LIFO cleanup releases the
+	// blocked goroutine before the router/DB are torn down. Closing an
+	// already-closed channel would panic, so this is the sole close site.
+	t.Cleanup(func() { close(blockCh) })
 
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
 	w1 := httptest.NewRecorder()
