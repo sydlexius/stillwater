@@ -89,10 +89,11 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 		FixBehavior: "",
 	},
 	RuleExtraneousImages: {
-		FixBehavior: "Deletes image files from the artist directory that do not match any recognized Stillwater filename pattern.",
+		FixBehavior: "Deletes image files in the artist directory that are not in the active platform profile's expected filenames; on shared-filesystem libraries the union of all configured profiles' filenames is used so files owned by another platform are preserved.",
 		Conditional: true,
 		Caveats: []string{
 			"Runs in manual mode only; never auto-deletes files.",
+			"Requires a configured platform profile; on shared-filesystem libraries the fix is skipped if no platform service is available.",
 		},
 	},
 	RuleImageDuplicate: {

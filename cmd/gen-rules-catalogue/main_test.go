@@ -102,12 +102,21 @@ func TestRenderCatalogue_FixableVsDetectionOnly(t *testing.T) {
 }
 
 // TestRenderCatalogue_FilesystemDependent verifies the filesystem-dependent
-// annotation appears for nfo_exists (the only rule in that set today).
+// annotation count matches the number of rules in DefaultRules() flagged with
+// FilesystemDependent: true. A loose Contains check would silently pass even
+// if the renderer dropped the annotation for some rules.
 func TestRenderCatalogue_FilesystemDependent(t *testing.T) {
-	got := renderCatalogue(rule.DefaultRules())
+	rules := rule.DefaultRules()
+	got := renderCatalogue(rules)
 
-	if !strings.Contains(got, "Filesystem-dependent:** Yes") {
-		t.Error("expected filesystem-dependent annotation in output")
+	want := 0
+	for _, r := range rules {
+		if r.FilesystemDependent {
+			want++
+		}
+	}
+	if c := strings.Count(got, "Filesystem-dependent:** Yes"); c != want {
+		t.Errorf("filesystem-dependent annotation count = %d, want %d", c, want)
 	}
 }
 
@@ -150,8 +159,8 @@ func TestRenderCatalogue_FixtureSingleRule(t *testing.T) {
 	if !strings.Contains(got, "No automated fix.") {
 		t.Error("expected detection-only fix text")
 	}
-	if !strings.Contains(got, "100") {
-		t.Error("expected resolution value in configurable block")
+	if !strings.Contains(got, "Minimum resolution (default 100 &times; 100 px)") {
+		t.Error("expected exact minimum resolution line in configurable block")
 	}
 }
 
