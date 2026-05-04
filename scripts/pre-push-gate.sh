@@ -80,10 +80,16 @@ echo "=== Patch coverage ==="
 # this script's silent HEAD~1 fallback. Letting the child resolve BASE
 # avoids narrowing patch coverage to only the tip commit on a branch
 # whose base ref isn't reachable.
-PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
+# Prefer the repo-vendored helper so a fresh clone works without any
+# user-local install. Fall back to ~/.claude/scripts/patch-coverage.sh only
+# if the repo copy is missing (e.g. mid-rebase against a commit that
+# pre-dates the vendoring).
+PATCH_COVERAGE_HELPER="$SCRIPT_DIR/patch-coverage.sh"
 if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
-  echo "pre-push-gate: missing $PATCH_COVERAGE_HELPER" >&2
-  echo "Install the user-level helpers (see CLAUDE.md Helper Scripts) before running this gate." >&2
+  PATCH_COVERAGE_HELPER="$HOME/.claude/scripts/patch-coverage.sh"
+fi
+if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
+  echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
   exit 1
 fi
 if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \

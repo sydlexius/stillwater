@@ -1,6 +1,9 @@
 # Binary (root level only)
 /stillwater
 /stillwater.exe
+/gen-rules-catalogue
+/gen-env-reference
+/gen-provider-matrix
 
 # Standalone tool binaries
 /tailwindcss

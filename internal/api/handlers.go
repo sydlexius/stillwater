@@ -374,7 +374,9 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 		rawReturn = validateReturnURL(c.Value)
 		// Clear the cookie after use. Match the Secure/SameSite attributes from
 		// the original cookie set in handleOIDCLogin so browsers delete it.
-		http.SetCookie(w, &http.Cookie{
+		// gosec G124 wants Secure=true literal; we derive it from request scheme
+		// so plain-HTTP dev installs still work. HttpOnly/SameSite are set.
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
 			Name:     "oidc_return",
 			Value:    "",
 			Path:     "/",
@@ -540,7 +542,9 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 
 // setSessionCookie writes the Stillwater session cookie to the response.
 func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, token string) {
-	http.SetCookie(w, &http.Cookie{
+	// gosec G124 wants Secure=true literal; we derive it from request scheme
+	// so plain-HTTP dev installs still work behind a TLS-terminating proxy.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
 		Name:     "session",
 		Value:    token,
 		Path:     "/",
@@ -749,11 +753,14 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	// Logout clears the session cookie. Match the SameSite/Secure attributes
+	// used in setSessionCookie so browsers reliably overwrite the original.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
 		Name:     "session",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 		Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		MaxAge:   -1,
 	})

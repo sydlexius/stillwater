@@ -44,6 +44,9 @@ linters:
           - gosec
           - errcheck
           - noctx
+      - text: "catalogue.*is a misspelling"
+        linters:
+          - misspell
 
 formatters:
   enable:

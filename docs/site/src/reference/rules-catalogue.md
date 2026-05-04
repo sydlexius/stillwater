@@ -10,6 +10,7 @@ Stillwater ships with 22 built-in rules across three categories: NFO, image, and
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
+<!-- BEGIN GENERATED: rules-catalogue -->
 ## At a glance
 
 | Rule | Category | Default | Fixable |
@@ -17,25 +18,25 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [NFO file exists](#nfo-file-exists) | NFO | Enabled, auto | Yes |
 | [NFO has MusicBrainz ID](#nfo-has-musicbrainz-id) | NFO | Enabled, auto | Yes |
 | [Biography exists](#biography-exists) | Metadata | Enabled, auto | Yes |
-| [Metadata quality](#metadata-quality) | Metadata | Enabled, manual | Yes |
-| [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Yes |
 | [Artist/ID mismatch](#artistid-mismatch) | Metadata | Disabled, manual | Detection-only |
+| [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Sometimes |
+| [Metadata quality](#metadata-quality) | Metadata | Enabled, manual | Yes |
 | [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Sometimes |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
 | [Fanart image exists](#fanart-image-exists) | Image | Enabled, auto | Yes |
+| [Logo image exists](#logo-image-exists) | Image | Enabled, auto | Yes |
 | [Fanart minimum resolution](#fanart-minimum-resolution) | Image | Disabled, auto | Yes |
 | [Fanart aspect ratio](#fanart-aspect-ratio) | Image | Disabled, auto | Yes |
-| [Logo image exists](#logo-image-exists) | Image | Enabled, auto | Yes |
 | [Logo minimum width](#logo-minimum-width) | Image | Disabled, auto | Yes |
-| [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
 | [Banner image exists](#banner-image-exists) | Image | Disabled, auto | Yes |
 | [Banner minimum resolution](#banner-minimum-resolution) | Image | Disabled, auto | Yes |
+| [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Sometimes |
+| [No duplicate images](#no-duplicate-images) | Image | Disabled, auto | Detection-only |
 | [Backdrop/fanart sequencing](#backdropfanart-sequencing) | Image | Disabled, manual | Yes |
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
-| [Extraneous image files](#extraneous-image-files) | Image | Enabled, manual | Yes |
-| [No duplicate images](#no-duplicate-images) | Image | Disabled, auto | Detection-only |
+| [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
 
 A rule marked **Detection-only** has no automated fix; you resolve the violations manually (or by adding artwork that satisfies the check).
 
@@ -45,248 +46,313 @@ A rule marked **Detection-only** has no automated fix; you resolve the violation
 
 **Category:** NFO &middot; **Default:** Enabled, auto &middot; **Severity:** error &middot; **Filesystem-dependent:** Yes
 
-Checks that an artist directory contains an `artist.nfo` file. This is the only rule that fundamentally cannot work without local file access -- it's automatically skipped for pathless artists.
+Artist directory must contain an artist.nfo file
 
 **Fix:** Generates an NFO from the artist's stored metadata and writes it to disk.
 
 **Configurable:** Severity only.
 
+---
+
 ## NFO has MusicBrainz ID
 
 **Category:** NFO &middot; **Default:** Enabled, auto &middot; **Severity:** error
 
-Checks that the artist's NFO contains a MusicBrainz artist ID. The MBID is the linchpin for cross-provider correlation -- many providers can be queried by MBID directly, and IDs from other providers are often discovered via MBID-keyed responses.
+The artist.nfo file must contain a MusicBrainz artist ID
 
 **Fix:** Asks providers (MusicBrainz first, then any provider whose response carries an MBID reference) for the artist's MBID and writes it to the NFO.
 
 **Configurable:** Severity only.
 
+---
+
 ## Biography exists
 
 **Category:** Metadata &middot; **Default:** Enabled, auto &middot; **Severity:** warning
 
-Checks that the artist has a biography of at least the minimum length.
+Artist must have a biography populated
 
-**Fix:** Fetches a biography from providers (Last.fm, Wikipedia, AudioDB, etc., per your priority) and saves it.
+**Fix:** Fetches a biography from providers (Last.fm, Wikipedia, TheAudioDB, etc., per your priority order) and saves it to the artist record.
 
 **Configurable:**
 
-- **Minimum length** (default 10 characters). Tune up if you'd like to enforce more substantive bios.
+- Minimum biography length (default 10 characters)
+- Severity (default: warning)
 
-## Metadata quality
+---
 
-**Category:** Metadata &middot; **Default:** Enabled, manual &middot; **Severity:** warning
+## Artist/ID mismatch
 
-Detects placeholder or junk metadata values -- a biography of just `?` or `N/A`, a sort name that's identical to a clearly-low-effort autofill, etc.
+**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning
 
-**Fix:** Clears the junk value and re-fetches from providers.
+Detects when an artist's filesystem folder name differs from their stored metadata name. Uses fuzzy matching to allow minor variations while flagging significant divergences.
 
-**Configurable:** Severity only.
+**Fix:** No automated fix.
+
+**Configurable:**
+
+- Tolerance (default 0.80)
+- Severity (default: warning)
+
+---
 
 ## Directory name matches artist
 
 **Category:** Metadata &middot; **Default:** Enabled, manual &middot; **Severity:** warning
 
-Checks that the artist's directory name on disk matches the canonical artist name. Useful when a manual rename in the file browser desynchronizes the directory from Stillwater's record.
+Artist directory name should match the canonical artist name
 
-**Fix:** Renames the directory to match the canonical name.
-
-**Configurable:**
-
-- **Article handling** -- how to treat leading articles ("The", "A") when comparing names. Choices: **Prefix** (default; "The Beatles" stays "The Beatles"), **Suffix** ("Beatles, The"), **Strip** ("Beatles"). Set to match how your media platform sorts.
-
-## Artist/ID mismatch
-
-**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning &middot; **Detection-only**
-
-Detects when an artist's filesystem folder name differs significantly from their stored metadata name. Uses fuzzy matching to allow minor variations while flagging real divergences.
-
-**No automated fix.** Resolution is manual: rename the directory, edit the artist's name, or dismiss the violation.
+**Fix:** Renames the directory on disk to match the canonical artist name.
 
 **Configurable:**
 
-- **Tolerance** (default 0.8). Higher values (closer to 1.0) only flag near-perfect mismatches; lower values flag more aggressively.
+- Article handling (default: prefix)
+- Severity (default: warning)
+
+**Caveats:**
+
+- Requires a local library path; skipped for pathless artists.
+- Rename is skipped if the target directory already exists to avoid clobbering another artist's folder.
+- Rename is skipped on shared-filesystem libraries to avoid collisions with the platform's own filesystem operations.
+
+---
+
+## Metadata quality
+
+**Category:** Metadata &middot; **Default:** Enabled, manual &middot; **Severity:** warning
+
+Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.
+
+**Fix:** Clears the junk value and re-fetches from providers.
+
+**Configurable:** Severity only.
+
+---
 
 ## Artist name matches preferred language
 
 **Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** warning
 
-Flags artists whose stored Name or Sort Name does not match your preferred metadata languages (configured under Settings > Metadata).
+Flags artists whose stored Name or SortName does not match the user's preferred metadata languages. When MusicBrainz provides a preferred-locale alias, the violation is fixable and Fix/auto mode can promote it; otherwise the violation is informational and can be edited manually or dismissed.
 
-**Fix:** When MusicBrainz provides a preferred-locale alias for the artist, the violation is fixable -- the fixer promotes that alias to primary. Otherwise the violation is informational and you handle it manually (edit the name) or dismiss it.
+**Fix:** Updates the artist's stored name to the preferred-language form when one is available from MusicBrainz.
 
-**Configurable:** Severity only. The preferred-language list lives in the Metadata settings, not the rule itself.
+**Configurable:** Severity only.
+
+**Caveats:**
+
+- Only resolves when MusicBrainz returns a locale-specific alias; no change is made if no alias matches.
+
+---
 
 ## Thumbnail image exists
 
 **Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** error
 
-Checks that the artist has a thumbnail image (`folder.jpg`, `artist.jpg`, `poster.jpg`, etc.).
+Artist directory must contain a thumbnail image (folder.jpg/png)
 
-**Fix:** Fetches a thumbnail from providers in priority order and saves it to disk.
+**Fix:** Downloads a thumbnail image from configured providers (in priority order) and writes it to the artist directory.
 
 **Configurable:** Severity only.
+
+---
 
 ## Thumbnail is square
 
 **Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** warning
 
-Checks that the thumbnail is approximately square (1:1 aspect ratio). Note: this rule does *not* crop the existing image -- it fetches a square replacement from providers.
+Thumbnail must be approximately square (1:1 ratio). Violations are fixed by fetching a square replacement from providers; the existing image is not cropped.
 
-**Fix:** Searches providers for a thumbnail that meets the aspect-ratio requirement.
+**Fix:** Fetches a square replacement thumbnail from providers; the existing non-square image is replaced, not cropped.
 
 **Configurable:**
 
-- **Aspect ratio** (default 1.0)
-- **Tolerance** (default 0.1, meaning the actual ratio must be within +/- 10% of square)
+- Aspect ratio (default 1, tolerance &plusmn;10%)
+- Severity (default: warning)
+
+---
 
 ## Thumbnail minimum resolution
 
 **Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** warning
 
-Checks that the thumbnail meets the minimum resolution.
+Thumbnail must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.
 
-**Fix:** Fetches a higher-resolution replacement from providers.
+**Fix:** Fetches a higher-resolution thumbnail from providers and replaces the undersized image.
 
 **Configurable:**
 
-- **Minimum width** (default 500)
-- **Minimum height** (default 500)
+- Minimum resolution (default 500 &times; 500 px)
+- Severity (default: warning)
+
+---
 
 ## Fanart image exists
 
 **Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** warning
 
-Checks that the artist has at least one fanart/backdrop image.
+Artist directory must contain a fanart/backdrop image
 
-**Fix:** Fetches a fanart from providers (Fanart.tv has the strongest catalogue) and saves it.
+**Fix:** Downloads a fanart/backdrop image from configured providers and writes it to the artist directory.
 
 **Configurable:** Severity only.
 
-## Fanart minimum resolution
-
-**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** warning
-
-Checks that the fanart meets the minimum resolution. Disabled by default because the threshold is high (1080p) -- enable when you've confirmed your providers can deliver at this quality.
-
-**Fix:** Fetches a higher-resolution replacement; existing image is not upscaled.
-
-**Configurable:**
-
-- **Minimum width** (default 1920)
-- **Minimum height** (default 1080)
-
-## Fanart aspect ratio
-
-**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** info
-
-Flags fanart whose aspect ratio diverges from 16:9. Like the thumbnail-square rule, it does not crop the existing image -- it fetches a correctly-proportioned replacement.
-
-**Fix:** Searches providers for a fanart matching the target aspect.
-
-**Configurable:**
-
-- **Aspect ratio** (default 16:9)
-- **Tolerance** (default 0.1)
+---
 
 ## Logo image exists
 
 **Category:** Image &middot; **Default:** Enabled, auto &middot; **Severity:** info
 
-Checks that the artist has a `logo.png`.
+Artist directory must contain a logo image (logo.png)
 
-**Fix:** Fetches a logo from providers.
+**Fix:** Downloads a logo image from configured providers and writes it to the artist directory.
 
 **Configurable:** Severity only.
+
+---
+
+## Fanart minimum resolution
+
+**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** warning
+
+Fanart/backdrop must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.
+
+**Fix:** Fetches a higher-resolution fanart image from providers and replaces the undersized file.
+
+**Configurable:**
+
+- Minimum resolution (default 1920 &times; 1080 px)
+- Severity (default: warning)
+
+---
+
+## Fanart aspect ratio
+
+**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** info
+
+Fanart/backdrop should match the target aspect ratio. Violations are fixed by fetching a correctly-proportioned replacement from providers; the existing image is not cropped.
+
+**Fix:** Fetches a replacement fanart image with the correct aspect ratio from providers.
+
+**Configurable:**
+
+- Aspect ratio (default 1.778, tolerance &plusmn;10%)
+- Severity (default: info)
+
+---
 
 ## Logo minimum width
 
 **Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** info
 
-Checks that the logo meets a minimum width for legibility at the sizes platforms render it.
+Logo should meet the minimum width for legibility. Violations are fixed by fetching a higher-resolution logo from providers.
 
-**Fix:** Fetches a higher-resolution logo from providers.
-
-**Configurable:**
-
-- **Minimum width** (default 400)
-
-## Logo excessive padding
-
-**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** info
-
-Detects logo images where excessive transparent (PNG) or whitespace (JPG) padding surrounds the artwork. When the padding area exceeds the configured percentage of the total image area, a violation is raised. Replaces the older `logo_trimmable` rule.
-
-**Fix:** Trims the logo to its content bounds, leaving a configurable margin.
+**Fix:** Fetches a higher-resolution logo from providers and replaces the undersized file.
 
 **Configurable:**
 
-- **Padding threshold** (default 15% of image area)
-- **Trim margin** (default 2 pixels of padding to keep after trimming)
+- Minimum width (default 400 px)
+- Severity (default: info)
+
+---
 
 ## Banner image exists
 
 **Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** info
 
-Checks that the artist has a banner image. Disabled by default because banners are an optional asset on most platforms.
+Artist directory should contain a banner image
 
-**Fix:** Fetches a banner from providers.
+**Fix:** Downloads a banner image from configured providers and writes it to the artist directory.
 
 **Configurable:** Severity only.
+
+---
 
 ## Banner minimum resolution
 
 **Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** info
 
-Checks that the banner meets the minimum resolution.
+Banner must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.
 
-**Fix:** Fetches a higher-resolution replacement.
-
-**Configurable:**
-
-- **Minimum width** (default 1000)
-- **Minimum height** (default 185)
-
-## Backdrop/fanart sequencing
-
-**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning
-
-Detects gaps and incorrect numbering in multi-fanart sequences (e.g. `fanart.jpg`, `fanart3.jpg`, with no `fanart2.jpg`).
-
-**Fix:** Renames files to fill gaps and use the correct numbering for the platform profile.
-
-**Configurable:** Severity only.
-
-## Minimum backdrop count
-
-**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning &middot; **Detection-only**
-
-Flags artists with fewer fanart variants than you'd like.
-
-**No single-click fix.** Resolution requires uploading more fanart (manually or via repeated provider fetches) until the count is satisfied.
+**Fix:** Fetches a higher-resolution banner from providers and replaces the undersized file.
 
 **Configurable:**
 
-- **Minimum count** (default 1; raise to require more variants)
+- Minimum resolution (default 1000 &times; 185 px)
+- Severity (default: info)
+
+---
 
 ## Extraneous image files
 
 **Category:** Image &middot; **Default:** Enabled, manual &middot; **Severity:** warning
 
-Flags image files in artist directories that don't match the canonical filenames configured in the active platform profile. Extras can cause duplicate or incorrect artwork on media servers.
+Flags image files that do not match filenames configured in the active platform profile. Extra files can cause duplicate or incorrect artwork on media servers. Auto-fix deletes them; manual mode lets you review changes first.
 
-**Fix:** Deletes the extraneous files. Default is **manual** mode -- you review each one before deletion. Switch to auto only when you're confident the platform profile matches your library.
+**Fix:** Deletes image files in the artist directory that are not in the active platform profile's expected filenames; on shared-filesystem libraries the union of all configured profiles' filenames is used so files owned by another platform are preserved.
 
 **Configurable:** Severity only.
 
+**Caveats:**
+
+- Runs in manual mode only; never auto-deletes files.
+- Requires a configured platform profile; on shared-filesystem libraries the fix is skipped if no platform service is available.
+
+---
+
 ## No duplicate images
 
-**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** warning &middot; **Detection-only**
+**Category:** Image &middot; **Default:** Disabled, auto &middot; **Severity:** warning
 
-Detects when different image slots (thumb vs fanart vs logo vs banner) contain visually similar images -- e.g. someone uploaded the same square portrait as both thumb and logo.
+Different image slots should not contain visually similar images (default threshold: 90%)
 
-**No automated fix.** Resolution: replace one of the slots with a different image, or accept the duplication and dismiss.
+**Fix:** No automated fix.
 
 **Configurable:**
 
-- **Similarity tolerance** (default 0.90 = 90% similar)
+- Tolerance (default 0.90)
+- Severity (default: warning)
+
+---
+
+## Backdrop/fanart sequencing
+
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning
+
+Detects gaps in backdrop/fanart image sequences and incorrect numbering. Violations are fixed by renaming files to fill gaps.
+
+**Fix:** Renames backdrop/fanart files to the canonical sequencing pattern (fanart.jpg, fanart1.jpg, fanart2.jpg ...).
+
+**Configurable:** Severity only.
+
+---
+
+## Minimum backdrop count
+
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** warning
+
+Flags artists with fewer backdrops than the configured minimum. This rule is detection-only; resolving violations requires manual upload or multiple evaluation passes.
+
+**Fix:** No automated fix.
+
+**Configurable:**
+
+- Minimum backdrop count (default 1)
+- Severity (default: warning)
+
+---
+
+## Logo excessive padding
+
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** info
+
+Detects logo images where excessive transparent (PNG) or whitespace (JPG) padding surrounds the content. If the padding area exceeds the configured threshold (default 15%) of the total image area, a violation is raised. Auto-fix trims to content bounds with a configurable margin. Replaces the former logo_trimmable rule.
+
+**Fix:** Crops the excess transparent or whitespace border from the logo image and writes the trimmed version in place.
+
+**Configurable:**
+
+- Padding threshold (default 15% of image area)
+- Trim margin (default 2 px)
+- Severity (default: info)
+<!-- END GENERATED: rules-catalogue -->

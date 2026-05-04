@@ -73,10 +73,11 @@ tailwind:
 ## generate: Run all code generation (templ + tailwind)
 generate: templ tailwind
 
-## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference)
+## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference, rules catalogue)
 generate-docs:
 	go run ./cmd/gen-provider-matrix
 	go run ./cmd/gen-env-reference
+	go run ./cmd/gen-rules-catalogue
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:
@@ -111,11 +112,13 @@ docker-stop:
 check-openapi:
 	go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
-## hooks: Install git pre-commit hook (mirrors CI lint checks)
+## hooks: Install git hooks (pre-commit lint, pre-push gate)
 hooks:
-	cp .githooks/pre-commit .git/hooks/pre-commit
-	chmod +x .git/hooks/pre-commit
-	@echo "Pre-commit hook installed."
+	chmod +x .githooks/pre-commit .githooks/pre-push
+	git config core.hooksPath .githooks
+	@echo "Hooks installed via core.hooksPath=.githooks (covers worktrees)."
+	@echo "  pre-commit: lint, gofmt, templ freshness, build, golangci-lint, govulncheck, hadolint"
+	@echo "  pre-push:   runs scripts/pre-push-gate.sh (tests, OpenAPI, generated, patch coverage >= 70%)"
 
 ## clean: Remove build artifacts
 clean:

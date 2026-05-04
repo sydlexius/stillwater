@@ -42,4 +42,13 @@ if [ -f docs/site/src/reference/environment-variables.md ]; then
   fi
 fi
 
+# Verify the rules catalogue is in sync with the built-in rule definitions.
+# Skip silently if the docs file is absent (e.g., a docs-stripped checkout).
+if [ -f docs/site/src/reference/rules-catalogue.md ]; then
+  if ! go run ./cmd/gen-rules-catalogue -check; then
+    echo "ERROR: docs/site/src/reference/rules-catalogue.md is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"

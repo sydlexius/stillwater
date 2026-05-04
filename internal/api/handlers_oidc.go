@@ -56,7 +56,9 @@ func (r *Router) handleOIDCLogin(w http.ResponseWriter, req *http.Request) {
 	// generous for an interactive login flow.
 	isSecure := req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https"
 	cookieOpts := func(name, value string) *http.Cookie {
-		return &http.Cookie{
+		// gosec G124: Secure derived from request scheme so plain-HTTP dev
+		// installs work behind a TLS-terminating proxy. HttpOnly+SameSite set.
+		return &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
 			Name:     name,
 			Value:    value,
 			Path:     "/",
@@ -151,7 +153,9 @@ func (r *Router) handleOIDCCallback(w http.ResponseWriter, req *http.Request) {
 	// Clear the OIDC cookies now that we have consumed them.
 	isSecure := req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https"
 	for _, name := range []string{"oidc_state", "oidc_nonce", "oidc_verifier", "oidc_invite"} {
-		http.SetCookie(w, &http.Cookie{
+		// gosec G124: Secure derived from request scheme so plain-HTTP dev
+		// installs still clear the cookie. HttpOnly+SameSite set explicitly.
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure derived from request scheme; HttpOnly+SameSite set explicitly.
 			Name:     name,
 			Value:    "",
 			Path:     "/",
