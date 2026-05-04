@@ -727,7 +727,7 @@ func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, c
 					ruleCache[rid] = fetched
 					r = fetched
 				}
-				if r.Category == categoryFilter {
+				if string(r.Category) == categoryFilter {
 					allowedIDs[rid] = struct{}{}
 				}
 			}

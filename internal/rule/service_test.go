@@ -1221,7 +1221,7 @@ func TestList_OrderedByCategoryAndName(t *testing.T) {
 
 	// Verify ordering: image rules first, then metadata, then nfo
 	// (alphabetical by category, then by name within category)
-	prevCategory := ""
+	var prevCategory RuleCategory
 	prevName := ""
 	for _, r := range rules {
 		if r.Category < prevCategory {

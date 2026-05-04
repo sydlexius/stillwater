@@ -159,7 +159,7 @@ func settingsTabs() []settingsTab {
 func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
 	var result []rule.Rule
 	for _, r := range rules {
-		if r.Category == category {
+		if string(r.Category) == category {
 			result = append(result, r)
 		}
 	}

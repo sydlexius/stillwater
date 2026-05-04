@@ -20,3 +20,6 @@ fpr = "fpr"  # FieldProviderResult in internal/provider/orchestrator.go
 # recognizes. Without this allowlist, typos rewrites it to ".into.jsonl" and
 # silently breaks Scorecard provenance detection.
 intoto = "intoto"
+# "catalogue" is British English, used consistently in doc filenames and prose
+# (rules-catalogue.md, provider catalogue, etc.).
+catalogue = "catalogue"
