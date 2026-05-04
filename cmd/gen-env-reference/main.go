@@ -107,6 +107,16 @@ func collectRows(t reflect.Type) ([]envRow, error) {
 	if err := walkStruct(t, &rows); err != nil {
 		return nil, err
 	}
+	// Codegen is the only place that enforces the env-tag schema, so a
+	// duplicate env: tag must fail loudly here rather than silently emit two
+	// table rows with the same Variable name.
+	seen := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		if _, exists := seen[r.Name]; exists {
+			return nil, fmt.Errorf("duplicate env tag %q: each environment variable must be defined once", r.Name)
+		}
+		seen[r.Name] = struct{}{}
+	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, nil
 }

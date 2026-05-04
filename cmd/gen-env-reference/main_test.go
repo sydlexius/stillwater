@@ -32,6 +32,13 @@ type fixtureMissingDesc struct {
 	Port int `env:"FX_PORT" default:"1"`
 }
 
+// fixtureDuplicateEnv has two fields tagged with the same env name; collectRows
+// must reject it so the docs page never ships two rows for the same variable.
+type fixtureDuplicateEnv struct {
+	A int `env:"FX_DUPE" default:"1" desc:"First."`
+	B int `env:"FX_DUPE" default:"2" desc:"Second."`
+}
+
 func TestCollectRows_Fixture(t *testing.T) {
 	rows, err := collectRows(reflect.TypeOf(fixtureGood{}))
 	if err != nil {
@@ -85,6 +92,19 @@ func TestCollectRows_MissingDescIsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "FX_PORT") {
 		t.Errorf("error should name the offending env var; got %v", err)
+	}
+}
+
+func TestCollectRows_RejectsDuplicateEnvTag(t *testing.T) {
+	_, err := collectRows(reflect.TypeOf(fixtureDuplicateEnv{}))
+	if err == nil {
+		t.Fatal("expected error when two fields share an env tag")
+	}
+	if !strings.Contains(err.Error(), "FX_DUPE") {
+		t.Errorf("error should name the duplicated env var; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error should say 'duplicate'; got %v", err)
 	}
 }
 
