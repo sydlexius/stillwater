@@ -145,22 +145,30 @@ func TestHandleFixAll_StartsJob(t *testing.T) {
 	}
 
 	// Wait for the background goroutine to finish so cleanup does not race
-	// with router-state mutations after the test returns.
+	// with router-state mutations after the test returns. Fail loudly if the
+	// worker never settles -- a silent timeout would reintroduce the very
+	// flake this wait is meant to remove.
 	deadline := time.Now().Add(5 * time.Second)
+	settled := false
 	for time.Now().Before(deadline) {
 		r.fixAllMu.RLock()
 		p := r.fixAllProgress
 		r.fixAllMu.RUnlock()
 		if p == nil {
+			settled = true
 			break
 		}
 		p.mu.RLock()
 		done := p.Status == "completed"
 		p.mu.RUnlock()
 		if done {
+			settled = true
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if !settled {
+		t.Fatal("timed out waiting for fix-all background job to finish")
 	}
 }
 

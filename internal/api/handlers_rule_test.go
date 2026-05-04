@@ -188,15 +188,24 @@ func TestHandleRunRule_Returns202(t *testing.T) {
 func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 	t.Parallel()
 	// Use a blocking stub so the first run stays in-progress until we release it.
+	// doneCh is closed by the stub once RunRule has been invoked, so cleanup
+	// can join the handler goroutine after closing blockCh -- closing alone
+	// only unblocks the stub, it does not wait for the handler's post-run
+	// processing to finish before the router/DB tear down.
 	blockCh := make(chan struct{})
-	t.Cleanup(func() { close(blockCh) })
+	doneCh := make(chan struct{})
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
+			defer close(doneCh)
 			<-blockCh
 			return &rule.RunResult{}, nil
 		},
 	}
 	r, _ := testRouterWithStubPipeline(t, stub)
+	t.Cleanup(func() {
+		close(blockCh)
+		<-doneCh
+	})
 
 	rules, err := r.ruleService.List(context.Background())
 	if err != nil || len(rules) == 0 {
@@ -331,6 +340,7 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 	t.Parallel()
 	blockCh := make(chan struct{})
+	doneCh := make(chan struct{})
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
 			<-blockCh
@@ -338,14 +348,20 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 		},
 	}
 	// Wrap RunAllScoped too so the goroutine blocks instead of returning fast.
-	stub2 := &blockingStubPipeline{stubPipeline: *stub, block: blockCh}
+	// done is closed inside RunAllScoped (via defer) so cleanup can join the
+	// background goroutine after unblocking it.
+	stub2 := &blockingStubPipeline{stubPipeline: *stub, block: blockCh, done: doneCh}
 	r, _ := testRouterWithStubPipeline(t, &stub2.stubPipeline)
 	// Swap the pipeline to the blocking variant so handleRunAllRules waits.
 	r.pipeline = stub2
 	// Register the unblock AFTER router setup so LIFO cleanup releases the
-	// blocked goroutine before the router/DB are torn down. Closing an
-	// already-closed channel would panic, so this is the sole close site.
-	t.Cleanup(func() { close(blockCh) })
+	// blocked goroutine before the router/DB are torn down. Closing alone is
+	// not enough -- we must also wait for the handler goroutine to finish so
+	// it cannot mutate router state after teardown.
+	t.Cleanup(func() {
+		close(blockCh)
+		<-doneCh
+	})
 
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
 	w1 := httptest.NewRecorder()
@@ -363,13 +379,17 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 }
 
 // blockingStubPipeline wraps stubPipeline with a RunAllScoped that blocks on a
-// channel until the test releases it. Used by the 409 test above.
+// channel until the test releases it. Used by the 409 test above. The done
+// channel is closed when RunAllScoped returns so the test can join the
+// background goroutine before tearing down router/DB state.
 type blockingStubPipeline struct {
 	stubPipeline
 	block chan struct{}
+	done  chan struct{}
 }
 
 func (b *blockingStubPipeline) RunAllScoped(_ context.Context, _ rule.RunScope) (*rule.RunResult, error) {
+	defer close(b.done)
 	<-b.block
 	return &rule.RunResult{}, nil
 }
