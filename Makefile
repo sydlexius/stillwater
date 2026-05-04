@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan
 
 # Binary name
 BINARY=stillwater
@@ -33,6 +33,10 @@ dev:
 ## test: Run all tests
 test:
 	go test -v -race -count=1 ./...
+
+## test-shuffle: Run tests with random ordering to surface order-dependent tests (local hygiene; reproduce a failure with -shuffle=<seed>)
+test-shuffle:
+	go test -race -count=1 -shuffle=on ./...
 
 ## test-race: Run tests with race detector via WSL2 (requires WSL2 with Go and GCC installed)
 test-race:

@@ -12,6 +12,23 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
+// waitOrFail blocks until wg signals done or the timeout fires. Tests use
+// this to join handler goroutines deterministically -- a fixed time.Sleep
+// would either under-wait (flake) or over-wait (slow).
+func waitOrFail(t *testing.T, wg *sync.WaitGroup, msg string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal(msg)
+	}
+}
+
 func TestPublishSubscribe(t *testing.T) {
 	bus := NewBus(testLogger(), 16)
 	go bus.Start()
@@ -19,8 +36,11 @@ func TestPublishSubscribe(t *testing.T) {
 
 	var mu sync.Mutex
 	var received []Event
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	bus.Subscribe(ScanCompleted, func(e Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		received = append(received, e)
@@ -31,8 +51,7 @@ func TestPublishSubscribe(t *testing.T) {
 		Data: map[string]any{"artists": 42},
 	})
 
-	// Give the goroutine time to process
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "handler not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -54,9 +73,12 @@ func TestMultipleSubscribers(t *testing.T) {
 
 	var mu sync.Mutex
 	count := 0
+	var wg sync.WaitGroup
+	wg.Add(3)
 
 	for range 3 {
 		bus.Subscribe(BulkCompleted, func(_ Event) {
+			defer wg.Done()
 			mu.Lock()
 			defer mu.Unlock()
 			count++
@@ -64,7 +86,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	bus.Publish(Event{Type: BulkCompleted})
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "all 3 handlers not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -78,9 +100,20 @@ func TestNoSubscribers(t *testing.T) {
 	go bus.Start()
 	defer bus.Stop()
 
-	// Should not panic
-	bus.Publish(Event{Type: ArtistNew})
-	time.Sleep(50 * time.Millisecond)
+	// Publish must not panic and must not stall the dispatch loop when no
+	// subscribers are registered for the event type. Subscribe a sentinel
+	// handler on a *different* event type and publish that immediately
+	// after; events are processed in order, so the sentinel firing proves
+	// the dispatcher consumed the no-subscriber event without panicking
+	// or wedging.
+	var sentinel sync.WaitGroup
+	sentinel.Add(1)
+	bus.Subscribe(BulkCompleted, func(_ Event) { sentinel.Done() })
+
+	bus.Publish(Event{Type: ArtistNew}) // no subscribers
+	bus.Publish(Event{Type: BulkCompleted})
+
+	waitOrFail(t, &sentinel, "dispatcher did not process events past the no-subscriber publish within 1s")
 }
 
 func TestBufferFull(t *testing.T) {
@@ -101,18 +134,24 @@ func TestHandlerPanicRecovery(t *testing.T) {
 
 	var mu sync.Mutex
 	secondCalled := false
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	bus.Subscribe(MetadataFixed, func(_ Event) {
+		// The bus must still call wg.Done() for this handler even though
+		// it panics; the bus's recover() path is what we are testing.
+		defer wg.Done()
 		panic("test panic")
 	})
 	bus.Subscribe(MetadataFixed, func(_ Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		secondCalled = true
 	})
 
 	bus.Publish(Event{Type: MetadataFixed})
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "both handlers not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -122,29 +161,52 @@ func TestHandlerPanicRecovery(t *testing.T) {
 }
 
 func TestStopDrainsBuffer(t *testing.T) {
-	bus := NewBus(testLogger(), 16)
+	// Why N=16 and Stop-before-Start:
+	//
+	// Bus.Start's outer select races `case e := <-b.ch` against
+	// `case <-b.done`. With both ready, Go's select picks randomly each
+	// iteration. A 2-event version of this test could drain the buffer
+	// entirely through the outer ch path and never enter the inner drain
+	// loop -- so a regression that breaks the inner drain (e.g. Stop just
+	// returns without draining) would still let the test pass.
+	//
+	// Calling Stop *before* Start ensures done is closed when Start enters
+	// its select. Publishing N=16 events (matching the buffer size) makes
+	// the probability of the outer ch path winning all 16 iterations
+	// (1/2)^16 ~= 1.5e-5 -- effectively guaranteeing the inner drain path
+	// runs at least once. A regression that breaks the inner drain would
+	// produce count < 16 with overwhelming probability.
+	//
+	// True determinism would require restructuring Start to make the
+	// drain path the only post-Stop dispatch route. Out of scope here.
+	const N = 16
+	bus := NewBus(testLogger(), N)
 
 	var mu sync.Mutex
 	count := 0
+	var wg sync.WaitGroup
+	wg.Add(N)
 
 	bus.Subscribe(ScanCompleted, func(_ Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		count++
 	})
 
-	// Publish before starting
-	bus.Publish(Event{Type: ScanCompleted})
-	bus.Publish(Event{Type: ScanCompleted})
+	// Fill the buffer before Start runs; Stop closes done while every event
+	// is still queued.
+	for range N {
+		bus.Publish(Event{Type: ScanCompleted})
+	}
+	bus.Stop()
 
 	go bus.Start()
-	time.Sleep(50 * time.Millisecond)
-	bus.Stop()
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "buffered events not drained after Stop within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
-	if count != 2 {
-		t.Errorf("got %d events, want 2 (all drained)", count)
+	if count != N {
+		t.Errorf("got %d events, want %d (all drained)", count, N)
 	}
 }
