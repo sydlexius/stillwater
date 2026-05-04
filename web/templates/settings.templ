@@ -702,6 +702,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								type="text"
 								id="base-path-field"
 								aria-labelledby="base-path-field-label"
+								aria-describedby="base-path-env-override-desc"
 								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 cursor-not-allowed"
 								if data.BasePath != "" {
 									value={ data.BasePath }
@@ -710,7 +711,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								}
 								readonly
 							/>
-							<p class="text-xs text-amber-600 dark:text-amber-400">
+							<p id="base-path-env-override-desc" class="text-xs text-amber-600 dark:text-amber-400">
 								{ t(ctx, "settings.base_path.env_override") }
 							</p>
 						} else {
@@ -718,6 +719,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								type="text"
 								id="base-path-field"
 								aria-labelledby="base-path-field-label"
+								aria-describedby="base-path-config-desc base-path-error base-path-restart-banner"
 								placeholder="/"
 								pattern="^/(?:[a-zA-Z0-9_\-]+(?:/[a-zA-Z0-9_\-]+)*)?$"
 								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -727,7 +729,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									value="/"
 								}
 							/>
-							<p class="text-xs text-gray-500 dark:text-gray-400">
+							<p id="base-path-config-desc" class="text-xs text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.base_path.config_hint") }
 							</p>
 							<div class="flex items-center justify-end gap-2 pt-1">
@@ -6487,6 +6489,24 @@ templ updatesTabScript() {
 			// otherwise stack multiple intervals, each racing to clear state.
 			var updaterPollTimer = null;
 
+			// persistedUpdatesEnabled tracks the last server-confirmed value of
+			// the updater kill switch. The Apply button must be gated on this
+			// rather than the live #updates-enabled checkbox state, because POST
+			// /api/v1/updates/apply is enforced from the persisted config: if
+			// the user toggles the checkbox without clicking Save, the server
+			// still 403s an Apply request, but a checkbox-driven gate would
+			// happily re-enable the button on the next /status hydrate.
+			//
+			// Seeded at script load from the server-rendered checkbox state
+			// (which IS the persisted value at render time), then updated only
+			// when saveUpdaterConfig completes successfully. Defaults to true
+			// when the checkbox is absent so the prior behaviour holds for
+			// hydrate paths that fire before the form has fully rendered.
+			var persistedUpdatesEnabled = (function() {
+				var el = document.getElementById('updates-enabled');
+				return el ? el.checked : true;
+			})();
+
 			function stopUpdaterPoll() {
 				if (updaterPollTimer !== null) {
 					clearInterval(updaterPollTimer);
@@ -6598,6 +6618,12 @@ templ updatesTabScript() {
 					return resp.json();
 				})
 				.then(function() {
+					// Save succeeded: the value the user just submitted is now the
+					// persisted state, so the Apply gate (consulted by the upcoming
+					// fetchAndPopulateUpdateStatus call) reflects the correct
+					// server-side authority on the next hydrate.
+					persistedUpdatesEnabled = enabled;
+
 					// Channel changes can invalidate the cached latest/release_url
 					// (new channel may have no matching release), so re-hydrate the
 					// updater UI from /status immediately. fetchAndPopulateUpdateStatus
@@ -6749,22 +6775,21 @@ templ updatesTabScript() {
 					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
 					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
 					var lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';
-					// Gate the Apply button on the kill-switch state in addition to
-					// update_available: when the operator has unchecked Enabled,
-					// the server returns 403 from POST /updates/apply, so leaving
-					// the button clickable just produces a confusing "Forbidden"
-					// toast on every hydrate (e.g. tab switch, popstate). The
-					// checkbox is the source of truth in the DOM; treat a missing
-					// element as "enabled" so the prior behaviour holds when this
-					// hydrate runs before the form has fully rendered.
-					var enabledChk = document.getElementById('updates-enabled');
-					var updatesEnabled = enabledChk ? enabledChk.checked : true;
+					// Gate the Apply button on the persisted kill-switch state in
+					// addition to update_available: when the operator has saved
+					// Enabled=false, the server 403s POST /updates/apply, and a
+					// clickable button just yields a confusing toast on every
+					// hydrate (tab switch, popstate). Read the persisted value
+					// (last server-confirmed save) rather than the live
+					// #updates-enabled checkbox: a user who toggles the box but
+					// has not clicked Save would otherwise see Apply re-enabled
+					// here even though the server rejects the request.
 					if (latestEl) {
 						if (d.latest) {
 							if (d.update_available) {
 								latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
 									+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
-								if (applyBtn) applyBtn.disabled = !updatesEnabled;
+								if (applyBtn) applyBtn.disabled = !persistedUpdatesEnabled;
 							} else {
 								latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
 								if (applyBtn) applyBtn.disabled = true;

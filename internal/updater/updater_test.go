@@ -1559,11 +1559,20 @@ func TestSetConfigCoercesZeroInterval(t *testing.T) {
 
 // TestSetConfigRejectsNegativeInterval verifies the error path so an explicit
 // garbage write (negative hours) is not silently coerced.
+//
+// The message check pins SetConfig to the specific check_interval_hours
+// validation: a future regression that fails the call for any other reason
+// (DB error during persist, unrelated coercion bug) would still produce a
+// non-nil error and silently pass an `err != nil`-only assertion. Asserting
+// the substring `check_interval_hours must be >=` keeps the test honest.
 func TestSetConfigRejectsNegativeInterval(t *testing.T) {
 	svc := buildTestService(t)
 	err := svc.SetConfig(context.Background(), Config{Channel: ChannelStable, CheckIntervalHours: -1})
 	if err == nil {
 		t.Fatal("expected error for negative CheckIntervalHours")
+	}
+	if !strings.Contains(err.Error(), "check_interval_hours must be >=") {
+		t.Fatalf("unexpected error for negative CheckIntervalHours: %v", err)
 	}
 }
 
