@@ -679,7 +679,10 @@ func TestSetManageServerFiles_RoundTrip(t *testing.T) {
 	if err := svc.SetPreStillwaterConfig(ctx, conn.ID, ""); err != nil {
 		t.Fatalf("clear snapshot: %v", err)
 	}
-	got, _ = svc.GetByID(ctx, conn.ID)
+	got, err = svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after clear: %v", err)
+	}
 	if got.FeatureManageServerFiles || got.PreStillwaterConfigJSON != "" {
 		t.Errorf("post-clear state = %+v", got)
 	}

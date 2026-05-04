@@ -130,6 +130,7 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := attempts.Add(1)
@@ -137,6 +138,7 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		close(done)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -159,7 +161,11 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 		Timestamp: time.Now().UTC(),
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for retry attempts")
+	}
 
 	got := int(attempts.Load())
 	if got != 3 {
@@ -172,9 +178,12 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
+		if attempts.Add(1) == int32(maxRetries) {
+			close(done)
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -197,7 +206,11 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 		Timestamp: time.Now().UTC(),
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for retry attempts")
+	}
 
 	got := int(attempts.Load())
 	if got != 3 {

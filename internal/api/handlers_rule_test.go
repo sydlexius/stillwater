@@ -189,6 +189,7 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 	t.Parallel()
 	// Use a blocking stub so the first run stays in-progress until we release it.
 	blockCh := make(chan struct{})
+	t.Cleanup(func() { close(blockCh) })
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
 			<-blockCh
@@ -223,8 +224,6 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
 	}
 
-	// Release the blocked goroutine so it can clean up.
-	close(blockCh)
 }
 
 // TestHandleRunRule_InvalidScope400 exercises the parseRunScope error path on
