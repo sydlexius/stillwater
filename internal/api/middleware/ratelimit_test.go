@@ -8,6 +8,7 @@ import (
 )
 
 func TestRateLimiter_AllowsBurst(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rl := NewLoginRateLimiter(ctx)
@@ -30,6 +31,7 @@ func TestRateLimiter_AllowsBurst(t *testing.T) {
 }
 
 func TestRateLimiter_BlocksAfterBurst(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rl := NewLoginRateLimiter(ctx)
@@ -58,6 +60,7 @@ func TestRateLimiter_BlocksAfterBurst(t *testing.T) {
 }
 
 func TestRateLimiter_DifferentIPsIndependent(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	rl := NewLoginRateLimiter(ctx)
@@ -86,12 +89,14 @@ func TestRateLimiter_DifferentIPsIndependent(t *testing.T) {
 }
 
 func TestRateLimiter_NilContext(t *testing.T) {
+	t.Parallel()
 	// Should not panic with nil context
 	rl := NewLoginRateLimiter(nil) //nolint:staticcheck // SA1012: testing nil context defense
 	_ = rl
 }
 
 func TestClientIP_DirectConnection(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "203.0.113.5:1234"
 
@@ -102,6 +107,7 @@ func TestClientIP_DirectConnection(t *testing.T) {
 }
 
 func TestClientIP_XFFFromPrivateProxy(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.10, 10.0.0.1")
@@ -114,6 +120,7 @@ func TestClientIP_XFFFromPrivateProxy(t *testing.T) {
 }
 
 func TestClientIP_XFFIgnoredFromPublicIP(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "203.0.113.5:1234"
 	req.Header.Set("X-Forwarded-For", "198.51.100.1")
@@ -126,6 +133,7 @@ func TestClientIP_XFFIgnoredFromPublicIP(t *testing.T) {
 }
 
 func TestClientIP_XRealIPFromPrivateProxy(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "192.168.1.1:1234"
 	req.Header.Set("X-Real-Ip", "203.0.113.20")
@@ -137,6 +145,7 @@ func TestClientIP_XRealIPFromPrivateProxy(t *testing.T) {
 }
 
 func TestIsPrivateIP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		ip   string
 		want bool

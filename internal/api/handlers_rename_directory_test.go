@@ -54,6 +54,7 @@ func renameRequest(t *testing.T, artistID, newDirname string) (*http.Request, *h
 }
 
 func TestHandleArtistRenameDirectory_Happy(t *testing.T) {
+	t.Parallel()
 	r, a, root := renameHandlerFixture(t)
 	req, w := renameRequest(t, a.ID, "Renamed")
 	r.handleArtistRenameDirectory(w, req)
@@ -75,6 +76,7 @@ func TestHandleArtistRenameDirectory_Happy(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_BadInput(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	cases := map[string]string{
 		"empty":         "",
@@ -95,6 +97,7 @@ func TestHandleArtistRenameDirectory_BadInput(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := renameHandlerFixture(t)
 	req, w := renameRequest(t, "no-such-artist", "Anything")
 	r.handleArtistRenameDirectory(w, req)
@@ -104,6 +107,7 @@ func TestHandleArtistRenameDirectory_NotFound(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_Locked(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	if err := r.artistService.Lock(context.Background(), a.ID, "user"); err != nil {
 		t.Fatalf("Lock: %v", err)
@@ -116,6 +120,7 @@ func TestHandleArtistRenameDirectory_Locked(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_DestExists(t *testing.T) {
+	t.Parallel()
 	r, a, root := renameHandlerFixture(t)
 	if err := os.Mkdir(filepath.Join(root, "Already Here"), 0o755); err != nil {
 		t.Fatalf("creating collision target: %v", err)
@@ -128,6 +133,7 @@ func TestHandleArtistRenameDirectory_DestExists(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_NoChange(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	req, w := renameRequest(t, a.ID, filepath.Base(a.Path))
 	r.handleArtistRenameDirectory(w, req)
@@ -143,6 +149,7 @@ func TestHandleArtistRenameDirectory_NoChange(t *testing.T) {
 // uncovered. A regression that breaks ParseForm or the PostForm lookup
 // would silently pass without this case.
 func TestHandleArtistRenameDirectory_FormBody(t *testing.T) {
+	t.Parallel()
 	r, a, root := renameHandlerFixture(t)
 	form := url.Values{}
 	form.Set("new_dirname", "Form Renamed")
@@ -163,6 +170,7 @@ func TestHandleArtistRenameDirectory_FormBody(t *testing.T) {
 }
 
 func TestHandleArtistRenameDirectory_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/artists/"+a.ID+"/rename-directory", bytes.NewReader([]byte(`{not json`)))
@@ -182,6 +190,7 @@ func TestHandleArtistRenameDirectory_InvalidJSON(t *testing.T) {
 // the err != nil branch returning "invalid form body" is unreachable in
 // tests.
 func TestHandleArtistRenameDirectory_MalformedFormBody(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	// "%" is an incomplete percent-escape; ParseForm rejects with
 	// "invalid URL escape".
@@ -203,6 +212,7 @@ func TestHandleArtistRenameDirectory_MalformedFormBody(t *testing.T) {
 // rename, and confirm the subscriber observed the event with the right
 // artist_id payload. Covers both the nil-check and the Publish call site.
 func TestHandleArtistRenameDirectory_PublishesEvent(t *testing.T) {
+	t.Parallel()
 	r, a, _ := renameHandlerFixture(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	bus := event.NewBus(logger, 4)
@@ -246,6 +256,7 @@ func TestHandleArtistRenameDirectory_PublishesEvent(t *testing.T) {
 // counters off the slog handler call to assert the log fired so a future
 // refactor that drops the slog.Error in the default branch is caught.
 func TestHandleArtistRenameDirectory_FilesystemError500(t *testing.T) {
+	t.Parallel()
 	// Root bypasses POSIX permission bits, so the chmod 0500 below would
 	// not produce EACCES and the default 500 branch we want to exercise
 	// would never fire. Same skip pattern used elsewhere in the repo.

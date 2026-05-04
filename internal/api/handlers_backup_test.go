@@ -61,6 +61,7 @@ func testRouterWithBackup(t *testing.T) (*Router, *backup.Service) {
 }
 
 func TestHandleBackupCreate_JSON(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
@@ -90,6 +91,7 @@ func TestHandleBackupCreate_JSON(t *testing.T) {
 }
 
 func TestHandleBackupCreate_HTMX(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
@@ -114,6 +116,7 @@ func TestHandleBackupCreate_HTMX(t *testing.T) {
 }
 
 func TestHandleBackupHistory_JSONEmpty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
@@ -140,6 +143,7 @@ func TestHandleBackupHistory_JSONEmpty(t *testing.T) {
 }
 
 func TestHandleBackupHistory_JSONWithBackups(t *testing.T) {
+	t.Parallel()
 	r, backupSvc := testRouterWithBackup(t)
 
 	if _, err := backupSvc.Backup(context.Background()); err != nil {
@@ -165,6 +169,7 @@ func TestHandleBackupHistory_JSONWithBackups(t *testing.T) {
 }
 
 func TestHandleBackupHistory_HTMXEmpty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
@@ -184,6 +189,7 @@ func TestHandleBackupHistory_HTMXEmpty(t *testing.T) {
 }
 
 func TestHandleBackupHistory_HTMXWithBackups(t *testing.T) {
+	t.Parallel()
 	r, backupSvc := testRouterWithBackup(t)
 
 	if _, err := backupSvc.Backup(context.Background()); err != nil {
@@ -215,6 +221,7 @@ func TestHandleBackupHistory_HTMXWithBackups(t *testing.T) {
 }
 
 func TestHandleBackupDownload_InvalidFilename(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	cases := []struct {
@@ -243,6 +250,7 @@ func TestHandleBackupDownload_InvalidFilename(t *testing.T) {
 }
 
 func TestHandleBackupDownload_ValidFile(t *testing.T) {
+	t.Parallel()
 	r, backupSvc := testRouterWithBackup(t)
 
 	info, err := backupSvc.Backup(context.Background())
@@ -279,6 +287,7 @@ func TestHandleBackupDownload_ValidFile(t *testing.T) {
 }
 
 func TestHandleBackupDownload_FileNotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	filename := "stillwater-20260101-120000.db"
@@ -294,6 +303,7 @@ func TestHandleBackupDownload_FileNotFound(t *testing.T) {
 }
 
 func TestHandleBackupDelete_JSON(t *testing.T) {
+	t.Parallel()
 	r, backupSvc := testRouterWithBackup(t)
 
 	info, err := backupSvc.Backup(context.Background())
@@ -321,6 +331,7 @@ func TestHandleBackupDelete_JSON(t *testing.T) {
 }
 
 func TestHandleBackupDelete_HTMX(t *testing.T) {
+	t.Parallel()
 	r, backupSvc := testRouterWithBackup(t)
 
 	info, err := backupSvc.Backup(context.Background())
@@ -351,6 +362,7 @@ func TestHandleBackupDelete_HTMX(t *testing.T) {
 }
 
 func TestHandleBackupDelete_InvalidFilename(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	cases := []struct {
@@ -378,6 +390,7 @@ func TestHandleBackupDelete_InvalidFilename(t *testing.T) {
 }
 
 func TestHandleBackupDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithBackup(t)
 
 	filename := "stillwater-20260101-120000.db"
@@ -393,6 +406,7 @@ func TestHandleBackupDelete_NotFound(t *testing.T) {
 }
 
 func TestFormatBytes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		input int64
 		want  string

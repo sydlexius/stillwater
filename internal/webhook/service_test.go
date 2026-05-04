@@ -21,6 +21,7 @@ func setupTestDB(t *testing.T) *Service {
 }
 
 func TestCreate(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -40,6 +41,7 @@ func TestCreate(t *testing.T) {
 }
 
 func TestCreate_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -52,6 +54,7 @@ func TestCreate_ValidationErrors(t *testing.T) {
 }
 
 func TestGetByID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -82,6 +85,7 @@ func TestGetByID(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -92,6 +96,7 @@ func TestGetByID_NotFound(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -116,6 +121,7 @@ func TestList(t *testing.T) {
 }
 
 func TestListByEvent(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -141,6 +147,7 @@ func TestListByEvent(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -168,6 +175,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	ctx := context.Background()
 
@@ -187,6 +195,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestDB(t)
 	if err := svc.Delete(context.Background(), "nope"); err == nil {
 		t.Error("expected error for nonexistent webhook")

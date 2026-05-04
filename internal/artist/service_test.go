@@ -65,6 +65,7 @@ func testArtist(name, path string) *Artist {
 }
 
 func TestCreateAndGetByID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -119,6 +120,7 @@ func TestCreateAndGetByID(t *testing.T) {
 // invisible to per-library views, so the artist is rolled back rather
 // than persisted in a partial state.
 func TestCreate_MembershipWriteFailureRollsBack(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -164,6 +166,7 @@ func TestCreate_MembershipWriteFailureRollsBack(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -174,6 +177,7 @@ func TestGetByID_NotFound(t *testing.T) {
 }
 
 func TestGetByMBID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -197,6 +201,7 @@ func TestGetByMBID(t *testing.T) {
 }
 
 func TestGetByMBID_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -210,6 +215,7 @@ func TestGetByMBID_NotFound(t *testing.T) {
 }
 
 func TestGetByProviderID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -247,6 +253,7 @@ func TestGetByProviderID(t *testing.T) {
 }
 
 func TestGetByPath(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -275,6 +282,7 @@ func TestGetByPath(t *testing.T) {
 }
 
 func TestList_Pagination(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -321,6 +329,7 @@ func TestList_Pagination(t *testing.T) {
 }
 
 func TestList_SearchAndFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -411,6 +420,7 @@ func TestList_SearchAndFilter(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -447,6 +457,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -467,6 +478,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -477,6 +489,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -500,6 +513,7 @@ func TestSearch(t *testing.T) {
 }
 
 func TestBandMembers_CRUD(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -551,6 +565,7 @@ func TestBandMembers_CRUD(t *testing.T) {
 }
 
 func TestUpsertMembers(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -591,6 +606,7 @@ func TestUpsertMembers(t *testing.T) {
 }
 
 func TestDeleteMembersByArtistID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -619,6 +635,7 @@ func TestDeleteMembersByArtistID(t *testing.T) {
 }
 
 func TestArtist_LastScannedAt(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -643,6 +660,7 @@ func TestArtist_LastScannedAt(t *testing.T) {
 }
 
 func TestList_ExcludedFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -679,6 +697,7 @@ func TestList_ExcludedFilter(t *testing.T) {
 }
 
 func TestList_SortOrder(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -704,6 +723,7 @@ func TestList_SortOrder(t *testing.T) {
 }
 
 func TestLibraryID_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -744,6 +764,7 @@ func TestLibraryID_RoundTrip(t *testing.T) {
 }
 
 func TestLibraryID_NullOnEmpty(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -764,6 +785,7 @@ func TestLibraryID_NullOnEmpty(t *testing.T) {
 }
 
 func TestGetByNameAndLibrary(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -813,6 +835,7 @@ func TestGetByNameAndLibrary(t *testing.T) {
 }
 
 func TestGetByMBIDAndLibrary(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -864,6 +887,7 @@ func TestGetByMBIDAndLibrary(t *testing.T) {
 }
 
 func TestUpdateProviderFetchedAt(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -902,6 +926,7 @@ func TestUpdateProviderFetchedAt(t *testing.T) {
 }
 
 func TestFetchedAt_EmptyProviderID_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -951,6 +976,7 @@ func TestFetchedAt_EmptyProviderID_RoundTrip(t *testing.T) {
 }
 
 func TestExtractImageMetadata_FanartCountPersistsSlots(t *testing.T) {
+	t.Parallel()
 	// FanartCount > 1 must produce ArtistImage entries for slots 1..FanartCount-1
 	// so that FanartCount round-trips through the database.
 	a := &Artist{
@@ -977,6 +1003,7 @@ func TestExtractImageMetadata_FanartCountPersistsSlots(t *testing.T) {
 }
 
 func TestExtractImageMetadata_FanartCountOneProducesOneSlot(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		ID:           "test-id",
 		FanartExists: true,
@@ -996,6 +1023,7 @@ func TestExtractImageMetadata_FanartCountOneProducesOneSlot(t *testing.T) {
 }
 
 func TestExtractImageMetadata_FanartCountZeroProducesNoSlots(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		ID:           "test-id",
 		FanartExists: false,
@@ -1011,6 +1039,7 @@ func TestExtractImageMetadata_FanartCountZeroProducesNoSlots(t *testing.T) {
 }
 
 func TestExtractImageMetadata_NoPhantomSlotsWhenFanartNotExists(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		ID:           "test-id",
 		FanartExists: false,
@@ -1041,6 +1070,7 @@ func TestExtractImageMetadata_NoPhantomSlotsWhenFanartNotExists(t *testing.T) {
 }
 
 func TestList_LibraryIDFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1096,6 +1126,7 @@ func TestList_LibraryIDFilter(t *testing.T) {
 }
 
 func TestFindByMBIDOrName_ByMBID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1130,6 +1161,7 @@ func TestFindByMBIDOrName_ByMBID(t *testing.T) {
 }
 
 func TestFindByMBIDOrName_ByNameCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1160,6 +1192,7 @@ func TestFindByMBIDOrName_ByNameCaseInsensitive(t *testing.T) {
 }
 
 func TestFindByMBIDOrName_MBIDPreferredOverName(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1201,6 +1234,7 @@ func TestFindByMBIDOrName_MBIDPreferredOverName(t *testing.T) {
 }
 
 func TestFindByMBIDOrName_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1221,6 +1255,7 @@ func TestFindByMBIDOrName_NotFound(t *testing.T) {
 }
 
 func TestFindByMBIDOrName_RespectsLibraryScope(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1253,6 +1288,7 @@ func TestFindByMBIDOrName_RespectsLibraryScope(t *testing.T) {
 }
 
 func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1381,6 +1417,7 @@ func setupServiceWithHistory(t *testing.T) (*Service, *HistoryService) {
 }
 
 func TestUpdateRecordsHistory(t *testing.T) {
+	t.Parallel()
 	svc, hsvc := setupServiceWithHistory(t)
 	ctx := context.Background()
 
@@ -1429,6 +1466,7 @@ func TestUpdateRecordsHistory(t *testing.T) {
 }
 
 func TestUpdateFieldRecordsHistory(t *testing.T) {
+	t.Parallel()
 	svc, hsvc := setupServiceWithHistory(t)
 	ctx := context.Background()
 
@@ -1462,6 +1500,7 @@ func TestUpdateFieldRecordsHistory(t *testing.T) {
 }
 
 func TestClearFieldRecordsHistory(t *testing.T) {
+	t.Parallel()
 	svc, hsvc := setupServiceWithHistory(t)
 	ctx := context.Background()
 

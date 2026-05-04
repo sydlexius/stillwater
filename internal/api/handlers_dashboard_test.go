@@ -42,6 +42,7 @@ func withTestUser(req *http.Request) *http.Request {
 // --- handleDashboardActionQueue tests (#876) ---
 
 func TestHandleDashboardActionQueue_LimitCapping(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
 
@@ -106,6 +107,7 @@ func TestHandleDashboardActionQueue_LimitCapping(t *testing.T) {
 }
 
 func TestHandleDashboardActionQueue_OffsetBranching(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
 
@@ -166,6 +168,7 @@ func TestHandleDashboardActionQueue_OffsetBranching(t *testing.T) {
 }
 
 func TestHandleDashboardActionQueue_Unauthorized(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false)
 
 	// No user in context -- should return 401.
@@ -180,6 +183,7 @@ func TestHandleDashboardActionQueue_Unauthorized(t *testing.T) {
 }
 
 func TestHandleDashboardActionQueue_NegativeOffset(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false)
 	ctx := context.Background()
 
@@ -227,6 +231,7 @@ func TestHandleDashboardActionQueue_NegativeOffset(t *testing.T) {
 // --- handleDashboardActivityFeed tests (#876) ---
 
 func TestHandleDashboardActivityFeed_WithHistoryService(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/activity", nil)
@@ -254,6 +259,7 @@ func TestHandleDashboardActivityFeed_WithHistoryService(t *testing.T) {
 }
 
 func TestHandleDashboardActivityFeed_NilHistoryService(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false) // historyService = nil
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/activity", nil)
@@ -269,6 +275,7 @@ func TestHandleDashboardActivityFeed_NilHistoryService(t *testing.T) {
 }
 
 func TestHandleDashboardActivityFeed_Unauthorized(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, true)
 
 	// No user in context.
@@ -283,6 +290,7 @@ func TestHandleDashboardActivityFeed_Unauthorized(t *testing.T) {
 }
 
 func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
+	t.Parallel()
 	// Verifies the handler renders successfully when the history service is
 	// present but returns an empty result set (no metadata changes recorded).
 	r := testDashboardRouter(t, true)
@@ -313,6 +321,7 @@ func TestHandleDashboardActivityFeed_EmptyResultSet(t *testing.T) {
 // the request is issued. The rule service retains its own open connection so
 // the violation-list queries succeed normally.
 func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
+	t.Parallel()
 	r := testDashboardRouter(t, false)
 
 	// Open a separate in-memory database for the artist service so we can
@@ -362,6 +371,7 @@ func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
 }
 
 func TestUrlValuesFromFilters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input dashboardFilterParams
@@ -426,6 +436,7 @@ func TestUrlValuesFromFilters(t *testing.T) {
 }
 
 func TestDashboardPushURLFromFilters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		basePath string

@@ -22,6 +22,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 }
 
 func TestList_BuiltinProfiles(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -54,6 +55,7 @@ func TestList_BuiltinProfiles(t *testing.T) {
 }
 
 func TestGetByID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -74,6 +76,7 @@ func TestGetByID(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -84,6 +87,7 @@ func TestGetByID_NotFound(t *testing.T) {
 }
 
 func TestGetActive(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -101,6 +105,7 @@ func TestGetActive(t *testing.T) {
 }
 
 func TestSetActive(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -128,6 +133,7 @@ func TestSetActive(t *testing.T) {
 }
 
 func TestSetActive_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -138,6 +144,7 @@ func TestSetActive_NotFound(t *testing.T) {
 }
 
 func TestCreate_CustomProfile(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -176,6 +183,7 @@ func TestCreate_CustomProfile(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -209,6 +217,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete_CustomProfile(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -229,6 +238,7 @@ func TestDelete_CustomProfile(t *testing.T) {
 }
 
 func TestDelete_BuiltinProfile_Fails(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -239,6 +249,7 @@ func TestDelete_BuiltinProfile_Fails(t *testing.T) {
 }
 
 func TestImageNamingMarshal(t *testing.T) {
+	t.Parallel()
 	n := ImageNaming{
 		Thumb:  []string{"folder.jpg", "artist.jpg"},
 		Fanart: []string{"fanart.jpg"},
@@ -258,6 +269,7 @@ func TestImageNamingMarshal(t *testing.T) {
 }
 
 func TestImageNamingUnmarshal_LegacyFormat(t *testing.T) {
+	t.Parallel()
 	// Legacy format: single strings per type
 	legacy := `{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}`
 	got := UnmarshalImageNaming(legacy)
@@ -271,6 +283,7 @@ func TestImageNamingUnmarshal_LegacyFormat(t *testing.T) {
 }
 
 func TestImageNaming_PrimaryName(t *testing.T) {
+	t.Parallel()
 	n := ImageNaming{
 		Thumb:  []string{"folder.jpg", "artist.jpg"},
 		Fanart: []string{"fanart.jpg"},
@@ -288,6 +301,7 @@ func TestImageNaming_PrimaryName(t *testing.T) {
 }
 
 func TestImageNaming_ToMap(t *testing.T) {
+	t.Parallel()
 	n := ImageNaming{
 		Thumb:  []string{"folder.jpg"},
 		Fanart: []string{"fanart.jpg"},
@@ -305,6 +319,7 @@ func TestImageNaming_ToMap(t *testing.T) {
 }
 
 func TestNamesForType(t *testing.T) {
+	t.Parallel()
 	n := ImageNaming{
 		Thumb:  []string{"folder.jpg", "artist.jpg"},
 		Fanart: []string{"fanart.jpg"},
@@ -335,6 +350,7 @@ func TestNamesForType(t *testing.T) {
 }
 
 func TestValidateImageNaming(t *testing.T) {
+	t.Parallel()
 	// Valid naming
 	valid := ImageNaming{
 		Thumb:  []string{"folder.jpg", "artist.jpg"},

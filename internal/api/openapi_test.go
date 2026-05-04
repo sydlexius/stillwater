@@ -28,6 +28,7 @@ import (
 //     positives from route-mapping complexity but may miss cases where a
 //     field exists in the wrong schema.
 func TestOpenAPIConsistency(t *testing.T) {
+	t.Parallel()
 	specFields, err := collectSpecFields("openapi.yaml")
 	if err != nil {
 		t.Fatalf("parsing openapi.yaml: %v", err)

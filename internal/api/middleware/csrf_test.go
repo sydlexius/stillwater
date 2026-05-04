@@ -7,6 +7,7 @@ import (
 )
 
 func TestCSRF_SafeMethodSetsToken(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,6 +40,7 @@ func TestCSRF_SafeMethodSetsToken(t *testing.T) {
 }
 
 func TestCSRF_UnsafeMethodWithoutToken(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -54,6 +56,7 @@ func TestCSRF_UnsafeMethodWithoutToken(t *testing.T) {
 }
 
 func TestCSRF_UnsafeMethodWithValidHeaderToken(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	token := csrf.generate()
 
@@ -72,6 +75,7 @@ func TestCSRF_UnsafeMethodWithValidHeaderToken(t *testing.T) {
 }
 
 func TestCSRF_UnsafeMethodWithInvalidToken(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -88,6 +92,7 @@ func TestCSRF_UnsafeMethodWithInvalidToken(t *testing.T) {
 }
 
 func TestCSRF_ExistingValidCookieNotReplaced(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	token := csrf.generate()
 
@@ -113,6 +118,7 @@ func TestCSRF_ExistingValidCookieNotReplaced(t *testing.T) {
 }
 
 func TestCSRF_HeadAndOptionsAreSafe(t *testing.T) {
+	t.Parallel()
 	csrf := NewCSRF()
 	handler := csrf.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

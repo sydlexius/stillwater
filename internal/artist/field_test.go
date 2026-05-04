@@ -8,6 +8,7 @@ import (
 // --- FieldValueFromArtist ---
 
 func TestFieldValueFromArtist_NewFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Name:           "Radiohead",
 		SortName:       "Radiohead",
@@ -46,6 +47,7 @@ func TestFieldValueFromArtist_NewFields(t *testing.T) {
 }
 
 func TestFieldValueFromArtist_UnknownField(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Test"}
 	got := FieldValueFromArtist(a, "nonexistent")
 	if got != "" {
@@ -56,6 +58,7 @@ func TestFieldValueFromArtist_UnknownField(t *testing.T) {
 // --- IsEditableField ---
 
 func TestIsEditableField_NewFields(t *testing.T) {
+	t.Parallel()
 	editable := []string{
 		"name", "sort_name", "disambiguation",
 		"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id",
@@ -80,6 +83,7 @@ func TestIsEditableField_NewFields(t *testing.T) {
 // --- IsProviderIDField ---
 
 func TestIsProviderIDField(t *testing.T) {
+	t.Parallel()
 	providerFields := []string{
 		"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id",
 	}
@@ -103,6 +107,7 @@ func TestIsProviderIDField(t *testing.T) {
 // --- ValidateFieldUpdate ---
 
 func TestValidateFieldUpdate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		field   string
@@ -142,6 +147,7 @@ func TestValidateFieldUpdate(t *testing.T) {
 // --- isValidMBID ---
 
 func TestIsValidMBID(t *testing.T) {
+	t.Parallel()
 	valid := []string{
 		"a74b1b7f-71a5-4011-9441-d0b5e4122711",
 		"5b11f4ce-a62d-471e-81fc-a69a8278c7da",
@@ -171,6 +177,7 @@ func TestIsValidMBID(t *testing.T) {
 // --- UpdateProviderField / ClearProviderField ---
 
 func TestUpdateProviderField(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -211,6 +218,7 @@ func TestUpdateProviderField(t *testing.T) {
 }
 
 func TestClearProviderField(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -240,6 +248,7 @@ func TestClearProviderField(t *testing.T) {
 }
 
 func TestUpdateField_NameAndSortName(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

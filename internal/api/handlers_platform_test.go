@@ -37,6 +37,7 @@ func testRouterWithPlatformForUpdate(t *testing.T) (*Router, *platform.Service, 
 }
 
 func TestUpdatePlatform_PartialUpdate(t *testing.T) {
+	t.Parallel()
 	r, svc, id := testRouterWithPlatformForUpdate(t)
 
 	// Send only nfo_enabled = false; other fields should remain unchanged.
@@ -70,6 +71,7 @@ func TestUpdatePlatform_PartialUpdate(t *testing.T) {
 }
 
 func TestUpdatePlatform_EmptyStringIgnored(t *testing.T) {
+	t.Parallel()
 	r, svc, id := testRouterWithPlatformForUpdate(t)
 
 	// Send name as empty string; should be treated as "not provided".
@@ -93,6 +95,7 @@ func TestUpdatePlatform_EmptyStringIgnored(t *testing.T) {
 }
 
 func TestUpdatePlatform_BuiltinRenameRejected(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithPlatformForUpdate(t)
 
 	// Attempt to rename the built-in Kodi profile.
@@ -115,6 +118,7 @@ func TestUpdatePlatform_BuiltinRenameRejected(t *testing.T) {
 }
 
 func TestUpdatePlatform_FullUpdate(t *testing.T) {
+	t.Parallel()
 	r, svc, id := testRouterWithPlatformForUpdate(t)
 
 	body := `{
@@ -159,6 +163,7 @@ func TestUpdatePlatform_FullUpdate(t *testing.T) {
 }
 
 func TestUpdatePlatform_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithPlatformForUpdate(t)
 
 	body := `{"name": "whatever"}`
@@ -173,6 +178,7 @@ func TestUpdatePlatform_NotFound(t *testing.T) {
 }
 
 func TestUpdatePlatform_UseSymlinks(t *testing.T) {
+	t.Parallel()
 	r, svc, id := testRouterWithPlatformForUpdate(t)
 
 	body := `{"use_symlinks": true}`
@@ -195,6 +201,7 @@ func TestUpdatePlatform_UseSymlinks(t *testing.T) {
 }
 
 func TestUpdatePlatform_UseSymlinks_BuiltinRejected(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithPlatformForUpdate(t)
 
 	// Attempt to set use_symlinks on the built-in Kodi profile (not editable).
@@ -217,6 +224,7 @@ func TestUpdatePlatform_UseSymlinks_BuiltinRejected(t *testing.T) {
 }
 
 func TestWebhookHost(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		baseURL string
@@ -239,6 +247,7 @@ func TestWebhookHost(t *testing.T) {
 }
 
 func TestWebhookScheme(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		baseURL  string

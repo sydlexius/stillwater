@@ -9,6 +9,7 @@ import (
 )
 
 func TestLocalProviderAuthenticate(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -60,6 +61,7 @@ func TestLocalProviderAuthenticate(t *testing.T) {
 }
 
 func TestLocalProviderType(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -73,6 +75,7 @@ func TestLocalProviderType(t *testing.T) {
 }
 
 func TestLocalProviderAutoProvision(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -86,6 +89,7 @@ func TestLocalProviderAutoProvision(t *testing.T) {
 }
 
 func TestNewLocalProvider_NilDB(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected panic for nil db")

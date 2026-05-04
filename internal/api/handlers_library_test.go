@@ -59,6 +59,7 @@ func testRouterWithLibrary(t *testing.T) (*Router, *library.Service, *artist.Ser
 }
 
 func TestHandleListLibraries_Empty(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries", nil)
@@ -80,6 +81,7 @@ func TestHandleListLibraries_Empty(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_JSON(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -113,6 +115,7 @@ func TestHandleCreateLibrary_JSON(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_FormEncoded(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -144,6 +147,7 @@ func TestHandleCreateLibrary_FormEncoded(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_MissingName(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"path":"/music","type":"regular"}`
@@ -159,6 +163,7 @@ func TestHandleCreateLibrary_MissingName(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_InvalidType(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"name":"Bad","path":"/bad","type":"invalid"}`
@@ -174,6 +179,7 @@ func TestHandleCreateLibrary_InvalidType(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_EmptyPath(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"name":"API Only","path":"","type":"regular"}`
@@ -197,6 +203,7 @@ func TestHandleCreateLibrary_EmptyPath(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_RelativePath(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"name":"Bad","path":"music/lib","type":"regular"}`
@@ -212,6 +219,7 @@ func TestHandleCreateLibrary_RelativePath(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_TraversalPath(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"name":"Bad","path":"../etc/passwd","type":"regular"}`
@@ -227,6 +235,7 @@ func TestHandleCreateLibrary_TraversalPath(t *testing.T) {
 }
 
 func TestHandleCreateLibrary_NonexistentPath(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	dir := filepath.Join(t.TempDir(), "no-such-dir")
@@ -243,6 +252,7 @@ func TestHandleCreateLibrary_NonexistentPath(t *testing.T) {
 }
 
 func TestHandleGetLibrary_WithArtistCount(t *testing.T) {
+	t.Parallel()
 	r, libSvc, artistSvc := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -278,6 +288,7 @@ func TestHandleGetLibrary_WithArtistCount(t *testing.T) {
 }
 
 func TestHandleGetLibrary_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries/nonexistent", nil)
@@ -292,6 +303,7 @@ func TestHandleGetLibrary_NotFound(t *testing.T) {
 }
 
 func TestHandleUpdateLibrary(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 
 	base := t.TempDir()
@@ -334,6 +346,7 @@ func TestHandleUpdateLibrary(t *testing.T) {
 }
 
 func TestHandleUpdateLibrary_InvalidPath(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -356,6 +369,7 @@ func TestHandleUpdateLibrary_InvalidPath(t *testing.T) {
 }
 
 func TestHandleUpdateLibrary_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	body := `{"name":"Nope"}`
@@ -372,6 +386,7 @@ func TestHandleUpdateLibrary_NotFound(t *testing.T) {
 }
 
 func TestHandleDeleteLibrary_Empty(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -400,6 +415,7 @@ func TestHandleDeleteLibrary_Empty(t *testing.T) {
 }
 
 func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
+	t.Parallel()
 	r, libSvc, artistSvc := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -434,6 +450,7 @@ func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
 }
 
 func TestHandleListLibraries_AfterCreate(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -469,6 +486,7 @@ func TestHandleListLibraries_AfterCreate(t *testing.T) {
 // flips it on, and that omitting the field on a subsequent PUT preserves
 // the current value (pointer-typed -> only updated when present in body).
 func TestHandleUpdateLibrary_NFOLockData_Toggle(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
@@ -548,6 +566,7 @@ func TestHandleUpdateLibrary_NFOLockData_Toggle(t *testing.T) {
 // the form branch silently dropped the field while the JSON branch wired it
 // through.
 func TestHandleUpdateLibrary_FormEncoded_NFOLockData(t *testing.T) {
+	t.Parallel()
 	r, libSvc, _ := testRouterWithLibrary(t)
 	libDir := t.TempDir()
 	lib := &library.Library{Name: "FormPath", Path: libDir, Type: library.TypeRegular}

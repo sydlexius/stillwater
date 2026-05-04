@@ -6,6 +6,7 @@ import (
 )
 
 func TestRegistryRegisterAndGet(t *testing.T) {
+	t.Parallel()
 	reg := NewRegistry()
 	provider := &stubProvider{providerType: "test"}
 	reg.Register(provider)
@@ -20,6 +21,7 @@ func TestRegistryRegisterAndGet(t *testing.T) {
 }
 
 func TestRegistryGetMissing(t *testing.T) {
+	t.Parallel()
 	reg := NewRegistry()
 	_, ok := reg.Get("nonexistent")
 	if ok {
@@ -28,6 +30,7 @@ func TestRegistryGetMissing(t *testing.T) {
 }
 
 func TestRegistryEnabled(t *testing.T) {
+	t.Parallel()
 	reg := NewRegistry()
 	reg.Register(&stubProvider{providerType: "a"})
 	reg.Register(&stubProvider{providerType: "b"})

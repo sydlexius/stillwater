@@ -22,6 +22,7 @@ func onboardingConflictRequest(target string) *http.Request {
 }
 
 func TestHasQualifyingConflictConnection(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		conns []connection.Connection
@@ -48,6 +49,7 @@ func TestHasQualifyingConflictConnection(t *testing.T) {
 }
 
 func TestHandleGetOnboardingConflictStep_RendersCleanWhenDetectorMissing(t *testing.T) {
+	t.Parallel()
 	// When the detector is unavailable we render the empty clean body
 	// rather than 204. HTMX skips swap+afterSwap on 204 by default, which
 	// would leave the OOBE spinner up forever and the Continue gate stuck
@@ -70,6 +72,7 @@ func TestHandleGetOnboardingConflictStep_RendersCleanWhenDetectorMissing(t *test
 }
 
 func TestHandleGetOnboardingConflictStep_RendersCleanBody(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
@@ -89,6 +92,7 @@ func TestHandleGetOnboardingConflictStep_RendersCleanBody(t *testing.T) {
 }
 
 func TestHandleGetOnboardingConflictStep_RefreshInvalidatesCache(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "a", Name: "A", Type: connection.TypeEmby, Enabled: true},
 	})
@@ -104,6 +108,7 @@ func TestHandleGetOnboardingConflictStep_RefreshInvalidatesCache(t *testing.T) {
 }
 
 func TestAggregateProbeError_EmptyWhenAllProbesSucceed(t *testing.T) {
+	t.Parallel()
 	l := conflict.Ledger{
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "A", Enabled: true, CheckErr: ""},
@@ -116,6 +121,7 @@ func TestAggregateProbeError_EmptyWhenAllProbesSucceed(t *testing.T) {
 }
 
 func TestAggregateProbeError_SingleFailure(t *testing.T) {
+	t.Parallel()
 	l := conflict.Ledger{
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "EmbyOne", Enabled: true, CheckErr: "dial tcp"},
@@ -128,6 +134,7 @@ func TestAggregateProbeError_SingleFailure(t *testing.T) {
 }
 
 func TestAggregateProbeError_DisabledIgnored(t *testing.T) {
+	t.Parallel()
 	l := conflict.Ledger{
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "A", Enabled: false, CheckErr: "dial tcp"},
@@ -139,6 +146,7 @@ func TestAggregateProbeError_DisabledIgnored(t *testing.T) {
 }
 
 func TestAggregateProbeError_MultipleFailures(t *testing.T) {
+	t.Parallel()
 	l := conflict.Ledger{
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "EmbyOne", Enabled: true, CheckErr: "dial tcp"},
@@ -160,6 +168,7 @@ func TestAggregateProbeError_MultipleFailures(t *testing.T) {
 // onboarding.conflict_check_completed_at so callers can detect that the
 // pre-flight has been visited at least once.
 func TestHandleGetOnboardingConflictStep_PersistsCompletionMarker(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 	r.conflictDetector = conflict.NewForTest(&fakeRepo{}, testDiscardLogger())
 

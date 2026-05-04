@@ -107,6 +107,7 @@ func signIDToken(t *testing.T, key *rsa.PrivateKey, issuer, clientID, sub, nonce
 }
 
 func TestOIDCProviderInitAndAuthenticate(t *testing.T) {
+	t.Parallel()
 	srv, key := mockOIDCServer(t)
 	defer srv.Close()
 
@@ -223,6 +224,7 @@ func TestOIDCProviderInitAndAuthenticate(t *testing.T) {
 }
 
 func TestOIDCAuthenticateEmptyCode(t *testing.T) {
+	t.Parallel()
 	p := auth.NewOIDCProvider(auth.OIDCConfig{
 		IssuerURL: "https://example.com",
 		ClientID:  "test",
@@ -235,6 +237,7 @@ func TestOIDCAuthenticateEmptyCode(t *testing.T) {
 }
 
 func TestOIDCInitBadIssuer(t *testing.T) {
+	t.Parallel()
 	p := auth.NewOIDCProvider(auth.OIDCConfig{
 		IssuerURL: "https://invalid.example.test.invalid",
 		ClientID:  "test",
@@ -248,6 +251,7 @@ func TestOIDCInitBadIssuer(t *testing.T) {
 
 // TestMockOIDCServerDiscovery verifies the mock OIDC server returns valid discovery.
 func TestMockOIDCServerDiscovery(t *testing.T) {
+	t.Parallel()
 	srv, _ := mockOIDCServer(t)
 	defer srv.Close()
 
@@ -276,6 +280,7 @@ func TestMockOIDCServerDiscovery(t *testing.T) {
 
 // Ensure the RSA key and token signing produce valid outputs.
 func TestSignIDToken(t *testing.T) {
+	t.Parallel()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generating key: %v", err)

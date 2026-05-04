@@ -43,6 +43,7 @@ const discographyTestNFO = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 func TestHandleArtistDiscographyTab_HappyPath(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := writeArtistNFO(t, discographyTestNFO)
@@ -78,6 +79,7 @@ func TestHandleArtistDiscographyTab_HappyPath(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ctx := testI18nCtx(t, context.Background())
@@ -103,6 +105,7 @@ func TestHandleArtistDiscographyTab_NotFound(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_InternalError(t *testing.T) {
+	t.Parallel()
 	// Force a repository error by closing the underlying DB before dispatch.
 	// GetByID will then return a non-NotFound error, exercising the 500 path.
 	r, artistSvc := testRouter(t)
@@ -139,6 +142,7 @@ func TestHandleArtistDiscographyTab_InternalError(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_MissingID(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ctx := testI18nCtx(t, context.Background())
@@ -154,6 +158,7 @@ func TestHandleArtistDiscographyTab_MissingID(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_NFOAbsent(t *testing.T) {
+	t.Parallel()
 	// Artist exists but NFOExists is false -- handler should render empty state.
 	r, artistSvc := testRouter(t)
 
@@ -180,6 +185,7 @@ func TestHandleArtistDiscographyTab_NFOAbsent(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_NFOMalformed(t *testing.T) {
+	t.Parallel()
 	// Malformed NFO: parseNFOFile returns nil; handler should still 200 with
 	// empty state AND emit a structured warn log so operators can diagnose.
 	r, artistSvc := testRouter(t)
@@ -218,6 +224,7 @@ func TestHandleArtistDiscographyTab_NFOMalformed(t *testing.T) {
 }
 
 func TestHandleArtistDiscographyTab_NFOWithoutAlbums(t *testing.T) {
+	t.Parallel()
 	// Valid NFO but no <album> entries -- empty state.
 	r, artistSvc := testRouter(t)
 
@@ -244,18 +251,21 @@ func TestHandleArtistDiscographyTab_NFOWithoutAlbums(t *testing.T) {
 }
 
 func TestDiscographyFromNFO_Nil(t *testing.T) {
+	t.Parallel()
 	if got := discographyFromNFO(nil); got != nil {
 		t.Errorf("discographyFromNFO(nil) = %v, want nil", got)
 	}
 }
 
 func TestDiscographyFromNFO_Empty(t *testing.T) {
+	t.Parallel()
 	if got := discographyFromNFO(&nfo.ArtistNFO{}); got != nil {
 		t.Errorf("discographyFromNFO(empty) = %v, want nil", got)
 	}
 }
 
 func TestDiscographyFromNFO_MapsFields(t *testing.T) {
+	t.Parallel()
 	in := &nfo.ArtistNFO{
 		Albums: []nfo.DiscographyAlbum{
 			{Title: "A", Year: "2001"},

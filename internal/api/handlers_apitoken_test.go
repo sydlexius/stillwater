@@ -83,6 +83,7 @@ func withUserCtx(req *http.Request, userID string) *http.Request {
 }
 
 func TestTokenLifecycle_ActiveToRevokedToDeleted(t *testing.T) {
+	t.Parallel()
 	r, authSvc, userID := testRouterWithAuth(t)
 
 	// Step 1: Create a token.
@@ -138,6 +139,7 @@ func TestTokenLifecycle_ActiveToRevokedToDeleted(t *testing.T) {
 }
 
 func TestDeleteActiveToken_Returns409(t *testing.T) {
+	t.Parallel()
 	r, authSvc, userID := testRouterWithAuth(t)
 
 	// Create an active token.
@@ -159,6 +161,7 @@ func TestDeleteActiveToken_Returns409(t *testing.T) {
 }
 
 func TestDeleteRevokedToken_AuditAnonymization(t *testing.T) {
+	t.Parallel()
 	r, authSvc, userID := testRouterWithAuth(t)
 
 	// Create and revoke a token.
@@ -236,6 +239,7 @@ func TestDeleteRevokedToken_AuditAnonymization(t *testing.T) {
 }
 
 func TestRevokedToken_CannotAuthenticate(t *testing.T) {
+	t.Parallel()
 	_, authSvc, userID := testRouterWithAuth(t)
 
 	plaintext, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "revoke-auth-test", "read")
@@ -267,6 +271,7 @@ func TestRevokedToken_CannotAuthenticate(t *testing.T) {
 }
 
 func TestCreateAPIToken_ReturnsStatusField(t *testing.T) {
+	t.Parallel()
 	_, authSvc, userID := testRouterWithAuth(t)
 
 	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "status-test", "read")
@@ -286,6 +291,7 @@ func TestCreateAPIToken_ReturnsStatusField(t *testing.T) {
 // TestDeleteRevokedToken_DirectlyWithoutArchiving verifies that a revoked
 // token can be permanently deleted.
 func TestDeleteRevokedToken_DirectlyWithoutArchiving(t *testing.T) {
+	t.Parallel()
 	router, authSvc, userID := testRouterWithAuth(t)
 
 	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "direct-delete-test", "read")

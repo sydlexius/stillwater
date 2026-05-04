@@ -7,6 +7,7 @@ import (
 )
 
 func TestUpsert_ProvenanceFields(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -61,6 +62,7 @@ func TestUpsert_ProvenanceFields(t *testing.T) {
 }
 
 func TestUpdateProvenance(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -128,6 +130,7 @@ func TestUpdateProvenance(t *testing.T) {
 }
 
 func TestUpdateProvenance_NoRow(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -161,6 +164,7 @@ func TestUpdateProvenance_NoRow(t *testing.T) {
 }
 
 func TestNewestWriteTimesByArtist(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -239,6 +243,7 @@ func TestNewestWriteTimesByArtist(t *testing.T) {
 }
 
 func TestNewestWriteTimesByArtist_NoWrites(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -263,6 +268,7 @@ func TestNewestWriteTimesByArtist_NoWrites(t *testing.T) {
 }
 
 func TestNewestWriteTimesByArtist_EmptyLibrary(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	repo := newSQLiteImageRepo(db)
 	ctx := context.Background()
@@ -278,6 +284,7 @@ func TestNewestWriteTimesByArtist_EmptyLibrary(t *testing.T) {
 }
 
 func TestUpsertAll_PreservesProvenance(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	ctx := context.Background()
 	repo := newSQLiteImageRepo(db)
@@ -345,6 +352,7 @@ func TestUpsertAll_PreservesProvenance(t *testing.T) {
 // artist_images registry to filesystem-truth without touching other artist
 // columns, and rejects a nil/empty-ID Artist.
 func TestReconcileImages(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -403,6 +411,7 @@ func TestReconcileImages(t *testing.T) {
 // TestClearExistsFlag verifies that ClearExistsFlag sets the exists_flag to 0
 // for the targeted image slot without affecting other slots.
 func TestClearExistsFlag(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

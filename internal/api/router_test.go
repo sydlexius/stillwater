@@ -12,6 +12,7 @@ import (
 // patterns overlap ambiguously (e.g. "/{id}/dismiss" vs "/undo/{undoId}").
 // This test catches such conflicts at CI time instead of at startup.
 func TestRouterRegistration(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -30,6 +31,7 @@ func TestRouterRegistration(t *testing.T) {
 // page, not on a separate route). It also verifies the redirect respects
 // base_path and that API routes under /api/v1/notifications are unaffected.
 func TestNotificationsPageRedirect(t *testing.T) {
+	t.Parallel()
 	// Helper: create a user session so requests pass auth middleware.
 	setupSession := func(t *testing.T, r *Router) *http.Cookie {
 		t.Helper()

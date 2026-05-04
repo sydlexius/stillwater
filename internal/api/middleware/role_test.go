@@ -8,6 +8,7 @@ import (
 )
 
 func TestRequireAdminAllows(t *testing.T) {
+	t.Parallel()
 	handler := RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -25,6 +26,7 @@ func TestRequireAdminAllows(t *testing.T) {
 }
 
 func TestRequireAdminBlocksOperator(t *testing.T) {
+	t.Parallel()
 	handler := RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -42,6 +44,7 @@ func TestRequireAdminBlocksOperator(t *testing.T) {
 }
 
 func TestRequireAdminBlocksNoRole(t *testing.T) {
+	t.Parallel()
 	handler := RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -56,6 +59,7 @@ func TestRequireAdminBlocksNoRole(t *testing.T) {
 }
 
 func TestRoleFromContext(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), userRoleKey, "operator")
 	if got := RoleFromContext(ctx); got != "operator" {
 		t.Errorf("RoleFromContext() = %q, want %q", got, "operator")
@@ -63,6 +67,7 @@ func TestRoleFromContext(t *testing.T) {
 }
 
 func TestRoleFromContextEmpty(t *testing.T) {
+	t.Parallel()
 	if got := RoleFromContext(context.Background()); got != "" {
 		t.Errorf("RoleFromContext() = %q, want empty", got)
 	}

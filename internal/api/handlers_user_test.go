@@ -21,6 +21,7 @@ func withAdminCtx(req *http.Request, userID string) *http.Request {
 }
 
 func TestHandleRegister_Success(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create an invite as the admin.
@@ -68,6 +69,7 @@ func TestHandleRegister_Success(t *testing.T) {
 }
 
 func TestHandleRegister_RedeemedInvite(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create and use an invite.
@@ -108,6 +110,7 @@ func TestHandleRegister_RedeemedInvite(t *testing.T) {
 }
 
 func TestHandleDeactivateUser_BootstrapAdmin(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create a second admin so the last-admin guard is not the reason for refusal.
@@ -137,6 +140,7 @@ func TestHandleDeactivateUser_BootstrapAdmin(t *testing.T) {
 }
 
 func TestHandleUpdateUser_InvalidRole(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"role":"superadmin"}`
@@ -161,6 +165,7 @@ func TestHandleUpdateUser_InvalidRole(t *testing.T) {
 }
 
 func TestHandleUpdateUser_ValidRole(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create a second admin to downgrade (the first is protected).
@@ -192,6 +197,7 @@ func TestHandleUpdateUser_ValidRole(t *testing.T) {
 }
 
 func TestHandleUpdateUser_BootstrapAdmin(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create a second admin so the last-admin guard is not the reason for refusal.

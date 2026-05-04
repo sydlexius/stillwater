@@ -38,6 +38,7 @@ func addTestConnectionWithURL(t *testing.T, r *Router, id, name, connType, url s
 }
 
 func TestHandleDeletePushImage_Success(t *testing.T) {
+	t.Parallel()
 	type capture struct {
 		method string
 		path   string
@@ -95,6 +96,7 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
+	t.Parallel()
 	pathCh := make(chan string, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -144,6 +146,7 @@ func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_InvalidType(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -162,6 +165,7 @@ func TestHandleDeletePushImage_InvalidType(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_MissingConnectionID(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -180,6 +184,7 @@ func TestHandleDeletePushImage_MissingConnectionID(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_ConnectionNotFound(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -198,6 +203,7 @@ func TestHandleDeletePushImage_ConnectionNotFound(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_ConnectionDisabled(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -230,6 +236,7 @@ func TestHandleDeletePushImage_ConnectionDisabled(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	router, _ := testRouter(t)
 	addTestConnection(t, router, "conn-1", "Emby", "emby")
 
@@ -248,6 +255,7 @@ func TestHandleDeletePushImage_ArtistNotFound(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
+	t.Parallel()
 	type capture struct {
 		method string
 		path   string
@@ -298,6 +306,7 @@ func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -315,6 +324,7 @@ func TestHandleDeletePushImage_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_PlatformIDNotStoredAndNotProvided(t *testing.T) {
+	t.Parallel()
 	router, artistSvc := testRouter(t)
 	addTestConnection(t, router, "conn-1", "Emby", "emby")
 	a := addTestArtist(t, artistSvc, "Radiohead")
@@ -337,6 +347,7 @@ func TestHandleDeletePushImage_PlatformIDNotStoredAndNotProvided(t *testing.T) {
 // --- handlePushImages tests ---
 
 func TestHandlePushImages_FanartUploadedAtCorrectIndices(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var captured []int
 
@@ -421,6 +432,7 @@ func TestHandlePushImages_FanartUploadedAtCorrectIndices(t *testing.T) {
 }
 
 func TestHandlePushImages_ReadFailureProducesSanitizedError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -481,6 +493,7 @@ func TestHandlePushImages_ReadFailureProducesSanitizedError(t *testing.T) {
 }
 
 func TestHandlePushImages_UploadFailureProducesSanitizedError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -537,6 +550,7 @@ func TestHandlePushImages_UploadFailureProducesSanitizedError(t *testing.T) {
 }
 
 func TestBuildArtistPushData_TypeAwareDates(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		artistType    string

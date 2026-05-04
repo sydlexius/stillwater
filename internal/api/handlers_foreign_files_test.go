@@ -65,6 +65,7 @@ func newTestRouterWithForeign(t *testing.T) (*Router, *sql.DB) {
 }
 
 func TestHandleForeignFilesList(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
@@ -93,6 +94,7 @@ func TestHandleForeignFilesList(t *testing.T) {
 }
 
 func TestHandleForeignFileAllowlist(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
@@ -131,6 +133,7 @@ func TestHandleForeignFileAllowlist(t *testing.T) {
 }
 
 func TestHandleForeignFileDelete(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "backdrop.jpg")
@@ -163,6 +166,7 @@ func TestHandleForeignFileDelete(t *testing.T) {
 }
 
 func TestHandleForeignAllowlistRemove(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
@@ -196,6 +200,7 @@ func TestHandleForeignAllowlistRemove(t *testing.T) {
 }
 
 func TestHandleForeignAllowlistList(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
 		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
@@ -220,6 +225,7 @@ func TestHandleForeignAllowlistList(t *testing.T) {
 }
 
 func TestForeignSummaryForBanner(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
@@ -239,6 +245,7 @@ func TestForeignSummaryForBanner(t *testing.T) {
 }
 
 func TestHandleForeignFilesDismiss(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
 	for _, fn := range []string{"backdrop.jpg", "fanart.jpg"} {
@@ -278,6 +285,7 @@ func TestHandleForeignFilesDismiss(t *testing.T) {
 }
 
 func TestForeignHandlers_NoRepoServiceUnavailable(t *testing.T) {
+	t.Parallel()
 	r := &Router{logger: slog.Default()}
 	cases := []struct {
 		name    string
@@ -310,6 +318,7 @@ func TestForeignHandlers_NoRepoServiceUnavailable(t *testing.T) {
 }
 
 func TestHandleForeignFile_MissingID(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	cases := []func(http.ResponseWriter, *http.Request){
 		r.handleForeignFileAllowlist,
@@ -327,6 +336,7 @@ func TestHandleForeignFile_MissingID(t *testing.T) {
 }
 
 func TestHandleForeignFileDelete_MissingFileStillSucceeds(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
 	// Ledger row points at a non-existent path; the handler should still
@@ -362,6 +372,7 @@ func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
 // (HTML) so HTMX can swap the whole container, fixing the stale empty-state
 // + bulk-dismiss button bug from PR #1246 round 2.
 func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	dir := t.TempDir()
@@ -419,6 +430,7 @@ func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 // TestHandleForeignAllowlistRemove_RendersRefreshedTable pins the same
 // behavior for the allowlist page's per-row Remove action.
 func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
 		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
@@ -450,6 +462,7 @@ func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
 // dismiss must render the actual remaining rows (not an unconditional empty
 // view) so a partial-success run does not hide surviving detections.
 func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
 	for _, fn := range []string{"backdrop.jpg", "fanart.jpg"} {
@@ -477,6 +490,7 @@ func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
 // 1 review (slog.Error before writeJSON 500) and lifts patch coverage on the
 // previously-untested error branches.
 func TestHandleForeignFiles_DBErrorPaths(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		method string
@@ -538,6 +552,7 @@ func TestHandleForeignFiles_DBErrorPaths(t *testing.T) {
 // (static assets, auth service) to render the wrapping page; testing the
 // loader directly captures the data-shaping logic without that machinery.
 func TestLoadForeignFilesView(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 
 	// Empty repo -> empty view, no error.
@@ -580,6 +595,7 @@ func TestLoadForeignFilesView(t *testing.T) {
 // TestLoadForeignAllowlistView mirrors the foreign-files loader test for
 // the allowlist page.
 func TestLoadForeignAllowlistView(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 
 	view, err := r.loadForeignAllowlistView(context.Background())
@@ -621,6 +637,7 @@ func TestLoadForeignAllowlistView(t *testing.T) {
 // path without needing the full Router wiring (static assets, auth service)
 // that the templ render at the end of the handler requires.
 func TestHandleForeignFilesPage_DBErrorPath(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -638,6 +655,7 @@ func TestHandleForeignFilesPage_DBErrorPath(t *testing.T) {
 // TestHandleForeignAllowlistPage_DBErrorPath is the analog for the
 // allowlist page handler.
 func TestHandleForeignAllowlistPage_DBErrorPath(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -655,6 +673,7 @@ func TestHandleForeignAllowlistPage_DBErrorPath(t *testing.T) {
 // TestForeignSummaryForBanner_CountError pins the Warn-and-return-zero
 // fallback when the repo's Count call fails (closed DB).
 func TestForeignSummaryForBanner_CountError(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -668,6 +687,7 @@ func TestForeignSummaryForBanner_CountError(t *testing.T) {
 // The anon path (empty userID) calls renderLoginPage which needs full Router
 // wiring; that branch is integration-test territory.
 func TestRequireForeignAdmin_NonAdminGetsForbidden(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	ctx := middleware.WithTestUserID(context.Background(), "u1")
 	ctx = middleware.WithTestRole(ctx, "operator")
@@ -686,6 +706,7 @@ func TestRequireForeignAdmin_NonAdminGetsForbidden(t *testing.T) {
 // List call fails. We seed a row, complete the mutation against the open DB,
 // then invoke the handler with the foreign_files table dropped so List errors.
 func TestHandleForeignFile_RenderListErrorAfterMutation(t *testing.T) {
+	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{

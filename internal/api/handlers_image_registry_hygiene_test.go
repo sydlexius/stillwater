@@ -21,6 +21,7 @@ import (
 // registry row on first failed fetch; this test pins the rendering invariant
 // so the FIRST page load degrades gracefully.
 func TestArtistDetail_StaleImageRow_RendersPlaceholderNot500(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Insert an artist with empty path so image lookups cannot find files

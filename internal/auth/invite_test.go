@@ -35,6 +35,7 @@ func setupInviteTest(t *testing.T) (*Service, string) {
 }
 
 func TestCreateInvite(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -65,6 +66,7 @@ func TestCreateInvite(t *testing.T) {
 }
 
 func TestGetInviteByCode(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -87,6 +89,7 @@ func TestGetInviteByCode(t *testing.T) {
 }
 
 func TestGetInviteByCode_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -97,6 +100,7 @@ func TestGetInviteByCode_NotFound(t *testing.T) {
 }
 
 func TestGetInviteByCode_Expired(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -113,6 +117,7 @@ func TestGetInviteByCode_Expired(t *testing.T) {
 }
 
 func TestGetInviteByCode_Redeemed(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -139,6 +144,7 @@ func TestGetInviteByCode_Redeemed(t *testing.T) {
 }
 
 func TestListPendingInvites(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -181,6 +187,7 @@ func TestListPendingInvites(t *testing.T) {
 }
 
 func TestRedeemInvite(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -208,6 +215,7 @@ func TestRedeemInvite(t *testing.T) {
 }
 
 func TestRedeemInvite_AlreadyRedeemed(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -233,6 +241,7 @@ func TestRedeemInvite_AlreadyRedeemed(t *testing.T) {
 }
 
 func TestRevokeInvite(t *testing.T) {
+	t.Parallel()
 	svc, adminID := setupInviteTest(t)
 	ctx := context.Background()
 
@@ -253,6 +262,7 @@ func TestRevokeInvite(t *testing.T) {
 }
 
 func TestRevokeInvite_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 

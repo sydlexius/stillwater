@@ -50,6 +50,7 @@ func renameTestArtist(t *testing.T, libID string) (*Service, *Artist, string) {
 }
 
 func TestRenameDirectory_Happy(t *testing.T) {
+	t.Parallel()
 	svc, a, root := renameTestArtist(t, "lib-rename-happy")
 	ctx := context.Background()
 
@@ -86,6 +87,7 @@ func TestRenameDirectory_Happy(t *testing.T) {
 // production-code rationale comment names them together; covering only
 // one would let a regression in the other ship green.
 func TestRenameDirectory_PreservesProviderIDs(t *testing.T) {
+	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-provider")
 	ctx := context.Background()
 
@@ -142,6 +144,7 @@ func TestRenameDirectory_PreservesProviderIDs(t *testing.T) {
 // (newPath/oldPath) or drops the rollback entirely would silently pass
 // every other test in the suite, but would fail this one.
 func TestRenameDirectory_RollbackOnDBFailure(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	root := t.TempDir()
 	ctx := context.Background()
@@ -260,6 +263,7 @@ func (r *concurrentEditRepo) UpdatePath(ctx context.Context, id, path string) er
 // s.artists.Update(ctx, a) call this would fail (the snapshot wins);
 // with UpdatePath it must hold.
 func TestRenameDirectory_PreservesConcurrentMetadataEdit(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	root := t.TempDir()
 	ctx := context.Background()
@@ -320,6 +324,7 @@ func TestRenameDirectory_PreservesConcurrentMetadataEdit(t *testing.T) {
 // "renaming %q to %q: %w". This exercises both the wrapped-error branch in
 // the service and the handler's default 500 mapping for unsentineled errors.
 func TestRenameDirectory_RenameError(t *testing.T) {
+	t.Parallel()
 	// Root bypasses POSIX permission bits, so the chmod 0500 below would
 	// not produce EACCES and the wrapped-error branch we want to exercise
 	// would never fire. Same skip pattern used by maintenance_test.go.
@@ -370,6 +375,7 @@ func TestRenameDirectory_RenameError(t *testing.T) {
 // original db error to the caller; we assert that contract here so any
 // future refactor that swaps which error wins is caught.
 func TestRenameDirectory_RollbackAlsoFails(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	root := t.TempDir()
 	ctx := context.Background()
@@ -419,6 +425,7 @@ func TestRenameDirectory_RollbackAlsoFails(t *testing.T) {
 }
 
 func TestRenameDirectory_InvalidName(t *testing.T) {
+	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-invalid")
 	ctx := context.Background()
 
@@ -434,6 +441,7 @@ func TestRenameDirectory_InvalidName(t *testing.T) {
 }
 
 func TestRenameDirectory_NotFound(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := renameTestArtist(t, "lib-rename-notfound")
 	ctx := context.Background()
 
@@ -444,6 +452,7 @@ func TestRenameDirectory_NotFound(t *testing.T) {
 }
 
 func TestRenameDirectory_Locked(t *testing.T) {
+	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-locked")
 	ctx := context.Background()
 
@@ -457,6 +466,7 @@ func TestRenameDirectory_Locked(t *testing.T) {
 }
 
 func TestRenameDirectory_NoPath(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -480,6 +490,7 @@ func TestRenameDirectory_NoPath(t *testing.T) {
 }
 
 func TestRenameDirectory_NoChange(t *testing.T) {
+	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-nochange")
 	ctx := context.Background()
 
@@ -491,6 +502,7 @@ func TestRenameDirectory_NoChange(t *testing.T) {
 }
 
 func TestRenameDirectory_DestExists(t *testing.T) {
+	t.Parallel()
 	svc, a, root := renameTestArtist(t, "lib-rename-collide")
 	ctx := context.Background()
 
@@ -516,6 +528,7 @@ func TestRenameDirectory_DestExists(t *testing.T) {
 // the link, so the dirent is detected and ErrRenameDestExists fires as
 // intended.
 func TestRenameDirectory_DestExistsDanglingSymlink(t *testing.T) {
+	t.Parallel()
 	svc, a, root := renameTestArtist(t, "lib-rename-dangling")
 	ctx := context.Background()
 

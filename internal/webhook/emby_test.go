@@ -6,6 +6,7 @@ import (
 )
 
 func TestEmbyPayload_Decode_TestEvent(t *testing.T) {
+	t.Parallel()
 	raw := `{"Event":"system.notificationtest"}`
 	var p EmbyPayload
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
@@ -20,6 +21,7 @@ func TestEmbyPayload_Decode_TestEvent(t *testing.T) {
 }
 
 func TestEmbyPayload_Decode_ItemAdded_WithMBIDs(t *testing.T) {
+	t.Parallel()
 	raw := `{
 		"Event": "library.new",
 		"Item": {
@@ -59,6 +61,7 @@ func TestEmbyPayload_Decode_ItemAdded_WithMBIDs(t *testing.T) {
 }
 
 func TestEmbyPayload_ArtistMBIDs_EmptyWhenNoProviderIds(t *testing.T) {
+	t.Parallel()
 	item := EmbyItem{Name: "Some Album", Type: "MusicAlbum"}
 	if got := item.ArtistMBIDs(); got != nil {
 		t.Errorf("ArtistMBIDs() = %v, want nil", got)
@@ -66,6 +69,7 @@ func TestEmbyPayload_ArtistMBIDs_EmptyWhenNoProviderIds(t *testing.T) {
 }
 
 func TestEmbyPayload_ArtistMBIDs_EmptyWhenKeyAbsent(t *testing.T) {
+	t.Parallel()
 	item := EmbyItem{
 		Name:        "Some Album",
 		Type:        "MusicAlbum",
@@ -77,6 +81,7 @@ func TestEmbyPayload_ArtistMBIDs_EmptyWhenKeyAbsent(t *testing.T) {
 }
 
 func TestEmbyPayload_ArtistMBIDs_SingleArtist(t *testing.T) {
+	t.Parallel()
 	item := EmbyItem{
 		Name:        "Some Album",
 		Type:        "MusicAlbum",
@@ -89,6 +94,7 @@ func TestEmbyPayload_ArtistMBIDs_SingleArtist(t *testing.T) {
 }
 
 func TestEmbyPayload_LibraryChanged(t *testing.T) {
+	t.Parallel()
 	raw := `{"Event":"library.changed"}`
 	var p EmbyPayload
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {

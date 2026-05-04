@@ -11,6 +11,7 @@ import (
 // TestNormalizeSettingsSection verifies that valid section names pass through
 // unchanged and that unknown names fall back to "general".
 func TestNormalizeSettingsSection(t *testing.T) {
+	t.Parallel()
 	valid := []string{
 		"general", "providers", "connections", "libraries",
 		"automation", "rules", "users", "auth_providers", "maintenance", "logs",
@@ -28,6 +29,7 @@ func TestNormalizeSettingsSection(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_CacheMaxSize_Invalid(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	body := `{"cache.image.max_size_mb": "-5"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
@@ -39,6 +41,7 @@ func TestHandleUpdateSettings_CacheMaxSize_Invalid(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_CacheMaxSize_Valid(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	body := `{"cache.image.max_size_mb": "512"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
@@ -50,6 +53,7 @@ func TestHandleUpdateSettings_CacheMaxSize_Valid(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_CacheMaxSize_Zero(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	body := `{"cache.image.max_size_mb": "0"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
@@ -61,6 +65,7 @@ func TestHandleUpdateSettings_CacheMaxSize_Zero(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_Threshold_Invalid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value string
@@ -87,6 +92,7 @@ func TestHandleUpdateSettings_Threshold_Invalid(t *testing.T) {
 // to set auth.providers.local.enabled to a falsy value is rejected with 400,
 // including case and whitespace variants.
 func TestHandleUpdateSettings_LocalAuthCannotBeDisabled(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value string
@@ -113,6 +119,7 @@ func TestHandleUpdateSettings_LocalAuthCannotBeDisabled(t *testing.T) {
 // TestHandleUpdateSettings_LocalAuthEnabled verifies that setting
 // auth.providers.local.enabled to true is accepted.
 func TestHandleUpdateSettings_LocalAuthEnabled(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	body := `{"auth.providers.local.enabled": "true"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
@@ -198,6 +205,7 @@ func TestHandleUpdateSettings_BasePath_Valid(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_Threshold_Valid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value string

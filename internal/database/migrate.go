@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/pressly/goose/v3"
 )
@@ -27,13 +28,24 @@ func (g *gooseLogger) Printf(format string, v ...interface{}) {
 	g.logger.Info(fmt.Sprintf(format, v...))
 }
 
+// gooseOnce guards the one-time initialization of goose's package-level state
+// (filesystem, logger, dialect). These values are always identical across all
+// callers, so initializing once is correct. Without this guard, concurrent
+// calls to Migrate (e.g. from parallel tests) race on goose's global vars.
+var (
+	gooseOnce    sync.Once
+	gooseInitErr error
+)
+
 // Migrate runs all pending database migrations.
 func Migrate(db *sql.DB) error {
-	goose.SetBaseFS(migrations)
-	goose.SetLogger(&gooseLogger{logger: slog.Default().With("component", "database")})
-
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		return fmt.Errorf("setting goose dialect: %w", err)
+	gooseOnce.Do(func() {
+		goose.SetBaseFS(migrations)
+		goose.SetLogger(&gooseLogger{logger: slog.Default().With("component", "database")})
+		gooseInitErr = goose.SetDialect("sqlite3")
+	})
+	if gooseInitErr != nil {
+		return fmt.Errorf("setting goose dialect: %w", gooseInitErr)
 	}
 
 	if err := goose.Up(db, "migrations"); err != nil {

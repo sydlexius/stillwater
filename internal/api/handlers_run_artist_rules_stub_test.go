@@ -116,6 +116,7 @@ func testRouterWithStubPipeline(t *testing.T, stub *stubPipeline) (*Router, *art
 }
 
 func TestStub_RunArtistRules_ViolationsFound_JSON(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return &rule.RunResult{
@@ -151,6 +152,7 @@ func TestStub_RunArtistRules_ViolationsFound_JSON(t *testing.T) {
 }
 
 func TestStub_RunArtistRules_ViolationsFound_HTMX(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return &rule.RunResult{
@@ -194,6 +196,7 @@ func TestStub_RunArtistRules_ViolationsFound_HTMX(t *testing.T) {
 }
 
 func TestStub_RunArtistRules_PipelineError_JSON(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return nil, fmt.Errorf("engine exploded")
@@ -214,6 +217,7 @@ func TestStub_RunArtistRules_PipelineError_JSON(t *testing.T) {
 }
 
 func TestStub_RunArtistRules_PipelineError_HTMX(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return nil, fmt.Errorf("engine exploded")
@@ -242,6 +246,7 @@ func TestStub_RunArtistRules_PipelineError_HTMX(t *testing.T) {
 }
 
 func TestStub_RunArtistRules_NoViolations_HTMX(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return &rule.RunResult{ArtistsProcessed: 1}, nil

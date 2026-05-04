@@ -49,6 +49,7 @@ func setupTestConnService(t *testing.T) *connection.Service {
 }
 
 func TestFetchArtistImage_Success(t *testing.T) {
+	t.Parallel()
 	// Stand up a fake Emby server that returns image bytes.
 	fakeBody := []byte("fake-png-data")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +103,7 @@ func TestFetchArtistImage_Success(t *testing.T) {
 }
 
 func TestFetchArtistImage_NoPlatformIDs(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	provider := &stubPlatformIDProvider{ids: nil}
 	bridge := New(connSvc, provider, slog.Default())
@@ -116,6 +118,7 @@ func TestFetchArtistImage_NoPlatformIDs(t *testing.T) {
 }
 
 func TestFetchArtistImage_PlatformIDLookupError(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	provider := &stubPlatformIDProvider{err: fmt.Errorf("db error")}
 	bridge := New(connSvc, provider, slog.Default())
@@ -130,6 +133,7 @@ func TestFetchArtistImage_PlatformIDLookupError(t *testing.T) {
 }
 
 func TestFetchArtistImage_DisabledConnection(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	ctx := context.Background()
 
@@ -165,6 +169,7 @@ func TestFetchArtistImage_DisabledConnection(t *testing.T) {
 }
 
 func TestUploadArtistImage_Success(t *testing.T) {
+	t.Parallel()
 	expectedData := []byte("trimmed-png")
 	received := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +238,7 @@ func TestUploadArtistImage_Success(t *testing.T) {
 }
 
 func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	ctx := context.Background()
 
@@ -279,6 +285,7 @@ func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
 }
 
 func TestFetchArtistImage_JellyfinConnection(t *testing.T) {
+	t.Parallel()
 	fakeBody := []byte("jellyfin-logo-data")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/Images/") {
@@ -331,6 +338,7 @@ func TestFetchArtistImage_JellyfinConnection(t *testing.T) {
 }
 
 func TestFetchArtistImage_UnsupportedConnectionType(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	ctx := context.Background()
 
@@ -366,6 +374,7 @@ func TestFetchArtistImage_UnsupportedConnectionType(t *testing.T) {
 }
 
 func TestListArtistImageSlots_Success(t *testing.T) {
+	t.Parallel()
 	// Stand up a fake Emby server that returns artist detail with images.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// GetArtistDetail hits /Users/{userID}/Items/{artistID}
@@ -437,6 +446,7 @@ func TestListArtistImageSlots_Success(t *testing.T) {
 }
 
 func TestListArtistImageSlots_NoPlatformIDs(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	provider := &stubPlatformIDProvider{ids: nil}
 	bridge := New(connSvc, provider, slog.Default())
@@ -451,6 +461,7 @@ func TestListArtistImageSlots_NoPlatformIDs(t *testing.T) {
 }
 
 func TestListArtistImageSlots_UnsupportedType(t *testing.T) {
+	t.Parallel()
 	connSvc := setupTestConnService(t)
 	ctx := context.Background()
 

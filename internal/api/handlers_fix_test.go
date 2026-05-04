@@ -24,6 +24,7 @@ func (n *noopRevert) fn(_ context.Context) error {
 }
 
 func TestHandleFixViolation_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
@@ -54,6 +55,7 @@ func TestHandleFixViolation_Success(t *testing.T) {
 }
 
 func TestHandleFixViolation_NotFixable(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{RuleID: "nfo_exists", Fixed: false, Message: "not fixable"}, nil
@@ -81,6 +83,7 @@ func TestHandleFixViolation_NotFixable(t *testing.T) {
 }
 
 func TestHandleFixViolation_PipelineError(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return nil, fmt.Errorf("db error")
@@ -100,6 +103,7 @@ func TestHandleFixViolation_PipelineError(t *testing.T) {
 }
 
 func TestHandleFixAll_StartsJob(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, artistSvc := testRouterWithStubPipeline(t, stub)
 	ctx := context.Background()
@@ -139,9 +143,37 @@ func TestHandleFixAll_StartsJob(t *testing.T) {
 	if resp["total"] != float64(2) {
 		t.Errorf("total = %v, want 2", resp["total"])
 	}
+
+	// Wait for the background goroutine to finish so cleanup does not race
+	// with router-state mutations after the test returns. Fail loudly if the
+	// worker never settles -- a silent timeout would reintroduce the very
+	// flake this wait is meant to remove.
+	deadline := time.Now().Add(5 * time.Second)
+	settled := false
+	for time.Now().Before(deadline) {
+		r.fixAllMu.RLock()
+		p := r.fixAllProgress
+		r.fixAllMu.RUnlock()
+		if p == nil {
+			settled = true
+			break
+		}
+		p.mu.RLock()
+		done := p.Status == "completed"
+		p.mu.RUnlock()
+		if done {
+			settled = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !settled {
+		t.Fatal("timed out waiting for fix-all background job to finish")
+	}
 }
 
 func TestHandleFixAll_NoFixable(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 	ctx := context.Background()
@@ -174,6 +206,7 @@ func TestHandleFixAll_NoFixable(t *testing.T) {
 }
 
 func TestHandleFixAllStatus_NoJob(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -196,6 +229,7 @@ func TestHandleFixAllStatus_NoJob(t *testing.T) {
 }
 
 func TestHandleFixAllStatus_WithProgress(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -237,6 +271,7 @@ func TestHandleFixAllStatus_WithProgress(t *testing.T) {
 }
 
 func TestHandleFixAll_Completion(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{Fixed: true, Message: "fixed"}, nil
@@ -301,6 +336,7 @@ func TestHandleFixAll_Completion(t *testing.T) {
 // --- Undo handler tests ---
 
 func TestHandleUndoFix_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -331,6 +367,7 @@ func TestHandleUndoFix_Success(t *testing.T) {
 }
 
 func TestHandleUndoFix_Expired(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -354,6 +391,7 @@ func TestHandleUndoFix_Expired(t *testing.T) {
 }
 
 func TestHandleUndoFix_NotFound(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -369,6 +407,7 @@ func TestHandleUndoFix_NotFound(t *testing.T) {
 }
 
 func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -395,6 +434,7 @@ func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
 }
 
 func TestHandleUndoFix_ConcurrentSameID(t *testing.T) {
+	t.Parallel()
 	// Two goroutines calling undo with the same ID concurrently: exactly one
 	// should get 200 and the other should get 410. The UndoStore.Pop is
 	// atomic (mutex-protected), so this verifies no double-revert.
@@ -441,6 +481,7 @@ func TestHandleUndoFix_ConcurrentSameID(t *testing.T) {
 }
 
 func TestHandleFixViolation_NoUndo_PathlessArtist(t *testing.T) {
+	t.Parallel()
 	// A fix that succeeds for a pathless artist (no on-disk directory) should
 	// not return undo_id because there are no files to snapshot or revert.
 	stub := &stubPipeline{
@@ -507,6 +548,7 @@ func TestHandleFixViolation_NoUndo_PathlessArtist(t *testing.T) {
 }
 
 func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
+	t.Parallel()
 	// A fix that succeeds for an artist with a path should return undo_id
 	// and undo_expires_in in the response.
 	stub := &stubPipeline{
@@ -573,6 +615,7 @@ func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
 // to status-only errors and the dashboard card would fail without
 // explanation.
 func TestHandleFixViolation_HTMX_FailureCarriesMessage(t *testing.T) {
+	t.Parallel()
 	const failureMsg = "no image found from any configured provider"
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
@@ -613,6 +656,7 @@ func TestHandleFixViolation_HTMX_FailureCarriesMessage(t *testing.T) {
 // via HTMX and an undo entry exists, the response contains UndoToast HTML
 // and does NOT set the HX-Trigger header (to avoid destroying the toast).
 func TestHandleFixViolation_HTMX_WithUndo(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
@@ -670,6 +714,7 @@ func TestHandleFixViolation_HTMX_WithUndo(t *testing.T) {
 // via HTMX and there is no undo entry (pathless artist), the response sets
 // HX-Trigger to refresh the queue and returns an empty body.
 func TestHandleFixViolation_HTMX_NoUndo(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
@@ -731,6 +776,7 @@ func TestHandleFixViolation_HTMX_NoUndo(t *testing.T) {
 // TestHandleUndoFix_HTMX verifies that when the undo endpoint is called via
 // HTMX, it returns an empty body and sets HX-Trigger to refresh the queue.
 func TestHandleUndoFix_HTMX(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 

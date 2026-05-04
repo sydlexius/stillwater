@@ -102,6 +102,7 @@ func addHistoryChange(t *testing.T, svc *artist.HistoryService, artistID, field,
 }
 
 func TestHandleListArtistHistory_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/no-such-artist/history", nil)
@@ -116,6 +117,7 @@ func TestHandleListArtistHistory_NotFound(t *testing.T) {
 }
 
 func TestHandleListArtistHistory_Empty(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Empty History Artist")
@@ -148,6 +150,7 @@ func TestHandleListArtistHistory_Empty(t *testing.T) {
 }
 
 func TestHandleListArtistHistory_WithChanges(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "History Artist")
@@ -183,6 +186,7 @@ func TestHandleListArtistHistory_WithChanges(t *testing.T) {
 }
 
 func TestHandleListArtistHistory_Pagination(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Pagination Artist")
@@ -248,6 +252,7 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 }
 
 func TestHandleListArtistHistory_ResponseShape(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Shape Artist")
@@ -305,6 +310,7 @@ func TestHandleListArtistHistory_ResponseShape(t *testing.T) {
 }
 
 func TestHandleArtistHistoryTab_HTML(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "History Tab Artist")
@@ -332,6 +338,7 @@ func TestHandleArtistHistoryTab_HTML(t *testing.T) {
 }
 
 func TestHandleArtistHistoryTab_Empty(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "No History Artist")
@@ -353,6 +360,7 @@ func TestHandleArtistHistoryTab_Empty(t *testing.T) {
 }
 
 func TestHandleArtistHistoryTab_NilHistoryService(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 	r.historyService = nil // simulate unconfigured service
 
@@ -372,6 +380,7 @@ func TestHandleArtistHistoryTab_NilHistoryService(t *testing.T) {
 }
 
 func TestHandleRevertHistory(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	artistSvc.SetHistoryService(historySvc)
 
@@ -464,6 +473,7 @@ func TestHandleRevertHistory(t *testing.T) {
 }
 
 func TestHandleListGlobalHistory(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Global History Artist")
@@ -554,6 +564,7 @@ func TestHandleListGlobalHistory(t *testing.T) {
 }
 
 func TestHandleListGlobalHistory_WildcardSource(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Wildcard Source Artist")
@@ -581,6 +592,7 @@ func TestHandleListGlobalHistory_WildcardSource(t *testing.T) {
 }
 
 func TestHandleListGlobalHistory_DateRange(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Date Range Artist")
@@ -653,6 +665,7 @@ func TestHandleListGlobalHistory_DateRange(t *testing.T) {
 }
 
 func TestHandleActivityPage(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
 
 	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
@@ -674,6 +687,7 @@ func TestHandleActivityPage(t *testing.T) {
 // renders activityRow entries including the old/new value blocks.
 // This covers the whitespace-pre-wrap change in the generated activity_templ.go.
 func TestHandleActivityContent_RendersRow(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	a := addTestArtist(t, artistSvc, "Activity Row Artist")
 
@@ -760,6 +774,7 @@ func seedHistoryChanges(t *testing.T, svc *artist.HistoryService, artistID strin
 // seeded and 40 rows rendered (DOM count from a hypothetical second
 // load-more), the OOB counter fragment must reflect 40, not the page-1 size.
 func TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	artistSvc.SetHistoryService(historySvc)
 
@@ -888,6 +903,7 @@ func TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint(t *testing.T) {
 // regresses to the first-page count after the user has loaded additional pages.
 // The hint must override that fallback.
 func TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	artistSvc.SetHistoryService(historySvc)
 
@@ -951,6 +967,7 @@ func TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint(t *testing.T) 
 // tab) call to honor the hx-vals "showing" hint while degrading gracefully
 // when the hint is missing, malformed, or out of range.
 func TestResolveShowingCount(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// includeShowing distinguishes "no showing key in body" from
@@ -1015,6 +1032,7 @@ func TestResolveShowingCount(t *testing.T) {
 // the activity-feed fragment is rendered, otherwise the artist-tab fragment.
 // This is the contract the hint relies on to drive the right rendering branch.
 func TestHandleRevertHistory_ActivityFromArtistPageRoute(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 	artistSvc.SetHistoryService(historySvc)
 

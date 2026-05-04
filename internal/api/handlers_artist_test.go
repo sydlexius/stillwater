@@ -15,6 +15,7 @@ import (
 )
 
 func TestHandleArtistsBadge_ZeroCount(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/badge", nil)
 	w := httptest.NewRecorder()
@@ -28,6 +29,7 @@ func TestHandleArtistsBadge_ZeroCount(t *testing.T) {
 }
 
 func TestHandleArtistsBadge_NonZeroCount(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Badge Artist"}); err != nil {
 		t.Fatalf("creating artist: %v", err)
@@ -44,6 +46,7 @@ func TestHandleArtistsBadge_NonZeroCount(t *testing.T) {
 }
 
 func TestHandleArtistsBadge_ServiceError(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// Close the DB to force a service error. testRouter's t.Cleanup will
 	// attempt a second close; that error is intentionally ignored there.
@@ -59,6 +62,7 @@ func TestHandleArtistsBadge_ServiceError(t *testing.T) {
 }
 
 func TestArtistsPageSortParams(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithLibrary(t)
 
 	a1 := &artist.Artist{Name: "Zydeco Band"}
@@ -116,6 +120,7 @@ func TestArtistsPageSortParams(t *testing.T) {
 // change to the selection controller. This test pins (a)-(c) so a future
 // edit cannot regress the behavior described in #1081.
 func TestArtistsPage_BulkSelectionSurvivesSort(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithLibrary(t)
 
 	// Two artists are enough to assert per-row uniqueness while keeping the
@@ -220,6 +225,7 @@ func TestArtistsPage_BulkSelectionSurvivesSort(t *testing.T) {
 // would otherwise expose. Without this round-trip the cross-page selection
 // still appears "lost" because the user has no way to focus on it.
 func TestArtistsPage_IDsFilter(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithLibrary(t)
 
 	// Three artists give the test something to filter against. We pick
@@ -281,6 +287,7 @@ func TestArtistsPage_IDsFilter(t *testing.T) {
 // strips the param on its own (older htmx, manual URL edits) does not show
 // an empty list with an alarming "Showing 0 selected" chip.
 func TestArtistsPage_IDsFilter_Empty(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithLibrary(t)
 	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Solo Artist"}); err != nil {
 		t.Fatalf("creating artist: %v", err)
@@ -333,6 +340,7 @@ func TestArtistsPage_IDsFilter_Empty(t *testing.T) {
 // overview when the setting is disabled, when no connections exist, or when
 // only non-debug-capable (Lidarr) connections exist.
 func TestArtistDetailPage_TabDebugFallback(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Debug Tab Artist")
 

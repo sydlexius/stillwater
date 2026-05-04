@@ -24,6 +24,7 @@ func firstRuleID(t *testing.T, svc *rule.Service) string {
 }
 
 func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ruleID := firstRuleID(t, r.ruleService)
@@ -55,6 +56,7 @@ func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
 }
 
 func TestHandleUpdateRule_ValidModesAccepted(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ruleID := firstRuleID(t, r.ruleService)
@@ -105,6 +107,7 @@ func requireErrorBody(t *testing.T, w *httptest.ResponseRecorder, want string) {
 }
 
 func TestHandleUpdateRule_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := strings.NewReader(`{"enabled":true}`)
@@ -122,6 +125,7 @@ func TestHandleUpdateRule_NotFound(t *testing.T) {
 }
 
 func TestHandleRunRule_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/nonexistent/run", nil)
@@ -137,6 +141,7 @@ func TestHandleRunRule_NotFound(t *testing.T) {
 }
 
 func TestHandleRunRule_NilPipeline(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// testRouter has nil pipeline; use a valid (seeded) rule ID.
 	ruleID := firstRuleID(t, r.ruleService)
@@ -154,6 +159,7 @@ func TestHandleRunRule_NilPipeline(t *testing.T) {
 }
 
 func TestHandleRunRule_Returns202(t *testing.T) {
+	t.Parallel()
 	r, _, ruleSvc := testRouterWithPipelineFull(t)
 	ruleID := firstRuleID(t, ruleSvc)
 
@@ -180,15 +186,26 @@ func TestHandleRunRule_Returns202(t *testing.T) {
 }
 
 func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	// Use a blocking stub so the first run stays in-progress until we release it.
+	// doneCh is closed by the stub once RunRule has been invoked, so cleanup
+	// can join the handler goroutine after closing blockCh -- closing alone
+	// only unblocks the stub, it does not wait for the handler's post-run
+	// processing to finish before the router/DB tear down.
 	blockCh := make(chan struct{})
+	doneCh := make(chan struct{})
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
+			defer close(doneCh)
 			<-blockCh
 			return &rule.RunResult{}, nil
 		},
 	}
 	r, _ := testRouterWithStubPipeline(t, stub)
+	t.Cleanup(func() {
+		close(blockCh)
+		<-doneCh
+	})
 
 	rules, err := r.ruleService.List(context.Background())
 	if err != nil || len(rules) == 0 {
@@ -216,8 +233,6 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
 	}
 
-	// Release the blocked goroutine so it can clean up.
-	close(blockCh)
 }
 
 // TestHandleRunRule_InvalidScope400 exercises the parseRunScope error path on
@@ -225,6 +240,7 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 // generic 400 without echoing the bad input back to the client. Covers the
 // scope-validation branch added for #698.
 func TestHandleRunRule_InvalidScope400(t *testing.T) {
+	t.Parallel()
 	r, _, ruleSvc := testRouterWithPipelineFull(t)
 	ruleID := firstRuleID(t, ruleSvc)
 
@@ -244,6 +260,7 @@ func TestHandleRunRule_InvalidScope400(t *testing.T) {
 // the pipeline is not wired. Distinct from the single-rule run because
 // handleRunAllRules has its own pipeline-nil check.
 func TestHandleRunAllRules_NilPipeline503(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
@@ -261,6 +278,7 @@ func TestHandleRunAllRules_NilPipeline503(t *testing.T) {
 // POST /rules/run-all so the spec's new 400 response is backed by the
 // implementation.
 func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithPipelineFull(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all?scope=xyz", nil)
@@ -278,6 +296,7 @@ func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
 // POST /rules/run-all. Uses the stub pipeline so the background goroutine
 // returns immediately and the test does not race on real evaluation work.
 func TestHandleRunAllRules_Returns202(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -319,12 +338,9 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 // POST /rules/run-all. A blocking stub keeps the first run in-progress so the
 // second call must observe r.ruleRun.Running == true and return 409.
 func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	blockCh := make(chan struct{})
-	// Register cleanup immediately so a later t.Fatalf cannot strand the
-	// blocked goroutine. Closing an already-closed channel panics, so this
-	// must only run once -- t.Cleanup is guaranteed to fire exactly once per
-	// registration and close(blockCh) at the bottom of the test is removed.
-	t.Cleanup(func() { close(blockCh) })
+	doneCh := make(chan struct{})
 	stub := &stubPipeline{
 		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
 			<-blockCh
@@ -332,10 +348,20 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 		},
 	}
 	// Wrap RunAllScoped too so the goroutine blocks instead of returning fast.
-	stub2 := &blockingStubPipeline{stubPipeline: *stub, block: blockCh}
+	// done is closed inside RunAllScoped (via defer) so cleanup can join the
+	// background goroutine after unblocking it.
+	stub2 := &blockingStubPipeline{stubPipeline: *stub, block: blockCh, done: doneCh}
 	r, _ := testRouterWithStubPipeline(t, &stub2.stubPipeline)
 	// Swap the pipeline to the blocking variant so handleRunAllRules waits.
 	r.pipeline = stub2
+	// Register the unblock AFTER router setup so LIFO cleanup releases the
+	// blocked goroutine before the router/DB are torn down. Closing alone is
+	// not enough -- we must also wait for the handler goroutine to finish so
+	// it cannot mutate router state after teardown.
+	t.Cleanup(func() {
+		close(blockCh)
+		<-doneCh
+	})
 
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
 	w1 := httptest.NewRecorder()
@@ -353,18 +379,23 @@ func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
 }
 
 // blockingStubPipeline wraps stubPipeline with a RunAllScoped that blocks on a
-// channel until the test releases it. Used by the 409 test above.
+// channel until the test releases it. Used by the 409 test above. The done
+// channel is closed when RunAllScoped returns so the test can join the
+// background goroutine before tearing down router/DB state.
 type blockingStubPipeline struct {
 	stubPipeline
 	block chan struct{}
+	done  chan struct{}
 }
 
 func (b *blockingStubPipeline) RunAllScoped(_ context.Context, _ rule.RunScope) (*rule.RunResult, error) {
+	defer close(b.done)
 	<-b.block
 	return &rule.RunResult{}, nil
 }
 
 func TestHandleEvaluateArtist_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/nonexistent/health", nil)
@@ -380,6 +411,7 @@ func TestHandleEvaluateArtist_NotFound(t *testing.T) {
 }
 
 func TestHandleEvaluateArtist_ReturnsHealthScore(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "Test Artist")
@@ -412,6 +444,7 @@ func TestHandleEvaluateArtist_ReturnsHealthScore(t *testing.T) {
 }
 
 func TestHandleBulkJobStatus_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.bulkService = rule.NewBulkService(r.db)
 
@@ -428,6 +461,7 @@ func TestHandleBulkJobStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleBulkJobList_ReturnsJobs(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.bulkService = rule.NewBulkService(r.db)
 
@@ -462,6 +496,7 @@ func testRouterWithBulkJob(t *testing.T) (*Router, *artist.Service, string) {
 }
 
 func TestHandleBulkJobStatus_WithJob(t *testing.T) {
+	t.Parallel()
 	r, _, jobID := testRouterWithBulkJob(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bulk/jobs/"+jobID, nil)

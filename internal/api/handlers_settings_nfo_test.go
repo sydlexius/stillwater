@@ -11,6 +11,7 @@ import (
 )
 
 func TestHandleGetNFOOutput_Defaults(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// Attach NFO settings service since testRouter does not set it up
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
@@ -36,6 +37,7 @@ func TestHandleGetNFOOutput_Defaults(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_MoodsAsStyles(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -66,6 +68,7 @@ func TestHandleUpdateNFOOutput_MoodsAsStyles(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_AdvancedRemap(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -105,6 +108,7 @@ func TestHandleUpdateNFOOutput_AdvancedRemap(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_InvalidGenreSource(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -119,6 +123,7 @@ func TestHandleUpdateNFOOutput_InvalidGenreSource(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_InvalidRemapKey(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -133,6 +138,7 @@ func TestHandleUpdateNFOOutput_InvalidRemapKey(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_InvalidRemapSource(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -147,6 +153,7 @@ func TestHandleUpdateNFOOutput_InvalidRemapSource(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.nfoSettingsService = nfo.NewNFOSettingsService(r.db, r.logger)
 
@@ -160,6 +167,7 @@ func TestHandleUpdateNFOOutput_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleGetNFOOutput_NilService(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// Explicitly leave nfoSettingsService nil
 	r.nfoSettingsService = nil
@@ -174,6 +182,7 @@ func TestHandleGetNFOOutput_NilService(t *testing.T) {
 }
 
 func TestHandleUpdateNFOOutput_NilService(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// Explicitly leave nfoSettingsService nil
 	r.nfoSettingsService = nil

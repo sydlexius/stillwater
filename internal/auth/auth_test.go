@@ -52,6 +52,7 @@ func createTestUser(t *testing.T, password string) *Service {
 // --- PrehashPassword tests ---
 
 func TestPrehashPassword(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		password string
@@ -82,6 +83,7 @@ func TestPrehashPassword(t *testing.T) {
 }
 
 func TestPrehashPassword_Deterministic(t *testing.T) {
+	t.Parallel()
 	a := PrehashPassword("test-password")
 	b := PrehashPassword("test-password")
 
@@ -91,6 +93,7 @@ func TestPrehashPassword_Deterministic(t *testing.T) {
 }
 
 func TestPrehashPassword_DifferentInputsDifferentOutputs(t *testing.T) {
+	t.Parallel()
 	a := PrehashPassword("password1")
 	b := PrehashPassword("password2")
 
@@ -102,6 +105,7 @@ func TestPrehashPassword_DifferentInputsDifferentOutputs(t *testing.T) {
 // --- NewService tests ---
 
 func TestNewService(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -117,6 +121,7 @@ func TestNewService(t *testing.T) {
 // --- Setup tests ---
 
 func TestSetup_CreatesUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -139,6 +144,7 @@ func TestSetup_CreatesUser(t *testing.T) {
 }
 
 func TestSetup_NoopWhenUsersExist(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "password123")
 	ctx := context.Background()
 
@@ -155,6 +161,7 @@ func TestSetup_NoopWhenUsersExist(t *testing.T) {
 // --- HasUsers tests ---
 
 func TestHasUsers_EmptyDB(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -168,6 +175,7 @@ func TestHasUsers_EmptyDB(t *testing.T) {
 }
 
 func TestHasUsers_WithUser(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "password")
 	ctx := context.Background()
 
@@ -183,6 +191,7 @@ func TestHasUsers_WithUser(t *testing.T) {
 // --- Login tests ---
 
 func TestLogin_Success(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -200,6 +209,7 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -213,6 +223,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 }
 
 func TestLogin_UnknownUser(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -226,6 +237,7 @@ func TestLogin_UnknownUser(t *testing.T) {
 }
 
 func TestLogin_UniqueTokens(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -247,6 +259,7 @@ func TestLogin_UniqueTokens(t *testing.T) {
 // --- ValidateSession tests ---
 
 func TestValidateSession_Valid(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -265,6 +278,7 @@ func TestValidateSession_Valid(t *testing.T) {
 }
 
 func TestValidateSession_InvalidToken(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -278,6 +292,7 @@ func TestValidateSession_InvalidToken(t *testing.T) {
 }
 
 func TestValidateSession_ExpiredSession(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -314,6 +329,7 @@ func TestValidateSession_ExpiredSession(t *testing.T) {
 // --- Logout tests ---
 
 func TestLogout_DeletesSession(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -334,6 +350,7 @@ func TestLogout_DeletesSession(t *testing.T) {
 }
 
 func TestLogout_NonexistentToken(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -346,6 +363,7 @@ func TestLogout_NonexistentToken(t *testing.T) {
 // --- CleanExpiredSessions tests ---
 
 func TestCleanExpiredSessions(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -387,6 +405,7 @@ func TestCleanExpiredSessions(t *testing.T) {
 }
 
 func TestCleanExpiredSessions_NoSessions(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -399,6 +418,7 @@ func TestCleanExpiredSessions_NoSessions(t *testing.T) {
 // --- CreateAPIToken tests ---
 
 func TestCreateAPIToken(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -429,6 +449,7 @@ func TestCreateAPIToken(t *testing.T) {
 }
 
 func TestCreateAPIToken_UniqueTokens(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -462,6 +483,7 @@ func TestCreateAPIToken_UniqueTokens(t *testing.T) {
 // --- ValidateAPIToken tests ---
 
 func TestValidateAPIToken_Valid(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -492,6 +514,7 @@ func TestValidateAPIToken_Valid(t *testing.T) {
 }
 
 func TestValidateAPIToken_InvalidToken(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -505,6 +528,7 @@ func TestValidateAPIToken_InvalidToken(t *testing.T) {
 }
 
 func TestValidateAPIToken_RevokedToken(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -536,6 +560,7 @@ func TestValidateAPIToken_RevokedToken(t *testing.T) {
 }
 
 func TestValidateAPIToken_UpdatesLastUsedAt(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -579,6 +604,7 @@ func TestValidateAPIToken_UpdatesLastUsedAt(t *testing.T) {
 // --- ListAPITokens tests ---
 
 func TestListAPITokens(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -622,6 +648,7 @@ func TestListAPITokens(t *testing.T) {
 }
 
 func TestListAPITokens_Empty(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -646,6 +673,7 @@ func TestListAPITokens_Empty(t *testing.T) {
 // --- RevokeAPIToken tests ---
 
 func TestRevokeAPIToken(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -681,6 +709,7 @@ func TestRevokeAPIToken(t *testing.T) {
 }
 
 func TestRevokeAPIToken_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -700,6 +729,7 @@ func TestRevokeAPIToken_NotFound(t *testing.T) {
 }
 
 func TestRevokeAPIToken_AlreadyRevoked(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -731,6 +761,7 @@ func TestRevokeAPIToken_AlreadyRevoked(t *testing.T) {
 }
 
 func TestRevokeAPIToken_WrongUser(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -758,6 +789,7 @@ func TestRevokeAPIToken_WrongUser(t *testing.T) {
 // --- DeleteAPIToken tests ---
 
 func TestDeleteAPIToken_Success(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -792,6 +824,7 @@ func TestDeleteAPIToken_Success(t *testing.T) {
 }
 
 func TestDeleteAPIToken_ActiveToken(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -817,6 +850,7 @@ func TestDeleteAPIToken_ActiveToken(t *testing.T) {
 }
 
 func TestDeleteAPIToken_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -836,6 +870,7 @@ func TestDeleteAPIToken_NotFound(t *testing.T) {
 }
 
 func TestDeleteAPIToken_AnonymizesAuditLog(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -899,6 +934,7 @@ func TestDeleteAPIToken_AnonymizesAuditLog(t *testing.T) {
 // --- GetAPIToken tests ---
 
 func TestGetAPIToken_Success(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -939,6 +975,7 @@ func TestGetAPIToken_Success(t *testing.T) {
 }
 
 func TestGetAPIToken_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -958,6 +995,7 @@ func TestGetAPIToken_NotFound(t *testing.T) {
 }
 
 func TestGetAPIToken_WrongUser(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -985,6 +1023,7 @@ func TestGetAPIToken_WrongUser(t *testing.T) {
 // --- WriteAuditLog tests ---
 
 func TestWriteAuditLog(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secret")
 	ctx := context.Background()
 
@@ -1030,6 +1069,7 @@ func TestWriteAuditLog(t *testing.T) {
 // --- Full lifecycle test ---
 
 func TestFullTokenLifecycle(t *testing.T) {
+	t.Parallel()
 	svc := createTestUser(t, "secure-password")
 	ctx := context.Background()
 
@@ -1109,6 +1149,7 @@ func TestFullTokenLifecycle(t *testing.T) {
 // --- Sentinel error tests ---
 
 func TestSentinelErrors(t *testing.T) {
+	t.Parallel()
 	// Verify sentinel errors have distinct, non-empty messages.
 	sentinels := []struct {
 		name string
@@ -1140,6 +1181,7 @@ func TestSentinelErrors(t *testing.T) {
 // --- ValidScopes tests ---
 
 func TestValidScopes(t *testing.T) {
+	t.Parallel()
 	expected := []TokenScope{ScopeRead, ScopeWrite, ScopeWebhook, ScopeAdmin}
 	for _, scope := range expected {
 		if !ValidScopes[scope] {
@@ -1156,12 +1198,14 @@ func TestValidScopes(t *testing.T) {
 // --- Constants tests ---
 
 func TestAPITokenPrefix(t *testing.T) {
+	t.Parallel()
 	if APITokenPrefix != "sw_" {
 		t.Errorf("APITokenPrefix = %q, want %q", APITokenPrefix, "sw_")
 	}
 }
 
 func TestTokenStatusValues(t *testing.T) {
+	t.Parallel()
 	if TokenStatusActive != "active" {
 		t.Errorf("TokenStatusActive = %q, want %q", TokenStatusActive, "active")
 	}
@@ -1173,6 +1217,7 @@ func TestTokenStatusValues(t *testing.T) {
 // --- SetupFederated tests ---
 
 func TestSetupFederated_CreatesUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -1224,6 +1269,7 @@ func TestSetupFederated_CreatesUser(t *testing.T) {
 }
 
 func TestSetupFederated_RejectsWhenUsersExist(t *testing.T) {
+	t.Parallel()
 	// Create a local user first using the existing Setup method.
 	svc := createTestUser(t, "password123")
 	ctx := context.Background()
@@ -1247,6 +1293,7 @@ func TestSetupFederated_RejectsWhenUsersExist(t *testing.T) {
 // --- LoginFederated tests ---
 
 func TestLoginFederated_Success(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -1289,6 +1336,7 @@ func TestLoginFederated_Success(t *testing.T) {
 }
 
 func TestLoginFederated_UnknownUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -1310,6 +1358,7 @@ func TestLoginFederated_UnknownUser(t *testing.T) {
 }
 
 func TestLoginFederated_SyncsUsername(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -1359,6 +1408,7 @@ func TestLoginFederated_SyncsUsername(t *testing.T) {
 // --- Regression: local auth unchanged ---
 
 func TestSetup_LocalUnchanged(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 

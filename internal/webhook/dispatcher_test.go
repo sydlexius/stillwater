@@ -31,16 +31,19 @@ func setupDispatcherTest(t *testing.T) (*Service, *slog.Logger) {
 }
 
 func TestDispatcher_GenericWebhook(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var mu sync.Mutex
 	var received map[string]any
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		defer mu.Unlock()
 		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
+		close(done)
 	}))
 	defer srv.Close()
 
@@ -62,7 +65,11 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 		Data:      map[string]any{"artists": float64(42)},
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -75,16 +82,19 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 }
 
 func TestDispatcher_DiscordFormat(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var mu sync.Mutex
 	var received map[string]any
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		defer mu.Unlock()
 		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
+		close(done)
 	}))
 	defer srv.Close()
 
@@ -106,7 +116,11 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 		Data:      map[string]any{"message": "Scan finished"},
 	})
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -124,9 +138,11 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 }
 
 func TestDispatcher_RetryOn500(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := attempts.Add(1)
@@ -134,6 +150,7 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		close(done)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -150,13 +167,17 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+	dispatcher.sleep = func(time.Duration) {}
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.ScanCompleted,
 		Timestamp: time.Now().UTC(),
 	})
 
-	// Wait for retries (1s + 2s backoff)
-	time.Sleep(5 * time.Second)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for retry attempts")
+	}
 
 	got := int(attempts.Load())
 	if got != 3 {
@@ -165,12 +186,16 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 }
 
 func TestDispatcher_MaxRetries(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
+	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts.Add(1)
+		if attempts.Add(1) == int32(maxRetries) {
+			close(done)
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -187,13 +212,17 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+	dispatcher.sleep = func(time.Duration) {}
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.BulkCompleted,
 		Timestamp: time.Now().UTC(),
 	})
 
-	// Wait for all retries (1s + 2s + attempt 3)
-	time.Sleep(6 * time.Second)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for retry attempts")
+	}
 
 	got := int(attempts.Load())
 	if got != 3 {
@@ -202,6 +231,7 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 }
 
 func TestDispatcher_NoMatchingWebhooks(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	w := &Webhook{
@@ -216,10 +246,11 @@ func TestDispatcher_NoMatchingWebhooks(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcher(svc, logger)
-	// Should not panic or hang
+	// Should not panic or hang. No webhook matches ScanCompleted (the
+	// registered webhook listens for bulk.completed), so HandleEvent spawns
+	// no delivery goroutines and there is nothing to wait on.
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.ScanCompleted,
 		Timestamp: time.Now().UTC(),
 	})
-	time.Sleep(50 * time.Millisecond)
 }

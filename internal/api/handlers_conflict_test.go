@@ -40,6 +40,7 @@ func newConflictHarness(t *testing.T, conns []connection.Connection) *Router {
 }
 
 func TestHandleGetConflicts_ReturnsLedger(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "a", Name: "A", Type: connection.TypeEmby, Enabled: true},
 	})
@@ -60,6 +61,7 @@ func TestHandleGetConflicts_ReturnsLedger(t *testing.T) {
 }
 
 func TestHandleGetConflicts_503WhenDetectorMissing(t *testing.T) {
+	t.Parallel()
 	r := &Router{logger: testDiscardLogger()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conflicts", nil)
 	w := httptest.NewRecorder()
@@ -70,6 +72,7 @@ func TestHandleGetConflicts_503WhenDetectorMissing(t *testing.T) {
 }
 
 func TestHandleGetConflicts_RefreshInvalidatesCache(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/conflicts?refresh=1", nil)
 	w := httptest.NewRecorder()
@@ -80,6 +83,7 @@ func TestHandleGetConflicts_RefreshInvalidatesCache(t *testing.T) {
 }
 
 func TestHandleGetConflictBanner_RendersHTML(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "a", Name: "A", Type: connection.TypeEmby, Enabled: true},
 	})
@@ -97,6 +101,7 @@ func TestHandleGetConflictBanner_RendersHTML(t *testing.T) {
 }
 
 func TestHandleGetConflictBanner_204WhenDetectorMissing(t *testing.T) {
+	t.Parallel()
 	r := &Router{logger: testDiscardLogger()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/config/conflict-banner", nil)
 	w := httptest.NewRecorder()
@@ -107,6 +112,7 @@ func TestHandleGetConflictBanner_204WhenDetectorMissing(t *testing.T) {
 }
 
 func TestHandleGetConflictBanner_RefreshInvalidatesCache(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "a", Name: "A", Type: connection.TypeEmby, Enabled: true},
 	})
@@ -122,6 +128,7 @@ func TestHandleGetConflictBanner_RefreshInvalidatesCache(t *testing.T) {
 }
 
 func TestHandleGetConnectionConflictDetail_RendersForKnownID(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, []connection.Connection{
 		{ID: "abc", Name: "Emby One", Type: connection.TypeEmby, Enabled: true},
 	})
@@ -140,6 +147,7 @@ func TestHandleGetConnectionConflictDetail_RendersForKnownID(t *testing.T) {
 }
 
 func TestHandleGetConnectionConflictDetail_204WhenMissing(t *testing.T) {
+	t.Parallel()
 	r := &Router{logger: testDiscardLogger()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/abc/conflict-detail", nil)
 	req.SetPathValue("id", "abc")
@@ -151,6 +159,7 @@ func TestHandleGetConnectionConflictDetail_204WhenMissing(t *testing.T) {
 }
 
 func TestHandleSetStillwaterManaged_RejectsMissingID(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections//stillwater-managed", bytes.NewReader([]byte(`{"enabled":true}`)))
 	req.SetPathValue("id", "")
@@ -162,6 +171,7 @@ func TestHandleSetStillwaterManaged_RejectsMissingID(t *testing.T) {
 }
 
 func TestHandleSetStillwaterManaged_RejectsBadJSON(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`{not json`)))
 	req.SetPathValue("id", "abc")
@@ -177,6 +187,7 @@ func TestHandleSetStillwaterManaged_RejectsBadJSON(t *testing.T) {
 // silently coerce to enabled=false (which would be a destructive state change
 // triggered by a dropped HTMX body or a curl typo).
 func TestHandleSetStillwaterManaged_RejectsEmptyBody(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader(nil))
 	req.SetPathValue("id", "abc")
@@ -192,6 +203,7 @@ func TestHandleSetStillwaterManaged_RejectsEmptyBody(t *testing.T) {
 // to false here would silently flip the toggle off on any caller that sent
 // {"foo":"bar"} or {} -- exactly what strict validation is meant to prevent.
 func TestHandleSetStillwaterManaged_RejectsJSONWithoutEnabled(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`{"foo":"bar"}`)))
 	req.SetPathValue("id", "abc")
@@ -206,6 +218,7 @@ func TestHandleSetStillwaterManaged_RejectsJSONWithoutEnabled(t *testing.T) {
 // where "enabled" is present but not parseable as bool (string "maybe", a
 // number, etc.).
 func TestHandleSetStillwaterManaged_RejectsInvalidEnabledValue(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`{"enabled":"maybe"}`)))
 	req.SetPathValue("id", "abc")
@@ -220,6 +233,7 @@ func TestHandleSetStillwaterManaged_RejectsInvalidEnabledValue(t *testing.T) {
 // HTMX-style application/x-www-form-urlencoded path. A form body that omits
 // "enabled" or sends a malformed value (e.g. enabled=maybe) must 400.
 func TestHandleSetStillwaterManaged_RejectsFormBodyWithoutEnabled(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`other=field`)))
 	req.SetPathValue("id", "abc")
@@ -231,6 +245,7 @@ func TestHandleSetStillwaterManaged_RejectsFormBodyWithoutEnabled(t *testing.T) 
 }
 
 func TestWriteConflictError_EmitsExpectedShape(t *testing.T) {
+	t.Parallel()
 	w := httptest.NewRecorder()
 	writeConflictError(w, &conflict.BlockedError{
 		Axis:   conflict.AxisImage,
@@ -258,6 +273,7 @@ func TestWriteConflictError_EmitsExpectedShape(t *testing.T) {
 }
 
 func TestConflictBannerView_PopulatesFromLedger(t *testing.T) {
+	t.Parallel()
 	l := conflict.Ledger{
 		Connections: []conflict.ConnectionState{
 			{ConnectionID: "a", ConnectionName: "A", ConnectionType: connection.TypeEmby,
@@ -279,6 +295,7 @@ func TestConflictBannerView_PopulatesFromLedger(t *testing.T) {
 }
 
 func TestWriteConflictError_AllAxes(t *testing.T) {
+	t.Parallel()
 	for _, axis := range []conflict.Axis{conflict.AxisImage, conflict.AxisNFO, conflict.AxisRoundTrip} {
 		w := httptest.NewRecorder()
 		writeConflictError(w, &conflict.BlockedError{Axis: axis, Reason: "x"})
@@ -302,6 +319,7 @@ func TestWriteConflictError_AllAxes(t *testing.T) {
 }
 
 func TestGateImageWrite_AllowsCleanWrite(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -311,6 +329,7 @@ func TestGateImageWrite_AllowsCleanWrite(t *testing.T) {
 }
 
 func TestGateImageWrite_Blocks409(t *testing.T) {
+	t.Parallel()
 	d := conflict.NewBlockingForTest(testDiscardLogger())
 	r := &Router{
 		logger:           testDiscardLogger(),
@@ -328,6 +347,7 @@ func TestGateImageWrite_Blocks409(t *testing.T) {
 }
 
 func TestGateNFOWrite_Blocks409(t *testing.T) {
+	t.Parallel()
 	d := conflict.NewBlockingForTest(testDiscardLogger())
 	r := &Router{
 		logger:           testDiscardLogger(),
@@ -345,6 +365,7 @@ func TestGateNFOWrite_Blocks409(t *testing.T) {
 }
 
 func TestGateNFOWrite_AllowsCleanWrite(t *testing.T) {
+	t.Parallel()
 	// The blocked-write 409 shape is covered by TestWriteConflictError_EmitsExpectedShape
 	// here and by TestGateBlocksOn{Image,NFO,RoundTrip}Conflict in the
 	// conflict package. This test pins down the clean-allow path for the NFO
@@ -361,6 +382,7 @@ func TestGateNFOWrite_AllowsCleanWrite(t *testing.T) {
 // branch where "enabled" is present but unparsable (e.g. "maybe"). This
 // path returns 400 from inside parseBoolStrict.
 func TestHandleSetStillwaterManaged_FormBodyInvalidValue(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed", bytes.NewReader([]byte(`enabled=maybe`)))
 	req.SetPathValue("id", "abc")
@@ -375,6 +397,7 @@ func TestHandleSetStillwaterManaged_FormBodyInvalidValue(t *testing.T) {
 // query-string fallback where ?enabled=??? is unparsable. The handler
 // must reject with 400 from the URL branch, not silently fall through.
 func TestHandleSetStillwaterManaged_QueryParamInvalidValue(t *testing.T) {
+	t.Parallel()
 	r := newConflictHarness(t, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/abc/stillwater-managed?enabled=banana", nil)
 	req.SetPathValue("id", "abc")
@@ -391,6 +414,7 @@ func TestHandleSetStillwaterManaged_QueryParamInvalidValue(t *testing.T) {
 // disableFileWriteBack; testing one keeps the policy assertion local
 // without standing up three near-identical fakes.
 func TestRestoreLibraryOptions_RejectsUnsupportedType(t *testing.T) {
+	t.Parallel()
 	r := &Router{logger: testDiscardLogger()}
 	err := r.restoreLibraryOptions(context.Background(), &connection.Connection{Type: "unknown"}, "{}")
 	if err == nil {
@@ -407,6 +431,7 @@ func TestRestoreLibraryOptions_RejectsUnsupportedType(t *testing.T) {
 // rejection (false, false) signal that lets the handler distinguish a
 // missing or garbled value from an explicit false.
 func TestParseBoolStrict(t *testing.T) {
+	t.Parallel()
 	truthy := []string{"1", "true", "TRUE", "On", "yes", "y", "t", "  true  "}
 	falsy := []string{"0", "false", "FALSE", "off", "no", "n", "f", " 0\n"}
 	rejected := []string{"", "maybe", "2", "tr", "yes please"}
@@ -438,6 +463,7 @@ func TestParseBoolStrict(t *testing.T) {
 // falls through to the historical 502 so unrelated regressions do not
 // silently change the status code.
 func TestStillwaterManagedErrorResponse(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		err      error

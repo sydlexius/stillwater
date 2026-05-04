@@ -13,6 +13,7 @@ import (
 )
 
 func TestHandleCacheStats_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.imageCacheDir = t.TempDir()
 
@@ -38,6 +39,7 @@ func TestHandleCacheStats_Empty(t *testing.T) {
 }
 
 func TestHandleCacheStats_WithFiles(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.imageCacheDir = t.TempDir()
 
@@ -72,6 +74,7 @@ func TestHandleCacheStats_WithFiles(t *testing.T) {
 }
 
 func TestHandleCacheClear_WithFiles(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.imageCacheDir = t.TempDir()
 
@@ -108,6 +111,7 @@ func TestHandleCacheClear_WithFiles(t *testing.T) {
 }
 
 func TestHandleCacheClear_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.imageCacheDir = t.TempDir()
 
@@ -132,6 +136,7 @@ func TestHandleCacheClear_Empty(t *testing.T) {
 }
 
 func TestHandleCacheClear_ResetsExistsFlag(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.imageCacheDir = t.TempDir()
 

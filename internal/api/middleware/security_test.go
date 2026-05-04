@@ -8,6 +8,7 @@ import (
 )
 
 func TestSecurityHeaders_Present(t *testing.T) {
+	t.Parallel()
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -32,6 +33,7 @@ func TestSecurityHeaders_Present(t *testing.T) {
 }
 
 func TestSecurityHeaders_NoHSTSOverHTTP(t *testing.T) {
+	t.Parallel()
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -46,6 +48,7 @@ func TestSecurityHeaders_NoHSTSOverHTTP(t *testing.T) {
 }
 
 func TestSecurityHeaders_HSTSOverForwardedHTTPS(t *testing.T) {
+	t.Parallel()
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -65,6 +68,7 @@ func TestSecurityHeaders_HSTSOverForwardedHTTPS(t *testing.T) {
 }
 
 func TestSecurityHeaders_CSPPresent(t *testing.T) {
+	t.Parallel()
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -94,6 +98,7 @@ func TestSecurityHeaders_CSPPresent(t *testing.T) {
 }
 
 func TestSecurityHeaders_PassesThrough(t *testing.T) {
+	t.Parallel()
 	called := false
 	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true

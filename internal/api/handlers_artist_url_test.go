@@ -14,6 +14,7 @@ import (
 // clients cannot navigate to the correct item and frequently show a
 // generic home page or fail to load in multi-server setups.
 func TestBuildPlatformArtistURL_ServerIDPlumbing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		conn    *connection.Connection

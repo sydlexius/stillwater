@@ -77,6 +77,7 @@ func seedMembershipFixtures(t *testing.T, db *sql.DB) {
 // TestMembershipAddIsIdempotent verifies Add inserts a row on first call
 // and is a no-op on repeat.
 func TestMembershipAddIsIdempotent(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db)
 	repo := newSQLiteMembershipRepo(db)
@@ -102,6 +103,7 @@ func TestMembershipAddIsIdempotent(t *testing.T) {
 // many libraries with different sources and that ListForArtist returns
 // them all.
 func TestMembershipMultipleLibraries(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db)
 	repo := newSQLiteMembershipRepo(db)
@@ -137,6 +139,7 @@ func TestMembershipMultipleLibraries(t *testing.T) {
 // TestMembershipRemove verifies Remove deletes only the targeted pair and
 // is a no-op for nonexistent pairs.
 func TestMembershipRemove(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db)
 	repo := newSQLiteMembershipRepo(db)
@@ -169,6 +172,7 @@ func TestMembershipRemove(t *testing.T) {
 // TestMembershipCascadeOnArtistDelete verifies that deleting the parent
 // artist cascades to artist_libraries via the FK ON DELETE CASCADE.
 func TestMembershipCascadeOnArtistDelete(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db)
 	repo := newSQLiteMembershipRepo(db)
@@ -195,6 +199,7 @@ func TestMembershipCascadeOnArtistDelete(t *testing.T) {
 // All three connection-backed types plus the no-connection (filesystem)
 // case are covered, and idempotency is asserted on a repeat call.
 func TestMembershipAddDerivingSource(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	seedMembershipFixtures(t, db) // gives us lib-fs (filesystem) + lib-emby (emby)
 	repo := newSQLiteMembershipRepo(db)
@@ -271,6 +276,7 @@ func TestMembershipAddDerivingSource(t *testing.T) {
 // TestArtistGetByName verifies the unscoped name lookup is case-insensitive
 // and returns nil when no match exists.
 func TestArtistGetByName(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	ctx := context.Background()
 	_, err := db.ExecContext(ctx, `
@@ -307,6 +313,7 @@ func TestArtistGetByName(t *testing.T) {
 // match wins when present; falls through to case-insensitive name
 // otherwise.
 func TestArtistFindByMBIDOrNameUnscoped(t *testing.T) {
+	t.Parallel()
 	db := openTestDB(t)
 	ctx := context.Background()
 

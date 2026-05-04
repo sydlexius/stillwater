@@ -8,6 +8,7 @@ import (
 )
 
 func TestLockAndUnlock(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -72,6 +73,7 @@ func TestLockAndUnlock(t *testing.T) {
 }
 
 func TestLockNotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -86,6 +88,7 @@ func TestLockNotFound(t *testing.T) {
 }
 
 func TestLockAlreadyLocked(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -106,6 +109,7 @@ func TestLockAlreadyLocked(t *testing.T) {
 }
 
 func TestUnlockNotLocked(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -123,6 +127,7 @@ func TestUnlockNotLocked(t *testing.T) {
 }
 
 func TestLockInvalidSource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -142,6 +147,7 @@ func TestLockInvalidSource(t *testing.T) {
 }
 
 func TestLockImportedSource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -165,6 +171,7 @@ func TestLockImportedSource(t *testing.T) {
 }
 
 func TestListFilterLocked(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -212,6 +219,7 @@ func TestListFilterLocked(t *testing.T) {
 }
 
 func TestLockPreservedOnUpdate(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -250,6 +258,7 @@ func TestLockPreservedOnUpdate(t *testing.T) {
 }
 
 func TestFieldLocks(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -315,6 +324,7 @@ func TestFieldLocks(t *testing.T) {
 }
 
 func TestImageLocks(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

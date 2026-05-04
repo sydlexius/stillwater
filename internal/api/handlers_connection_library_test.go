@@ -81,6 +81,7 @@ func testRouterForLibraryOps(t *testing.T) *Router {
 }
 
 func TestHandleLibraryOpStatus_Idle(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries/nonexistent/operation/status", nil)
@@ -103,6 +104,7 @@ func TestHandleLibraryOpStatus_Idle(t *testing.T) {
 }
 
 func TestHandleLibraryOpStatus_Running(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	// Simulate a running operation.
@@ -139,6 +141,7 @@ func TestHandleLibraryOpStatus_Running(t *testing.T) {
 }
 
 func TestHandleLibraryOpStatus_Completed(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	now := time.Now().UTC()
@@ -177,6 +180,7 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 }
 
 func TestScheduleOpCleanup(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	op := &LibraryOpResult{
@@ -214,6 +218,7 @@ func TestScheduleOpCleanup(t *testing.T) {
 }
 
 func TestScheduleOpCleanup_SkipsRunningOp(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	op := &LibraryOpResult{
@@ -245,6 +250,7 @@ func TestScheduleOpCleanup_SkipsRunningOp(t *testing.T) {
 }
 
 func TestScheduleOpCleanup_SkipsNewerOp(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 
 	oldOp := &LibraryOpResult{
@@ -285,6 +291,7 @@ func TestScheduleOpCleanup_SkipsNewerOp(t *testing.T) {
 }
 
 func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
+	t.Parallel()
 	// Stand up a fake Emby server returning one artist with full metadata.
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -365,6 +372,7 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 }
 
 func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
+	t.Parallel()
 	// Stand up a fake Jellyfin server returning one artist with full metadata.
 	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -433,6 +441,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 }
 
 func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
+	t.Parallel()
 	r := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
@@ -502,6 +511,7 @@ func createTestJPEGForHandler(t *testing.T) []byte {
 }
 
 func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -602,6 +612,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 }
 
 func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -674,6 +685,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 }
 
 func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	var imageRequested atomic.Bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -762,6 +774,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 }
 
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	tmpDir := t.TempDir()
 	artistDir, err := filepath.EvalSymlinks(tmpDir)
@@ -862,6 +875,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 }
 
 func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 
@@ -973,6 +987,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 }
 
 func TestValidatedArtistPath(t *testing.T) {
+	t.Parallel()
 	// Use real temp dirs so filepath.Abs produces valid absolute paths.
 	libDir := t.TempDir()
 	artistDir := filepath.Join(libDir, "Radiohead")
@@ -1022,6 +1037,7 @@ func TestValidatedArtistPath(t *testing.T) {
 }
 
 func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
+	t.Parallel()
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1077,6 +1093,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 }
 
 func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
+	t.Parallel()
 	artistDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("resolving temp dir symlinks: %v", err)
@@ -1139,6 +1156,7 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 }
 
 func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.T) {
+	t.Parallel()
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1194,6 +1212,7 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 }
 
 func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
+	t.Parallel()
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/Artists/AlbumArtists":
@@ -1268,6 +1287,7 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 }
 
 func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
+	t.Parallel()
 	// Platform provides MBID-A for "Radiohead", but DB already has "Radiohead"
 	// with MBID-B. These are different artists with the same name.
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1341,6 +1361,7 @@ func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
 }
 
 func TestPopulateFromJellyfin_SkipsOnMBIDConflict(t *testing.T) {
+	t.Parallel()
 	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1409,6 +1430,7 @@ func TestPopulateFromJellyfin_SkipsOnMBIDConflict(t *testing.T) {
 }
 
 func TestValidatedArtistPath_SymlinkEscape(t *testing.T) {
+	t.Parallel()
 	// Create a library root and an external directory, then symlink from
 	// inside the library to the external directory. The validation should
 	// reject the symlinked path.
@@ -1427,6 +1449,7 @@ func TestValidatedArtistPath_SymlinkEscape(t *testing.T) {
 }
 
 func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -1517,6 +1540,7 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 }
 
 func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -1599,6 +1623,7 @@ func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
 }
 
 func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -1688,6 +1713,7 @@ func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 }
 
 func TestPopulateFromEmby_NoBackdropsWhenTagsEmpty(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -1758,6 +1784,7 @@ func TestPopulateFromEmby_NoBackdropsWhenTagsEmpty(t *testing.T) {
 }
 
 func TestPopulateFromEmby_PartialBackdropDownloadFailure(t *testing.T) {
+	t.Parallel()
 	// Backdrop index 0 returns 404; index 1 returns a valid JPEG.
 	// The loop must continue past the failure and count only the successful download.
 	jpegData := createTestJPEGForHandler(t)
@@ -1841,6 +1868,7 @@ func TestPopulateFromEmby_PartialBackdropDownloadFailure(t *testing.T) {
 }
 
 func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -1916,6 +1944,7 @@ func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
 }
 
 func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -1991,6 +2020,7 @@ func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
 }
 
 func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
@@ -2087,6 +2117,7 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 }
 
 func TestImportLibraries_AutoPopulate(t *testing.T) {
+	t.Parallel()
 	// Stand up a fake Emby server that returns one artist.
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -2173,6 +2204,7 @@ func TestImportLibraries_AutoPopulate(t *testing.T) {
 }
 
 func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -2293,6 +2325,7 @@ func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 }
 
 func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	t.Parallel()
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -2398,6 +2431,7 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 }
 
 func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -2514,6 +2548,7 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 }
 
 func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
+	t.Parallel()
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
@@ -2539,6 +2574,7 @@ func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
 }
 
 func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
+	t.Parallel()
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
@@ -2564,6 +2600,7 @@ func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
 }
 
 func TestBackfillPlatformIDToManualLibs_MultipleManualLibraries(t *testing.T) {
+	t.Parallel()
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
@@ -2625,6 +2662,7 @@ func TestBackfillPlatformIDToManualLibs_MultipleManualLibraries(t *testing.T) {
 }
 
 func TestBackfillPlatformIDToManualLibs_SkipsSameArtist(t *testing.T) {
+	t.Parallel()
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
@@ -2672,6 +2710,7 @@ func TestBackfillPlatformIDToManualLibs_SkipsSameArtist(t *testing.T) {
 }
 
 func TestScanFromJellyfin_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
@@ -2778,6 +2817,7 @@ func TestScanFromJellyfin_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 }
 
 func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	t.Parallel()
 	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/artist" {
 			w.Header().Set("Content-Type", "application/json")
@@ -2875,6 +2915,7 @@ func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 // scenario). Emby populates first and creates the artist; Jellyfin
 // populates second and absorbs into the existing row.
 func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
+	t.Parallel()
 	const mbid = "mbid-12-stones"
 
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -47,6 +47,7 @@ func enableMultiUser(t *testing.T, r *Router) {
 // 403 Forbidden when accessing admin-only settings endpoints. The test calls the
 // handler through RequireAdmin to mirror how the router wires it.
 func TestAdminRoute_Operator_Gets403_OnSettings(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -63,6 +64,7 @@ func TestAdminRoute_Operator_Gets403_OnSettings(t *testing.T) {
 // TestAdminRoute_Admin_Gets200_OnSettings verifies that an administrator can
 // access settings endpoints.
 func TestAdminRoute_Admin_Gets200_OnSettings(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
@@ -80,6 +82,7 @@ func TestAdminRoute_Admin_Gets200_OnSettings(t *testing.T) {
 // change rule configuration (enable/disable/set automation mode). The test calls
 // the handler through RequireAdmin to mirror how the router wires it.
 func TestAdminRoute_Operator_Gets403_OnUpdateRule(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -99,6 +102,7 @@ func TestAdminRoute_Operator_Gets403_OnUpdateRule(t *testing.T) {
 // TestAdminRoute_Operator_CanRunRule verifies that an operator can execute a rule
 // (rule execution is not admin-gated).
 func TestAdminRoute_Operator_CanRunRule(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -119,6 +123,7 @@ func TestAdminRoute_Operator_CanRunRule(t *testing.T) {
 // TestMultiUserGate_InviteRoutes_Return404_WhenDisabled verifies that invite
 // endpoints return 404 when multi_user.enabled is not set.
 func TestMultiUserGate_InviteRoutes_Return404_WhenDisabled(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 	// multi_user.enabled is not set -- defaults to "false"
 
@@ -137,6 +142,7 @@ func TestMultiUserGate_InviteRoutes_Return404_WhenDisabled(t *testing.T) {
 // TestMultiUserGate_InviteRoutes_Return200_WhenEnabled verifies that invite
 // endpoints are accessible when multi_user.enabled is "true".
 func TestMultiUserGate_InviteRoutes_Return200_WhenEnabled(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 	enableMultiUser(t, r)
 
@@ -156,6 +162,7 @@ func TestMultiUserGate_InviteRoutes_Return200_WhenEnabled(t *testing.T) {
 // TestMultiUserGate_LoginFlow_UnaffectedByMultiUser verifies that the login
 // endpoint works regardless of multi_user.enabled (it is not gated).
 func TestMultiUserGate_LoginFlow_UnaffectedByMultiUser(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 	// multi_user.enabled is not set -- login should still work.
 
@@ -179,6 +186,7 @@ func TestMultiUserGate_LoginFlow_UnaffectedByMultiUser(t *testing.T) {
 // TestTokenScopeCeiling_Admin_CanCreateAdminToken verifies that an administrator
 // can create a token with admin scope.
 func TestTokenScopeCeiling_Admin_CanCreateAdminToken(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 
 	body := `{"name":"admin-token","scopes":"admin"}`
@@ -204,6 +212,7 @@ func TestTokenScopeCeiling_Admin_CanCreateAdminToken(t *testing.T) {
 // TestTokenScopeCeiling_Operator_CanCreateReadToken verifies that an operator
 // can create read-scoped tokens.
 func TestTokenScopeCeiling_Operator_CanCreateReadToken(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -222,6 +231,7 @@ func TestTokenScopeCeiling_Operator_CanCreateReadToken(t *testing.T) {
 // TestTokenScopeCeiling_Operator_CanCreateWriteToken verifies that an operator
 // can create write-scoped tokens.
 func TestTokenScopeCeiling_Operator_CanCreateWriteToken(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -240,6 +250,7 @@ func TestTokenScopeCeiling_Operator_CanCreateWriteToken(t *testing.T) {
 // TestTokenScopeCeiling_Operator_CanCreateWebhookToken verifies that an operator
 // can create webhook-scoped tokens.
 func TestTokenScopeCeiling_Operator_CanCreateWebhookToken(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -258,6 +269,7 @@ func TestTokenScopeCeiling_Operator_CanCreateWebhookToken(t *testing.T) {
 // TestTokenScopeCeiling_Operator_Cannot_CreateAdminToken verifies that an operator
 // receives 403 when attempting to create an admin-scoped token.
 func TestTokenScopeCeiling_Operator_Cannot_CreateAdminToken(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -284,6 +296,7 @@ func TestTokenScopeCeiling_Operator_Cannot_CreateAdminToken(t *testing.T) {
 // TestTokenScopeCeiling_Operator_Cannot_CreateReadPlusAdminToken verifies that
 // mixing admin with other scopes is also rejected for operators.
 func TestTokenScopeCeiling_Operator_Cannot_CreateReadPlusAdminToken(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -305,6 +318,7 @@ func TestTokenScopeCeiling_Operator_Cannot_CreateReadPlusAdminToken(t *testing.T
 // handleSetup endpoint creates an administrator account, including when the
 // auth registry is configured (the registry path must be skipped for local).
 func TestSetup_Local_CreatesAdministrator(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	// Wire up a registry with a local provider to match production config.
@@ -342,6 +356,7 @@ func TestSetup_Local_CreatesAdministrator(t *testing.T) {
 // setup via the auth registry always creates the user as Administrator, even if
 // the provider's MapRole would return a lesser role.
 func TestSetup_WithRegistry_FederatedAlwaysAdministrator(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	// Register a stub provider that maps roles to "operator".

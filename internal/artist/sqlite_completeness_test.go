@@ -18,6 +18,7 @@ func insertCompletenessArtist(t *testing.T, svc *Service, a *Artist) {
 // TestGetCompletenessRows_BasicFlags verifies that NFO, MBID, image, and text
 // field flags are populated correctly from a real SQLite row.
 func TestGetCompletenessRows_BasicFlags(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -84,6 +85,7 @@ func TestGetCompletenessRows_BasicFlags(t *testing.T) {
 // TestGetCompletenessRows_ExcludedArtists verifies that artists marked
 // is_excluded = 1 are omitted from completeness results.
 func TestGetCompletenessRows_ExcludedArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -123,6 +125,7 @@ func TestGetCompletenessRows_ExcludedArtists(t *testing.T) {
 // TestGetCompletenessRows_LibraryFilter verifies that the library_id filter
 // restricts results to the specified library.
 func TestGetCompletenessRows_LibraryFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -171,6 +174,7 @@ func TestGetCompletenessRows_LibraryFilter(t *testing.T) {
 // TestGetLowestCompleteness_Ordering verifies that artists are returned ordered
 // by health_score ascending (lowest score first).
 func TestGetLowestCompleteness_Ordering(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -226,6 +230,7 @@ func TestGetLowestCompleteness_Ordering(t *testing.T) {
 
 // TestGetLowestCompleteness_DefaultLimit verifies that limit <= 0 defaults to 10.
 func TestGetLowestCompleteness_DefaultLimit(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -269,6 +274,7 @@ func TestGetLowestCompleteness_DefaultLimit(t *testing.T) {
 // TestGetLowestCompleteness_ExcludedOmitted verifies that excluded artists are
 // not included in the lowest completeness results.
 func TestGetLowestCompleteness_ExcludedOmitted(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -310,6 +316,7 @@ func TestGetLowestCompleteness_ExcludedOmitted(t *testing.T) {
 // TestGetLowestCompleteness_LibraryFilter verifies that library_id filters
 // the lowest completeness results.
 func TestGetLowestCompleteness_LibraryFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

@@ -5,6 +5,7 @@ import (
 )
 
 func TestOIDCProviderType(t *testing.T) {
+	t.Parallel()
 	p := NewOIDCProvider(OIDCConfig{})
 	if got := p.Type(); got != "oidc" {
 		t.Errorf("Type() = %q, want %q", got, "oidc")
@@ -12,6 +13,7 @@ func TestOIDCProviderType(t *testing.T) {
 }
 
 func TestOIDCProviderDefaultRole(t *testing.T) {
+	t.Parallel()
 	p := NewOIDCProvider(OIDCConfig{})
 	if p.defaultRole != "operator" {
 		t.Errorf("default role = %q, want %q", p.defaultRole, "operator")
@@ -24,6 +26,7 @@ func TestOIDCProviderDefaultRole(t *testing.T) {
 }
 
 func TestOIDCMapRole(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		adminGroups []string
@@ -83,6 +86,7 @@ func TestOIDCMapRole(t *testing.T) {
 }
 
 func TestOIDCCanAutoProvision(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		autoProv   bool
@@ -154,6 +158,7 @@ func TestOIDCCanAutoProvision(t *testing.T) {
 }
 
 func TestOIDCIsInAdminGroup(t *testing.T) {
+	t.Parallel()
 	p := NewOIDCProvider(OIDCConfig{
 		AdminGroups: []string{"admins", "super-admins"},
 	})
@@ -173,6 +178,7 @@ func TestOIDCIsInAdminGroup(t *testing.T) {
 }
 
 func TestGenerateCodeVerifier(t *testing.T) {
+	t.Parallel()
 	v1 := generateCodeVerifier()
 	v2 := generateCodeVerifier()
 
@@ -188,6 +194,7 @@ func TestGenerateCodeVerifier(t *testing.T) {
 }
 
 func TestComputeS256Challenge(t *testing.T) {
+	t.Parallel()
 	// The challenge must be deterministic for the same verifier.
 	verifier := "test-verifier-12345"
 	c1 := computeS256Challenge(verifier)
@@ -208,6 +215,7 @@ func TestComputeS256Challenge(t *testing.T) {
 }
 
 func TestGenerateState(t *testing.T) {
+	t.Parallel()
 	s1, err := GenerateState()
 	if err != nil {
 		t.Fatalf("GenerateState() error: %v", err)
@@ -226,6 +234,7 @@ func TestGenerateState(t *testing.T) {
 }
 
 func TestGenerateNonce(t *testing.T) {
+	t.Parallel()
 	n1, err := GenerateNonce()
 	if err != nil {
 		t.Fatalf("GenerateNonce() error: %v", err)
@@ -244,6 +253,7 @@ func TestGenerateNonce(t *testing.T) {
 }
 
 func TestOIDCAuthURLIncludesPKCE(t *testing.T) {
+	t.Parallel()
 	p := NewOIDCProvider(OIDCConfig{
 		IssuerURL:   "https://idp.example.com",
 		ClientID:    "test-client",

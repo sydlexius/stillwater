@@ -12,6 +12,7 @@ import (
 )
 
 func TestHandleClearMembers_JSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "The Beatles")
 
@@ -61,6 +62,7 @@ func TestHandleClearMembers_JSON(t *testing.T) {
 }
 
 func TestHandleClearMembers_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -101,6 +103,7 @@ func TestHandleClearMembers_HTMX(t *testing.T) {
 }
 
 func TestHandleSaveMembers_JSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Nirvana")
 
@@ -149,6 +152,7 @@ func TestHandleSaveMembers_JSON(t *testing.T) {
 }
 
 func TestHandleSaveMembers_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Led Zeppelin")
 
@@ -191,6 +195,7 @@ func TestHandleSaveMembers_HTMX(t *testing.T) {
 }
 
 func TestHandleSaveMembers_InvalidBody(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Pink Floyd")
 
@@ -215,6 +220,7 @@ func TestHandleSaveMembers_InvalidBody(t *testing.T) {
 // the apply-path failure surfaces silently, which is the regression that
 // issue #1034 reported.
 func TestHandleSaveMembers_InvalidBody_ToastEnvelope_JSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Black Sabbath")
 
@@ -259,6 +265,7 @@ func TestHandleSaveMembers_InvalidBody_ToastEnvelope_JSON(t *testing.T) {
 // fragment shape prevents a future writeError refactor from silently
 // regressing this surface to a status-only failure.
 func TestHandleSaveMembers_InvalidBody_ToastEnvelope_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Soundgarden")
 
@@ -299,6 +306,7 @@ func TestHandleSaveMembers_InvalidBody_ToastEnvelope_HTMX(t *testing.T) {
 // records, so a future refactor of convertProviderMembers cannot silently
 // drop a column.
 func TestHandleSaveMembers_PersistsApplyPayload(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Apply Test Band")
 
@@ -367,6 +375,7 @@ func TestHandleSaveMembers_PersistsApplyPayload(t *testing.T) {
 }
 
 func TestHandleSaveMembers_ReplacesExisting(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Queen")
 

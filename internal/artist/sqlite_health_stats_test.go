@@ -6,6 +6,7 @@ import (
 )
 
 func TestHealthStats_EmptyDB(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -28,6 +29,7 @@ func TestHealthStats_EmptyDB(t *testing.T) {
 }
 
 func TestHealthStats_MixedArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -88,6 +90,7 @@ func TestHealthStats_MixedArtists(t *testing.T) {
 }
 
 func TestHealthStats_ExcludedArtistsOmitted(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -128,6 +131,7 @@ func TestHealthStats_ExcludedArtistsOmitted(t *testing.T) {
 }
 
 func TestHealthStats_LibraryFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -179,6 +183,7 @@ func TestHealthStats_LibraryFilter(t *testing.T) {
 }
 
 func TestListUnevaluatedIDs(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

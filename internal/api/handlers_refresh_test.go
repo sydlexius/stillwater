@@ -27,6 +27,7 @@ func (s *stubScraperExecutor) ScrapeAll(_ context.Context, _, _, _ string, _ map
 }
 
 func TestRenderRefreshWithOOB_ContainsSwapTargets(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "OOB Test Artist")
 
@@ -65,6 +66,7 @@ func TestRenderRefreshWithOOB_ContainsSwapTargets(t *testing.T) {
 }
 
 func TestRenderRefreshWithOOB_MemberFailure_SkipsOOB(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Member Fail Artist")
 
@@ -98,6 +100,7 @@ func TestRenderRefreshWithOOB_MemberFailure_SkipsOOB(t *testing.T) {
 }
 
 func TestApplyRefreshResult_ReidentifyUpdatesName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		artistName   string
@@ -183,6 +186,7 @@ func TestApplyRefreshResult_ReidentifyUpdatesName(t *testing.T) {
 // an artist. This is the underlying mechanism that executeRefresh relies
 // on to clear stale members when a provider returns an empty member list.
 func TestUpsertMembers_EmptySliceClearsExisting(t *testing.T) {
+	t.Parallel()
 	_, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Stale Members Band")
 
@@ -221,6 +225,7 @@ func TestUpsertMembers_EmptySliceClearsExisting(t *testing.T) {
 // clears members, ensuring UpsertMembers treats nil the same as an empty
 // slice when updating an artist's members.
 func TestUpsertMembers_NilSliceClearsExisting(t *testing.T) {
+	t.Parallel()
 	_, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Nil Members Band")
 
@@ -250,6 +255,7 @@ func TestUpsertMembers_NilSliceClearsExisting(t *testing.T) {
 // executeRefresh skips UpsertMembers when Members is empty, so this path
 // is informational -- verifying the converter itself is well-behaved.
 func TestConvertProviderMembers_EmptyInput(t *testing.T) {
+	t.Parallel()
 	result := convertProviderMembers("artist-1", nil)
 	if result == nil {
 		t.Fatal("convertProviderMembers(nil) returned nil, want empty slice")
@@ -261,6 +267,7 @@ func TestConvertProviderMembers_EmptyInput(t *testing.T) {
 
 // TestConvertProviderMembers_WithData verifies normal conversion.
 func TestConvertProviderMembers_WithData(t *testing.T) {
+	t.Parallel()
 	input := []provider.MemberInfo{
 		{Name: "Thom Yorke", MBID: "mb-1", Instruments: []string{"vocals", "guitar"}},
 		{Name: "Jonny Greenwood", MBID: "mb-2", Instruments: []string{"guitar"}},
@@ -286,6 +293,7 @@ func TestConvertProviderMembers_WithData(t *testing.T) {
 // executeRefreshCtx delegates to for member upsert decisions.
 // Calling the real method ensures coverage of the changed guard condition.
 func TestApplyMemberRefresh(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	seedMembers := func(t *testing.T, artistID string) {
@@ -470,6 +478,7 @@ func TestApplyMemberRefresh(t *testing.T) {
 // silently breaks the user-visible "violation clears after refresh" behavior
 // surfaces here as a failing test instead of as another reopened bug.
 func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
 
 	// Disable every rule except bio_exists so the test is independent of
@@ -576,6 +585,7 @@ func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
 // TestRunRulesAfterRefresh_InvokesPipeline verifies that runRulesAfterRefresh
 // calls the pipeline's RunForArtist method with the re-fetched artist.
 func TestRunRulesAfterRefresh_InvokesPipeline(t *testing.T) {
+	t.Parallel()
 	var calledWithID string
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
@@ -600,6 +610,7 @@ func TestRunRulesAfterRefresh_InvokesPipeline(t *testing.T) {
 // TestRunRulesAfterRefresh_NilPipeline verifies that runRulesAfterRefresh
 // is a no-op when the pipeline is not configured (nil).
 func TestRunRulesAfterRefresh_NilPipeline(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithStubPipeline(t, nil)
 	// Set pipeline to nil to simulate unconfigured state.
 	r.pipeline = nil
@@ -614,6 +625,7 @@ func TestRunRulesAfterRefresh_NilPipeline(t *testing.T) {
 // a pipeline error is swallowed (best-effort) and does not panic or
 // return an error to the caller.
 func TestRunRulesAfterRefresh_PipelineError_DoesNotPropagate(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return nil, fmt.Errorf("rule engine exploded")
@@ -631,6 +643,7 @@ func TestRunRulesAfterRefresh_PipelineError_DoesNotPropagate(t *testing.T) {
 // delegates to applyMemberRefresh and persists provider-returned members.
 // This covers the r.applyMemberRefresh call site inside the orchestration path.
 func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Wire a stub orchestrator so FetchMetadata returns a controlled result
@@ -680,6 +693,7 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 // PopulatedFields field from the MergeOptions literal at handlers_refresh.go
 // would silently revert the entire feature.
 func TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Seed an artist with pre-existing tag data. addTestArtist gives us genres
@@ -739,6 +753,7 @@ func TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData(t *testing.T) 
 // When PopulatedFields does contain a field, the merge is authorized to
 // overwrite the artist's value with the provider's value.
 func TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "Tag Overwrite Artist")
@@ -778,6 +793,7 @@ func TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData(t *testing.T) {
 // ApplyMetadata's MergeOptions.LockedFields guard, so it needs its own
 // coverage.
 func TestApplyProviderName_RespectsLocks(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	t.Run("name_locked_preserves_user_value", func(t *testing.T) {

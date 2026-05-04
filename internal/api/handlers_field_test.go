@@ -14,6 +14,7 @@ import (
 )
 
 func TestHandleFieldUpdate_WritesBackNFO(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := t.TempDir()
@@ -62,6 +63,7 @@ func TestHandleFieldUpdate_WritesBackNFO(t *testing.T) {
 }
 
 func TestHandleFieldUpdate_NoPath_SkipsWriteBack(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "No Path Artist")
@@ -86,6 +88,7 @@ func TestHandleFieldUpdate_NoPath_SkipsWriteBack(t *testing.T) {
 }
 
 func TestHandleFieldUpdate_NoNFO_SkipsWriteBack(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := t.TempDir()
@@ -116,6 +119,7 @@ func TestHandleFieldUpdate_NoNFO_SkipsWriteBack(t *testing.T) {
 }
 
 func TestHandleFieldClear_WritesBackNFO(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := t.TempDir()
@@ -158,6 +162,7 @@ func TestHandleFieldClear_WritesBackNFO(t *testing.T) {
 }
 
 func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := t.TempDir()
@@ -197,6 +202,7 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 }
 
 func TestExtractFieldValue(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		field       string
@@ -300,6 +306,7 @@ func TestExtractFieldValue(t *testing.T) {
 // TestExtractFieldValue_QueryParamNotAccepted verifies that form-encoded
 // requests only read from the POST body, not from URL query parameters.
 func TestExtractFieldValue_QueryParamNotAccepted(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodPatch, "/test?value=injected", strings.NewReader(""))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	got, err := extractFieldValue(req, "biography")
@@ -312,6 +319,7 @@ func TestExtractFieldValue_QueryParamNotAccepted(t *testing.T) {
 }
 
 func TestWriteBackNFO_StatNotExist(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	dir := t.TempDir()

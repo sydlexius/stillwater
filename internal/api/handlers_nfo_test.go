@@ -15,6 +15,7 @@ import (
 )
 
 func TestHandleNFODiff_JSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	t.Run("pathless artist shows no diff", func(t *testing.T) {
@@ -127,6 +128,7 @@ func TestHandleNFODiff_JSON(t *testing.T) {
 }
 
 func TestHandleNFODiff_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "HTMX Diff")
@@ -149,6 +151,7 @@ func TestHandleNFODiff_HTMX(t *testing.T) {
 }
 
 func TestHandleNFODiff_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/nonexistent/nfo/diff", nil)
@@ -163,6 +166,7 @@ func TestHandleNFODiff_NotFound(t *testing.T) {
 }
 
 func TestHandleNFODiff_PathlessArtist(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := &artist.Artist{
@@ -193,6 +197,7 @@ func TestHandleNFODiff_PathlessArtist(t *testing.T) {
 }
 
 func TestHandleNFOConflictCheck_PathlessArtist(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := &artist.Artist{
@@ -225,6 +230,7 @@ func TestHandleNFOConflictCheck_PathlessArtist(t *testing.T) {
 }
 
 func TestParseNFOFile_NonExistent(t *testing.T) {
+	t.Parallel()
 	result, err := parseNFOFile("/nonexistent/path/artist.nfo")
 	if result != nil {
 		t.Error("expected nil for non-existent file")
@@ -235,6 +241,7 @@ func TestParseNFOFile_NonExistent(t *testing.T) {
 }
 
 func TestParseNFOFile_Valid(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "artist.nfo")
 	content := []byte(`<?xml version="1.0" encoding="UTF-8"?>

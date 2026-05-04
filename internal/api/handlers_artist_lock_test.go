@@ -14,6 +14,7 @@ import (
 // endpoints. It uses the handler functions directly, setting path values via
 // SetPathValue because the tests bypass the router's pattern matching.
 func TestHandleLockArtistField(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouter(t)
 	ctx := context.Background()
 
@@ -61,6 +62,7 @@ func TestHandleLockArtistField(t *testing.T) {
 // TestHandleLockArtistField_NotFound verifies the handler emits a 404 when
 // the artist does not exist.
 func TestHandleLockArtistField_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/field-locks/biography", nil)
 	req.SetPathValue("id", "missing")
@@ -75,6 +77,7 @@ func TestHandleLockArtistField_NotFound(t *testing.T) {
 // TestHandleLockArtistImage verifies per-image lock toggling and the
 // cross-artist ownership check.
 func TestHandleLockArtistImage(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouter(t)
 	ctx := context.Background()
 
@@ -139,6 +142,7 @@ func TestHandleLockArtistImage(t *testing.T) {
 // TestHandleUnlockArtistField_NotFound verifies 404 from the DELETE endpoint
 // when the artist does not exist.
 func TestHandleUnlockArtistField_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/missing/field-locks/biography", nil)
 	req.SetPathValue("id", "missing")
@@ -154,6 +158,7 @@ func TestHandleUnlockArtistField_NotFound(t *testing.T) {
 // the path does not resolve to any images (GetImagesForArtist returns empty,
 // so the ownership check fails).
 func TestHandleLockArtistImage_MissingArtist(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/image-locks/img-1", nil)
 	req.SetPathValue("id", "missing")
@@ -169,6 +174,7 @@ func TestHandleLockArtistImage_MissingArtist(t *testing.T) {
 // POST sets the lock, GET confirms it, DELETE removes it. PushLocks runs
 // inline; without a configured connection it is a no-op.
 func TestHandleLockArtist(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouter(t)
 	ctx := context.Background()
 	a := &artist.Artist{Name: "Wholesale Lock"}
@@ -226,6 +232,7 @@ func TestHandleLockArtist(t *testing.T) {
 }
 
 func TestHandleLockArtist_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/lock", nil)
 	req.SetPathValue("id", "missing")
@@ -237,6 +244,7 @@ func TestHandleLockArtist_NotFound(t *testing.T) {
 }
 
 func TestHandleUnlockArtist_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/missing/lock", nil)
 	req.SetPathValue("id", "missing")
@@ -250,6 +258,7 @@ func TestHandleUnlockArtist_NotFound(t *testing.T) {
 // TestHandleUnlockArtistImage_WrongImage verifies 404 when the imageId does
 // not belong to the artist on the DELETE path.
 func TestHandleUnlockArtistImage_WrongImage(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouter(t)
 	ctx := context.Background()
 	a := &artist.Artist{Name: "Unlock Wrong", Path: "/music/unlock-wrong"}

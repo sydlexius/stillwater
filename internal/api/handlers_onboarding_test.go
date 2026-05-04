@@ -67,6 +67,7 @@ func onboardingRequest() *http.Request {
 }
 
 func TestHandleOnboardingPage_DefaultStep(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	req := onboardingRequest()
@@ -90,6 +91,7 @@ func TestHandleOnboardingPage_DefaultStep(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	tests := []struct {
@@ -133,6 +135,7 @@ func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_InvalidStep(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	// Store an invalid value.
@@ -159,6 +162,7 @@ func TestHandleOnboardingPage_InvalidStep(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_CompletedRedirects(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	// Mark onboarding as completed.
@@ -184,6 +188,7 @@ func TestHandleOnboardingPage_CompletedRedirects(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_NoAuth(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	// Request without user ID in context.
@@ -198,6 +203,7 @@ func TestHandleOnboardingPage_NoAuth(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_UnidentifiedCount(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 	ctx := context.Background()
 
@@ -252,6 +258,7 @@ func TestHandleOnboardingPage_UnidentifiedCount(t *testing.T) {
 }
 
 func TestHandleOnboardingPage_UserAuthProvider(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		authProvider  string

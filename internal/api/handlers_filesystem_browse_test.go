@@ -24,6 +24,7 @@ func newBrowseRouter(t *testing.T) *Router {
 }
 
 func TestHandleFilesystemBrowse_Valid(t *testing.T) {
+	t.Parallel()
 	// Create a temp directory with some subdirectories and a file.
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "albums"), 0o755); err != nil {
@@ -77,6 +78,7 @@ func TestHandleFilesystemBrowse_Valid(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_EmptyDirectory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	r := newBrowseRouter(t)
@@ -100,6 +102,7 @@ func TestHandleFilesystemBrowse_EmptyDirectory(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_MissingPath(t *testing.T) {
+	t.Parallel()
 	r := newBrowseRouter(t)
 	ctx := middleware.WithTestRole(context.Background(), "administrator")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/filesystem/browse", nil)
@@ -113,6 +116,7 @@ func TestHandleFilesystemBrowse_MissingPath(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_RelativePath(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		path string
@@ -139,6 +143,7 @@ func TestHandleFilesystemBrowse_RelativePath(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_SymlinkResolvesToValidPath(t *testing.T) {
+	t.Parallel()
 	// Create a symlink inside innerDir that points to outerDir.
 	// When browsing the symlink path directly, it must resolve to outerDir.
 	outerDir := t.TempDir()
@@ -181,6 +186,7 @@ func TestHandleFilesystemBrowse_SymlinkResolvesToValidPath(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_NonExistentPath(t *testing.T) {
+	t.Parallel()
 	r := newBrowseRouter(t)
 	ctx := middleware.WithTestRole(context.Background(), "administrator")
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/filesystem/browse?path=/nonexistent/path/that/does/not/exist", nil)
@@ -194,6 +200,7 @@ func TestHandleFilesystemBrowse_NonExistentPath(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_RequireAdmin(t *testing.T) {
+	t.Parallel()
 	// The RequireAdmin middleware is applied at route registration, but we
 	// verify the pattern directly by wrapping the handler as the router does.
 	r := newBrowseRouter(t)
@@ -223,6 +230,7 @@ func TestHandleFilesystemBrowse_RequireAdmin(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_ParentPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Resolve the dir through any OS-level symlinks (e.g. /var -> /private/var on macOS).
@@ -254,6 +262,7 @@ func TestHandleFilesystemBrowse_ParentPath(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_SortOrder(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Create directories in non-alphabetical order to verify case-insensitive sort.
 	for _, name := range []string{"Zebra", "apple", "Mango", "banana"} {
@@ -294,6 +303,7 @@ func TestHandleFilesystemBrowse_SortOrder(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_PathIsFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "afile.txt")
 	if err := os.WriteFile(filePath, []byte("content"), 0o644); err != nil {
@@ -313,6 +323,7 @@ func TestHandleFilesystemBrowse_PathIsFile(t *testing.T) {
 }
 
 func TestHandleFilesystemBrowse_RootParentIsEmpty(t *testing.T) {
+	t.Parallel()
 	// filepath.Dir of the filesystem root returns the root itself.
 	// The handler must detect this and return parent="" so the UI
 	// can disable the "go up" control at the root level.
