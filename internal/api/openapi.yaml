@@ -30,6 +30,82 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    EmbyJellyfinPlatformSettings:
+      type: object
+      required: [connection_type, libraries]
+      properties:
+        connection_type:
+          type: string
+          enum: [emby, jellyfin]
+          description: Platform type of the connection.
+        libraries:
+          type: array
+          description: Per-library fetcher/saver settings.
+          items:
+            type: object
+            properties:
+              library_id:
+                type: string
+                description: ID of the library.
+              library_name:
+                type: string
+                description: Display name of the library on the platform.
+              image_fetchers:
+                type: array
+                items:
+                  type: string
+                description: Image fetcher plugins enabled for this library.
+              metadata_fetchers:
+                type: array
+                items:
+                  type: string
+                description: Metadata fetcher plugins enabled for this library.
+              metadata_savers:
+                type: array
+                items:
+                  type: string
+                description: Metadata saver plugins enabled for this library.
+              has_conflicts:
+                type: boolean
+                description: Whether conflicting plugin settings were detected.
+              needs_lockdata:
+                type: boolean
+                description: Jellyfin only. Indicates NFO lockdata injection is required.
+              enable_internet_providers:
+                type: boolean
+                description: Jellyfin only. Whether internet providers are enabled for this library.
+        note:
+          type: string
+          description: Platform-specific advisory note.
+    LidarrPlatformSettings:
+      type: object
+      required: [connection_type, metadata_consumers]
+      properties:
+        connection_type:
+          type: string
+          enum: [lidarr]
+          description: Platform type of the connection.
+        metadata_consumers:
+          type: array
+          description: Global metadata consumers.
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                description: Unique identifier.
+              consumer_name:
+                type: string
+                description: Display name of the metadata consumer plugin.
+              metadata_type:
+                type: string
+                description: Type of metadata this consumer handles.
+              enabled:
+                type: boolean
+                description: Whether this metadata consumer is enabled.
+        note:
+          type: string
+          description: Platform-specific advisory note.
     Error:
       type: object
       properties:
@@ -89,8 +165,7 @@ components:
             enum: [genres, styles, moods]
           description: Which source categories feed the genre XML element.
         advanced_remap:
-          type: object
-          nullable: true
+          type: [object, "null"]
           description: Full source-to-element mapping matrix. Overrides all other settings when non-null.
           properties:
             genre:
@@ -4091,17 +4166,15 @@ paths:
                 type: object
                 properties:
                   last_evaluation_at:
-                    type: string
+                    type: [string, "null"]
                     format: date-time
-                    nullable: true
                     description: When the last rule evaluation completed (UTC, RFC 3339).
                   interval_minutes:
                     type: integer
                     description: Minutes between scheduled rule evaluations.
                   next_evaluation_at:
-                    type: string
+                    type: [string, "null"]
                     format: date-time
-                    nullable: true
                     description: When the next scheduled evaluation will run (UTC, RFC 3339).
                   scheduler_enabled:
                     type: boolean
@@ -5993,82 +6066,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - title: EmbyJellyfinPlatformSettings
-                    type: object
-                    required: [connection_type, libraries]
-                    properties:
-                      connection_type:
-                        type: string
-                        enum: [emby, jellyfin]
-                        description: Platform type of the connection.
-                      libraries:
-                        type: array
-                        description: Per-library fetcher/saver settings.
-                        items:
-                          type: object
-                          properties:
-                            library_id:
-                              type: string
-                              description: ID of the library.
-                            library_name:
-                              type: string
-                              description: Display name of the library on the platform.
-                            image_fetchers:
-                              type: array
-                              items:
-                                type: string
-                              description: Image fetcher plugins enabled for this library.
-                            metadata_fetchers:
-                              type: array
-                              items:
-                                type: string
-                              description: Metadata fetcher plugins enabled for this library.
-                            metadata_savers:
-                              type: array
-                              items:
-                                type: string
-                              description: Metadata saver plugins enabled for this library.
-                            has_conflicts:
-                              type: boolean
-                              description: Whether conflicting plugin settings were detected.
-                            needs_lockdata:
-                              type: boolean
-                              description: Jellyfin only. Indicates NFO lockdata injection is required.
-                            enable_internet_providers:
-                              type: boolean
-                              description: Jellyfin only. Whether internet providers are enabled for this library.
-                      note:
-                        type: string
-                        description: Platform-specific advisory note.
-                  - title: LidarrPlatformSettings
-                    type: object
-                    required: [connection_type, metadata_consumers]
-                    properties:
-                      connection_type:
-                        type: string
-                        enum: [lidarr]
-                        description: Platform type of the connection.
-                      metadata_consumers:
-                        type: array
-                        description: Global metadata consumers.
-                        items:
-                          type: object
-                          properties:
-                            id:
-                              type: integer
-                              description: Unique identifier.
-                            consumer_name:
-                              type: string
-                              description: Display name of the metadata consumer plugin.
-                            metadata_type:
-                              type: string
-                              description: Type of metadata this consumer handles.
-                            enabled:
-                              type: boolean
-                              description: Whether this metadata consumer is enabled.
-                      note:
-                        type: string
-                        description: Platform-specific advisory note.
+                  - $ref: "#/components/schemas/EmbyJellyfinPlatformSettings"
+                  - $ref: "#/components/schemas/LidarrPlatformSettings"
                 discriminator:
                   propertyName: connection_type
                   mapping:
