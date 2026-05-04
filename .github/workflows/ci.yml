@@ -81,10 +81,20 @@ jobs:
         run: npx --yes @stoplight/spectral-cli@6.15.0 lint internal/api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
 
   test:
-    name: Test
+    # Per-shard display names render as "Test Shard (api)", "Test Shard (rule)",
+    # etc. The bare name "Test" is owned by the test-summary job below so the
+    # pre-existing required check remains satisfied without a branch-protection
+    # update at merge time.
+    name: Test Shard
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      # One shard's failure should not cancel the others -- a flake in one
+      # shard hides real failures in the others if fail-fast is on.
+      fail-fast: false
+      matrix:
+        shard: [api, rule, services, core]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -93,15 +103,90 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Resolve the package list for this shard. The api / rule / services
+      # shards have static lists derived from a per-package profile (api 83s,
+      # rule+settingsio 110s, auth+image+artist 105s). The core shard is
+      # dynamic -- whatever is left after excluding the static buckets --
+      # so newly-added packages auto-fall into core without further matrix
+      # edits. Wall time = max(shards) + runner overhead (~60s).
+      - name: Resolve shard package list
+        id: shard
+        run: |
+          # Single source of truth for named-shard package mappings. Adding
+          # or moving packages between shards is a one-line change here; the
+          # named-shard branches and the core exclusion regex both derive
+          # from this map, so they cannot drift. Adding a NEW shard also
+          # requires updating the matrix.shard list above.
+          declare -A SHARDS=(
+            [api]="internal/api"
+            [rule]="internal/rule internal/settingsio"
+            [services]="internal/auth internal/image internal/artist"
+          )
+
+          shard="${{ matrix.shard }}"
+          case "${shard}" in
+            core)
+              # Dynamic exclusion: derive the regex from SHARDS so this
+              # branch cannot drift from the named-shard branches. Module
+              # path comes from `go list -m` so a go.mod rename does not
+              # silently break sharding.
+              module=$(go list -m)
+              excludes=""
+              for k in "${!SHARDS[@]}"; do
+                for p in ${SHARDS[$k]}; do
+                  excludes="${excludes:+${excludes}|}${p}"
+                done
+              done
+              pkgs=$(go list ./... | grep -v -E "^${module}/(${excludes})(/|$)" | tr '\n' ' ')
+              ;;
+            *)
+              if [ -z "${SHARDS[${shard}]+x}" ]; then
+                echo "Unknown shard: ${shard}" >&2
+                exit 1
+              fi
+              pkgs=""
+              for p in ${SHARDS[${shard}]}; do
+                pkgs="${pkgs}./${p}/... "
+              done
+              ;;
+          esac
+          echo "packages=${pkgs}" >> "$GITHUB_OUTPUT"
+
+      # -coverpkg=./... is intentionally cross-shard: each shard's coverage
+      # profile records hits across the WHOLE module, not just its own
+      # packages. Codecov OR-merges multiple uploads on the same commit, so
+      # a line marked covered by any shard wins -- the final report is
+      # accurate regardless of which shard executed which test.
       - name: Run tests
-        run: go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ./...
+        run: go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ${{ steps.shard.outputs.packages }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+          # Tag uploads with the shard name so codecov can attribute and
+          # merge per-shard coverage cleanly across the matrix.
+          flags: shard-${{ matrix.shard }}
           fail_ci_if_error: true
+
+  # Aggregate gate that owns the "Test" check name. Branch protection can keep
+  # requiring "Test" without enumerating every shard, and this job will fail
+  # iff any matrix shard did not succeed. always() ensures we still emit a
+  # status when shards fail or are cancelled (default needs behavior would
+  # skip the gate, leaving "Test" unreported and branch protection stuck).
+  test-summary:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: always() && needs.changes.outputs.code == 'true'
+    steps:
+      - name: Verify all shards succeeded
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "One or more Test shards did not succeed: ${{ needs.test.result }}"
+            exit 1
+          fi
 
   build:
     name: Build
