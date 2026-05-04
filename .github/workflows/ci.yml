@@ -85,6 +85,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      # One shard's failure should not cancel the others -- a flake in one
+      # shard hides real failures in the others if fail-fast is on.
+      fail-fast: false
+      matrix:
+        shard: [api, rule, services, core]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -93,14 +99,53 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Resolve the package list for this shard. The api / rule / services
+      # shards have static lists derived from a per-package profile (api 83s,
+      # rule+settingsio 110s, auth+image+artist 105s). The core shard is
+      # dynamic -- whatever is left after excluding the static buckets --
+      # so newly-added packages auto-fall into core without further matrix
+      # edits. Wall time = max(shards) + runner overhead (~60s).
+      - name: Resolve shard package list
+        id: shard
+        run: |
+          case "${{ matrix.shard }}" in
+            api)
+              echo "packages=./internal/api/..." >> "$GITHUB_OUTPUT"
+              ;;
+            rule)
+              echo "packages=./internal/rule/... ./internal/settingsio/..." >> "$GITHUB_OUTPUT"
+              ;;
+            services)
+              echo "packages=./internal/auth/... ./internal/image/... ./internal/artist/..." >> "$GITHUB_OUTPUT"
+              ;;
+            core)
+              # Everything not covered by the named shards above. Keep the
+              # exclusion list in sync with the case branches.
+              pkgs=$(go list ./... | grep -v -E '^github\.com/sydlexius/stillwater/(internal/api|internal/rule|internal/settingsio|internal/auth|internal/image|internal/artist)(/|$)' | tr '\n' ' ')
+              echo "packages=${pkgs}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown shard: ${{ matrix.shard }}" >&2
+              exit 1
+              ;;
+          esac
+
+      # -coverpkg=./... is intentionally cross-shard: each shard's coverage
+      # profile records hits across the WHOLE module, not just its own
+      # packages. Codecov OR-merges multiple uploads on the same commit, so
+      # a line marked covered by any shard wins -- the final report is
+      # accurate regardless of which shard executed which test.
       - name: Run tests
-        run: go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ./...
+        run: go test -v -race -count=1 -timeout 8m -coverpkg=./... -coverprofile=coverage.out ${{ steps.shard.outputs.packages }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+          # Tag uploads with the shard name so codecov can attribute and
+          # merge per-shard coverage cleanly across the matrix.
+          flags: shard-${{ matrix.shard }}
           fail_ci_if_error: true
 
   build:
