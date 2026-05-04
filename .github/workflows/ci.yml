@@ -112,27 +112,45 @@ jobs:
       - name: Resolve shard package list
         id: shard
         run: |
-          case "${{ matrix.shard }}" in
-            api)
-              echo "packages=./internal/api/..." >> "$GITHUB_OUTPUT"
-              ;;
-            rule)
-              echo "packages=./internal/rule/... ./internal/settingsio/..." >> "$GITHUB_OUTPUT"
-              ;;
-            services)
-              echo "packages=./internal/auth/... ./internal/image/... ./internal/artist/..." >> "$GITHUB_OUTPUT"
-              ;;
+          # Single source of truth for named-shard package mappings. Adding
+          # or moving packages between shards is a one-line change here; the
+          # named-shard branches and the core exclusion regex both derive
+          # from this map, so they cannot drift. Adding a NEW shard also
+          # requires updating the matrix.shard list above.
+          declare -A SHARDS=(
+            [api]="internal/api"
+            [rule]="internal/rule internal/settingsio"
+            [services]="internal/auth internal/image internal/artist"
+          )
+
+          shard="${{ matrix.shard }}"
+          case "${shard}" in
             core)
-              # Everything not covered by the named shards above. Keep the
-              # exclusion list in sync with the case branches.
-              pkgs=$(go list ./... | grep -v -E '^github\.com/sydlexius/stillwater/(internal/api|internal/rule|internal/settingsio|internal/auth|internal/image|internal/artist)(/|$)' | tr '\n' ' ')
-              echo "packages=${pkgs}" >> "$GITHUB_OUTPUT"
+              # Dynamic exclusion: derive the regex from SHARDS so this
+              # branch cannot drift from the named-shard branches. Module
+              # path comes from `go list -m` so a go.mod rename does not
+              # silently break sharding.
+              module=$(go list -m)
+              excludes=""
+              for k in "${!SHARDS[@]}"; do
+                for p in ${SHARDS[$k]}; do
+                  excludes="${excludes:+${excludes}|}${p}"
+                done
+              done
+              pkgs=$(go list ./... | grep -v -E "^${module}/(${excludes})(/|$)" | tr '\n' ' ')
               ;;
             *)
-              echo "Unknown shard: ${{ matrix.shard }}" >&2
-              exit 1
+              if [ -z "${SHARDS[${shard}]+x}" ]; then
+                echo "Unknown shard: ${shard}" >&2
+                exit 1
+              fi
+              pkgs=""
+              for p in ${SHARDS[${shard}]}; do
+                pkgs="${pkgs}./${p}/... "
+              done
               ;;
           esac
+          echo "packages=${pkgs}" >> "$GITHUB_OUTPUT"
 
       # -coverpkg=./... is intentionally cross-shard: each shard's coverage
       # profile records hits across the WHOLE module, not just its own
