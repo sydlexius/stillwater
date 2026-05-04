@@ -22,50 +22,55 @@ type Config struct {
 }
 
 // ServerConfig holds HTTP server settings.
+//
+// Struct tags drive the env-var reference codegen in cmd/gen-env-reference:
+//   - env:  the environment variable name (SW_*)
+//   - desc: a single-sentence user-facing description
+//   - default: rendered default; "unset" or "" when there is no default
 type ServerConfig struct {
-	Port            int    `yaml:"port"`      // SW_PORT
-	BasePath        string `yaml:"base_path"` // SW_BASE_PATH
-	BasePathFromEnv bool   `yaml:"-"`         // true when BasePath was set from SW_BASE_PATH
+	Port            int    `yaml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
+	BasePath        string `yaml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
+	BasePathFromEnv bool   `yaml:"-"`
 }
 
 // DatabaseConfig holds SQLite settings.
 type DatabaseConfig struct {
-	Path string `yaml:"path"` // SW_DB_PATH
+	Path string `yaml:"path" env:"SW_DB_PATH" default:"/config/stillwater.db" desc:"Filesystem path to the SQLite database file."`
 }
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	SessionSecret string `yaml:"session_secret"` //nolint:gosec // G117: not a hardcoded secret, this is a config field -- SW_SESSION_SECRET
+	SessionSecret string `yaml:"session_secret" env:"SW_SESSION_SECRET" default:"unset" desc:"Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory."` //nolint:gosec // G117: not a hardcoded secret, this is a config field
 }
 
 // EncryptionConfig holds encryption key settings.
 type EncryptionConfig struct {
-	Key string `yaml:"key"` // SW_ENCRYPTION_KEY
+	Key string `yaml:"key" env:"SW_ENCRYPTION_KEY" default:"unset" desc:"Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory."`
 }
 
 // MusicConfig holds music library path settings.
 type MusicConfig struct {
-	LibraryPath string `yaml:"library_path"` // SW_MUSIC_PATH
+	LibraryPath string `yaml:"library_path" env:"SW_MUSIC_PATH" default:"/music" desc:"Default music library path used as a starting point when no library has been added through the UI."`
 }
 
 // ScannerConfig holds scanner behavior settings.
 type ScannerConfig struct {
 	Depth      int      `yaml:"depth"`
-	Exclusions []string `yaml:"exclusions"` // SW_SCANNER_EXCLUSIONS (comma-separated)
+	Exclusions []string `yaml:"exclusions" env:"SW_SCANNER_EXCLUSIONS" default:"Various Artists, Various, VA, Soundtrack, OST" desc:"Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed."`
 }
 
 // BackupConfig holds database backup settings.
 type BackupConfig struct {
-	Path           string `yaml:"path"`            // SW_BACKUP_PATH
-	RetentionCount int    `yaml:"retention_count"` // SW_BACKUP_RETENTION
-	IntervalHours  int    `yaml:"interval_hours"`  // SW_BACKUP_INTERVAL
-	Enabled        bool   `yaml:"enabled"`         // SW_BACKUP_ENABLED ("true" or "1")
+	Path           string `yaml:"path" env:"SW_BACKUP_PATH" default:"" desc:"Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory."`
+	RetentionCount int    `yaml:"retention_count" env:"SW_BACKUP_RETENTION" default:"7" desc:"Number of recent backups to keep. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
+	IntervalHours  int    `yaml:"interval_hours" env:"SW_BACKUP_INTERVAL" default:"24" desc:"Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
+	Enabled        bool   `yaml:"enabled" env:"SW_BACKUP_ENABLED" default:"true" desc:"Set to true or 1 to enable automated backups. Any other value disables them."`
 }
 
 // LoggingConfig holds logging settings.
 type LoggingConfig struct {
-	Level  string `yaml:"level"`  // SW_LOG_LEVEL
-	Format string `yaml:"format"` // SW_LOG_FORMAT
+	Level  string `yaml:"level" env:"SW_LOG_LEVEL" default:"info" desc:"Log level at startup. One of trace, debug, info, warn, error. The runtime can also adjust the live level from the Logs settings tab."`
+	Format string `yaml:"format" env:"SW_LOG_FORMAT" default:"json" desc:"Log output format. Use json for log aggregators or text for friendlier console output."`
 }
 
 // Default returns a Config with sensible defaults.

@@ -8,22 +8,27 @@ description: Every SW_ environment variable Stillwater honors at startup, with d
 
 Stillwater is configured by a small YAML file plus environment-variable overrides. **Environment variables always win** over YAML values.
 
-| Variable | YAML field | Default | Notes |
+The table below is generated from the configuration definition; do not edit it by hand. Run `make generate-docs` after changing a configuration field.
+
+<!-- BEGIN GENERATED: env-reference -->
+| Variable | Type | Default | Description |
 |---|---|---|---|
-| `SW_CONFIG_PATH` | -- | `/config/config.yaml` | Path to a YAML config file. When unset, Stillwater attempts to read `/config/config.yaml`; if that file does not exist, it starts with defaults plus environment overrides only. |
-| `SW_PORT` | `server.port` | `1973` | TCP port. Non-numeric values are silently ignored; numeric values outside `1-65535` are rejected at startup by config validation. |
-| `SW_BASE_PATH` | `server.base_path` | `/` | URL prefix for subfolder reverse-proxy deployments (e.g. `/stillwater`). When set from the environment, the Settings UI marks the field read-only with a "managed by environment" badge so a config-as-code deployment can't be silently overridden through the UI. |
-| `SW_DB_PATH` | `database.path` | `/config/stillwater.db` | SQLite file path. Optional; defaults to `/config/stillwater.db`. |
-| `SW_SESSION_SECRET` | `auth.session_secret` | unset | Long random string used to sign session cookies. When unset, Stillwater generates one on first run and persists it in the config directory. Set this only when you need sessions to survive across fresh container deployments with no persistent volume. |
-| `SW_ENCRYPTION_KEY` | `encryption.key` | unset | Key used to encrypt provider API keys at rest. When unset, Stillwater generates one on first run and persists it in the config directory. Set this only when restoring from a backup that was encrypted with a known key. |
-| `SW_MUSIC_PATH` | `music.library_path` | `/music` | Default library path used when no library is configured yet. Once you've added libraries through the UI, this is informational. |
-| `SW_SCANNER_EXCLUSIONS` | `scanner.exclusions` | `Various Artists, Various, VA, Soundtrack, OST` | Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed. |
-| `SW_BACKUP_PATH` | `backup.path` | empty (defaults inside Stillwater to a `backups/` subfolder of the config directory) | Override the directory where automated database backups are written. |
-| `SW_BACKUP_RETENTION` | `backup.retention_count` | `7` | Number of recent backups to keep. Older backups are pruned after each successful new backup. Must be a positive number; non-positive values are silently ignored. |
-| `SW_BACKUP_INTERVAL` | `backup.interval_hours` | `24` | Hours between automated backups. Must be a positive number; non-positive values are silently ignored. |
-| `SW_BACKUP_ENABLED` | `backup.enabled` | `true` | Set to `true` or `1` to enable automated backups; any other value disables them. |
-| `SW_LOG_LEVEL` | `logging.level` | `info` | One of `trace`, `debug`, `info`, `warn`, `error`. The runtime can also raise/lower the live level via the Logs settings tab without restart. |
-| `SW_LOG_FORMAT` | `logging.format` | `json` | `json` for log aggregators; `text` for friendlier console output. |
+| `SW_BACKUP_ENABLED` | boolean | `true` | Set to true or 1 to enable automated backups. Any other value disables them. |
+| `SW_BACKUP_INTERVAL` | integer | `24` | Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. |
+| `SW_BACKUP_PATH` | path | (none) | Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory. |
+| `SW_BACKUP_RETENTION` | integer | `7` | Number of recent backups to keep. Must be a positive integer; non-positive or non-numeric values are silently ignored. |
+| `SW_BASE_PATH` | path | `/` | URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only. |
+| `SW_DB_PATH` | path | `/config/stillwater.db` | Filesystem path to the SQLite database file. |
+| `SW_ENCRYPTION_KEY` | string | unset | Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory. |
+| `SW_LOG_FORMAT` | string | `json` | Log output format. Use json for log aggregators or text for friendlier console output. |
+| `SW_LOG_LEVEL` | string | `info` | Log level at startup. One of trace, debug, info, warn, error. The runtime can also adjust the live level from the Logs settings tab. |
+| `SW_MUSIC_PATH` | path | `/music` | Default music library path used as a starting point when no library has been added through the UI. |
+| `SW_PORT` | integer | `1973` | TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup. |
+| `SW_SCANNER_EXCLUSIONS` | list (comma-separated) | `Various Artists, Various, VA, Soundtrack, OST` | Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed. |
+| `SW_SESSION_SECRET` | string | unset | Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory. |
+<!-- END GENERATED: env-reference -->
+
+`SW_CONFIG_PATH` is also honored at startup but lives outside the configuration struct: set it to point at a YAML config file. When unset, Stillwater attempts to read `/config/config.yaml`; if that file does not exist, it starts with defaults plus environment overrides only.
 
 ## YAML configuration file
 

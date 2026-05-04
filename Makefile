@@ -69,9 +69,10 @@ tailwind:
 ## generate: Run all code generation (templ + tailwind)
 generate: templ tailwind
 
-## generate-docs: Regenerate docs site content from code (provider matrix)
+## generate-docs: Regenerate docs site content from code (provider matrix, env-var reference)
 generate-docs:
 	go run ./cmd/gen-provider-matrix
+	go run ./cmd/gen-env-reference
 
 ## tailwind-watch: Watch and rebuild Tailwind CSS
 tailwind-watch:
