@@ -3040,6 +3040,11 @@ templ basePathSaveScript() {
 								showError(j.error || msgSaveFailed);
 							});
 					}
+					// Reflect the normalized value back into the field so the
+					// user sees what was persisted. Without this, clearing the
+					// input and clicking Save persists "/" but leaves the
+					// control visually blank until the next page load.
+					input.value = val;
 					if (errEl) {
 						errEl.classList.add('hidden');
 						errEl.textContent = '';
