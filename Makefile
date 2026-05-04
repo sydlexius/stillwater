@@ -34,6 +34,10 @@ dev:
 test:
 	go test -v -race -count=1 ./...
 
+## test-shuffle: Run tests with random ordering to surface order-dependent tests (local hygiene; reproduce a failure with -shuffle=<seed>)
+test-shuffle:
+	go test -race -count=1 -shuffle=on ./...
+
 ## test-race: Run tests with race detector via WSL2 (requires WSL2 with Go and GCC installed)
 test-race:
 	@wsl_path=$$(echo "$(CURDIR)" | sed 's|^/\([a-zA-Z]\)/|/mnt/\1/|'); \

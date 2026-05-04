@@ -12,6 +12,23 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
+// waitOrFail blocks until wg signals done or the timeout fires. Tests use
+// this to join handler goroutines deterministically -- a fixed time.Sleep
+// would either under-wait (flake) or over-wait (slow).
+func waitOrFail(t *testing.T, wg *sync.WaitGroup, msg string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal(msg)
+	}
+}
+
 func TestPublishSubscribe(t *testing.T) {
 	bus := NewBus(testLogger(), 16)
 	go bus.Start()
@@ -19,8 +36,11 @@ func TestPublishSubscribe(t *testing.T) {
 
 	var mu sync.Mutex
 	var received []Event
+	var wg sync.WaitGroup
+	wg.Add(1)
 
 	bus.Subscribe(ScanCompleted, func(e Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		received = append(received, e)
@@ -31,8 +51,7 @@ func TestPublishSubscribe(t *testing.T) {
 		Data: map[string]any{"artists": 42},
 	})
 
-	// Give the goroutine time to process
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "handler not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -54,9 +73,12 @@ func TestMultipleSubscribers(t *testing.T) {
 
 	var mu sync.Mutex
 	count := 0
+	var wg sync.WaitGroup
+	wg.Add(3)
 
 	for range 3 {
 		bus.Subscribe(BulkCompleted, func(_ Event) {
+			defer wg.Done()
 			mu.Lock()
 			defer mu.Unlock()
 			count++
@@ -64,7 +86,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	bus.Publish(Event{Type: BulkCompleted})
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "all 3 handlers not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -78,9 +100,11 @@ func TestNoSubscribers(t *testing.T) {
 	go bus.Start()
 	defer bus.Stop()
 
-	// Should not panic
+	// Publish must not panic when no subscribers are registered. With no
+	// handlers there is nothing to wait on -- the bus dispatch loop simply
+	// drops the event. The synchronous Publish call returning is the only
+	// signal we need; defer bus.Stop() drains the loop.
 	bus.Publish(Event{Type: ArtistNew})
-	time.Sleep(50 * time.Millisecond)
 }
 
 func TestBufferFull(t *testing.T) {
@@ -101,18 +125,24 @@ func TestHandlerPanicRecovery(t *testing.T) {
 
 	var mu sync.Mutex
 	secondCalled := false
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	bus.Subscribe(MetadataFixed, func(_ Event) {
+		// The bus must still call wg.Done() for this handler even though
+		// it panics; the bus's recover() path is what we are testing.
+		defer wg.Done()
 		panic("test panic")
 	})
 	bus.Subscribe(MetadataFixed, func(_ Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		secondCalled = true
 	})
 
 	bus.Publish(Event{Type: MetadataFixed})
-	time.Sleep(50 * time.Millisecond)
+	waitOrFail(t, &wg, "both handlers not invoked within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -126,21 +156,26 @@ func TestStopDrainsBuffer(t *testing.T) {
 
 	var mu sync.Mutex
 	count := 0
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	bus.Subscribe(ScanCompleted, func(_ Event) {
+		defer wg.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		count++
 	})
 
-	// Publish before starting
+	// Publish before starting -- both events sit in the channel buffer.
 	bus.Publish(Event{Type: ScanCompleted})
 	bus.Publish(Event{Type: ScanCompleted})
 
 	go bus.Start()
-	time.Sleep(50 * time.Millisecond)
+	// Wait until both buffered events have been dispatched, then Stop. The
+	// wg signal is the contract: "both handlers ran". Bus.Stop() is then
+	// the synchronous drain barrier; no second wait needed.
+	waitOrFail(t, &wg, "buffered events not drained within 1s")
 	bus.Stop()
-	time.Sleep(50 * time.Millisecond)
 
 	mu.Lock()
 	defer mu.Unlock()
