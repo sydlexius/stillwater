@@ -132,6 +132,19 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 				})
 				return
 			}
+			// Mirror the loader (cmd/stillwater/main.go isValidPersistedBasePath)
+			// and the client (web/templates/settings.templ saveBasePath): a second
+			// character of "/" or "\\" is rejected. The charset check below would
+			// already reject backslash, but "//foo" passes that check and would
+			// otherwise persist a value the loader then refuses to apply on next
+			// restart, leaving the user with a successful save and a restart
+			// banner for a base path that is silently ignored.
+			if len(bp) >= 2 && (bp[1] == '/' || bp[1] == '\\') {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": "server.base_path must not start with \"//\" or \"/\\\\\"",
+				})
+				return
+			}
 			if strings.HasSuffix(bp, "/") {
 				writeJSON(w, http.StatusBadRequest, map[string]string{
 					"error": "server.base_path must not end with \"/\"",

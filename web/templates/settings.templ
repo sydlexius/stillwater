@@ -3043,8 +3043,13 @@ templ basePathSaveScript() {
 						errEl.textContent = '';
 					}
 					if (banner) banner.classList.remove('hidden');
-				}).catch(function(err) {
-					showError(err.message || msgNetwork);
+				}).catch(function() {
+					// Prefer the localized message; the browser-provided
+					// err.message is always English (e.g. "Failed to fetch")
+					// and would shadow the translated copy on every locale.
+					// English fallback is already handled when msgNetwork is
+					// derived from #base-path-i18n with a default.
+					showError(msgNetwork);
 				});
 			};
 		})();

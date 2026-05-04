@@ -1567,6 +1567,51 @@ func TestSetConfigRejectsNegativeInterval(t *testing.T) {
 	}
 }
 
+// TestGetConfigRecoversFromCorruptSettings exercises the recovery path for
+// malformed values in the settings table. A direct out-of-band INSERT (or a
+// failed migration that left junk behind) must not silently flip the kill
+// switch off or reset the check cadence to zero. GetConfig now parses Enabled
+// and AutoCheck via strconv.ParseBool, and CheckIntervalHours via strconv.Atoi
+// with a MinCheckIntervalHours floor; an unparsable value preserves the
+// in-memory default and emits a Warn rather than aborting GetConfig or
+// adopting the bad value verbatim.
+func TestGetConfigRecoversFromCorruptSettings(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed each new key with a value that the strict parsers reject. Strings
+	// like "TRUE" / "1" / "0" would parse cleanly via ParseBool and exercise
+	// the success path, not the recovery branch -- pick deliberately
+	// nonsensical values so the test actually proves default-preservation.
+	for _, kv := range []struct{ k, v string }{
+		{SettingEnabled, "not-a-bool"},
+		{SettingAutoCheck, "also-bad"},
+		{SettingCheckIntervalHours, "zero-ish"},
+	} {
+		if _, err := svc.db.ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
+			kv.k, kv.v, now); err != nil {
+			t.Fatalf("seed %s: %v", kv.k, err)
+		}
+	}
+
+	cfg, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig should recover, not error, on malformed settings: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Error("Enabled = false, want default true (kill-switch must not flip on malformed stored value)")
+	}
+	if cfg.AutoCheck {
+		t.Error("AutoCheck = true, want default false")
+	}
+	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want default %d",
+			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
 // TestStartSchedulerStopsOnContextCancel verifies the scheduler exits
 // promptly when its context is canceled. Without a working stop path the
 // goroutine would leak across process shutdowns.
