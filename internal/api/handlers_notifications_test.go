@@ -41,6 +41,7 @@ func seedNotificationViolations(t *testing.T, svc *rule.Service) {
 }
 
 func TestParseNotificationParams(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		url       string
@@ -98,6 +99,7 @@ func TestParseNotificationParams(t *testing.T) {
 }
 
 func TestParseNotificationParams_DefaultStatus(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/notifications/table", nil)
 	p := parseNotificationParams(req)
 	if p.Status != "active" {
@@ -106,6 +108,7 @@ func TestParseNotificationParams_DefaultStatus(t *testing.T) {
 }
 
 func TestHandleNotificationsExport_CSV(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	seedNotificationViolations(t, r.ruleService)
 
@@ -146,6 +149,7 @@ func TestHandleNotificationsExport_CSV(t *testing.T) {
 }
 
 func TestHandleNotificationsExport_JSON(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	seedNotificationViolations(t, r.ruleService)
 
@@ -193,6 +197,7 @@ func TestHandleNotificationsExport_JSON(t *testing.T) {
 }
 
 func TestHandleNotificationsExport_JSONViaAcceptHeader(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	seedNotificationViolations(t, r.ruleService)
 
@@ -213,6 +218,7 @@ func TestHandleNotificationsExport_JSONViaAcceptHeader(t *testing.T) {
 }
 
 func TestHandleNotificationsExport_SeverityFilter(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	seedNotificationViolations(t, r.ruleService)
 
@@ -239,6 +245,7 @@ func TestHandleNotificationsExport_SeverityFilter(t *testing.T) {
 }
 
 func TestViolationAge(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {

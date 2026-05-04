@@ -29,6 +29,7 @@ func setupTestService(t *testing.T) *Service {
 }
 
 func TestCreateAndGetByID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -70,6 +71,7 @@ func TestCreateAndGetByID(t *testing.T) {
 }
 
 func TestCreate_Validation(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -94,6 +96,7 @@ func TestCreate_Validation(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -121,6 +124,7 @@ func TestList(t *testing.T) {
 }
 
 func TestListByType(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -144,6 +148,7 @@ func TestListByType(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -177,6 +182,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -196,6 +202,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	if err := svc.Delete(context.Background(), "nonexistent"); err == nil {
 		t.Error("expected error deleting nonexistent connection")
@@ -203,6 +210,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestList_SkipsUndecryptableRows(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -246,6 +254,7 @@ func TestList_SkipsUndecryptableRows(t *testing.T) {
 }
 
 func TestList_EmptyEncryptedKey(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -287,6 +296,7 @@ func TestList_EmptyEncryptedKey(t *testing.T) {
 }
 
 func TestGetByTypeAndURL(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -327,6 +337,7 @@ func TestGetByTypeAndURL(t *testing.T) {
 }
 
 func TestDeduplicateByTypeURL(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
@@ -373,6 +384,7 @@ func TestDeduplicateByTypeURL(t *testing.T) {
 }
 
 func TestCreatePreservesFeatureFlags(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -421,6 +433,7 @@ func TestCreatePreservesFeatureFlags(t *testing.T) {
 }
 
 func TestUpdateFeatures(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -450,6 +463,7 @@ func TestUpdateFeatures(t *testing.T) {
 }
 
 func TestUpdateFeatures_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, true, true, false, false); err == nil {
 		t.Error("expected error updating features for nonexistent connection")
@@ -457,6 +471,7 @@ func TestUpdateFeatures_NotFound(t *testing.T) {
 }
 
 func TestUpdatePlatformUserID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -484,6 +499,7 @@ func TestUpdatePlatformUserID(t *testing.T) {
 }
 
 func TestUpdate_PreservesPlatformUserID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -518,6 +534,7 @@ func TestUpdate_PreservesPlatformUserID(t *testing.T) {
 }
 
 func TestUpdateStatus(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -543,6 +560,7 @@ func TestUpdateStatus(t *testing.T) {
 }
 
 func TestNewFeatureFlags_DefaultFalse(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -564,6 +582,7 @@ func TestNewFeatureFlags_DefaultFalse(t *testing.T) {
 }
 
 func TestUpdateFeatures_NewFlags(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -590,6 +609,7 @@ func TestUpdateFeatures_NewFlags(t *testing.T) {
 }
 
 func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -626,6 +646,7 @@ func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
 // "Let Stillwater manage" setter plus the DB column read/write. Also pins
 // down SetPreStillwaterConfig alongside since they are always paired.
 func TestSetManageServerFiles_RoundTrip(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 	conn := &Connection{Name: "e", Type: TypeEmby, URL: "http://localhost:8096", APIKey: "k"}
@@ -665,6 +686,7 @@ func TestSetManageServerFiles_RoundTrip(t *testing.T) {
 }
 
 func TestSetManageServerFiles_ErrorOnUnknownID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	if err := svc.SetManageServerFiles(context.Background(), "ghost", true); err == nil {
 		t.Error("want error on unknown id")

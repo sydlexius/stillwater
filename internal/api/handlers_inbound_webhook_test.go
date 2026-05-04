@@ -13,6 +13,7 @@ import (
 
 // TestHandleEmbyWebhook_OK verifies the handler returns 200 immediately.
 func TestHandleEmbyWebhook_OK(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := `{"Event":"system.notificationtest"}`
@@ -30,6 +31,7 @@ func TestHandleEmbyWebhook_OK(t *testing.T) {
 
 // TestHandleEmbyWebhook_InvalidJSON verifies 400 on bad JSON.
 func TestHandleEmbyWebhook_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
@@ -46,6 +48,7 @@ func TestHandleEmbyWebhook_InvalidJSON(t *testing.T) {
 
 // TestHandleEmbyWebhook_MissingEvent verifies 400 when Event field is absent.
 func TestHandleEmbyWebhook_MissingEvent(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
@@ -62,6 +65,7 @@ func TestHandleEmbyWebhook_MissingEvent(t *testing.T) {
 
 // TestHandleEmbyWebhook_UnknownEventType verifies 200 with unknown event type (handled gracefully).
 func TestHandleEmbyWebhook_UnknownEventType(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := `{"Event":"some.unknown.event"}`
@@ -79,6 +83,7 @@ func TestHandleEmbyWebhook_UnknownEventType(t *testing.T) {
 
 // TestHandleJellyfinWebhook_OK verifies the handler returns 200 immediately.
 func TestHandleJellyfinWebhook_OK(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := `{"NotificationType":"Test"}`
@@ -96,6 +101,7 @@ func TestHandleJellyfinWebhook_OK(t *testing.T) {
 
 // TestHandleJellyfinWebhook_InvalidJSON verifies 400 on bad JSON.
 func TestHandleJellyfinWebhook_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/jellyfin",
@@ -112,6 +118,7 @@ func TestHandleJellyfinWebhook_InvalidJSON(t *testing.T) {
 
 // TestHandleJellyfinWebhook_MissingNotificationType verifies 400 when field is absent.
 func TestHandleJellyfinWebhook_MissingNotificationType(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/jellyfin",
@@ -128,6 +135,7 @@ func TestHandleJellyfinWebhook_MissingNotificationType(t *testing.T) {
 
 // TestHandleJellyfinWebhook_UnknownEventType verifies 200 with unknown event type.
 func TestHandleJellyfinWebhook_UnknownEventType(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := `{"NotificationType":"SomeUnknownEvent"}`
@@ -146,6 +154,7 @@ func TestHandleJellyfinWebhook_UnknownEventType(t *testing.T) {
 // TestLidarrArtistAdd_NilPipeline verifies that handleLidarrArtistAdd does not
 // panic when pipeline is nil and an existing artist is found.
 func TestLidarrArtistAdd_NilPipeline(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	// testRouter does not set pipeline, so r.pipeline == nil.
 
@@ -173,6 +182,7 @@ func TestLidarrArtistAdd_NilPipeline(t *testing.T) {
 // TestLidarrDownload_NilPipeline verifies that handleLidarrDownload does not
 // panic when pipeline is nil and an existing artist is found.
 func TestLidarrDownload_NilPipeline(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"

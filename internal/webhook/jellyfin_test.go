@@ -6,6 +6,7 @@ import (
 )
 
 func TestJellyfinPayload_Decode_TestEvent(t *testing.T) {
+	t.Parallel()
 	raw := `{"NotificationType":"Test"}`
 	var p JellyfinPayload
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
@@ -17,6 +18,7 @@ func TestJellyfinPayload_Decode_TestEvent(t *testing.T) {
 }
 
 func TestJellyfinPayload_Decode_ItemAdded_WithMBID(t *testing.T) {
+	t.Parallel()
 	// Jellyfin sends MusicAlbum items (not MusicArtist); MBID is the album artist ID.
 	// Confirmed via UAT against Jellyfin webhook plugin v18.
 	raw := `{
@@ -49,6 +51,7 @@ func TestJellyfinPayload_Decode_ItemAdded_WithMBID(t *testing.T) {
 }
 
 func TestJellyfinPayload_MBID_EmptyWhenAbsent(t *testing.T) {
+	t.Parallel()
 	p := JellyfinPayload{
 		NotificationType: JellyfinEventItemAdded,
 		ItemType:         "MusicAlbum",
@@ -60,6 +63,7 @@ func TestJellyfinPayload_MBID_EmptyWhenAbsent(t *testing.T) {
 }
 
 func TestJellyfinPayload_NonMusicAlbumType(t *testing.T) {
+	t.Parallel()
 	raw := `{
 		"NotificationType": "ItemAdded",
 		"ItemId": "xyz",
@@ -76,6 +80,7 @@ func TestJellyfinPayload_NonMusicAlbumType(t *testing.T) {
 }
 
 func TestJellyfinPayload_LibraryChanged(t *testing.T) {
+	t.Parallel()
 	raw := `{"NotificationType":"LibraryChanged"}`
 	var p JellyfinPayload
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
@@ -87,6 +92,7 @@ func TestJellyfinPayload_LibraryChanged(t *testing.T) {
 }
 
 func TestJellyfinPayload_ItemUpdated(t *testing.T) {
+	t.Parallel()
 	raw := `{
 		"NotificationType": "ItemUpdated",
 		"ItemType": "MusicAlbum",

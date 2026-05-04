@@ -12,6 +12,7 @@ import (
 // TestFieldUpdate_AutoPush_FiresForPlatformArtist verifies that a PATCH field
 // request triggers an async metadata push to the connected Emby server.
 func TestFieldUpdate_AutoPush_FiresForPlatformArtist(t *testing.T) {
+	t.Parallel()
 	received := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/Items/") {
@@ -55,6 +56,7 @@ func TestFieldUpdate_AutoPush_FiresForPlatformArtist(t *testing.T) {
 // TestFieldClear_AutoPush_FiresForPlatformArtist verifies that a DELETE field
 // request also triggers an async metadata push.
 func TestFieldClear_AutoPush_FiresForPlatformArtist(t *testing.T) {
+	t.Parallel()
 	received := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/Items/") {
@@ -100,6 +102,7 @@ func TestFieldClear_AutoPush_FiresForPlatformArtist(t *testing.T) {
 // TestFieldUpdate_AutoPush_SkipsLocalArtist verifies that artists with no
 // platform ID mappings do not trigger any outbound push requests.
 func TestFieldUpdate_AutoPush_SkipsLocalArtist(t *testing.T) {
+	t.Parallel()
 	called := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		select {
@@ -139,6 +142,7 @@ func TestFieldUpdate_AutoPush_SkipsLocalArtist(t *testing.T) {
 // TestFieldUpdate_AutoPush_SkipsDisabledConnection verifies that disabled
 // connections are not pushed to.
 func TestFieldUpdate_AutoPush_SkipsDisabledConnection(t *testing.T) {
+	t.Parallel()
 	called := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		select {
@@ -190,6 +194,7 @@ func TestFieldUpdate_AutoPush_SkipsDisabledConnection(t *testing.T) {
 // TestFieldUpdate_AutoPush_JellyfinFires verifies that the Jellyfin connection
 // type is also pushed to (not silently skipped by the type switch).
 func TestFieldUpdate_AutoPush_JellyfinFires(t *testing.T) {
+	t.Parallel()
 	received := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Jellyfin PushMetadata now GETs the current item before POSTing the
@@ -241,6 +246,7 @@ func TestFieldUpdate_AutoPush_JellyfinFires(t *testing.T) {
 // server returns 500, the PATCH handler still returns HTTP 200 immediately,
 // and that the push was still attempted (error path is exercised, not skipped).
 func TestFieldUpdate_AutoPush_DoesNotBlockSave(t *testing.T) {
+	t.Parallel()
 	attempted := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		select {

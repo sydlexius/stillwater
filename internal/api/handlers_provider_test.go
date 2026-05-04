@@ -51,6 +51,7 @@ func testRouterWithMirror(t *testing.T) *Router {
 }
 
 func TestHandleSetMirror(t *testing.T) {
+	t.Parallel()
 	// Start a local mirror server so the auto-test in the JSON path succeeds.
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -115,6 +116,7 @@ func TestHandleSetMirror(t *testing.T) {
 }
 
 func TestHandleSetMirrorValidation(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithMirror(t)
 
 	tests := []struct {
@@ -145,6 +147,7 @@ func TestHandleSetMirrorValidation(t *testing.T) {
 }
 
 func TestHandleSetMirrorTrailingSlash(t *testing.T) {
+	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"artists":[]}`))
@@ -186,6 +189,7 @@ func TestHandleSetMirrorTrailingSlash(t *testing.T) {
 }
 
 func TestHandleSetMirrorDefaultRateLimit(t *testing.T) {
+	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"artists":[]}`))
@@ -218,6 +222,7 @@ func TestHandleSetMirrorDefaultRateLimit(t *testing.T) {
 }
 
 func TestHandleSetMirrorRateLimitCap(t *testing.T) {
+	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"artists":[]}`))
@@ -250,6 +255,7 @@ func TestHandleSetMirrorRateLimitCap(t *testing.T) {
 }
 
 func TestHandleDeleteMirror(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithMirror(t)
 	ctx := context.Background()
 
@@ -293,6 +299,7 @@ func TestHandleDeleteMirror(t *testing.T) {
 }
 
 func TestHandleSetMirrorUnsupportedProvider(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithMirror(t)
 
 	body := `{"base_url":"http://mirror:5000/ws/2"}`

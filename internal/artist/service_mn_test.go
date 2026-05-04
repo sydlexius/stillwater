@@ -21,6 +21,7 @@ func seedLibForMNTests(t *testing.T, ctx context.Context, db *sql.DB, id string,
 }
 
 func TestFindByMBIDOrNameUnscoped_ByMBID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -51,6 +52,7 @@ func TestFindByMBIDOrNameUnscoped_ByMBID(t *testing.T) {
 }
 
 func TestFindByMBIDOrNameUnscoped_ByNameCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -76,6 +78,7 @@ func TestFindByMBIDOrNameUnscoped_ByNameCaseInsensitive(t *testing.T) {
 }
 
 func TestFindByMBIDOrNameUnscoped_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -90,6 +93,7 @@ func TestFindByMBIDOrNameUnscoped_NotFound(t *testing.T) {
 }
 
 func TestFindByMBIDOrNameUnscoped_CrossesLibraries(t *testing.T) {
+	t.Parallel()
 	// The unscoped variant exists specifically to find an artist regardless
 	// of library context. Seed an artist on one library and look it up
 	// without a library scope.
@@ -122,6 +126,7 @@ func TestFindByMBIDOrNameUnscoped_CrossesLibraries(t *testing.T) {
 // Without this guarantee a regression that fell back to case-insensitive
 // name lookup before MBID would still pass the happy-path tests.
 func TestFindByMBIDOrNameUnscoped_MBIDPrecedence(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -157,6 +162,7 @@ func TestFindByMBIDOrNameUnscoped_MBIDPrecedence(t *testing.T) {
 }
 
 func TestGetByName_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -179,6 +185,7 @@ func TestGetByName_CaseInsensitive(t *testing.T) {
 }
 
 func TestGetByName_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -199,6 +206,7 @@ func TestGetByName_NotFound(t *testing.T) {
 // via the Service guards against a future refactor that would silently break
 // the wrapper layer.
 func TestMembershipServicePassthroughs(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -273,6 +281,7 @@ func TestMembershipServicePassthroughs(t *testing.T) {
 // Service: when membership repo wiring is absent, the methods return zero
 // values without erroring, so callers never need to gate on availability.
 func TestMembershipMethods_NoMembershipRepo(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	svc.memberships = nil

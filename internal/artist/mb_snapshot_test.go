@@ -6,6 +6,7 @@ import (
 )
 
 func TestMBSnapshotRepo_UpsertAll_and_GetForArtist(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	repo := newSQLiteMBSnapshotRepo(db)
@@ -85,6 +86,7 @@ func TestMBSnapshotRepo_UpsertAll_and_GetForArtist(t *testing.T) {
 }
 
 func TestMBSnapshotRepo_DeleteByArtistID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	repo := newSQLiteMBSnapshotRepo(db)
@@ -117,6 +119,7 @@ func TestMBSnapshotRepo_DeleteByArtistID(t *testing.T) {
 }
 
 func TestMBSnapshotRepo_GetForArtist_empty(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	repo := newSQLiteMBSnapshotRepo(db)
 	ctx := context.Background()

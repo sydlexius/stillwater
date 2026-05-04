@@ -13,6 +13,7 @@ import (
 // truncation explicitly because a future "tighten cap" change should be a
 // deliberate decision, not silent slack.
 func TestListParams_Validate_CapsIDs(t *testing.T) {
+	t.Parallel()
 	ids := make([]string, MaxListIDs+5)
 	for i := range ids {
 		ids[i] = "id-" + strconv.Itoa(i)
@@ -31,6 +32,7 @@ func TestListParams_Validate_CapsIDs(t *testing.T) {
 // row whose primary key is the empty string. We assert the empty entries
 // are filtered out.
 func TestListParams_Validate_DropsEmptyIDs(t *testing.T) {
+	t.Parallel()
 	p := ListParams{IDs: []string{"a", "", "b", "", "c"}}
 	p.Validate()
 	want := []string{"a", "b", "c"}
@@ -51,6 +53,7 @@ func TestListParams_Validate_DropsEmptyIDs(t *testing.T) {
 // order is preserved so the chip text and the SQL bind order stay stable
 // across reloads.
 func TestListParams_Validate_DedupesIDs(t *testing.T) {
+	t.Parallel()
 	p := ListParams{IDs: []string{"a", "b", "a", "c", "b"}}
 	p.Validate()
 	want := []string{"a", "b", "c"}
@@ -69,6 +72,7 @@ func TestListParams_Validate_DedupesIDs(t *testing.T) {
 // existing caller takes today; a regression here would silently shift the
 // list query into "filter to nothing" via an empty IN-clause.
 func TestListParams_Validate_PreservesNilIDs(t *testing.T) {
+	t.Parallel()
 	p := ListParams{}
 	p.Validate()
 	// Identity check, not length: an empty non-nil slice would also pass

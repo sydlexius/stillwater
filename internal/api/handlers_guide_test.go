@@ -10,6 +10,7 @@ import (
 )
 
 func TestHandleGuidePage_Authenticated(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
@@ -31,6 +32,7 @@ func TestHandleGuidePage_Authenticated(t *testing.T) {
 }
 
 func TestHandleGuidePage_Unauthenticated(t *testing.T) {
+	t.Parallel()
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
@@ -62,6 +64,7 @@ func testRouterWithBasePath(t *testing.T, bp string) *Router {
 // prefixed with server.base_path when it is set to a non-empty value. This is the
 // primary regression check for sub-path deployments (e.g. /stillwater).
 func TestLayout_NavLinksUseBasePath(t *testing.T) {
+	t.Parallel()
 	const bp = "/stillwater"
 	r := testRouterWithBasePath(t, bp)
 
@@ -126,6 +129,7 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 // TestLayout_NavLinksNoBasePath verifies that when base_path is empty the layout
 // renders standard root-relative links so the default deployment is unaffected.
 func TestLayout_NavLinksNoBasePath(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithBasePath(t, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)

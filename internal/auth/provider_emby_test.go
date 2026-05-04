@@ -19,6 +19,7 @@ func newTestEmbyProvider(t *testing.T, serverURL string, autoProvision bool, gua
 }
 
 func TestEmbyProviderAuthenticate(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/Users/AuthenticateByName" {
 			http.NotFound(w, r)
@@ -65,6 +66,7 @@ func TestEmbyProviderAuthenticate(t *testing.T) {
 }
 
 func TestEmbyProviderAuthenticate_Unauthorized(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -81,6 +83,7 @@ func TestEmbyProviderAuthenticate_Unauthorized(t *testing.T) {
 }
 
 func TestEmbyProviderAuthenticate_ServerError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -94,6 +97,7 @@ func TestEmbyProviderAuthenticate_ServerError(t *testing.T) {
 }
 
 func TestEmbyProviderType(t *testing.T) {
+	t.Parallel()
 	provider := newTestEmbyProvider(t, "http://localhost", false, "admin")
 	if provider.Type() != "emby" {
 		t.Errorf("Type() = %q, want %q", provider.Type(), "emby")
@@ -101,6 +105,7 @@ func TestEmbyProviderType(t *testing.T) {
 }
 
 func TestEmbyProviderCanAutoProvision(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		guardRail string
@@ -125,6 +130,7 @@ func TestEmbyProviderCanAutoProvision(t *testing.T) {
 }
 
 func TestEmbyProviderCanAutoProvision_NilIdentity(t *testing.T) {
+	t.Parallel()
 	provider := newTestEmbyProvider(t, "http://localhost", true, "any_user")
 	if provider.CanAutoProvision(nil) {
 		t.Error("expected false for nil identity")
@@ -132,6 +138,7 @@ func TestEmbyProviderCanAutoProvision_NilIdentity(t *testing.T) {
 }
 
 func TestEmbyProviderAutoProvisionDisabled(t *testing.T) {
+	t.Parallel()
 	provider := newTestEmbyProvider(t, "http://localhost", false, "admin")
 	identity := &Identity{IsAdmin: true}
 	if provider.CanAutoProvision(identity) {
@@ -140,6 +147,7 @@ func TestEmbyProviderAutoProvisionDisabled(t *testing.T) {
 }
 
 func TestEmbyProviderMapRole(t *testing.T) {
+	t.Parallel()
 	provider := newTestEmbyProvider(t, "http://localhost", true, "admin")
 
 	if got := provider.MapRole(&Identity{IsAdmin: true}); got != "administrator" {
@@ -151,6 +159,7 @@ func TestEmbyProviderMapRole(t *testing.T) {
 }
 
 func TestEmbyProviderMapRole_NilIdentity(t *testing.T) {
+	t.Parallel()
 	provider := newTestEmbyProvider(t, "http://localhost", true, "admin")
 	if got := provider.MapRole(nil); got != "operator" {
 		t.Errorf("MapRole(nil) = %q, want %q", got, "operator")
@@ -158,6 +167,7 @@ func TestEmbyProviderMapRole_NilIdentity(t *testing.T) {
 }
 
 func TestNewEmbyProvider_InvalidURL(t *testing.T) {
+	t.Parallel()
 	_, err := NewEmbyProvider("ftp://bad", false, "admin", "operator")
 	if err == nil {
 		t.Fatal("expected error for invalid URL scheme")

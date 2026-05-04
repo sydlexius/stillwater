@@ -94,6 +94,7 @@ func (s *stubLibraryLister) List(_ context.Context) ([]library.Library, error) {
 }
 
 func TestScan_PathlessLibrarySkipped(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Visible Artist")
 	svc, artistSvc := setupScanner(t, libDir)
@@ -129,6 +130,7 @@ func TestScan_PathlessLibrarySkipped(t *testing.T) {
 }
 
 func TestScan_EmptyDirectory(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	svc, _ := setupScanner(t, libDir)
 	ctx := context.Background()
@@ -151,6 +153,7 @@ func TestScan_EmptyDirectory(t *testing.T) {
 }
 
 func TestScan_SingleArtist(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Nirvana", "folder.jpg", "fanart.jpg")
 	svc, artistSvc := setupScanner(t, libDir)
@@ -190,6 +193,7 @@ func TestScan_SingleArtist(t *testing.T) {
 }
 
 func TestScan_MultipleArtists(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Artist A", "folder.jpg")
 	createArtistDir(t, libDir, "Artist B", "fanart.jpg", "logo.png")
@@ -210,6 +214,7 @@ func TestScan_MultipleArtists(t *testing.T) {
 }
 
 func TestScan_DetectFiles(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Full",
 		"artist.nfo", "folder.jpg", "fanart.jpg", "logo.png", "banner.jpg")
@@ -243,6 +248,7 @@ func TestScan_DetectFiles(t *testing.T) {
 }
 
 func TestScan_NFOParsing(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <artist>
@@ -281,6 +287,7 @@ func TestScan_NFOParsing(t *testing.T) {
 }
 
 func TestScan_UpdateExisting(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Tool")
 	svc, artistSvc := setupScanner(t, libDir)
@@ -326,6 +333,7 @@ func TestScan_UpdateExisting(t *testing.T) {
 }
 
 func TestScan_RemovedArtist(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Temp Band")
 	svc, artistSvc := setupScanner(t, libDir)
@@ -364,6 +372,7 @@ func TestScan_RemovedArtist(t *testing.T) {
 }
 
 func TestScan_ConcurrentPrevention(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	// Create many dirs to keep scan running longer
 	for i := 0; i < 20; i++ {
@@ -390,6 +399,7 @@ func TestScan_ConcurrentPrevention(t *testing.T) {
 }
 
 func TestScan_SkipsHiddenDirs(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, ".hidden")
 	createArtistDir(t, libDir, "Visible")
@@ -409,6 +419,7 @@ func TestScan_SkipsHiddenDirs(t *testing.T) {
 }
 
 func TestScan_Exclusions(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Various Artists", "folder.jpg")
 	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
@@ -461,6 +472,7 @@ func TestScan_Exclusions(t *testing.T) {
 }
 
 func TestScan_HealthScoreIntegration(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	// Create an artist with NFO, thumb, fanart -- should pass several rules
 	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -554,6 +566,7 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 }
 
 func TestScan_NilRuleEngine(t *testing.T) {
+	t.Parallel()
 	// Verify scanner works fine when rule engine is nil (backward compat)
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
@@ -576,6 +589,7 @@ func TestScan_NilRuleEngine(t *testing.T) {
 }
 
 func TestDetectFiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"artist.nfo", "folder.jpg", "backdrop.jpg", "logo.png", "banner.jpg"} {
 		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644) //nolint:errcheck
@@ -604,6 +618,7 @@ func TestDetectFiles(t *testing.T) {
 }
 
 func TestDetectFiles_LowRes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Write real PNG images with known dimensions so probeLowRes can decode them.
@@ -656,6 +671,7 @@ func TestDetectFiles_LowRes(t *testing.T) {
 }
 
 func TestDetectFiles_ReadDirError(t *testing.T) {
+	t.Parallel()
 	// Pass a path that does not exist so os.ReadDir fails.
 	_, err := detectFiles(filepath.Join(t.TempDir(), "nonexistent"), nil)
 	if err == nil {
@@ -664,6 +680,7 @@ func TestDetectFiles_ReadDirError(t *testing.T) {
 }
 
 func TestScan_NoLibraries_NoFallback(t *testing.T) {
+	t.Parallel()
 	legacyDir := t.TempDir()
 	createArtistDir(t, legacyDir, "Ghost Artist")
 
@@ -694,6 +711,7 @@ func TestScan_NoLibraries_NoFallback(t *testing.T) {
 }
 
 func TestScan_DeletedLibrary_NoRepopulate(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Real Artist", "folder.jpg")
 
@@ -744,6 +762,7 @@ func TestScan_DeletedLibrary_NoRepopulate(t *testing.T) {
 }
 
 func TestScan_PlaceholderGenerated(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	artistDir := filepath.Join(libDir, "Placeholders")
 	if err := os.MkdirAll(artistDir, 0o755); err != nil {
@@ -788,6 +807,7 @@ func TestScan_PlaceholderGenerated(t *testing.T) {
 }
 
 func TestDetectFiles_Placeholders(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Write real images so placeholder generation can decode them.
@@ -839,6 +859,7 @@ func makeScannerPNG(t *testing.T, w, h int) []byte {
 }
 
 func TestDetectFiles_SkipsExistingPlaceholder(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Write a real PNG so probeImageFile can decode dimensions.
@@ -869,6 +890,7 @@ func TestDetectFiles_SkipsExistingPlaceholder(t *testing.T) {
 }
 
 func TestProcessDirectory_TransientFailurePreservesPlaceholder(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	artistDir := filepath.Join(libDir, "Transient")
 	if err := os.MkdirAll(artistDir, 0o755); err != nil {
@@ -926,6 +948,7 @@ func TestProcessDirectory_TransientFailurePreservesPlaceholder(t *testing.T) {
 }
 
 func TestShutdownCancelsInProgressScan(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	// Create enough artist directories to keep the scan busy.
@@ -987,6 +1010,7 @@ func setupScannerWithDB(t *testing.T, libraryPath string) (*Service, *artist.Ser
 // persistNormalized -> images.UpsertAll, repopulating the row. This test
 // pins that end-to-end recovery as a regression for #1225.
 func TestScan_ReconcilesArtistImagesRegistry(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Reconcile Test", "fanart.jpg")
 	svc, artistSvc, db := setupScannerWithDB(t, libDir)
@@ -1062,6 +1086,7 @@ func TestScan_ReconcilesArtistImagesRegistry(t *testing.T) {
 // the no-change branch did nothing, leaving stale registries permanently
 // stuck unless some other field happened to flip.
 func TestScan_ReconcileImagesOnUnchangedRescan(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Stable Artist", "fanart.jpg")
 	svc, artistSvc, _ := setupScannerWithDB(t, libDir)
@@ -1116,6 +1141,7 @@ func TestScan_ReconcileImagesOnUnchangedRescan(t *testing.T) {
 // future callers can use for explicit registry repair when they have an
 // authoritative image-flag snapshot to write through.
 func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
 	ctx := context.Background()
@@ -1205,6 +1231,7 @@ func TestArtistService_ReconcileImages_IdempotentConvergence(t *testing.T) {
 // that the metadata is locked. Regression coverage for the rescan path that
 // previously discarded populateFromNFO's lockdata return value.
 func TestScan_LockDataImportedOnRescan(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Portishead")
 	svc, artistSvc := setupScanner(t, libDir)
@@ -1261,6 +1288,7 @@ func TestScan_LockDataImportedOnRescan(t *testing.T) {
 // the locked state on rescan. Two NFO variants are exercised in sequence so
 // both the missing-tag and the explicit-false parsing branches are covered.
 func TestScan_NoLockDataLeavesUnlocked(t *testing.T) {
+	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Massive Attack")
 	svc, artistSvc := setupScanner(t, libDir)

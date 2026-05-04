@@ -14,6 +14,7 @@ import (
 )
 
 func TestGetPreferences_ReturnsDefaults(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
@@ -64,6 +65,7 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 }
 
 func TestUpdatePreference_ThenGet(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// PUT a preference.
@@ -106,6 +108,7 @@ func TestUpdatePreference_ThenGet(t *testing.T) {
 }
 
 func TestUpdatePreference_RejectsInvalidKey(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"anything"}`
@@ -130,6 +133,7 @@ func TestUpdatePreference_RejectsInvalidKey(t *testing.T) {
 }
 
 func TestUpdatePreference_UpsertOverwrites(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// First PUT: set theme to light.
@@ -172,6 +176,7 @@ func TestUpdatePreference_UpsertOverwrites(t *testing.T) {
 }
 
 func TestGetPreferences_Unauthenticated(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
@@ -185,6 +190,7 @@ func TestGetPreferences_Unauthenticated(t *testing.T) {
 }
 
 func TestUpdatePreference_Unauthenticated(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	body := `{"value":"light"}`
@@ -200,6 +206,7 @@ func TestUpdatePreference_Unauthenticated(t *testing.T) {
 }
 
 func TestUpdatePreference_RejectsInvalidValue(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"neon_pink"}`
@@ -226,6 +233,7 @@ func TestUpdatePreference_RejectsInvalidValue(t *testing.T) {
 // -- handleGetPreference (single key) tests --
 
 func TestGetPreference_ReturnsDefault(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/theme", nil)
@@ -252,6 +260,7 @@ func TestGetPreference_ReturnsDefault(t *testing.T) {
 }
 
 func TestGetPreference_ReturnsStoredValue(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// Store a non-default value.
@@ -287,6 +296,7 @@ func TestGetPreference_ReturnsStoredValue(t *testing.T) {
 }
 
 func TestGetPreference_UnknownKey(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/nonexistent", nil)
@@ -302,6 +312,7 @@ func TestGetPreference_UnknownKey(t *testing.T) {
 }
 
 func TestGetPreference_SuppressConfirmDefaultsFalse(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_delete_artist", nil)
@@ -325,6 +336,7 @@ func TestGetPreference_SuppressConfirmDefaultsFalse(t *testing.T) {
 }
 
 func TestUpdatePreference_SuppressConfirmAcceptsTrueAndFalse(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// Suppress the action.
@@ -385,6 +397,7 @@ func TestUpdatePreference_SuppressConfirmAcceptsTrueAndFalse(t *testing.T) {
 }
 
 func TestUpdatePreference_SuppressConfirmRejectsInvalidValue(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"yes"}`
@@ -400,6 +413,7 @@ func TestUpdatePreference_SuppressConfirmRejectsInvalidValue(t *testing.T) {
 }
 
 func TestGetPreference_Unauthenticated(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/theme", nil)
@@ -416,6 +430,7 @@ func TestGetPreference_Unauthenticated(t *testing.T) {
 // -- page_size preference tests --
 
 func TestPageSizePref_DefaultReturned(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/page_size", nil)
@@ -440,6 +455,7 @@ func TestPageSizePref_DefaultReturned(t *testing.T) {
 }
 
 func TestPageSizePref_StoreAndRetrieve(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// PUT a valid page_size value.
@@ -475,6 +491,7 @@ func TestPageSizePref_StoreAndRetrieve(t *testing.T) {
 }
 
 func TestPageSizePref_RejectsOutOfRange(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	cases := []struct {
@@ -505,6 +522,7 @@ func TestPageSizePref_RejectsOutOfRange(t *testing.T) {
 }
 
 func TestPageSizePref_AcceptsBoundaryValues(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	for _, v := range []string{"10", "500"} {
@@ -526,6 +544,7 @@ func TestPageSizePref_AcceptsBoundaryValues(t *testing.T) {
 // TestPageSizePref_UsedByArtistList verifies that the page_size preference is
 // respected by the artist list API endpoint when no query param is provided.
 func TestPageSizePref_UsedByArtistList(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Establish a known user ID that we will use for the preference.
@@ -586,6 +605,7 @@ func TestPageSizePref_UsedByArtistList(t *testing.T) {
 // TestPageSizePref_QueryParamOverridesPref verifies that an explicit page_size
 // query parameter takes precedence over the stored user preference.
 func TestPageSizePref_QueryParamOverridesPref(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	const testUserID = "test-user-qparam"
@@ -626,6 +646,7 @@ func TestPageSizePref_QueryParamOverridesPref(t *testing.T) {
 }
 
 func TestIsSuppressConfirmKey(t *testing.T) {
+	t.Parallel()
 	valid := []string{
 		"suppress_confirm_delete",
 		"suppress_confirm_delete_artist",
@@ -658,6 +679,7 @@ func TestIsSuppressConfirmKey(t *testing.T) {
 // -- bg_opacity preference tests --
 
 func TestBgOpacityPref_DefaultReturned(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/bg_opacity", nil)
@@ -682,6 +704,7 @@ func TestBgOpacityPref_DefaultReturned(t *testing.T) {
 }
 
 func TestBgOpacityPref_StoreAndRetrieve(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"80"}`
@@ -715,6 +738,7 @@ func TestBgOpacityPref_StoreAndRetrieve(t *testing.T) {
 }
 
 func TestBgOpacityPref_RejectsOutOfRange(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	cases := []struct {
@@ -745,6 +769,7 @@ func TestBgOpacityPref_RejectsOutOfRange(t *testing.T) {
 }
 
 func TestBgOpacityPref_AcceptsBoundaryValues(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	for _, v := range []string{fmt.Sprintf("%d", BgOpacityMin), fmt.Sprintf("%d", BgOpacityMax)} {
@@ -766,6 +791,7 @@ func TestBgOpacityPref_AcceptsBoundaryValues(t *testing.T) {
 // -- auto_fetch_images preference tests --
 
 func TestAutoFetchImagesPref_DefaultReturned(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/auto_fetch_images", nil)
@@ -790,6 +816,7 @@ func TestAutoFetchImagesPref_DefaultReturned(t *testing.T) {
 }
 
 func TestAutoFetchImagesPref_StoreAndRetrieve(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"true"}`
@@ -823,6 +850,7 @@ func TestAutoFetchImagesPref_StoreAndRetrieve(t *testing.T) {
 }
 
 func TestAutoFetchImagesPref_RejectsInvalidValue(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	for _, bad := range []string{"yes", "1", "on", ""} {
@@ -844,6 +872,7 @@ func TestAutoFetchImagesPref_RejectsInvalidValue(t *testing.T) {
 // -- metadata_languages preference tests --
 
 func TestMetadataLanguagesPref_DefaultReturned(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/metadata_languages", nil)
@@ -867,6 +896,7 @@ func TestMetadataLanguagesPref_DefaultReturned(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_StoreAndRetrieve(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"value":"[\"en-GB\",\"en\",\"ja\"]"}`
@@ -901,6 +931,7 @@ func TestMetadataLanguagesPref_StoreAndRetrieve(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_CanonicalizesCase(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// PUT with mixed-case tags.
@@ -936,6 +967,7 @@ func TestMetadataLanguagesPref_CanonicalizesCase(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	cases := []struct {
@@ -974,6 +1006,7 @@ func TestMetadataLanguagesPref_RejectsInvalid(t *testing.T) {
 // langpref.Delete call returns a wrapped error and the handler must
 // respond 500 rather than silently 200ing.
 func TestMetadataLanguagesPref_EmptyArray_DeleteFailure(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 	if err := r.db.Close(); err != nil {
 		t.Fatalf("closing db for error injection: %v", err)
@@ -999,6 +1032,7 @@ func TestMetadataLanguagesPref_EmptyArray_DeleteFailure(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_EmptyArrayResetsToDefault(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	// Seed a non-default preference first so we can observe the delete.
@@ -1050,6 +1084,7 @@ func TestMetadataLanguagesPref_EmptyArrayResetsToDefault(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_AcceptsValid(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	cases := []struct {
@@ -1078,6 +1113,7 @@ func TestMetadataLanguagesPref_AcceptsValid(t *testing.T) {
 }
 
 func TestMetadataLanguagesPref_IncludedInGetAll(t *testing.T) {
+	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences", nil)
@@ -1105,6 +1141,7 @@ func TestMetadataLanguagesPref_IncludedInGetAll(t *testing.T) {
 }
 
 func TestValidateMetadataLanguages(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string

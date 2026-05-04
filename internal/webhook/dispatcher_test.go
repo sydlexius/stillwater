@@ -31,6 +31,7 @@ func setupDispatcherTest(t *testing.T) (*Service, *slog.Logger) {
 }
 
 func TestDispatcher_GenericWebhook(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var mu sync.Mutex
@@ -75,6 +76,7 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 }
 
 func TestDispatcher_DiscordFormat(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var mu sync.Mutex
@@ -124,6 +126,7 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 }
 
 func TestDispatcher_RetryOn500(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
@@ -150,13 +153,13 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+	dispatcher.sleep = func(time.Duration) {}
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.ScanCompleted,
 		Timestamp: time.Now().UTC(),
 	})
 
-	// Wait for retries (1s + 2s backoff)
-	time.Sleep(5 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	got := int(attempts.Load())
 	if got != 3 {
@@ -165,6 +168,7 @@ func TestDispatcher_RetryOn500(t *testing.T) {
 }
 
 func TestDispatcher_MaxRetries(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	var attempts atomic.Int32
@@ -187,13 +191,13 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 	}
 
 	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+	dispatcher.sleep = func(time.Duration) {}
 	dispatcher.HandleEvent(event.Event{
 		Type:      event.BulkCompleted,
 		Timestamp: time.Now().UTC(),
 	})
 
-	// Wait for all retries (1s + 2s + attempt 3)
-	time.Sleep(6 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	got := int(attempts.Load())
 	if got != 3 {
@@ -202,6 +206,7 @@ func TestDispatcher_MaxRetries(t *testing.T) {
 }
 
 func TestDispatcher_NoMatchingWebhooks(t *testing.T) {
+	t.Parallel()
 	svc, logger := setupDispatcherTest(t)
 
 	w := &Webhook{

@@ -13,6 +13,7 @@ import (
 )
 
 func TestHandleSharedFilesystemStatus(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/shared-filesystem/status", nil)
@@ -50,6 +51,7 @@ func TestHandleSharedFilesystemStatus(t *testing.T) {
 }
 
 func TestHandleSharedFilesystemDismiss(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/shared-filesystem/dismiss", nil)
@@ -75,6 +77,7 @@ func TestHandleSharedFilesystemDismiss(t *testing.T) {
 }
 
 func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
+	t.Parallel()
 	// Verify that OverlapWith is populated when peer library IDs are set.
 	r, libSvc, _ := testRouterWithLibrary(t)
 	ctx := context.Background()
@@ -145,6 +148,7 @@ func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
 }
 
 func TestHandleSharedFilesystemRecheck(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithLibrary(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/shared-filesystem/recheck", nil)

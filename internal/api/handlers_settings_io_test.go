@@ -145,6 +145,7 @@ func setupTestDBForIO(t *testing.T) *sql.DB {
 // --- Export handler tests ---
 
 func TestHandleSettingsExport_NilService(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	db := setupTestDBForIO(t)
 	authSvc := auth.NewService(db)
@@ -168,6 +169,7 @@ func TestHandleSettingsExport_NilService(t *testing.T) {
 }
 
 func TestHandleSettingsExport_MissingPassphrase(t *testing.T) {
+	t.Parallel()
 	router, _, _ := settingsIOTestDeps(t)
 
 	body := `{"passphrase":""}`
@@ -183,6 +185,7 @@ func TestHandleSettingsExport_MissingPassphrase(t *testing.T) {
 }
 
 func TestHandleSettingsExport_JSON(t *testing.T) {
+	t.Parallel()
 	router, _, db := settingsIOTestDeps(t)
 
 	// Seed two preference rows for one user so summary.user_preferences is
@@ -243,6 +246,7 @@ func TestHandleSettingsExport_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsExport_FormEncoded(t *testing.T) {
+	t.Parallel()
 	router, _, _ := settingsIOTestDeps(t)
 
 	body := "passphrase=hunter2"
@@ -260,6 +264,7 @@ func TestHandleSettingsExport_FormEncoded(t *testing.T) {
 // --- Import handler tests ---
 
 func TestHandleSettingsImport_NilService(t *testing.T) {
+	t.Parallel()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	db := setupTestDBForIO(t)
 	authSvc := auth.NewService(db)
@@ -283,6 +288,7 @@ func TestHandleSettingsImport_NilService(t *testing.T) {
 }
 
 func TestHandleSettingsImport_MissingPassphrase_JSON(t *testing.T) {
+	t.Parallel()
 	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "secret")
 
@@ -303,6 +309,7 @@ func TestHandleSettingsImport_MissingPassphrase_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsImport_WrongPassphrase_JSON(t *testing.T) {
+	t.Parallel()
 	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "correct-passphrase")
 
@@ -329,6 +336,7 @@ func TestHandleSettingsImport_WrongPassphrase_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsImport_WrongPassphrase_HTMX(t *testing.T) {
+	t.Parallel()
 	router, svc, _ := settingsIOTestDeps(t)
 	envBytes := buildExportedEnvelope(t, svc, "correct-passphrase")
 
@@ -357,6 +365,7 @@ func TestHandleSettingsImport_WrongPassphrase_HTMX(t *testing.T) {
 }
 
 func TestHandleSettingsImport_RoundTrip_JSON(t *testing.T) {
+	t.Parallel()
 	router, svc, db := settingsIOTestDeps(t)
 	// Seed two preference pairs and one user before exporting so the import
 	// counters can be checked against known values.
@@ -399,6 +408,7 @@ func TestHandleSettingsImport_RoundTrip_JSON(t *testing.T) {
 }
 
 func TestHandleSettingsImport_RoundTrip_HTMX(t *testing.T) {
+	t.Parallel()
 	router, svc, _ := settingsIOTestDeps(t)
 	const passphrase = "my-secret"
 	envBytes := buildExportedEnvelope(t, svc, passphrase)
@@ -427,6 +437,7 @@ func TestHandleSettingsImport_RoundTrip_HTMX(t *testing.T) {
 }
 
 func TestHandleSettingsImport_Multipart(t *testing.T) {
+	t.Parallel()
 	router, svc, _ := settingsIOTestDeps(t)
 	const passphrase = "multipart-pass"
 	envBytes := buildExportedEnvelope(t, svc, passphrase)
@@ -463,6 +474,7 @@ func TestHandleSettingsImport_Multipart(t *testing.T) {
 }
 
 func TestHandleSettingsImport_Multipart_MissingFile(t *testing.T) {
+	t.Parallel()
 	router, _, _ := settingsIOTestDeps(t)
 
 	var buf bytes.Buffer
@@ -486,6 +498,7 @@ func TestHandleSettingsImport_Multipart_MissingFile(t *testing.T) {
 }
 
 func TestHandleSettingsImport_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	router, _, _ := settingsIOTestDeps(t)
 
 	body := `{not valid json`

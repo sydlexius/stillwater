@@ -110,6 +110,7 @@ func writeJPEGWithProvenance(t *testing.T, path string, w, h int, meta *img.Exif
 }
 
 func TestSetArtistImageFlag_LowRes(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Test", SortName: "Test", Path: dir}
@@ -134,6 +135,7 @@ func TestSetArtistImageFlag_LowRes(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_GoodRes(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Test", SortName: "Test", Path: dir}
@@ -158,6 +160,7 @@ func TestSetArtistImageFlag_GoodRes(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_Delete(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{
@@ -182,6 +185,7 @@ func TestSetArtistImageFlag_Delete(t *testing.T) {
 }
 
 func TestRequireArtistPath_Pathless(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPlatform(t)
 
 	// Artist with empty path (pathless library)
@@ -210,6 +214,7 @@ func TestRequireArtistPath_Pathless(t *testing.T) {
 }
 
 func TestRequireImageDir_WithCacheDir(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
 	setImageCacheDir(r, cacheDir)
@@ -239,6 +244,7 @@ func TestRequireImageDir_WithCacheDir(t *testing.T) {
 }
 
 func TestRequireImageDir_RejectsNoCacheNoPath(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPlatform(t)
 	// No cache dir, no artist path.
 	setImageCacheDir(r, "")
@@ -257,6 +263,7 @@ func TestRequireImageDir_RejectsNoCacheNoPath(t *testing.T) {
 }
 
 func TestIsPrivateURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -283,6 +290,7 @@ func TestIsPrivateURL(t *testing.T) {
 }
 
 func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
+	t.Parallel()
 	transport := ssrfSafeTransport()
 	if transport.DialContext == nil {
 		t.Fatal("DialContext should be set")
@@ -300,6 +308,7 @@ func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
 }
 
 func TestSSRFSafeTransport_BlocksPrivateIP(t *testing.T) {
+	t.Parallel()
 	transport := ssrfSafeTransport()
 	client := &http.Client{Transport: transport}
 
@@ -313,6 +322,7 @@ func TestSSRFSafeTransport_BlocksPrivateIP(t *testing.T) {
 }
 
 func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
+	t.Parallel()
 	// The empty-DNS guard is exercised when a hostname resolves to zero addresses.
 	// We cannot easily force that in a unit test (net.DefaultResolver is global),
 	// but we verify the guard exists by reading the function.
@@ -330,6 +340,7 @@ func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Test", SortName: "Test", Path: dir}
@@ -357,6 +368,7 @@ func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 
@@ -387,6 +399,7 @@ func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
 }
 
 func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
+	t.Parallel()
 	type syncCapture struct {
 		contentLength int64
 		contentType   string
@@ -469,6 +482,7 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 }
 
 func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
+	t.Parallel()
 	deletedCh := make(chan struct{}, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "/Images/Primary") {
@@ -557,6 +571,7 @@ func buildThumbUploadRequest(t *testing.T, artistID string) *http.Request {
 }
 
 func TestHandleImageUpload_SyncWarnings_NoPlatforms(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Local Artist", SortName: "Local Artist", Path: dir}
@@ -590,6 +605,7 @@ func TestHandleImageUpload_SyncWarnings_NoPlatforms(t *testing.T) {
 }
 
 func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
+	t.Parallel()
 	// Mock server that returns 500 for every request, simulating a broken platform.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -652,6 +668,7 @@ func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
 }
 
 func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
+	t.Parallel()
 	// Mock server that returns 500 for every request, simulating a broken platform.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -714,6 +731,7 @@ func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
 }
 
 func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
@@ -753,6 +771,7 @@ func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
 }
 
 func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	setImageCacheDir(r, t.TempDir())
 
@@ -796,6 +815,7 @@ func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
 }
 
 func TestDeleteImageFromPlatforms_GetByIDError(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
@@ -831,6 +851,7 @@ func TestDeleteImageFromPlatforms_GetByIDError(t *testing.T) {
 }
 
 func TestHandleDeleteImage_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
 	setImageCacheDir(r, cacheDir)
@@ -884,6 +905,7 @@ func TestHandleDeleteImage_SyncWarnings_UnsupportedConnType(t *testing.T) {
 }
 
 func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
+	t.Parallel()
 	// assertTruncated decodes the HX-Trigger header, verifies the first warning
 	// was cut to exactly maxWarningRunes runes with the "(truncated)" suffix, and
 	// confirms the header is valid JSON.
@@ -1019,6 +1041,7 @@ func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
 }
 
 func TestHandleImageCrop_SyncWarnings_NoPlatforms(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Crop Artist", SortName: "Crop Artist", Path: dir}
@@ -1070,6 +1093,7 @@ func TestHandleImageCrop_SyncWarnings_NoPlatforms(t *testing.T) {
 }
 
 func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
+	t.Parallel()
 	// Mock server that returns 500 for every request, simulating a broken platform.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1138,6 +1162,7 @@ func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
 }
 
 func TestExtractImageFetchParams_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	body := strings.NewReader(`{bad json`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -1152,6 +1177,7 @@ func TestExtractImageFetchParams_MalformedJSON(t *testing.T) {
 }
 
 func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
+	t.Parallel()
 	body := strings.NewReader(`{"url":"https://example.com/img.jpg","type":"thumb"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -1169,6 +1195,7 @@ func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
 }
 
 func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
+	t.Parallel()
 	// Mock server that records whether a DELETE was received.
 	// Use a channel (not a bare bool) to avoid an unprotected cross-goroutine write
 	// if the production guard is ever relaxed.
@@ -1250,6 +1277,7 @@ func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
 }
 
 func TestHandleFanartBatchDelete_SyncCalledAfterDelete(t *testing.T) {
+	t.Parallel()
 	// Track uploads to the mock platform server. Use a channel so the test
 	// goroutine can wait for the uploads to arrive without polling.
 	type uploadCapture struct {
@@ -1350,6 +1378,7 @@ func TestHandleFanartBatchDelete_SyncCalledAfterDelete(t *testing.T) {
 }
 
 func TestHandleFanartBatchDelete_RenumberFailureSkipsSync(t *testing.T) {
+	t.Parallel()
 	// Track whether any upload reaches the mock platform server.
 	uploadCh := make(chan struct{}, 10)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -1436,6 +1465,7 @@ func TestHandleFanartBatchDelete_RenumberFailureSkipsSync(t *testing.T) {
 }
 
 func TestHandleFanartBatchDelete_SyncWarningsPropagated(t *testing.T) {
+	t.Parallel()
 	// Mock platform server that returns 500, simulating sync failure.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1500,6 +1530,7 @@ func TestHandleFanartBatchDelete_SyncWarningsPropagated(t *testing.T) {
 }
 
 func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
+	t.Parallel()
 	// Mock server that records whether a DELETE was received.
 	deletedCh := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -1575,6 +1606,7 @@ func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_RecordsProvenance(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Provenance Test", SortName: "Provenance Test", Path: dir}
@@ -1631,6 +1663,7 @@ func TestSetArtistImageFlag_RecordsProvenance(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_NoProvenance_StillWorks(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "No Provenance", SortName: "No Provenance", Path: dir}
@@ -1683,6 +1716,7 @@ func TestSetArtistImageFlag_NoProvenance_StillWorks(t *testing.T) {
 }
 
 func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "Delete Provenance", SortName: "Delete Provenance", Path: dir}
@@ -1733,6 +1767,7 @@ func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
 // asynchronously clears the stale exists flag so subsequent UI renders show a
 // placeholder instead of a broken image.
 func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -1825,6 +1860,7 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 // TestHandleRandomBackdrop_ServesValidFile verifies that the endpoint serves
 // an existing fanart file and returns 200.
 func TestHandleRandomBackdrop_ServesValidFile(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -1859,6 +1895,7 @@ func TestHandleRandomBackdrop_ServesValidFile(t *testing.T) {
 // exists but the file is missing, the endpoint returns 404 and synchronously
 // clears the stale exists_flag so the entry is not returned again.
 func TestHandleRandomBackdrop_ClearsStaleFlag(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPlatform(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -1899,6 +1936,7 @@ func TestHandleRandomBackdrop_ClearsStaleFlag(t *testing.T) {
 // TestHandleRandomBackdrop_EmptyPool verifies that the endpoint returns 404
 // when no artists have fanart flagged as existing.
 func TestHandleRandomBackdrop_EmptyPool(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPlatform(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
@@ -1911,6 +1949,7 @@ func TestHandleRandomBackdrop_EmptyPool(t *testing.T) {
 }
 
 func TestSortImageResults(t *testing.T) {
+	t.Parallel()
 	images := []provider.ImageResult{
 		{URL: "a.jpg", Likes: 5, Width: 100, Height: 100},   // area=10000
 		{URL: "b.jpg", Likes: 10, Width: 50, Height: 50},    // area=2500

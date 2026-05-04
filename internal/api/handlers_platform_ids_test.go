@@ -29,6 +29,7 @@ func addTestConnection(t *testing.T, r *Router, id, name, connType string) {
 }
 
 func TestHandleGetPlatformIDs_Empty(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -52,6 +53,7 @@ func TestHandleGetPlatformIDs_Empty(t *testing.T) {
 }
 
 func TestHandleGetPlatformIDs_WithData(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	addTestConnection(t, r, "conn-1", "Emby", "emby")
 	addTestConnection(t, r, "conn-2", "Jellyfin", "jellyfin")
@@ -79,6 +81,7 @@ func TestHandleGetPlatformIDs_WithData(t *testing.T) {
 }
 
 func TestHandleSetPlatformID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	addTestConnection(t, r, "conn-1", "Emby", "emby")
 	a := addTestArtist(t, artistSvc, "Radiohead")
@@ -104,6 +107,7 @@ func TestHandleSetPlatformID(t *testing.T) {
 }
 
 func TestHandleSetPlatformID_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	addTestConnection(t, r, "conn-1", "Emby", "emby")
 
@@ -122,6 +126,7 @@ func TestHandleSetPlatformID_ArtistNotFound(t *testing.T) {
 }
 
 func TestHandleSetPlatformID_ConnectionNotFound(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -140,6 +145,7 @@ func TestHandleSetPlatformID_ConnectionNotFound(t *testing.T) {
 }
 
 func TestHandleSetPlatformID_MissingBody(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -158,6 +164,7 @@ func TestHandleSetPlatformID_MissingBody(t *testing.T) {
 }
 
 func TestHandleDeletePlatformID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	addTestConnection(t, r, "conn-1", "Emby", "emby")
 	a := addTestArtist(t, artistSvc, "Radiohead")
@@ -182,6 +189,7 @@ func TestHandleDeletePlatformID(t *testing.T) {
 }
 
 func TestHandleDeletePlatformID_NotFound(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 

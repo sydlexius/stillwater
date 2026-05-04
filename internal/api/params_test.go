@@ -9,6 +9,7 @@ import (
 )
 
 func TestRequirePathParam_Present(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/artists/abc123", nil)
 	req.SetPathValue("id", "abc123")
 	w := httptest.NewRecorder()
@@ -26,6 +27,7 @@ func TestRequirePathParam_Present(t *testing.T) {
 }
 
 func TestRequirePathParam_Missing(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/artists/", nil)
 	w := httptest.NewRecorder()
 
@@ -46,6 +48,7 @@ func TestRequirePathParam_Missing(t *testing.T) {
 }
 
 func TestDecodeJSON_Valid(t *testing.T) {
+	t.Parallel()
 	type payload struct {
 		Name string `json:"name"`
 	}
@@ -62,6 +65,7 @@ func TestDecodeJSON_Valid(t *testing.T) {
 }
 
 func TestDecodeJSON_Invalid(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`not-json`))
 	w := httptest.NewRecorder()
 

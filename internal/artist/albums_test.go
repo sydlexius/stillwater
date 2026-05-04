@@ -7,6 +7,7 @@ import (
 )
 
 func TestListLocalAlbums(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Create some album directories.
@@ -34,6 +35,7 @@ func TestListLocalAlbums(t *testing.T) {
 }
 
 func TestListLocalAlbums_NonexistentPath(t *testing.T) {
+	t.Parallel()
 	albums := ListLocalAlbums("/nonexistent/path/12345")
 	if albums != nil {
 		t.Errorf("expected nil for nonexistent path, got %v", albums)
@@ -41,6 +43,7 @@ func TestListLocalAlbums_NonexistentPath(t *testing.T) {
 }
 
 func TestNormalizeAlbumName(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		input string
 		want  string
@@ -65,6 +68,7 @@ func TestNormalizeAlbumName(t *testing.T) {
 }
 
 func TestCompareAlbums(t *testing.T) {
+	t.Parallel()
 	local := []string{"OK Computer", "The Bends", "Kid A", "Live at Glastonbury"}
 	remote := []string{"ok computer", "The Bends", "Kid A (Deluxe Edition)", "Pablo Honey", "Amnesiac"}
 
@@ -91,6 +95,7 @@ func TestCompareAlbums(t *testing.T) {
 }
 
 func TestCompareAlbums_Empty(t *testing.T) {
+	t.Parallel()
 	comp := CompareAlbums(nil, nil)
 	if comp.MatchCount != 0 || comp.MatchPercent != 0 {
 		t.Errorf("expected zero values for empty inputs, got match=%d pct=%d",
@@ -99,6 +104,7 @@ func TestCompareAlbums_Empty(t *testing.T) {
 }
 
 func TestCompareAlbums_AllMatch(t *testing.T) {
+	t.Parallel()
 	local := []string{"Album One", "Album Two"}
 	remote := []string{"album one", "Album Two"}
 
@@ -112,6 +118,7 @@ func TestCompareAlbums_AllMatch(t *testing.T) {
 }
 
 func TestCompareAlbums_NoMatch(t *testing.T) {
+	t.Parallel()
 	local := []string{"Album X", "Album Y"}
 	remote := []string{"Album A", "Album B"}
 

@@ -14,6 +14,7 @@ import (
 // a blank path value must fail the request fast so the rule service is never
 // queried with an unconstrained filter.
 func TestHandleArtistViolationsTab_EmptyArtistID(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/artists//violations/tab", nil)
@@ -31,6 +32,7 @@ func TestHandleArtistViolationsTab_EmptyArtistID(t *testing.T) {
 // active violations renders the tab partial with the empty-state copy and the
 // OOB badge swap that hides the tab-bar count.
 func TestHandleArtistViolationsTab_EmptyState(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Empty Artist")
 
@@ -61,6 +63,7 @@ func TestHandleArtistViolationsTab_EmptyState(t *testing.T) {
 // the row for the open violation, the Fix button for a fixable rule, and the
 // OOB badge count reflecting the number of active rows.
 func TestHandleArtistViolationsTab_WithViolations(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
 	a := addTestArtist(t, artistSvc, "Violation Artist")
 

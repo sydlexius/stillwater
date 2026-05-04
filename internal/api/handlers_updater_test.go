@@ -63,6 +63,7 @@ func testRouterWithUpdater(t *testing.T) *Router {
 }
 
 func TestHandleGetUpdateConfig_Defaults(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
@@ -87,6 +88,7 @@ func TestHandleGetUpdateConfig_Defaults(t *testing.T) {
 }
 
 func TestHandlePutUpdateConfig_Valid(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	body := `{"channel":"prerelease","auto_check":true}`
@@ -138,6 +140,7 @@ func TestHandlePutUpdateConfig_Valid(t *testing.T) {
 // validation; without this test a future handler-side allowlist change
 // could silently reject nightly while SetConfig still accepts it.
 func TestHandlePutUpdateConfig_Nightly(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	body := `{"channel":"nightly","auto_check":false}`
@@ -270,6 +273,7 @@ func TestHandlePutUpdateConfig_NegativeInterval(t *testing.T) {
 }
 
 func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	body := `{"channel":"bogus","auto_check":false}`
@@ -286,6 +290,7 @@ func TestHandlePutUpdateConfig_Invalid(t *testing.T) {
 }
 
 func TestHandleGetUpdateStatus_Idle(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
@@ -349,6 +354,7 @@ func TestHandleGetUpdateStatus_Idle(t *testing.T) {
 }
 
 func TestHandlePostUpdateApply_Docker(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	// Replace the updater service with a Docker-mode one.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -378,6 +384,7 @@ func TestHandlePostUpdateApply_Docker(t *testing.T) {
 // first apply goroutine in flight (so applyRunning stays set) while the second
 // call races through the CAS and returns the sentinel.
 func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	block := make(chan struct{})
@@ -437,6 +444,7 @@ func TestHandlePostUpdateApply_AlreadyRunning(t *testing.T) {
 // has staged a binary, a subsequent request returns 409 with the
 // restart-required error message rather than re-running the download path.
 func TestHandlePostUpdateApply_RestartRequired(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
 
@@ -461,6 +469,7 @@ func TestHandlePostUpdateApply_RestartRequired(t *testing.T) {
 }
 
 func TestHandlePostUpdateCheck_NoNetwork(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	// Override the HTTP client with one that always fails.
@@ -486,6 +495,7 @@ func TestHandlePostUpdateCheck_NoNetwork(t *testing.T) {
 
 // TestHandlePutUpdateConfig_BadJSON verifies that malformed JSON returns 400.
 func TestHandlePutUpdateConfig_BadJSON(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
@@ -502,6 +512,7 @@ func TestHandlePutUpdateConfig_BadJSON(t *testing.T) {
 
 // TestHandleGetUpdateStatus_ContentType verifies the response is JSON.
 func TestHandleGetUpdateStatus_ContentType(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/status", nil)
@@ -517,6 +528,7 @@ func TestHandleGetUpdateStatus_ContentType(t *testing.T) {
 
 // TestHandleNilUpdaterService verifies that nil updaterService returns 503 on all endpoints.
 func TestHandleNilUpdaterService(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	r.updaterService = nil
 
@@ -545,6 +557,7 @@ func TestHandleNilUpdaterService(t *testing.T) {
 // TestHandlePostUpdateApply_NonDocker verifies that a non-Docker, non-in-progress
 // apply starts successfully and the async goroutine settles before the test exits.
 func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	// Make the updater's HTTP client immediately fail so the goroutine exits fast.
 	r.updaterService.SetHTTPClient(&http.Client{Transport: &alwaysFailTransport{}})
@@ -581,6 +594,7 @@ func TestHandlePostUpdateApply_NonDocker(t *testing.T) {
 
 // TestHandleCheckWithMockServer verifies the full check path with a mock GitHub server.
 func TestHandleCheckWithMockServer(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	releases := []map[string]interface{}{
@@ -689,6 +703,7 @@ func TestHandleCheckWithMockServer(t *testing.T) {
 // when the channel has no builds, and /status must agree with /check for this
 // case so the UI cannot render a stale version after a channel switch.
 func TestHandleCheckWithMockServer_NoMatch(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	// A prerelease-only fixture while the configured channel stays at stable
@@ -771,6 +786,7 @@ func TestHandleCheckWithMockServer_NoMatch(t *testing.T) {
 // TestBuildUpdatesTabData_NilService verifies that buildUpdatesTabData returns
 // sensible defaults when no updater service is wired in.
 func TestBuildUpdatesTabData_NilService(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	r.updaterService = nil
 
@@ -790,6 +806,7 @@ func TestBuildUpdatesTabData_NilService(t *testing.T) {
 // TestBuildUpdatesTabData_WithService verifies that buildUpdatesTabData reads
 // config values from the updater service.
 func TestBuildUpdatesTabData_WithService(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	ctx := context.Background()
 
@@ -817,6 +834,7 @@ func TestBuildUpdatesTabData_WithService(t *testing.T) {
 // directly; a future refactor that reintroduces a render-side allowlist must
 // keep nightly in it or this test fails.
 func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	ctx := context.Background()
 
@@ -837,6 +855,7 @@ func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
 // TestNormalizeSettingsSectionUpdates verifies that "updates" is a valid
 // settings section that routes to the updates tab.
 func TestNormalizeSettingsSectionUpdates(t *testing.T) {
+	t.Parallel()
 	got := normalizeSettingsSection("updates")
 	if got != "updates" {
 		t.Errorf("normalizeSettingsSection(\"updates\") = %q, want \"updates\"", got)
@@ -851,6 +870,7 @@ func TestNormalizeSettingsSectionUpdates(t *testing.T) {
 // dropped them from the JSON payload would silently make Apply look like
 // it did nothing again. Issue #1169.
 func TestHandleGetUpdateStatus_RestartRequiredSurfaced(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 
 	// Drive the in-memory flag to the post-Apply state without exercising
@@ -906,6 +926,7 @@ func TestHandleGetUpdateStatus_RestartRequiredSurfaced(t *testing.T) {
 // /status fetch to land), and is asserted as a unit because the templ
 // branch reads `data.RestartRequired` directly.
 func TestBuildUpdatesTabData_RestartRequired(t *testing.T) {
+	t.Parallel()
 	r := testRouterWithUpdater(t)
 	r.updaterService.MarkRestartRequiredForTest("v9.9.9")
 

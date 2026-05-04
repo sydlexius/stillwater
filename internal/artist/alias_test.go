@@ -36,6 +36,7 @@ func createTestArtist(t *testing.T, svc *Service, name string) *Artist {
 }
 
 func TestAddAlias(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -53,6 +54,7 @@ func TestAddAlias(t *testing.T) {
 }
 
 func TestAddAlias_EmptyAlias(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -64,6 +66,7 @@ func TestAddAlias_EmptyAlias(t *testing.T) {
 }
 
 func TestAddAlias_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	_, err := svc.AddAlias(context.Background(), "nonexistent", "alias", "manual")
 	if err == nil {
@@ -72,6 +75,7 @@ func TestAddAlias_ArtistNotFound(t *testing.T) {
 }
 
 func TestListAliases(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -89,6 +93,7 @@ func TestListAliases(t *testing.T) {
 }
 
 func TestRemoveAlias(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -105,6 +110,7 @@ func TestRemoveAlias(t *testing.T) {
 }
 
 func TestRemoveAlias_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	if err := svc.RemoveAlias(context.Background(), "nonexistent"); err == nil {
 		t.Error("expected error for nonexistent alias")
@@ -112,6 +118,7 @@ func TestRemoveAlias_NotFound(t *testing.T) {
 }
 
 func TestSearchWithAliases(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 
@@ -144,6 +151,7 @@ func TestSearchWithAliases(t *testing.T) {
 }
 
 func TestFindDuplicates_SharedMBID(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 
@@ -172,6 +180,7 @@ func TestFindDuplicates_SharedMBID(t *testing.T) {
 }
 
 func TestFindDuplicates_SharedAlias(t *testing.T) {
+	t.Parallel()
 	svc := setupAliasTest(t)
 	ctx := context.Background()
 

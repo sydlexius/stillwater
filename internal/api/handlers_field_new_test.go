@@ -14,6 +14,7 @@ import (
 // TestHandleFieldUpdate_Name verifies that updating the "name" field
 // persists correctly through the API.
 func TestHandleFieldUpdate_Name(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Old Name")
 
@@ -41,6 +42,7 @@ func TestHandleFieldUpdate_Name(t *testing.T) {
 
 // TestHandleFieldUpdate_NameEmpty verifies that an empty name is rejected with 400.
 func TestHandleFieldUpdate_NameEmpty(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Some Artist")
 
@@ -60,6 +62,7 @@ func TestHandleFieldUpdate_NameEmpty(t *testing.T) {
 
 // TestHandleFieldUpdate_SortName verifies that sort_name is editable.
 func TestHandleFieldUpdate_SortName(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "The Beatles")
 
@@ -87,6 +90,7 @@ func TestHandleFieldUpdate_SortName(t *testing.T) {
 
 // TestHandleFieldUpdate_Disambiguation verifies that disambiguation is editable.
 func TestHandleFieldUpdate_Disambiguation(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Genesis")
 
@@ -115,6 +119,7 @@ func TestHandleFieldUpdate_Disambiguation(t *testing.T) {
 // TestHandleFieldUpdate_MusicBrainzID verifies that musicbrainz_id is
 // editable via the API and persists through the normalized provider_ids table.
 func TestHandleFieldUpdate_MusicBrainzID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Radiohead")
 
@@ -153,6 +158,7 @@ func TestHandleFieldUpdate_MusicBrainzID(t *testing.T) {
 // TestHandleFieldUpdate_MusicBrainzID_InvalidFormat verifies that an invalid
 // UUID format is rejected with 400.
 func TestHandleFieldUpdate_MusicBrainzID_InvalidFormat(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Test Artist")
 
@@ -172,6 +178,7 @@ func TestHandleFieldUpdate_MusicBrainzID_InvalidFormat(t *testing.T) {
 
 // TestHandleFieldUpdate_AudioDBID verifies that audiodb_id is editable.
 func TestHandleFieldUpdate_AudioDBID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Tool")
 
@@ -200,6 +207,7 @@ func TestHandleFieldUpdate_AudioDBID(t *testing.T) {
 // TestHandleFieldClear_MusicBrainzID verifies that clearing musicbrainz_id
 // removes it from the provider_ids table.
 func TestHandleFieldClear_MusicBrainzID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "Led Zeppelin")
@@ -231,6 +239,7 @@ func TestHandleFieldClear_MusicBrainzID(t *testing.T) {
 // TestHandleFieldClear_Name_Rejected verifies that clearing the name field
 // returns 400, enforcing the non-empty invariant.
 func TestHandleFieldClear_Name_Rejected(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "The Beatles")
 
@@ -259,6 +268,7 @@ func TestHandleFieldClear_Name_Rejected(t *testing.T) {
 // provider ID fields are accepted by IsEditableField and the handler routes them
 // correctly without returning 400 "unknown field".
 func TestHandleFieldUpdate_ProviderIDFields_AllEditable(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Pink Floyd")
 
@@ -298,6 +308,7 @@ func TestHandleFieldUpdate_ProviderIDFields_AllEditable(t *testing.T) {
 // TestHandleFieldDisplay_NewFields verifies that the display handler accepts
 // all new field names without returning 400.
 func TestHandleFieldDisplay_NewFields(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Artist For Display")
 

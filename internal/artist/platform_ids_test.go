@@ -40,6 +40,7 @@ func setupPlatformIDTest(t *testing.T) *Service {
 }
 
 func TestSetPlatformID(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -59,6 +60,7 @@ func TestSetPlatformID(t *testing.T) {
 }
 
 func TestSetPlatformID_Upsert(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -79,6 +81,7 @@ func TestSetPlatformID_Upsert(t *testing.T) {
 }
 
 func TestSetPlatformID_Validation(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 
@@ -104,6 +107,7 @@ func TestSetPlatformID_Validation(t *testing.T) {
 }
 
 func TestGetPlatformID_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -118,6 +122,7 @@ func TestGetPlatformID_NotFound(t *testing.T) {
 }
 
 func TestGetPlatformIDs(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -146,6 +151,7 @@ func TestGetPlatformIDs(t *testing.T) {
 }
 
 func TestGetPlatformIDs_Empty(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -160,6 +166,7 @@ func TestGetPlatformIDs_Empty(t *testing.T) {
 }
 
 func TestDeletePlatformID(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -181,6 +188,7 @@ func TestDeletePlatformID(t *testing.T) {
 }
 
 func TestDeletePlatformID_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 
@@ -194,6 +202,7 @@ func TestDeletePlatformID_NotFound(t *testing.T) {
 }
 
 func TestDeletePlatformIDsByArtist(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	artist := createTestArtist(t, svc, "Radiohead")
@@ -216,6 +225,7 @@ func TestDeletePlatformIDsByArtist(t *testing.T) {
 }
 
 func TestSetPlatformID_MultipleArtists(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformIDTest(t)
 	ctx := context.Background()
 	a1 := createTestArtist(t, svc, "Radiohead")
@@ -340,6 +350,7 @@ func setupPlatformPresenceTestWithDB(t *testing.T) (*Service, *sql.DB) {
 }
 
 func TestGetPlatformPresenceForArtists(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
 
@@ -424,6 +435,7 @@ func TestGetPlatformPresenceForArtists(t *testing.T) {
 }
 
 func TestGetPlatformPresenceForArtists_Nil(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
 
@@ -437,6 +449,7 @@ func TestGetPlatformPresenceForArtists_Nil(t *testing.T) {
 }
 
 func TestGetPlatformPresenceForArtists_EmptySlice(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
 
@@ -450,6 +463,7 @@ func TestGetPlatformPresenceForArtists_EmptySlice(t *testing.T) {
 }
 
 func TestGetPlatformPresenceForArtists_AllPlatforms(t *testing.T) {
+	t.Parallel()
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
 
@@ -488,6 +502,7 @@ func TestGetPlatformPresenceForArtists_AllPlatforms(t *testing.T) {
 // artist_libraries membership) must still surface its presence; the
 // fallback branch goes away once the column drop in #1214 lands.
 func TestGetPlatformPresenceForArtists_LegacyLibraryIDFallback(t *testing.T) {
+	t.Parallel()
 	svc, db := setupPlatformPresenceTestWithDB(t)
 	ctx := context.Background()
 
@@ -539,6 +554,7 @@ func TestGetPlatformPresenceForArtists_LegacyLibraryIDFallback(t *testing.T) {
 // artists.library_id pointing at the same library is reported once per
 // presence kind (the UNION + GROUP-equivalent semantics dedupe).
 func TestGetPlatformPresenceForArtists_MembershipAndLegacyDeDuplicate(t *testing.T) {
+	t.Parallel()
 	svc, db := setupPlatformPresenceTestWithDB(t)
 	ctx := context.Background()
 

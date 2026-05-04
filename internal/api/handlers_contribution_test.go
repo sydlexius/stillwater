@@ -11,6 +11,7 @@ import (
 )
 
 func TestHandleGetMBDiffs_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithHistory(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/no-such-artist/musicbrainz/diffs", nil)
@@ -25,6 +26,7 @@ func TestHandleGetMBDiffs_ArtistNotFound(t *testing.T) {
 }
 
 func TestHandleGetMBDiffs_NoMBID(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "No MBID Artist")
@@ -41,6 +43,7 @@ func TestHandleGetMBDiffs_NoMBID(t *testing.T) {
 }
 
 func TestHandleGetMBDiffs_EmptyDiffs(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 
 	a := &artist.Artist{
@@ -90,6 +93,7 @@ func TestHandleGetMBDiffs_EmptyDiffs(t *testing.T) {
 }
 
 func TestHandleGetMBDiffs_WithDiffs(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithHistory(t)
 
 	a := &artist.Artist{

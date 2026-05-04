@@ -25,6 +25,7 @@ type Dispatcher struct {
 	httpClient *http.Client
 	logger     *slog.Logger
 	sem        chan struct{} // semaphore to cap concurrent delivery goroutines
+	sleep      func(time.Duration)
 }
 
 // NewDispatcher creates a webhook dispatcher.
@@ -34,6 +35,7 @@ func NewDispatcher(service *Service, logger *slog.Logger) *Dispatcher {
 		httpClient: &http.Client{Timeout: requestTimeout},
 		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
 		sem:        make(chan struct{}, maxConcurrentDeliveries),
+		sleep:      time.Sleep,
 	}
 }
 
@@ -44,6 +46,7 @@ func NewDispatcherWithHTTPClient(service *Service, httpClient *http.Client, logg
 		httpClient: httpClient,
 		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
 		sem:        make(chan struct{}, maxConcurrentDeliveries),
+		sleep:      time.Sleep,
 	}
 }
 
@@ -85,7 +88,7 @@ func (d *Dispatcher) deliver(w Webhook, e event.Event) {
 	for attempt := range maxRetries {
 		if attempt > 0 {
 			backoff := time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt is bounded by maxRetries (3)
-			time.Sleep(backoff)
+			d.sleep(backoff)
 		}
 
 		lastErr = d.send(w.URL, body, contentType)

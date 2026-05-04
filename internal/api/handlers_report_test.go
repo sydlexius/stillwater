@@ -111,6 +111,7 @@ func addTestArtist(t *testing.T, svc *artist.Service, name string) *artist.Artis
 }
 
 func TestHandleReportHealth_JSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	addTestArtist(t, artistSvc, "Artist A")
@@ -139,6 +140,7 @@ func TestHandleReportHealth_JSON(t *testing.T) {
 }
 
 func TestHandleReportHealth_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	addTestArtist(t, artistSvc, "HTMX Artist")
@@ -165,6 +167,7 @@ func TestHandleReportHealth_HTMX(t *testing.T) {
 }
 
 func TestHandleReportHealth_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
@@ -190,6 +193,7 @@ func TestHandleReportHealth_Empty(t *testing.T) {
 }
 
 func TestHandleReportHealthHistory(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	addTestArtist(t, artistSvc, "History Artist")
@@ -220,6 +224,7 @@ func TestHandleReportHealthHistory(t *testing.T) {
 }
 
 func TestHandleReportHealthHistory_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health/history", nil)
@@ -242,6 +247,7 @@ func TestHandleReportHealthHistory_Empty(t *testing.T) {
 }
 
 func TestHandleReportCompliance(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	addTestArtist(t, artistSvc, "Compliant Artist")
@@ -282,6 +288,7 @@ func TestHandleReportCompliance(t *testing.T) {
 // always present in the response (stable for clients that rely on its
 // existence).
 func TestHandleReportCompliance_IncludesRulesPassedCount(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	ctx := context.Background()
 
@@ -358,6 +365,7 @@ func testRuleResultsDBFromRouter(r *Router) interface {
 }
 
 func TestSanitizeCSV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -387,6 +395,7 @@ func TestSanitizeCSV(t *testing.T) {
 }
 
 func TestHandleViolationTrend_DefaultRange(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend", nil)
@@ -413,6 +422,7 @@ func TestHandleViolationTrend_DefaultRange(t *testing.T) {
 }
 
 func TestHandleViolationTrend_CustomRange(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=7", nil)
@@ -439,6 +449,7 @@ func TestHandleViolationTrend_CustomRange(t *testing.T) {
 }
 
 func TestHandleViolationTrend_PointShape(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=1", nil)
@@ -493,6 +504,7 @@ func TestHandleViolationTrend_PointShape(t *testing.T) {
 }
 
 func TestHandleViolationTrend_InvalidDaysClamped(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	// days=0 should be clamped to default (30)
@@ -520,6 +532,7 @@ func TestHandleViolationTrend_InvalidDaysClamped(t *testing.T) {
 }
 
 func TestHandleReportMetadataCompleteness_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/metadata-completeness", nil)
@@ -559,6 +572,7 @@ func TestHandleReportMetadataCompleteness_Empty(t *testing.T) {
 }
 
 func TestHandleReportMetadataCompleteness_WithArtists(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Add two artists: one with biography and NFO, one without.
@@ -629,6 +643,7 @@ func TestHandleReportMetadataCompleteness_WithArtists(t *testing.T) {
 }
 
 func TestHandleReportMetadataCompleteness_ExcludedArtistsOmitted(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	// Regular artist.
@@ -667,6 +682,7 @@ func TestHandleReportMetadataCompleteness_ExcludedArtistsOmitted(t *testing.T) {
 }
 
 func TestHandleReportMetadataCompleteness_HTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 	addTestArtist(t, artistSvc, "HTMX Artist")
 
@@ -687,6 +703,7 @@ func TestHandleReportMetadataCompleteness_HTMX(t *testing.T) {
 }
 
 func TestHandleViolationTrend_UpperBoundClamped(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	// days=366 exceeds the 365 maximum and should be clamped to 30 (default).
@@ -717,6 +734,7 @@ func TestHandleViolationTrend_UpperBoundClamped(t *testing.T) {
 // artists changes the health endpoint response because it reads stored scores
 // from the database, not from a cache.
 func TestHandleReportHealth_StoredScoresReflectNewArtists(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	addTestArtist(t, artistSvc, "Artist A")
@@ -760,6 +778,7 @@ func TestHandleReportHealth_StoredScoresReflectNewArtists(t *testing.T) {
 }
 
 func TestHandleReportHealthByLibrary(t *testing.T) {
+	t.Parallel()
 	db, err := database.Open(":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)

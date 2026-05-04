@@ -9,6 +9,7 @@ import (
 )
 
 func TestGetUserByID(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -45,6 +46,7 @@ func TestGetUserByID(t *testing.T) {
 }
 
 func TestGetUserByID_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -58,6 +60,7 @@ func TestGetUserByID_NotFound(t *testing.T) {
 }
 
 func TestGetUserRole(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -81,6 +84,7 @@ func TestGetUserRole(t *testing.T) {
 }
 
 func TestGetUserRole_NotFound(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -94,6 +98,7 @@ func TestGetUserRole_NotFound(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -126,6 +131,7 @@ func TestListUsers(t *testing.T) {
 }
 
 func TestUpdateUserRole(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -168,6 +174,7 @@ func TestUpdateUserRole(t *testing.T) {
 }
 
 func TestUpdateUserRole_InvalidRole(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -188,6 +195,7 @@ func TestUpdateUserRole_InvalidRole(t *testing.T) {
 }
 
 func TestUpdateUserRole_LastAdmin(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -209,6 +217,7 @@ func TestUpdateUserRole_LastAdmin(t *testing.T) {
 }
 
 func TestDeactivateUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -249,6 +258,7 @@ func TestDeactivateUser(t *testing.T) {
 }
 
 func TestDeactivateUser_BootstrapAdmin(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -294,6 +304,7 @@ func TestDeactivateUser_BootstrapAdmin(t *testing.T) {
 }
 
 func TestDeactivateUser_LastAdmin(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -310,6 +321,7 @@ func TestDeactivateUser_LastAdmin(t *testing.T) {
 }
 
 func TestDeactivateUser_NonBootstrapAdmin(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -337,6 +349,7 @@ func TestDeactivateUser_NonBootstrapAdmin(t *testing.T) {
 }
 
 func TestListUsers_BootstrapAdminIsProtected(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -391,6 +404,7 @@ func TestListUsers_BootstrapAdminIsProtected(t *testing.T) {
 }
 
 func TestCreateLocalUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -429,6 +443,7 @@ func TestCreateLocalUser(t *testing.T) {
 }
 
 func TestCreateLocalUser_WithInvitedBy(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -454,6 +469,7 @@ func TestCreateLocalUser_WithInvitedBy(t *testing.T) {
 }
 
 func TestCreateFederatedUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -490,6 +506,7 @@ func TestCreateFederatedUser(t *testing.T) {
 }
 
 func TestUpdateUserRole_BootstrapAdmin(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -532,6 +549,7 @@ func TestUpdateUserRole_BootstrapAdmin(t *testing.T) {
 }
 
 func TestGetUserByProvider_IsProtected(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -555,6 +573,7 @@ func TestGetUserByProvider_IsProtected(t *testing.T) {
 }
 
 func TestDBTrigger_PreventDeactivateProtectedUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -574,6 +593,7 @@ func TestDBTrigger_PreventDeactivateProtectedUser(t *testing.T) {
 }
 
 func TestDBTrigger_PreventRoleChangeProtectedUser(t *testing.T) {
+	t.Parallel()
 	svc := setupTestService(t)
 	ctx := context.Background()
 

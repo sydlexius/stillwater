@@ -10,6 +10,7 @@ import (
 )
 
 func TestScrubQuery_RedactsSensitiveParams(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string
@@ -31,6 +32,7 @@ func TestScrubQuery_RedactsSensitiveParams(t *testing.T) {
 }
 
 func TestScrubQuery_PreservesSafeParams(t *testing.T) {
+	t.Parallel()
 	input := "page=1&page_size=50&sort=name"
 	got := scrubQuery(input)
 	if got != input {
@@ -39,6 +41,7 @@ func TestScrubQuery_PreservesSafeParams(t *testing.T) {
 }
 
 func TestScrubQuery_Empty(t *testing.T) {
+	t.Parallel()
 	got := scrubQuery("")
 	if got != "" {
 		t.Errorf("scrubQuery(\"\") = %q, want empty", got)
@@ -46,6 +49,7 @@ func TestScrubQuery_Empty(t *testing.T) {
 }
 
 func TestScrubQuery_BareKeyNoEquals(t *testing.T) {
+	t.Parallel()
 	// A bare key with no = sign should pass through unchanged (len(kv) == 1).
 	// This verifies the function does not panic or misredact.
 	got := scrubQuery("apikey&page=1")
@@ -56,6 +60,7 @@ func TestScrubQuery_BareKeyNoEquals(t *testing.T) {
 }
 
 func TestScrubQuery_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	got := scrubQuery("API_KEY=secret&APIKEY=val")
 	want := "API_KEY=REDACTED&APIKEY=REDACTED"
 	if got != want {
@@ -64,6 +69,7 @@ func TestScrubQuery_CaseInsensitive(t *testing.T) {
 }
 
 func TestStatusWriter_ImplementsFlusher(t *testing.T) {
+	t.Parallel()
 	// statusWriter must implement http.Flusher so that the SSE handler can
 	// type-assert the wrapped writer. Without this the SSE endpoint returns 500.
 	rec := httptest.NewRecorder()
@@ -79,6 +85,7 @@ func TestStatusWriter_ImplementsFlusher(t *testing.T) {
 }
 
 func TestStatusWriter_Unwrap(t *testing.T) {
+	t.Parallel()
 	// Unwrap lets http.NewResponseController reach the underlying concrete
 	// writer for operations like SetWriteDeadline used by the SSE handler.
 	rec := httptest.NewRecorder()
@@ -89,6 +96,7 @@ func TestStatusWriter_Unwrap(t *testing.T) {
 }
 
 func TestLogging_LogLevels(t *testing.T) {
+	t.Parallel()
 	// Successful requests must be logged at DEBUG, 4xx at WARN, 5xx at ERROR.
 	tests := []struct {
 		status    int
@@ -128,6 +136,7 @@ func TestLogging_LogLevels(t *testing.T) {
 }
 
 func TestLogging_QuietPaths(t *testing.T) {
+	t.Parallel()
 	// Requests to quiet paths (/api/v1/logs, /static/) should not produce
 	// log output. This prevents self-referential noise from the log viewer
 	// polling endpoint and reduces static-asset log spam.

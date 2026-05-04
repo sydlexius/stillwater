@@ -24,6 +24,7 @@ func firstRuleID(t *testing.T, svc *rule.Service) string {
 }
 
 func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ruleID := firstRuleID(t, r.ruleService)
@@ -55,6 +56,7 @@ func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
 }
 
 func TestHandleUpdateRule_ValidModesAccepted(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	ruleID := firstRuleID(t, r.ruleService)
@@ -105,6 +107,7 @@ func requireErrorBody(t *testing.T, w *httptest.ResponseRecorder, want string) {
 }
 
 func TestHandleUpdateRule_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	body := strings.NewReader(`{"enabled":true}`)
@@ -122,6 +125,7 @@ func TestHandleUpdateRule_NotFound(t *testing.T) {
 }
 
 func TestHandleRunRule_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/nonexistent/run", nil)
@@ -137,6 +141,7 @@ func TestHandleRunRule_NotFound(t *testing.T) {
 }
 
 func TestHandleRunRule_NilPipeline(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	// testRouter has nil pipeline; use a valid (seeded) rule ID.
 	ruleID := firstRuleID(t, r.ruleService)
@@ -154,6 +159,7 @@ func TestHandleRunRule_NilPipeline(t *testing.T) {
 }
 
 func TestHandleRunRule_Returns202(t *testing.T) {
+	t.Parallel()
 	r, _, ruleSvc := testRouterWithPipelineFull(t)
 	ruleID := firstRuleID(t, ruleSvc)
 
@@ -180,6 +186,7 @@ func TestHandleRunRule_Returns202(t *testing.T) {
 }
 
 func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	// Use a blocking stub so the first run stays in-progress until we release it.
 	blockCh := make(chan struct{})
 	stub := &stubPipeline{
@@ -225,6 +232,7 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 // generic 400 without echoing the bad input back to the client. Covers the
 // scope-validation branch added for #698.
 func TestHandleRunRule_InvalidScope400(t *testing.T) {
+	t.Parallel()
 	r, _, ruleSvc := testRouterWithPipelineFull(t)
 	ruleID := firstRuleID(t, ruleSvc)
 
@@ -244,6 +252,7 @@ func TestHandleRunRule_InvalidScope400(t *testing.T) {
 // the pipeline is not wired. Distinct from the single-rule run because
 // handleRunAllRules has its own pipeline-nil check.
 func TestHandleRunAllRules_NilPipeline503(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
@@ -261,6 +270,7 @@ func TestHandleRunAllRules_NilPipeline503(t *testing.T) {
 // POST /rules/run-all so the spec's new 400 response is backed by the
 // implementation.
 func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithPipelineFull(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all?scope=xyz", nil)
@@ -278,6 +288,7 @@ func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
 // POST /rules/run-all. Uses the stub pipeline so the background goroutine
 // returns immediately and the test does not race on real evaluation work.
 func TestHandleRunAllRules_Returns202(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -319,6 +330,7 @@ func TestHandleRunAllRules_Returns202(t *testing.T) {
 // POST /rules/run-all. A blocking stub keeps the first run in-progress so the
 // second call must observe r.ruleRun.Running == true and return 409.
 func TestHandleRunAllRules_409WhenAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	blockCh := make(chan struct{})
 	// Register cleanup immediately so a later t.Fatalf cannot strand the
 	// blocked goroutine. Closing an already-closed channel panics, so this
@@ -365,6 +377,7 @@ func (b *blockingStubPipeline) RunAllScoped(_ context.Context, _ rule.RunScope) 
 }
 
 func TestHandleEvaluateArtist_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/nonexistent/health", nil)
@@ -380,6 +393,7 @@ func TestHandleEvaluateArtist_NotFound(t *testing.T) {
 }
 
 func TestHandleEvaluateArtist_ReturnsHealthScore(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "Test Artist")
@@ -412,6 +426,7 @@ func TestHandleEvaluateArtist_ReturnsHealthScore(t *testing.T) {
 }
 
 func TestHandleBulkJobStatus_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.bulkService = rule.NewBulkService(r.db)
 
@@ -428,6 +443,7 @@ func TestHandleBulkJobStatus_NotFound(t *testing.T) {
 }
 
 func TestHandleBulkJobList_ReturnsJobs(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouter(t)
 	r.bulkService = rule.NewBulkService(r.db)
 
@@ -462,6 +478,7 @@ func testRouterWithBulkJob(t *testing.T) (*Router, *artist.Service, string) {
 }
 
 func TestHandleBulkJobStatus_WithJob(t *testing.T) {
+	t.Parallel()
 	r, _, jobID := testRouterWithBulkJob(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bulk/jobs/"+jobID, nil)

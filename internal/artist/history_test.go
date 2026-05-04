@@ -23,6 +23,7 @@ func setupHistoryTestDB(t *testing.T) *HistoryService {
 }
 
 func TestHistoryService_Record(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 
@@ -110,6 +111,7 @@ func TestHistoryService_Record(t *testing.T) {
 }
 
 func TestHistoryService_List(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 	artistID := "artist-pag"
@@ -242,6 +244,7 @@ func TestHistoryService_List(t *testing.T) {
 }
 
 func TestHistoryService_RecordPreservesTimestamp(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 
@@ -265,6 +268,7 @@ func TestHistoryService_RecordPreservesTimestamp(t *testing.T) {
 }
 
 func TestHistoryService_GetByID(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 
@@ -313,6 +317,7 @@ func TestHistoryService_GetByID(t *testing.T) {
 // via context, then fetches the resulting row by ID instead of doing a "most
 // recent revert for field X" lookup that races against concurrent writers.
 func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	preID := "00000000-0000-4000-8000-000000000abc"
 
@@ -353,6 +358,7 @@ func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
 // real-world ordering. The query wraps both the WHERE bounds and the
 // ORDER BY in datetime() to normalise both representations.
 func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 	db := svc.repo.(*sqliteHistoryRepo).db
@@ -404,6 +410,7 @@ func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
 }
 
 func TestHistoryService_ListGlobal(t *testing.T) {
+	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
 
@@ -628,6 +635,7 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 }
 
 func TestIsTrackableField(t *testing.T) {
+	t.Parallel()
 	trackable := []string{"biography", "genres", "styles", "moods", "formed", "born", "disbanded", "died", "years_active", "type", "gender"}
 	for _, f := range trackable {
 		if !IsTrackableField(f) {

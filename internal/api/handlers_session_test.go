@@ -3,6 +3,7 @@ package api
 import "testing"
 
 func TestValidateReturnURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string

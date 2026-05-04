@@ -3,6 +3,7 @@ package artist
 import "testing"
 
 func TestMarshalStringSlice(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input []string
@@ -27,6 +28,7 @@ func TestMarshalStringSlice(t *testing.T) {
 }
 
 func TestUnmarshalStringSlice(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -54,6 +56,7 @@ func TestUnmarshalStringSlice(t *testing.T) {
 }
 
 func TestMarshalUnmarshalRoundTrip(t *testing.T) {
+	t.Parallel()
 	original := []string{"Rock", "Alternative", "Indie"}
 	marshaled := MarshalStringSlice(original)
 	result := UnmarshalStringSlice(marshaled)

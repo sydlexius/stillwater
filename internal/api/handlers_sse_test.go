@@ -16,6 +16,7 @@ import (
 )
 
 func TestSSEHub_RegisterUnregister(t *testing.T) {
+	t.Parallel()
 	hub := NewSSEHub(slog.Default())
 
 	c1 := hub.Register("user-1")
@@ -37,6 +38,7 @@ func TestSSEHub_RegisterUnregister(t *testing.T) {
 }
 
 func TestSSEHub_Broadcast(t *testing.T) {
+	t.Parallel()
 	hub := NewSSEHub(slog.Default())
 
 	c1 := hub.Register("user-1")
@@ -74,6 +76,7 @@ func TestSSEHub_Broadcast(t *testing.T) {
 }
 
 func TestSSEHub_BroadcastDropsWhenBufferFull(t *testing.T) {
+	t.Parallel()
 	hub := NewSSEHub(slog.Default())
 	c := hub.Register("user-1")
 	defer hub.Unregister(c)
@@ -103,6 +106,7 @@ done:
 }
 
 func TestSSEHub_SubscribeToEventBus(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	hub := NewSSEHub(logger)
 	bus := event.NewBus(logger, 64)
@@ -146,6 +150,7 @@ func TestSSEHub_SubscribeToEventBus(t *testing.T) {
 }
 
 func TestHandleSSEStream(t *testing.T) {
+	t.Parallel()
 	logger := slog.Default()
 	hub := NewSSEHub(logger)
 
@@ -250,6 +255,7 @@ func TestHandleSSEStream(t *testing.T) {
 }
 
 func TestHandleSSEStream_NoHub(t *testing.T) {
+	t.Parallel()
 	r := &Router{
 		sseHub: nil,
 		logger: slog.Default(),

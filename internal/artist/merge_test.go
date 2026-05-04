@@ -7,6 +7,7 @@ import (
 )
 
 func TestIsIndividualType(t *testing.T) {
+	t.Parallel()
 	individual := []string{"solo", "person", "character"}
 	for _, typ := range individual {
 		if !IsIndividualType(typ) {
@@ -22,6 +23,7 @@ func TestIsIndividualType(t *testing.T) {
 }
 
 func TestApplyMetadata_NilUpdate(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Test"}
 	if ApplyMetadata(a, nil, FillEmpty, MergeOptions{}) {
 		t.Error("expected no change for nil update")
@@ -31,6 +33,7 @@ func TestApplyMetadata_NilUpdate(t *testing.T) {
 // --- OverwriteAttempted tests ---
 
 func TestOverwriteAttempted_OverwritesAttemptedFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Biography: "old bio", Born: "1970"}
 	u := &MetadataUpdate{Biography: "new bio", Born: "1980", Genres: []string{"rock"}}
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -57,6 +60,7 @@ func TestOverwriteAttempted_OverwritesAttemptedFields(t *testing.T) {
 // the artist. PopulatedFields is the gate that distinguishes "we asked and got
 // nothing" (preserve) from "we asked and got data" (overwrite).
 func TestOverwriteAttempted_PreservesAttemptedButUnpopulatedFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Biography: "old bio", Genres: []string{"jazz"}}
 	u := &MetadataUpdate{} // attempted but no provider returned data
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -75,6 +79,7 @@ func TestOverwriteAttempted_PreservesAttemptedButUnpopulatedFields(t *testing.T)
 }
 
 func TestOverwriteAttempted_PreservesUnattemptedFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Biography: "keep me", Born: "1970"}
 	u := &MetadataUpdate{Biography: "discard", Born: "discard"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -89,6 +94,7 @@ func TestOverwriteAttempted_PreservesUnattemptedFields(t *testing.T) {
 }
 
 func TestOverwriteAttempted_TypeGenderNeverCleared(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Type: "person", Gender: "male"}
 	u := &MetadataUpdate{Type: "", Gender: ""}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -103,6 +109,7 @@ func TestOverwriteAttempted_TypeGenderNeverCleared(t *testing.T) {
 }
 
 func TestOverwriteAttempted_OriginNeverCleared(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Origin: "United Kingdom"}
 	u := &MetadataUpdate{Origin: ""}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -120,6 +127,7 @@ func TestOverwriteAttempted_OriginNeverCleared(t *testing.T) {
 }
 
 func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Type: "person", Gender: "male"}
 	u := &MetadataUpdate{Type: "group", Gender: "female"}
 	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
@@ -135,6 +143,7 @@ func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
 }
 
 func TestOverwriteAttempted_YearsActiveNonEmptyOnly(t *testing.T) {
+	t.Parallel()
 	a := &Artist{YearsActive: "1990-2000"}
 	u := &MetadataUpdate{YearsActive: ""}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
@@ -150,6 +159,7 @@ func TestOverwriteAttempted_YearsActiveNonEmptyOnly(t *testing.T) {
 }
 
 func TestOverwriteAttempted_ProviderIDsFillEmptyOnly(t *testing.T) {
+	t.Parallel()
 	a := &Artist{MusicBrainzID: "existing-mbid"}
 	u := &MetadataUpdate{
 		MusicBrainzID: "new-mbid",
@@ -172,6 +182,7 @@ func TestOverwriteAttempted_ProviderIDsFillEmptyOnly(t *testing.T) {
 }
 
 func TestOverwriteAttempted_SkipsNameSortName(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Original", SortName: "Original, The", Disambiguation: "UK"}
 	u := &MetadataUpdate{Name: "Changed", SortName: "Changed, The", Disambiguation: "US"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -194,6 +205,7 @@ func TestOverwriteAttempted_SkipsNameSortName(t *testing.T) {
 // TestOverwriteAttempted_DisambiguationNonEmptyOnly verifies that an empty
 // provider Disambiguation does NOT clear a populated local value.
 func TestOverwriteAttempted_DisambiguationNonEmptyOnly(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Disambiguation: "UK rock band"}
 	u := &MetadataUpdate{Disambiguation: ""}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
@@ -203,6 +215,7 @@ func TestOverwriteAttempted_DisambiguationNonEmptyOnly(t *testing.T) {
 }
 
 func TestOverwriteAttempted_FilterDatesByType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		artistType    string
@@ -245,6 +258,7 @@ func TestOverwriteAttempted_FilterDatesByType(t *testing.T) {
 }
 
 func TestOverwriteAttempted_Sources(t *testing.T) {
+	t.Parallel()
 	a := &Artist{}
 	u := &MetadataUpdate{Biography: "bio"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -273,6 +287,7 @@ func TestOverwriteAttempted_Sources(t *testing.T) {
 // preserved; an attempted-but-empty merge that wipes them violates #952's
 // graceful-fallback acceptance criterion.
 func TestOverwriteAttempted_GracefulFallbackPreservesExistingTags(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Biography: "existing biography",
 		Genres:    []string{"rock", "indie"},
@@ -306,6 +321,7 @@ func TestOverwriteAttempted_GracefulFallbackPreservesExistingTags(t *testing.T) 
 // mixed case: some fields had a provider returning data (overwrite), others
 // were queried with no data (preserve).
 func TestOverwriteAttempted_PartialPopulationOverwritesOnlyPopulated(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Biography: "existing biography",
 		Genres:    []string{"jazz"},
@@ -330,6 +346,7 @@ func TestOverwriteAttempted_PartialPopulationOverwritesOnlyPopulated(t *testing.
 }
 
 func TestOverwriteAttempted_AllAttemptedSliceFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{}
 	u := &MetadataUpdate{
 		Styles: []string{"blues"},
@@ -353,6 +370,7 @@ func TestOverwriteAttempted_AllAttemptedSliceFields(t *testing.T) {
 // --- FillEmpty tests ---
 
 func TestFillEmpty_OnlyFillsEmptyFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Type:          "person",
 		MusicBrainzID: "existing",
@@ -441,6 +459,7 @@ func TestFillEmpty_OnlyFillsEmptyFields(t *testing.T) {
 }
 
 func TestFillEmpty_SkipsNameSortNameDisambiguation(t *testing.T) {
+	t.Parallel()
 	a := &Artist{}
 	u := &MetadataUpdate{Name: "New", SortName: "New, The", Disambiguation: "UK"}
 	ApplyMetadata(a, u, FillEmpty, MergeOptions{})
@@ -456,6 +475,7 @@ func TestFillEmpty_SkipsNameSortNameDisambiguation(t *testing.T) {
 }
 
 func TestFillEmpty_ReturnsFalseWhenNothingChanged(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Type: "group", Gender: "mixed", MusicBrainzID: "mbid",
 		Biography: "bio", Genres: []string{"rock"}, Born: "1980",
@@ -472,6 +492,7 @@ func TestFillEmpty_ReturnsFalseWhenNothingChanged(t *testing.T) {
 // --- NFOImport tests ---
 
 func TestNFOImport_IdentityFieldsNonEmptyOverwrite(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Old Name", SortName: "Old", Biography: "old bio", MusicBrainzID: "old-mbid"}
 	u := &MetadataUpdate{Name: "New Name", SortName: "New", Biography: "new bio", MusicBrainzID: "new-mbid"}
 	changed := ApplyMetadata(a, u, NFOImport, MergeOptions{})
@@ -498,6 +519,7 @@ func TestNFOImport_IdentityFieldsNonEmptyOverwrite(t *testing.T) {
 }
 
 func TestNFOImport_ProviderIDsNonEmptyOverwrite(t *testing.T) {
+	t.Parallel()
 	a := &Artist{DiscogsID: "old-discogs"}
 	u := &MetadataUpdate{
 		DiscogsID:  "new-discogs",
@@ -524,6 +546,7 @@ func TestNFOImport_ProviderIDsNonEmptyOverwrite(t *testing.T) {
 }
 
 func TestNFOImport_ProviderIDsPreservedWhenEmpty(t *testing.T) {
+	t.Parallel()
 	a := &Artist{MusicBrainzID: "existing-mbid", DiscogsID: "existing-discogs"}
 	u := &MetadataUpdate{} // all empty
 	ApplyMetadata(a, u, NFOImport, MergeOptions{})
@@ -536,6 +559,7 @@ func TestNFOImport_ProviderIDsPreservedWhenEmpty(t *testing.T) {
 }
 
 func TestNFOImport_ClassificationUnconditional(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Type: "person", Gender: "male", Disambiguation: "UK"}
 	u := &MetadataUpdate{Type: "", Gender: "", Disambiguation: ""}
 	changed := ApplyMetadata(a, u, NFOImport, MergeOptions{})
@@ -554,6 +578,7 @@ func TestNFOImport_ClassificationUnconditional(t *testing.T) {
 }
 
 func TestNFOImport_ListsAndDatesUnconditional(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Genres: []string{"rock"}, Styles: []string{"grunge"}, Moods: []string{"angry"},
 		Born: "1970", Formed: "1980", Died: "2020", Disbanded: "2000", YearsActive: "1980-2000",
@@ -577,6 +602,7 @@ func TestNFOImport_ListsAndDatesUnconditional(t *testing.T) {
 // --- SnapshotRestore tests ---
 
 func TestSnapshotRestore_AllFieldsUnconditional(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		Name: "Old", SortName: "Old", Type: "person", Gender: "male",
 		Disambiguation: "UK", MusicBrainzID: "old-mbid", Biography: "old bio",
@@ -609,6 +635,7 @@ func TestSnapshotRestore_AllFieldsUnconditional(t *testing.T) {
 }
 
 func TestSnapshotRestore_PreservesNonMetadataFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{
 		ID: "test-id", Path: "/music/Test", LibraryID: "lib-1",
 		NFOExists: true, ThumbExists: true, HealthScore: 85.5,
@@ -635,6 +662,7 @@ func TestSnapshotRestore_PreservesNonMetadataFields(t *testing.T) {
 // --- Changed return value ---
 
 func TestApplyMetadata_ReturnsFalseWhenNoChange(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Same", Type: "group", Biography: "bio"}
 	u := &MetadataUpdate{Name: "Same", Type: "group", Biography: "bio"}
 	if ApplyMetadata(a, u, SnapshotRestore, MergeOptions{}) {
@@ -645,6 +673,7 @@ func TestApplyMetadata_ReturnsFalseWhenNoChange(t *testing.T) {
 // --- FilterDatesByArtistType ---
 
 func TestFilterDatesByArtistType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		artistType        string
@@ -683,6 +712,7 @@ func TestFilterDatesByArtistType(t *testing.T) {
 // --- FetchResultToUpdate ---
 
 func TestFetchResultToUpdate(t *testing.T) {
+	t.Parallel()
 	result := &provider.FetchResult{
 		Metadata: &provider.ArtistMetadata{
 			Name: "Test", SortName: "Test, The", Type: "group", Gender: "mixed",
@@ -717,6 +747,7 @@ func TestFetchResultToUpdate(t *testing.T) {
 }
 
 func TestFetchResultToUpdate_IndividualKeepsGender(t *testing.T) {
+	t.Parallel()
 	result := &provider.FetchResult{
 		Metadata: &provider.ArtistMetadata{
 			Name: "Solo Artist", Type: "solo", Gender: "female",
@@ -729,6 +760,7 @@ func TestFetchResultToUpdate_IndividualKeepsGender(t *testing.T) {
 }
 
 func TestFetchResultToUpdate_UnknownTypeKeepsGender(t *testing.T) {
+	t.Parallel()
 	result := &provider.FetchResult{
 		Metadata: &provider.ArtistMetadata{
 			Name: "Unknown", Type: "", Gender: "male",
@@ -741,6 +773,7 @@ func TestFetchResultToUpdate_UnknownTypeKeepsGender(t *testing.T) {
 }
 
 func TestFetchResultToUpdate_NilMetadata(t *testing.T) {
+	t.Parallel()
 	if FetchResultToUpdate(nil) != nil {
 		t.Error("expected nil for nil result")
 	}
@@ -752,6 +785,7 @@ func TestFetchResultToUpdate_NilMetadata(t *testing.T) {
 // --- LockedFields honored across strategies ---
 
 func TestApplyMetadata_OverwriteAttempted_SkipsLockedFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Biography: "keep me", Born: "1970", Genres: []string{"jazz"}}
 	u := &MetadataUpdate{Biography: "overwrite", Born: "1980", Genres: []string{"rock"}}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -771,6 +805,7 @@ func TestApplyMetadata_OverwriteAttempted_SkipsLockedFields(t *testing.T) {
 }
 
 func TestApplyMetadata_OverwriteAttempted_LockedDisambiguationKept(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Disambiguation: "Seattle grunge"}
 	u := &MetadataUpdate{Disambiguation: "replaced"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
@@ -782,6 +817,7 @@ func TestApplyMetadata_OverwriteAttempted_LockedDisambiguationKept(t *testing.T)
 }
 
 func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Pinned", Biography: "old"}
 	u := &MetadataUpdate{Name: "Snapshot", Biography: "restored"}
 	ApplyMetadata(a, u, SnapshotRestore, MergeOptions{
@@ -796,6 +832,7 @@ func TestApplyMetadata_SnapshotRestore_SkipsLocked(t *testing.T) {
 }
 
 func TestApplyMetadata_FillEmpty_SkipsLockedFields(t *testing.T) {
+	t.Parallel()
 	// Biography and Genres are intentionally empty so FillEmpty would
 	// populate them; the lock must prevent the write even on empty dst.
 	a := &Artist{Biography: "", Genres: nil, Type: ""}
@@ -815,6 +852,7 @@ func TestApplyMetadata_FillEmpty_SkipsLockedFields(t *testing.T) {
 }
 
 func TestApplyMetadata_NFOImport_SkipsLockedFields(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Name: "Pinned", Biography: "old", Genres: []string{"pinned-genre"}}
 	u := &MetadataUpdate{Name: "FromNFO", Biography: "nfo-bio", Genres: []string{"nfo-genre"}}
 	ApplyMetadata(a, u, NFOImport, MergeOptions{
@@ -835,6 +873,7 @@ func TestApplyMetadata_NFOImport_SkipsLockedFields(t *testing.T) {
 // entries in LockedFields never produce a map key that would match a lookup
 // for an empty field name.
 func TestBuildLockedSet_DropsBlankTokens(t *testing.T) {
+	t.Parallel()
 	if got := buildLockedSet(nil); got != nil {
 		t.Errorf("buildLockedSet(nil) = %v, want nil", got)
 	}
@@ -863,6 +902,7 @@ func TestBuildLockedSet_DropsBlankTokens(t *testing.T) {
 // pinned born="1970" on a group should see that date survive the merge AND
 // the post-merge type filter.
 func TestApplyMetadata_LockedDateSurvivesFilterByType(t *testing.T) {
+	t.Parallel()
 	a := &Artist{Type: "group", Born: "1970", Died: "2010"}
 	u := &MetadataUpdate{Type: "group", Born: "2020", Died: "2030"}
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{

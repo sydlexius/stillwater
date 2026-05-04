@@ -19,6 +19,7 @@ func newTestJellyfinProvider(t *testing.T, serverURL string, autoProvision bool,
 }
 
 func TestJellyfinProviderAuthenticate(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/Users/AuthenticateByName" {
 			http.NotFound(w, r)
@@ -68,6 +69,7 @@ func TestJellyfinProviderAuthenticate(t *testing.T) {
 }
 
 func TestJellyfinProviderAuthenticate_Unauthorized(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -84,6 +86,7 @@ func TestJellyfinProviderAuthenticate_Unauthorized(t *testing.T) {
 }
 
 func TestJellyfinProviderAuthenticate_ServerError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -97,6 +100,7 @@ func TestJellyfinProviderAuthenticate_ServerError(t *testing.T) {
 }
 
 func TestJellyfinProviderCanAutoProvision(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		guardRail string
@@ -121,6 +125,7 @@ func TestJellyfinProviderCanAutoProvision(t *testing.T) {
 }
 
 func TestJellyfinProviderCanAutoProvision_NilIdentity(t *testing.T) {
+	t.Parallel()
 	provider := newTestJellyfinProvider(t, "http://localhost", true, "any_user")
 	if provider.CanAutoProvision(nil) {
 		t.Error("expected false for nil identity")
@@ -128,6 +133,7 @@ func TestJellyfinProviderCanAutoProvision_NilIdentity(t *testing.T) {
 }
 
 func TestJellyfinProviderAutoProvisionDisabled(t *testing.T) {
+	t.Parallel()
 	provider := newTestJellyfinProvider(t, "http://localhost", false, "admin")
 	identity := &Identity{IsAdmin: true}
 	if provider.CanAutoProvision(identity) {
@@ -136,6 +142,7 @@ func TestJellyfinProviderAutoProvisionDisabled(t *testing.T) {
 }
 
 func TestJellyfinProviderMapRole(t *testing.T) {
+	t.Parallel()
 	provider := newTestJellyfinProvider(t, "http://localhost", true, "admin")
 
 	if got := provider.MapRole(&Identity{IsAdmin: true}); got != "administrator" {
@@ -147,6 +154,7 @@ func TestJellyfinProviderMapRole(t *testing.T) {
 }
 
 func TestJellyfinProviderMapRole_NilIdentity(t *testing.T) {
+	t.Parallel()
 	provider := newTestJellyfinProvider(t, "http://localhost", true, "admin")
 	if got := provider.MapRole(nil); got != "operator" {
 		t.Errorf("MapRole(nil) = %q, want %q", got, "operator")
@@ -154,6 +162,7 @@ func TestJellyfinProviderMapRole_NilIdentity(t *testing.T) {
 }
 
 func TestJellyfinProviderType(t *testing.T) {
+	t.Parallel()
 	provider := newTestJellyfinProvider(t, "http://localhost", false, "admin")
 	if provider.Type() != "jellyfin" {
 		t.Errorf("Type() = %q, want %q", provider.Type(), "jellyfin")
@@ -161,6 +170,7 @@ func TestJellyfinProviderType(t *testing.T) {
 }
 
 func TestNewJellyfinProvider_InvalidURL(t *testing.T) {
+	t.Parallel()
 	_, err := NewJellyfinProvider("ftp://bad", false, "admin", "operator")
 	if err == nil {
 		t.Fatal("expected error for invalid URL scheme")

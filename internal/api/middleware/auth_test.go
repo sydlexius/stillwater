@@ -39,6 +39,7 @@ func (m *mockAuthProvider) GetUserRole(ctx context.Context, userID string) (stri
 // --- Auth middleware tests ---
 
 func TestAuth_ValidSession(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateSessionFn: func(_ context.Context, token string) (string, error) {
 			if token == "valid-session" {
@@ -82,6 +83,7 @@ func TestAuth_ValidSession(t *testing.T) {
 }
 
 func TestAuth_ValidAPIToken(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateAPITokenFn: func(_ context.Context, token string) (string, string, error) {
 			if token == "sw_valid123" {
@@ -129,6 +131,7 @@ func TestAuth_ValidAPIToken(t *testing.T) {
 }
 
 func TestAuth_InactiveUser_Session_Returns401(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateSessionFn: func(_ context.Context, _ string) (string, error) {
 			return "user-inactive", nil
@@ -153,6 +156,7 @@ func TestAuth_InactiveUser_Session_Returns401(t *testing.T) {
 }
 
 func TestAuth_InactiveUser_APIToken_Returns401(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateAPITokenFn: func(_ context.Context, _ string) (string, string, error) {
 			return "user-deactivated", "read", nil
@@ -177,6 +181,7 @@ func TestAuth_InactiveUser_APIToken_Returns401(t *testing.T) {
 }
 
 func TestAuth_GetUserRoleError_Session_Returns500(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateSessionFn: func(_ context.Context, _ string) (string, error) {
 			return "user-1", nil
@@ -201,6 +206,7 @@ func TestAuth_GetUserRoleError_Session_Returns500(t *testing.T) {
 }
 
 func TestAuth_GetUserRoleError_APIToken_Returns500(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateAPITokenFn: func(_ context.Context, _ string) (string, string, error) {
 			return "user-1", "read", nil
@@ -227,6 +233,7 @@ func TestAuth_GetUserRoleError_APIToken_Returns500(t *testing.T) {
 // --- OptionalAuth middleware tests ---
 
 func TestOptionalAuth_ValidSession(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateSessionFn: func(_ context.Context, _ string) (string, error) {
 			return "user-1", nil
@@ -264,6 +271,7 @@ func TestOptionalAuth_ValidSession(t *testing.T) {
 }
 
 func TestOptionalAuth_InactiveUser_ContinuesUnauthenticated(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateSessionFn: func(_ context.Context, _ string) (string, error) {
 			return "user-inactive", nil
@@ -299,6 +307,7 @@ func TestOptionalAuth_InactiveUser_ContinuesUnauthenticated(t *testing.T) {
 }
 
 func TestOptionalAuth_GetUserRoleError_ContinuesUnauthenticated(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{
 		validateAPITokenFn: func(_ context.Context, _ string) (string, string, error) {
 			return "user-1", "read", nil
@@ -334,6 +343,7 @@ func TestOptionalAuth_GetUserRoleError_ContinuesUnauthenticated(t *testing.T) {
 }
 
 func TestOptionalAuth_NoToken_ContinuesUnauthenticated(t *testing.T) {
+	t.Parallel()
 	mock := &mockAuthProvider{}
 
 	called := false
@@ -356,6 +366,7 @@ func TestOptionalAuth_NoToken_ContinuesUnauthenticated(t *testing.T) {
 
 // TestExtractToken verifies token extraction from cookie, header, and query.
 func TestExtractToken_Cookie(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "session-abc"})
 
@@ -366,6 +377,7 @@ func TestExtractToken_Cookie(t *testing.T) {
 }
 
 func TestExtractToken_BearerHeader(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_testtoken123")
 
@@ -376,6 +388,7 @@ func TestExtractToken_BearerHeader(t *testing.T) {
 }
 
 func TestExtractToken_QueryParam(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
 
 	got := extractToken(req)
@@ -385,6 +398,7 @@ func TestExtractToken_QueryParam(t *testing.T) {
 }
 
 func TestExtractToken_CookieTakesPrecedence(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "cookie-token"})
 	req.Header.Set("Authorization", "Bearer header-token")
@@ -396,6 +410,7 @@ func TestExtractToken_CookieTakesPrecedence(t *testing.T) {
 }
 
 func TestExtractToken_HeaderOverQuery(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
 	req.Header.Set("Authorization", "Bearer header-token")
 
@@ -406,6 +421,7 @@ func TestExtractToken_HeaderOverQuery(t *testing.T) {
 }
 
 func TestExtractToken_Empty(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest("GET", "/", nil)
 	got := extractToken(req)
 	if got != "" {
@@ -415,6 +431,7 @@ func TestExtractToken_Empty(t *testing.T) {
 
 // TestHasScope verifies scope checking logic.
 func TestHasScope_SessionHasAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), authMethodKey, "session")
 	if !HasScope(ctx, "write") {
 		t.Error("session auth should have all scopes")
@@ -422,6 +439,7 @@ func TestHasScope_SessionHasAll(t *testing.T) {
 }
 
 func TestHasScope_APITokenWithMatchingScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), authMethodKey, "api_token")
 	ctx = context.WithValue(ctx, tokenScopesKey, "read,write")
 	if !HasScope(ctx, "write") {
@@ -430,6 +448,7 @@ func TestHasScope_APITokenWithMatchingScope(t *testing.T) {
 }
 
 func TestHasScope_APITokenMissingScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), authMethodKey, "api_token")
 	ctx = context.WithValue(ctx, tokenScopesKey, "read")
 	if HasScope(ctx, "write") {
@@ -438,6 +457,7 @@ func TestHasScope_APITokenMissingScope(t *testing.T) {
 }
 
 func TestHasScope_AdminGrantsAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), authMethodKey, "api_token")
 	ctx = context.WithValue(ctx, tokenScopesKey, "admin")
 	if !HasScope(ctx, "write") {
@@ -446,6 +466,7 @@ func TestHasScope_AdminGrantsAll(t *testing.T) {
 }
 
 func TestHasScope_NoAuth(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	if HasScope(ctx, "read") {
 		t.Error("no auth context should not have any scope")
@@ -454,6 +475,7 @@ func TestHasScope_NoAuth(t *testing.T) {
 
 // TestRequireScope verifies the scope middleware returns 403 on missing scope.
 func TestRequireScope_Forbidden(t *testing.T) {
+	t.Parallel()
 	called := false
 	handler := RequireScope("write")(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -480,6 +502,7 @@ func TestRequireScope_Forbidden(t *testing.T) {
 }
 
 func TestRequireScope_Allowed(t *testing.T) {
+	t.Parallel()
 	handler := RequireScope("read")(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -498,6 +521,7 @@ func TestRequireScope_Allowed(t *testing.T) {
 
 // TestUserIDFromContext verifies user ID extraction.
 func TestUserIDFromContext(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(context.Background(), userIDKey, "user-123")
 	if got := UserIDFromContext(ctx); got != "user-123" {
 		t.Errorf("UserIDFromContext = %q, want user-123", got)
@@ -505,6 +529,7 @@ func TestUserIDFromContext(t *testing.T) {
 }
 
 func TestUserIDFromContext_Empty(t *testing.T) {
+	t.Parallel()
 	if got := UserIDFromContext(context.Background()); got != "" {
 		t.Errorf("UserIDFromContext(empty) = %q, want empty", got)
 	}

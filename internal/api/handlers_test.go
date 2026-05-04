@@ -11,6 +11,7 @@ import (
 )
 
 func TestHandleLogout(t *testing.T) {
+	t.Parallel()
 	t.Run("returns 200 with JSON body and HX-Redirect header", func(t *testing.T) {
 		r := &Router{
 			logger:   slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
@@ -112,6 +113,7 @@ func TestHandleLogout(t *testing.T) {
 }
 
 func TestBuildDashboardInitialQuery(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input url.Values

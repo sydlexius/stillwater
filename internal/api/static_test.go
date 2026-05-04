@@ -12,6 +12,7 @@ import (
 )
 
 func TestStaticAssets_Path(t *testing.T) {
+	t.Parallel()
 	fsys := fstest.MapFS{
 		"css/styles.css": &fstest.MapFile{Data: []byte("body{}")},
 		"js/htmx.min.js": &fstest.MapFile{Data: []byte("htmx")},
@@ -38,6 +39,7 @@ func TestStaticAssets_Path(t *testing.T) {
 }
 
 func TestStaticAssets_Handler(t *testing.T) {
+	t.Parallel()
 	fsys := fstest.MapFS{
 		"css/styles.css": &fstest.MapFile{Data: []byte("body{}")},
 	}
@@ -92,6 +94,7 @@ func TestStaticAssets_Handler(t *testing.T) {
 }
 
 func TestStaticAssets_DirFS(t *testing.T) {
+	t.Parallel()
 	// Verify StaticAssets works with an on-disk fs.FS rooted at web/static.
 	// This test uses os.DirFS, not the production embedded filesystem.
 	fsys := os.DirFS("../../web/static")
@@ -131,6 +134,7 @@ func TestStaticAssets_DirFS(t *testing.T) {
 }
 
 func TestStaticAssets_NilFS(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatal("expected panic for nil fsys")
@@ -141,6 +145,7 @@ func TestStaticAssets_NilFS(t *testing.T) {
 }
 
 func TestStaticAssets_WithBasePath(t *testing.T) {
+	t.Parallel()
 	fsys := fstest.MapFS{
 		"css/styles.css": &fstest.MapFile{Data: []byte("body{}")},
 	}
@@ -164,6 +169,7 @@ func TestStaticAssets_WithBasePath(t *testing.T) {
 // TestStaticAssetsHandlerStripPrefix verifies that the Handler correctly strips
 // the base path prefix when serving files across multiple base path configurations.
 func TestStaticAssetsHandlerStripPrefix(t *testing.T) {
+	t.Parallel()
 	basePaths := []string{"", "/stillwater", "/foo/bar"}
 	for _, bp := range basePaths {
 		t.Run("basePath="+bp, func(t *testing.T) {

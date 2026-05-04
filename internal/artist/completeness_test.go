@@ -6,6 +6,7 @@ import (
 
 // TestBuildCompletenessReport_Empty verifies the report structure when there are no artists.
 func TestBuildCompletenessReport_Empty(t *testing.T) {
+	t.Parallel()
 	report := buildCompletenessReport(nil, nil)
 
 	if report.TotalArtists != 0 {
@@ -28,6 +29,7 @@ func TestBuildCompletenessReport_Empty(t *testing.T) {
 // TestBuildCompletenessReport_FullyCovered verifies that 100% coverage is computed
 // when all artists have all fields populated.
 func TestBuildCompletenessReport_FullyCovered(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{
 			ID:        "1",
@@ -69,6 +71,7 @@ func TestBuildCompletenessReport_FullyCovered(t *testing.T) {
 
 // TestBuildCompletenessReport_NoCoverage verifies 0% coverage when all fields are empty.
 func TestBuildCompletenessReport_NoCoverage(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{
 			ID:   "1",
@@ -93,6 +96,7 @@ func TestBuildCompletenessReport_NoCoverage(t *testing.T) {
 // TestBuildCompletenessReport_TypeAware verifies that type-specific fields are
 // only counted for applicable artist types.
 func TestBuildCompletenessReport_TypeAware(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		// Group artist: "Formed date" applies, "Born date" does not.
 		{ID: "1", Name: "The Band", Type: "group", Formed: "1985"},
@@ -143,6 +147,7 @@ func TestBuildCompletenessReport_TypeAware(t *testing.T) {
 // TestBuildCompletenessReport_OrchestraType verifies that orchestra artists are
 // treated like groups: "Formed date" applies but "Born date" does not.
 func TestBuildCompletenessReport_OrchestraType(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		// Orchestra: "Formed date" applies, "Born date" does not.
 		{ID: "1", Name: "Berlin Phil", Type: "orchestra", Formed: "1882"},
@@ -181,6 +186,7 @@ func TestBuildCompletenessReport_OrchestraType(t *testing.T) {
 // string are treated as groups for formed/born applicability: "Formed date"
 // applies but "Born date" does not.
 func TestBuildCompletenessReport_EmptyType(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		// Unknown type: empty string. The allFieldDefs rule treats "" like "group"
 		// for "Formed date" and excludes it from "Born date".
@@ -219,6 +225,7 @@ func TestBuildCompletenessReport_EmptyType(t *testing.T) {
 // like groups: "Formed date" and "Disbanded date" apply, "Born date" and
 // "Died date" do not.
 func TestBuildCompletenessReport_ChoirType(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "City Choir", Type: "choir", Formed: "1920"},
 	}
@@ -270,6 +277,7 @@ func TestBuildCompletenessReport_ChoirType(t *testing.T) {
 // TestBuildCompletenessReport_SoloType verifies that solo artists get "Born date"
 // and "Died date" counted, not "Formed date" or "Disbanded date".
 func TestBuildCompletenessReport_SoloType(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Solo Singer", Type: "solo", Born: "1975", Died: "2020"},
 	}
@@ -321,6 +329,7 @@ func TestBuildCompletenessReport_SoloType(t *testing.T) {
 // TestBuildCompletenessReport_CharacterType verifies that character artists get
 // "Born date" and "Died date" counted, not "Formed date" or "Disbanded date".
 func TestBuildCompletenessReport_CharacterType(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Fictional Character", Type: "character", Born: "1800"},
 	}
@@ -364,6 +373,7 @@ func TestBuildCompletenessReport_CharacterType(t *testing.T) {
 // TestBuildCompletenessReport_DisbandedDateGroup verifies that Disbanded date
 // is tracked for group artists.
 func TestBuildCompletenessReport_DisbandedDateGroup(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Disbanded Band", Type: "group", Formed: "1980", Disbanded: "1995"},
 		{ID: "2", Name: "Active Band", Type: "group", Formed: "2000"},
@@ -396,6 +406,7 @@ func TestBuildCompletenessReport_DisbandedDateGroup(t *testing.T) {
 // TestBuildCompletenessReport_DiedDatePerson verifies that Died date
 // is tracked for person artists.
 func TestBuildCompletenessReport_DiedDatePerson(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Deceased Artist", Type: "person", Born: "1900", Died: "1980"},
 		{ID: "2", Name: "Living Artist", Type: "person", Born: "1970"},
@@ -428,6 +439,7 @@ func TestBuildCompletenessReport_DiedDatePerson(t *testing.T) {
 // TestBuildCompletenessReport_LibraryCoverage verifies that per-library
 // breakdown is populated when more than one library is present.
 func TestBuildCompletenessReport_LibraryCoverage(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Artist A", Type: "group", LibraryID: "lib-a", Biography: "Bio"},
 		{ID: "2", Name: "Artist B", Type: "group", LibraryID: "lib-a"},
@@ -474,6 +486,7 @@ func TestBuildCompletenessReport_LibraryCoverage(t *testing.T) {
 // TestBuildCompletenessReport_LibraryCoverage_SingleLibrary verifies that
 // LibraryCoverage is nil when all artists belong to the same library.
 func TestBuildCompletenessReport_LibraryCoverage_SingleLibrary(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Artist A", Type: "group", LibraryID: "lib-a"},
 		{ID: "2", Name: "Artist B", Type: "group", LibraryID: "lib-a"},
@@ -488,6 +501,7 @@ func TestBuildCompletenessReport_LibraryCoverage_SingleLibrary(t *testing.T) {
 // TestBuildCompletenessReport_LibraryCoverage_UnknownLibraryID verifies that a
 // library ID with no name entry in the map falls back to the ID itself.
 func TestBuildCompletenessReport_LibraryCoverage_UnknownLibraryID(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Artist A", Type: "group", LibraryID: "lib-x"},
 		{ID: "2", Name: "Artist B", Type: "group", LibraryID: "lib-y"},
@@ -505,6 +519,7 @@ func TestBuildCompletenessReport_LibraryCoverage_UnknownLibraryID(t *testing.T) 
 // TestBuildCompletenessReport_PartialCoverage verifies correct percentage calculation
 // with a mix of populated and missing fields.
 func TestBuildCompletenessReport_PartialCoverage(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "Artist A", Type: "group", Biography: "Bio A", NFOExists: true},
 		{ID: "2", Name: "Artist B", Type: "group"}, // no bio, no NFO
@@ -551,6 +566,7 @@ func TestBuildCompletenessReport_PartialCoverage(t *testing.T) {
 // TestBuildCompletenessReport_SortedAscending verifies that FieldCoverage is
 // sorted by percentage ascending (lowest coverage first).
 func TestBuildCompletenessReport_SortedAscending(t *testing.T) {
+	t.Parallel()
 	// Two artists: one with biography, one without. No other fields populated.
 	// Biography should have 50% coverage; all others 0%.
 	rows := []CompletenessRow{
@@ -571,6 +587,7 @@ func TestBuildCompletenessReport_SortedAscending(t *testing.T) {
 // TestBuildCompletenessReport_OverallScore verifies the overall score is the mean
 // field-coverage across all applicable pairs.
 func TestBuildCompletenessReport_OverallScore(t *testing.T) {
+	t.Parallel()
 	// Single artist, group type. Universal fields + Formed and Disbanded date
 	// are applicable. Born date, Died date are not applicable for groups.
 	// The exact count is not asserted here; the test verifies the formula.
@@ -607,6 +624,7 @@ func TestBuildCompletenessReport_OverallScore(t *testing.T) {
 // TestBuildCompletenessReport_LowestCompleteness verifies that the lowest
 // completeness list is passed through unchanged.
 func TestBuildCompletenessReport_LowestCompleteness(t *testing.T) {
+	t.Parallel()
 	lowest := []LowestCompletenessArtist{
 		{ID: "3", Name: "Worst Artist", HealthScore: 10},
 		{ID: "4", Name: "Bad Artist", HealthScore: 25},
@@ -628,6 +646,7 @@ func TestBuildCompletenessReport_LowestCompleteness(t *testing.T) {
 
 // TestRoundOneDecimal verifies rounding behavior.
 func TestRoundOneDecimal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input float64
 		want  float64
@@ -649,6 +668,7 @@ func TestRoundOneDecimal(t *testing.T) {
 
 // TestSortFieldCoverageAsc verifies the sort is stable and ascending.
 func TestSortFieldCoverageAsc(t *testing.T) {
+	t.Parallel()
 	coverage := []FieldCoverage{
 		{Field: "C", Percentage: 75.0},
 		{Field: "A", Percentage: 25.0},
@@ -675,6 +695,7 @@ func TestSortFieldCoverageAsc(t *testing.T) {
 // TestBuildCompletenessReport_GenresEmpty verifies that the empty JSON array "[]"
 // and the empty string are both treated as missing genres.
 func TestBuildCompletenessReport_GenresEmpty(t *testing.T) {
+	t.Parallel()
 	rows := []CompletenessRow{
 		{ID: "1", Name: "A", Type: "group", Genres: "[]"},
 		{ID: "2", Name: "B", Type: "group", Genres: ""},

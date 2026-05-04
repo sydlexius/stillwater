@@ -23,6 +23,7 @@ func testRouterWithIdentify(t *testing.T) (*Router, *library.Service, *artist.Se
 }
 
 func TestBulkIdentify_ConcurrentReject(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	// Simulate a running identify job by setting progress directly.
@@ -50,6 +51,7 @@ func TestBulkIdentify_ConcurrentReject(t *testing.T) {
 }
 
 func TestBulkIdentifyProgress_Idle(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/bulk-identify", nil)
@@ -71,6 +73,7 @@ func TestBulkIdentifyProgress_Idle(t *testing.T) {
 }
 
 func TestBulkIdentifyProgress_WithRunningJob(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	// Simulate a running job with progress.
@@ -116,6 +119,7 @@ func TestBulkIdentifyProgress_WithRunningJob(t *testing.T) {
 }
 
 func TestBulkIdentifyCancel_NoJob(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/bulk-identify", nil)
@@ -137,6 +141,7 @@ func TestBulkIdentifyCancel_NoJob(t *testing.T) {
 }
 
 func TestBulkIdentifyCancel_RunningJob(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	_, cancel := context.WithCancel(context.Background())
@@ -167,6 +172,7 @@ func TestBulkIdentifyCancel_RunningJob(t *testing.T) {
 }
 
 func TestBulkIdentify_NoUnidentified(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 
 	// Create an artist with an MBID (should not appear in missing_mbid filter).
@@ -203,6 +209,7 @@ func TestBulkIdentify_NoUnidentified(t *testing.T) {
 }
 
 func TestBulkIdentify_ExcludedSkipped(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 
 	// Create an excluded artist without MBID.
@@ -237,6 +244,7 @@ func TestBulkIdentify_ExcludedSkipped(t *testing.T) {
 }
 
 func TestBulkIdentify_Tier1_ConnectionMatch(t *testing.T) {
+	t.Parallel()
 	r, libSvc, artistSvc := testRouterWithIdentify(t)
 	ctx := context.Background()
 
@@ -344,6 +352,7 @@ func TestBulkIdentify_Tier1_ConnectionMatch(t *testing.T) {
 }
 
 func TestBulkIdentify_LockedArtistSkipped(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	ctx := context.Background()
 
@@ -404,6 +413,7 @@ func TestBulkIdentify_LockedArtistSkipped(t *testing.T) {
 }
 
 func TestBulkIdentifyLink(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	ctx := context.Background()
 
@@ -468,6 +478,7 @@ func TestBulkIdentifyLink(t *testing.T) {
 }
 
 func TestBulkIdentifyLink_MissingFields(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		body string
@@ -495,6 +506,7 @@ func TestBulkIdentifyLink_MissingFields(t *testing.T) {
 }
 
 func TestBulkIdentifyLink_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	body := strings.NewReader(`{"artist_id":"nonexistent","mbid":"test-mbid"}`)
@@ -510,6 +522,7 @@ func TestBulkIdentifyLink_ArtistNotFound(t *testing.T) {
 }
 
 func TestBulkIdentify_CompletedJobAllowsRestart(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	// Simulate a completed identify job.
@@ -538,6 +551,7 @@ func TestBulkIdentify_CompletedJobAllowsRestart(t *testing.T) {
 }
 
 func TestBulkIdentify_WithLibraryFilter(t *testing.T) {
+	t.Parallel()
 	r, libSvc, artistSvc := testRouterWithIdentify(t)
 	ctx := context.Background()
 

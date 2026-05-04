@@ -26,6 +26,7 @@ import (
 // TestLayoutRenders_ValidHTML verifies that the layout template renders without
 // errors and produces valid HTML with all required landmarks.
 func TestLayoutRenders_ValidHTML(t *testing.T) {
+	t.Parallel()
 
 	// Create sample AssetPaths context.
 	assets := templates.AssetPaths{
@@ -95,6 +96,7 @@ func TestLayoutRenders_ValidHTML(t *testing.T) {
 // TestLayoutSidebar_ContainsRequiredLandmarks verifies the sidebar and main
 // content landmarks exist with correct IDs and semantic roles.
 func TestLayoutSidebar_ContainsRequiredLandmarks(t *testing.T) {
+	t.Parallel()
 
 	assets := templates.AssetPaths{
 		BasePath:       "",
@@ -189,6 +191,7 @@ func TestLayoutSidebar_ContainsRequiredLandmarks(t *testing.T) {
 // TestLayoutAdmin_RendersSharedFilesystemBar verifies that admin users see
 // the shared filesystem bar while non-admin users do not.
 func TestLayoutAdmin_RendersSharedFilesystemBar(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		isAdmin bool
@@ -253,6 +256,7 @@ func TestLayoutAdmin_RendersSharedFilesystemBar(t *testing.T) {
 // TestLayoutContentArea_ContainsMainLandmark verifies that the main content
 // area has proper semantic structure for accessibility.
 func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
+	t.Parallel()
 
 	assets := templates.AssetPaths{
 		BasePath:       "/app",
@@ -308,6 +312,7 @@ func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
 // TestLayout_AssetPathsWithBasePath verifies that asset paths are correctly
 // prefixed with the BasePath when rendering.
 func TestLayout_AssetPathsWithBasePath(t *testing.T) {
+	t.Parallel()
 	basePath := "/my-app"
 	assets := templates.AssetPaths{
 		BasePath:       basePath,
@@ -368,6 +373,7 @@ func TestLayout_AssetPathsWithBasePath(t *testing.T) {
 // TestLayout_RendersWithoutHandlerContext verifies the layout can be rendered
 // independently for testing purposes, without a full HTTP handler context.
 func TestLayout_RendersWithoutHandlerContext(t *testing.T) {
+	t.Parallel()
 	assets := templates.AssetPaths{
 		BasePath:       "",
 		CSS:            "/css/main.css",
@@ -427,6 +433,7 @@ func TestLayout_RendersWithoutHandlerContext(t *testing.T) {
 // status code and renders the layout with the sidebar landmark (id="sw-sidebar").
 // This is an integration test that uses the real app router and handler registration.
 func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
+	t.Parallel()
 	// Set up test database and services
 	db, err := database.Open(":memory:")
 	if err != nil {

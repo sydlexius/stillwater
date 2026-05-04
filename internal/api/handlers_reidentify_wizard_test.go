@@ -21,6 +21,7 @@ import (
 // step.Decision before recording the new one; same-decision resubmits are
 // a no-op.
 func TestApplyDecision_Idempotent(t *testing.T) {
+	t.Parallel()
 	t.Run("no_prior_decision", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{}
 		step := &reIdentifyWizardStep{}
@@ -122,6 +123,7 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 // backdate Updated manually so the test does not have to sleep for 30
 // minutes.
 func TestWizardStore(t *testing.T) {
+	t.Parallel()
 	t.Run("create_and_get", func(t *testing.T) {
 		s := newReIdentifyWizardStore()
 		sess, err := s.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
@@ -205,6 +207,7 @@ func TestWizardStore(t *testing.T) {
 // the AlbumComparison percent when present, falling back to Confidence *
 // 100.
 func TestProjectWizardCandidates(t *testing.T) {
+	t.Parallel()
 	t.Run("not_ready_returns_nil", func(t *testing.T) {
 		step := &reIdentifyWizardStep{ready: false, Candidates: []ScoredCandidate{{}}}
 		if got := projectWizardCandidates(step); got != nil {
@@ -266,6 +269,7 @@ func TestProjectWizardCandidates(t *testing.T) {
 // the start endpoint without a real orchestrator. These paths account for
 // the bulk of unhappy-path code in the handler.
 func TestHandleReIdentifyWizardStart_Validation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		body     string
@@ -295,6 +299,7 @@ func TestHandleReIdentifyWizardStart_Validation(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardStart_TooManyIDs(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	// Build a payload with MaxBulkActionIDs+1 valid IDs so the cap fires
 	// before any per-ID work runs.
@@ -319,6 +324,7 @@ func TestHandleReIdentifyWizardStart_TooManyIDs(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardStart_ServiceUnavailable(t *testing.T) {
+	t.Parallel()
 	// Zero-value Router has nil artistService, which is the 503 branch.
 	r := &Router{reIdentifyWizardStore: newReIdentifyWizardStore()}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", strings.NewReader(`{"ids":["x"]}`))
@@ -331,6 +337,7 @@ func TestHandleReIdentifyWizardStart_ServiceUnavailable(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardStart_Success(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	a := &artist.Artist{ID: "startHappy1", Name: "Start Happy"}
 	if err := artistSvc.Create(context.Background(), a); err != nil {
@@ -364,6 +371,7 @@ func TestHandleReIdentifyWizardStart_Success(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	req := httptest.NewRequest(http.MethodGet, "/artists/re-identify/wizard/unknown/step/0", nil)
 	req.SetPathValue("sid", "unknown")
@@ -376,6 +384,7 @@ func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardStep_InvalidIndex(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
 	if err != nil {
@@ -392,6 +401,7 @@ func TestHandleReIdentifyWizardStep_InvalidIndex(t *testing.T) {
 }
 
 func TestWizardStepFromRequest_ServiceUnavailable(t *testing.T) {
+	t.Parallel()
 	r := &Router{reIdentifyWizardStore: newReIdentifyWizardStore()}
 	req := httptest.NewRequest(http.MethodPost, "/any", nil)
 	req.SetPathValue("sid", "x")
@@ -406,6 +416,7 @@ func TestWizardStepFromRequest_ServiceUnavailable(t *testing.T) {
 }
 
 func TestWizardStepFromRequest_IndexOutOfRange(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
 	if err != nil {
@@ -426,6 +437,7 @@ func TestWizardStepFromRequest_IndexOutOfRange(t *testing.T) {
 // TestHandleReIdentifyWizardSkip exercises the full skip handler: advance the
 // decision counter and return status=advanced for the non-HTMX caller.
 func TestHandleReIdentifyWizardSkip(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1"}, {ArtistID: "a2"},
@@ -465,6 +477,7 @@ func TestHandleReIdentifyWizardSkip(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardDecline(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1"}, {ArtistID: "a2"},
@@ -498,6 +511,7 @@ func TestHandleReIdentifyWizardDecline(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_MissingMBID(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
 	if err != nil {
@@ -518,6 +532,7 @@ func TestHandleReIdentifyWizardAccept_MissingMBID(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
 	if err != nil {
@@ -535,6 +550,7 @@ func TestHandleReIdentifyWizardAccept_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_ArtistNotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	// Step references an artist that does not exist in the DB, so the
 	// accept handler's GetByID returns ErrNotFound.
@@ -554,6 +570,7 @@ func TestHandleReIdentifyWizardAccept_ArtistNotFound(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_FormBody(t *testing.T) {
+	t.Parallel()
 	// Form-encoded hx-vals path. We expect the handler to reject missing
 	// mbid here too; this exercises the non-JSON branch of the content-type
 	// switch.
@@ -574,6 +591,7 @@ func TestHandleReIdentifyWizardAccept_FormBody(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_AdvancedSuccess(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	a := &artist.Artist{ID: "acceptAdv1", Name: "Accept Advanced"}
 	if err := artistSvc.Create(context.Background(), a); err != nil {
@@ -615,6 +633,7 @@ func TestHandleReIdentifyWizardAccept_AdvancedSuccess(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardAccept_DoneSuccess(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	a := &artist.Artist{ID: "acceptDone1", Name: "Accept Done"}
 	if err := artistSvc.Create(context.Background(), a); err != nil {
@@ -655,6 +674,7 @@ func TestHandleReIdentifyWizardAccept_DoneSuccess(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
 		{ArtistID: "a1", ArtistName: "A One", Decision: ""},
@@ -728,6 +748,7 @@ func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 }
 
 func TestHandleReIdentifyWizardSaveExit_SessionNotFound(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	req := httptest.NewRequest(http.MethodPost, "/any", nil)
 	req.SetPathValue("sid", "nope")
@@ -743,6 +764,7 @@ func TestHandleReIdentifyWizardSaveExit_SessionNotFound(t *testing.T) {
 // with a sanitized errMsg. The full template-surface for errored is tracked
 // as an M46.5 follow-up but the state on the session is already populated.
 func TestEnsureWizardCandidates_NoOrchestrator(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1", ArtistName: "A"}})
 	if err != nil {
@@ -767,6 +789,7 @@ func TestEnsureWizardCandidates_NoOrchestrator(t *testing.T) {
 }
 
 func TestEnsureWizardCandidates_OutOfRange(t *testing.T) {
+	t.Parallel()
 	// idx < 0 or >= len(Steps) is a silent no-op; safe to call from
 	// pre-fetch goroutines without bounds checks.
 	r, _, _ := testRouterWithIdentify(t)
@@ -787,6 +810,7 @@ func TestEnsureWizardCandidates_OutOfRange(t *testing.T) {
 // alias re_identify is normalized to re_identify_auto in the 202 response.
 // This locks in the contract covered by the openapi round-3 update.
 func TestHandleBulkAction_ReIdentifyAliasNormalization(t *testing.T) {
+	t.Parallel()
 	r, _, artistSvc := testRouterWithIdentify(t)
 	a := &artist.Artist{ID: "aliasArtist1", Name: "Alias Artist"}
 	if err := artistSvc.Create(context.Background(), a); err != nil {

@@ -6,6 +6,7 @@ import (
 )
 
 func TestMatchByMBID_Found(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -36,6 +37,7 @@ func TestMatchByMBID_Found(t *testing.T) {
 }
 
 func TestMatchByMBID_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -50,6 +52,7 @@ func TestMatchByMBID_NotFound(t *testing.T) {
 }
 
 func TestMatchByMBID_EmptyID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -64,6 +67,7 @@ func TestMatchByMBID_EmptyID(t *testing.T) {
 }
 
 func TestMatchByID_MultipleProviders(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -106,6 +110,7 @@ func TestMatchByID_MultipleProviders(t *testing.T) {
 }
 
 func TestMatchByID_PriorityOrder(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -145,6 +150,7 @@ func TestMatchByID_PriorityOrder(t *testing.T) {
 }
 
 func TestMatchByID_NoIDs(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -159,6 +165,7 @@ func TestMatchByID_NoIDs(t *testing.T) {
 }
 
 func TestMatch_ConfidenceThreshold(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -195,6 +202,7 @@ func TestMatch_ConfidenceThreshold(t *testing.T) {
 }
 
 func TestMatch_AlwaysPromptStrategy(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

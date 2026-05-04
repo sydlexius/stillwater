@@ -25,6 +25,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 }
 
 func TestCreateAndGetByID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -61,6 +62,7 @@ func TestCreateAndGetByID(t *testing.T) {
 }
 
 func TestGetByID_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -71,6 +73,7 @@ func TestGetByID_NotFound(t *testing.T) {
 }
 
 func TestGetByPath(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -100,6 +103,7 @@ func TestGetByPath(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -134,6 +138,7 @@ func TestList(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -173,6 +178,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestUpdate_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -184,6 +190,7 @@ func TestUpdate_NotFound(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -205,6 +212,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_WithArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -247,6 +255,7 @@ func TestDelete_WithArtists(t *testing.T) {
 }
 
 func TestDelete_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -257,6 +266,7 @@ func TestDelete_NotFound(t *testing.T) {
 }
 
 func TestCountArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -294,6 +304,7 @@ func TestCountArtists(t *testing.T) {
 }
 
 func TestCreate_Validation(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -312,6 +323,7 @@ func TestCreate_Validation(t *testing.T) {
 }
 
 func TestIsPathless(t *testing.T) {
+	t.Parallel()
 	lib := Library{Name: "API Only", Path: "", Type: TypeRegular}
 	if !lib.IsPathless() {
 		t.Error("expected IsPathless() = true for empty path")
@@ -324,6 +336,7 @@ func TestIsPathless(t *testing.T) {
 }
 
 func TestCreate_DuplicateName(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -351,6 +364,7 @@ func TestCreate_DuplicateName(t *testing.T) {
 }
 
 func TestCreate_InvalidSource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -365,6 +379,7 @@ func TestCreate_InvalidSource(t *testing.T) {
 }
 
 func TestCreate_DefaultSource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -388,6 +403,7 @@ func TestCreate_DefaultSource(t *testing.T) {
 }
 
 func TestGetByConnectionAndExternalID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -441,6 +457,7 @@ func TestGetByConnectionAndExternalID(t *testing.T) {
 }
 
 func TestClearConnectionID(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -505,6 +522,7 @@ func TestClearConnectionID(t *testing.T) {
 }
 
 func TestCreate_PathValidation(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -558,6 +576,7 @@ func TestCreate_PathValidation(t *testing.T) {
 }
 
 func TestUpdate_PathValidation(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -620,6 +639,7 @@ func TestUpdate_PathValidation(t *testing.T) {
 }
 
 func TestUpdate_InvalidSource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -638,6 +658,7 @@ func TestUpdate_InvalidSource(t *testing.T) {
 }
 
 func TestUpdate_DefaultsEmptySource(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -658,6 +679,7 @@ func TestUpdate_DefaultsEmptySource(t *testing.T) {
 }
 
 func TestIsSharedFS(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		status string
 		want   bool
@@ -677,6 +699,7 @@ func TestIsSharedFS(t *testing.T) {
 }
 
 func TestSetSharedFSStatus_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -726,6 +749,7 @@ func TestSetSharedFSStatus_RoundTrip(t *testing.T) {
 }
 
 func TestSetSharedFSStatus_InvalidStatus(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -743,6 +767,7 @@ func TestSetSharedFSStatus_InvalidStatus(t *testing.T) {
 }
 
 func TestSetSharedFSStatus_NotFound(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 
@@ -753,6 +778,7 @@ func TestSetSharedFSStatus_NotFound(t *testing.T) {
 }
 
 func TestListSharedFS(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -805,6 +831,7 @@ func TestListSharedFS(t *testing.T) {
 }
 
 func TestHasLocalLibrary(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -906,6 +933,7 @@ func seedPlatformID(t *testing.T, db *sql.DB, artistID, connID, platformID strin
 // artist row must remove its artist_platform_ids row via ON DELETE CASCADE.
 // Regression guard for the orphan rows that were observed in production.
 func TestDeleteWithArtists_CascadesPlatformIDs(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -960,6 +988,7 @@ func TestDeleteWithArtists_CascadesPlatformIDs(t *testing.T) {
 // came from the same connection but have a NULL library_id (because some
 // earlier code path lost the assignment) should also be pruned.
 func TestDeleteWithArtists_PrunesOrphanedConnectionArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -1045,6 +1074,7 @@ func TestDeleteWithArtists_PrunesOrphanedConnectionArtists(t *testing.T) {
 // connection. The prune fallback is only safe when this is the LAST
 // library on the connection.
 func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -1124,6 +1154,7 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 // "WHERE library_id = ?" delete (or even a naive M:N pruner) would erase
 // the artist from under the still-attached library.
 func TestDeleteWithArtists_PreservesArtistInOtherLibraries(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -1198,6 +1229,7 @@ func TestDeleteWithArtists_PreservesArtistInOtherLibraries(t *testing.T) {
 // stays alive, and the artist row is preserved by the candidate-prune
 // loop because memberships > 0.
 func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiHomeArtist(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -1285,6 +1317,7 @@ func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiHomeArtist(t *testing.T
 // unlinked connection must still be cleaned up because the artist no
 // longer has any library backing it on that connection.
 func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiConnArtist(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
@@ -1353,6 +1386,7 @@ func TestDeleteWithArtists_PrunesStalePlatformIDsForMultiConnArtist(t *testing.T
 // (issue #1264) round-trips through Create, Update, scan, and re-fetch.
 // Default is false; explicit true persists; flipping back to false persists.
 func TestNFOLockData_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -1403,6 +1437,7 @@ func TestNFOLockData_RoundTrip(t *testing.T) {
 // (parent /music/jazz must not claim /music/jazzfusion/album), (3) pathless
 // libraries are skipped, and (4) absent ownership returns nil + nil.
 func TestFindForArtistPath(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

@@ -19,6 +19,7 @@ import (
 // setup creates admin, login returns a session cookie, and the cookie grants
 // access to authenticated endpoints with the correct role.
 func TestLocalLoginFlow(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	// Wipe all users so handleSetup can run (requires zero existing users).
@@ -99,6 +100,7 @@ func TestLocalLoginFlow(t *testing.T) {
 // TestLocalLoginFlow_WrongPassword verifies that handleLogin rejects invalid
 // credentials with 401.
 func TestLocalLoginFlow_WrongPassword(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	loginBody := `{"username":"admin","password":"wrongpassword"}`
@@ -118,6 +120,7 @@ func TestLocalLoginFlow_WrongPassword(t *testing.T) {
 // admin creates invite, new user redeems it, new user logs in and has the
 // correct operator role, and role-based access is enforced correctly.
 func TestInviteRegisterFlow(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	enableMultiUser(t, r)
 
@@ -200,6 +203,7 @@ func TestInviteRegisterFlow(t *testing.T) {
 // TestInviteRegisterFlow_InvalidCode verifies that handleRegister rejects an
 // invalid invite code with 400.
 func TestInviteRegisterFlow_InvalidCode(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 	enableMultiUser(t, r)
 
@@ -242,6 +246,7 @@ func (p *stubFederatedProvider) MapRole(identity *auth.Identity) string {
 // TestFederatedLoginFlow_AutoProvision verifies that a federated provider login
 // auto-provisions the user on first login and creates a valid session.
 func TestFederatedLoginFlow_AutoProvision(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	stubProvider := &stubFederatedProvider{
@@ -296,6 +301,7 @@ func TestFederatedLoginFlow_AutoProvision(t *testing.T) {
 // TestFederatedLoginFlow_AdminAutoProvision verifies that a federated provider
 // auto-provisions the user as administrator when IsAdmin is true.
 func TestFederatedLoginFlow_AdminAutoProvision(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	stubProvider := &stubFederatedProvider{
@@ -334,6 +340,7 @@ func TestFederatedLoginFlow_AdminAutoProvision(t *testing.T) {
 // TestFederatedLoginFlow_SessionValid verifies that a session cookie returned
 // by federated login is accepted by the Auth middleware.
 func TestFederatedLoginFlow_SessionValid(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithAuth(t)
 
 	stubProvider := &stubFederatedProvider{
@@ -388,6 +395,7 @@ func TestFederatedLoginFlow_SessionValid(t *testing.T) {
 // TestRoleEnforcementFlow_OperatorForbiddenOnAdminRoutes verifies that an
 // operator is denied access to all admin-only endpoints.
 func TestRoleEnforcementFlow_OperatorForbiddenOnAdminRoutes(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -436,6 +444,7 @@ func TestRoleEnforcementFlow_OperatorForbiddenOnAdminRoutes(t *testing.T) {
 // TestRoleEnforcementFlow_OperatorAllowedOnOperatorRoutes verifies that an
 // operator can access endpoints that do not require admin.
 func TestRoleEnforcementFlow_OperatorAllowedOnOperatorRoutes(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 
@@ -470,6 +479,7 @@ func TestRoleEnforcementFlow_OperatorAllowedOnOperatorRoutes(t *testing.T) {
 // TestRoleEnforcementFlow_AdminCanAccessAll verifies that an administrator
 // can access both admin-only and operator-allowed endpoints.
 func TestRoleEnforcementFlow_AdminCanAccessAll(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 
 	cases := []struct {
@@ -515,6 +525,7 @@ func TestRoleEnforcementFlow_AdminCanAccessAll(t *testing.T) {
 // TestRoleEnforcementFlow_AdminCanUpdateRule verifies that an administrator
 // can modify rule configuration (enable/disable/automation mode).
 func TestRoleEnforcementFlow_AdminCanUpdateRule(t *testing.T) {
+	t.Parallel()
 	r, _, adminID := testRouterWithAuth(t)
 
 	// Get an existing rule ID from the seeded defaults.
@@ -539,6 +550,7 @@ func TestRoleEnforcementFlow_AdminCanUpdateRule(t *testing.T) {
 // TestRoleEnforcementFlow_OperatorCanRunScanner verifies that an operator can
 // trigger a scanner run (not admin-gated).
 func TestRoleEnforcementFlow_OperatorCanRunScanner(t *testing.T) {
+	t.Parallel()
 	r, authSvc, adminID := testRouterWithAuth(t)
 	opID := createOperatorUser(t, authSvc, adminID)
 

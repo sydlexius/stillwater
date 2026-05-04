@@ -6,6 +6,7 @@ import (
 )
 
 func TestCount_NoArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -20,6 +21,7 @@ func TestCount_NoArtists(t *testing.T) {
 }
 
 func TestCount_AllArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -41,6 +43,7 @@ func TestCount_AllArtists(t *testing.T) {
 }
 
 func TestCount_WithLibraryFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -68,6 +71,7 @@ func TestCount_WithLibraryFilter(t *testing.T) {
 }
 
 func TestCount_WithSearchQuery(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -89,6 +93,7 @@ func TestCount_WithSearchQuery(t *testing.T) {
 }
 
 func TestCount_WithExcludedFilter(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -124,6 +129,7 @@ func TestCount_WithExcludedFilter(t *testing.T) {
 }
 
 func TestCount_ConsistentWithList(t *testing.T) {
+	t.Parallel()
 	// Verify that Count returns the same total as List for several filter
 	// shapes. This catches drift between buildWhereClause and toListParams.
 	db := setupTestDB(t)

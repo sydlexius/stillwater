@@ -140,6 +140,7 @@ func startFakeEmby(t *testing.T) (*httptest.Server, *sync.Map) {
 }
 
 func TestSetStillwaterManaged_EnableSnapshotsAndDisablesPeer(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 	fake, received := startFakeEmby(t)
 	defer fake.Close()
@@ -195,6 +196,7 @@ func TestSetStillwaterManaged_EnableSnapshotsAndDisablesPeer(t *testing.T) {
 }
 
 func TestSetStillwaterManaged_DisableRestoresSnapshot(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 	fake, received := startFakeEmby(t)
 	defer fake.Close()
@@ -386,6 +388,7 @@ func startFakeLidarr(t *testing.T) (*httptest.Server, func() map[string]any) {
 }
 
 func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 	fake, snapshot := startFakeJellyfin(t)
 	defer fake.Close()
@@ -419,6 +422,7 @@ func TestSetStillwaterManaged_JellyfinBranch(t *testing.T) {
 }
 
 func TestSetStillwaterManaged_LidarrBranch(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 	fake, snapshot := startFakeLidarr(t)
 	defer fake.Close()
@@ -503,6 +507,7 @@ func lidarrField(consumer map[string]any, name string) any {
 }
 
 func TestSetStillwaterManaged_404OnUnknownConnection(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterForConflictToggle(t)
 	body := bytes.NewReader([]byte(`{"enabled":true}`))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/ghost/stillwater-managed", body)
@@ -520,6 +525,7 @@ func TestSetStillwaterManaged_404OnUnknownConnection(t *testing.T) {
 // 500 (local side). This is the inverse of the apply-side rollback test
 // and pins the symmetric behavior across both directions.
 func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 
 	var (
@@ -615,6 +621,7 @@ func TestSetStillwaterManaged_DisableReturns502OnPeerRestoreFailure(t *testing.T
 // still surface the original 502 to the caller and the snapshot row must
 // still be cleared. The rollback restore error is logged but not returned.
 func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 
 	// postCount tracks how many LibraryOptions POSTs the fake peer received.
@@ -698,6 +705,7 @@ func TestSetStillwaterManaged_RollbackRestoreFailureLogged(t *testing.T) {
 // resnaps the savers-off peer and overwrites the real pre-Stillwater config,
 // breaking opt-out forever.
 func TestSetStillwaterManaged_RollsBackWhenPeerDisableFails(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
 
 	var (

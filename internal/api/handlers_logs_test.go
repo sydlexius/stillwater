@@ -27,6 +27,7 @@ func newTestRouterWithLogs(t *testing.T) (*Router, *logging.RingBuffer) {
 }
 
 func TestHandleGetLogs_JSON(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -62,6 +63,7 @@ func TestHandleGetLogs_JSON(t *testing.T) {
 }
 
 func TestHandleGetLogs_HTMX(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -96,6 +98,7 @@ func TestHandleGetLogs_HTMX(t *testing.T) {
 }
 
 func TestHandleGetLogs_HTMX_AttrsAndSource(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -147,6 +150,7 @@ func TestHandleGetLogs_HTMX_AttrsAndSource(t *testing.T) {
 }
 
 func TestHandleGetLogs_LevelFilter(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -179,6 +183,7 @@ func TestHandleGetLogs_LevelFilter(t *testing.T) {
 }
 
 func TestHandleGetLogs_SearchFilter(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -207,6 +212,7 @@ func TestHandleGetLogs_SearchFilter(t *testing.T) {
 }
 
 func TestHandleGetLogs_ComponentFilter(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	now := time.Now()
@@ -241,6 +247,7 @@ func TestHandleGetLogs_ComponentFilter(t *testing.T) {
 }
 
 func TestHandleGetLogs_Empty(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
@@ -265,6 +272,7 @@ func TestHandleGetLogs_Empty(t *testing.T) {
 }
 
 func TestHandleGetLogs_EmptyHTMX(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
@@ -285,6 +293,7 @@ func TestHandleGetLogs_EmptyHTMX(t *testing.T) {
 }
 
 func TestHandleClearLogs_JSON(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	rb.Write(logging.LogEntry{Time: time.Now(), Level: "info", Message: "test"})
@@ -308,6 +317,7 @@ func TestHandleClearLogs_JSON(t *testing.T) {
 }
 
 func TestHandleClearLogs_HTMX(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	rb.Write(logging.LogEntry{Time: time.Now(), Level: "info", Message: "test"})
@@ -337,6 +347,7 @@ func TestHandleClearLogs_HTMX(t *testing.T) {
 }
 
 func TestHandleGetLogs_NilManager(t *testing.T) {
+	t.Parallel()
 	r := &Router{
 		logManager: nil,
 		logger:     slog.Default(),
@@ -355,6 +366,7 @@ func TestHandleGetLogs_NilManager(t *testing.T) {
 }
 
 func TestHandleClearLogs_NilManager(t *testing.T) {
+	t.Parallel()
 	r := &Router{
 		logManager: nil,
 		logger:     slog.Default(),
@@ -373,6 +385,7 @@ func TestHandleClearLogs_NilManager(t *testing.T) {
 }
 
 func TestHandleGetLogs_AfterFilter(t *testing.T) {
+	t.Parallel()
 	r, rb := newTestRouterWithLogs(t)
 
 	base := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
@@ -405,6 +418,7 @@ func TestHandleGetLogs_AfterFilter(t *testing.T) {
 }
 
 func TestHandleGetLogs_InvalidLevel(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?level=verbose", nil)
@@ -417,6 +431,7 @@ func TestHandleGetLogs_InvalidLevel(t *testing.T) {
 }
 
 func TestHandleGetLogs_InvalidAfter(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?after=not-a-date", nil)
@@ -429,6 +444,7 @@ func TestHandleGetLogs_InvalidAfter(t *testing.T) {
 }
 
 func TestHandleGetLogs_InvalidLimit(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?limit=abc", nil)
@@ -441,6 +457,7 @@ func TestHandleGetLogs_InvalidLimit(t *testing.T) {
 }
 
 func TestHandleGetLogs_NegativeLimit(t *testing.T) {
+	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
 	req := httptest.NewRequest("GET", "/api/v1/logs?limit=-5", nil)
@@ -453,6 +470,7 @@ func TestHandleGetLogs_NegativeLimit(t *testing.T) {
 }
 
 func TestLevelBadgeClass(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		level string
 		want  string

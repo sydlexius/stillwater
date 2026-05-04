@@ -10,6 +10,7 @@ import (
 // rules_evaluated_at are always considered dirty -- this is the
 // initial-bootstrap path for fresh installs and newly imported artists.
 func TestListDirtyIDs_NeverEvaluated(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -32,6 +33,7 @@ func TestListDirtyIDs_NeverEvaluated(t *testing.T) {
 // rules_evaluated_at is set and is not flagged dirty drops out of the
 // dirty set -- the property that makes incremental Run Rules cheap.
 func TestListDirtyIDs_CleanArtistOmitted(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -56,6 +58,7 @@ func TestListDirtyIDs_CleanArtistOmitted(t *testing.T) {
 // TestListDirtyIDs_DirtyAfterEvaluated verifies the round trip: evaluate
 // (clean), mark dirty (mutated again), expect the artist back in the set.
 func TestListDirtyIDs_DirtyAfterEvaluated(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -91,6 +94,7 @@ func TestListDirtyIDs_DirtyAfterEvaluated(t *testing.T) {
 // is_excluded=1 or locked=1 never appear in the dirty list, matching the
 // pipeline's own skip semantics so progress counters are not inflated.
 func TestListDirtyIDs_ExcludesLockedAndExcluded(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -127,6 +131,7 @@ func TestListDirtyIDs_ExcludesLockedAndExcluded(t *testing.T) {
 // touches every non-excluded, non-locked artist in a single statement.
 // This is the path triggered when a brand-new rule is added.
 func TestMarkAllDirty_StampsEligibleArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -183,6 +188,7 @@ func TestMarkAllDirty_StampsEligibleArtists(t *testing.T) {
 // TestCountEligibleArtists verifies the denominator count used by progress
 // reporting matches what ListDirtyIDs/RunAll would walk in scope=all.
 func TestCountEligibleArtists(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -220,6 +226,7 @@ func TestCountEligibleArtists(t *testing.T) {
 // Update must not overwrite dirty_since/rules_evaluated_at, otherwise
 // a write-then-event race would silently drop the dirty mark.
 func TestUpdate_DoesNotClobberDirtyTracking(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -280,6 +287,7 @@ func TestUpdate_DoesNotClobberDirtyTracking(t *testing.T) {
 // and the artist would re-appear in ListDirtyIDs immediately, flaking the
 // scheduled sweep.
 func TestUpdateAfterRuleEvaluation_DoesNotStampDirty(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -331,6 +339,7 @@ func TestUpdateAfterRuleEvaluation_DoesNotStampDirty(t *testing.T) {
 // scanners, bulk executor) still schedule a re-evaluation. Together these
 // two tests pin the boundary between external and self-writeback paths.
 func TestUpdate_DoesStampDirty(t *testing.T) {
+	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()

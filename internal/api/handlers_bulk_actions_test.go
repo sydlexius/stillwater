@@ -22,6 +22,7 @@ var errBulkPipelineTest = errors.New("bulk pipeline test failure")
 // TestBulkAction_Cancel_NoRun verifies the cancel endpoint returns 409 when
 // there is no in-flight bulk action to stop.
 func TestBulkAction_Cancel_NoRun(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
 	w := httptest.NewRecorder()
@@ -34,6 +35,7 @@ func TestBulkAction_Cancel_NoRun(t *testing.T) {
 // TestBulkAction_Cancel_Running covers the happy path: a running progress
 // with a non-nil cancelFn returns 200 and invokes the cancel function.
 func TestBulkAction_Cancel_Running(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	canceled := false
 	cancel := func() { canceled = true }
@@ -55,6 +57,7 @@ func TestBulkAction_Cancel_Running(t *testing.T) {
 // TestBulkAction_Cancel_StaleProgress handles the case where a completed
 // snapshot lingers with a nil cancelFn; cancel must 409 rather than panic.
 func TestBulkAction_Cancel_StaleProgress(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	r.bulkActionMu.Lock()
 	r.bulkActionProgress = &BulkActionProgress{Status: "completed", Action: "run_rules", Total: 1}
@@ -69,6 +72,7 @@ func TestBulkAction_Cancel_StaleProgress(t *testing.T) {
 
 // TestBulkAction_InvalidAction rejects unknown action values with 400.
 func TestBulkAction_InvalidAction(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	body := strings.NewReader(`{"action":"delete_everything","ids":["abc"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
@@ -84,6 +88,7 @@ func TestBulkAction_InvalidAction(t *testing.T) {
 
 // TestBulkAction_EmptyIDs rejects empty id lists with 400.
 func TestBulkAction_EmptyIDs(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	body := strings.NewReader(`{"action":"run_rules","ids":[]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
@@ -99,6 +104,7 @@ func TestBulkAction_EmptyIDs(t *testing.T) {
 
 // TestBulkAction_InvalidIDFormat rejects IDs that fail the format regex.
 func TestBulkAction_InvalidIDFormat(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	body := strings.NewReader(`{"action":"run_rules","ids":["../../etc/passwd"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
@@ -115,6 +121,7 @@ func TestBulkAction_InvalidIDFormat(t *testing.T) {
 // TestBulkAction_ConcurrentReject ensures a second bulk action while one is
 // already running returns 409 Conflict, matching the fix-all pattern.
 func TestBulkAction_ConcurrentReject(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	// Simulate an in-flight run by claiming the progress slot directly.
@@ -144,6 +151,7 @@ func TestBulkAction_ConcurrentReject(t *testing.T) {
 
 // TestBulkActionStatus_Idle returns idle when no progress is set.
 func TestBulkActionStatus_Idle(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/bulk-actions/status", nil)
 	w := httptest.NewRecorder()
@@ -165,6 +173,7 @@ func TestBulkActionStatus_Idle(t *testing.T) {
 // TestBulkAction_TooManyIDs bounds the request size so a single call cannot
 // monopolize the singleton slot indefinitely.
 func TestBulkAction_TooManyIDs(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	var b strings.Builder
@@ -194,6 +203,7 @@ func TestBulkAction_TooManyIDs(t *testing.T) {
 // misleading 202 + completed snapshot; the fix routes this case through the
 // upfront 503 path so the progress slot is released immediately.
 func TestBulkAction_ScanRequiresPipeline(t *testing.T) {
+	t.Parallel()
 	// testRouterWithIdentify wires an artistService but no pipeline, so scan
 	// must fail availability.
 	r, _, _ := testRouterWithIdentify(t)
@@ -220,6 +230,7 @@ func TestBulkAction_ScanRequiresPipeline(t *testing.T) {
 // TestBulkAction_RunRulesRequiresPipeline locks in the 503 + slot-release
 // path for run_rules when the pipeline is absent.
 func TestBulkAction_RunRulesRequiresPipeline(t *testing.T) {
+	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 
 	body := strings.NewReader(`{"action":"run_rules","ids":["abc123"]}`)
@@ -272,6 +283,7 @@ func waitBulkActionCompleted(t *testing.T, r *Router) {
 //     exactly once per unique ID (no arbitrary sleeps; mirrors the fix-all
 //     polling pattern)
 func TestBulkAction_SuccessDedupKickoff(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
@@ -357,6 +369,7 @@ func TestBulkAction_SuccessDedupKickoff(t *testing.T) {
 // TestBulkAction_Scan_Success exercises the scan action end-to-end through
 // the pipeline so the success branch of applyBulkAction is covered.
 func TestBulkAction_Scan_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, artistSvc := testRouterWithStubPipeline(t, stub)
 	a := addTestArtist(t, artistSvc, "Scan Artist")
@@ -392,6 +405,7 @@ func TestBulkAction_Scan_Success(t *testing.T) {
 // TestBulkAction_MissingArtistSkipped exercises the not-found branch in the
 // per-artist loop so coverage reflects the skipped outcome.
 func TestBulkAction_MissingArtistSkipped(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
@@ -427,6 +441,7 @@ func TestBulkAction_MissingArtistSkipped(t *testing.T) {
 // applyBulkAction (same pipeline hop as run_rules, but a distinct action
 // label so progress reports the right value).
 func TestBulkAction_FetchImages_Success(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, artistSvc := testRouterWithStubPipeline(t, stub)
 	a := addTestArtist(t, artistSvc, "Fetch Images Artist")
@@ -457,6 +472,7 @@ func TestBulkAction_FetchImages_Success(t *testing.T) {
 // TestBulkAction_PipelineError marks the per-artist work as failed when the
 // pipeline returns an error so operators see the real outcome.
 func TestBulkAction_PipelineError(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{
 		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
 			return nil, errBulkPipelineTest
@@ -488,6 +504,7 @@ func TestBulkAction_PipelineError(t *testing.T) {
 // TestBulkAction_ReIdentifyNoOrchestrator verifies the skipped path when
 // neither an orchestrator nor a connection index is available.
 func TestBulkAction_ReIdentifyNoOrchestrator(t *testing.T) {
+	t.Parallel()
 	// The stub-pipeline router has no orchestrator and no connections, so the
 	// per-artist re-identify branch will return bulkOutcomeSkipped.
 	stub := &stubPipeline{}
@@ -518,6 +535,7 @@ func TestBulkAction_ReIdentifyNoOrchestrator(t *testing.T) {
 // completed run must still be visible via /status (not idle) so callers can
 // see per-action outcome without an active job.
 func TestBulkAction_StatusAfterCompletion(t *testing.T) {
+	t.Parallel()
 	stub := &stubPipeline{}
 	r, artistSvc := testRouterWithStubPipeline(t, stub)
 	a := addTestArtist(t, artistSvc, "Status Artist")

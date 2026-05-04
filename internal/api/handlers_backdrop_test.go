@@ -117,6 +117,7 @@ func addTestConnectionWithURLForBackdrop(t *testing.T, r *Router, id, name, conn
 }
 
 func TestHandlePlatformBackdrops_NoConnections(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	a := addTestArtist(t, artistSvc, "TestArtist")
 
@@ -142,6 +143,7 @@ func TestHandlePlatformBackdrops_NoConnections(t *testing.T) {
 }
 
 func TestHandlePlatformBackdrops_WithBackdrops(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 
 	// Mock Emby server that returns an artist with 3 backdrops.
@@ -210,6 +212,7 @@ func TestHandlePlatformBackdrops_WithBackdrops(t *testing.T) {
 }
 
 func TestHandlePlatformBackdropThumbnail(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForBackdrop(t)
 
 	r, artistSvc := testRouterForBackdrops(t)
@@ -250,6 +253,7 @@ func TestHandlePlatformBackdropThumbnail(t *testing.T) {
 }
 
 func TestHandleFanartSlotAssign(t *testing.T) {
+	t.Parallel()
 	jpegData := createTestJPEGForBackdrop(t)
 	artistDir := t.TempDir()
 
@@ -301,6 +305,7 @@ func TestHandleFanartSlotAssign(t *testing.T) {
 }
 
 func TestHandleFanartSlotAssign_GapRejected(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	artistDir := t.TempDir()
 
@@ -334,6 +339,7 @@ func TestHandleFanartSlotAssign_GapRejected(t *testing.T) {
 }
 
 func TestHandleFanartSlotDelete(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 
 	r, artistSvc := testRouterForBackdrops(t)
@@ -378,6 +384,7 @@ func TestHandleFanartSlotDelete(t *testing.T) {
 }
 
 func TestHandleFanartSlotDelete_OnlySlot(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	r, artistSvc := testRouterForBackdrops(t)
 
@@ -424,6 +431,7 @@ func TestHandleFanartSlotDelete_OnlySlot(t *testing.T) {
 }
 
 func TestHandleFanartReorder(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	r, artistSvc := testRouterForBackdrops(t)
 
@@ -479,6 +487,7 @@ func TestHandleFanartReorder(t *testing.T) {
 }
 
 func TestHandleFanartReorder_InvalidPermutation(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	r, artistSvc := testRouterForBackdrops(t)
 
@@ -526,6 +535,7 @@ func TestHandleFanartReorder_InvalidPermutation(t *testing.T) {
 }
 
 func TestHandleFanartSyncState_NoConnections(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	a := addTestArtist(t, artistSvc, "TestArtist")
 
@@ -555,6 +565,7 @@ func TestHandleFanartSyncState_NoConnections(t *testing.T) {
 }
 
 func TestHandleFanartSyncState_AllSynced(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	artistDir := t.TempDir()
 
@@ -637,6 +648,7 @@ func TestHandleFanartSyncState_AllSynced(t *testing.T) {
 }
 
 func TestHandleFanartSyncState_Partial(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	artistDir := t.TempDir()
 
@@ -721,6 +733,7 @@ func TestHandleFanartSyncState_Partial(t *testing.T) {
 }
 
 func TestHandleFanartSyncState_MultipleConnections(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	artistDir := t.TempDir()
 
@@ -851,6 +864,7 @@ func TestHandleFanartSyncState_MultipleConnections(t *testing.T) {
 }
 
 func TestHandlePlatformBackdropThumbnail_InvalidIndex(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterForBackdrops(t)
 	a := addTestArtist(t, artistSvc, "TestArtist")
 	addTestConnectionWithURLForBackdrop(t, r, "conn-emby", "My Emby", "emby", "http://unused:8096")
@@ -884,6 +898,7 @@ func TestHandlePlatformBackdropThumbnail_InvalidIndex(t *testing.T) {
 }
 
 func TestHandleFanartSlotDelete_OutOfRange(t *testing.T) {
+	t.Parallel()
 	artistDir := t.TempDir()
 	r, artistSvc := testRouterForBackdrops(t)
 
@@ -932,6 +947,7 @@ func TestHandleFanartSlotDelete_OutOfRange(t *testing.T) {
 }
 
 func TestIsValidPermutation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		order []int
 		want  bool

@@ -79,6 +79,7 @@ func testRouterWithPipeline(t *testing.T) (*Router, *artist.Service) {
 }
 
 func TestHandleRunArtistRules_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPipeline(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nonexistent/run-rules", nil)
@@ -93,6 +94,7 @@ func TestHandleRunArtistRules_NotFound(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_HTMX_NotFound(t *testing.T) {
+	t.Parallel()
 	r, _ := testRouterWithPipeline(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nonexistent/run-rules", nil)
@@ -115,6 +117,7 @@ func TestHandleRunArtistRules_HTMX_NotFound(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_ReturnsJSON(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPipeline(t)
 
 	a := addTestArtist(t, artistSvc, "Test Artist")
@@ -146,6 +149,7 @@ func TestHandleRunArtistRules_ReturnsJSON(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_HTMX_NoViolations(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
 
 	// Disable all rules so a fresh artist produces zero violations.
@@ -182,6 +186,7 @@ func TestHandleRunArtistRules_HTMX_NoViolations(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
+	t.Parallel()
 	// Enable only RuleBioExists so the test does not depend on filesystem state or
 	// pathless-library handling.
 	// A fresh artist with no biography always violates this DB-only rule.
@@ -236,6 +241,7 @@ func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_BasePath(t *testing.T) {
+	t.Parallel()
 	r, artistSvc, _ := testRouterWithPipelineFull(t)
 	r.basePath = "/app"
 
@@ -264,6 +270,7 @@ func TestHandleRunArtistRules_BasePath(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_HTMX_DBError(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPipeline(t)
 
 	a := addTestArtist(t, artistSvc, "DB Error Artist")
@@ -296,6 +303,7 @@ func TestHandleRunArtistRules_HTMX_DBError(t *testing.T) {
 // Branch-level body assertions are covered by TestHandleRunArtistRules_HTMX_NoViolations
 // and TestHandleRunArtistRules_HTMX_ViolationsFound.
 func TestHandleRunArtistRules_ReturnsHTMLForHTMX(t *testing.T) {
+	t.Parallel()
 	r, artistSvc := testRouterWithPipeline(t)
 
 	a := addTestArtist(t, artistSvc, "HTMX Artist")
