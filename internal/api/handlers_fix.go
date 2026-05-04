@@ -544,12 +544,16 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 			time.Sleep(10 * time.Millisecond)
 		}
 
+		// Invalidate the health cache after bulk fixes complete so the next
+		// dashboard poll reflects the updated health scores. Done before the
+		// "completed" status flip so observers polling for completion never
+		// see a "completed" state while the cache invalidation is still
+		// pending -- this also makes the status flip a true end-of-goroutine
+		// signal for tests that join on it.
+		r.InvalidateHealthCache()
+
 		progress.mu.Lock()
 		progress.Status = "completed"
 		progress.mu.Unlock()
-
-		// Invalidate the health cache after bulk fixes complete so the next
-		// dashboard poll reflects the updated health scores.
-		r.InvalidateHealthCache()
 	}()
 }
