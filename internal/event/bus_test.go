@@ -161,12 +161,31 @@ func TestHandlerPanicRecovery(t *testing.T) {
 }
 
 func TestStopDrainsBuffer(t *testing.T) {
-	bus := NewBus(testLogger(), 16)
+	// Why N=16 and Stop-before-Start:
+	//
+	// Bus.Start's outer select races `case e := <-b.ch` against
+	// `case <-b.done`. With both ready, Go's select picks randomly each
+	// iteration. A 2-event version of this test could drain the buffer
+	// entirely through the outer ch path and never enter the inner drain
+	// loop -- so a regression that breaks the inner drain (e.g. Stop just
+	// returns without draining) would still let the test pass.
+	//
+	// Calling Stop *before* Start ensures done is closed when Start enters
+	// its select. Publishing N=16 events (matching the buffer size) makes
+	// the probability of the outer ch path winning all 16 iterations
+	// (1/2)^16 ~= 1.5e-5 -- effectively guaranteeing the inner drain path
+	// runs at least once. A regression that breaks the inner drain would
+	// produce count < 16 with overwhelming probability.
+	//
+	// True determinism would require restructuring Start to make the
+	// drain path the only post-Stop dispatch route. Out of scope here.
+	const N = 16
+	bus := NewBus(testLogger(), N)
 
 	var mu sync.Mutex
 	count := 0
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(N)
 
 	bus.Subscribe(ScanCompleted, func(_ Event) {
 		defer wg.Done()
@@ -175,21 +194,19 @@ func TestStopDrainsBuffer(t *testing.T) {
 		count++
 	})
 
-	// Publish before starting -- both events sit in the channel buffer.
-	bus.Publish(Event{Type: ScanCompleted})
-	bus.Publish(Event{Type: ScanCompleted})
+	// Fill the buffer before Start runs; Stop closes done while every event
+	// is still queued.
+	for range N {
+		bus.Publish(Event{Type: ScanCompleted})
+	}
+	bus.Stop()
 
 	go bus.Start()
-	// Call Stop without waiting for handlers first -- the test name promises
-	// that Stop itself drains buffered events. Calling waitOrFail BEFORE
-	// Stop would let this test pass even if Stop did nothing, since the
-	// dispatcher would have already drained the buffer on its own.
-	bus.Stop()
 	waitOrFail(t, &wg, "buffered events not drained after Stop within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()
-	if count != 2 {
-		t.Errorf("got %d events, want 2 (all drained)", count)
+	if count != N {
+		t.Errorf("got %d events, want %d (all drained)", count, N)
 	}
 }
