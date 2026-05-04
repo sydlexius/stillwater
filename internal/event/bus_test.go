@@ -100,11 +100,20 @@ func TestNoSubscribers(t *testing.T) {
 	go bus.Start()
 	defer bus.Stop()
 
-	// Publish must not panic when no subscribers are registered. With no
-	// handlers there is nothing to wait on -- the bus dispatch loop simply
-	// drops the event. The synchronous Publish call returning is the only
-	// signal we need; defer bus.Stop() drains the loop.
-	bus.Publish(Event{Type: ArtistNew})
+	// Publish must not panic and must not stall the dispatch loop when no
+	// subscribers are registered for the event type. Subscribe a sentinel
+	// handler on a *different* event type and publish that immediately
+	// after; events are processed in order, so the sentinel firing proves
+	// the dispatcher consumed the no-subscriber event without panicking
+	// or wedging.
+	var sentinel sync.WaitGroup
+	sentinel.Add(1)
+	bus.Subscribe(BulkCompleted, func(_ Event) { sentinel.Done() })
+
+	bus.Publish(Event{Type: ArtistNew}) // no subscribers
+	bus.Publish(Event{Type: BulkCompleted})
+
+	waitOrFail(t, &sentinel, "dispatcher did not process events past the no-subscriber publish within 1s")
 }
 
 func TestBufferFull(t *testing.T) {
@@ -171,11 +180,12 @@ func TestStopDrainsBuffer(t *testing.T) {
 	bus.Publish(Event{Type: ScanCompleted})
 
 	go bus.Start()
-	// Wait until both buffered events have been dispatched, then Stop. The
-	// wg signal is the contract: "both handlers ran". Bus.Stop() is then
-	// the synchronous drain barrier; no second wait needed.
-	waitOrFail(t, &wg, "buffered events not drained within 1s")
+	// Call Stop without waiting for handlers first -- the test name promises
+	// that Stop itself drains buffered events. Calling waitOrFail BEFORE
+	// Stop would let this test pass even if Stop did nothing, since the
+	// dispatcher would have already drained the buffer on its own.
 	bus.Stop()
+	waitOrFail(t, &wg, "buffered events not drained after Stop within 1s")
 
 	mu.Lock()
 	defer mu.Unlock()

@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan
 
 # Binary name
 BINARY=stillwater
