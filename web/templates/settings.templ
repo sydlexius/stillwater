@@ -6512,6 +6512,43 @@ templ updatesTabScript() {
 				return el ? el.checked : true;
 			})();
 
+			// computeApplyDisabled is the single source of truth for the Apply
+			// button's disabled state on every /status hydrate. It mirrors the
+			// server-side rejection paths in POST /api/v1/updates/apply
+			// (handlers_updater.go) so the UI never invites a click that can
+			// only return 403 or 409. Keeping the predicate centralised here
+			// (rather than inlined per render branch) prevents the recurring
+			// pattern where a new server-side rejection condition gets added
+			// or rediscovered and the per-branch checks fall out of sync.
+			//
+			// Server-side rejection map (must stay in lockstep):
+			//   - IsDocker:           422  -> NOT checked here; the Apply button
+			//                                 is not rendered at all in Docker
+			//                                 mode (server-side branch in the
+			//                                 updatesTab template), so applyBtn
+			//                                 is null and every caller already
+			//                                 guards on `if (applyBtn)`.
+			//   - GetConfig errors:   500  -> transient server error; not
+			//                                 reflected in /status payload, so
+			//                                 not gateable client-side.
+			//   - !cfg.Enabled:       403  -> persistedUpdatesEnabled.
+			//   - ErrAlreadyRunning:  409  -> d.state && d.state !== 'idle'.
+			//   - ErrRestartRequired: 409  -> d.restart_required.
+			//
+			// Plus two UX gates with no server analogue (the server would
+			// happily 200 a no-op apply, but a clickable button advertising
+			// "apply nothing" is just confusing):
+			//   - !d.update_available: nothing newer than the running build.
+			//   - !d.latest:           no successful check has populated a
+			//                          target version yet.
+			function computeApplyDisabled(d) {
+				if (!persistedUpdatesEnabled) return true;
+				if (!d.update_available || !d.latest) return true;
+				if (d.restart_required) return true;
+				if (d.state && d.state !== 'idle') return true;
+				return false;
+			}
+
 			function stopUpdaterPoll() {
 				if (updaterPollTimer !== null) {
 					clearInterval(updaterPollTimer);
@@ -6780,39 +6817,39 @@ templ updatesTabScript() {
 					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
 					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
 					var lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';
-					// Gate the Apply button on the persisted kill-switch state in
-					// addition to update_available: when the operator has saved
-					// Enabled=false, the server 403s POST /updates/apply, and a
-					// clickable button just yields a confusing toast on every
-					// hydrate (tab switch, popstate). Read the persisted value
-					// (last server-confirmed save) rather than the live
-					// #updates-enabled checkbox: a user who toggles the box but
-					// has not clicked Save would otherwise see Apply re-enabled
-					// here even though the server rejects the request.
+					// The latestEl branches below are display-only: they render
+					// the version pill / "up to date" / "not checked" copy. The
+					// Apply button's disabled state is computed from the full
+					// server-rejection mirror in computeApplyDisabled(d) and
+					// applied once after this block, so the per-branch render
+					// no longer has to worry about getting the gate right.
 					if (latestEl) {
 						if (d.latest) {
 							if (d.update_available) {
 								latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
 									+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
-								if (applyBtn) applyBtn.disabled = !persistedUpdatesEnabled;
 							} else {
 								latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
-								if (applyBtn) applyBtn.disabled = true;
 							}
 						} else if (!d.last_checked) {
 							// No check has ever succeeded: keep the server-rendered
 							// "Not checked" placeholder so the first /status hydrate
 							// does not blank it out.
 							latestEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 italic">' + escHtml(lblNotChecked) + '</span>';
-							if (applyBtn) applyBtn.disabled = true;
 						} else {
 							// Checked, but the current channel has no matching release
 							// (e.g. after switching to a channel with no builds yet).
 							// Leave blank rather than "Not checked" since the check did happen.
 							latestEl.textContent = '';
-							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
+					// Single canonical Apply gate. Mirrors POST /updates/apply's
+					// rejection paths via computeApplyDisabled (declared above
+					// with the server-side parity map). Setting this once after
+					// the display branches means a future server-side rejection
+					// condition only needs an update in computeApplyDisabled,
+					// not in N branches here.
+					if (applyBtn) applyBtn.disabled = computeApplyDisabled(d);
 					// Hydrate the release-notes link from /status so it is visible
 					// after a page reload or tab re-open without a manual check.
 					var relLinkRow = document.getElementById('updates-release-link-row');
