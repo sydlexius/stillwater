@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,6 +106,24 @@ func TestRenderTable_HeaderAndRows(t *testing.T) {
 	}
 }
 
+func TestRenderTable_EscapesPipesAndNewlines(t *testing.T) {
+	rows := []envRow{
+		{Name: "PIPE_VAR", Type: "string", Default: "`a|b`", Description: "Has a | pipe and\na newline."},
+	}
+	got := renderTable(rows)
+	if !strings.Contains(got, `\|b`) {
+		t.Errorf("pipe in default should be escaped; got:\n%s", got)
+	}
+	if !strings.Contains(got, "Has a \\| pipe and<br>a newline.") {
+		t.Errorf("pipe and newline in description should be escaped; got:\n%s", got)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {
+		if strings.Count(line, "|")-strings.Count(line, `\|`) != 5 {
+			t.Errorf("each row should have exactly 5 unescaped pipes; got line:\n%s", line)
+		}
+	}
+}
+
 func TestReplaceBetweenMarkers(t *testing.T) {
 	src := []byte("prefix\n" + beginMarker + "\nstale body\n" + endMarker + "\nsuffix\n")
 	out, err := replaceBetweenMarkers(src, beginMarker, endMarker, "fresh body")
@@ -128,5 +148,117 @@ func TestReplaceBetweenMarkers_MissingEnd(t *testing.T) {
 	_, err := replaceBetweenMarkers(src, beginMarker, endMarker, "body")
 	if err == nil {
 		t.Fatal("expected error when end marker is missing")
+	}
+}
+
+// writeFixtureDoc writes a docs file with the begin/end markers wrapping
+// stale body text, returns the path. Used by run() tests.
+func writeFixtureDoc(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env.md")
+	content := "intro\n" + beginMarker + "\n" + body + "\n" + endMarker + "\nfooter\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("seed fixture: %v", err)
+	}
+	return path
+}
+
+func TestRun_RewritesStaleContent(t *testing.T) {
+	path := writeFixtureDoc(t, "STALE TABLE")
+	if err := run(path, false); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "STALE TABLE") {
+		t.Errorf("stale body should be replaced; got:\n%s", got)
+	}
+	if !strings.Contains(string(got), "| Variable | Type | Default | Description |") {
+		t.Errorf("regenerated table header missing; got:\n%s", got)
+	}
+	if !strings.Contains(string(got), "intro\n") || !strings.Contains(string(got), "footer\n") {
+		t.Errorf("manual prose around markers should be preserved; got:\n%s", got)
+	}
+}
+
+func TestRun_NoChangeIsNoop(t *testing.T) {
+	path := writeFixtureDoc(t, "STALE")
+	if err := run(path, false); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infoBefore, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(path, false); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("second run should be a no-op")
+	}
+	infoAfter, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !infoBefore.ModTime().Equal(infoAfter.ModTime()) {
+		t.Logf("note: file mtime changed despite no content change (acceptable)")
+	}
+}
+
+func TestRun_CheckMode(t *testing.T) {
+	t.Run("stale errors", func(t *testing.T) {
+		path := writeFixtureDoc(t, "STALE")
+		err := run(path, true)
+		if err == nil {
+			t.Fatal("expected error in -check mode against stale file")
+		}
+		if !strings.Contains(err.Error(), "stale") {
+			t.Errorf("error should mention staleness; got: %v", err)
+		}
+	})
+	t.Run("fresh succeeds", func(t *testing.T) {
+		path := writeFixtureDoc(t, "STALE")
+		if err := run(path, false); err != nil {
+			t.Fatalf("seed regen: %v", err)
+		}
+		if err := run(path, true); err != nil {
+			t.Errorf("check mode should pass on fresh file; got: %v", err)
+		}
+	})
+}
+
+func TestRun_MissingFile(t *testing.T) {
+	err := run(filepath.Join(t.TempDir(), "does-not-exist.md"), false)
+	if err == nil {
+		t.Fatal("expected error when output path does not exist")
+	}
+	if !strings.Contains(err.Error(), "read") {
+		t.Errorf("error should mention read failure; got: %v", err)
+	}
+}
+
+func TestRun_MissingMarkers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env.md")
+	if err := os.WriteFile(path, []byte("no markers here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := run(path, false)
+	if err == nil {
+		t.Fatal("expected error when markers are absent")
+	}
+	if !strings.Contains(err.Error(), "marker") {
+		t.Errorf("error should mention marker; got: %v", err)
 	}
 }

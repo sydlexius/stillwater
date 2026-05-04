@@ -25,7 +25,8 @@ type Config struct {
 //
 // Struct tags drive the env-var reference codegen in cmd/gen-env-reference:
 //   - env:  the environment variable name (SW_*)
-//   - desc: a single-sentence user-facing description
+//   - desc: a concise user-facing description (one or two sentences); a second
+//     sentence is acceptable when it captures a constraint or runtime caveat
 //   - default: rendered default; "unset" or "" when there is no default
 type ServerConfig struct {
 	Port            int    `yaml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
@@ -179,7 +180,7 @@ func (c *Config) loadFromEnv() {
 			c.Backup.IntervalHours = n
 		}
 	}
-	if v := os.Getenv("SW_BACKUP_ENABLED"); v != "" {
+	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok {
 		c.Backup.Enabled = v == "true" || v == "1"
 	}
 	if v := os.Getenv("SW_LOG_LEVEL"); v != "" {

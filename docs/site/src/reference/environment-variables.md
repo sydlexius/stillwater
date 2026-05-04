@@ -1,5 +1,5 @@
 ---
-description: Every SW_ environment variable Stillwater honors at startup, with defaults and YAML field equivalents.
+description: Every SW_ environment variable Stillwater honors at startup, with types, defaults, and descriptions.
 ---
 
 <!-- code: internal/config/config.go (Default, loadFromEnv, validate, Config struct hierarchy), cmd/stillwater/main.go (SW_CONFIG_PATH usage). Verified against main at the time of drafting. -->

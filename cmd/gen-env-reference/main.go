@@ -185,9 +185,24 @@ func renderTable(rows []envRow) string {
 	b.WriteString("| Variable | Type | Default | Description |\n")
 	b.WriteString("|---|---|---|---|\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", r.Name, r.Type, r.Default, r.Description)
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n",
+			escapeMarkdownCell(r.Name),
+			escapeMarkdownCell(r.Type),
+			escapeMarkdownCell(r.Default),
+			escapeMarkdownCell(r.Description),
+		)
 	}
 	return b.String()
+}
+
+// escapeMarkdownCell sanitizes a string for use inside a Markdown table cell.
+// Pipes break the column boundary; newlines break the row boundary. Codegen
+// is the only place that enforces table integrity for arbitrary desc/default
+// content, so this helper runs over every cell unconditionally.
+func escapeMarkdownCell(s string) string {
+	s = strings.ReplaceAll(s, "|", `\|`)
+	s = strings.ReplaceAll(s, "\n", "<br>")
+	return s
 }
 
 // replaceBetweenMarkers returns src with the region between begin and end
