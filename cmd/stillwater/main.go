@@ -364,6 +364,48 @@ func run() error {
 	// Initialize self-update service
 	updaterService := updater.NewService(db, logger)
 
+	// Apply persisted SW_BASE_PATH override from settings (#1005). The env
+	// var still wins: when SW_BASE_PATH is set, BasePathFromEnv is true and
+	// we leave the value alone so operator-managed deployments stay
+	// deterministic. Otherwise the saved override (if any) replaces the
+	// YAML/default value before the router is built; the HTTP mux is wired
+	// from this value at startup and cannot rebind on the fly, so the UI
+	// surfaces a "restart required" banner after a save.
+	if !cfg.Server.BasePathFromEnv {
+		if override := getDBStringSetting(db, context.Background(), "server.base_path", ""); override != "" {
+			normalized := strings.TrimRight(override, "/")
+			if normalized == "/" {
+				normalized = ""
+			}
+			// Validate before applying. The HTTP mux composes routes as
+			// basePath+"/api/v1/..." so a malformed override (missing
+			// leading "/") would poison every route pattern and the
+			// process would fail to start with an opaque mux error.
+			// Warn-and-ignore so a corrupt persisted value cannot lock
+			// operators out -- they can repair it via SW_BASE_PATH env or
+			// by editing the settings table directly.
+			//
+			// The persisted value reaches mux pattern composition without a
+			// second pass through the API handler's charset filter, so this
+			// loader must reject the same things directly: a missing leading
+			// "/", a leading "//" or "/\\" (CodeQL "bad redirect check" --
+			// schema-relative URLs and Windows-style separators that could
+			// be reflected back in router/redirect contexts), and any
+			// character outside the API-validated set. The empty string is
+			// the canonical "no override" sentinel and is allowed through.
+			if normalized != "" && !isValidPersistedBasePath(normalized) {
+				logger.Warn("ignoring invalid persisted base_path override",
+					"override", override,
+					"reason", "must start with single \"/\" and contain only letters, digits, hyphens, underscores, and slashes",
+				)
+			} else if normalized != cfg.Server.BasePath {
+				logger.Info("applying persisted base_path override",
+					"previous", cfg.Server.BasePath, "override", normalized)
+				cfg.Server.BasePath = normalized
+			}
+		}
+	}
+
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
@@ -614,6 +656,13 @@ func run() error {
 	if ruleScheduler != nil {
 		go ruleScheduler.Start(ctx, time.Duration(ruleScheduleMinutes)*time.Minute)
 	}
+
+	// Start updater background scheduler. The loop respects the persisted
+	// updater.enabled / updater.auto_check toggles on each tick, so an admin
+	// who toggles auto-check from the Settings UI sees the next tick honor
+	// the new value without a restart. The cadence is also reread per tick
+	// so changing check_interval_hours takes effect on the very next cycle.
+	go updaterService.StartScheduler(ctx)
 
 	// Start filesystem watcher for libraries with fs_watch enabled
 	{
@@ -1047,6 +1096,34 @@ func getDBBoolSetting(db *sql.DB, key string, fallback bool) bool {
 		return fallback
 	}
 	return v == "true" || v == "1"
+}
+
+// isValidPersistedBasePath mirrors the API handler's server.base_path
+// validation (handlers_settings.go) so a value loaded from the settings
+// table at boot is held to the same rules a fresh PUT would have to pass.
+// The persisted value is composed directly into mux route patterns and may
+// surface in router-side redirect contexts, so a leading "//" or "/\\"
+// (CodeQL "bad redirect check") and unexpected characters must be refused
+// rather than warn-and-applied. Caller is responsible for stripping the
+// trailing slash and treating "" as "no override"; this function assumes
+// the input has at least one character.
+func isValidPersistedBasePath(s string) bool {
+	if !strings.HasPrefix(s, "/") {
+		return false
+	}
+	if len(s) >= 2 && (s[1] == '/' || s[1] == '\\') {
+		return false
+	}
+	for _, c := range s {
+		ok := (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '/'
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // getDBIntSetting reads an integer setting directly from the database.

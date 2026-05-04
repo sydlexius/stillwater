@@ -12,6 +12,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -440,8 +441,10 @@ func webhookScheme(baseURL string, req *http.Request) string {
 // If the updater service is nil (e.g. in tests), it returns sensible defaults.
 func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabData {
 	data := templates.UpdatesTabData{
-		CurrentVersion: version.Version,
-		Channel:        "stable",
+		CurrentVersion:     version.Version,
+		Channel:            "stable",
+		Enabled:            true,
+		CheckIntervalHours: updater.DefaultCheckIntervalHours,
 	}
 
 	if r.updaterService == nil {
@@ -455,7 +458,9 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 		r.logger.Warn("loading updater config for settings page", "error", err)
 	} else {
 		data.Channel = string(cfg.Channel)
+		data.Enabled = cfg.Enabled
 		data.AutoCheck = cfg.AutoCheck
+		data.CheckIntervalHours = cfg.CheckIntervalHours
 	}
 
 	status := r.updaterService.Status()

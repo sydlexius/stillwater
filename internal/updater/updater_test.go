@@ -1483,6 +1483,169 @@ func containsAll(s string, subs ...string) bool {
 	return true
 }
 
+// TestGetConfigDefaultsForNewFields covers the defaults exposed by GetConfig
+// when the new keys (#1117) are absent from the settings table. A fresh
+// install must look "enabled, manual-check, 24h cadence" so existing users
+// are not silently muted by a new field.
+func TestGetConfigDefaultsForNewFields(t *testing.T) {
+	svc := buildTestService(t)
+	cfg, err := svc.GetConfig(context.Background())
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Error("default Enabled should be true")
+	}
+	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("default CheckIntervalHours = %d, want %d",
+			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
+// TestSetConfigPersistsAllFields covers the round-trip of every new knob:
+// Enabled and CheckIntervalHours must survive a SetConfig + GetConfig pair
+// so the UI can rely on values it just saved being read back. AutoUpdate
+// is intentionally not in this PR (see #1284 for the auto-Apply work).
+func TestSetConfigPersistsAllFields(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	want := Config{
+		Channel:            ChannelPrerelease,
+		Enabled:            false,
+		AutoCheck:          true,
+		CheckIntervalHours: 6,
+	}
+	if err := svc.SetConfig(ctx, want); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	got, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.Channel != want.Channel {
+		t.Errorf("Channel = %q, want %q", got.Channel, want.Channel)
+	}
+	if got.Enabled != want.Enabled {
+		t.Errorf("Enabled = %v, want %v", got.Enabled, want.Enabled)
+	}
+	if got.AutoCheck != want.AutoCheck {
+		t.Errorf("AutoCheck = %v, want %v", got.AutoCheck, want.AutoCheck)
+	}
+	if got.CheckIntervalHours != want.CheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want %d",
+			got.CheckIntervalHours, want.CheckIntervalHours)
+	}
+}
+
+// TestSetConfigCoercesZeroInterval verifies that a zero CheckIntervalHours
+// is silently coerced to the default rather than rejected. Older clients and
+// the API handler test fixtures predate this field; coercion keeps them
+// from breaking.
+func TestSetConfigCoercesZeroInterval(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	if err := svc.SetConfig(ctx, Config{Channel: ChannelStable, CheckIntervalHours: 0}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	got, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want default %d",
+			got.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
+// TestSetConfigRejectsNegativeInterval verifies the error path so an explicit
+// garbage write (negative hours) is not silently coerced.
+//
+// The message check pins SetConfig to the specific check_interval_hours
+// validation: a future regression that fails the call for any other reason
+// (DB error during persist, unrelated coercion bug) would still produce a
+// non-nil error and silently pass an `err != nil`-only assertion. Asserting
+// the substring `check_interval_hours must be >=` keeps the test honest.
+func TestSetConfigRejectsNegativeInterval(t *testing.T) {
+	svc := buildTestService(t)
+	err := svc.SetConfig(context.Background(), Config{Channel: ChannelStable, CheckIntervalHours: -1})
+	if err == nil {
+		t.Fatal("expected error for negative CheckIntervalHours")
+	}
+	if !strings.Contains(err.Error(), "check_interval_hours must be >=") {
+		t.Fatalf("unexpected error for negative CheckIntervalHours: %v", err)
+	}
+}
+
+// TestGetConfigRecoversFromCorruptSettings exercises the recovery path for
+// malformed values in the settings table. A direct out-of-band INSERT (or a
+// failed migration that left junk behind) must not silently flip the kill
+// switch off or reset the check cadence to zero. GetConfig now parses Enabled
+// and AutoCheck via strconv.ParseBool, and CheckIntervalHours via strconv.Atoi
+// with a MinCheckIntervalHours floor; an unparsable value preserves the
+// in-memory default and emits a Warn rather than aborting GetConfig or
+// adopting the bad value verbatim.
+func TestGetConfigRecoversFromCorruptSettings(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed each new key with a value that the strict parsers reject. Strings
+	// like "TRUE" / "1" / "0" would parse cleanly via ParseBool and exercise
+	// the success path, not the recovery branch -- pick deliberately
+	// nonsensical values so the test actually proves default-preservation.
+	for _, kv := range []struct{ k, v string }{
+		{SettingEnabled, "not-a-bool"},
+		{SettingAutoCheck, "also-bad"},
+		{SettingCheckIntervalHours, "zero-ish"},
+	} {
+		if _, err := svc.db.ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
+			kv.k, kv.v, now); err != nil {
+			t.Fatalf("seed %s: %v", kv.k, err)
+		}
+	}
+
+	cfg, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig should recover, not error, on malformed settings: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Error("Enabled = false, want default true (kill-switch must not flip on malformed stored value)")
+	}
+	if cfg.AutoCheck {
+		t.Error("AutoCheck = true, want default false")
+	}
+	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want default %d",
+			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+}
+
+// TestStartSchedulerStopsOnContextCancel verifies the scheduler exits
+// promptly when its context is canceled. Without a working stop path the
+// goroutine would leak across process shutdowns.
+func TestStartSchedulerStopsOnContextCancel(t *testing.T) {
+	svc := buildTestService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		svc.StartScheduler(ctx)
+		close(done)
+	}()
+
+	// Give the scheduler a moment to enter the select{} loop, then cancel.
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+		// Good: returned after cancel.
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartScheduler did not return after context cancel")
+	}
+}
+
 // rewriteHostTransport rewrites all request URLs to point at a specific base
 // server, regardless of the original host. Used in tests to intercept GitHub
 // API calls without DNS overrides.

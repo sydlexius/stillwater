@@ -69,14 +69,16 @@ type SettingsData struct {
 
 // UpdatesTabData holds the data for the Updates settings tab.
 type UpdatesTabData struct {
-	CurrentVersion  string // Running binary version (from version.Version)
-	Channel         string // "stable" | "prerelease" | "nightly"
-	AutoCheck       bool
-	IsDocker        bool   // When true, hide binary apply controls
-	LastChecked     string // RFC 3339 or empty
-	LatestVersion   string // Latest version from last check (may be empty if not yet checked)
-	UpdateAvailable bool
-	ReleaseURL      string
+	CurrentVersion     string // Running binary version (from version.Version)
+	Channel            string // "stable" | "prerelease" | "nightly"
+	Enabled            bool   // Top-level updater kill switch
+	AutoCheck          bool
+	CheckIntervalHours int    // Background auto-check cadence; minimum 1
+	IsDocker           bool   // When true, hide binary apply controls
+	LastChecked        string // RFC 3339 or empty
+	LatestVersion      string // Latest version from last check (may be empty if not yet checked)
+	UpdateAvailable    bool
+	ReleaseURL         string
 	// RestartRequired is true after a successful Apply replaced the on-disk
 	// binary in this process's lifetime. When true, the Updates tab renders a
 	// persistent "Update installed -- restart to finish" banner instead of
@@ -532,6 +534,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsTabScript()
 		@platformDebugToggleScript()
 		@symlinkToggleScript()
+		@basePathSaveScript()
 		@settingsLibraryScript()
 		@settingsConnectionScript()
 		@connectionFeatureToggleScript()
@@ -662,7 +665,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				}
-				<!-- Base Path -->
+				<!-- Base Path. Editable when SW_BASE_PATH env var is unset (the
+				     env value wins to keep operator-managed deployments stable);
+				     read-only with an amber caption otherwise. Saves go through
+				     PUT /api/v1/settings under the "server.base_path" key and
+				     surface a shared restart-required banner because the HTTP
+				     mux is wired at startup and cannot rebind on the fly. -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">{ t(ctx, "settings.base_path.title") }</h2>
@@ -670,30 +678,104 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							{ t(ctx, "settings.base_path.description") }
 						</p>
 					</div>
-					<div class="px-6 py-4 space-y-2">
-						<label for="base-path-field" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+					<!-- Hidden element carrying translated client-side validation
+					     and save-error strings for basePathSaveScript. The JS
+					     reads these via dataset.* rather than embedding raw
+					     English, mirroring the #updates-i18n pattern used by the
+					     Updates tab. -->
+					<div
+						id="base-path-i18n"
+						class="hidden"
+						data-error-must-start-slash={ t(ctx, "settings.base_path.error_must_start_slash") }
+						data-error-must-not-end-slash={ t(ctx, "settings.base_path.error_must_not_end_slash") }
+						data-error-protocol-relative={ t(ctx, "settings.base_path.error_protocol_relative") }
+						data-error-charset={ t(ctx, "settings.base_path.error_charset") }
+						data-error-save-failed={ t(ctx, "settings.base_path.error_save_failed") }
+						data-error-network={ t(ctx, "settings.base_path.error_network") }
+					></div>
+					<div class="px-6 py-4 space-y-3">
+						<label id="base-path-field-label" for="base-path-field" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 							SW_BASE_PATH
 						</label>
-						<input
-							type="text"
-							id="base-path-field"
-							aria-label="Base path"
-							class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 cursor-not-allowed"
-							if data.BasePath != "" {
-								value={ data.BasePath }
-							} else {
-								value="/"
-							}
-							readonly
-						/>
 						if data.BasePathEnvOverride {
-							<p class="text-xs text-amber-600 dark:text-amber-400">
+							<input
+								type="text"
+								id="base-path-field"
+								aria-labelledby="base-path-field-label"
+								aria-describedby="base-path-env-override-desc"
+								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 cursor-not-allowed"
+								if data.BasePath != "" {
+									value={ data.BasePath }
+								} else {
+									value="/"
+								}
+								readonly
+							/>
+							<p id="base-path-env-override-desc" class="text-xs text-amber-600 dark:text-amber-400">
 								{ t(ctx, "settings.base_path.env_override") }
 							</p>
 						} else {
-							<p class="text-xs text-gray-500 dark:text-gray-400">
+							<input
+								type="text"
+								id="base-path-field"
+								aria-labelledby="base-path-field-label"
+								aria-describedby="base-path-config-desc base-path-error base-path-restart-banner"
+								placeholder="/"
+								pattern="^/(?:[a-zA-Z0-9_\-]+(?:/[a-zA-Z0-9_\-]+)*)?$"
+								class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								if data.BasePath != "" {
+									value={ data.BasePath }
+								} else {
+									value="/"
+								}
+							/>
+							<p id="base-path-config-desc" class="text-xs text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.base_path.config_hint") }
 							</p>
+							<div class="flex items-center justify-end gap-2 pt-1">
+								<button
+									type="button"
+									id="base-path-save-btn"
+									onclick="saveBasePath()"
+									class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+								>
+									{ t(ctx, "actions.save") }
+								</button>
+							</div>
+							<!-- Shared restart-required banner. Hidden by default;
+							     the save handler removes "hidden" on a successful
+							     PUT. The data-restart-required-banner attribute is
+							     load-bearing: future settings that also require a
+							     restart can target the same banner CSS class
+							     (".sw-restart-required-banner") to share one
+							     visual element across the General tab. -->
+							<div
+								id="base-path-restart-banner"
+								class="sw-restart-required-banner hidden mt-2 rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+								data-restart-required-banner="server.base_path"
+							>
+								<div class="flex items-start gap-3">
+									<svg class="mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+									</svg>
+									<div class="flex-1 text-sm">
+										<div class="font-semibold text-amber-800 dark:text-amber-200">
+											{ t(ctx, "settings.base_path.restart_required_title") }
+										</div>
+										<div class="mt-1 text-amber-700 dark:text-amber-300">
+											{ t(ctx, "settings.base_path.restart_required_body") }
+										</div>
+									</div>
+								</div>
+							</div>
+							<div
+								id="base-path-error"
+								class="hidden mt-2 text-sm text-red-600 dark:text-red-400"
+								role="alert"
+							></div>
 						}
 					</div>
 				</div>
@@ -2866,6 +2948,118 @@ templ symlinkToggleScript() {
 				}
 			});
 		}
+	</script>
+}
+
+// basePathSaveScript persists the editable SW_BASE_PATH override and reveals
+// the shared restart-required banner on success. Validation mirrors the API
+// (must start with "/", no trailing "/", alphanumerics + hyphen + underscore
+// + slash) so the user gets immediate feedback rather than waiting for the
+// 400 round-trip.
+templ basePathSaveScript() {
+	<script>
+		(function() {
+			window.saveBasePath = function() {
+				var input = document.getElementById('base-path-field');
+				var banner = document.getElementById('base-path-restart-banner');
+				var errEl = document.getElementById('base-path-error');
+				var i18n = document.getElementById('base-path-i18n');
+				if (!input) return;
+				var val = (input.value || '').trim();
+
+				// Translated strings sourced from the hidden #base-path-i18n
+				// element. English fallbacks are kept so the validator still
+				// reports something useful if the i18n element is absent
+				// (older cached templ render, JS exposed on a non-General
+				// page, etc.) rather than crashing on a null dataset read.
+				var ds = (i18n && i18n.dataset) || {};
+				var msgStart = ds.errorMustStartSlash || 'Base path must start with "/".';
+				var msgEnd = ds.errorMustNotEndSlash || 'Base path must not end with "/".';
+				var msgProtocolRelative = ds.errorProtocolRelative || 'Base path must not start with "//" or "/\\".';
+				var msgCharset = ds.errorCharset || 'Base path may only contain letters, numbers, hyphens, underscores, and slashes.';
+				var msgSaveFailed = ds.errorSaveFailed || 'Save failed.';
+				var msgNetwork = ds.errorNetwork || 'Network error.';
+
+				// Normalise: an empty input is treated as the root "/" so the
+				// PUT body always carries an explicit, meaningful value. The
+				// server-side validator then trims any trailing slash and
+				// stores the canonical form (empty string for root, leading
+				// slash preserved for any other prefix).
+				if (val === '') {
+					val = '/';
+				}
+
+				function showError(msg) {
+					if (errEl) {
+						errEl.textContent = msg;
+						errEl.classList.remove('hidden');
+					}
+					if (banner) banner.classList.add('hidden');
+				}
+
+				if (val[0] !== '/') {
+					showError(msgStart);
+					return;
+				}
+				// Mirror the server's isValidPersistedBasePath: a second
+				// character of "/" or "\\" is rejected to refuse protocol-
+				// relative-style and Windows-separator-prefixed values that
+				// would otherwise pass the leading-slash test, save
+				// successfully, and silently fail to take effect on next
+				// process restart.
+				if (val.length > 1 && (val.charAt(1) === '/' || val.charAt(1) === '\\')) {
+					showError(msgProtocolRelative);
+					return;
+				}
+				if (val.length > 1 && val.charAt(val.length - 1) === '/') {
+					showError(msgEnd);
+					return;
+				}
+				if (!/^\/(?:[a-zA-Z0-9_\-]+(?:\/[a-zA-Z0-9_\-]+)*)?$/.test(val)) {
+					showError(msgCharset);
+					return;
+				}
+
+				var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+				var csrfToken = document.cookie.replace(
+					/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+				);
+
+				fetch(bp + '/api/v1/settings', {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': csrfToken
+					},
+					body: JSON.stringify({'server.base_path': val}),
+					credentials: 'same-origin'
+				}).then(function(r) {
+					if (!r.ok) {
+						return r.json().catch(function() { return {error: msgSaveFailed}; })
+							.then(function(j) {
+								showError(j.error || msgSaveFailed);
+							});
+					}
+					// Reflect the normalized value back into the field so the
+					// user sees what was persisted. Without this, clearing the
+					// input and clicking Save persists "/" but leaves the
+					// control visually blank until the next page load.
+					input.value = val;
+					if (errEl) {
+						errEl.classList.add('hidden');
+						errEl.textContent = '';
+					}
+					if (banner) banner.classList.remove('hidden');
+				}).catch(function() {
+					// Prefer the localized message; the browser-provided
+					// err.message is always English (e.g. "Failed to fetch")
+					// and would shadow the translated copy on every locale.
+					// English fallback is already handled when msgNetwork is
+					// derived from #base-path-i18n with a default.
+					showError(msgNetwork);
+				});
+			};
+		})();
 	</script>
 }
 
@@ -5920,6 +6114,32 @@ templ apiTokenScript() {
 	</script>
 }
 
+// updaterIntervalOption renders one <option> for the check-interval select.
+// The selected attribute is set when value matches the currently-stored
+// CheckIntervalHours so the dropdown reflects persisted state on page load.
+templ updaterIntervalOption(value, current int, label string) {
+	if value == current {
+		<option value={ strconv.Itoa(value) } selected>{ label }</option>
+	} else {
+		<option value={ strconv.Itoa(value) }>{ label }</option>
+	}
+}
+
+// isKnownInterval reports whether v matches one of the enum values rendered
+// by the check-interval <select>. When the persisted CheckIntervalHours is
+// outside this set (e.g., set via direct API call to a custom cadence), the
+// template renders a sentinel "(custom)" option so a Save without explicit
+// interval change does not silently overwrite the persisted value with the
+// browser's first-option fallback.
+func isKnownInterval(v int) bool {
+	switch v {
+	case 1, 6, 12, 24, 168:
+		return true
+	default:
+		return false
+	}
+}
+
 // settingsUpdatesTab renders the Updates tab content.
 templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	// Hidden element carrying translated labels for the updater JS.
@@ -6076,12 +6296,23 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 			</div>
 		</div>
 	</div>
-	<!-- Channel and auto-check settings -->
+	<!-- Channel, scheduler, and apply-mode settings -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config_title") }</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config_desc") }</p>
 		</div>
 		<div class="px-6 py-4 space-y-5">
+			<!-- Top-level Enabled toggle -->
+			<div class="flex items-center justify-between gap-4">
+				@components.Toggle(
+					"updates-enabled",
+					"updates_enabled",
+					data.Enabled,
+					t(ctx, "settings.updates.enabled"),
+					t(ctx, "settings.updates.enabled_desc"),
+				)
+			</div>
 			<!-- Channel selector -->
 			<div class="flex items-center justify-between gap-4">
 				<div>
@@ -6106,6 +6337,33 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					t(ctx, "settings.updates.auto_check"),
 					t(ctx, "settings.updates.auto_check_desc"),
 				)
+			</div>
+			<!-- Check interval selector. The select is a fixed enum to keep
+			     the UI simple and keep the request payload small; the API
+			     accepts any integer >= 1, so power users can hit the
+			     endpoint directly for non-listed cadences. If the persisted
+			     CheckIntervalHours is not in the enum, a "(custom)" option
+			     is rendered so Save does not silently overwrite it with the
+			     browser's first-option fallback. -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<label for="updates-check-interval" class="block text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.check_interval") }</label>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.check_interval_desc") }</div>
+				</div>
+				<select
+					id="updates-check-interval"
+					name="updates_check_interval"
+					class="block w-44 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					if !isKnownInterval(data.CheckIntervalHours) {
+						<option value={ strconv.Itoa(data.CheckIntervalHours) } selected>{ tf(ctx, "settings.updates.interval_custom", data.CheckIntervalHours) }</option>
+					}
+					@updaterIntervalOption(1, data.CheckIntervalHours, t(ctx, "settings.updates.interval_1h"))
+					@updaterIntervalOption(6, data.CheckIntervalHours, t(ctx, "settings.updates.interval_6h"))
+					@updaterIntervalOption(12, data.CheckIntervalHours, t(ctx, "settings.updates.interval_12h"))
+					@updaterIntervalOption(24, data.CheckIntervalHours, t(ctx, "settings.updates.interval_24h"))
+					@updaterIntervalOption(168, data.CheckIntervalHours, t(ctx, "settings.updates.interval_7d"))
+				</select>
 			</div>
 			<!-- Save button -->
 			<div class="flex justify-end pt-2">
@@ -6138,7 +6396,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					type="button"
 					id="updates-apply-btn"
 					onclick="applyUpdate()"
-					disabled?={ !data.UpdateAvailable || data.RestartRequired }
+					disabled?={ !data.Enabled || !data.UpdateAvailable || data.RestartRequired }
 					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
 				>
 					{ t(ctx, "settings.updates.apply_update") }
@@ -6236,6 +6494,61 @@ templ updatesTabScript() {
 			// otherwise stack multiple intervals, each racing to clear state.
 			var updaterPollTimer = null;
 
+			// persistedUpdatesEnabled tracks the last server-confirmed value of
+			// the updater kill switch. The Apply button must be gated on this
+			// rather than the live #updates-enabled checkbox state, because POST
+			// /api/v1/updates/apply is enforced from the persisted config: if
+			// the user toggles the checkbox without clicking Save, the server
+			// still 403s an Apply request, but a checkbox-driven gate would
+			// happily re-enable the button on the next /status hydrate.
+			//
+			// Seeded at script load from the server-rendered checkbox state
+			// (which IS the persisted value at render time), then updated only
+			// when saveUpdaterConfig completes successfully. Defaults to true
+			// when the checkbox is absent so the prior behaviour holds for
+			// hydrate paths that fire before the form has fully rendered.
+			var persistedUpdatesEnabled = (function() {
+				var el = document.getElementById('updates-enabled');
+				return el ? el.checked : true;
+			})();
+
+			// computeApplyDisabled is the single source of truth for the Apply
+			// button's disabled state on every /status hydrate. It mirrors the
+			// server-side rejection paths in POST /api/v1/updates/apply
+			// (handlers_updater.go) so the UI never invites a click that can
+			// only return 403 or 409. Keeping the predicate centralised here
+			// (rather than inlined per render branch) prevents the recurring
+			// pattern where a new server-side rejection condition gets added
+			// or rediscovered and the per-branch checks fall out of sync.
+			//
+			// Server-side rejection map (must stay in lockstep):
+			//   - IsDocker:           422  -> NOT checked here; the Apply button
+			//                                 is not rendered at all in Docker
+			//                                 mode (server-side branch in the
+			//                                 updatesTab template), so applyBtn
+			//                                 is null and every caller already
+			//                                 guards on `if (applyBtn)`.
+			//   - GetConfig errors:   500  -> transient server error; not
+			//                                 reflected in /status payload, so
+			//                                 not gateable client-side.
+			//   - !cfg.Enabled:       403  -> persistedUpdatesEnabled.
+			//   - ErrAlreadyRunning:  409  -> d.state && d.state !== 'idle'.
+			//   - ErrRestartRequired: 409  -> d.restart_required.
+			//
+			// Plus two UX gates with no server analogue (the server would
+			// happily 200 a no-op apply, but a clickable button advertising
+			// "apply nothing" is just confusing):
+			//   - !d.update_available: nothing newer than the running build.
+			//   - !d.latest:           no successful check has populated a
+			//                          target version yet.
+			function computeApplyDisabled(d) {
+				if (!persistedUpdatesEnabled) return true;
+				if (!d.update_available || !d.latest) return true;
+				if (d.restart_required) return true;
+				if (d.state && d.state !== 'idle') return true;
+				return false;
+			}
+
 			function stopUpdaterPoll() {
 				if (updaterPollTimer !== null) {
 					clearInterval(updaterPollTimer);
@@ -6314,13 +6627,20 @@ templ updatesTabScript() {
 				if (checkBtn) checkBtn.disabled = true;
 			}
 
-			// saveUpdaterConfig persists channel + auto_check.
+			// saveUpdaterConfig persists channel + enabled + auto-check + interval.
 			// Read the checked radio, not the first radio, or Save always sends "stable".
 			window.saveUpdaterConfig = function() {
 				var channelEl = document.querySelector('[name="updates_channel"]:checked');
+				var enabledEl = document.getElementById('updates-enabled');
 				var autoEl = document.getElementById('updates-auto-check');
+				var intervalEl = document.getElementById('updates-check-interval');
 				var channel = channelEl ? channelEl.value : 'stable';
+				var enabled = enabledEl ? enabledEl.checked : true;
 				var autoCheck = autoEl ? autoEl.checked : false;
+				var interval = intervalEl ? parseInt(intervalEl.value, 10) : 24;
+				if (!interval || interval < 1) {
+					interval = 24;
+				}
 
 				fetch(updBp + '/api/v1/updates/config', {
 					method: 'PUT',
@@ -6328,13 +6648,24 @@ templ updatesTabScript() {
 						'Content-Type': 'application/json',
 						'X-CSRF-Token': getCSRFToken()
 					},
-					body: JSON.stringify({channel: channel, auto_check: autoCheck})
+					body: JSON.stringify({
+						channel: channel,
+						enabled: enabled,
+						auto_check: autoCheck,
+						check_interval_hours: interval
+					})
 				})
 				.then(function(resp) {
 					if (!resp.ok) return throwFromResponse(resp, 'save failed');
 					return resp.json();
 				})
 				.then(function() {
+					// Save succeeded: the value the user just submitted is now the
+					// persisted state, so the Apply gate (consulted by the upcoming
+					// fetchAndPopulateUpdateStatus call) reflects the correct
+					// server-side authority on the next hydrate.
+					persistedUpdatesEnabled = enabled;
+
 					// Channel changes can invalidate the cached latest/release_url
 					// (new channel may have no matching release), so re-hydrate the
 					// updater UI from /status immediately. fetchAndPopulateUpdateStatus
@@ -6486,30 +6817,39 @@ templ updatesTabScript() {
 					var lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';
 					var lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';
 					var lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';
+					// The latestEl branches below are display-only: they render
+					// the version pill / "up to date" / "not checked" copy. The
+					// Apply button's disabled state is computed from the full
+					// server-rejection mirror in computeApplyDisabled(d) and
+					// applied once after this block, so the per-branch render
+					// no longer has to worry about getting the gate right.
 					if (latestEl) {
 						if (d.latest) {
 							if (d.update_available) {
 								latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
 									+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
-								if (applyBtn) applyBtn.disabled = false;
 							} else {
 								latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
-								if (applyBtn) applyBtn.disabled = true;
 							}
 						} else if (!d.last_checked) {
 							// No check has ever succeeded: keep the server-rendered
 							// "Not checked" placeholder so the first /status hydrate
 							// does not blank it out.
 							latestEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 italic">' + escHtml(lblNotChecked) + '</span>';
-							if (applyBtn) applyBtn.disabled = true;
 						} else {
 							// Checked, but the current channel has no matching release
 							// (e.g. after switching to a channel with no builds yet).
 							// Leave blank rather than "Not checked" since the check did happen.
 							latestEl.textContent = '';
-							if (applyBtn) applyBtn.disabled = true;
 						}
 					}
+					// Single canonical Apply gate. Mirrors POST /updates/apply's
+					// rejection paths via computeApplyDisabled (declared above
+					// with the server-side parity map). Setting this once after
+					// the display branches means a future server-side rejection
+					// condition only needs an update in computeApplyDisabled,
+					// not in N branches here.
+					if (applyBtn) applyBtn.disabled = computeApplyDisabled(d);
 					// Hydrate the release-notes link from /status so it is visible
 					// after a page reload or tab re-open without a manual check.
 					var relLinkRow = document.getElementById('updates-release-link-row');

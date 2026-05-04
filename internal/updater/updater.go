@@ -12,8 +12,14 @@
 //     container-appropriate re-pull instructions instead.
 //
 // Config keys stored in the settings table:
-//   - updater.channel:    "stable" | "prerelease" | "nightly"  (default: "stable")
-//   - updater.auto_check: "true" | "false"                     (default: "false")
+//   - updater.channel:              "stable" | "prerelease" | "nightly"  (default: "stable")
+//   - updater.enabled:              "true" | "false"                     (default: "true")
+//   - updater.auto_check:           "true" | "false"                     (default: "false")
+//   - updater.check_interval_hours: integer string, minimum 1            (default: "24")
+//
+// Auto-Apply (automatic install on the non-Docker path) is intentionally
+// omitted: it requires a confirmation flow, last-applied status display, and
+// a skip-this-version affordance to be responsible to ship. Tracked as #1284.
 package updater
 
 import (
@@ -35,6 +41,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,9 +53,24 @@ import (
 
 // settingKey constants for the settings KV table.
 const (
-	SettingChannel   = "updater.channel"
-	SettingAutoCheck = "updater.auto_check"
+	SettingChannel            = "updater.channel"
+	SettingEnabled            = "updater.enabled"
+	SettingAutoCheck          = "updater.auto_check"
+	SettingCheckIntervalHours = "updater.check_interval_hours"
 )
+
+// MinCheckIntervalHours is the floor for the background auto-check cadence.
+// A 1h floor prevents users from accidentally hammering the GitHub Releases
+// API (60 requests/hour from a single host is well under the 60/hr unauth
+// rate limit, but tighter intervals would risk rate-limit responses for
+// no real benefit).
+const MinCheckIntervalHours = 1
+
+// DefaultCheckIntervalHours is used when no override is stored or a stored
+// value falls below the minimum. 24h matches the cadence other Stillwater
+// background scanners use by default and is appropriate for a release feed
+// that updates at most a few times per week.
+const DefaultCheckIntervalHours = 24
 
 // ErrAlreadyRunning is returned by Apply when another apply is already in progress.
 var ErrAlreadyRunning = errors.New("update already in progress")
@@ -91,9 +113,23 @@ const (
 )
 
 // Config holds user-configurable update preferences.
+//
+// Two orthogonal knobs gate the background loop:
+//
+//   - Enabled: top-level kill switch. When false, the background loop is a
+//     no-op AND manual Apply is rejected (the API surface gates on Enabled
+//     so an admin who flips this off is fully opted out of in-app updates).
+//   - AutoCheck: when true and Enabled is also true, the background loop
+//     polls GitHub at CheckIntervalHours.
+//
+// AutoUpdate (automatic Apply on the non-Docker path) is tracked separately
+// in #1284 alongside the safety surface it requires (confirmation flow,
+// last-applied status display, skip-this-version affordance).
 type Config struct {
-	Channel   Channel `json:"channel"`
-	AutoCheck bool    `json:"auto_check"`
+	Channel            Channel `json:"channel"`
+	Enabled            bool    `json:"enabled"`
+	AutoCheck          bool    `json:"auto_check"`
+	CheckIntervalHours int     `json:"check_interval_hours"`
 }
 
 // CheckResult is returned by Check.
@@ -304,15 +340,24 @@ func detectDocker() bool {
 
 // GetConfig reads the updater configuration from the settings table.
 // Returns sensible defaults when keys are absent.
+//
+// Defaults:
+//   - Channel:            ChannelStable
+//   - Enabled:            true (the updater itself is on; AutoCheck is
+//     still individually opt-in)
+//   - AutoCheck:          false
+//   - CheckIntervalHours: DefaultCheckIntervalHours (24h)
 func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	cfg := Config{
-		Channel:   ChannelStable,
-		AutoCheck: false,
+		Channel:            ChannelStable,
+		Enabled:            true,
+		AutoCheck:          false,
+		CheckIntervalHours: DefaultCheckIntervalHours,
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT key, value FROM settings WHERE key IN (?, ?)`,
-		SettingChannel, SettingAutoCheck)
+		`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)`,
+		SettingChannel, SettingEnabled, SettingAutoCheck, SettingCheckIntervalHours)
 	if err != nil {
 		return cfg, fmt.Errorf("querying updater config: %w", err)
 	}
@@ -338,8 +383,39 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 				s.logger.Error("unknown updater.channel value in settings; coercing to stable",
 					"stored_value", v)
 			}
+		case SettingEnabled:
+			// Stored only when explicitly toggled; absence keeps the
+			// "enabled" default so existing installs are not silently
+			// disabled when the new key rolls out. ParseBool (rather than
+			// `v == "true"`) accepts the broader set of strconv-recognized
+			// values written by older or out-of-band migrations ("1",
+			// "TRUE", "T", etc.); a malformed value preserves the default
+			// rather than silently flipping the kill switch off.
+			if b, err := strconv.ParseBool(v); err == nil {
+				cfg.Enabled = b
+			} else {
+				s.logger.Warn("invalid updater.enabled value in settings; keeping default",
+					"stored_value", v)
+			}
 		case SettingAutoCheck:
-			cfg.AutoCheck = v == "true"
+			if b, err := strconv.ParseBool(v); err == nil {
+				cfg.AutoCheck = b
+			} else {
+				s.logger.Warn("invalid updater.auto_check value in settings; keeping default",
+					"stored_value", v)
+			}
+		case SettingCheckIntervalHours:
+			n, err := strconv.Atoi(v)
+			if err != nil || n < MinCheckIntervalHours {
+				// Corrupt or out-of-range stored value falls back to the
+				// default rather than blocking the whole updater. Log so
+				// operators can see drift; a one-line warn is cheap.
+				s.logger.Warn("invalid updater.check_interval_hours value; using default",
+					"stored_value", v, "default_hours", DefaultCheckIntervalHours)
+				cfg.CheckIntervalHours = DefaultCheckIntervalHours
+			} else {
+				cfg.CheckIntervalHours = n
+			}
 		}
 	}
 	return cfg, rows.Err()
@@ -368,6 +444,20 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.Channel != ChannelStable && cfg.Channel != ChannelPrerelease && cfg.Channel != ChannelNightly {
 		return fmt.Errorf("invalid channel: %q", cfg.Channel)
 	}
+	// Treat a zero CheckIntervalHours as "use the default" rather than as an
+	// error: callers (especially tests and older clients that predate this
+	// field) may not populate it. A negative value is still rejected so an
+	// explicit garbage write fails loudly.
+	if cfg.CheckIntervalHours == 0 {
+		cfg.CheckIntervalHours = DefaultCheckIntervalHours
+	}
+	if cfg.CheckIntervalHours < MinCheckIntervalHours {
+		return fmt.Errorf("check_interval_hours must be >= %d", MinCheckIntervalHours)
+	}
+	enabled := "false"
+	if cfg.Enabled {
+		enabled = "true"
+	}
 	autoCheck := "false"
 	if cfg.AutoCheck {
 		autoCheck = "true"
@@ -379,8 +469,8 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	prev, prevErr := s.GetConfig(ctx)
 	channelChanged := decideChannelChanged(prev, prevErr, cfg)
 
-	// Wrap both writes in a transaction so a mid-loop failure cannot leave
-	// the channel and auto-check settings in a split state.
+	// Wrap all writes in a transaction so a mid-loop failure cannot leave
+	// the updater settings in a split state.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning updater config transaction: %w", err)
@@ -390,7 +480,9 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, kv := range []struct{ k, v string }{
 		{SettingChannel, string(cfg.Channel)},
+		{SettingEnabled, enabled},
 		{SettingAutoCheck, autoCheck},
+		{SettingCheckIntervalHours, strconv.Itoa(cfg.CheckIntervalHours)},
 	} {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -1029,4 +1121,75 @@ func atomicReplaceFile(target string, newContent []byte) error {
 		return fmt.Errorf("stat target: %w", err)
 	}
 	return filesystem.WriteFileAtomic(target, newContent, fi.Mode())
+}
+
+// StartScheduler runs the background auto-check loop. It blocks until ctx is
+// canceled. Callers typically launch it in a goroutine from main.
+//
+// Behavior on each tick:
+//
+//   - Reload the live Config from settings so admins can change cadence /
+//     toggle Enabled / toggle AutoCheck.
+//   - When Enabled and AutoCheck are both true, run Check(). The result
+//     populates the in-memory cache that drives the sidebar "update
+//     available" pill; manual Apply remains the operator-driven path.
+//
+// Cadence-change limitation: the loop recomputes CheckIntervalHours only
+// after the current timer fires. Lowering the interval from 24h to 1h via
+// SetConfig still waits out the old 24h timer before the new cadence takes
+// effect. Same for toggling Enabled false then true mid-tick. For immediate
+// effect on a long initial interval, restart the process. A proper
+// wake-on-config-change implementation (configChange channel + select +
+// timer.Stop/Drain/Reset) is tracked in #1285.
+func (s *Service) StartScheduler(ctx context.Context) {
+	// Initial read picks up the persisted interval. Fall back to the
+	// default on read error so a transient DB hiccup at startup does
+	// not silently disable the loop.
+	cfg, err := s.GetConfig(ctx)
+	interval := time.Duration(DefaultCheckIntervalHours) * time.Hour
+	if err == nil && cfg.CheckIntervalHours >= MinCheckIntervalHours {
+		interval = time.Duration(cfg.CheckIntervalHours) * time.Hour
+	}
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+
+	s.logger.Info("updater scheduler started",
+		"initial_interval", interval.String())
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("updater scheduler stopped")
+			return
+		case <-timer.C:
+			cfg, err := s.GetConfig(ctx)
+			if err != nil {
+				s.logger.Warn("updater scheduler: reading config failed; skipping tick",
+					"error", err)
+				timer.Reset(interval)
+				continue
+			}
+
+			if cfg.Enabled && cfg.AutoCheck {
+				if _, err := s.Check(ctx); err != nil {
+					// Check already records the error in StatusResult.
+					// A debug-level log here is enough to leave a
+					// breadcrumb without spamming the default-info logs
+					// when GitHub is briefly down.
+					s.logger.Debug("updater scheduler: background check failed",
+						"error", err)
+				}
+			}
+
+			// Recompute the next interval from the freshly-read config so
+			// admin changes take effect on the very next cycle.
+			next := time.Duration(DefaultCheckIntervalHours) * time.Hour
+			if cfg.CheckIntervalHours >= MinCheckIntervalHours {
+				next = time.Duration(cfg.CheckIntervalHours) * time.Hour
+			}
+			interval = next
+			timer.Reset(interval)
+		}
+	}
 }

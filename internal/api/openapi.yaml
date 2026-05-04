@@ -1328,6 +1328,12 @@ components:
             restart to take effect. Present only when restart_required is true.
     UpdateConfig:
       type: object
+      # Only `channel` and `auto_check` are required so the schema stays
+      # backward-compatible with the original W2/M36 clients that predate the
+      # enabled / check_interval_hours fields. The handler and service both
+      # default missing fields (enabled=true, check_interval_hours=24) when
+      # they are absent from a PUT body. AutoUpdate is intentionally not in
+      # the schema; see issue #1284 for the auto-Apply work split-out.
       required: [channel, auto_check]
       properties:
         channel:
@@ -1337,9 +1343,28 @@ components:
             Release channel to track. "stable" follows non-prerelease semver tags;
             "prerelease" also includes release candidates and beta builds;
             "nightly" follows date-stamped nightly builds (nightly-YYYYMMDD).
+        enabled:
+          type: boolean
+          description: >-
+            Top-level kill switch for the updater. When false, the background
+            auto-check loop is a no-op and manual Apply is rejected with a
+            403. Default: true.
         auto_check:
           type: boolean
-          description: When true, the updater periodically checks for new releases in the background.
+          description: >-
+            When true (and `enabled` is also true), the updater periodically
+            checks for new releases in the background at `check_interval_hours`.
+            Default: false.
+        check_interval_hours:
+          type: integer
+          minimum: 0
+          description: >-
+            How often the background auto-check loop polls GitHub, in hours.
+            The persisted minimum is 1; a request value of 0 is coerced to
+            the default (24) by the service layer (the handler only rejects
+            negative values; the coercion runs inside Service.SetConfig so
+            older clients that omit the field still validate). Negative
+            values are rejected on PUT with a 400.
 
     ForeignFileEntry:
       type: object
@@ -8520,7 +8545,9 @@ paths:
     get:
       tags: [Updates]
       summary: Get update configuration
-      description: Returns the current update channel and auto-check preference.
+      description: >-
+        Returns the current updater configuration: channel, enabled,
+        auto_check, and check_interval_hours.
       operationId: getUpdateConfig
       responses:
         "200":
@@ -8551,8 +8578,10 @@ paths:
       tags: [Updates]
       summary: Set update configuration
       description: |
-        Persists the update channel (`stable`, `prerelease`, or `nightly`) and
-        the auto-check toggle. Config is stored in the settings key-value table.
+        Persists the updater configuration: channel (`stable`, `prerelease`, or
+        `nightly`), the top-level `enabled` switch, the `auto_check` toggle,
+        and the `check_interval_hours` cadence used by the background
+        auto-check loop. Config is stored in the settings key-value table.
       operationId: setUpdateConfig
       requestBody:
         required: true

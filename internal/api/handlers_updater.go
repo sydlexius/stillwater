@@ -58,6 +58,32 @@ func (r *Router) handlePostUpdateApply(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// Honor the Enabled kill switch: when the operator has explicitly
+	// disabled the updater, manual Apply is rejected too. The schema
+	// description for `enabled` advertises this contract and the UI Apply
+	// button is disabled when Enabled=false; this is the server-side
+	// enforcement so a direct API call cannot bypass the toggle.
+	//
+	// Fail closed on a config-read error: the previous form ("err == nil
+	// && !cfg.Enabled") fell through on read failure and applied the
+	// update anyway, defeating the kill switch whenever the settings
+	// query erred for any reason. Surface a 500 instead so the operator
+	// sees the read failure and the update does not slip past the gate.
+	cfg, err := r.updaterService.GetConfig(req.Context())
+	if err != nil {
+		r.logger.Error("reading updater config before apply", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to read updater configuration",
+		})
+		return
+	}
+	if !cfg.Enabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "updater is disabled; enable it under Settings > Updates before applying",
+		})
+		return
+	}
+
 	// Detach from the request context so the async goroutine is not canceled
 	// when the HTTP response is sent and the request context is canceled.
 	if err := r.updaterService.Apply(context.WithoutCancel(req.Context())); err != nil {
@@ -105,10 +131,33 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	var body updater.Config
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+	// Decode into a pointer-fielded shadow so a missing `enabled` field can be
+	// distinguished from an explicit `false`. The OpenAPI schema documents the
+	// kill switch as defaulting to true on PUT (so a client that PUTs only
+	// `channel` does not silently turn updates off); decoding directly into
+	// updater.Config would assign Go's zero value and quietly flip Enabled to
+	// false on every partial write.
+	var raw struct {
+		Channel            updater.Channel `json:"channel"`
+		Enabled            *bool           `json:"enabled,omitempty"`
+		AutoCheck          *bool           `json:"auto_check,omitempty"`
+		CheckIntervalHours int             `json:"check_interval_hours"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&raw); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
+	}
+	body := updater.Config{
+		Channel:            raw.Channel,
+		Enabled:            true,
+		AutoCheck:          false,
+		CheckIntervalHours: raw.CheckIntervalHours,
+	}
+	if raw.Enabled != nil {
+		body.Enabled = *raw.Enabled
+	}
+	if raw.AutoCheck != nil {
+		body.AutoCheck = *raw.AutoCheck
 	}
 
 	// Validate channel value before persisting.
@@ -117,6 +166,17 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		body.Channel != updater.ChannelNightly {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "channel must be \"stable\", \"prerelease\", or \"nightly\"",
+		})
+		return
+	}
+
+	// Validate check interval. Zero is coerced to the default at the service
+	// layer (matches GetConfig defaulting) so API clients that omit the field
+	// receive sane behavior; an explicit negative value is rejected here so
+	// the UI gets an actionable 400 rather than a 500 from the service layer.
+	if body.CheckIntervalHours < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "check_interval_hours must be at least 1",
 		})
 		return
 	}

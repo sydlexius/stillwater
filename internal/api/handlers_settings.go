@@ -103,6 +103,69 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	// server.base_path: path prefix for sub-path deployments. The HTTP mux
+	// is wired at startup and cannot rebind on the fly, so this value is
+	// applied on the next process restart. The UI surfaces a "restart
+	// required" banner after a successful save.
+	//
+	// Rules:
+	//   - "/" (root) is the canonical "no prefix" value and is always valid.
+	//   - Any other value must start with "/" and must NOT end with "/".
+	//   - Allowed characters: letters, digits, hyphen, underscore, slash.
+	//
+	// We do NOT enforce here that the env override is unset: an admin who
+	// edits the YAML config out-of-band still expects the saved override to
+	// take effect on the next restart that lacks SW_BASE_PATH. The UI
+	// already hides the editable input when the env override is active, so
+	// the only way to reach this branch with the env set is a direct API
+	// call, which we treat as "save the override anyway; env still wins
+	// at runtime."
+	if v, ok := body["server.base_path"]; ok {
+		bp := strings.TrimSpace(v)
+		if bp == "" {
+			bp = "/"
+		}
+		if bp != "/" {
+			if !strings.HasPrefix(bp, "/") {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": "server.base_path must start with \"/\"",
+				})
+				return
+			}
+			// Mirror the loader (cmd/stillwater/main.go isValidPersistedBasePath)
+			// and the client (web/templates/settings.templ saveBasePath): a second
+			// character of "/" or "\\" is rejected. The charset check below would
+			// already reject backslash, but "//foo" passes that check and would
+			// otherwise persist a value the loader then refuses to apply on next
+			// restart, leaving the user with a successful save and a restart
+			// banner for a base path that is silently ignored.
+			if len(bp) >= 2 && (bp[1] == '/' || bp[1] == '\\') {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": "server.base_path must not start with \"//\" or \"/\\\\\"",
+				})
+				return
+			}
+			if strings.HasSuffix(bp, "/") {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": "server.base_path must not end with \"/\"",
+				})
+				return
+			}
+			for _, c := range bp {
+				ok := (c >= 'a' && c <= 'z') ||
+					(c >= 'A' && c <= 'Z') ||
+					(c >= '0' && c <= '9') ||
+					c == '-' || c == '_' || c == '/'
+				if !ok {
+					writeJSON(w, http.StatusBadRequest, map[string]string{
+						"error": "server.base_path may only contain letters, digits, hyphens, underscores, and slashes",
+					})
+					return
+				}
+			}
+		}
+		body["server.base_path"] = bp
+	}
 	if v, ok := body["auth.method"]; ok {
 		if v != "local" && v != "emby" && v != "jellyfin" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
