@@ -10,7 +10,6 @@ import (
 )
 
 func TestRegisterPprof_ShutdownOnContextCancel(t *testing.T) {
-	t.Parallel()
 	// Reset the sync.Once so this test can call registerPprof independently.
 	// This test must NOT use t.Parallel -- the pprofOnce reset and the
 	// hard-coded port 6060 require serial execution.
