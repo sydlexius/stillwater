@@ -186,10 +186,10 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 
 	wants := []string{
 		"## General  {#tab-general}",
-		"### Platform profile  {#settings-platform-profile}",
+		"### Platform profile  {#settings-general-platform-profile}",
 		"Pick the active platform profile.",
-		"- **Preset** {#settings-platform-profile-preset} -- Built-in presets.",
-		"- **Custom filenames** {#settings-platform-profile-custom-filenames}",
+		"- **Preset** {#settings-general-platform-profile-preset} -- Built-in presets.",
+		"- **Custom filenames** {#settings-general-platform-profile-custom-filenames}",
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
@@ -202,7 +202,7 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 // fold into the bullet's prose with the documented marker syntax.
 func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	var b strings.Builder
-	renderControl(&b, "base_path", docControl{
+	renderControl(&b, "general", "base_path", docControl{
 		ID:          "value",
 		Label:       "Base path",
 		Description: "URL prefix served by Stillwater.",
@@ -232,14 +232,17 @@ func TestCollectAnchors_DeterministicAndUnique(t *testing.T) {
 		}},
 		{ID: "providers"},
 	}}
-	got := collectAnchors(doc)
+	got, err := collectAnchors(doc)
+	if err != nil {
+		t.Fatalf("collectAnchors() unexpected error: %v", err)
+	}
 
 	wantAll := []string{
-		"settings-base-path",
-		"settings-base-path-value",
-		"settings-image-cache",
-		"settings-image-cache-clear",
-		"settings-image-cache-max-size",
+		"settings-general-base-path",
+		"settings-general-base-path-value",
+		"settings-general-image-cache",
+		"settings-general-image-cache-clear",
+		"settings-general-image-cache-max-size",
 		"tab-general",
 		"tab-providers",
 	}
@@ -256,6 +259,28 @@ func TestCollectAnchors_DeterministicAndUnique(t *testing.T) {
 		if got[i] == got[i-1] {
 			t.Errorf("collectAnchors() emitted duplicate anchor %q at index %d", got[i], i)
 		}
+	}
+}
+
+// TestCollectAnchors_FailsOnCollision asserts that two distinct controls
+// hashing to the same anchor produce an error rather than getting silently
+// glossed over by a dedupe pass. The collision below is contrived (two
+// controls in the same section sharing an ID), but the same shape arises in
+// the real en.json when section/control IDs differ only in characters that
+// the slug normalizer flattens.
+func TestCollectAnchors_FailsOnCollision(t *testing.T) {
+	doc := document{Tabs: []docTab{{
+		ID: "general",
+		Sections: []docSection{{
+			ID: "image_cache",
+			Controls: []docControl{
+				{ID: "clear"},
+				{ID: "clear"}, // duplicate -> collision
+			},
+		}},
+	}}}
+	if _, err := collectAnchors(doc); err == nil {
+		t.Error("collectAnchors() returned nil error on duplicate-anchor input")
 	}
 }
 
@@ -352,7 +377,10 @@ func TestRunCheckMode(t *testing.T) {
 	}
 	doc := buildDocument(tabs, keys)
 	rendered := renderDocument(doc)
-	anchors := collectAnchors(doc)
+	anchors, err := collectAnchors(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, false); err != nil {
 		t.Fatalf("writeOrCheck() write: %v", err)
@@ -535,11 +563,12 @@ func TestRun_HappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Note: run() reads from the package-level templSourceFiles list, so a
-	// full run() invocation against a custom templ requires either editing
-	// those constants (test-unfriendly) or invoking the components individually.
-	// We use the components here, which still flows every code path the binary
-	// would touch in a real generation.
+	// Note: run() resolves templ sources via discoverTemplSources(), which
+	// reads the real `web/templates/settings*.templ` glob rooted at the
+	// process working directory -- so a full run() invocation against a
+	// custom templ would need to chdir into a fixture tree. We exercise the
+	// individual stages here instead; every code path the binary would
+	// touch in a real generation flows through these calls.
 	keys, err := loadI18nKeys(i18nPath)
 	if err != nil {
 		t.Fatalf("loadI18nKeys: %v", err)
@@ -605,6 +634,61 @@ templ helperScript() {
 				t.Errorf("panel %q leaked helper key %q (should be bounded by next ^templ declaration)",
 					p.ID, k)
 			}
+		}
+	}
+}
+
+// TestDiscoverTemplSources verifies that the auto-discovery picks up new
+// settings_*.templ files without manual generator edits, while honoring the
+// excluded-files map (settings_appearance.templ stays out of the Settings
+// reference because it backs the standalone User Preferences page).
+func TestDiscoverTemplSources(t *testing.T) {
+	dir := t.TempDir()
+	must := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	trunk := must("settings.templ")
+	users := must("settings_users.templ")
+	auth := must("settings_auth_providers.templ")
+	must("settings_appearance.templ") // present but excluded
+	future := must("settings_billing.templ")
+
+	// Override the exclude map for this test by passing a custom glob and
+	// asserting the auto-derived owner mapping for each file.
+	sources, owner, err := discoverTemplSources(trunk, filepath.Join(dir, "settings_*.templ"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Trunk first.
+	if len(sources) == 0 || sources[0] != trunk {
+		t.Errorf("expected trunk first; got %v", sources)
+	}
+	// Sub-templates discovered by glob (sorted): auth, appearance (excluded
+	// at runtime), billing, users.
+	wantOwners := map[string]string{
+		users:  "users",
+		auth:   "auth_providers",
+		future: "billing",
+	}
+	for path, wantPanel := range wantOwners {
+		got, ok := owner[path]
+		if !ok {
+			t.Errorf("missing %s in owner map", path)
+			continue
+		}
+		if got != wantPanel {
+			t.Errorf("owner[%s] = %q, want %q", path, got, wantPanel)
+		}
+	}
+	// Excluded file must not appear.
+	for _, src := range sources {
+		if filepath.Base(src) == "settings_appearance.templ" {
+			t.Errorf("settings_appearance.templ should be excluded; got in sources: %v", sources)
 		}
 	}
 }

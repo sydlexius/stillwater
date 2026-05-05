@@ -44,28 +44,66 @@ const (
 	defaultI18nPath    = "internal/i18n/locales/en.json"
 )
 
-// templSourceFiles lists every templ source file the panel scanner walks.
-// settings.templ is the trunk -- it owns the data-tab-panel="X" div tree.
-// The other files house @settingsUsersTab and @settingsAuthProvidersTab
-// sub-templates that render inside specific panels; the scanner attributes
-// every i18n key in those sub-files to the appropriate parent panel.
+// templTrunkPath is the page-rendering templ file: it owns the
+// data-tab-panel="X" div tree that defines the tab boundaries the scanner
+// uses for key attribution.
+const templTrunkPath = "web/templates/settings.templ"
+
+// templSubTemplateGlob matches every settings_*.templ partial that backs a
+// specific tab panel. Files matching this glob are auto-discovered at
+// generation time, with subTemplateExclude-listed files removed -- so a new
+// settings_billing.templ shipping in the future is included automatically
+// without anyone needing to remember to update this generator.
+const templSubTemplateGlob = "web/templates/settings_*.templ"
+
+// subTemplateExclude names files (by basename) that look like sub-templates
+// by glob match but are not consumed by the Settings page's @-call tree:
+//   - settings_appearance.templ backs the standalone User Preferences page
+//     (route /preferences). Its keys live under settings.appearance.* and
+//     are out of scope for the Settings tabs reference.
 //
-// settings_appearance.templ is intentionally excluded: it backs the standalone
-// User Preferences page, not a Settings tab.
-var templSourceFiles = []string{
-	"web/templates/settings.templ",
-	"web/templates/settings_users.templ",
-	"web/templates/settings_auth_providers.templ",
+// Keying on basename rather than full path keeps the exclude list portable
+// across worktrees and test fixtures.
+var subTemplateExclude = map[string]struct{}{
+	"settings_appearance.templ": {},
 }
 
-// subTemplateOwner maps each sub-template file to the parent Settings panel
-// whose @<func> invocation reaches into it. Determined by inspecting
-// settings.templ's panel divs: settings_users.templ is invoked at line 1602
-// inside data-tab-panel="users"; settings_auth_providers.templ at line 1612
-// inside data-tab-panel="auth_providers".
-var subTemplateOwner = map[string]string{
-	"web/templates/settings_users.templ":          "users",
-	"web/templates/settings_auth_providers.templ": "auth_providers",
+// discoverTemplSources auto-discovers the trunk + sub-template files the
+// panel scanner walks, replacing what used to be a hand-maintained allowlist.
+// Returns the trunk path first, followed by sub-templates in sorted order
+// for deterministic output. The sub-template-to-panel map derives the panel
+// ID from the filename (`settings_users.templ` -> `users`); if a future
+// sub-template uses a panel ID that doesn't match its filename, add it to
+// subTemplateExclude (skip discovery) and pass it explicitly.
+//
+// glob is the filesystem-style pattern for sub-template discovery; it is
+// resolved with filepath.Glob, so callers can override during tests.
+func discoverTemplSources(trunk, glob string) ([]string, map[string]string, error) {
+	subPaths, err := filepath.Glob(glob)
+	if err != nil {
+		return nil, nil, fmt.Errorf("glob %q: %w", glob, err)
+	}
+	sort.Strings(subPaths)
+
+	sources := []string{trunk}
+	owner := make(map[string]string)
+	for _, p := range subPaths {
+		// Glob includes the trunk file when it matches `settings_*.templ`
+		// (it doesn't, since the trunk is `settings.templ`), but we filter
+		// regardless to be defensive against renames.
+		if p == trunk {
+			continue
+		}
+		base := filepath.Base(p) // settings_users.templ
+		if _, skip := subTemplateExclude[base]; skip {
+			continue
+		}
+		stem := strings.TrimSuffix(base, ".templ")       // settings_users
+		panelID := strings.TrimPrefix(stem, "settings_") // users
+		owner[p] = panelID
+		sources = append(sources, p)
+	}
+	return sources, owner, nil
 }
 
 func main() {
@@ -93,14 +131,21 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 		return fmt.Errorf("load i18n: %w", err)
 	}
 
-	tabs, err := scanPanels(templSourceFiles, subTemplateOwner)
+	sources, owner, err := discoverTemplSources(templTrunkPath, templSubTemplateGlob)
+	if err != nil {
+		return fmt.Errorf("discover templ sources: %w", err)
+	}
+	tabs, err := scanPanels(sources, owner)
 	if err != nil {
 		return fmt.Errorf("scan panels: %w", err)
 	}
 
 	doc := buildDocument(tabs, keys)
 	rendered := renderDocument(doc)
-	anchors := collectAnchors(doc)
+	anchors, err := collectAnchors(doc)
+	if err != nil {
+		return fmt.Errorf("collect anchors: %w", err)
+	}
 
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, checkOnly); err != nil {
 		return err
@@ -419,9 +464,15 @@ var noiseTokens = []string{
 	// because each of their segments contains the substring `confirm`.
 	"confirm_",
 	"failed",
-	// Underscore-anchored: bare `hint` would also filter `oidc_display_name_hint`
-	// and `oidc_logo_url_hint`, which are the only descriptive prose those auth
-	// controls have in en.json -- removing them leaves the auth section bare.
+	// Suffix-anchored to keep the filter intentional: `_hint` matches every
+	// real noise key (default_hint, aria_pill_hint, oidc_logo_url_hint,
+	// admin_groups_hint, etc.) without false-matching a section namespace
+	// whose own segment happens to contain `hint`. The OIDC `*_hint` keys
+	// stay filtered out by design -- they are inline form-help annotations
+	// shown next to the input, not standalone controls -- so the docs page
+	// surfaces those controls via their .label / .description metadata
+	// (e.g. settings.auth.oidc.label / .description) rather than the
+	// transient hint copy.
 	"_hint",
 	"message",
 	"saved",   // status labels: settings.X.saved
@@ -459,6 +510,21 @@ var noiseTokens = []string{
 	"docker_",      // docker_notice, docker_instruction (banner copy, not configurable)
 	"_instruction", // restart_required_native_instruction, etc.
 	"config_title", // sub-section subtitle, redundant with the Config control's label
+	// Empty-state, loading, and clipboard feedback render as runtime UI
+	// (lists waiting for data, "copied" toasts, etc.) and are never settings
+	// the user can configure. Anchored to suffix forms so legitimate names
+	// like "info_section" or "success_rate" aren't false-positives.
+	"empty",   // X.empty: empty-state placeholders ("No items configured.")
+	"loading", // X_loading, loading_X: in-flight indicators
+	"copied",  // *_copied: clipboard feedback ("Link copied")
+	"success", // *_success: post-action success banners
+	"_info",   // suffix-only: catches reset_info etc. without eating "info_section"
+	"_link",   // suffix-only: catches invite_link, copy_link, etc. (URLs/buttons, not settings)
+	// Sentence-fragment provider notes: two i18n keys carrying halves of one
+	// sentence concatenated at runtime ("Requires X..." / "...app."). They
+	// render as broken bullets if surfaced in the docs.
+	"_note_prefix",
+	"_note_suffix",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens
@@ -734,14 +800,14 @@ func renderDocument(doc document) string {
 	for _, tab := range doc.Tabs {
 		fmt.Fprintf(&b, "## %s  {#%s}\n\n", tab.Label, tabAnchor(tab.ID))
 		for _, sec := range tab.Sections {
-			renderSection(&b, sec)
+			renderSection(&b, tab.ID, sec)
 		}
 	}
 	return b.String()
 }
 
-func renderSection(b *strings.Builder, sec docSection) {
-	fmt.Fprintf(b, "### %s  {#%s}\n\n", sec.Title, sectionAnchor(sec.ID))
+func renderSection(b *strings.Builder, tabID string, sec docSection) {
+	fmt.Fprintf(b, "### %s  {#%s}\n\n", sec.Title, sectionAnchor(tabID, sec.ID))
 	if sec.Description != "" {
 		b.WriteString(sec.Description)
 		b.WriteString("\n\n")
@@ -750,7 +816,7 @@ func renderSection(b *strings.Builder, sec docSection) {
 		return
 	}
 	for _, ctrl := range sec.Controls {
-		renderControl(b, sec.ID, ctrl)
+		renderControl(b, tabID, sec.ID, ctrl)
 	}
 	b.WriteString("\n")
 }
@@ -760,8 +826,8 @@ func renderSection(b *strings.Builder, sec docSection) {
 // `#anchor` URL fragments scroll to it. Description, visibility, and help
 // fold into the bullet's prose with simple inline markers; if the control has
 // none of those, only the label and anchor render.
-func renderControl(b *strings.Builder, secID string, ctrl docControl) {
-	fmt.Fprintf(b, "- **%s** {#%s}", ctrl.Label, controlAnchor(secID, ctrl.ID))
+func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
+	fmt.Fprintf(b, "- **%s** {#%s}", ctrl.Label, controlAnchor(tabID, secID, ctrl.ID))
 
 	prose := composeControlProse(ctrl)
 	if prose != "" {
@@ -800,46 +866,64 @@ func tabAnchor(tabID string) string {
 }
 
 // sectionAnchor returns the slug for a section heading. Format:
-// "settings-{section}" with underscores rewritten to hyphens.
-func sectionAnchor(secID string) string {
-	return "settings-" + strings.ReplaceAll(secID, "_", "-")
+// "settings-{tab}-{section}" with underscores rewritten to hyphens. The tab
+// prefix disambiguates section names that legitimately repeat across tabs --
+// for example, the Rules tab and the Maintenance tab both expose a "Schedule"
+// section under different i18n namespaces, and an unscoped slug would emit
+// duplicate {#settings-schedule} IDs that break HelpHint deep-link routing
+// and produce invalid HTML.
+func sectionAnchor(tabID, secID string) string {
+	return "settings-" + hyphenate(tabID) + "-" + hyphenate(secID)
 }
 
 // controlAnchor returns the slug for a control heading. Format:
-// "settings-{section}-{control}" with underscores rewritten to hyphens and
-// dot-separated control IDs flattened to hyphens.
-func controlAnchor(secID, ctrlID string) string {
+// "settings-{tab}-{section}-{control}" with underscores rewritten to hyphens
+// and dot-separated control IDs flattened to hyphens. Same tab-scoping
+// rationale as sectionAnchor.
+func controlAnchor(tabID, secID, ctrlID string) string {
 	flat := strings.ReplaceAll(ctrlID, ".", "-")
-	return "settings-" + strings.ReplaceAll(secID, "_", "-") + "-" + strings.ReplaceAll(flat, "_", "-")
+	return "settings-" + hyphenate(tabID) + "-" + hyphenate(secID) + "-" + hyphenate(flat)
+}
+
+// hyphenate normalizes underscores to hyphens for slug safety.
+func hyphenate(s string) string {
+	return strings.ReplaceAll(s, "_", "-")
 }
 
 // collectAnchors walks the document and returns every anchor it emits, sorted
-// for deterministic output.
-func collectAnchors(doc document) []string {
-	var anchors []string
+// for deterministic output. Returns a non-nil error when two anchors collide,
+// so duplicates (which would silently break HelpHint deep links and produce
+// invalid HTML) fail generation rather than getting glossed over by a
+// dedupe pass.
+func collectAnchors(doc document) ([]string, error) {
+	seen := make(map[string]string) // anchor -> first source (debug context)
+	anchors := make([]string, 0)
+	add := func(anchor, source string) error {
+		if prior, ok := seen[anchor]; ok {
+			return fmt.Errorf("duplicate anchor %q: emitted by %s and %s", anchor, prior, source)
+		}
+		seen[anchor] = source
+		anchors = append(anchors, anchor)
+		return nil
+	}
+
 	for _, tab := range doc.Tabs {
-		anchors = append(anchors, tabAnchor(tab.ID))
+		if err := add(tabAnchor(tab.ID), "tab "+tab.ID); err != nil {
+			return nil, err
+		}
 		for _, sec := range tab.Sections {
-			anchors = append(anchors, sectionAnchor(sec.ID))
+			if err := add(sectionAnchor(tab.ID, sec.ID), "section "+tab.ID+"/"+sec.ID); err != nil {
+				return nil, err
+			}
 			for _, ctrl := range sec.Controls {
-				anchors = append(anchors, controlAnchor(sec.ID, ctrl.ID))
+				if err := add(controlAnchor(tab.ID, sec.ID, ctrl.ID), "control "+tab.ID+"/"+sec.ID+"/"+ctrl.ID); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 	sort.Strings(anchors)
-	// Defensive: dedupe in case two distinct (section, control) tuples slug
-	// to the same anchor. The Phase-1 test asserts this never happens against
-	// real en.json; the dedupe is belt-and-braces.
-	out := anchors[:0]
-	var prev string
-	for _, a := range anchors {
-		if a == prev {
-			continue
-		}
-		out = append(out, a)
-		prev = a
-	}
-	return out
+	return anchors, nil
 }
 
 // ---------------------------------------------------------------------------
