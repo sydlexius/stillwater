@@ -8,7 +8,7 @@ import (
 
 // UserPreferencesPage renders a standalone page for user-level appearance
 // preferences. It is accessible to all authenticated users (not admin-only).
-templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
+templ UserPreferencesPage(assets AssetPaths, prefs PreferencesData) {
 	@Layout(t(ctx, "settings.appearance"), assets) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
@@ -24,10 +24,10 @@ templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
 	}
 }
 
-// AppearancePrefsData holds the current user preference values shown in the
+// PreferencesData holds the current user preference values shown in the
 // Appearance settings tab. All fields are pre-populated from the user_preferences
 // table (or the compiled defaults) by the settings page handler.
-type AppearancePrefsData struct {
+type PreferencesData struct {
 	Theme             string // "dark" | "light" | "system"
 	ThumbnailSize     string // "small" | "medium" | "large"
 	SidebarState      string // "full" | "icon-only" | "hidden"
@@ -44,7 +44,7 @@ type AppearancePrefsData struct {
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
-templ settingsAppearanceTab(prefs AppearancePrefsData) {
+templ settingsAppearanceTab(prefs PreferencesData) {
 	@components.ContextHelpScript()
 	<!-- Theme -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">

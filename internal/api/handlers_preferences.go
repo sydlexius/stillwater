@@ -636,7 +636,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		autoFetchImages = normalized
 	}
 
-	prefs := templates.AppearancePrefsData{
+	prefs := templates.PreferencesData{
 		Theme:             pref(PrefTheme),
 		ThumbnailSize:     pref(PrefThumbnailSize),
 		SidebarState:      pref(PrefSidebarState),

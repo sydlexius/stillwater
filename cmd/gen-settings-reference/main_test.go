@@ -664,9 +664,9 @@ templ helperScript() {
 }
 
 // TestDiscoverTemplSources verifies that the auto-discovery picks up new
-// settings_*.templ files without manual generator edits, while honoring the
-// excluded-files map (settings_appearance.templ stays out of the Settings
-// reference because it backs the standalone User Preferences page).
+// settings_*.templ files without manual generator edits. The standalone User
+// Preferences page lives in preferences.templ (does not match the glob), so
+// no exclusion entry is needed for it.
 func TestDiscoverTemplSources(t *testing.T) {
 	dir := t.TempDir()
 	must := func(name string) string {
@@ -679,11 +679,11 @@ func TestDiscoverTemplSources(t *testing.T) {
 	trunk := must("settings.templ")
 	users := must("settings_users.templ")
 	auth := must("settings_auth_providers.templ")
-	must("settings_appearance.templ") // present but excluded
+	// preferences.templ deliberately does NOT match settings_*.templ; create
+	// it to confirm the glob ignores it without needing an exclude entry.
+	must("preferences.templ")
 	future := must("settings_billing.templ")
 
-	// Override the exclude map for this test by passing a custom glob and
-	// asserting the auto-derived owner mapping for each file.
 	sources, owner, err := discoverTemplSources(trunk, filepath.Join(dir, "settings_*.templ"))
 	if err != nil {
 		t.Fatal(err)
@@ -693,8 +693,7 @@ func TestDiscoverTemplSources(t *testing.T) {
 	if len(sources) == 0 || sources[0] != trunk {
 		t.Errorf("expected trunk first; got %v", sources)
 	}
-	// Sub-templates discovered by glob (sorted): auth, appearance (excluded
-	// at runtime), billing, users.
+	// Sub-templates discovered by glob (sorted): auth, billing, users.
 	wantOwners := map[string]string{
 		users:  "users",
 		auth:   "auth_providers",
@@ -710,10 +709,10 @@ func TestDiscoverTemplSources(t *testing.T) {
 			t.Errorf("owner[%s] = %q, want %q", path, got, wantPanel)
 		}
 	}
-	// Excluded file must not appear.
+	// preferences.templ must not be picked up by the settings_*.templ glob.
 	for _, src := range sources {
-		if filepath.Base(src) == "settings_appearance.templ" {
-			t.Errorf("settings_appearance.templ should be excluded; got in sources: %v", sources)
+		if filepath.Base(src) == "preferences.templ" {
+			t.Errorf("preferences.templ should not match settings_*.templ glob; got in sources: %v", sources)
 		}
 	}
 }
