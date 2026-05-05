@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -79,12 +80,14 @@ type Detector struct {
 	// return without re-querying peers. See Current() for the pattern.
 	refreshMu sync.Mutex
 
-	// onBeforeRefreshLock, if non-nil, is invoked from Current() on the
-	// slow path immediately before refreshMu.Lock(). Test-only hook used
-	// by the cache-stampede coalescing tests to deterministically wait
-	// until every concurrent caller has reached the contention point;
-	// production callers leave it nil.
-	onBeforeRefreshLock func()
+	// onBeforeRefreshLock, if loaded non-nil, is invoked from Current() on
+	// the slow path immediately before refreshMu.Lock(). Test-only hook
+	// used by the cache-stampede coalescing tests to deterministically
+	// wait until every concurrent caller has reached the contention
+	// point; production callers leave it nil. Stored as atomic.Pointer so
+	// hot-path readers in Current() incur no mutex contention and tests
+	// can install or clear the hook without racing concurrent callers.
+	onBeforeRefreshLock atomic.Pointer[func()]
 }
 
 // NewDetector returns a detector wired to the live connection service and
@@ -187,8 +190,8 @@ func (d *Detector) Current(ctx context.Context) Ledger {
 	if fresh {
 		return ledger
 	}
-	if d.onBeforeRefreshLock != nil {
-		d.onBeforeRefreshLock()
+	if hook := d.onBeforeRefreshLock.Load(); hook != nil {
+		(*hook)()
 	}
 	d.refreshMu.Lock()
 	defer d.refreshMu.Unlock()
