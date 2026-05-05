@@ -47,13 +47,42 @@ func TestArtistsPage_AfterSwapListener_UsesPathInfo(t *testing.T) {
 	}
 	scope := body[listenerStart+scopeIdx : end]
 
-	// Canonical htmx 2.x property reads must both be present.
+	// Assertions key off JS-syntax fragments unique to the rawPath fallback
+	// chain expression. Plain runtime tokens like "xhr.responseURL" also
+	// appear in the priority-list comment ("evt.detail.xhr.responseURL"),
+	// so we anchor on operator/grouping syntax that only the code carries:
+	// "pi && (pi.finalRequestPath", "pi.requestPath)", "rc && rc.path", and
+	// "xhr && xhr.responseURL". A regression to comments-only mentions or
+	// to a different chain shape would not match these patterns.
 	for _, want := range []string{
-		"pathInfo.finalRequestPath",
-		"pathInfo.requestPath",
+		"pi && (pi.finalRequestPath",
+		"pi.requestPath)",
+		"rc && rc.path",
+		"xhr && xhr.responseURL",
 	} {
 		if !strings.Contains(scope, want) {
-			t.Errorf("URL listener missing canonical htmx 2.x read %q; scope:\n%s", want, scope)
+			t.Errorf("URL listener missing rawPath chain fragment %q; scope:\n%s", want, scope)
+		}
+	}
+
+	// Strict priority order: the rawPath fallback chain must read
+	// pi.finalRequestPath -> pi.requestPath -> rc.path -> xhr.responseURL.
+	// First-occurrence indices of the four code-only fragments must appear
+	// in that order; any inversion means the priority chain regressed.
+	tokens := []string{
+		"pi && (pi.finalRequestPath",
+		"pi.requestPath)",
+		"rc && rc.path",
+		"xhr && xhr.responseURL",
+	}
+	indices := make([]int, len(tokens))
+	for i, tok := range tokens {
+		indices[i] = strings.Index(scope, tok)
+	}
+	for i := 1; i < len(indices); i++ {
+		if indices[i] >= 0 && indices[i-1] >= 0 && indices[i] < indices[i-1] {
+			t.Errorf("rawPath chain order regressed: %q (idx=%d) appears before %q (idx=%d)",
+				tokens[i], indices[i], tokens[i-1], indices[i-1])
 		}
 	}
 
@@ -64,13 +93,13 @@ func TestArtistsPage_AfterSwapListener_UsesPathInfo(t *testing.T) {
 		t.Errorf("URL listener missing console.debug on silent-fail path; scope:\n%s", scope)
 	}
 
-	// Defensive: the legacy mono-source pattern (requestConfig.path with no
-	// pathInfo fallback chain) must not reappear. We allow the legacy
-	// property as one element of the priority chain, but the pathInfo read
-	// must come first lexically -- otherwise the fallback chain is wrong.
-	piIdx := strings.Index(scope, "pathInfo.finalRequestPath")
-	rcIdx := strings.Index(scope, "requestConfig")
-	if rcIdx >= 0 && piIdx >= 0 && rcIdx < piIdx {
-		t.Errorf("requestConfig fallback must come AFTER pathInfo read in the priority chain; pathInfo idx=%d requestConfig idx=%d", piIdx, rcIdx)
+	// History rewrite must be guarded: if rawPath is missing or URL parse
+	// fails, the listener has to bail out before history.replaceState runs
+	// (otherwise stale params get pushed to the URL bar). The prior
+	// implementation threw on the no-rawPath path and let the catch block
+	// fall through into replaceState -- a bare "throw new Error(" must no
+	// longer appear in this scope; the listener now uses early return.
+	if strings.Contains(scope, "throw new Error(") {
+		t.Errorf("URL listener still uses throw on the no-rawPath path; this lets history.replaceState run on stale params. Use early return. scope:\n%s", scope)
 	}
 }

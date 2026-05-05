@@ -697,7 +697,9 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							if (window.console && console.debug) {
 								console.debug('[artists] htmx:afterSwap missing pathInfo/requestConfig; URL state not updated', evt.detail);
 							}
-							throw new Error('no request path');
+							// Bail out of the entire handler so history.replaceState below
+							// does not rewrite the URL from the stale params snapshot.
+							return;
 						}
 						var reqUrl = new URL(rawPath, window.location.origin);
 						var ids = reqUrl.searchParams.get('ids');
@@ -710,7 +712,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						if (page && page !== '1') params.page = page;
 						var pageSize = reqUrl.searchParams.get('page_size');
 						if (pageSize) params.page_size = pageSize;
-					} catch(e) { /* ignore parse errors */ }
+					} catch(e) {
+						// Same reasoning as the no-rawPath bail-out: if URL parse
+						// fails for any reason, the params snapshot is stale and
+						// rewriting history with it would clobber the user URL bar.
+						return;
+					}
 					var qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {
 						return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
 					}).join('&');
