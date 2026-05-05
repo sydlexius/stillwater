@@ -250,6 +250,26 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Idempotency guard. If the connection is already in the requested state
+	// the side effects (snapshotLibraryOptions / SetPreStillwaterConfig on the
+	// enable side; restoreLibraryOptions / SetPreStillwaterConfig clear on the
+	// disable side) are not just wasted work, they are destructive: a second
+	// enable=true would re-snapshot the peer's current (already-disabled)
+	// LibraryOptions and overwrite pre_stillwater_config_json with that
+	// post-managed state, so a future disable would replay Stillwater's own
+	// settings instead of the user's original config. The matching disable
+	// side would re-clear an already-cleared snapshot column. Returning the
+	// current state in the same shape as a real toggle keeps the response
+	// contract stable for clients that don't branch on no-op vs. apply.
+	// See issue #1190 for the data-loss reproduction.
+	if body.Enabled == conn.FeatureManageServerFiles {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connection_id":               conn.ID,
+			"feature_manage_server_files": conn.FeatureManageServerFiles,
+		})
+		return
+	}
+
 	// refreshConflictState rebuilds the cached ledger and emits a
 	// ConflictChanged event so the UI banner and write gate pick up the
 	// new connection state immediately. It MUST run on every error path
