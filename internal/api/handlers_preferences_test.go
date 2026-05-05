@@ -1175,9 +1175,10 @@ func TestValidateMetadataLanguages(t *testing.T) {
 
 // TestUserPreferencesPage_RendersWithDefaults exercises the page-render
 // handler so the templates.PreferencesData literal at line 639 is covered.
-// Asserts a 200 plus the rendered body contains a marker the page is known
-// to emit (sufficient to prove the template was reached without coupling
-// the test to layout details).
+// Asserts a 200 plus markers unique to the preferences page (the
+// appearance tab panel and one of its preference inputs) so the test
+// fails if the handler accidentally renders the login page or an
+// unrelated template.
 func TestUserPreferencesPage_RendersWithDefaults(t *testing.T) {
 	t.Parallel()
 	r, _, userID := testRouterWithAuth(t)
@@ -1191,8 +1192,17 @@ func TestUserPreferencesPage_RendersWithDefaults(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if w.Body.Len() == 0 {
-		t.Fatal("expected non-empty rendered body")
+	body := w.Body.String()
+	for _, marker := range []string{
+		`data-tab-panel="appearance"`,
+		`id="pref-theme"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("expected preferences-page marker %q in rendered body", marker)
+		}
+	}
+	if strings.Contains(body, `id="login-result"`) {
+		t.Error("expected preferences page, but login-page marker id=\"login-result\" was rendered")
 	}
 }
 
@@ -1211,5 +1221,12 @@ func TestUserPreferencesPage_UnauthenticatedRendersLogin(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 (login page), got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="login-result"`) {
+		t.Errorf("expected login-page marker id=\"login-result\" in rendered body; got %d bytes", w.Body.Len())
+	}
+	if strings.Contains(body, `data-tab-panel="appearance"`) {
+		t.Error("expected login page, but preferences-page marker data-tab-panel=\"appearance\" was rendered")
 	}
 }
