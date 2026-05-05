@@ -725,8 +725,14 @@ func humanize(id string) string {
 // target individual controls without exploding the heading hierarchy.
 func renderDocument(doc document) string {
 	var b strings.Builder
+	// Lead the body with a single newline so the BEGIN marker line is
+	// followed by a blank line before the first `## Tab` heading
+	// (markdownlint MD022 requires headings to be surrounded by blanks).
+	// Subsequent tab headings sit one blank line below the previous tab's
+	// last section, which already emits a trailing blank in renderSection.
+	b.WriteString("\n")
 	for _, tab := range doc.Tabs {
-		fmt.Fprintf(&b, "\n## %s  {#%s}\n\n", tab.Label, tabAnchor(tab.ID))
+		fmt.Fprintf(&b, "## %s  {#%s}\n\n", tab.Label, tabAnchor(tab.ID))
 		for _, sec := range tab.Sections {
 			renderSection(&b, sec)
 		}

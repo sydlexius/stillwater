@@ -47,7 +47,6 @@ Manage cached images for artists without filesystem paths.
 - **Unlimited** {#settings-image-cache-unlimited}
 - **Clear Cache** {#settings-image-cache-clear}
 
-
 ## Providers  {#tab-providers}
 
 ### Provider API Keys  {#settings-provider-keys}
@@ -99,7 +98,6 @@ Minimum similarity score (0-100) required when matching artist names from search
 - **OAuth Credentials** {#settings-provider-config-oauth-credentials}
 - **Required for submitting edits to MusicBrainz.** {#settings-provider-config-oauth-note}
 
-
 ## Connections  {#tab-connections}
 
 ### Server Connections  {#settings-connections}
@@ -117,7 +115,6 @@ Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
 - **Let Stillwater manage artwork and NFO files on this server** {#settings-connections-manage-title}
 - **When on, Stillwater watches this server and turns off its artwork and NFO savers whenever they get re-enabled. Your previous settings are saved and restored if you turn this off or remove the connection.** {#settings-connections-manage-description}
 - **Not configured** {#settings-connections-not-configured}
-
 
 ## Libraries  {#tab-libraries}
 
@@ -139,7 +136,6 @@ Manage your music library paths. Each library maps to a directory containing art
 - **Watch + Poll** {#settings-libraries-fs-both}
 - **Re-sync Artists** {#settings-libraries-resync}
 - **Scan Library** {#settings-libraries-scan}
-
 
 ## Automation  {#tab-automation}
 
@@ -178,7 +174,6 @@ Receive events from external applications to trigger actions in Stillwater.
 - **Supported events** {#settings-inbound-webhooks-supported-events}
 - **Supported events (Emby internal names)** {#settings-inbound-webhooks-supported-events-emby}
 
-
 ## Rules  {#tab-rules}
 
 ### Rules  {#settings-rules}
@@ -209,7 +204,6 @@ Run all enabled rules on a recurring schedule. Requires a container restart afte
 - **Every 6 hours** {#settings-schedule-every-6h}
 - **Every 12 hours** {#settings-schedule-every-12h}
 - **Daily (24h)** {#settings-schedule-daily}
-
 
 ## Users  {#tab-users}
 
@@ -246,7 +240,6 @@ Run all enabled rules on a recurring schedule. Requires a container restart afte
 - **Revoke this invite? It will no longer be usable.** {#settings-users-revoke-confirm}
 - **Invite revoked** {#settings-users-invite-revoked}
 - **Revoke** {#settings-users-revoke}
-
 
 ## Auth Providers  {#tab-auth-providers}
 
@@ -288,7 +281,6 @@ Configure how users can authenticate with this instance.
 - **Logo URL** {#settings-auth-oidc-logo-url}
 - **Enable auto-provisioning for OIDC users** {#settings-auth-enable-auto-provision-oidc}
 - **Auto provision oidc** {#settings-auth-auto-provision-oidc} -- Create accounts for authenticated OIDC users
-
 
 ## Maintenance  {#tab-maintenance}
 
@@ -339,7 +331,6 @@ Create, download, and manage database backups.
 - **The export file is encrypted with your passphrase using PBKDF2 + AES-256-GCM.** {#settings-export-import-encryption-note-line1}
 - **You will need the same passphrase to import the file on any instance.** {#settings-export-import-encryption-note-line2}
 
-
 ## Logs  {#tab-logs}
 
 ### Log Settings  {#settings-log-settings}
@@ -371,7 +362,6 @@ View application logs in real time with level filtering and search.
 - **Select log file to view** {#settings-log-viewer-select-file}
 - **Live (current)** {#settings-log-viewer-live-current}
 - **Showing up to 200 most recent entries. Live view polls in real time; historical files are loaded on demand.** {#settings-log-viewer-footer-note}
-
 
 ## Updates  {#tab-updates}
 
