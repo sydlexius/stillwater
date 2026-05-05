@@ -57,21 +57,48 @@ if ! awk -v t="$THRESHOLD" 'BEGIN { exit !(t ~ /^[0-9]+(\.[0-9]+)?$/) }'; then
   exit 2
 fi
 
-# Resolve BASE. Prefer an explicit env var, otherwise fall back to
-# merge-base with main. Fail loudly if neither produces a usable commit
-# rather than silently comparing against a bogus ref (which would skip
-# every file and exit 0 -- a false pass).
+# Refuse to run with uncommitted changes. The diff range below is HEAD vs
+# BASE, so unstaged or staged-but-uncommitted edits are invisible -- a
+# gate run before `git commit` would silently false-pass on whatever
+# already happens to be in the diff range (commonly empty, or recently
+# merged upstream work whose coverage signal masks the real patch). Force
+# the caller to commit first so the gate's input matches the patch that
+# will actually be pushed. Untracked files are excluded by `git diff` and
+# do not trigger this guard; they cannot affect patch coverage anyway.
+if ! git diff --quiet HEAD 2>/dev/null; then
+  echo "patch-coverage: uncommitted changes detected; commit first so the gate sees the real patch." >&2
+  echo "Run \`git status\` to see the working tree; \`git diff HEAD\` for the changes." >&2
+  exit 2
+fi
+
+# Resolve BASE. Prefer an explicit env var; otherwise prefer `origin/main`
+# over the local `main` branch so a stale local main cannot silently
+# widen the diff range to include other contributors' already-merged work
+# (which dilutes the patch and can drown the real coverage signal under
+# their high-coverage files). Fall back to local `main` if origin is not
+# configured. Fail loudly if neither produces a usable commit rather than
+# silently comparing against a bogus ref (which would skip every file and
+# exit 0 -- a false pass).
+base_ref=""
 if [ -z "${BASE:-}" ]; then
-  if ! BASE=$(git merge-base main HEAD 2>/dev/null); then
-    echo "patch-coverage: could not resolve BASE (no 'main' branch and BASE not set)." >&2
+  if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    base_ref="origin/main"
+  elif git rev-parse --verify -q main >/dev/null 2>&1; then
+    base_ref="main"
+  fi
+  if [ -z "$base_ref" ] || ! BASE=$(git merge-base "$base_ref" HEAD 2>/dev/null); then
+    echo "patch-coverage: could not resolve BASE (no 'origin/main' or 'main' branch and BASE not set)." >&2
     echo "Set BASE explicitly, e.g. BASE=\$(git merge-base origin/main HEAD)." >&2
     exit 2
   fi
+else
+  base_ref="<BASE env var>"
 fi
 if ! git rev-parse --verify -q "${BASE}^{commit}" >/dev/null 2>&1; then
   echo "patch-coverage: BASE does not resolve to a commit: $BASE" >&2
   exit 2
 fi
+echo "patch-coverage: BASE=${BASE:0:12} (${base_ref})"
 
 if [ ! -s "$COVER_OUT" ]; then
   echo "patch-coverage: profile not found or empty at $COVER_OUT" >&2
