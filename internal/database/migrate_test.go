@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -903,6 +904,73 @@ func TestMigrate_Pre002Shim_RecoversFromMissingTrackerRow(t *testing.T) {
 	if secondTstamp != firstTstamp {
 		t.Errorf("tstamp changed across re-runs: first=%q second=%q (shim must skip, not re-insert)",
 			firstTstamp, secondTstamp)
+	}
+}
+
+// TestMarkPre002Applied_TrackerExistsColumnAbsent covers the branch where
+// goose_db_version is present but libraries.nfo_lock_data has not been
+// created yet. The shim must not synthesize a marker row for a migration
+// whose target column does not exist; it would mask a genuinely missing 002.
+func TestMarkPre002Applied_TrackerExistsColumnAbsent(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx := context.Background()
+
+	// Create only what the shim's pre-checks need: a tracker table (so
+	// hasTracker is true) and a libraries table without nfo_lock_data (so
+	// hasColumn is false). The schema does not need to match goose's exact
+	// shape -- the shim only reads via sqlite_master / PRAGMA.
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE goose_db_version (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			version_id INTEGER NOT NULL,
+			is_applied INTEGER NOT NULL,
+			tstamp TIMESTAMP DEFAULT (datetime('now'))
+		)
+	`); err != nil {
+		t.Fatalf("creating tracker: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE libraries (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatalf("creating libraries: %v", err)
+	}
+
+	if err := markPre002Applied(db); err != nil {
+		t.Fatalf("markPre002Applied with column absent: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM goose_db_version WHERE version_id = 2`).Scan(&n); err != nil {
+		t.Fatalf("counting tracker rows: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("tracker rows for version_id=2 = %d, want 0 (shim must not synthesize a marker without the column)", n)
+	}
+}
+
+// TestMarkPre002Applied_PropagatesErrorOnClosedDB verifies that errors from
+// the underlying sqlite_master query propagate as wrapped errors rather than
+// silently turning into a "no tracker" skip. A closed handle is the cheapest
+// way to force the query to fail without mocks.
+func TestMarkPre002Applied_PropagatesErrorOnClosedDB(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	err = markPre002Applied(db)
+	if err == nil {
+		t.Fatal("markPre002Applied on closed db returned nil; want wrapped error")
+	}
+	if !strings.Contains(err.Error(), "checking goose_db_version presence") {
+		t.Errorf("error = %q, want wrap containing %q", err.Error(), "checking goose_db_version presence")
 	}
 }
 
