@@ -971,3 +971,83 @@ func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
 		t.Errorf("snapshot should be empty after disable, got %q", updated.PreStillwaterConfigJSON)
 	}
 }
+
+// TestSetStillwaterManaged_ConcurrentEnableSerializes is the regression
+// test Copilot asked for on PR #1307: two enabled:true requests issued
+// concurrently against the same connection must end up in the same
+// post-state as one serial pair. Without per-connection serialization,
+// both requests can race past the idempotency guard simultaneously --
+// each sees an unmanaged snapshot, both call applyStillwaterManaged,
+// and the second snapshot captures the post-managed peer state and
+// clobbers pre_stillwater_config_json.
+//
+// We seed the connection unmanaged, fire two enable goroutines in
+// parallel, then assert that a) both succeed (200), b) the snapshot
+// column reflects the genuine pre-Stillwater config (savers on), and
+// c) FeatureManageServerFiles is true. If the per-id mutex regresses,
+// the second request's re-snapshot would write savers-off into
+// pre_stillwater_config_json and this test would fail.
+func TestSetStillwaterManaged_ConcurrentEnableSerializes(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	fake, _ := startFakeEmby(t)
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create conn: %v", err)
+	}
+
+	const concurrent = 2
+	var (
+		wg     sync.WaitGroup
+		mu     sync.Mutex
+		codes  []int
+		bodies []string
+	)
+	wg.Add(concurrent)
+	start := make(chan struct{})
+	for i := 0; i < concurrent; i++ {
+		go func() {
+			defer wg.Done()
+			body := bytes.NewReader([]byte(`{"enabled":true}`))
+			req := httptest.NewRequest(http.MethodPost, "/", body)
+			req.SetPathValue("id", conn.ID)
+			w := httptest.NewRecorder()
+			<-start
+			r.handleSetStillwaterManaged(w, req)
+			mu.Lock()
+			codes = append(codes, w.Code)
+			bodies = append(bodies, w.Body.String())
+			mu.Unlock()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Fatalf("concurrent enable #%d status = %d body=%s", i, code, bodies[i])
+		}
+	}
+
+	final, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after concurrent enable: %v", err)
+	}
+	if !final.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be true after concurrent enables")
+	}
+	if final.PreStillwaterConfigJSON == "" {
+		t.Fatal("snapshot must be populated after concurrent enables")
+	}
+	// The genuine pre-Stillwater snapshot has save_local_metadata:true. If
+	// the second request re-snapshotted post-managed state, the stored
+	// JSON would carry save_local_metadata:false instead -- exactly the
+	// data-loss the per-id mutex prevents. (The serialized field is
+	// snake_case via the snapshot's JSON tags, not Emby's CamelCase.)
+	if !bytes.Contains([]byte(final.PreStillwaterConfigJSON), []byte(`"save_local_metadata":true`)) {
+		t.Errorf("snapshot looks post-managed; concurrent enables clobbered it: %s", final.PreStillwaterConfigJSON)
+	}
+}

@@ -245,12 +245,27 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Resolve the connection BEFORE allocating per-id serialization state.
+	// Otherwise every request with an arbitrary unknown {id} would
+	// LoadOrStore a fresh *sync.Mutex into stillwaterManagedMu and leave
+	// it there forever, letting a stream of 404 requests grow the map
+	// without bound. With this gate the map's cardinality is bounded by
+	// real connection IDs the process has ever seen (entries for deleted
+	// connections still linger -- a separate, lower-priority cleanup).
+	// We discard the resolved connection here on purpose -- it is only
+	// the existence gate; the canonical post-lock snapshot is fetched
+	// below, after we hold connMu.
+	if _, err := r.connectionService.GetByID(req.Context(), id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
 	// Serialize read-modify-write for this connection so two concurrent
-	// requests cannot both observe a stale snapshot at the top of the
-	// handler and both fall through the idempotency guard below. The
-	// mutex is released after writeJSON via the deferred unlock when this
-	// handler returns. LoadOrStore guarantees a single *sync.Mutex per
-	// connection ID for the lifetime of the process.
+	// requests cannot both observe a stale snapshot below and both fall
+	// through the idempotency guard. The mutex is released after
+	// writeJSON via the deferred unlock when this handler returns.
+	// LoadOrStore guarantees a single *sync.Mutex per connection ID for
+	// the lifetime of the process.
 	muIface, _ := r.stillwaterManagedMu.LoadOrStore(id, &sync.Mutex{})
 	connMu := muIface.(*sync.Mutex)
 	connMu.Lock()
