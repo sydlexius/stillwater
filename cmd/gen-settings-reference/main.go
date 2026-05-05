@@ -57,16 +57,14 @@ const templTrunkPath = "web/templates/settings.templ"
 const templSubTemplateGlob = "web/templates/settings_*.templ"
 
 // subTemplateExclude names files (by basename) that look like sub-templates
-// by glob match but are not consumed by the Settings page's @-call tree:
-//   - settings_appearance.templ backs the standalone User Preferences page
-//     (route /preferences). Its keys live under settings.appearance.* and
-//     are out of scope for the Settings tabs reference.
+// by glob match but are not consumed by the Settings page's @-call tree.
+// The standalone User Preferences page (route /preferences) lives in
+// preferences.templ, which does not match the settings_*.templ glob and
+// therefore needs no entry here.
 //
 // Keying on basename rather than full path keeps the exclude list portable
 // across worktrees and test fixtures.
-var subTemplateExclude = map[string]struct{}{
-	"settings_appearance.templ": {},
-}
+var subTemplateExclude = map[string]struct{}{}
 
 // discoverTemplSources auto-discovers the trunk + sub-template files the
 // panel scanner walks, replacing what used to be a hand-maintained allowlist.
