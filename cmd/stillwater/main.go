@@ -35,7 +35,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
-	"github.com/sydlexius/stillwater/internal/provider/allmusic"
 	"github.com/sydlexius/stillwater/internal/provider/audiodb"
 	"github.com/sydlexius/stillwater/internal/provider/deezer"
 	"github.com/sydlexius/stillwater/internal/provider/discogs"
@@ -256,9 +255,6 @@ func run() error {
 
 	webSearchRegistry := provider.NewWebSearchRegistry()
 	webSearchRegistry.Register(duckduckgo.New(rateLimiters, logger))
-
-	webScraperRegistry := provider.NewWebScraperRegistry()
-	webScraperRegistry.Register(allmusic.New(rateLimiters, logger))
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
@@ -519,7 +515,6 @@ func run() error {
 		ProviderSettings:   providerSettings,
 		ProviderRegistry:   providerRegistry,
 		WebSearchRegistry:  webSearchRegistry,
-		WebScraperRegistry: webScraperRegistry,
 		RateLimiters:       rateLimiters,
 		Orchestrator:       orchestrator,
 		RuleService:        ruleService,
