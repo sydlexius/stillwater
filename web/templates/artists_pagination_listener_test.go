@@ -102,4 +102,24 @@ func TestArtistsPage_AfterSwapListener_UsesPathInfo(t *testing.T) {
 	if strings.Contains(scope, "throw new Error(") {
 		t.Errorf("URL listener still uses throw on the no-rawPath path; this lets history.replaceState run on stale params. Use early return. scope:\n%s", scope)
 	}
+
+	// Forbidding `throw` is necessary but not sufficient -- the catch(e)
+	// block must also bail out before history.replaceState runs, or a
+	// failed URL parse would still let stale params clobber the URL bar.
+	// Pin the ordering: a `return;` must appear inside the catch block,
+	// before the history.replaceState call site.
+	catchIdx := strings.Index(scope, "catch(e)")
+	replaceIdx := strings.Index(scope, "history.replaceState")
+	if catchIdx < 0 {
+		t.Errorf("URL listener missing catch(e) block; scope:\n%s", scope)
+	}
+	if replaceIdx < 0 {
+		t.Errorf("URL listener missing history.replaceState call; scope:\n%s", scope)
+	}
+	if catchIdx >= 0 && replaceIdx > catchIdx {
+		catchBlock := scope[catchIdx:replaceIdx]
+		if !strings.Contains(catchBlock, "return;") {
+			t.Errorf("URL listener catch(e) block must return before history.replaceState; catch-to-replace span:\n%s", catchBlock)
+		}
+	}
 }

@@ -682,8 +682,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						//   2. evt.detail.pathInfo.requestPath (initial request path)
 						//   3. evt.detail.requestConfig.path (legacy fallback)
 						//   4. evt.detail.xhr.responseURL (post-HTTP-redirect URL)
-						// Migrated to pathInfo per #1228 to match the htmx 2.x event contract
-						// (the same migration #1081 made for the selection store).
+						// Migrated to pathInfo per #1228 to match the htmx 2.x event
+						// contract. The legacy 2-level fallback (requestConfig.path,
+						// xhr.responseURL) is preserved below as a defensive
+						// belt-and-braces against runtime event-shape drift.
 						var pi = evt.detail.pathInfo;
 						var rc = evt.detail.requestConfig;
 						var xhr = evt.detail.xhr;
@@ -713,6 +715,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var pageSize = reqUrl.searchParams.get('page_size');
 						if (pageSize) params.page_size = pageSize;
 					} catch(e) {
+						// Mirror the no-rawPath path's debug log so a malformed
+						// URL/event regression surfaces in the console during
+						// dev/UAT instead of presenting as a stale URL bar.
+						if (window.console && console.debug) {
+							console.debug('[artists] htmx:afterSwap URL parse failed; URL state not updated', e, evt.detail);
+						}
 						// Same reasoning as the no-rawPath bail-out: if URL parse
 						// fails for any reason, the params snapshot is stale and
 						// rewriting history with it would clobber the user URL bar.
