@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -244,6 +245,17 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Serialize read-modify-write for this connection so two concurrent
+	// requests cannot both observe a stale snapshot at the top of the
+	// handler and both fall through the idempotency guard below. The
+	// mutex is released after writeJSON via the deferred unlock when this
+	// handler returns. LoadOrStore guarantees a single *sync.Mutex per
+	// connection ID for the lifetime of the process.
+	muIface, _ := r.stillwaterManagedMu.LoadOrStore(id, &sync.Mutex{})
+	connMu := muIface.(*sync.Mutex)
+	connMu.Lock()
+	defer connMu.Unlock()
+
 	conn, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -251,18 +263,31 @@ func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Req
 	}
 
 	// Idempotency guard. If the connection is already in the requested state
-	// the side effects (snapshotLibraryOptions / SetPreStillwaterConfig on the
-	// enable side; restoreLibraryOptions / SetPreStillwaterConfig clear on the
-	// disable side) are not just wasted work, they are destructive: a second
-	// enable=true would re-snapshot the peer's current (already-disabled)
+	// AND the snapshot column is in the shape that state implies (non-empty
+	// when managed, empty when unmanaged) the side effects
+	// (snapshotLibraryOptions / SetPreStillwaterConfig on the enable side;
+	// restoreLibraryOptions / SetPreStillwaterConfig clear on the disable
+	// side) are not just wasted work, they are destructive: a second
+	// enable=true would re-snapshot the peer's already-disabled
 	// LibraryOptions and overwrite pre_stillwater_config_json with that
 	// post-managed state, so a future disable would replay Stillwater's own
-	// settings instead of the user's original config. The matching disable
-	// side would re-clear an already-cleared snapshot column. Returning the
-	// current state in the same shape as a real toggle keeps the response
-	// contract stable for clients that don't branch on no-op vs. apply.
-	// See issue #1190 for the data-loss reproduction.
-	if body.Enabled == conn.FeatureManageServerFiles {
+	// settings instead of the user's original config.
+	//
+	// We deliberately DO fall through when the snapshot column is in the
+	// wrong shape for the current flag (non-empty while disabled, or empty
+	// while enabled). That state means a prior toggle failed mid-flight --
+	// e.g. clearStillwaterManaged ran SetManageServerFiles(false) but the
+	// peer restoreLibraryOptions or the SetPreStillwaterConfig clear failed
+	// after that. The user must be able to retry the toggle to recover; a
+	// blanket short-circuit on flag-equality would trap them.
+	//
+	// Returning the current state in the same shape as a real toggle keeps
+	// the response contract stable for clients that don't branch on no-op
+	// vs. apply. See issue #1190 for the data-loss reproduction.
+	snapshotEmpty := conn.PreStillwaterConfigJSON == ""
+	stateConsistent := (conn.FeatureManageServerFiles && !snapshotEmpty) ||
+		(!conn.FeatureManageServerFiles && snapshotEmpty)
+	if body.Enabled == conn.FeatureManageServerFiles && stateConsistent {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"connection_id":               conn.ID,
 			"feature_manage_server_files": conn.FeatureManageServerFiles,

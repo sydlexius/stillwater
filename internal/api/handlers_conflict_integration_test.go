@@ -878,11 +878,13 @@ func TestSetStillwaterManaged_IdempotentEnablePreservesSnapshot(t *testing.T) {
 }
 
 // TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall pins the disable-side
-// idempotency contract from issue #1190. Two successive enabled:false POSTs
-// against an already-unmanaged connection must NOT re-trigger the peer
-// restoreLibraryOptions call or re-clear pre_stillwater_config_json. Asserting
-// the peer-side POST count stays at zero across both calls is the most
-// direct signal that the second invocation short-circuited.
+// idempotency contract from issue #1190. The sequence enable -> disable ->
+// disable must hit the peer LibraryOptions endpoint exactly twice (the disable
+// PATCH on the first disable plus the restore PATCH that follows it); the
+// second disable, against the now-cleared snapshot, must short-circuit before
+// reaching the peer. Earlier shape of this test seeded an already-unmanaged
+// connection with no snapshot, so it would have passed even if the no-op
+// guard were removed; this version exercises the actual regression path.
 func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterForConflictToggle(t)
@@ -920,9 +922,6 @@ func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
 	if err := svc.Create(ctx, conn); err != nil {
 		t.Fatalf("create conn: %v", err)
 	}
-	// Connection starts unmanaged (FeatureManageServerFiles=false), no
-	// snapshot in the column, so the disable path has nothing legitimate
-	// to do.
 
 	post := func(body string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -933,27 +932,32 @@ func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
 		return w
 	}
 
-	for i, label := range []string{"first", "second"} {
-		w := post(`{"enabled":false}`)
-		if w.Code != http.StatusOK {
-			t.Fatalf("%s disable (i=%d) status = %d body=%s", label, i, w.Code, w.Body.String())
-		}
-		assertSetManagedResponse(t, w, conn.ID, false)
+	// Step 1: enable. This is one peer POST (the disable PATCH issued by
+	// applyStillwaterManaged) and writes a non-empty snapshot.
+	if w := post(`{"enabled":true}`); w.Code != http.StatusOK {
+		t.Fatalf("enable status = %d body=%s", w.Code, w.Body.String())
 	}
+
+	// Step 2: first disable. This is one more peer POST (the restore PATCH
+	// issued by clearStillwaterManaged) and clears the snapshot.
+	if w := post(`{"enabled":false}`); w.Code != http.StatusOK {
+		t.Fatalf("first disable status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Step 3: second disable against the now-cleared snapshot. The
+	// idempotency guard has to short-circuit -- otherwise we hit the peer
+	// again and gotPosts climbs to 3.
+	w := post(`{"enabled":false}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second disable status = %d body=%s", w.Code, w.Body.String())
+	}
+	assertSetManagedResponse(t, w, conn.ID, false)
 
 	mu.Lock()
 	gotPosts := postCount
 	mu.Unlock()
-	// Pre-fix, the first call would (harmlessly) skip the restore because
-	// the snapshot column was empty, but still issue a SetPreStillwaterConfig
-	// clear; the second call would do the same again. The peer POST count
-	// is the cleanest invariant: zero in both paths means we never reached
-	// restoreLibraryOptions, which is what idempotency demands. Any future
-	// regression that re-routes the second call through clearStillwaterManaged
-	// while a snapshot happens to exist (e.g. via a separate enable in
-	// between) would push this above zero.
-	if gotPosts != 0 {
-		t.Errorf("peer POST count = %d after two no-op disables, want 0", gotPosts)
+	if gotPosts != 2 {
+		t.Errorf("peer POST count = %d, want 2 (1 disable PATCH on enable + 1 restore PATCH on first disable; second/third disables must short-circuit)", gotPosts)
 	}
 
 	updated, err := svc.GetByID(ctx, conn.ID)
@@ -961,9 +965,9 @@ func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
 		t.Fatalf("reload conn: %v", err)
 	}
 	if updated.FeatureManageServerFiles {
-		t.Error("FeatureManageServerFiles should remain false after idempotent disable")
+		t.Error("FeatureManageServerFiles should be false after disable")
 	}
 	if updated.PreStillwaterConfigJSON != "" {
-		t.Errorf("snapshot should remain empty, got %q", updated.PreStillwaterConfigJSON)
+		t.Errorf("snapshot should be empty after disable, got %q", updated.PreStillwaterConfigJSON)
 	}
 }
