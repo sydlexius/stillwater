@@ -2,6 +2,7 @@ package conflict
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,6 +10,20 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
+
+// waitFor spins until cond returns true or timeout elapses, yielding to the
+// scheduler between checks. Used by the coalesce tests to wait for all
+// stampede goroutines to reach refreshMu without resorting to time.Sleep.
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", msg)
+		}
+		runtime.Gosched()
+	}
+}
 
 // countingRepo wraps a connection list and counts how many times List is
 // called. List is the first thing Refresh does, so the call count equals the
@@ -79,33 +94,30 @@ func TestDetectorCurrentCoalescesConcurrentRefresh(t *testing.T) {
 	// the fresh-cache fast path on its post-mutex re-check.
 	d.ttl = time.Hour
 
-	var (
-		wg      sync.WaitGroup
-		started sync.WaitGroup
-	)
+	// Count how many goroutines have reached the pre-Lock site inside
+	// Current(). This replaces a time.Sleep gate with a deterministic
+	// barrier: once entered == goroutines, the leader holds refreshMu and
+	// every follower has reached (or is about to park on) Lock().
+	var entered atomic.Int32
+	d.onBeforeRefreshLock = func() { entered.Add(1) }
+
+	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	started.Add(goroutines)
 
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			started.Done()
 			d.Current(context.Background())
 		}()
 	}
 
-	// Wait for every caller to be inside Current() before unblocking the
-	// in-flight Refresh. This guarantees the stampede surface is exercised:
-	// if the first holder of refreshMu were not the only one to do work,
-	// the others would also enter Refresh and bump repo.calls.
-	started.Wait()
-
-	// Give the goroutines a moment to fan into Current() and pile up on
-	// refreshMu. There's no synchronization primitive that says "everyone
-	// is parked", so a brief pause is the pragmatic gate; a too-short pause
-	// risks letting some callers reach Current after the leader unblocks,
-	// which would still be coalesced but would weaken the assertion.
-	time.Sleep(50 * time.Millisecond)
+	// Wait for every caller to reach the refreshMu contention point. If
+	// the cache-stampede guard regressed, followers would still increment
+	// `entered` here -- the assertion below on repo.calls is what catches
+	// the regression.
+	waitFor(t, 5*time.Second, func() bool {
+		return entered.Load() == int32(goroutines)
+	}, "all goroutines to reach refreshMu")
 
 	close(release)
 	wg.Wait()
@@ -152,22 +164,25 @@ func TestDetectorCurrentCoalescesAfterTTLExpiry(t *testing.T) {
 	release := make(chan struct{})
 	client.release = release
 
-	var (
-		wg      sync.WaitGroup
-		started sync.WaitGroup
-	)
+	// Count post-expiry stampede arrivals at the refreshMu contention
+	// point so we can release the leader only after every caller has
+	// reached the slow path. The priming Current() above ran before this
+	// hook was installed, so it does not contribute to the count.
+	var entered atomic.Int32
+	d.onBeforeRefreshLock = func() { entered.Add(1) }
+
+	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	started.Add(goroutines)
 
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			started.Done()
 			d.Current(context.Background())
 		}()
 	}
-	started.Wait()
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, 5*time.Second, func() bool {
+		return entered.Load() == int32(goroutines)
+	}, "post-expiry goroutines to reach refreshMu")
 
 	close(release)
 	wg.Wait()

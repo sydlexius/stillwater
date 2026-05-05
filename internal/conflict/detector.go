@@ -78,6 +78,13 @@ type Detector struct {
 	// the work; subsequent holders see a fresh cache on re-check and
 	// return without re-querying peers. See Current() for the pattern.
 	refreshMu sync.Mutex
+
+	// onBeforeRefreshLock, if non-nil, is invoked from Current() on the
+	// slow path immediately before refreshMu.Lock(). Test-only hook used
+	// by the cache-stampede coalescing tests to deterministically wait
+	// until every concurrent caller has reached the contention point;
+	// production callers leave it nil.
+	onBeforeRefreshLock func()
 }
 
 // NewDetector returns a detector wired to the live connection service and
@@ -179,6 +186,9 @@ func (d *Detector) Current(ctx context.Context) Ledger {
 	d.mu.RUnlock()
 	if fresh {
 		return ledger
+	}
+	if d.onBeforeRefreshLock != nil {
+		d.onBeforeRefreshLock()
 	}
 	d.refreshMu.Lock()
 	defer d.refreshMu.Unlock()
