@@ -1943,15 +1943,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<!-- Log to file toggle -->
 							<div class="flex items-center justify-between py-1">
 								<div>
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file") }</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file_desc") }</p>
+									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file.label") }</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file.description") }</p>
 								</div>
 								<button
 									type="button"
 									id="log-to-file-btn"
 									role="switch"
 									aria-checked="false"
-									aria-label={ t(ctx, "settings.log_settings.log_to_file") }
+									aria-label={ t(ctx, "settings.log_settings.log_to_file.label") }
 									onclick="toggleFileLogging()"
 									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
 								>
@@ -6299,8 +6299,8 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	<!-- Channel, scheduler, and apply-mode settings -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config_title") }</h2>
-			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config_desc") }</p>
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config.label") }</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config.description") }</p>
 		</div>
 		<div class="px-6 py-4 space-y-5">
 			<!-- Top-level Enabled toggle -->
@@ -6309,15 +6309,15 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					"updates-enabled",
 					"updates_enabled",
 					data.Enabled,
-					t(ctx, "settings.updates.enabled"),
-					t(ctx, "settings.updates.enabled_desc"),
+					t(ctx, "settings.updates.enabled.label"),
+					t(ctx, "settings.updates.enabled.description"),
 				)
 			</div>
 			<!-- Channel selector -->
 			<div class="flex items-center justify-between gap-4">
 				<div>
-					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.channel") }</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.channel_desc") }</div>
+					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.channel.label") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.channel.description") }</div>
 				</div>
 				@components.Segmented("updates-channel", "updates_channel",
 					[]components.SegmentOption{
@@ -6334,8 +6334,8 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					"updates-auto-check",
 					"updates_auto_check",
 					data.AutoCheck,
-					t(ctx, "settings.updates.auto_check"),
-					t(ctx, "settings.updates.auto_check_desc"),
+					t(ctx, "settings.updates.auto_check.label"),
+					t(ctx, "settings.updates.auto_check.description"),
 				)
 			</div>
 			<!-- Check interval selector. The select is a fixed enum to keep
@@ -6347,8 +6347,8 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 			     browser's first-option fallback. -->
 			<div class="flex items-center justify-between gap-4">
 				<div>
-					<label for="updates-check-interval" class="block text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.check_interval") }</label>
-					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.check_interval_desc") }</div>
+					<label for="updates-check-interval" class="block text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.check_interval.label") }</label>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.check_interval.description") }</div>
 				</div>
 				<select
 					id="updates-check-interval"
