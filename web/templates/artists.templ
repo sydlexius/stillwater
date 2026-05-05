@@ -676,15 +676,33 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					// rebuild must mirror whichever the request actually
 					// carried so back-navigation restores the right view.
 					try {
-						// Use documented HTMX afterSwap fields. evt.detail.requestConfig.path
-						// is the path htmx issued the request to; xhr.responseURL is the
-						// post-redirect resolved URL. (evt.detail.requestInfo is not part
-						// of the htmx event contract.) Mirrors scopeTokenFromRequest()
-						// below so both handlers derive scope from the same source.
+						// Use documented HTMX 2.x afterSwap fields. Priority order:
+						//   1. evt.detail.pathInfo.finalRequestPath (canonical 2.x; reflects
+						//      htmx-side hx-push-url rewrites)
+						//   2. evt.detail.pathInfo.requestPath (initial request path)
+						//   3. evt.detail.requestConfig.path (legacy fallback)
+						//   4. evt.detail.xhr.responseURL (post-HTTP-redirect URL)
+						// Migrated to pathInfo per #1228 to match the htmx 2.x event
+						// contract. The legacy 2-level fallback (requestConfig.path,
+						// xhr.responseURL) is preserved below as a defensive
+						// belt-and-braces against runtime event-shape drift.
+						var pi = evt.detail.pathInfo;
 						var rc = evt.detail.requestConfig;
 						var xhr = evt.detail.xhr;
-						var rawPath = (rc && rc.path) || (xhr && xhr.responseURL);
-						if (!rawPath) throw new Error('no request path');
+						var rawPath = (pi && (pi.finalRequestPath || pi.requestPath)) ||
+							(rc && rc.path) ||
+							(xhr && xhr.responseURL);
+						if (!rawPath) {
+							// Surface silent-fail in the console so future htmx event-shape
+							// regressions show up during dev/UAT instead of presenting as a
+							// stale URL bar with no other symptom.
+							if (window.console && console.debug) {
+								console.debug('[artists] htmx:afterSwap missing pathInfo/requestConfig; URL state not updated', evt.detail);
+							}
+							// Bail out of the entire handler so history.replaceState below
+							// does not rewrite the URL from the stale params snapshot.
+							return;
+						}
 						var reqUrl = new URL(rawPath, window.location.origin);
 						var ids = reqUrl.searchParams.get('ids');
 						if (ids) {
@@ -696,7 +714,18 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						if (page && page !== '1') params.page = page;
 						var pageSize = reqUrl.searchParams.get('page_size');
 						if (pageSize) params.page_size = pageSize;
-					} catch(e) { /* ignore parse errors */ }
+					} catch(e) {
+						// Mirror the no-rawPath path's debug log so a malformed
+						// URL/event regression surfaces in the console during
+						// dev/UAT instead of presenting as a stale URL bar.
+						if (window.console && console.debug) {
+							console.debug('[artists] htmx:afterSwap URL parse failed; URL state not updated', e, evt.detail);
+						}
+						// Same reasoning as the no-rawPath bail-out: if URL parse
+						// fails for any reason, the params snapshot is stale and
+						// rewriting history with it would clobber the user URL bar.
+						return;
+					}
 					var qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {
 						return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
 					}).join('&');
