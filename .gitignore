@@ -4,6 +4,7 @@
 /gen-rules-catalogue
 /gen-env-reference
 /gen-provider-matrix
+/gen-settings-reference
 
 # Standalone tool binaries
 /tailwindcss

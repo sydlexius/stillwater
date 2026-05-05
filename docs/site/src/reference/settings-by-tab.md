@@ -8,124 +8,380 @@ description: A guided tour of every tab in Settings -- what each section does, w
 
 Stillwater's Settings page is divided into 11 tabs. This page is a navigational reference -- each section below describes one tab, the major panels inside it, and where to find specific knobs. For deeper explanation of *what the settings mean*, follow the cross-links into the relevant Core Concepts or How-to pages.
 
-## General
+<!-- BEGIN GENERATED: settings-reference -->
 
-The basics of how Stillwater behaves: which platform profile is active, how URLs are routed, and how the image cache is sized.
+## General  {#tab-general}
 
-- **Platform profile** -- pick the active profile (Kodi, Emby, Jellyfin, Plex, or a custom one) and review the per-slot image filenames it expects. Built-in profiles are read-only; custom ones are editable.
-- **Active profile configuration** -- the NFO output policy and the four image-naming rows (thumbnail, fanart, logo, banner). Read-only when the profile isn't editable.
-- **Symlinks** -- if your filesystem supports symlinks, Stillwater can write the primary image once and link the alternate filenames. The toggle is disabled (with a tooltip) on filesystems that don't.
-- **Base path** -- the URL prefix Stillwater serves under. The field is editable when `SW_BASE_PATH` is not set in the environment; saving stores the override in the application database and surfaces a "restart required" banner because the HTTP routes are bound at startup. When `SW_BASE_PATH` is set, the env value wins and the field is read-only with an amber caption.
-- **Behavior & debug** -- platform debug toggles for verbose logging.
-- **Image cache** -- size dropdown (unlimited, 256 MB, 512 MB, 1 GB, 2 GB, or custom) plus a "clear cache" button. Cache stats load asynchronously and show "X MB used (Y files, Z artists)."
+### Platform Profile  {#settings-platform-profile}
 
-## Providers
+Select the target platform to control NFO output and image naming conventions.
 
-Everything that controls how Stillwater talks to external metadata sources.
+### Active Profile Details  {#settings-active-profile}
 
-- **Provider keys** -- one card per provider (MusicBrainz, Fanart.tv, AudioDB, Discogs, Last.fm, Genius, Spotify, ...). Set or update API keys here. Disabled providers are skipped during fetches.
-- **Web search providers** -- enable/disable image search adapters (e.g., DuckDuckGo).
-- **Provider priorities** -- per-field priority chips, drag-reorderable. The order decides who Stillwater asks first when populating that field.
-- **Metadata languages** -- multi-select of preferred languages with autocomplete. Drives the "name matches preferred language" rule and influences which alias providers promote.
-- **Advanced settings** -- the name-similarity threshold slider (lower = fuzzier matching, higher = stricter), with inline help.
+Edit filenames for each image type. Changes are saved to the profile.
 
-For the *behavior* (how priority and aggregation actually work), see [providers in core concepts](../core-concepts/providers.md). For the per-provider capability matrix, see [the providers reference](providers.md).
+- **NFO Output** {#settings-active-profile-nfo-output}
+- **Save Filenames** {#settings-active-profile-save-filenames}
 
-## Connections
+### Use symlinks for duplicate copies  {#settings-symlinks}
 
-External platform integrations.
+- **Symlinks are not supported on this filesystem. The library path does not support symbolic links.** {#settings-symlinks-unsupported-description}
 
-- **Service connections** -- one card per supported platform: Emby, Jellyfin, Lidarr. Each card carries the URL, credentials, and current status. Connection status is live -- if the platform goes down, the card reflects it.
+### Base Path  {#settings-base-path}
 
-When two libraries point at the same files (one direct, one via Emby for example), conflict gating kicks in -- see the global "image / NFO writes paused" banner that appears site-wide when the gate is engaged. See [field locks](../core-concepts/field-locks.md#what-about-platforms-pushing-back) for the bigger picture.
+URL path prefix for running Stillwater behind a reverse proxy at a sub-path.
 
-## Libraries
+### Behavior  {#settings-behavior}
 
-The libraries Stillwater scans and writes into.
+Configure default behaviors for metadata workflows.
 
-- **Libraries list** -- name, path, type, source, watch mode, and the per-library "lock NFO" toggle. Each row is editable inline.
-- **Add library** -- a hidden form revealed by the "Add" button. Asks for name, path, and type (regular or classical). Type help text updates as you switch.
+### Show platform debug info on artist pages  {#settings-platform-debug}
 
-The "lock NFO" toggle controls the per-library `<lockdata>true</lockdata>` switch (see [NFO files](../core-concepts/nfo-files.md#lockdata)). Default is off; enabling it asks platforms to leave every NFO this library writes alone.
+When enabled, a Debug tab appears on artist detail pages for platform-connected artists
 
-## Automation
+### Image Cache  {#settings-image-cache}
 
-Outbound webhooks, notification badges, API tokens, and inbound webhook setup.
+Manage cached images for artists without filesystem paths.
 
-- **Webhooks** -- create outbound webhooks. Pick a name, type (generic JSON, Discord, Slack, Gotify), and URL. Useful for piping events into your existing notification stack.
-- **Notification badges** -- toggle the on-screen badge plus per-severity filters (errors, warnings, info).
-- **API tokens** -- create tokens with scopes (read, write, webhook, admin). Shows created-at and last-used timestamps. Revoked tokens go to an archive section.
-- **Inbound webhooks** -- per-platform setup instructions (Lidarr, Emby, Jellyfin) including the supported event types and a copy-friendly URL.
+- **Maximum size** {#settings-image-cache-max-size}
+- **Unlimited** {#settings-image-cache-unlimited}
+- **Clear Cache** {#settings-image-cache-clear}
 
-The supported inbound events:
 
-- **Lidarr:** ArtistAdded, Download, Grab, AlbumImport
-- **Emby:** library.new, item.updated, library.changed, system.notificationtest
-- **Jellyfin:** ItemAdded, ItemUpdated, LibraryChanged
+## Providers  {#tab-providers}
 
-## Rules
+### Provider API Keys  {#settings-provider-keys}
 
-The rule engine's per-rule configuration plus its scheduler.
+Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
 
-- **Rule rows** grouped by category (NFO, Image, Metadata). Each row has the enable toggle, the manual/auto mode, and links to per-rule config (thresholds, severity, etc.).
-- **Conflict-gated chips** -- amber chips appear next to image and NFO rules when the conflict gate is currently blocking writes for that category.
-- **Scheduled evaluation** -- a dropdown to enable periodic "Run rules" passes (every 5/15/30 minutes, hourly, every 6 or 12 hours, daily, or disabled).
+- **No API key required** {#settings-provider-keys-no-key-required}
+- **Premium key configured** {#settings-provider-keys-premium-configured}
+- **Free tier (optional premium upgrade)** {#settings-provider-keys-free-tier}
+- **Key configured** {#settings-provider-keys-key-configured}
+- **API key required** {#settings-provider-keys-key-required}
+- **Requires a Spotify Premium subscription and a registered** {#settings-provider-keys-spotify-note-prefix}
+- **app.** {#settings-provider-keys-spotify-note-suffix}
 
-For the catalogue of every built-in rule and its knobs, see [rules catalogue](rules-catalogue.md). For the modes (disabled / manual / auto), see [rules in core concepts](../core-concepts/rules.md).
+### Web Image Search  {#settings-web-search}
 
-## Users
+Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
 
-Multi-user mode, the user list, and invitations.
+### Provider Priorities  {#settings-priorities}
 
-- **Multi-user mode toggle** -- when off, Stillwater is single-admin. When on, the rest of this tab becomes meaningful.
-- **Users table** -- avatar (initials), name, role badge (administrator vs operator), status (active vs inactive).
-- **Create invite** -- pick a role and an expiry (24 hours, 3, 7, or 30 days), generate the invite link, share it.
+Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
 
-Errors loading user or invite data appear as an amber alert at the top of the tab.
+### Metadata Language Preferences  {#settings-metadata-languages}
 
-## Auth providers
+Set your preferred languages for artist names, biographies, and aliases. Providers will return content in the first available language from your list. Drag to reorder priority.
 
-How users log in. One section per provider.
+- **Remove** {#settings-metadata-languages-remove}
+- **Search languages** {#settings-metadata-languages-input-label}
 
-- **Local provider** -- username/password. Always on (the toggle is permanently disabled to prevent accidental lockout).
-- **Emby** -- enable, auto-provision users from Emby on first login, and a guard rail (admins only, or any user). Default role for new users is configurable. Server URL is read-only and pulled from the connection in the Connections tab.
-- **Jellyfin** -- same shape as Emby.
-- **OIDC** -- issuer URL, client ID, client secret, default role, admin-groups list, allowed-groups list, display name (shown on the login button), and an optional logo URL.
+### Advanced  {#settings-advanced}
 
-## Maintenance
+Fine-tune provider matching behavior.
 
-Database upkeep, backups, and the settings export/import flow.
+### Name similarity  {#settings-name-similarity}
 
-- **Confirmation preferences** -- a one-click button to clear the "do not ask again" choices stored in your browser.
-- **Database maintenance** -- "Optimize now" (analyze + index refresh) and "Vacuum" (rebuild the SQLite file). Vacuum prompts for confirmation. Auto-optimize schedule dropdown.
-- **Backup** -- "Create backup" button, retention count, and max-age dropdown (never expire, or 7 / 14 / 30 / 60 / 90 days). Below: the backup history with download and delete actions.
-- **Settings export / import** -- "Export settings" produces an encrypted JSON file (passphrase prompted, minimum 8 characters). "Import settings" takes a `.json` file plus the matching passphrase.
+Minimum similarity score (0-100) required when matching artist names from search results. Set to 0 to disable name validation and accept any result. Default is 60.
 
-For the export/import flow end-to-end, see [export and import settings](../how-to/export-import-settings.md).
+- **Name Similarity Threshold** {#settings-name-similarity-label}
 
-## Logs
+### Provider config  {#settings-provider-config}
 
-Logging configuration and the live log viewer.
+- **Client ID** {#settings-provider-config-client-id}
+- **Client Secret** {#settings-provider-config-client-secret}
+- **Server** {#settings-provider-config-server}
+- **Official** {#settings-provider-config-official}
+- **Beta** {#settings-provider-config-beta}
+- **Custom mirror** {#settings-provider-config-custom-mirror}
+- **Self-hosted mirrors can often handle higher rates. Default: 10 req/s.** {#settings-provider-config-custom-help}
+- **OAuth Credentials** {#settings-provider-config-oauth-credentials}
+- **Required for submitting edits to MusicBrainz.** {#settings-provider-config-oauth-note}
 
-- **Log settings** -- level dropdown (trace / debug / info / warn / error), format (JSON or text), and an "ephemeral level" checkbox that lets you bump the level for the current session without persisting.
-- **Log to file** -- toggle for file logging plus the path, max size in MB, max number of files, and max age in days. A "clean up old logs" button appears when rotated files exist.
-- **Log viewer** -- live tail with level filter buttons (trace / debug / info / warn / error), a search box, pause and clear buttons, a download button, and a file-picker dropdown when file logging is on. Polls every two seconds.
 
-## Updates
+## Connections  {#tab-connections}
 
-Stillwater's self-updater (when running natively) or version status (when running in Docker).
+### Server Connections  {#settings-connections}
 
-- **Version info** -- current version (always), latest version (after a check), update-available badge when newer.
-- **Last checked** timestamp.
-- **Release notes** link when available.
-- **Docker notice** -- a banner reading "Updates are managed by your container image" when Stillwater detects it's running in a container.
-- **Check now** button -- triggers an immediate version check.
-- **Status** display -- "Checking...", "Downloading...", "Applying..." during an update cycle.
-- **Restart required** banner (amber) when an applied update is staged and waiting for a restart.
-- **Updater enabled** toggle -- top-level kill switch. When off, the background loop is a no-op and the Apply button is disabled.
-- **Channel** selector -- choose stable, prerelease, or nightly. Your next check (and any Apply) uses the selected channel.
-- **Auto-check** toggle -- when on, the background scheduler polls GitHub at the configured interval. The loop reads its config once per tick, so toggle changes take effect on the next scheduled tick rather than instantly; restart the process for immediate effect on long initial intervals.
-- **Check interval** dropdown -- how often the background loop polls GitHub: every hour, 6 hours, 12 hours, 24 hours (default), or 7 days. The minimum accepted by the API is 1 hour. If a custom value (set via direct API call) is persisted, the dropdown shows it as a "(custom)" entry so it isn't lost on Save.
-- **Save** button -- persists all of the above in one PUT to `/api/v1/updates/config`.
+Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
 
-Auto-apply (automatic install of detected updates on the non-Docker path) isn't yet exposed; that work needs a confirmation flow, last-applied status display, and a skip-this-version affordance to be responsible to ship, and is tracked separately. Today an update is detected by the background check, surfaced in the badge and the version row, and installed by clicking Apply.
+- **Feature toggles** {#settings-connections-feature-toggles}
+- **What Stillwater sends to this connection** {#settings-connections-sends-heading}
+- **Library import** {#settings-connections-feature-library-import}
+- **When on, Stillwater imports library metadata from this server.** {#settings-connections-feature-library-import-tooltip}
+- **NFO write** {#settings-connections-feature-nfo-write}
+- **When on, Stillwater writes artist.nfo files for artists in this server's libraries. Writes can still be gated while conflict gating is active (write-back or round-trip overlap) -- see the top banner for details.** {#settings-connections-feature-nfo-write-tooltip}
+- **Image download/write** {#settings-connections-feature-image-write}
+- **When on, Stillwater writes image files for artists in this server's libraries. Writes can still be gated while conflict gating is active (write-back or round-trip overlap) -- see the top banner for details.** {#settings-connections-feature-image-write-tooltip}
+- **Let Stillwater manage artwork and NFO files on this server** {#settings-connections-manage-title}
+- **When on, Stillwater watches this server and turns off its artwork and NFO savers whenever they get re-enabled. Your previous settings are saved and restored if you turn this off or remove the connection.** {#settings-connections-manage-description}
+- **Not configured** {#settings-connections-not-configured}
+
+
+## Libraries  {#tab-libraries}
+
+### Music Libraries  {#settings-libraries}
+
+Manage your music library paths. Each library maps to a directory containing artist folders.
+
+- **Connection** {#settings-libraries-connection-badge}
+- **No libraries configured.** {#settings-libraries-empty}
+- **Lock NFOs** {#settings-libraries-lock-nfo-label}
+- **When on, Stillwater stamps <lockdata>true</lockdata> into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists, preserving Stillwater's curated values from being overwritten by the platform's own scrapers. Off by default. Tip: artists whose NFO already contains <lockdata>true</lockdata> (set by Stillwater or another tool) are automatically marked as locked at the artist level.** {#settings-libraries-lock-nfo-title}
+- **Add Library** {#settings-libraries-add}
+- **Regular** {#settings-libraries-type-regular}
+- **Classical** {#settings-libraries-type-classical}
+- **Filesystem monitoring mode** {#settings-libraries-fs-mode-title}
+- **Off** {#settings-libraries-fs-off}
+- **Watch** {#settings-libraries-fs-watch}
+- **Poll** {#settings-libraries-fs-poll}
+- **Watch + Poll** {#settings-libraries-fs-both}
+- **Re-sync Artists** {#settings-libraries-resync}
+- **Scan Library** {#settings-libraries-scan}
+
+
+## Automation  {#tab-automation}
+
+### Webhooks  {#settings-webhooks}
+
+Send notifications to external services when events occur.
+
+- **No webhooks configured.** {#settings-webhooks-empty}
+- **Add Webhook** {#settings-webhooks-add}
+- **Select type...** {#settings-webhooks-select-type}
+- **Generic (JSON)** {#settings-webhooks-type-generic}
+
+### Notification Badges  {#settings-notif-badges}
+
+Show a counter badge on the Open Violations link in the sidebar indicating active violations.
+
+- **Enable badge** {#settings-notif-badges-enable-badge}
+- **Count violations by severity** {#settings-notif-badges-count-by-severity}
+
+### API Tokens  {#settings-api-tokens}
+
+Generate tokens for external applications to access the Stillwater API.
+
+- **No API tokens created.** {#settings-api-tokens-empty}
+- **Revoked** {#settings-api-tokens-revoked}
+- **Read** {#settings-api-tokens-scope-read}
+- **Write** {#settings-api-tokens-scope-write}
+- **Webhook** {#settings-api-tokens-scope-webhook}
+- **Admin** {#settings-api-tokens-scope-admin}
+
+### Inbound Webhooks  {#settings-inbound-webhooks}
+
+Receive events from external applications to trigger actions in Stillwater.
+
+- **Webhook URL** {#settings-inbound-webhooks-url-label}
+- **Supported events** {#settings-inbound-webhooks-supported-events}
+- **Supported events (Emby internal names)** {#settings-inbound-webhooks-supported-events-emby}
+
+
+## Rules  {#tab-rules}
+
+### Rules  {#settings-rules}
+
+- **Image-category rules are paused while conflict gating is active. Resolve the active write-back or round-trip conflict in the top banner to resume auto-fix.** {#settings-rules-conflict-gated-image-tooltip}
+- **paused: conflict gating** {#settings-rules-conflict-gated-chip}
+- **NFO-category rules are paused while conflict gating is active. Resolve the active write-back or round-trip conflict in the top banner to resume auto-fix.** {#settings-rules-conflict-gated-nfo-tooltip}
+- **No rules found.** {#settings-rules-empty}
+- **This rule requires a local library with a filesystem path. Add a library with a path to enable it.** {#settings-rules-requires-local-tooltip}
+- **Requires a local library with a filesystem path** {#settings-rules-requires-local-tooltip-short}
+- **Requires local library** {#settings-rules-requires-local}
+- **Auto-fix** {#settings-rules-auto-fix}
+- **Manual (notify only)** {#settings-rules-manual}
+- **Cannot enable: no local library configured** {#settings-rules-cannot-enable-tooltip}
+
+### Scheduled Evaluation  {#settings-rule-schedule}
+
+Run all enabled rules on a recurring schedule. Requires a container restart after changing.
+
+- **Evaluates all enabled rules against every artist on the selected interval. Changes take effect after container restart.** {#settings-rule-schedule-note}
+
+### Schedule  {#settings-schedule}
+
+- **Every 5 minutes** {#settings-schedule-every-5m}
+- **Every 15 minutes** {#settings-schedule-every-15m}
+- **Every 30 minutes** {#settings-schedule-every-30m}
+- **Every hour** {#settings-schedule-every-hour}
+- **Every 6 hours** {#settings-schedule-every-6h}
+- **Every 12 hours** {#settings-schedule-every-12h}
+- **Daily (24h)** {#settings-schedule-daily}
+
+
+## Users  {#tab-users}
+
+### Users  {#settings-users}
+
+- **Multi-User Mode** {#settings-users-multi-user-mode}
+- **Multi user** {#settings-users-multi-user} -- Allow multiple users to access this Stillwater instance with separate accounts and roles.
+- **Enable multi-user mode** {#settings-users-enable-multi-user}
+- **Manage** {#settings-users-manage} -- Manage who has access to this instance.
+- **Create Invite** {#settings-users-create-invite}
+- **Role** {#settings-users-role}
+- **Role for invited user** {#settings-users-role-for-invite}
+- **Expires In** {#settings-users-expires-in}
+- **Invite expiry duration** {#settings-users-invite-expiry}
+- **24 hours** {#settings-users-24-hours}
+- **3 days** {#settings-users-3-days}
+- **7 days** {#settings-users-7-days}
+- **30 days** {#settings-users-30-days}
+- **Invite Link** {#settings-users-invite-link}
+- **Generated invite link** {#settings-users-generated-invite-link}
+- **Copy invite link to clipboard** {#settings-users-copy-invite}
+- **Invite link copied** {#settings-users-invite-link-copied}
+- **Copy Link** {#settings-users-copy-link}
+- **This link can only be used once.** {#settings-users-link-single-use}
+- **User accounts** {#settings-users-user-accounts}
+- **User** {#settings-users-user}
+- **Auth Provider** {#settings-users-auth-provider}
+- **Actions** {#settings-users-actions}
+- **Loading users...** {#settings-users-loading}
+- **Pending Invites** {#settings-users-pending-invites} -- Invite links that have not been redeemed yet.
+- **Loading invites...** {#settings-users-loading-invites}
+- **Role:** {#settings-users-role-label}
+- **Expires:** {#settings-users-expires-label}
+- **Revoke this invite? It will no longer be usable.** {#settings-users-revoke-confirm}
+- **Invite revoked** {#settings-users-invite-revoked}
+- **Revoke** {#settings-users-revoke}
+
+
+## Auth Providers  {#tab-auth-providers}
+
+### Authentication Providers  {#settings-auth}
+
+Configure how users can authenticate with this instance.
+
+- **Local** {#settings-auth-local} -- Username and password authentication managed by Stillwater.
+- **Local authentication cannot be disabled. It provides break-glass access if all other providers are misconfigured.** {#settings-auth-local-always-on}
+- **Enable Emby authentication** {#settings-auth-enable-emby}
+- **Emby** {#settings-auth-emby} -- Authenticate using an Emby server account. Uses the existing Emby connection.
+- **Server URL** {#settings-auth-server-url}
+- **Sourced from your Emby connection** {#settings-auth-sourced-from-emby}
+- **Auto-Provision** {#settings-auth-auto-provision}
+- **Auto provision emby** {#settings-auth-auto-provision-emby} -- Automatically create accounts for valid Emby users
+- **Enable auto-provisioning for Emby users** {#settings-auth-enable-auto-provision-emby}
+- **Guard Rail** {#settings-auth-guard-rail} -- Who can auto-provision when enabled
+- **Emby guard rail setting** {#settings-auth-emby-guard-rail}
+- **Admins only** {#settings-auth-admins-only}
+- **Any user** {#settings-auth-any-user}
+- **Default Role** {#settings-auth-default-role} -- Role assigned to auto-provisioned users
+- **Default role for Emby users** {#settings-auth-default-role-emby}
+- **Enable Jellyfin authentication** {#settings-auth-enable-jellyfin}
+- **Jellyfin** {#settings-auth-jellyfin} -- Authenticate using a Jellyfin server account. Requires an active Jellyfin connection.
+- **Sourced from your Jellyfin connection** {#settings-auth-sourced-from-jellyfin}
+- **Auto provision jellyfin** {#settings-auth-auto-provision-jellyfin} -- Automatically create accounts for valid Jellyfin users
+- **Enable auto-provisioning for Jellyfin users** {#settings-auth-enable-auto-provision-jellyfin}
+- **Jellyfin guard rail setting** {#settings-auth-jellyfin-guard-rail}
+- **Default role for Jellyfin users** {#settings-auth-default-role-jellyfin}
+- **Enable OpenID Connect authentication** {#settings-auth-enable-oidc}
+- **Oidc** {#settings-auth-oidc} -- Single sign-on via Authentik, Keycloak, Authelia, or any OIDC-compliant provider.
+- **Issuer URL** {#settings-auth-issuer-url}
+- **Client ID** {#settings-auth-client-id}
+- **Client Secret** {#settings-auth-client-secret}
+- **Default role for OIDC users not in an admin group** {#settings-auth-default-role-oidc}
+- **Administrator Groups** {#settings-auth-admin-groups}
+- **Allowed Groups** {#settings-auth-allowed-groups}
+- **Display Name** {#settings-auth-oidc-display-name}
+- **Logo URL** {#settings-auth-oidc-logo-url}
+- **Enable auto-provisioning for OIDC users** {#settings-auth-enable-auto-provision-oidc}
+- **Auto provision oidc** {#settings-auth-auto-provision-oidc} -- Create accounts for authenticated OIDC users
+
+
+## Maintenance  {#tab-maintenance}
+
+### Confirmation Dialogs  {#settings-confirm-dialogs}
+
+Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
+
+- **If you previously checked "Don't ask again" on a confirmation dialog, you can reset all preferences here to restore those prompts.** {#settings-confirm-dialogs-reset-info}
+- **Preferences reset.** {#settings-confirm-dialogs-reset-success}
+
+### Database Maintenance  {#settings-db-maintenance}
+
+Optimize database performance and reclaim disk space.
+
+- **Auto-optimize schedule** {#settings-db-maintenance-auto-schedule}
+- **Runs PRAGMA optimize and WAL checkpoint on the selected interval. Requires restart to apply schedule changes.** {#settings-db-maintenance-schedule-note}
+
+### Schedule  {#settings-schedule}
+
+- **Every 6 hours** {#settings-schedule-every-6h}
+- **Every 12 hours** {#settings-schedule-every-12h}
+- **Daily (24h)** {#settings-schedule-daily}
+- **Weekly** {#settings-schedule-weekly}
+
+### Database Backup  {#settings-backup}
+
+Create, download, and manage database backups.
+
+- **Retention** {#settings-backup-retention}
+- **Keep** {#settings-backup-keep}
+- **backups** {#settings-backup-backups-unit}
+- **Max age** {#settings-backup-max-age}
+- **7 days** {#settings-backup-days-7}
+- **14 days** {#settings-backup-days-14}
+- **30 days** {#settings-backup-days-30}
+- **60 days** {#settings-backup-days-60}
+- **90 days** {#settings-backup-days-90}
+- **Oldest backups are pruned after each automatic backup when they exceed the configured retention count or maximum age.** {#settings-backup-retention-note}
+- **Loading backup history...** {#settings-backup-loading-history}
+
+### Settings Export / Import  {#settings-export-import}
+
+- **Export all settings (provider keys, connections, profiles, webhooks) as an encrypted file.** {#settings-export-import-description-line1}
+- **A passphrase you choose protects the file, so it can be imported on any Stillwater instance.** {#settings-export-import-description-line2}
+- **Export passphrase** {#settings-export-import-export-passphrase}
+- **Import settings file** {#settings-export-import-import-file-label}
+- **Import passphrase** {#settings-export-import-import-passphrase}
+- **The export file is encrypted with your passphrase using PBKDF2 + AES-256-GCM.** {#settings-export-import-encryption-note-line1}
+- **You will need the same passphrase to import the file on any instance.** {#settings-export-import-encryption-note-line2}
+
+
+## Logs  {#tab-logs}
+
+### Log Settings  {#settings-log-settings}
+
+Configure log level, format, and file output with rotation. Changes take effect immediately.
+
+- **Level** {#settings-log-settings-level}
+- **Trace** {#settings-log-settings-level-trace}
+- **Debug** {#settings-log-settings-level-debug}
+- **Format** {#settings-log-settings-format}
+- **JSON** {#settings-log-settings-format-json}
+- **Text** {#settings-log-settings-format-text}
+- **Revert log level on restart** {#settings-log-settings-revert-on-restart}
+- **Revert to** {#settings-log-settings-revert-to}
+- **on restart** {#settings-log-settings-on-restart}
+- **Log to file** {#settings-log-settings-log-to-file} -- Write logs to a rotating file in addition to stdout.
+- **Log file path** {#settings-log-settings-file-path}
+- **Logs are always written to stdout. This enables an additional rotating file.** {#settings-log-settings-file-path-note}
+- **Max size (MB)** {#settings-log-settings-max-size}
+- **Files to keep** {#settings-log-settings-files-to-keep}
+- **Max age (days)** {#settings-log-settings-max-age}
+
+### Log Viewer  {#settings-log-viewer}
+
+View application logs in real time with level filtering and search.
+
+- **Log level filter** {#settings-log-viewer-level-filter}
+- **File** {#settings-log-viewer-file-label}
+- **Select log file to view** {#settings-log-viewer-select-file}
+- **Live (current)** {#settings-log-viewer-live-current}
+- **Showing up to 200 most recent entries. Live view polls in real time; historical files are loaded on demand.** {#settings-log-viewer-footer-note}
+
+
+## Updates  {#tab-updates}
+
+### Application Updates  {#settings-updates}
+
+Check for new Stillwater releases and apply binary updates.
+
+- **Config** {#settings-updates-config} -- Control how the updater discovers and applies new releases.
+- **Updater enabled** {#settings-updates-enabled} -- Top-level kill switch. When off, both the background loop and the Apply button are disabled.
+- **Release channel** {#settings-updates-channel} -- Stable tracks only non-prerelease versions. Prerelease includes release candidates. Nightly tracks date-stamped builds from the default branch.
+- **Automatic update checks** {#settings-updates-auto-check} -- Periodically check for new releases in the background at the configured interval.
+- **Check interval** {#settings-updates-check-interval} -- How often the background loop polls GitHub for new releases. Minimum is 1 hour.
+<!-- END GENERATED: settings-reference -->

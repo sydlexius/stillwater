@@ -51,4 +51,16 @@ if [ -f docs/site/src/reference/rules-catalogue.md ]; then
   fi
 fi
 
+# Verify the settings reference is in sync with the i18n locale + templ panel
+# scan. The companion anchors file is the contract consumed by the in-app
+# HelpHint component (#1132); checking it here catches drift that would later
+# surface as broken HelpHint deep links. Skip silently if the docs file is
+# absent (e.g., a docs-stripped checkout).
+if [ -f docs/site/src/reference/settings-by-tab.md ]; then
+  if ! go run ./cmd/gen-settings-reference -check; then
+    echo "ERROR: docs/site/src/reference/settings-by-tab.md or _settings-anchors.txt is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"
