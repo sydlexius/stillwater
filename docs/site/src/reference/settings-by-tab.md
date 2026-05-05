@@ -23,7 +23,7 @@ Edit filenames for each image type. Changes are saved to the profile.
 - **NFO Output** {#settings-general-active-profile-nfo-output}
 - **Save Filenames** {#settings-general-active-profile-save-filenames}
 
-### Use symlinks for duplicate copies  {#settings-general-symlinks}
+### Use symlinks for duplicates  {#settings-general-symlinks}
 
 - **Symlinks are not supported on this filesystem. The library path does not support symbolic links.** {#settings-general-symlinks-unsupported-description}
 

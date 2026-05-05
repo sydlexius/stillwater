@@ -1413,7 +1413,7 @@
   "settings.schedule.every_hour": "Every hour",
   "settings.schedule.weekly": "Weekly",
   "settings.symlinks.supported_description": "When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. %s images are always real files.",
-  "settings.symlinks.title": "Use symlinks for duplicate copies",
+  "settings.symlinks.title": "Use symlinks for duplicates",
   "settings.symlinks.unsupported_description": "Symlinks are not supported on this filesystem. The library path does not support symbolic links.",
   "settings.tab.auth_providers": "Auth Providers",
   "settings.tab.automation": "Automation",
