@@ -842,3 +842,91 @@ func TestMigration002_LibraryNFOLockData_Idempotent(t *testing.T) {
 		t.Errorf("nfo_lock_data column count = %d, want 1 (idempotent re-run must not duplicate)", count)
 	}
 }
+
+// TestMigrate_Pre002Shim_RecoversFromMissingTrackerRow simulates a database
+// where libraries.nfo_lock_data was added by the now-retired ensureXColumns
+// runtime helper before migration 002 existed: the column is present, but
+// goose_db_version has no row for version_id=2. Without the shim, goose.Up
+// would re-run 002 and abort startup with "duplicate column name". With the
+// shim, Migrate inserts the marker row and returns cleanly.
+func TestMigrate_Pre002Shim_RecoversFromMissingTrackerRow(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	// Simulate the pre-002 state by deleting the goose tracker row for
+	// version 2. The column itself remains in place, mirroring a DB that
+	// got nfo_lock_data via the retired runtime helper instead of goose.
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM goose_db_version WHERE version_id = 2`); err != nil {
+		t.Fatalf("simulating pre-002 state: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate after pre-002 simulation: %v", err)
+	}
+
+	var version int
+	if err := db.QueryRowContext(ctx,
+		`SELECT version_id FROM goose_db_version WHERE version_id = 2`).Scan(&version); err != nil {
+		t.Fatalf("expected version_id=2 row after recovery: %v", err)
+	}
+	if version != 2 {
+		t.Errorf("recovered version_id = %d, want 2", version)
+	}
+
+	// Capture the marker tstamp so we can prove the next Migrate call did
+	// not re-insert (which would refresh the tstamp). Idempotency is carried
+	// by the WHERE NOT EXISTS guard, not by a unique constraint, so this is
+	// the only assertion that distinguishes "skipped" from "inserted again".
+	var firstTstamp string
+	if err := db.QueryRowContext(ctx,
+		`SELECT tstamp FROM goose_db_version WHERE version_id = 2`).Scan(&firstTstamp); err != nil {
+		t.Fatalf("reading initial tstamp: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("second Migrate call after recovery: %v", err)
+	}
+	var rowCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM goose_db_version WHERE version_id = 2`).Scan(&rowCount); err != nil {
+		t.Fatalf("counting version_id=2 rows: %v", err)
+	}
+	if rowCount != 1 {
+		t.Errorf("version_id=2 row count = %d, want 1 (shim must be idempotent)", rowCount)
+	}
+	var secondTstamp string
+	if err := db.QueryRowContext(ctx,
+		`SELECT tstamp FROM goose_db_version WHERE version_id = 2`).Scan(&secondTstamp); err != nil {
+		t.Fatalf("reading second tstamp: %v", err)
+	}
+	if secondTstamp != firstTstamp {
+		t.Errorf("tstamp changed across re-runs: first=%q second=%q (shim must skip, not re-insert)",
+			firstTstamp, secondTstamp)
+	}
+}
+
+// TestMarkPre002Applied_FreshDBSkips verifies that markPre002Applied is a
+// no-op on a database that has no goose_db_version table yet. Fresh-install
+// startup must not synthesize a tracker row before goose has had a chance to
+// create the table itself.
+func TestMarkPre002Applied_FreshDBSkips(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := markPre002Applied(db); err != nil {
+		t.Fatalf("markPre002Applied on fresh db: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='goose_db_version'`).Scan(&n); err != nil {
+		t.Fatalf("checking sqlite_master: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("goose_db_version table count after fresh-DB shim = %d, want 0 (shim must not create the tracker)", n)
+	}
+}
