@@ -3,7 +3,6 @@ settings-auth-providers-auth-admin-groups
 settings-auth-providers-auth-admins-only
 settings-auth-providers-auth-allowed-groups
 settings-auth-providers-auth-any-user
-settings-auth-providers-auth-auto-provision
 settings-auth-providers-auth-auto-provision-emby
 settings-auth-providers-auth-auto-provision-jellyfin
 settings-auth-providers-auth-auto-provision-oidc
@@ -204,7 +203,6 @@ settings-users-users-expires-label
 settings-users-users-invite-expiry
 settings-users-users-invite-revoked
 settings-users-users-link-single-use
-settings-users-users-manage
 settings-users-users-multi-user
 settings-users-users-multi-user-mode
 settings-users-users-pending-invites

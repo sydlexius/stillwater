@@ -372,9 +372,9 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var23 string
-			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision"))
+			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision_emby.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 156, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 156, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -855,9 +855,9 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var56 string
-			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision"))
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision_jellyfin.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 274, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 274, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1739,9 +1739,9 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var116 string
-			templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision"))
+			templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.auth.auto_provision_oidc.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 503, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 503, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 			if templ_7745c5c3_Err != nil {

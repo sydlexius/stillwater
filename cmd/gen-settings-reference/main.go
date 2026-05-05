@@ -361,11 +361,22 @@ func scanPanels(sources []string, subOwner map[string]string) ([]panel, error) {
 			return nil, fmt.Errorf("read %s: %w", src, err)
 		}
 		extra := extractKeys(data)
+		// Find the trunk panel this sub-template's keys belong to. If the
+		// owner ID doesn't exist in the trunk -- typically because someone
+		// added settings_X.templ without ever adding a data-tab-panel="X"
+		// div in the page -- error out rather than silently dropping the
+		// keys. A silent drop would let the docs page miss the entire tab
+		// while every check on the PR still passed.
+		matched := false
 		for i := range panels {
 			if panels[i].ID == owner {
 				panels[i].Keys = append(panels[i].Keys, extra...)
+				matched = true
 				break
 			}
+		}
+		if !matched && len(extra) > 0 {
+			return nil, fmt.Errorf("sub-template %s maps to panel %q which has no data-tab-panel div in the trunk file", src, owner)
 		}
 	}
 

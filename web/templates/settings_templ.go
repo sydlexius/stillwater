@@ -13080,7 +13080,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var725 string
-		templ_7745c5c3_Var725, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config_title"))
+		templ_7745c5c3_Var725, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.label"))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6302, Col: 111}
 		}

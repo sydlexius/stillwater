@@ -203,10 +203,11 @@ Run all enabled rules on a recurring schedule. Requires a container restart afte
 
 ### Users  {#settings-users-users}
 
+Manage who has access to this instance.
+
 - **Multi-User Mode** {#settings-users-users-multi-user-mode}
 - **Multi user** {#settings-users-users-multi-user} -- Allow multiple users to access this Stillwater instance with separate accounts and roles.
 - **Enable multi-user mode** {#settings-users-users-enable-multi-user}
-- **Manage** {#settings-users-users-manage} -- Manage who has access to this instance.
 - **Create Invite** {#settings-users-users-create-invite}
 - **Role** {#settings-users-users-role}
 - **Role for invited user** {#settings-users-users-role-for-invite}
@@ -241,8 +242,7 @@ Configure how users can authenticate with this instance.
 - **Emby** {#settings-auth-providers-auth-emby} -- Authenticate using an Emby server account. Uses the existing Emby connection.
 - **Server URL** {#settings-auth-providers-auth-server-url}
 - **Sourced from your Emby connection** {#settings-auth-providers-auth-sourced-from-emby}
-- **Auto-Provision** {#settings-auth-providers-auth-auto-provision}
-- **Auto provision emby** {#settings-auth-providers-auth-auto-provision-emby} -- Automatically create accounts for valid Emby users
+- **Auto-Provision** {#settings-auth-providers-auth-auto-provision-emby} -- Automatically create accounts for valid Emby users
 - **Enable auto-provisioning for Emby users** {#settings-auth-providers-auth-enable-auto-provision-emby}
 - **Guard Rail** {#settings-auth-providers-auth-guard-rail} -- Who can auto-provision when enabled
 - **Emby guard rail setting** {#settings-auth-providers-auth-emby-guard-rail}
@@ -253,7 +253,7 @@ Configure how users can authenticate with this instance.
 - **Enable Jellyfin authentication** {#settings-auth-providers-auth-enable-jellyfin}
 - **Jellyfin** {#settings-auth-providers-auth-jellyfin} -- Authenticate using a Jellyfin server account. Requires an active Jellyfin connection.
 - **Sourced from your Jellyfin connection** {#settings-auth-providers-auth-sourced-from-jellyfin}
-- **Auto provision jellyfin** {#settings-auth-providers-auth-auto-provision-jellyfin} -- Automatically create accounts for valid Jellyfin users
+- **Auto-Provision** {#settings-auth-providers-auth-auto-provision-jellyfin} -- Automatically create accounts for valid Jellyfin users
 - **Enable auto-provisioning for Jellyfin users** {#settings-auth-providers-auth-enable-auto-provision-jellyfin}
 - **Jellyfin guard rail setting** {#settings-auth-providers-auth-jellyfin-guard-rail}
 - **Default role for Jellyfin users** {#settings-auth-providers-auth-default-role-jellyfin}
@@ -267,8 +267,8 @@ Configure how users can authenticate with this instance.
 - **Allowed Groups** {#settings-auth-providers-auth-allowed-groups}
 - **Display Name** {#settings-auth-providers-auth-oidc-display-name}
 - **Logo URL** {#settings-auth-providers-auth-oidc-logo-url}
+- **Auto-Provision** {#settings-auth-providers-auth-auto-provision-oidc} -- Create accounts for authenticated OIDC users
 - **Enable auto-provisioning for OIDC users** {#settings-auth-providers-auth-enable-auto-provision-oidc}
-- **Auto provision oidc** {#settings-auth-providers-auth-auto-provision-oidc} -- Create accounts for authenticated OIDC users
 
 ## Maintenance  {#tab-maintenance}
 
@@ -353,7 +353,7 @@ View application logs in real time with level filtering and search.
 
 Check for new Stillwater releases and apply binary updates.
 
-- **Config** {#settings-updates-updates-config} -- Control how the updater discovers and applies new releases.
+- **Update channel and schedule** {#settings-updates-updates-config} -- Control how the updater discovers and applies new releases.
 - **Updater enabled** {#settings-updates-updates-enabled} -- Top-level kill switch. When off, both the background loop and the Apply button are disabled.
 - **Release channel** {#settings-updates-updates-channel} -- Stable tracks only non-prerelease versions. Prerelease includes release candidates. Nightly tracks date-stamped builds from the default branch.
 - **Automatic update checks** {#settings-updates-updates-auto-check} -- Periodically check for new releases in the background at the configured interval.

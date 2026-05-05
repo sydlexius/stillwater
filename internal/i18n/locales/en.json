@@ -1133,7 +1133,6 @@
   "settings.auth.allowed_groups_aria": "Restrict OIDC login to these groups (comma-separated, empty allows all)",
   "settings.auth.allowed_groups_hint": "Restrict login to these groups. Leave empty to allow all authenticated users.",
   "settings.auth.any_user": "Any user",
-  "settings.auth.auto_provision": "Auto-Provision",
   "settings.auth.auto_provision_emby.description": "Automatically create accounts for valid Emby users",
   "settings.auth.auto_provision_jellyfin.description": "Automatically create accounts for valid Jellyfin users",
   "settings.auth.auto_provision_oidc.description": "Create accounts for authenticated OIDC users",
@@ -1442,7 +1441,6 @@
   "settings.updates.check_interval.description": "How often the background loop polls GitHub for new releases. Minimum is 1 hour.",
   "settings.updates.check_now": "Check for updates",
   "settings.updates.config.description": "Control how the updater discovers and applies new releases.",
-  "settings.updates.config_title": "Update channel and schedule",
   "settings.updates.enabled.label": "Updater enabled",
   "settings.updates.enabled.description": "Top-level kill switch. When off, both the background loop and the Apply button are disabled.",
   "settings.updates.interval_12h": "Every 12 hours",
@@ -1496,9 +1494,7 @@
   "settings.users.loading_invites": "Loading invites...",
   "settings.users.invite_link_copied": "Invite link copied",
   "settings.users.invite_link_copy_failed": "Failed to copy link",
-  "settings.users.manage.description": "Manage who has access to this instance.",
   "settings.users.multi_user.description": "Allow multiple users to access this Stillwater instance with separate accounts and roles.",
-  "settings.users.multi_user_mode": "Multi-User Mode",
   "settings.users.pending_invites.label": "Pending Invites",
   "settings.users.pending_invites.description": "Invite links that have not been redeemed yet.",
   "settings.users.revoke": "Revoke",
@@ -1559,5 +1555,11 @@
   "time.hours_ago.other": "{count}h ago",
   "time.just_now": "just now",
   "time.minutes_ago.one": "{count}m ago",
-  "time.minutes_ago.other": "{count}m ago"
+  "time.minutes_ago.other": "{count}m ago",
+  "settings.users.multi_user_mode.label": "Multi-User Mode",
+  "settings.users.description": "Manage who has access to this instance.",
+  "settings.auth.auto_provision_emby.label": "Auto-Provision",
+  "settings.auth.auto_provision_jellyfin.label": "Auto-Provision",
+  "settings.auth.auto_provision_oidc.label": "Auto-Provision",
+  "settings.updates.config.label": "Update channel and schedule"
 }
