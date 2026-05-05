@@ -94,10 +94,11 @@ if [ -z "${BASE:-}" ]; then
 else
   base_ref="<BASE env var>"
 fi
-if ! git rev-parse --verify -q "${BASE}^{commit}" >/dev/null 2>&1; then
+if ! resolved_base=$(git rev-parse --verify -q "${BASE}^{commit}" 2>/dev/null); then
   echo "patch-coverage: BASE does not resolve to a commit: $BASE" >&2
   exit 2
 fi
+BASE="$resolved_base"
 echo "patch-coverage: BASE=${BASE:0:12} (${base_ref})"
 
 if [ ! -s "$COVER_OUT" ]; then
