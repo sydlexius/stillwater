@@ -693,6 +693,20 @@ func TestDiscoverTemplSources(t *testing.T) {
 	if len(sources) == 0 || sources[0] != trunk {
 		t.Errorf("expected trunk first; got %v", sources)
 	}
+	// Pin the full discovered order, not just membership: the generator's
+	// output is only stable if discoverTemplSources sorts sub-templates
+	// deterministically. A regression that returned sources in
+	// filesystem-iteration order would still satisfy the membership
+	// check below, so assert the exact slice here.
+	wantSources := []string{trunk, auth, future, users}
+	if len(sources) != len(wantSources) {
+		t.Fatalf("expected %d sources, got %d: %v", len(wantSources), len(sources), sources)
+	}
+	for i, want := range wantSources {
+		if sources[i] != want {
+			t.Errorf("sources[%d] = %q, want %q (full slice: %v)", i, sources[i], want, sources)
+		}
+	}
 	// Sub-templates discovered by glob (sorted): auth, billing, users.
 	wantOwners := map[string]string{
 		users:  "users",
