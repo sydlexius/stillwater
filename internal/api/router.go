@@ -145,6 +145,22 @@ type Router struct {
 	i18nBundle            *i18n.Bundle
 	conflictDetector      *conflict.Detector
 	conflictGate          *conflict.Gate
+	// stillwaterManagedMu serializes read-modify-write inside
+	// handleSetStillwaterManaged on a per-connection basis. Without it,
+	// two concurrent enable=true requests for the same connection could
+	// both observe FeatureManageServerFiles=false on the snapshot loaded
+	// at the top of the handler, both fall through the idempotency guard,
+	// and both run applyStillwaterManaged -- the second snapshot of an
+	// already-managed peer would clobber pre_stillwater_config_json with
+	// the already-cleared library options, making restore unable to
+	// recover the real pre-Stillwater settings (issue #1190).
+	//
+	// Map values are *sync.Mutex pulled via LoadOrStore; entries
+	// accumulate for the lifetime of the process. Cardinality is bounded
+	// by the number of connections (small for realistic deployments) so
+	// we accept the leak rather than racing removal against late-arriving
+	// requests.
+	stillwaterManagedMu sync.Map
 	// foreignRepo persists foreign-file ledger rows and the allowlist
 	// (#1185). Always non-nil after NewRouter when DB is provided so the
 	// foreign-files settings page never has to special-case a missing dep.

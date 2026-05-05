@@ -809,3 +809,245 @@ func TestSetStillwaterManaged_RollsBackWhenPeerDisableFails(t *testing.T) {
 		t.Errorf("snapshot should be cleared after rollback, got %q", updated.PreStillwaterConfigJSON)
 	}
 }
+
+// TestSetStillwaterManaged_IdempotentEnablePreservesSnapshot pins the
+// idempotency contract from issue #1190. When a client sends enabled:true
+// twice in a row (stale HTMX hx-vals payload, repeated curl, concurrent
+// clicks), the second call must NOT re-snapshot the peer. If it did, the
+// fresh snapshot would capture the post-managed (savers-off) state and
+// overwrite pre_stillwater_config_json, so a future "disable" would replay
+// Stillwater's own settings instead of the user's original config. The
+// regression assertion is byte-equal: the JSON stored after call #1 must
+// match what is stored after call #2.
+func TestSetStillwaterManaged_IdempotentEnablePreservesSnapshot(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	fake, _ := startFakeEmby(t)
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create conn: %v", err)
+	}
+
+	// First enable: stores the genuine pre-Stillwater snapshot (savers on).
+	body := bytes.NewReader([]byte(`{"enabled":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.SetPathValue("id", conn.ID)
+	w := httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("first enable status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	afterFirst, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after first enable: %v", err)
+	}
+	originalSnapshot := afterFirst.PreStillwaterConfigJSON
+	if originalSnapshot == "" {
+		t.Fatal("first enable should have populated pre_stillwater_config_json")
+	}
+
+	// Second enable: must be a no-op. The handler should detect the
+	// already-managed state and skip applyStillwaterManaged entirely.
+	body = bytes.NewReader([]byte(`{"enabled":true}`))
+	req = httptest.NewRequest(http.MethodPost, "/", body)
+	req.SetPathValue("id", conn.ID)
+	w = httptest.NewRecorder()
+	r.handleSetStillwaterManaged(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second enable status = %d body=%s", w.Code, w.Body.String())
+	}
+	assertSetManagedResponse(t, w, conn.ID, true)
+
+	// Snapshot column must be byte-equal to what call #1 wrote. Pre-fix,
+	// the second call would re-snapshot the peer's now-disabled
+	// LibraryOptions and SetPreStillwaterConfig would clobber this.
+	afterSecond, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after second enable: %v", err)
+	}
+	if afterSecond.PreStillwaterConfigJSON != originalSnapshot {
+		t.Errorf("idempotent enable clobbered snapshot:\nfirst:  %s\nsecond: %s", originalSnapshot, afterSecond.PreStillwaterConfigJSON)
+	}
+	if !afterSecond.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should remain true after idempotent enable")
+	}
+}
+
+// TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall pins the disable-side
+// idempotency contract from issue #1190. The sequence enable -> disable ->
+// disable must hit the peer LibraryOptions endpoint exactly twice (the disable
+// PATCH on the first disable plus the restore PATCH that follows it); the
+// second disable, against the now-cleared snapshot, must short-circuit before
+// reaching the peer. Earlier shape of this test seeded an already-unmanaged
+// connection with no snapshot, so it would have passed even if the no-op
+// guard were removed; this version exercises the actual regression path.
+func TestSetStillwaterManaged_IdempotentDisableSkipsPeerCall(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+
+	var (
+		mu        sync.Mutex
+		postCount int
+	)
+	initial := map[string]any{
+		"Name":           "Music",
+		"CollectionType": "music",
+		"ItemId":         "lib1",
+		"LibraryOptions": map[string]any{
+			"SaveLocalMetadata": true,
+			"MetadataSavers":    []string{"Nfo"},
+		},
+	}
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/Library/VirtualFolders":
+			_ = json.NewEncoder(w).Encode([]any{initial})
+		case "/Library/VirtualFolders/LibraryOptions":
+			mu.Lock()
+			postCount++
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create conn: %v", err)
+	}
+
+	post := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte(body)))
+		req.SetPathValue("id", conn.ID)
+		w := httptest.NewRecorder()
+		r.handleSetStillwaterManaged(w, req)
+		return w
+	}
+
+	// Step 1: enable. This is one peer POST (the disable PATCH issued by
+	// applyStillwaterManaged) and writes a non-empty snapshot.
+	if w := post(`{"enabled":true}`); w.Code != http.StatusOK {
+		t.Fatalf("enable status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Step 2: first disable. This is one more peer POST (the restore PATCH
+	// issued by clearStillwaterManaged) and clears the snapshot.
+	if w := post(`{"enabled":false}`); w.Code != http.StatusOK {
+		t.Fatalf("first disable status = %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Step 3: second disable against the now-cleared snapshot. The
+	// idempotency guard has to short-circuit -- otherwise we hit the peer
+	// again and gotPosts climbs to 3.
+	w := post(`{"enabled":false}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second disable status = %d body=%s", w.Code, w.Body.String())
+	}
+	assertSetManagedResponse(t, w, conn.ID, false)
+
+	mu.Lock()
+	gotPosts := postCount
+	mu.Unlock()
+	if gotPosts != 2 {
+		t.Errorf("peer POST count = %d, want 2 (1 disable PATCH on enable + 1 restore PATCH on first disable; second/third disables must short-circuit)", gotPosts)
+	}
+
+	updated, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload conn: %v", err)
+	}
+	if updated.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be false after disable")
+	}
+	if updated.PreStillwaterConfigJSON != "" {
+		t.Errorf("snapshot should be empty after disable, got %q", updated.PreStillwaterConfigJSON)
+	}
+}
+
+// TestSetStillwaterManaged_ConcurrentEnableSerializes is the regression
+// test Copilot asked for on PR #1307: two enabled:true requests issued
+// concurrently against the same connection must end up in the same
+// post-state as one serial pair. Without per-connection serialization,
+// both requests can race past the idempotency guard simultaneously --
+// each sees an unmanaged snapshot, both call applyStillwaterManaged,
+// and the second snapshot captures the post-managed peer state and
+// clobbers pre_stillwater_config_json.
+//
+// We seed the connection unmanaged, fire two enable goroutines in
+// parallel, then assert that a) both succeed (200), b) the snapshot
+// column reflects the genuine pre-Stillwater config (savers on), and
+// c) FeatureManageServerFiles is true. If the per-id mutex regresses,
+// the second request's re-snapshot would write savers-off into
+// pre_stillwater_config_json and this test would fail.
+func TestSetStillwaterManaged_ConcurrentEnableSerializes(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForConflictToggle(t)
+	fake, _ := startFakeEmby(t)
+	defer fake.Close()
+
+	ctx := context.Background()
+	conn := &connection.Connection{Name: "TestEmby", Type: connection.TypeEmby, URL: fake.URL, APIKey: "key"}
+	if err := svc.Create(ctx, conn); err != nil {
+		t.Fatalf("create conn: %v", err)
+	}
+
+	const concurrent = 2
+	var (
+		wg     sync.WaitGroup
+		mu     sync.Mutex
+		codes  []int
+		bodies []string
+	)
+	wg.Add(concurrent)
+	start := make(chan struct{})
+	for i := 0; i < concurrent; i++ {
+		go func() {
+			defer wg.Done()
+			body := bytes.NewReader([]byte(`{"enabled":true}`))
+			req := httptest.NewRequest(http.MethodPost, "/", body)
+			req.SetPathValue("id", conn.ID)
+			w := httptest.NewRecorder()
+			<-start
+			r.handleSetStillwaterManaged(w, req)
+			mu.Lock()
+			codes = append(codes, w.Code)
+			bodies = append(bodies, w.Body.String())
+			mu.Unlock()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Fatalf("concurrent enable #%d status = %d body=%s", i, code, bodies[i])
+		}
+	}
+
+	final, err := svc.GetByID(ctx, conn.ID)
+	if err != nil {
+		t.Fatalf("reload after concurrent enable: %v", err)
+	}
+	if !final.FeatureManageServerFiles {
+		t.Error("FeatureManageServerFiles should be true after concurrent enables")
+	}
+	if final.PreStillwaterConfigJSON == "" {
+		t.Fatal("snapshot must be populated after concurrent enables")
+	}
+	// The genuine pre-Stillwater snapshot has save_local_metadata:true. If
+	// the second request re-snapshotted post-managed state, the stored
+	// JSON would carry save_local_metadata:false instead -- exactly the
+	// data-loss the per-id mutex prevents. (The serialized field is
+	// snake_case via the snapshot's JSON tags, not Emby's CamelCase.)
+	if !bytes.Contains([]byte(final.PreStillwaterConfigJSON), []byte(`"save_local_metadata":true`)) {
+		t.Errorf("snapshot looks post-managed; concurrent enables clobbered it: %s", final.PreStillwaterConfigJSON)
+	}
+}
