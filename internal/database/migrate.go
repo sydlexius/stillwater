@@ -48,6 +48,17 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("setting goose dialect: %w", gooseInitErr)
 	}
 
+	// On databases created before migration 002 was added to the codebase,
+	// libraries.nfo_lock_data was created by the now-retired ensureXColumns
+	// runtime helper rather than by goose. The goose_db_version tracker has
+	// no row for version_id=2, so goose tries to re-apply 002 on next start
+	// and aborts with "duplicate column name". Insert the missing tracker row
+	// before goose runs so 002 is treated as already applied. Fresh DBs and
+	// already-upgraded DBs skip the insert.
+	if err := markPre002Applied(db); err != nil {
+		return fmt.Errorf("reconciling pre-002 goose tracker: %w", err)
+	}
+
 	if err := goose.Up(db, "migrations"); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}
@@ -148,6 +159,54 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("inserting rule_results backfill rows: %w", err)
+	}
+	return nil
+}
+
+// markPre002Applied inserts the goose tracker row for migration 002 on
+// pre-002 databases where libraries.nfo_lock_data was added by the retired
+// ensureXColumns runtime helper. Without this shim, goose.Up retries 002
+// against an existing column and aborts with "duplicate column name".
+// Idempotent: skipped on fresh DBs (no tracker yet) and no-op when the
+// marker row already exists.
+func markPre002Applied(db *sql.DB) error {
+	ctx := context.Background()
+	logger := slog.Default().With("component", "database")
+
+	hasTracker, err := tableExists(db, "goose_db_version")
+	if err != nil {
+		return fmt.Errorf("checking goose_db_version presence: %w", err)
+	}
+	if !hasTracker {
+		return nil
+	}
+
+	hasColumn, err := columnExists(db, "libraries", "nfo_lock_data")
+	if err != nil {
+		return fmt.Errorf("checking libraries.nfo_lock_data presence: %w", err)
+	}
+	if !hasColumn {
+		return nil
+	}
+
+	// Idempotency rides entirely on WHERE NOT EXISTS: goose's tracker has
+	// only an autoincrement PK on id, no unique constraint on version_id, so
+	// a bare INSERT would happily produce duplicate version_id=2 rows on a
+	// re-run.
+	res, err := db.ExecContext(ctx, `
+		INSERT INTO goose_db_version (version_id, is_applied, tstamp)
+		SELECT 2, 1, datetime('now')
+		WHERE NOT EXISTS (
+			SELECT 1 FROM goose_db_version WHERE version_id = 2
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("recording pre-applied 002 marker: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Info(
+			"recorded pre-applied marker for migration 002 (libraries.nfo_lock_data column predates goose tracker)",
+		)
 	}
 	return nil
 }
@@ -866,6 +925,22 @@ func rebuildArtistLibrariesIfStaleCheck(ctx context.Context, db *sql.DB) error {
 	slog.Default().With("component", "database").Info(
 		"rebuilt artist_libraries table to refresh CHECK constraint")
 	return nil
+}
+
+// tableExists returns true if the named table is present in the database.
+// Uses sqlite_master rather than PRAGMA so the call is cheap on databases
+// that have not yet been touched by goose (no tracker table yet).
+func tableExists(db *sql.DB, name string) (bool, error) {
+	var found string
+	err := db.QueryRowContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("querying sqlite_master for %s: %w", name, err)
+	}
+	return true, nil
 }
 
 // columnExists returns true if the named column is present on the table.
