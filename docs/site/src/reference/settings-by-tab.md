@@ -205,8 +205,7 @@ Run all enabled rules on a recurring schedule. Requires a container restart afte
 
 Manage who has access to this instance.
 
-- **Multi-User Mode** {#settings-users-users-multi-user-mode}
-- **Multi user** {#settings-users-users-multi-user} -- Allow multiple users to access this Stillwater instance with separate accounts and roles.
+- **Multi-User Mode** {#settings-users-users-multi-user-mode} -- Allow multiple users to access this Stillwater instance with separate accounts and roles.
 - **Enable multi-user mode** {#settings-users-users-enable-multi-user}
 - **Create Invite** {#settings-users-users-create-invite}
 - **Role** {#settings-users-users-role}
@@ -238,8 +237,8 @@ Configure how users can authenticate with this instance.
 
 - **Local** {#settings-auth-providers-auth-local} -- Username and password authentication managed by Stillwater.
 - **Local authentication cannot be disabled. It provides break-glass access if all other providers are misconfigured.** {#settings-auth-providers-auth-local-always-on}
-- **Enable Emby authentication** {#settings-auth-providers-auth-enable-emby}
 - **Emby** {#settings-auth-providers-auth-emby} -- Authenticate using an Emby server account. Uses the existing Emby connection.
+- **Enable Emby authentication** {#settings-auth-providers-auth-enable-emby}
 - **Server URL** {#settings-auth-providers-auth-server-url}
 - **Sourced from your Emby connection** {#settings-auth-providers-auth-sourced-from-emby}
 - **Auto-Provision** {#settings-auth-providers-auth-auto-provision-emby} -- Automatically create accounts for valid Emby users
@@ -250,15 +249,15 @@ Configure how users can authenticate with this instance.
 - **Any user** {#settings-auth-providers-auth-any-user}
 - **Default Role** {#settings-auth-providers-auth-default-role} -- Role assigned to auto-provisioned users
 - **Default role for Emby users** {#settings-auth-providers-auth-default-role-emby}
-- **Enable Jellyfin authentication** {#settings-auth-providers-auth-enable-jellyfin}
 - **Jellyfin** {#settings-auth-providers-auth-jellyfin} -- Authenticate using a Jellyfin server account. Requires an active Jellyfin connection.
+- **Enable Jellyfin authentication** {#settings-auth-providers-auth-enable-jellyfin}
 - **Sourced from your Jellyfin connection** {#settings-auth-providers-auth-sourced-from-jellyfin}
 - **Auto-Provision** {#settings-auth-providers-auth-auto-provision-jellyfin} -- Automatically create accounts for valid Jellyfin users
 - **Enable auto-provisioning for Jellyfin users** {#settings-auth-providers-auth-enable-auto-provision-jellyfin}
 - **Jellyfin guard rail setting** {#settings-auth-providers-auth-jellyfin-guard-rail}
 - **Default role for Jellyfin users** {#settings-auth-providers-auth-default-role-jellyfin}
+- **OpenID Connect (OIDC)** {#settings-auth-providers-auth-oidc} -- Single sign-on via Authentik, Keycloak, Authelia, or any OIDC-compliant provider.
 - **Enable OpenID Connect authentication** {#settings-auth-providers-auth-enable-oidc}
-- **Oidc** {#settings-auth-providers-auth-oidc} -- Single sign-on via Authentik, Keycloak, Authelia, or any OIDC-compliant provider.
 - **Issuer URL** {#settings-auth-providers-auth-issuer-url}
 - **Client ID** {#settings-auth-providers-auth-client-id}
 - **Client Secret** {#settings-auth-providers-auth-client-secret}

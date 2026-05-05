@@ -1494,7 +1494,6 @@
   "settings.users.loading_invites": "Loading invites...",
   "settings.users.invite_link_copied": "Invite link copied",
   "settings.users.invite_link_copy_failed": "Failed to copy link",
-  "settings.users.multi_user.description": "Allow multiple users to access this Stillwater instance with separate accounts and roles.",
   "settings.users.pending_invites.label": "Pending Invites",
   "settings.users.pending_invites.description": "Invite links that have not been redeemed yet.",
   "settings.users.revoke": "Revoke",
@@ -1561,5 +1560,9 @@
   "settings.auth.auto_provision_emby.label": "Auto-Provision",
   "settings.auth.auto_provision_jellyfin.label": "Auto-Provision",
   "settings.auth.auto_provision_oidc.label": "Auto-Provision",
-  "settings.updates.config.label": "Update channel and schedule"
+  "settings.updates.config.label": "Update channel and schedule",
+  "settings.users.multi_user_mode.description": "Allow multiple users to access this Stillwater instance with separate accounts and roles.",
+  "settings.auth.emby.label": "Emby",
+  "settings.auth.jellyfin.label": "Jellyfin",
+  "settings.auth.oidc.label": "OpenID Connect (OIDC)"
 }

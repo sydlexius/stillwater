@@ -375,7 +375,10 @@ func TestRunCheckMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := buildDocument(tabs, keys)
+	doc, err := buildDocument(tabs, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rendered := renderDocument(doc)
 	anchors, err := collectAnchors(doc)
 	if err != nil {
@@ -450,40 +453,62 @@ func TestBuildControl(t *testing.T) {
 		"settings.bare.simple.placeholder": "ignored",
 	}
 
-	ctrl := buildControl("theme", []string{
+	ctrl, err := buildControl("theme", []string{
 		"settings.appearance.theme.label",
 		"settings.appearance.theme.description",
 		"settings.appearance.theme.help",
 		"settings.appearance.theme.visibility",
 	}, keys)
+	if err != nil {
+		t.Fatalf("buildControl(theme) unexpected error: %v", err)
+	}
 	if ctrl.Label != "Theme" || ctrl.Description != "Pick a theme." ||
 		ctrl.Help != "Light, dark, or system." || ctrl.Visibility != "Always shown." {
 		t.Errorf("buildControl(theme) = %+v; want all four canonical fields populated", ctrl)
 	}
 
-	// Legacy ._desc is fallback only; canonical .description wins.
-	ctrl = buildControl("foo", []string{
+	// Both .label and .description present: canonical wins.
+	ctrl, err = buildControl("foo", []string{
 		"settings.legacy.foo.label",
-		"settings.legacy.foo._desc",
 		"settings.legacy.foo.description",
 	}, keys)
+	if err != nil {
+		t.Fatalf("buildControl(foo) unexpected error: %v", err)
+	}
 	if ctrl.Description != "Canonical description." {
-		t.Errorf("buildControl(foo).Description = %q; want canonical to win over legacy _desc", ctrl.Description)
+		t.Errorf("buildControl(foo).Description = %q; want %q", ctrl.Description, "Canonical description.")
 	}
 
 	// Bare key with no .label: the value is used as the label.
-	ctrl = buildControl("simple", []string{
+	ctrl, err = buildControl("simple", []string{
 		"settings.bare.simple",
 		"settings.bare.simple.placeholder",
 	}, keys)
+	if err != nil {
+		t.Fatalf("buildControl(simple) unexpected error: %v", err)
+	}
 	if ctrl.Label != "Simple Toggle" {
 		t.Errorf("buildControl(simple).Label = %q; want bare-key fallback %q", ctrl.Label, "Simple Toggle")
 	}
 
 	// No keys at all: humanize the ID as the label of last resort.
-	ctrl = buildControl("untranslated_thing", nil, keys)
+	ctrl, err = buildControl("untranslated_thing", nil, keys)
+	if err != nil {
+		t.Fatalf("buildControl(empty) unexpected error: %v", err)
+	}
 	if ctrl.Label != "Untranslated thing" {
 		t.Errorf("buildControl(empty).Label = %q; want humanized fallback", ctrl.Label)
+	}
+
+	// Description without label: ERROR. The previous behavior silently
+	// humanized the slug (Multi user, Oidc) and let mismatched keys leak
+	// into the docs page; CR PR #1303 round-3 caught this masking the real
+	// i18n drift.
+	keysOrphan := map[string]string{
+		"settings.X.orphan.description": "Description with no label.",
+	}
+	if _, err := buildControl("orphan", []string{"settings.X.orphan.description"}, keysOrphan); err == nil {
+		t.Error("buildControl(orphan) expected error for description-without-label; got nil")
 	}
 }
 

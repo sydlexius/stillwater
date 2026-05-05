@@ -203,7 +203,6 @@ settings-users-users-expires-label
 settings-users-users-invite-expiry
 settings-users-users-invite-revoked
 settings-users-users-link-single-use
-settings-users-users-multi-user
 settings-users-users-multi-user-mode
 settings-users-users-pending-invites
 settings-users-users-revoke

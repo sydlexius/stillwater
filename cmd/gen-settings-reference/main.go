@@ -140,7 +140,10 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 		return fmt.Errorf("scan panels: %w", err)
 	}
 
-	doc := buildDocument(tabs, keys)
+	doc, err := buildDocument(tabs, keys)
+	if err != nil {
+		return fmt.Errorf("build document: %w", err)
+	}
 	rendered := renderDocument(doc)
 	anchors, err := collectAnchors(doc)
 	if err != nil {
@@ -601,28 +604,37 @@ var metadataSuffixes = []string{
 }
 
 // buildDocument assembles the full tab > section > control tree from the
-// scanned panels and the loaded i18n keys.
-func buildDocument(tabs []panel, keys map[string]string) document {
+// scanned panels and the loaded i18n keys. Returns the first error from
+// buildControl when a control's i18n keys are malformed (missing label).
+func buildDocument(tabs []panel, keys map[string]string) (document, error) {
 	doc := document{Tabs: make([]docTab, 0, len(tabs))}
 	for _, p := range tabs {
-		doc.Tabs = append(doc.Tabs, buildTab(p, keys))
+		t, err := buildTab(p, keys)
+		if err != nil {
+			return document{}, err
+		}
+		doc.Tabs = append(doc.Tabs, t)
 	}
-	return doc
+	return doc, nil
 }
 
-func buildTab(p panel, keys map[string]string) docTab {
+func buildTab(p panel, keys map[string]string) (docTab, error) {
 	tab := docTab{
 		ID:    p.ID,
 		Label: lookupLabel(keys, "settings.tab."+p.ID, p.ID),
 	}
-	tab.Sections = buildSections(p.Keys, keys)
-	return tab
+	sections, err := buildSections(p.Keys, keys)
+	if err != nil {
+		return docTab{}, fmt.Errorf("tab %q: %w", p.ID, err)
+	}
+	tab.Sections = sections
+	return tab, nil
 }
 
 // buildSections groups the panel's keys by tier-2 namespace (the section ID)
 // and returns one docSection per group, preserving panel-source order for both
 // sections and their controls.
-func buildSections(panelKeys []string, allKeys map[string]string) []docSection {
+func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection, error) {
 	type sectionAccum struct {
 		id          string
 		controlIDs  []string            // first-appearance order of control IDs
@@ -684,11 +696,15 @@ func buildSections(panelKeys []string, allKeys map[string]string) []docSection {
 			Description: allKeys[acc.descKey],
 		}
 		for _, ctrlID := range acc.controlIDs {
-			sec.Controls = append(sec.Controls, buildControl(ctrlID, acc.controlKeys[ctrlID], allKeys))
+			ctrl, err := buildControl(ctrlID, acc.controlKeys[ctrlID], allKeys)
+			if err != nil {
+				return nil, fmt.Errorf("section %q: %w", secID, err)
+			}
+			sec.Controls = append(sec.Controls, ctrl)
 		}
 		out = append(out, sec)
 	}
-	return out
+	return out, nil
 }
 
 // controlIDFor returns the stable control ID derived from a key's tier-3+
@@ -718,9 +734,19 @@ func controlIDFor(rest []string) string {
 }
 
 // buildControl assembles a docControl from the bag of keys belonging to one
-// control ID. The label resolves from .label, then the bare-control key, then
-// a humanized form of the ID.
-func buildControl(ctrlID string, ctrlKeys []string, allKeys map[string]string) docControl {
+// control ID. The label resolves from .label first, then the bare-control
+// key. If neither exists but the control carries description/help/visibility
+// metadata, that's an i18n mismatch the docs page has no clean fallback for
+// -- humanizing the slug into "Multi user" or "Oidc" silently masks the
+// missing label and lets the rendered doc drift away from the UI. Return an
+// error in that case so the generator surfaces the broken key shape rather
+// than papering over it.
+//
+// A control with no metadata at all (no description/help/visibility) AND no
+// label still humanizes the slug -- that case is genuinely ambiguous (could
+// be a runtime UI key the noise filter missed) and erroring on it would
+// produce constant churn, so we keep the existing fallback there.
+func buildControl(ctrlID string, ctrlKeys []string, allKeys map[string]string) (docControl, error) {
 	ctrl := docControl{ID: ctrlID}
 	for _, k := range ctrlKeys {
 		switch suffix := lastSegmentOf(k); suffix {
@@ -732,11 +758,6 @@ func buildControl(ctrlID string, ctrlKeys []string, allKeys map[string]string) d
 			ctrl.Help = allKeys[k]
 		case "visibility":
 			ctrl.Visibility = allKeys[k]
-		case "desc":
-			// Legacy suffix; treat as description if the dedicated key is empty.
-			if ctrl.Description == "" {
-				ctrl.Description = allKeys[k]
-			}
 		case "placeholder":
 			// Placeholders are UI hints, not user-facing reference content.
 			// Skip silently.
@@ -749,9 +770,13 @@ func buildControl(ctrlID string, ctrlKeys []string, allKeys map[string]string) d
 		}
 	}
 	if ctrl.Label == "" {
+		hasMetadata := ctrl.Description != "" || ctrl.Help != "" || ctrl.Visibility != ""
+		if hasMetadata {
+			return ctrl, fmt.Errorf("control %q has description/help/visibility but no .label or bare-key label; keys: %s", ctrlID, strings.Join(ctrlKeys, ", "))
+		}
 		ctrl.Label = humanize(ctrlID)
 	}
-	return ctrl
+	return ctrl, nil
 }
 
 // lastSegmentOf returns the final dot-segment of a key (the metadata role for

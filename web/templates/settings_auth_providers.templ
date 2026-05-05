@@ -99,7 +99,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<img src={ data.BasePath + "/static/img/logos/emby-32.png" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
-							<span class="font-medium text-sm">Emby</span>
+							<span class="font-medium text-sm">{ t(ctx, "settings.auth.emby.label") }</span>
 							<span
 								class={
 									"ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium",
@@ -217,7 +217,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<img src={ data.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
-							<span class="font-medium text-sm">Jellyfin</span>
+							<span class="font-medium text-sm">{ t(ctx, "settings.auth.jellyfin.label") }</span>
 							<span
 								class={
 									"ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium",
@@ -335,7 +335,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<img src={ data.BasePath + "/static/img/logos/openid.svg" } alt="" class="h-6 w-6"/>
 						</div>
 						<div>
-							<span class="font-medium text-sm">OpenID Connect (OIDC)</span>
+							<span class="font-medium text-sm">{ t(ctx, "settings.auth.oidc.label") }</span>
 							<span
 								class={
 									"ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium",
