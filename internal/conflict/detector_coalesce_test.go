@@ -99,7 +99,8 @@ func TestDetectorCurrentCoalescesConcurrentRefresh(t *testing.T) {
 	// barrier: once entered == goroutines, the leader holds refreshMu and
 	// every follower has reached (or is about to park on) Lock().
 	var entered atomic.Int32
-	d.onBeforeRefreshLock = func() { entered.Add(1) }
+	hook := func() { entered.Add(1) }
+	d.onBeforeRefreshLock.Store(&hook)
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
@@ -169,7 +170,8 @@ func TestDetectorCurrentCoalescesAfterTTLExpiry(t *testing.T) {
 	// reached the slow path. The priming Current() above ran before this
 	// hook was installed, so it does not contribute to the count.
 	var entered atomic.Int32
-	d.onBeforeRefreshLock = func() { entered.Add(1) }
+	hook := func() { entered.Add(1) }
+	d.onBeforeRefreshLock.Store(&hook)
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
