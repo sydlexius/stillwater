@@ -130,6 +130,8 @@ func TestGetCompletenessRows_LibraryFilter(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	seedLibraries(t, db, "lib-a", "lib-b")
+
 	libA := &Artist{
 		Name:      "Library A Artist",
 		SortName:  "Library A Artist",
@@ -320,6 +322,8 @@ func TestGetLowestCompleteness_LibraryFilter(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-a", "lib-b")
 
 	a1 := &Artist{
 		Name:        "Lib A Artist",

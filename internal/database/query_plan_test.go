@@ -55,16 +55,28 @@ func TestQueryPlans(t *testing.T) {
 			args:  []any{"Test Artist"},
 		},
 		"artist_list_by_library": {
-			query: "SELECT id, name FROM artists WHERE library_id = ? ORDER BY name ASC LIMIT ? OFFSET ?",
-			args:  []any{"lib-1", 50, 0},
+			query: `SELECT a.id, a.name FROM artists a
+				JOIN artist_libraries al ON al.artist_id = a.id
+				WHERE al.library_id = ? ORDER BY a.name ASC LIMIT ? OFFSET ?`,
+			args: []any{"lib-1", 50, 0},
 		},
 		"artist_list_with_search": {
 			query: "SELECT id, name FROM artists WHERE name LIKE ? ORDER BY name ASC LIMIT ? OFFSET ?",
 			args:  []any{"%test%", 50, 0},
 		},
 		"artist_count_by_library": {
-			query: "SELECT COUNT(*) FROM artists WHERE library_id = ?",
+			query: "SELECT COUNT(*) FROM artist_libraries WHERE library_id = ?",
 			args:  []any{"lib-1"},
+		},
+		"artist_by_lower_name": {
+			query: "SELECT id FROM artists WHERE LOWER(name) = LOWER(?)",
+			args:  []any{"Beatles"},
+		},
+		"history_range_rfc3339": {
+			query: `SELECT id FROM metadata_changes
+				WHERE artist_id = ? AND created_at >= ? AND created_at <= ?
+				ORDER BY created_at DESC LIMIT 50`,
+			args: []any{"test-id", "2024-01-01T00:00:00Z", "2024-12-31T23:59:59Z"},
 		},
 		"artist_search": {
 			query: "SELECT id, name FROM artists WHERE name LIKE ? ORDER BY name LIMIT 20",
@@ -80,9 +92,10 @@ func TestQueryPlans(t *testing.T) {
 			args: []any{"5b11f4ce-a62d-471e-81fc-a69a8278c7da"},
 		},
 		"artist_by_mbid_and_library": {
-			query: `SELECT id FROM artists
-				WHERE id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
-				AND library_id = ?`,
+			query: `SELECT a.id FROM artists a
+				JOIN artist_libraries al ON al.artist_id = a.id
+				WHERE a.id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
+				AND al.library_id = ?`,
 			args: []any{"5b11f4ce-a62d-471e-81fc-a69a8278c7da", "lib-1"},
 		},
 		"images_for_artist": {
@@ -138,8 +151,10 @@ func TestQueryPlans(t *testing.T) {
 			args:  []any{"2024-01-01"},
 		},
 		"artists_by_path_for_library": {
-			query: "SELECT id, path FROM artists WHERE library_id = ? AND path != ''",
-			args:  []any{"lib-1"},
+			query: `SELECT a.id, a.path FROM artists a
+				JOIN artist_libraries al ON al.artist_id = a.id
+				WHERE al.library_id = ? AND a.path != ''`,
+			args: []any{"lib-1"},
 		},
 		"locked_artists": {
 			query: "SELECT id, name FROM artists WHERE locked = 1",
@@ -207,7 +222,8 @@ func TestQueryPlans(t *testing.T) {
 			query: `SELECT a.id, MAX(ai.last_written_at)
 				FROM artist_images ai
 				JOIN artists a ON ai.artist_id = a.id
-				WHERE a.library_id = ? AND ai.last_written_at != ''
+				JOIN artist_libraries al ON al.artist_id = a.id
+				WHERE al.library_id = ? AND ai.last_written_at != ''
 				GROUP BY a.id`,
 			args: []any{"lib-1"},
 		},
@@ -226,6 +242,8 @@ func TestQueryPlans(t *testing.T) {
 		"artist_by_id":              true,
 		"artist_by_path":            true,
 		"artist_by_name":            true,
+		"artist_by_lower_name":      true,
+		"history_range_rfc3339":     true,
 		"provider_id_lookup":        true,
 		"api_token_lookup":          true,
 		"images_for_artist":         true,

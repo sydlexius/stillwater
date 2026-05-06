@@ -275,11 +275,34 @@ func seedLibrary(t *testing.T, db *sql.DB, id, source, connID string) {
 	}
 }
 
+// ensureLegacyLibraryIDColumn re-adds the (post-004 dropped)
+// artists.library_id column on a freshly migrated DB so the legacy backfill
+// and duplicate-collapse helpers can be exercised against a "pre-1004"
+// data shape. Idempotent: a no-op when the column is already present.
+// Lazy-called from seedArtistWithLibrary so individual tests do not need
+// to remember the setup step.
+func ensureLegacyLibraryIDColumn(t *testing.T, db *sql.DB) {
+	t.Helper()
+	has, err := columnExists(db, "artists", "library_id")
+	if err != nil {
+		t.Fatalf("checking for legacy library_id column: %v", err)
+	}
+	if has {
+		return
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`ALTER TABLE artists ADD COLUMN library_id TEXT REFERENCES libraries(id) DEFAULT NULL`); err != nil {
+		t.Fatalf("re-adding legacy library_id column: %v", err)
+	}
+}
+
 // seedArtistWithLibrary inserts an artist tied to a specific library_id
 // (legacy path that the M:N migration backfills from). created_at lets the
-// test control the canonical-pick tie-breaker.
+// test control the canonical-pick tie-breaker. Lazy-installs the legacy
+// library_id column on first use.
 func seedArtistWithLibrary(t *testing.T, db *sql.DB, id, name, libraryID, createdAt string) {
 	t.Helper()
+	ensureLegacyLibraryIDColumn(t, db)
 	_, err := db.ExecContext(context.Background(), `
 		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))

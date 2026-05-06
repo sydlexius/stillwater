@@ -170,6 +170,17 @@ func TestNewestWriteTimesByArtist(t *testing.T) {
 	ctx := context.Background()
 	repo := newSQLiteImageRepo(db)
 
+	// Seed the two libraries the artists will belong to so Service.Create's
+	// derive-source membership insert lands a real artist_libraries row.
+	for _, lid := range []string{"lib-mtime", "lib-other"} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO libraries (id, name, type, source, created_at, updated_at)
+				VALUES (?, ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+			lid, lid); err != nil {
+			t.Fatalf("seeding library %s: %v", lid, err)
+		}
+	}
+
 	// Create two artists in the same library with different write times.
 	artistA := testArtist("Artist A", "/music/Artist A")
 	artistA.LibraryID = "lib-mtime"

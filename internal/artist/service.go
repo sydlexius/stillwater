@@ -331,6 +331,9 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -344,6 +347,9 @@ func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -363,36 +369,7 @@ func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Ar
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, nil
-}
-
-// GetByNameAndLibrary retrieves an artist by name within a specific library.
-// Returns nil, nil when no match is found.
-func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error) {
-	a, err := s.artists.GetByNameAndLibrary(ctx, name, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	return a, nil
-}
-
-// GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
-// Returns nil, nil when no match is found.
-func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
-	a, err := s.artists.GetByMBIDAndLibrary(ctx, mbid, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -412,6 +389,9 @@ func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -428,6 +408,9 @@ func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name strin
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -470,26 +453,6 @@ func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) 
 	return s.memberships.CountForArtist(ctx, artistID)
 }
 
-// FindByMBIDOrName finds an artist by MBID first, then falls back to
-// case-insensitive name match, both scoped to the given library.
-// Returns nil, nil when no match is found.
-//
-// Deprecated: use FindByMBIDOrNameUnscoped. Removed alongside the
-// artists.library_id column when the legacy scoped repo surface goes.
-func (s *Service) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
-	a, err := s.artists.FindByMBIDOrName(ctx, mbid, name, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	return a, nil
-}
-
 // GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	a, err := s.artists.GetByPath(ctx, path)
@@ -500,6 +463,9 @@ func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -516,6 +482,9 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 		return nil, 0, err
 	}
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
+		return nil, 0, err
+	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
 		return nil, 0, err
 	}
 	return artists, total, nil
@@ -1458,6 +1427,93 @@ func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {
 		return fmt.Errorf("hydrating provider IDs: %w", err)
 	}
 	applyProviderIDs(a, ids)
+	return nil
+}
+
+// hydratePrimaryLibrary populates a.LibraryID from artist_libraries by
+// picking the earliest membership row (oldest added_at). The legacy
+// artists.library_id column was dropped in migration 004; readers that
+// still rely on Artist.LibraryID (rule engine shared-fs detection,
+// compliance CSV export, library-name display in artist detail pages)
+// continue to see a value derived from the M:N table. A nil or unset
+// repository is a silent no-op so tests using fake repos without a real
+// DB are unaffected.
+func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
+	if a == nil || a.ID == "" {
+		return nil
+	}
+	// Use the underlying *sql.DB through the repo when available; fall back
+	// to a no-op when no DB is wired (e.g. tests with fake repos).
+	repo, ok := s.artists.(*sqliteArtistRepo)
+	if !ok {
+		return nil
+	}
+	var libID string
+	err := repo.db.QueryRowContext(ctx,
+		`SELECT library_id FROM artist_libraries WHERE artist_id = ? ORDER BY added_at, library_id LIMIT 1`,
+		a.ID).Scan(&libID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("hydrating primary library for artist %s: %w", a.ID, err)
+	}
+	a.LibraryID = libID
+	return nil
+}
+
+// hydratePrimaryLibrariesBatch populates LibraryID on a slice of artists
+// in a single query so List does not fan out to N round-trips. The same
+// "earliest added_at" rule applies per artist. Artists without any
+// membership row keep their zero-valued LibraryID.
+func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Artist) error {
+	if len(artists) == 0 {
+		return nil
+	}
+	repo, ok := s.artists.(*sqliteArtistRepo)
+	if !ok {
+		return nil
+	}
+	placeholders := make([]string, len(artists))
+	args := make([]any, len(artists))
+	for i := range artists {
+		placeholders[i] = "?"
+		args[i] = artists[i].ID
+	}
+	// Window-style "first per group" via NOT EXISTS so we get exactly one
+	// row per artist_id (the one with the smallest added_at, ties broken
+	// by library_id).
+	//nolint:gosec // G202: placeholders is a literal "?,?,..." string built by joining "?" literals; no user input.
+	query := `SELECT al.artist_id, al.library_id FROM artist_libraries al
+		WHERE al.artist_id IN (` + strings.Join(placeholders, ",") + `)
+		AND NOT EXISTS (
+			SELECT 1 FROM artist_libraries al2
+			WHERE al2.artist_id = al.artist_id
+			AND (al2.added_at < al.added_at
+				OR (al2.added_at = al.added_at AND al2.library_id < al.library_id))
+		)`
+	rows, err := repo.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("batch hydrating primary library: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	libByArtist := make(map[string]string, len(artists))
+	for rows.Next() {
+		var aid, lid string
+		if err := rows.Scan(&aid, &lid); err != nil {
+			return fmt.Errorf("scanning primary library row: %w", err)
+		}
+		libByArtist[aid] = lid
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating primary library rows: %w", err)
+	}
+	for i := range artists {
+		if lid, ok := libByArtist[artists[i].ID]; ok {
+			artists[i].LibraryID = lid
+		}
+	}
 	return nil
 }
 

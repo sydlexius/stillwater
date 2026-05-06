@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1104,29 +1105,32 @@ func (r *Router) manualLibraries(ctx context.Context) []library.Library {
 // or exact name, stores the platform ID on it, and backfills the mapping to
 // any matching filesystem-library artist. Returns the connection-library
 // artist for the caller to update image flags, or nil if no match found.
+//
+// The lookup prefers an artist that already holds a membership in connLib
+// (so a transitional state with one artist row per library still resolves
+// to the connection-side row, not the filesystem-side row). It falls back
+// to an unscoped MBID-then-name lookup, which is the right answer once the
+// duplicate-collapse migration has merged the rows.
 func (r *Router) resolveAndBackfillPlatformID(
 	ctx context.Context,
 	mbid, name, connectionID, platformArtistID string,
 	connLib *library.Library,
 	manualLibs []library.Library,
 ) *artist.Artist {
-	var a *artist.Artist
-	var lookupErr error
-	if mbid != "" {
-		a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, connLib.ID)
-	}
-	if a == nil && lookupErr == nil {
-		a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, name, connLib.ID)
-	}
-	if lookupErr != nil {
-		r.logger.Warn("scan artist lookup", "name", name, "mbid", mbid, "platform", connLib.Source, "error", lookupErr)
-		return nil
+	a := r.findArtistInLibrary(ctx, mbid, name, connLib.ID)
+	if a == nil {
+		var lookupErr error
+		a, lookupErr = r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
+		if lookupErr != nil {
+			r.logger.Warn("scan artist lookup", "name", name, "mbid", mbid, "platform", connLib.Source, "error", lookupErr)
+			return nil
+		}
 	}
 	if a == nil {
 		return nil
 	}
 
-	// Store platform ID on the connection-library artist.
+	// Store platform ID on the resolved artist.
 	if setErr := r.artistService.SetPlatformID(ctx, a.ID, connectionID, platformArtistID); setErr != nil {
 		r.logger.Warn("storing platform id during scan", "name", a.Name, "platform", connLib.Source, "error", setErr)
 	}
@@ -1134,6 +1138,71 @@ func (r *Router) resolveAndBackfillPlatformID(
 	// Backfill to filesystem-library artists.
 	r.backfillPlatformIDToManualLibs(ctx, mbid, name, connectionID, platformArtistID, a.ID, manualLibs)
 
+	return a
+}
+
+// findArtistInLibrary looks up an artist by MBID then case-insensitive
+// name, restricted to artists that are members of libraryID. Returns nil
+// if no match exists. Used by resolveAndBackfillPlatformID to prefer the
+// connection-library artist over a sibling-library artist that shares the
+// same identity (transitional duplicate-row state under M:N).
+func (r *Router) findArtistInLibrary(ctx context.Context, mbid, name, libraryID string) *artist.Artist {
+	if mbid != "" {
+		if a := r.lookupByMBIDInLibrary(ctx, mbid, libraryID); a != nil {
+			return a
+		}
+	}
+	if name == "" {
+		return nil
+	}
+	return r.lookupByNameInLibrary(ctx, name, libraryID)
+}
+
+func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID string) *artist.Artist {
+	var artistID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT a.id FROM artists a
+		JOIN artist_libraries al ON al.artist_id = a.id
+		JOIN artist_provider_ids p ON p.artist_id = a.id
+		WHERE al.library_id = ?
+		  AND p.provider = 'musicbrainz' AND p.provider_id = ?
+		LIMIT 1
+	`, libraryID, mbid).Scan(&artistID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("library-scoped mbid lookup", "mbid", mbid, "library_id", libraryID, "error", err)
+		return nil
+	}
+	a, err := r.artistService.GetByID(ctx, artistID)
+	if err != nil {
+		r.logger.Warn("loading library-scoped artist by id", "artist_id", artistID, "error", err)
+		return nil
+	}
+	return a
+}
+
+func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID string) *artist.Artist {
+	var artistID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT a.id FROM artists a
+		JOIN artist_libraries al ON al.artist_id = a.id
+		WHERE al.library_id = ? AND LOWER(a.name) = LOWER(?)
+		LIMIT 1
+	`, libraryID, name).Scan(&artistID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		r.logger.Warn("library-scoped name lookup", "name", name, "library_id", libraryID, "error", err)
+		return nil
+	}
+	a, err := r.artistService.GetByID(ctx, artistID)
+	if err != nil {
+		r.logger.Warn("loading library-scoped artist by id", "artist_id", artistID, "error", err)
+		return nil
+	}
 	return a
 }
 

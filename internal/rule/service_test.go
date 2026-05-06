@@ -1240,19 +1240,24 @@ func TestDismissOrphanedViolations(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Create a library so the real artist has a valid library_id.
+	// Create a library so the real artist has a membership.
 	_, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, type) VALUES (?, ?, ?, ?)`,
 		"lib-1", "Test Library", "/music", "regular")
 	if err != nil {
 		t.Fatalf("inserting library: %v", err)
 	}
 
-	// Create a real artist with a library, an orphaned violation (deleted
+	// Create a real artist with a membership, an orphaned violation (deleted
 	// artist), and a libraryless artist (library removed, artist kept).
-	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id) VALUES (?, ?, ?, ?, ?, ?)`,
-		"real-artist", "Real Artist", "Real Artist", "person", "/music/Real Artist", "lib-1")
+	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path) VALUES (?, ?, ?, ?, ?)`,
+		"real-artist", "Real Artist", "Real Artist", "person", "/music/Real Artist")
 	if err != nil {
 		t.Fatalf("inserting real artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+		"real-artist", "lib-1"); err != nil {
+		t.Fatalf("inserting artist_libraries: %v", err)
 	}
 
 	realV := &RuleViolation{
@@ -1338,16 +1343,21 @@ func TestDismissViolationsForLibrary(t *testing.T) {
 		}
 	}
 
-	// Insert artists belonging to each library.
+	// Insert artists and link them to libraries via artist_libraries.
 	for _, a := range []struct{ id, name, libID string }{
 		{"artist-a1", "Artist A1", "lib-a"},
 		{"artist-a2", "Artist A2", "lib-a"},
 		{"artist-b1", "Artist B1", "lib-b"},
 	} {
-		_, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id)
-			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id, a.name, a.name, a.id, a.libID)
+		_, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+			VALUES (?, ?, ?, 'person', '/music/'||?)`, a.id, a.name, a.name, a.id)
 		if err != nil {
 			t.Fatalf("inserting artist %s: %v", a.id, err)
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			a.id, a.libID); err != nil {
+			t.Fatalf("inserting artist_libraries for %s: %v", a.id, err)
 		}
 	}
 
@@ -2262,7 +2272,6 @@ func TestCountActiveViolationsByLibrary(t *testing.T) {
 	}
 	// Artists: two in lib-a, one in lib-b, and one with no library (should
 	// not appear in counts because the handler expects library IDs only).
-	// Only libID is nullable here; ids are always set.
 	for _, a := range []struct {
 		id    string
 		libID sql.NullString
@@ -2272,9 +2281,16 @@ func TestCountActiveViolationsByLibrary(t *testing.T) {
 		{"art-b1", sql.NullString{String: "lib-b", Valid: true}},
 		{"art-none", sql.NullString{}},
 	} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id)
-			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id, a.id, a.id, a.id, a.libID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+			VALUES (?, ?, ?, 'person', '/music/'||?)`, a.id, a.id, a.id, a.id); err != nil {
 			t.Fatalf("insert artist %s: %v", a.id, err)
+		}
+		if a.libID.Valid {
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+				a.id, a.libID.String); err != nil {
+				t.Fatalf("insert artist_libraries for %s: %v", a.id, err)
+			}
 		}
 	}
 

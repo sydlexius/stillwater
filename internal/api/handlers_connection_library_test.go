@@ -341,7 +341,7 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 	}
 
 	// Retrieve the artist and verify metadata was mapped.
-	a, err := r.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := r.artistService.GetByName(ctx, "Radiohead")
 	if err != nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := r.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := r.artistService.GetByName(ctx, "Bjork")
 	if err != nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	}
 
 	// Verify artist record has path and thumb flag set.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -749,7 +749,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	}
 
 	// Verify the image was saved to the cache directory, not an artist path.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "NoPath Artist", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "NoPath Artist")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -862,7 +862,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 		t.Errorf("expected image file in %s, got: %v", artistDir, entries)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Bjork")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -977,7 +977,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	}
 
 	// Verify the flag was set.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1083,7 +1083,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1146,7 +1146,7 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1202,7 +1202,7 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1277,7 +1277,7 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 	}
 
 	// Verify MBID was backfilled.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1530,7 +1530,7 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 		t.Errorf("expected fanart1.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1703,7 +1703,7 @@ func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 		t.Errorf("expected fanart1.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Bjork")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -1934,7 +1934,7 @@ func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
 		t.Errorf("updated = %d, want 1", updated)
 	}
 
-	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-001", lib.ID)
+	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-001")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
@@ -2010,7 +2010,7 @@ func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
 		t.Errorf("updated = %d, want 1", updated)
 	}
 
-	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-002", lib.ID)
+	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-002")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
@@ -2107,7 +2107,7 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 		t.Errorf("expected backdrop2.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Sigur Ros", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Sigur Ros")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -2531,14 +2531,9 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 	if fsPlatformID != "" {
 		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
 	}
-	embyArtistRow, err := router.artistService.GetByNameAndLibrary(ctx, "VERIDIA", embyLib.ID)
-	if err != nil {
-		t.Fatalf("GetByNameAndLibrary (emby): %v", err)
-	}
-	if embyArtistRow == nil {
-		t.Fatal("scanFromEmby should have created the Emby-library artist row")
-	}
-	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtistRow.ID, "conn-emby-1")
+	// The scan resolves the Emby-library artist via membership; assert
+	// that the platform mapping landed on that row directly.
+	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (emby): %v", err)
 	}

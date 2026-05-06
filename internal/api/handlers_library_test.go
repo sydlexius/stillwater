@@ -31,6 +31,9 @@ func testRouterWithLibrary(t *testing.T) (*Router, *library.Service, *artist.Ser
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("running migrations: %v", err)
 	}
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
 	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

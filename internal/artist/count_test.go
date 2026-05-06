@@ -48,6 +48,8 @@ func TestCount_WithLibraryFilter(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	seedLibraries(t, db, "lib-1", "lib-2")
+
 	a1 := testArtist("Alpha", "/music/Alpha")
 	a1.LibraryID = "lib-1"
 	a2 := testArtist("Bravo", "/music/Bravo")
@@ -135,6 +137,8 @@ func TestCount_ConsistentWithList(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-1", "lib-2")
 
 	a1 := testArtist("Alpha", "/music/Alpha")
 	a1.LibraryID = "lib-1"

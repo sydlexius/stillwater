@@ -131,6 +131,16 @@ func TestPipeline_FixFlipsFailToPassInSameRun(t *testing.T) {
 		t.Fatalf("setting automation_mode=auto: %v", err)
 	}
 
+	// Seed a libraries row so Service.Create can land a real
+	// artist_libraries membership; the post-create hydration of
+	// Artist.LibraryID then reflects the membership and the
+	// SharedFSCheck path observes a non-empty library id.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, type, source, created_at, updated_at)
+			VALUES ('lib-test', 'Test', 'regular', 'manual', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
 	a := &artist.Artist{
 		Name:      "Fix Flips Pass",
 		SortName:  "Fix Flips Pass",
