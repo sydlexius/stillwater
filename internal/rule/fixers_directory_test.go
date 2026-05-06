@@ -55,7 +55,9 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 		}
 	})
 
-	t.Run("destination exists", func(t *testing.T) {
+	t.Run("destination exists with no usable sort_name", func(t *testing.T) {
+		// Canonical target collides; sort_name is empty so no fallback is
+		// attempted. The fixer must refuse with the canonical-collision message.
 		tmp := t.TempDir()
 		oldPath := filepath.Join(tmp, "Old Name")
 		newPath := filepath.Join(tmp, "Existing")
@@ -77,7 +79,203 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Fatalf("Fix: %v", err)
 		}
 		if result.Fixed {
-			t.Error("Fixed = true, want false when destination exists")
+			t.Error("Fixed = true, want false when destination exists and no fallback")
+		}
+		if !strings.Contains(result.Message, "already exists") {
+			t.Errorf("expected 'already exists' message, got: %s", result.Message)
+		}
+	})
+
+	// #1220: when the canonical target collides AND sort_name produces a
+	// distinct, free directory name, the fixer renames to the sort-name path
+	// so artists with disambiguated SortName values still auto-fix.
+	// #1220 idempotency: a prior run already renamed the directory to the
+	// sort-name fallback. On rescan, pathIsFree(fallbackPath) sees the current
+	// directory occupying the target; without a guard the fixer would report
+	// "destination collides" and bounce the artist back into a fix loop.
+	t.Run("directory already at sort_name fallback (idempotent rerun)", func(t *testing.T) {
+		tmp := t.TempDir()
+		fallbackPath := filepath.Join(tmp, "Carter Family, The (later generations)")
+		canonicalCollision := filepath.Join(tmp, "The Carter Family")
+		// The artist directory is already at the fallback path from a prior run.
+		if err := os.MkdirAll(fallbackPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Canonical target exists too -- this is what triggered the original
+		// collision-driven fallback.
+		if err := os.MkdirAll(canonicalCollision, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		a := &artist.Artist{
+			Name:      "The Carter Family",
+			SortName:  "Carter Family, The (later generations)",
+			Path:      fallbackPath,
+			LibraryID: "lib-test",
+		}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if !result.Fixed {
+			t.Fatalf("Fixed = false, want true (idempotent rerun); message: %s", result.Message)
+		}
+		// a.Path must remain at the fallback path (no actual rename happened).
+		if a.Path != fallbackPath {
+			t.Errorf("a.Path = %q, want %q (no-op on idempotent rerun)", a.Path, fallbackPath)
+		}
+		if !strings.Contains(result.Message, "already uses sort-name fallback") {
+			t.Errorf("expected 'already uses sort-name fallback' message, got: %s", result.Message)
+		}
+	})
+
+	t.Run("canonical collides with sort_name fallback free", func(t *testing.T) {
+		tmp := t.TempDir()
+		oldPath := filepath.Join(tmp, "Wrong Folder")
+		canonicalCollision := filepath.Join(tmp, "The Carter Family")
+		if err := os.MkdirAll(oldPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Pre-create the canonical target to force the collision branch.
+		if err := os.MkdirAll(canonicalCollision, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		a := &artist.Artist{
+			Name:      "The Carter Family",
+			SortName:  "Carter Family, The (later generations)",
+			Path:      oldPath,
+			LibraryID: "lib-test",
+		}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if !result.Fixed {
+			t.Fatalf("Fixed = false, want true; message: %s", result.Message)
+		}
+		expected := filepath.Join(tmp, "Carter Family, The (later generations)")
+		if a.Path != expected {
+			t.Errorf("a.Path = %q, want %q", a.Path, expected)
+		}
+		if !strings.Contains(result.Message, "sort-name fallback") {
+			t.Errorf("expected sort-name fallback message, got: %s", result.Message)
+		}
+	})
+
+	// #1220: when both canonical and sort-name targets collide, refuse.
+	t.Run("canonical and sort_name both collide", func(t *testing.T) {
+		tmp := t.TempDir()
+		oldPath := filepath.Join(tmp, "Wrong Folder")
+		canonical := filepath.Join(tmp, "Hiromi")
+		fallback := filepath.Join(tmp, "Uehara, Hiromi")
+		for _, p := range []string{oldPath, canonical, fallback} {
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		a := &artist.Artist{
+			Name:      "Hiromi",
+			SortName:  "Uehara, Hiromi",
+			Path:      oldPath,
+			LibraryID: "lib-test",
+		}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if result.Fixed {
+			t.Error("Fixed = true, want false when both targets collide")
+		}
+		if !strings.Contains(result.Message, "fallback") {
+			t.Errorf("expected fallback-collision message, got: %s", result.Message)
+		}
+	})
+
+	// #1220: empty sort_name skips the fallback branch entirely. The fixer
+	// must refuse with the canonical-collision message rather than try a
+	// derived empty path.
+	t.Run("canonical collides with empty sort_name", func(t *testing.T) {
+		tmp := t.TempDir()
+		oldPath := filepath.Join(tmp, "Wrong Folder")
+		canonical := filepath.Join(tmp, "Beth Gibbons")
+		for _, p := range []string{oldPath, canonical} {
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		a := &artist.Artist{
+			Name:      "Beth Gibbons",
+			SortName:  "",
+			Path:      oldPath,
+			LibraryID: "lib-test",
+		}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if result.Fixed {
+			t.Error("Fixed = true, want false when sort_name is empty")
+		}
+		if !strings.Contains(result.Message, "already exists") {
+			t.Errorf("expected canonical-collision message, got: %s", result.Message)
+		}
+	})
+
+	// #1220: when sort_name canonicalizes to the same value as canonical,
+	// the fallback is not a real alternative; refuse rather than retry.
+	t.Run("canonical collides with sort_name equal to canonical", func(t *testing.T) {
+		tmp := t.TempDir()
+		oldPath := filepath.Join(tmp, "Wrong Folder")
+		canonical := filepath.Join(tmp, "Existing")
+		for _, p := range []string{oldPath, canonical} {
+			if err := os.MkdirAll(p, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		a := &artist.Artist{
+			Name:      "Existing",
+			SortName:  "Existing",
+			Path:      oldPath,
+			LibraryID: "lib-test",
+		}
+		v := &Violation{
+			RuleID: RuleDirectoryNameMismatch,
+			Config: RuleConfig{ArticleMode: "prefix"},
+		}
+
+		result, err := fixer.Fix(context.Background(), a, v)
+		if err != nil {
+			t.Fatalf("Fix: %v", err)
+		}
+		if result.Fixed {
+			t.Error("Fixed = true, want false when sort_name equals canonical")
+		}
+		if !strings.Contains(result.Message, "already exists") {
+			t.Errorf("expected canonical-collision message, got: %s", result.Message)
 		}
 	})
 
