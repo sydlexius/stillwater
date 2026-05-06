@@ -1421,6 +1421,179 @@ func TestDismissViolationsForLibrary_NoViolations(t *testing.T) {
 	}
 }
 
+// TestListViolations_PrimaryLibraryMixedTimestamps verifies that the
+// primary-library subquery selects the chronologically oldest membership even
+// when artist_libraries.added_at contains a mix of legacy
+// "YYYY-MM-DD HH:MM:SS" and RFC3339 timestamps. Lexicographic sort would put
+// "2026-..." (RFC3339 with 'T') after legacy "2024-..." with space, so a raw
+// ORDER BY would silently pick the wrong oldest membership when years match.
+func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	for _, lib := range []struct{ id, name string }{
+		{"lib-old", "Oldest Library"},
+		{"lib-new", "Newer Library"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
+			t.Fatalf("inserting library %s: %v", lib.id, err)
+		}
+	}
+
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+		VALUES ('artist-mixed', 'Mixed Artist', 'Mixed Artist', 'person', '/music/mixed')`); err != nil {
+		t.Fatalf("inserting artist: %v", err)
+	}
+
+	// lib-old joined first chronologically, but stored in legacy format.
+	// lib-new joined later, stored in RFC3339. Lexicographic compare of
+	// "2024-06-01 10:00:00" vs "2024-01-15T10:00:00Z" places the RFC3339 row
+	// FIRST (the 'T' character sorts after a space), which would incorrectly
+	// pick lib-new as primary if datetime() normalization is missing.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
+		"artist-mixed", "lib-old", "2024-06-01 10:00:00"); err != nil {
+		t.Fatalf("insert lib-old membership: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
+		"artist-mixed", "lib-new", "2024-01-15T10:00:00Z"); err != nil {
+		t.Fatalf("insert lib-new membership: %v", err)
+	}
+
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "artist-mixed", ArtistName: "Mixed Artist",
+		Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	got, err := svc.ListViolations(ctx, "active")
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d violations, want 1", len(got))
+	}
+	// lib-new joined chronologically first (Jan vs Jun), so it is the oldest
+	// membership and must be the primary library_name.
+	if got[0].LibraryName != "Newer Library" {
+		t.Errorf("LibraryName = %q, want %q (datetime() normalization should pick the chronologically earliest membership)",
+			got[0].LibraryName, "Newer Library")
+	}
+
+	// GetViolationByID exercises the third copy of the subquery.
+	byID, err := svc.GetViolationByID(ctx, v.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if byID.LibraryName != "Newer Library" {
+		t.Errorf("GetViolationByID LibraryName = %q, want %q", byID.LibraryName, "Newer Library")
+	}
+
+	// ListViolationsFiltered exercises the second copy.
+	filtered, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active"})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("ListViolationsFiltered got %d, want 1", len(filtered))
+	}
+	if filtered[0].LibraryName != "Newer Library" {
+		t.Errorf("ListViolationsFiltered LibraryName = %q, want %q",
+			filtered[0].LibraryName, "Newer Library")
+	}
+}
+
+// TestDismissViolationsForLibrary_PreservesSharedArtist verifies that an artist
+// who belongs to two libraries does NOT have their violations dismissed when
+// only one of those libraries is removed. The artist's surviving membership in
+// the other library means the violation is still actionable.
+func TestDismissViolationsForLibrary_PreservesSharedArtist(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert two libraries.
+	for _, lib := range []struct{ id, name string }{
+		{"lib-a", "Library A"},
+		{"lib-b", "Library B"},
+	} {
+		_, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name)
+		if err != nil {
+			t.Fatalf("inserting library %s: %v", lib.id, err)
+		}
+	}
+
+	// artist-shared belongs to BOTH lib-a and lib-b.
+	// artist-only-a belongs to lib-a alone.
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+		VALUES ('artist-shared', 'Shared Artist', 'Shared Artist', 'person', '/music/shared')`); err != nil {
+		t.Fatalf("inserting artist-shared: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+		VALUES ('artist-only-a', 'Only A Artist', 'Only A Artist', 'person', '/music/only-a')`); err != nil {
+		t.Fatalf("inserting artist-only-a: %v", err)
+	}
+	for _, link := range []struct{ artistID, libID string }{
+		{"artist-shared", "lib-a"},
+		{"artist-shared", "lib-b"},
+		{"artist-only-a", "lib-a"},
+	} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			link.artistID, link.libID); err != nil {
+			t.Fatalf("inserting artist_libraries (%s, %s): %v", link.artistID, link.libID, err)
+		}
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "artist-shared", ArtistName: "Shared Artist",
+			Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "artist-only-a", ArtistName: "Only A Artist",
+			Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("upserting violation: %v", err)
+		}
+	}
+
+	// Dismiss for lib-a. Only artist-only-a's violation should be dismissed;
+	// artist-shared still belongs to lib-b, so its violation must remain open.
+	n, err := svc.DismissViolationsForLibrary(ctx, "lib-a")
+	if err != nil {
+		t.Fatalf("DismissViolationsForLibrary: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("dismissed = %d, want 1 (only artist-only-a)", n)
+	}
+
+	// artist-shared's violation must still be open.
+	gotShared, err := svc.GetViolationByID(ctx, violations[0].ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID(shared): %v", err)
+	}
+	if gotShared.Status != ViolationStatusOpen {
+		t.Errorf("shared artist violation status = %q, want %q (still has lib-b membership)",
+			gotShared.Status, ViolationStatusOpen)
+	}
+
+	// artist-only-a's violation must be dismissed.
+	gotOnlyA, err := svc.GetViolationByID(ctx, violations[1].ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID(only-a): %v", err)
+	}
+	if gotOnlyA.Status != ViolationStatusDismissed {
+		t.Errorf("only-a artist violation status = %q, want %q",
+			gotOnlyA.Status, ViolationStatusDismissed)
+	}
+}
+
 func TestGetComplianceForArtists(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

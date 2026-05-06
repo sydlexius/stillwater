@@ -919,7 +919,7 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 // ListViolations returns rule violations filtered by status.
 // If status is empty, returns all violations.
 func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViolation, error) {
-	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY al.added_at, al.library_id LIMIT 1)`
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1)`
 	args := []any{}
 	if status == "active" {
 		// active = open + pending_choice (violations that need attention)
@@ -1025,7 +1025,7 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 
 // buildViolationFromClause returns the FROM/JOIN portion of a violation query.
 func buildViolationFromClause(needJoin bool) string {
-	q := ` FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY al.added_at, al.library_id LIMIT 1)`
+	q := ` FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1)`
 	if needJoin {
 		q += ` JOIN rules r ON r.id = rv.rule_id`
 	}
@@ -1216,7 +1216,7 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolation, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at
-		FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY al.added_at, al.library_id LIMIT 1) WHERE rv.id = ?
+		FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1) WHERE rv.id = ?
 	`, id)
 	v, err := scanViolation(row)
 	if err != nil {
@@ -1517,12 +1517,25 @@ func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p Violatio
 // the number of violations dismissed.
 func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID string) (int, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	// In the M:N model, only dismiss violations for artists whose ONLY library
+	// membership is the one being deleted. Artists that still belong to another
+	// library after this deletion should keep their active violations.
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations
 		SET status = ?, dismissed_at = ?, updated_at = ?
 		WHERE status IN (?, ?)
-		AND artist_id IN (SELECT artist_id FROM artist_libraries WHERE library_id = ?)
-	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice, libraryID)
+		AND artist_id IN (
+			SELECT al.artist_id
+			FROM artist_libraries al
+			WHERE al.library_id = ?
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM artist_libraries other
+				WHERE other.artist_id = al.artist_id
+				  AND other.library_id <> ?
+			  )
+		)
+	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice, libraryID, libraryID)
 	if err != nil {
 		return 0, fmt.Errorf("dismissing violations for library %s: %w", libraryID, err)
 	}
