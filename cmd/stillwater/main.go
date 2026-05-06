@@ -100,7 +100,7 @@ func main() {
 
 func run() error {
 	// Load configuration
-	configPath := os.Getenv("SW_CONFIG_PATH")
+	configPath, configPathSet := os.LookupEnv("SW_CONFIG_PATH")
 	if configPath == "" {
 		configPath = "/config/config.toml"
 	}
@@ -108,7 +108,21 @@ func run() error {
 	// First-run scaffolding: create a commented config.toml at configPath when
 	// the file is missing so admins have a documented starting point. A failure
 	// here is non-fatal; in-code defaults plus env vars are sufficient to boot.
-	scaffolded, scaffoldErr := config.EnsureScaffold(configPath)
+	//
+	// Only scaffold when the operator has explicitly opted in via
+	// SW_CONFIG_PATH. Native binary installs that boot with only SW_DB_PATH
+	// and SW_MUSIC_PATH would otherwise log a "could not write scaffold"
+	// warning every startup just because the container default /config is
+	// unwritable on a host filesystem. The container image sets
+	// SW_CONFIG_PATH explicitly, so the Docker first-run experience is
+	// preserved.
+	var (
+		scaffolded  bool
+		scaffoldErr error
+	)
+	if configPathSet && configPath != "" {
+		scaffolded, scaffoldErr = config.EnsureScaffold(configPath)
+	}
 
 	cfg, err := config.Load(configPath)
 	if err != nil {

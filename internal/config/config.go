@@ -12,6 +12,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // Config holds all application configuration.
@@ -181,22 +183,18 @@ func EnsureScaffold(path string) (bool, error) {
 			return false, fmt.Errorf("creating config directory: %w", err)
 		}
 	}
-	// Atomic create-only: O_CREATE|O_EXCL avoids the TOCTOU window between
-	// a separate Stat and Write, and converges concurrent first-runs on a
-	// single scaffold (the loser sees ErrExist, treated as a no-op).
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G306: config file is intentionally world-readable
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return false, nil
-		}
+	// Skip if the file already exists. A direct stat is sufficient: this
+	// runs once on first boot, the operator sequence does not produce
+	// concurrent scaffolders, and the alternative (O_EXCL on the destination)
+	// would skip the project's atomic-write contract that requires every
+	// file write to go through internal/filesystem's tmp/rename helper.
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, fmt.Errorf("checking for existing config: %w", err)
+	}
+	if err := filesystem.WriteFileAtomic(path, []byte(scaffoldTOML), 0o644); err != nil {
 		return false, fmt.Errorf("writing config scaffold: %w", err)
-	}
-	if _, werr := f.Write([]byte(scaffoldTOML)); werr != nil {
-		_ = f.Close()
-		return false, fmt.Errorf("writing config scaffold: %w", werr)
-	}
-	if cerr := f.Close(); cerr != nil {
-		return false, fmt.Errorf("writing config scaffold: %w", cerr)
 	}
 	return true, nil
 }
