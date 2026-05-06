@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
@@ -1041,5 +1042,74 @@ func TestResetPrioritiesDBError(t *testing.T) {
 	err := svc.ResetPriorities(context.Background())
 	if err == nil {
 		t.Fatal("expected error after db close, got nil")
+	}
+	// Assert the error carries the documented "resetting priorities" wrap so
+	// callers (and humans reading logs) can attribute the failure rather than
+	// see a bare driver message.
+	if !strings.Contains(err.Error(), "resetting priorities") {
+		t.Fatalf("expected wrapped reset context, got: %v", err)
+	}
+}
+
+// TestResetPrioritiesPreservesEnabledWebSearch verifies that ResetPriorities
+// re-applies currently-enabled web search providers to image-field priority
+// rows after the bulk delete, so enabled web search providers do not silently
+// disappear from active priority lists.
+func TestResetPrioritiesPreservesEnabledWebSearch(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Pick a real web search provider name and enable it.
+	wsNames := AllWebSearchProviderNames()
+	if len(wsNames) == 0 {
+		t.Skip("no web search providers registered")
+	}
+	wsName := wsNames[0]
+	if err := svc.SetWebSearchEnabled(ctx, wsName, true); err != nil {
+		t.Fatalf("enabling web search provider %s: %v", wsName, err)
+	}
+
+	// Seed a customized image-field priority so the reset has something to clear.
+	if err := svc.SetPriority(ctx, "thumb", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("seeding thumb priority: %v", err)
+	}
+
+	if err := svc.ResetPriorities(ctx); err != nil {
+		t.Fatalf("ResetPriorities: %v", err)
+	}
+
+	// After reset, GetPriorities for image fields must contain the enabled
+	// web search provider so it actually participates in fetches.
+	priorities, err := svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	imageFields := map[string]bool{"thumb": true, "fanart": true, "logo": true, "banner": true}
+	for _, p := range priorities {
+		if !imageFields[p.Field] {
+			continue
+		}
+		found := false
+		for _, name := range p.Providers {
+			if name == wsName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("image field %s missing enabled web search provider %s after reset; got %v", p.Field, wsName, p.Providers)
+		}
+	}
+
+	// And the websearch.enabled flag itself must remain true (reset only
+	// touches provider.priority.* rows).
+	stillEnabled, err := svc.IsWebSearchEnabled(ctx, wsName)
+	if err != nil {
+		t.Fatalf("IsWebSearchEnabled after reset: %v", err)
+	}
+	if !stillEnabled {
+		t.Errorf("web search provider %s should remain enabled after reset", wsName)
 	}
 }
