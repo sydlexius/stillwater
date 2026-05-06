@@ -265,6 +265,37 @@ func TestFindExistingImage_LooseWrapper(t *testing.T) {
 	}
 }
 
+// TestFindExistingImage_LooseWrapper_StatErrorReturnsNotFound locks in the
+// loose wrapper's swallow-all-errors contract on the EACCES path. The strict
+// variant surfaces the error; the loose wrapper must continue to return
+// ("", false) for read-only consumers that have no use for the error and
+// cannot regress to a strict signature without churning every caller.
+func TestFindExistingImage_LooseWrapper_StatErrorReturnsNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 semantics are Unix-specific")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	parent := t.TempDir()
+	child := filepath.Join(parent, "artist")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	got, found := FindExistingImage(child, []string{"folder.jpg"})
+	if found {
+		t.Error("expected found=false on permission-denied stat")
+	}
+	if got != "" {
+		t.Errorf("expected got=\"\" on permission-denied stat, got %q", got)
+	}
+}
+
 // TestFindExistingImageStrict_PermissionDeniedAltExt covers the alt-extension
 // branch's EACCES short-circuit. The primary pattern's stat must surface as
 // ENOENT (so the loop continues into the alt-extension probes) while the

@@ -2172,18 +2172,24 @@ func TestHandleServeImage_PreservesFlagOnStatError(t *testing.T) {
 		t.Errorf("expected 404 on stat error, got %d", w.Code)
 	}
 
-	// Wait briefly so any (incorrect) async clear would have time to run.
-	time.Sleep(200 * time.Millisecond)
-
 	// Restore permissions so the DB read can use the path freely (defensive).
 	_ = os.Chmod(parent, 0o755)
 
-	updated, err := artistSvc.GetByID(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if !updated.ThumbExists {
-		t.Error("ThumbExists must remain true after a non-ENOENT stat error; otherwise transient FS hiccups corrupt flags")
+	// The serve handler clears stale flags from a goroutine with a 5s
+	// timeout. A short sleep can let the test pass even if a buggy code path
+	// schedules the clear with extra latency, so poll past the goroutine's
+	// own deadline and assert the flag stays true the whole window. Any flip
+	// to false at any point is a regression.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		updated, err := artistSvc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if !updated.ThumbExists {
+			t.Fatal("ThumbExists must remain true after a non-ENOENT stat error; otherwise transient FS hiccups corrupt flags")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

@@ -213,6 +213,17 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 		// as a clean miss. Without this distinction, a single flaky filesystem
 		// could clear every exists_flag under it. See issue #1161.
 		patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
+		if len(patterns) == 0 {
+			// Unknown imageType: FindExistingImageStrict(dir, nil) reports
+			// found=false, err=nil, which would clear exists_flag without ever
+			// probing the filesystem. Skip so the "only clear on definitive
+			// absence" guarantee is preserved.
+			s.logger.Warn("exists_flag scan: unknown image type, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType))
+			skipped++
+			continue
+		}
 		_, found, statErr := img.FindExistingImageStrict(dir, patterns)
 		if statErr != nil {
 			s.logger.Warn("exists_flag scan: stat error probing artist dir, skipping",
