@@ -70,6 +70,12 @@ Three channels:
 
 Switch channels under Settings > Updates (channel selector). Switching does not roll your version backwards -- it adjusts which versions Stillwater considers "available" going forward.
 
+### Updates settings auto-save
+
+The Updates tab has no Save button. Channel, "enable updater", "auto-check on schedule", and the check-interval selector all persist on change with a confirmation toast. If a save fails, the controls snap back to the persisted server values so the UI never drifts from what is actually saved.
+
+If the updater config fails to load on the server side (rare; typically a database read error), the tab renders with the in-code defaults shown in disabled-looking state and a banner across the top explains the read failed. Saves are blocked while the load-failed state is active so a click cannot overwrite real config with the displayed fallback values. Reload the page after fixing the underlying issue to clear the banner.
+
 ## Verifying releases
 
 Each release publishes a `checksums.txt` (SHA256 hashes) and a cosign keyless signature for it (`checksums.txt.sigstore.json`). Docker images are also signed with cosign keyless and have SLSA build provenance attached.
