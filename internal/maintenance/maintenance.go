@@ -3,9 +3,7 @@ package maintenance
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -209,21 +207,33 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 			continue
 		}
 
-		// Stat the directory before asking FindExistingImage to probe files
-		// inside it. FindExistingImage collapses any stat error to "not found",
-		// so without this guard a permission-denied directory or an unmounted
-		// NFS share would clear every flag under it.
-		if _, statErr := os.Stat(dir); statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-			s.logger.Warn("exists_flag scan: cannot stat artist dir, skipping",
+		// Use the strict variant: a transient stat error (EACCES on a
+		// permission-denied dir, EIO/ESTALE on an unmounted NFS share) means
+		// "we don't know whether the file is absent" and must NOT be treated
+		// as a clean miss. Without this distinction, a single flaky filesystem
+		// could clear every exists_flag under it. See issue #1161.
+		patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
+		if len(patterns) == 0 {
+			// Unknown imageType: FindExistingImageStrict(dir, nil) reports
+			// found=false, err=nil, which would clear exists_flag without ever
+			// probing the filesystem. Skip so the "only clear on definitive
+			// absence" guarantee is preserved.
+			s.logger.Warn("exists_flag scan: unknown image type, skipping",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType))
+			skipped++
+			continue
+		}
+		_, found, statErr := img.FindExistingImageStrict(dir, patterns)
+		if statErr != nil {
+			s.logger.Warn("exists_flag scan: stat error probing artist dir, skipping",
 				slog.String("artist_id", artistID),
 				slog.String("dir", dir),
 				slog.Any("error", statErr))
 			skipped++
 			continue
 		}
-
-		patterns := img.FileNamesForType(img.DefaultFileNames, imageType)
-		if _, found := img.FindExistingImage(dir, patterns); !found {
+		if !found {
 			stale = append(stale, staleRow{artistID, imageType, slotIndex})
 		}
 	}

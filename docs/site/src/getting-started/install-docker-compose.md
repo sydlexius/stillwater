@@ -24,7 +24,7 @@ You'll need:
 
 One container running the Stillwater binary. Two storage paths:
 
-- `/config` (a Docker named volume): SQLite database, generated encryption key, configuration YAML, and any backups Stillwater writes itself.
+- `/config` (a Docker named volume): SQLite database, generated encryption key, optional `config.toml`, and any backups Stillwater writes itself.
 - `/music` (a bind mount to your host's music directory): the library Stillwater reads from and writes NFO files into.
 
 Stillwater listens on port `1973` inside the container. The compose file publishes it to `1973` on the host, so you'll reach the web UI at `http://localhost:1973` once it's up.

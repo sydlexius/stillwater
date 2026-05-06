@@ -86,11 +86,11 @@ The binary's built-in defaults assume a containerized layout (`/config`, `/music
 
 | Env var | What it controls | Example |
 |---|---|---|
-| `SW_CONFIG_PATH` | Path to `config.yaml` (file). Stillwater starts with built-in defaults if the file is missing or unset. | `~/.stillwater/config.yaml` |
+| `SW_CONFIG_PATH` | Path to `config.toml` (file). Stillwater starts with built-in defaults if the file is missing or unset. YAML files are also accepted for backward compatibility. | `~/.stillwater/config.toml` |
 | `SW_DB_PATH` | Path to the SQLite database (file). | `~/.stillwater/stillwater.db` |
 | `SW_MUSIC_PATH` | Music library directory. Stillwater needs read/write here for NFO writeback. | `/srv/music` |
 
-A first-time install only needs `SW_DB_PATH` and `SW_MUSIC_PATH`; you don't need a `config.yaml` until you want to override defaults beyond what env vars cover.
+A first-time install only needs `SW_DB_PATH` and `SW_MUSIC_PATH`; you don't need a `config.toml` until you want to override defaults beyond what env vars cover.
 
 ## Run it
 
@@ -212,32 +212,34 @@ A foreground binary stops when you log out. For a real install you want Stillwat
     - **NSSM** (the Non-Sucking Service Manager). Install NSSM, then `nssm install Stillwater "C:\Program Files\stillwater\stillwater.exe"` and configure the service environment variables through the NSSM GUI.
     - **Task Scheduler** with "At log on" trigger. Simpler, but not a true service; Stillwater runs only while the configured user is logged in.
 
-## Configure with a `config.yaml` (optional)
+## Configure with a `config.toml` (optional)
 
-Env vars cover most needs, but you can also supply a `config.yaml` for static configuration:
+Env vars cover most needs, but you can also supply a `config.toml` for static configuration:
 
-```yaml
-server:
-  port: 1973
-  base_path: /
+```toml
+[server]
+port = 1973
+base_path = "/"
 
-database:
-  path: /var/lib/stillwater/stillwater.db
+[database]
+path = "/var/lib/stillwater/stillwater.db"
 
-music:
-  library_path: /srv/music
+[music]
+library_path = "/srv/music"
 
-backup:
-  enabled: true
-  interval_hours: 24
-  retention_count: 7
+[backup]
+enabled = true
+interval_hours = 24
+retention_count = 7
 
-logging:
-  level: info
-  format: json
+[logging]
+level = "info"
+format = "json"
 ```
 
-Point Stillwater at it with `SW_CONFIG_PATH=/etc/stillwater/config.yaml`. Env vars override values from the file, so a config file plus a few environment overrides is a good production pattern.
+Point Stillwater at it with `SW_CONFIG_PATH=/etc/stillwater/config.toml`. Env vars override values from the file, so a config file plus a few environment overrides is a good production pattern.
+
+YAML configuration files (`.yaml` or `.yml`) remain supported for backward compatibility; the loader picks the parser by file extension.
 
 ## Upgrading
 
@@ -255,7 +257,7 @@ Stillwater runs schema migrations automatically on startup; you don't need to mi
 
 ## Backups
 
-Back up the SQLite database file (`SW_DB_PATH`), the encryption key (in the same directory by default), and your `config.yaml` if you have one. The simplest path is to back up the entire data directory:
+Back up the SQLite database file (`SW_DB_PATH`), the encryption key (in the same directory by default), and your `config.toml` if you have one. The simplest path is to back up the entire data directory:
 
 ```bash
 tar czf "stillwater-$(date +%F).tar.gz" -C ~/.stillwater .
