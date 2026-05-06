@@ -315,3 +315,123 @@ func TestHandleSetMirrorUnsupportedProvider(t *testing.T) {
 		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
 	}
 }
+
+// TestHandleResetPriorities seeds custom priority + disabled rows, calls the
+// reset handler, and asserts GetPriorities matches DefaultPriorities (i.e. no
+// stored overrides remain).
+func TestHandleResetPriorities(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+	ctx := context.Background()
+
+	// Seed: reorder "biography" providers and disable one of them. Both rows
+	// land under the `provider.priority.%` key prefix that the handler clears.
+	customBio := []provider.ProviderName{provider.NameLastFM, provider.NameWikipedia}
+	if err := r.providerSettings.SetPriority(ctx, "biography", customBio); err != nil {
+		t.Fatalf("seeding SetPriority: %v", err)
+	}
+	if err := r.providerSettings.SetDisabledProviders(ctx, "biography", []provider.ProviderName{provider.NameLastFM}); err != nil {
+		t.Fatalf("seeding SetDisabledProviders: %v", err)
+	}
+
+	// Sanity: the seed actually changed the stored "biography" row.
+	before, err := r.providerSettings.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities pre-reset: %v", err)
+	}
+	var beforeBio provider.FieldPriority
+	for _, p := range before {
+		if p.Field == "biography" {
+			beforeBio = p
+			break
+		}
+	}
+	if len(beforeBio.Disabled) != 1 || beforeBio.Disabled[0] != provider.NameLastFM {
+		t.Fatalf("seed did not persist disabled list, got %+v", beforeBio.Disabled)
+	}
+
+	// Hit the reset endpoint.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/priorities/reset", nil)
+	w := httptest.NewRecorder()
+	r.handleResetPriorities(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// JSON path: status echoed and priorities fall back to defaults.
+	var resp struct {
+		Status     string                   `json:"status"`
+		Priorities []provider.FieldPriority `json:"priorities"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Status != "reset" {
+		t.Errorf("status = %q, want %q", resp.Status, "reset")
+	}
+
+	got, err := r.providerSettings.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities post-reset: %v", err)
+	}
+	want := provider.DefaultPriorities()
+	if len(got) != len(want) {
+		t.Fatalf("priority count mismatch: got %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Field != want[i].Field {
+			t.Errorf("field[%d] = %q, want %q", i, got[i].Field, want[i].Field)
+		}
+		if !providersEqual(got[i].Providers, want[i].Providers) {
+			t.Errorf("providers[%s] = %v, want %v", want[i].Field, got[i].Providers, want[i].Providers)
+		}
+		if len(got[i].Disabled) != 0 {
+			t.Errorf("disabled[%s] = %v, want empty", want[i].Field, got[i].Disabled)
+		}
+	}
+
+	// HTMX path: response is the rendered chip-rows fragment with the wrapper id.
+	htmxReq := httptest.NewRequest(http.MethodPost, "/api/v1/providers/priorities/reset", nil)
+	htmxReq.Header.Set("HX-Request", "true")
+	htmxW := httptest.NewRecorder()
+	r.handleResetPriorities(htmxW, htmxReq)
+	if htmxW.Code != http.StatusOK {
+		t.Fatalf("htmx status = %d, want %d; body: %s", htmxW.Code, http.StatusOK, htmxW.Body.String())
+	}
+	if !strings.Contains(htmxW.Body.String(), `id="priority-rows"`) {
+		t.Errorf("htmx response missing priority-rows wrapper; body: %s", htmxW.Body.String())
+	}
+}
+
+// TestHandleResetPriorities_DBError covers the DELETE error branch by closing
+// the underlying database before calling the handler.
+func TestHandleResetPriorities_DBError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	// Close the DB to force the DELETE to fail with a 500.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/priorities/reset", nil)
+	w := httptest.NewRecorder()
+	r.handleResetPriorities(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+}
+
+func providersEqual(a, b []provider.ProviderName) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

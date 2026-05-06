@@ -67,6 +67,8 @@ Enable web search providers to find additional artist images beyond authoritativ
 
 Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
 
+- **Restore defaults** {#settings-providers-priorities-restore-defaults}
+
 ### Metadata Language Preferences  {#settings-providers-metadata-languages}
 
 Set your preferred languages for artist names, biographies, and aliases. Providers will return content in the first available language from your list. Drag to reorder priority.

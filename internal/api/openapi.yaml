@@ -4012,6 +4012,34 @@ paths:
               schema:
                 type: string
 
+  /providers/priorities/reset:
+    post:
+      tags: [Providers]
+      summary: Reset provider priorities to defaults
+      description: >
+        Deletes every stored `provider.priority.*` settings row so the priority
+        order and per-field disabled-provider lists fall back to the built-in
+        defaults. For HTMX requests, returns the re-rendered priority chip rows
+        fragment; otherwise returns JSON.
+      operationId: resetPriorities
+      responses:
+        "200":
+          description: Priorities reset (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  priorities:
+                    type: array
+                    items:
+                      type: object
+            text/html:
+              schema:
+                type: string
+
   /providers/search:
     post:
       tags: [Providers]

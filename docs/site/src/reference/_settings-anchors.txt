@@ -145,6 +145,7 @@ settings-providers-metadata-languages-remove
 settings-providers-name-similarity
 settings-providers-name-similarity-label
 settings-providers-priorities
+settings-providers-priorities-restore-defaults
 settings-providers-provider-config
 settings-providers-provider-config-beta
 settings-providers-provider-config-client-id

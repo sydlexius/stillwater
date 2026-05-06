@@ -412,6 +412,37 @@ func (r *Router) handleToggleFieldProvider(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, http.StatusOK, map[string]string{"status": "toggled"})
 }
 
+// handleResetPriorities deletes all stored provider.priority.* settings rows
+// so GetPriorities falls back to DefaultPriorities. For HTMX requests, returns
+// the re-rendered priority chip rows fragment; otherwise returns JSON.
+func (r *Router) handleResetPriorities(w http.ResponseWriter, req *http.Request) {
+	// Single DELETE covers both `provider.priority.<field>` and
+	// `provider.priority.<field>.disabled` rows because both share the prefix.
+	if _, err := r.db.ExecContext(req.Context(), "DELETE FROM settings WHERE key LIKE 'provider.priority.%'"); err != nil {
+		r.logger.Error("resetting priorities", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to reset priorities")
+		return
+	}
+
+	priorities, err := r.providerSettings.GetPriorities(req.Context())
+	if err != nil {
+		r.logger.Error("loading priorities after reset", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load priorities")
+		return
+	}
+
+	if req.Header.Get("HX-Request") == "true" {
+		keys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+		if err != nil {
+			r.logger.Error("listing provider key statuses after reset", "error", err)
+		}
+		renderTempl(w, req, templates.PriorityChipRows(priorities, keys))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "priorities": priorities})
+}
+
 // handleProviderSearch searches all providers for an artist by name.
 func (r *Router) handleProviderSearch(w http.ResponseWriter, req *http.Request) {
 	var body struct {
