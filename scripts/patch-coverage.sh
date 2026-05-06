@@ -11,9 +11,13 @@
 #
 # Approximates codecov.yml's patch-coverage semantics:
 #   - The unit is source lines. Each line inside a coverage block is
-#     treated as executable; a line is covered if any block covering it
-#     was hit at least once. Lines that no block touches are ignored
-#     (non-executable: comments, imports, bare declarations, etc.).
+#     treated as executable. A line is counted as covered ONLY IF every
+#     block touching it was hit at least once. If any block covering the
+#     line had cnt == 0, the line is treated as missed (this matches
+#     codecov's "partial" handling: lines with mixed hit/miss blocks land
+#     in the missed bucket, not the covered bucket). Lines that no block
+#     touches are ignored (non-executable: comments, imports, bare
+#     declarations, etc.).
 #   - Block-trailing lines whose end column <= 2 are dropped because the
 #     Go coverage profile's eLine.eCol points one past the closing '}',
 #     so those lines contain only a brace and are not meaningful patch.
@@ -26,10 +30,15 @@
 #       PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/myapp/main.go" \
 #         bash patch-coverage.sh
 #
-# This does not match codecov's numbers exactly (codecov has its own
-# block-to-line projection and counts "partials" from branch analysis
-# that isn't in Go's profile). It runs conservatively: if this passes,
-# codecov will almost always pass too.
+# Prior versions of this script used "any-hit-wins" semantics, which
+# inflated local coverage relative to codecov: a line hit by one block
+# but missed by another (a typical pattern around early-return error
+# branches and switch arms) was counted covered locally but partial-
+# missed by codecov. The all-hit rule below brings the two into line
+# without needing codecov's full branch-analysis pipeline. It is still
+# slightly conservative: codecov may count a few more lines as fully
+# covered when its block projection differs from go's profile, but the
+# delta is well under the +-1-2% issue #1321 calls for.
 #
 # Inputs (all via environment; all optional):
 #   COVER_OUT                  path to coverage profile (default: coverage.out)
@@ -186,10 +195,14 @@ for file in "${changed[@]}"; do
 
   # Classify each added line in one awk pass. Order matters: feed all
   # "D" records first so the diff set is fully populated before any "B"
-  # record is processed. For each block, mark every line in its range
-  # as covered (cnt > 0) or uncovered (cnt == 0), preferring "covered"
-  # if any block covering the line was hit. Block-end lines with a tiny
-  # end column (the trailing '}' lines) are excluded from the range.
+  # record is processed. For each block, walk every line in its range
+  # and record whether the block was hit (cnt > 0) or missed (cnt == 0)
+  # in two parallel maps (hadHit / hadMiss). A line is "executable" if
+  # any block touched it. A line is "covered" iff at least one block hit
+  # it AND no block missed it -- the all-hit rule that mirrors codecov's
+  # partial accounting (mixed-hit lines fall into the missed bucket).
+  # Block-end lines with a tiny end column (trailing '}') are excluded
+  # from the range.
   # The `if/fi` (rather than `[ ] && printf`) matters because this group
   # is the left side of a pipe under `set -o pipefail`; a failed test
   # would propagate as a non-zero pipeline exit and set -e would kill
@@ -212,14 +225,20 @@ for file in "${changed[@]}"; do
       for (ln in diff) {
         l = ln+0
         if (l >= sl && l <= el) {
-          if (cnt > 0) status[l] = "c"
-          else if (!(l in status)) status[l] = "u"
+          if (cnt > 0) hadHit[l] = 1
+          else hadMiss[l] = 1
         }
       }
     }
     END {
       covered = 0; execcount = 0
-      for (l in status) { execcount++; if (status[l] == "c") covered++ }
+      # Union of hit and miss line sets gives all executable lines.
+      for (l in hadHit) execLines[l] = 1
+      for (l in hadMiss) execLines[l] = 1
+      for (l in execLines) {
+        execcount++
+        if ((l in hadHit) && !(l in hadMiss)) covered++
+      }
       print execcount+0, covered+0
     }')
 
