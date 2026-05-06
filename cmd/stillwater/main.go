@@ -102,8 +102,13 @@ func run() error {
 	// Load configuration
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/config/config.yaml"
+		configPath = "/config/config.toml"
 	}
+
+	// First-run scaffolding: create a commented config.toml at configPath when
+	// the file is missing so admins have a documented starting point. A failure
+	// here is non-fatal; in-code defaults plus env vars are sufficient to boot.
+	scaffolded, scaffoldErr := config.EnsureScaffold(configPath)
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -118,6 +123,14 @@ func run() error {
 	logManager, logger := logging.NewManager(logCfg)
 	defer logManager.Close() //nolint:errcheck
 	slog.SetDefault(logger)
+
+	if scaffoldErr != nil {
+		logger.Warn("could not write first-run config scaffold",
+			"path", configPath, "error", scaffoldErr)
+	} else if scaffolded {
+		logger.Info("wrote first-run config scaffold",
+			"path", configPath)
+	}
 
 	// Open database
 	db, err := database.Open(cfg.Database.Path)
@@ -744,7 +757,7 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 func resetCredentials() error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/config/config.yaml"
+		configPath = "/config/config.toml"
 	}
 
 	cfg, err := config.Load(configPath)
@@ -799,7 +812,7 @@ func resetCredentials() error {
 func resetPassword(username, password string) error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
-		configPath = "/config/config.yaml"
+		configPath = "/config/config.toml"
 	}
 
 	cfg, err := config.Load(configPath)

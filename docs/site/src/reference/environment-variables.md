@@ -2,11 +2,11 @@
 description: Every SW_ environment variable Stillwater honors at startup, with types, defaults, and descriptions.
 ---
 
-<!-- code: internal/config/config.go (Default, loadFromEnv, validate, Config struct hierarchy), cmd/stillwater/main.go (SW_CONFIG_PATH usage). Verified against main at the time of drafting. -->
+<!-- code: internal/config/config.go (Default, loadFromEnv, validate, Config struct hierarchy, detectFormat), cmd/stillwater/main.go (SW_CONFIG_PATH usage). Verified against main at the time of drafting. -->
 
 # Environment variables
 
-Stillwater is configured by a small YAML file plus environment-variable overrides. **Environment variables always win** over YAML values.
+Stillwater is configured by a small TOML file plus environment-variable overrides. **Environment variables always win** over file values. YAML configuration files (`.yaml` or `.yml`) remain accepted for backward compatibility.
 
 The table below is generated from the configuration definition; do not edit it by hand. Run `make generate-docs` after changing a configuration field.
 
@@ -28,49 +28,46 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_SESSION_SECRET` | string | unset | Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory. |
 <!-- END GENERATED: env-reference -->
 
-`SW_CONFIG_PATH` is also honored at startup but lives outside the configuration struct: set it to point at a YAML config file. When unset, Stillwater attempts to read `/config/config.yaml`; if that file does not exist, it starts with defaults plus environment overrides only.
+`SW_CONFIG_PATH` is also honored at startup but lives outside the configuration struct: set it to point at a TOML or YAML config file. When unset, Stillwater attempts to read `/config/config.toml`; if that file does not exist, it starts with defaults plus environment overrides only. YAML files are still accepted for existing installs; the loader picks the parser from the file extension (`.toml` -> TOML; `.yaml` or `.yml` -> YAML).
 
-## YAML configuration file
+## TOML configuration file
 
-When `SW_CONFIG_PATH` points at a YAML file, Stillwater reads it on startup before applying environment-variable overrides. A complete example:
+When `SW_CONFIG_PATH` points at a config file, Stillwater reads it on startup before applying environment-variable overrides. A complete TOML example:
 
-```yaml
-server:
-  port: 1973
-  base_path: ""              # set to e.g. /stillwater for subfolder reverse-proxy deploys
+```toml
+[server]
+port = 1973
+base_path = ""              # set to e.g. /stillwater for subfolder reverse-proxy deploys
 
-database:
-  path: /config/stillwater.db
+[database]
+path = "/config/stillwater.db"
 
-auth:
-  session_secret: ""          # generate with: openssl rand -base64 64
+[auth]
+session_secret = ""          # generate with: openssl rand -base64 64
 
-encryption:
-  key: ""                     # generate with: openssl rand -base64 32
+[encryption]
+key = ""                     # generate with: openssl rand -base64 32
 
-music:
-  library_path: /music
+[music]
+library_path = "/music"
 
-scanner:
-  exclusions:
-    - "Various Artists"
-    - "Various"
-    - "VA"
-    - "Soundtrack"
-    - "OST"
+[scanner]
+exclusions = ["Various Artists", "Various", "VA", "Soundtrack", "OST"]
 
-backup:
-  path: ""                    # defaults to <config-dir>/backups when empty
-  retention_count: 7
-  interval_hours: 24
-  enabled: true
+[backup]
+path = ""                    # defaults to <config-dir>/backups when empty
+retention_count = 7
+interval_hours = 24
+enabled = true
 
-logging:
-  level: info
-  format: json
+[logging]
+level = "info"
+format = "json"
 ```
 
 You can ship the file with secrets blank and inject `SW_SESSION_SECRET` and `SW_ENCRYPTION_KEY` at runtime from your secrets manager.
+
+The same configuration in YAML (still supported for existing deployments) uses key: value syntax with two-space indentation under each top-level section, e.g. `server:` followed by an indented `port: 1973` line. Environment variables and field names are identical across both formats.
 
 ## Behavior notes
 

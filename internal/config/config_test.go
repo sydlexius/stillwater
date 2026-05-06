@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -195,6 +196,264 @@ database:
 	}
 }
 
+func TestLoad_FromTOML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "config.toml")
+	err := os.WriteFile(tomlPath, []byte(`
+[server]
+port = 8080
+base_path = "/app"
+
+[database]
+path = "/tmp/test.db"
+
+[logging]
+level = "debug"
+`), 0o644)
+	if err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	cfg, err := Load(tomlPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Server.Port != 8080 {
+		t.Errorf("Server.Port = %d, want 8080", cfg.Server.Port)
+	}
+	if cfg.Server.BasePath != "/app" {
+		t.Errorf("Server.BasePath = %q, want /app", cfg.Server.BasePath)
+	}
+	if cfg.Database.Path != "/tmp/test.db" {
+		t.Errorf("Database.Path = %q, want /tmp/test.db", cfg.Database.Path)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %q, want debug", cfg.Logging.Level)
+	}
+}
+
+// TestLoad_TOMLAndYAMLEquivalent asserts that the two supported file formats
+// parse to the same Config when expressing the same configuration. This is
+// the round-trip contract documented in #1272.
+func TestLoad_TOMLAndYAMLEquivalent(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+
+	yamlPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(yamlPath, []byte(`
+server:
+  port: 9000
+  base_path: /sw
+database:
+  path: /var/lib/x.db
+music:
+  library_path: /srv/music
+scanner:
+  exclusions:
+    - "Various Artists"
+    - "OST"
+backup:
+  enabled: true
+  interval_hours: 12
+  retention_count: 5
+logging:
+  level: warn
+  format: text
+`), 0o644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(`
+[server]
+port = 9000
+base_path = "/sw"
+
+[database]
+path = "/var/lib/x.db"
+
+[music]
+library_path = "/srv/music"
+
+[scanner]
+exclusions = ["Various Artists", "OST"]
+
+[backup]
+enabled = true
+interval_hours = 12
+retention_count = 5
+
+[logging]
+level = "warn"
+format = "text"
+`), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+
+	yamlCfg, err := Load(yamlPath)
+	if err != nil {
+		t.Fatalf("Load yaml: %v", err)
+	}
+	tomlCfg, err := Load(tomlPath)
+	if err != nil {
+		t.Fatalf("Load toml: %v", err)
+	}
+
+	// Trim base path to match validate() behavior consistently.
+	if yamlCfg.Server.Port != tomlCfg.Server.Port {
+		t.Errorf("Port mismatch: yaml=%d toml=%d", yamlCfg.Server.Port, tomlCfg.Server.Port)
+	}
+	if yamlCfg.Server.BasePath != tomlCfg.Server.BasePath {
+		t.Errorf("BasePath mismatch: yaml=%q toml=%q", yamlCfg.Server.BasePath, tomlCfg.Server.BasePath)
+	}
+	if yamlCfg.Database.Path != tomlCfg.Database.Path {
+		t.Errorf("DB Path mismatch: yaml=%q toml=%q", yamlCfg.Database.Path, tomlCfg.Database.Path)
+	}
+	if yamlCfg.Music.LibraryPath != tomlCfg.Music.LibraryPath {
+		t.Errorf("LibraryPath mismatch")
+	}
+	if len(yamlCfg.Scanner.Exclusions) != len(tomlCfg.Scanner.Exclusions) {
+		t.Fatalf("Exclusions length mismatch: yaml=%d toml=%d",
+			len(yamlCfg.Scanner.Exclusions), len(tomlCfg.Scanner.Exclusions))
+	}
+	for i := range yamlCfg.Scanner.Exclusions {
+		if yamlCfg.Scanner.Exclusions[i] != tomlCfg.Scanner.Exclusions[i] {
+			t.Errorf("Exclusions[%d] mismatch: yaml=%q toml=%q",
+				i, yamlCfg.Scanner.Exclusions[i], tomlCfg.Scanner.Exclusions[i])
+		}
+	}
+	if yamlCfg.Backup != tomlCfg.Backup {
+		t.Errorf("Backup mismatch: yaml=%+v toml=%+v", yamlCfg.Backup, tomlCfg.Backup)
+	}
+	if yamlCfg.Logging != tomlCfg.Logging {
+		t.Errorf("Logging mismatch: yaml=%+v toml=%+v", yamlCfg.Logging, tomlCfg.Logging)
+	}
+}
+
+// TestLoad_FormatSniffByContent ensures the loader picks the right parser
+// when the path has neither .toml nor .yaml/.yml extension.
+func TestLoad_FormatSniffByContent(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+
+	tomlSniffPath := filepath.Join(dir, "config.cfg")
+	if err := os.WriteFile(tomlSniffPath, []byte(`
+# this is a TOML file with an ambiguous extension
+[server]
+port = 7777
+
+[database]
+path = "/tmp/sniff.db"
+`), 0o644); err != nil {
+		t.Fatalf("write sniff toml: %v", err)
+	}
+
+	cfg, err := Load(tomlSniffPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.Port != 7777 {
+		t.Errorf("Server.Port = %d, want 7777 (TOML sniff)", cfg.Server.Port)
+	}
+	if cfg.Database.Path != "/tmp/sniff.db" {
+		t.Errorf("Database.Path = %q, want /tmp/sniff.db (TOML sniff)", cfg.Database.Path)
+	}
+
+	yamlSniffPath := filepath.Join(dir, "config.conf")
+	if err := os.WriteFile(yamlSniffPath, []byte(`
+# YAML with ambiguous extension
+server:
+  port: 6666
+database:
+  path: /tmp/yamlsniff.db
+`), 0o644); err != nil {
+		t.Fatalf("write sniff yaml: %v", err)
+	}
+
+	cfg2, err := Load(yamlSniffPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg2.Server.Port != 6666 {
+		t.Errorf("Server.Port = %d, want 6666 (YAML sniff)", cfg2.Server.Port)
+	}
+	if cfg2.Database.Path != "/tmp/yamlsniff.db" {
+		t.Errorf("Database.Path = %q, want /tmp/yamlsniff.db (YAML sniff)", cfg2.Database.Path)
+	}
+}
+
+func TestLoad_MalformedTOML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "config.toml")
+	// Unterminated string is a hard TOML parse error.
+	if err := os.WriteFile(tomlPath, []byte(`[server]`+"\nport = \"oops\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := Load(tomlPath); err == nil {
+		t.Fatal("expected parse error on malformed TOML")
+	}
+}
+
+func TestLoad_MalformedYAML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "config.yaml")
+	// Tab indent is invalid in YAML.
+	if err := os.WriteFile(yamlPath, []byte("server:\n\tport: 8080\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := Load(yamlPath); err == nil {
+		t.Fatal("expected parse error on malformed YAML")
+	}
+}
+
+// TestLoadFromEnv_AllRemaining covers the env-var branches that the existing
+// tests do not already exercise (session secret, encryption key, music path,
+// backup overrides, log format).
+func TestLoadFromEnv_AllRemaining(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_SESSION_SECRET", "shh")
+	t.Setenv("SW_ENCRYPTION_KEY", "kk")
+	t.Setenv("SW_MUSIC_PATH", "/music2")
+	t.Setenv("SW_BACKUP_PATH", "/bk")
+	t.Setenv("SW_BACKUP_RETENTION", "9")
+	t.Setenv("SW_BACKUP_INTERVAL", "6")
+	t.Setenv("SW_BACKUP_ENABLED", "false")
+	t.Setenv("SW_LOG_FORMAT", "text")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.SessionSecret != "shh" {
+		t.Errorf("SessionSecret = %q", cfg.Auth.SessionSecret)
+	}
+	if cfg.Encryption.Key != "kk" {
+		t.Errorf("Encryption.Key = %q", cfg.Encryption.Key)
+	}
+	if cfg.Music.LibraryPath != "/music2" {
+		t.Errorf("LibraryPath = %q", cfg.Music.LibraryPath)
+	}
+	if cfg.Backup.Path != "/bk" {
+		t.Errorf("Backup.Path = %q", cfg.Backup.Path)
+	}
+	if cfg.Backup.RetentionCount != 9 {
+		t.Errorf("Backup.RetentionCount = %d", cfg.Backup.RetentionCount)
+	}
+	if cfg.Backup.IntervalHours != 6 {
+		t.Errorf("Backup.IntervalHours = %d", cfg.Backup.IntervalHours)
+	}
+	if cfg.Backup.Enabled {
+		t.Error("Backup.Enabled should be false (env said false)")
+	}
+	if cfg.Logging.Format != "text" {
+		t.Errorf("Logging.Format = %q", cfg.Logging.Format)
+	}
+}
+
 func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_SCANNER_EXCLUSIONS", "Various Artists, Soundtrack, OST")
@@ -212,5 +471,101 @@ func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	}
 	if cfg.Scanner.Exclusions[1] != "Soundtrack" {
 		t.Errorf("Exclusions[1] = %q, want Soundtrack", cfg.Scanner.Exclusions[1])
+	}
+}
+
+func TestEnsureScaffold_CreatesMissingFile(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	created, err := EnsureScaffold(path)
+	if err != nil {
+		t.Fatalf("EnsureScaffold: %v", err)
+	}
+	if !created {
+		t.Fatal("EnsureScaffold returned created=false on missing file")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile after scaffold: %v", err)
+	}
+	if !strings.Contains(string(data), "[server]") || !strings.Contains(string(data), "# port = 1973") {
+		t.Errorf("scaffold content missing expected sections; got:\n%s", data)
+	}
+	// The scaffold must parse as valid TOML so a Load round-trip succeeds.
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load after scaffold: %v", err)
+	}
+}
+
+func TestEnsureScaffold_NoOpWhenFileExists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	existing := []byte("[server]\nport = 9999\n")
+	if err := os.WriteFile(path, existing, 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	created, err := EnsureScaffold(path)
+	if err != nil {
+		t.Fatalf("EnsureScaffold: %v", err)
+	}
+	if created {
+		t.Error("EnsureScaffold returned created=true for existing file")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(existing) {
+		t.Errorf("existing file was rewritten; got %q, want %q", got, existing)
+	}
+}
+
+func TestEnsureScaffold_CreatesParentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested", "subdir", "config.toml")
+
+	created, err := EnsureScaffold(path)
+	if err != nil {
+		t.Fatalf("EnsureScaffold: %v", err)
+	}
+	if !created {
+		t.Fatal("created=false")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("scaffold not created at nested path: %v", err)
+	}
+}
+
+func TestEnsureScaffold_EmptyPathNoOp(t *testing.T) {
+	created, err := EnsureScaffold("")
+	if err != nil {
+		t.Errorf("EnsureScaffold(\"\"): %v", err)
+	}
+	if created {
+		t.Error("EnsureScaffold(\"\") returned created=true")
+	}
+}
+
+// TestEnsureScaffold_SkipsYAMLPath verifies that EnsureScaffold treats a
+// .yaml/.yml path as a no-op. Writing TOML content under a YAML filename
+// would force the loader's extension-based parser selection to fail on
+// first boot, so the policy is to leave YAML deployments untouched.
+func TestEnsureScaffold_SkipsYAMLPath(t *testing.T) {
+	for _, ext := range []string{".yaml", ".yml"} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config"+ext)
+		created, err := EnsureScaffold(path)
+		if err != nil {
+			t.Fatalf("EnsureScaffold(%s): %v", ext, err)
+		}
+		if created {
+			t.Errorf("EnsureScaffold(%s) returned created=true; want false", ext)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("EnsureScaffold(%s) wrote file; want no file: stat err=%v", ext, err)
+		}
 	}
 }
