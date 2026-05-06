@@ -2568,6 +2568,137 @@ func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
 	}
 }
 
+// TestFindArtistInLibrary_HitByMBID covers the success path of
+// lookupByMBIDInLibrary: an artist with an MBID provider row AND a membership
+// in the target library is returned. Pins the M:N membership-join behavior
+// after the legacy artists.library_id column was dropped.
+func TestFindArtistInLibrary_HitByMBID(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Veridia",
+		SortName:  "Veridia",
+		LibraryID: embyLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Attach an MBID provider row so the MBID lookup matches.
+	if _, err := router.db.ExecContext(ctx, `
+		INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+		VALUES (?, 'musicbrainz', ?)
+	`, a.ID, "11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("inserting provider id: %v", err)
+	}
+
+	got, err := router.findArtistInLibrary(ctx, "11111111-1111-1111-1111-111111111111", "Veridia", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected hit, got nil")
+	}
+	if got.ID != a.ID {
+		t.Errorf("got.ID = %q, want %q", got.ID, a.ID)
+	}
+}
+
+// TestFindArtistInLibrary_HitByName covers the case-insensitive fallback path
+// (lookupByNameInLibrary) when no MBID is provided.
+func TestFindArtistInLibrary_HitByName(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Mixed Case Band",
+		SortName:  "Mixed Case Band",
+		LibraryID: embyLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Lookup with a different case should still match (LOWER on both sides).
+	got, err := router.findArtistInLibrary(ctx, "", "MIXED CASE BAND", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected hit, got nil")
+	}
+	if got.ID != a.ID {
+		t.Errorf("got.ID = %q, want %q", got.ID, a.ID)
+	}
+}
+
+// TestFindArtistInLibrary_NoMatchReturnsNil verifies the (nil, nil) "genuine
+// no match" contract that callers depend on to fall back to unscoped lookup.
+func TestFindArtistInLibrary_NoMatchReturnsNil(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	got, err := router.findArtistInLibrary(ctx, "00000000-0000-0000-0000-000000000000", "Nobody", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+
+	// MBID empty + no name => early return (nil, nil) without query.
+	got, err = router.findArtistInLibrary(ctx, "", "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary empty: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for empty inputs, got %+v", got)
+	}
+}
+
 func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
 	t.Parallel()
 	router := testRouterForLibraryOps(t)
