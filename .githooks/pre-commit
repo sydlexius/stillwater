@@ -204,7 +204,7 @@ fi
 # is safe. Configuration lives in .markdownlint-cli2.yaml at the repo root.
 # Version pin (v0.22.1) matches .pre-commit-config.yaml so contributors using
 # either entrypoint get identical results.
-STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM -- '*.md' || true)
+STAGED_MD=$(git diff --cached --name-only --diff-filter=ACMR -- '*.md' || true)
 if [ -n "$STAGED_MD" ]; then
     if command -v markdownlint-cli2 &>/dev/null; then
         MDL_CMD=(markdownlint-cli2)
