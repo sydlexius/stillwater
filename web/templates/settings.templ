@@ -2178,15 +2178,21 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 templ resetConfirmPrefsScript() {
 	<script>
 		function resetConfirmPrefs() {
-			var keys = [];
-			for (var i = 0; i < localStorage.length; i++) {
-				var key = localStorage.key(i);
-				if (key && key.indexOf('ui.confirm.') === 0) {
-					keys.push(key);
+			try {
+				var keys = [];
+				for (var i = 0; i < localStorage.length; i++) {
+					var key = localStorage.key(i);
+					if (key && key.indexOf('ui.confirm.') === 0) {
+						keys.push(key);
+					}
 				}
-			}
-			for (var j = 0; j < keys.length; j++) {
-				localStorage.removeItem(keys[j]);
+				for (var j = 0; j < keys.length; j++) {
+					localStorage.removeItem(keys[j]);
+				}
+			} catch (_e) {
+				// Sandboxed contexts (private mode, restrictive CSP) may
+				// throw on localStorage access; treat as a no-op so the
+				// status flash still confirms the click was handled.
 			}
 			var status = document.getElementById('confirm-reset-status');
 			if (status) {

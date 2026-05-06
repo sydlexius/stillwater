@@ -1354,7 +1354,17 @@ func (s *Service) StartScheduler(ctx context.Context) {
 					s.logger.Debug("updater scheduler: background check failed",
 						"error", err)
 				} else {
-					s.maybeAutoApply(ctx, cfg, result)
+					// Re-read config after the (potentially slow) network
+					// Check so an admin toggle of AutoUpdate or an addition
+					// to SkippedVersions during the in-flight check is
+					// honored before we launch an apply.
+					liveCfg, cfgErr := s.GetConfig(ctx)
+					if cfgErr != nil {
+						s.logger.Warn("updater scheduler: re-reading config before auto-apply failed",
+							"error", cfgErr)
+					} else {
+						s.maybeAutoApply(ctx, liveCfg, result)
+					}
 				}
 			}
 
