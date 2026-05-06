@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -857,6 +858,26 @@ func TestImport_EmptyData(t *testing.T) {
 	_, err := svc.Import(ctx, env, "any-passphrase")
 	if err == nil {
 		t.Error("expected error for empty data")
+	}
+}
+
+// TestImport_NilEnvelope covers the explicit nil-envelope guard at the top of
+// ImportWithOptions. The HTTP handler always passes a decoded body, but the
+// function is exported so a nil pass from another caller is a real possibility;
+// failing fast prevents a partial import from panicking on env.Data.
+func TestImport_NilEnvelope(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	_, err := svc.Import(ctx, nil, "any-passphrase")
+	if err == nil {
+		t.Fatal("expected error for nil envelope, got nil")
+	}
+	if !strings.Contains(err.Error(), "nil envelope") {
+		t.Errorf("error must reference 'nil envelope'; got: %v", err)
 	}
 }
 
