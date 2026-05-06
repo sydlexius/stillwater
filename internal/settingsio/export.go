@@ -459,6 +459,16 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 		return nil, fmt.Errorf("empty export data")
 	}
 
+	// Reject misconfigured admin-fallback up front. The HTTP handler resolves
+	// ImportingAdminUserID from the session, so an empty value here means the
+	// caller asked for fallback but supplied no fallback target. Silently
+	// dropping every orphan token (the prior behavior) hides the misconfig
+	// behind an APITokensSkipped count; failing fast surfaces it as the
+	// configuration error it is.
+	if opts.AdminFallbackTokens && opts.ImportingAdminUserID == "" {
+		return nil, fmt.Errorf("admin_fallback_tokens=true requires a non-empty ImportingAdminUserID")
+	}
+
 	// Reject envelope formats this binary does not understand. An empty Version
 	// is treated as legacy "1.0" so older exports without an explicit field
 	// continue to import.

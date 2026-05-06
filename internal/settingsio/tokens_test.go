@@ -3,6 +3,7 @@ package settingsio
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -203,6 +204,35 @@ func TestImport_CrossInstance_FallbackOff_NoUsers(t *testing.T) {
 	}
 	if res.OwnershipReassigned != 0 {
 		t.Errorf("ownership reassigned: got %d, want 0", res.OwnershipReassigned)
+	}
+}
+
+// TestImport_AdminFallback_RejectsEmptyAdminID checks that the import path
+// fails fast when admin-fallback is enabled but ImportingAdminUserID is
+// empty. The prior behavior silently routed every orphan token through the
+// owner-absent skip branch, hiding the misconfiguration behind an
+// APITokensSkipped count instead of surfacing it as a configuration error.
+func TestImport_AdminFallback_RejectsEmptyAdminID(t *testing.T) {
+	hash := "bcrypt-token-hash-empty-admin"
+	srcSvc, ctx := seedTokenSource(t, hash)
+	envelope, err := srcSvc.Export(ctx, "pp")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	_, err = svc2.ImportWithOptions(ctx, envelope, "pp", ImportOptions{
+		AdminFallbackTokens:  true,
+		ImportingAdminUserID: "",
+	})
+	if err == nil {
+		t.Fatal("expected error for AdminFallbackTokens=true with empty ImportingAdminUserID, got nil")
+	}
+	if !strings.Contains(err.Error(), "ImportingAdminUserID") {
+		t.Errorf("error must reference ImportingAdminUserID; got: %v", err)
 	}
 }
 
