@@ -200,12 +200,15 @@ fi
 # --------------------------------------------------------------------------
 # 8. markdownlint -- lint staged markdown files (mirrors CI Docs / Markdown Lint)
 # --------------------------------------------------------------------------
-# Markdown filenames in this repo do not contain whitespace; newline-delimited
-# is safe. Configuration lives in .markdownlint-cli2.yaml at the repo root.
-# Version pin (v0.22.1) matches .pre-commit-config.yaml so contributors using
-# either entrypoint get identical results.
-STAGED_MD=$(git diff --cached --name-only --diff-filter=ACMR -- '*.md' || true)
-if [ -n "$STAGED_MD" ]; then
+# Configuration lives in .markdownlint-cli2.yaml at the repo root. Version pin
+# (v0.22.1) matches .pre-commit-config.yaml so contributors using either
+# entrypoint get identical results. Paths are collected NUL-delimited so
+# filenames containing spaces or other shell metacharacters are handled safely.
+STAGED_MD=()
+while IFS= read -r -d '' f; do
+    STAGED_MD+=("$f")
+done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+if [ "${#STAGED_MD[@]}" -gt 0 ]; then
     if command -v markdownlint-cli2 &>/dev/null; then
         MDL_CMD=(markdownlint-cli2)
     elif command -v npx &>/dev/null; then
@@ -215,9 +218,9 @@ if [ -n "$STAGED_MD" ]; then
         MDL_CMD=()
     fi
     if [ "${#MDL_CMD[@]}" -gt 0 ]; then
-        # markdownlint-cli2 takes file globs/paths positionally and reads
+        # markdownlint-cli2 takes file paths positionally and reads
         # .markdownlint-cli2.yaml automatically from the working directory.
-        if ! MDL_OUTPUT=$(echo "$STAGED_MD" | xargs "${MDL_CMD[@]}" 2>&1); then
+        if ! MDL_OUTPUT=$("${MDL_CMD[@]}" "${STAGED_MD[@]}" 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} markdownlint:"
             echo "$MDL_OUTPUT"
             exit 1
