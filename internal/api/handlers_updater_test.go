@@ -1038,6 +1038,24 @@ func TestHandlePutUpdateConfig_AutoUpdate(t *testing.T) {
 	if !cfg.AutoUpdate {
 		t.Error("auto_update should be true after PUT")
 	}
+
+	// Verify persistence: a follow-up GET must return AutoUpdate=true
+	// independent of the PUT echo. Without this round-trip the test
+	// would still pass if the handler echoed the request body without
+	// actually persisting through SetConfig.
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/config", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body: %s", getW.Code, getW.Body.String())
+	}
+	var persisted updater.Config
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal persisted config: %v", err)
+	}
+	if !persisted.AutoUpdate {
+		t.Error("persisted auto_update should be true")
+	}
 }
 
 // TestHandleGetUpdateSkips_Empty verifies the GET /updates/skips endpoint
@@ -1091,6 +1109,24 @@ func TestHandlePostUpdateSkips_Append(t *testing.T) {
 	}
 	if len(resp.SkippedVersions) != 1 || resp.SkippedVersions[0] != "v9.9.9" {
 		t.Errorf("skipped_versions = %v, want [v9.9.9]", resp.SkippedVersions)
+	}
+
+	// Verify persistence with a follow-up GET so the test fails if the
+	// POST returned the post-write list without actually committing.
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/skips", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetUpdateSkips(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET skips status = %d; body: %s", getW.Code, getW.Body.String())
+	}
+	var persisted struct {
+		SkippedVersions []string `json:"skipped_versions"`
+	}
+	if err := json.Unmarshal(getW.Body.Bytes(), &persisted); err != nil {
+		t.Fatalf("unmarshal persisted skips: %v", err)
+	}
+	if len(persisted.SkippedVersions) != 1 || persisted.SkippedVersions[0] != "v9.9.9" {
+		t.Errorf("persisted skipped_versions = %v, want [v9.9.9]", persisted.SkippedVersions)
 	}
 }
 

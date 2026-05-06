@@ -1682,58 +1682,102 @@ func withSchedulerHourUnit(t *testing.T, unit time.Duration) {
 func TestStartSchedulerReactsToConfigChange(t *testing.T) {
 	withSchedulerHourUnit(t, time.Millisecond)
 
+	// Stand up a fake GitHub so Check() inside the timer.C arm has a
+	// quick deterministic response: the test asserts an observable
+	// effect (lastChecked advancing) of the post-SetConfig short
+	// interval, not just that ctx.Done() can wake the loop. Without
+	// the side-effect assertion this test would still pass even if
+	// the configChange-driven timer reset were removed entirely,
+	// because cancel() always unblocks the select.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Older release tag so the scheduler's auto-apply branch is a
+		// no-op; we only care that Check ran.
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.0.1","prerelease":false,"draft":false,"html_url":"https://example.com/release","published_at":"2026-01-01T00:00:00Z"}]`))
+	}))
+	t.Cleanup(srv.Close)
+
 	svc := buildTestService(t)
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+	svc.SetDockerForTest(false)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	// Seed a long interval so the timer would not fire on its own
-	// during the test window. With schedulerHourUnit==1ms, "1000h"
-	// is 1s; well outside the test bound.
+	// Seed a long interval and Enabled+AutoCheck=true so the timer
+	// arm would actually run Check when it fires. With
+	// schedulerHourUnit==1ms, "1000h" is 1s; well outside the test
+	// bound, so the scheduler should sit on the long timer and not
+	// fire on its own.
 	if err := svc.SetConfig(ctx, Config{
 		Channel:            ChannelStable,
-		Enabled:            false, // Disable so /check is not triggered (no GitHub).
-		AutoCheck:          false,
+		Enabled:            true,
+		AutoCheck:          true,
 		CheckIntervalHours: 1000,
 	}); err != nil {
 		t.Fatalf("seed SetConfig: %v", err)
 	}
 
+	// SetConfig itself queued a configChange wakeup before the
+	// scheduler started; clear lastChecked so the post-start initial
+	// tick (or any pre-existing one) does not poison the assertion
+	// below. We assert that a *second* SetConfig (the reactive one)
+	// causes lastChecked to advance past the timestamp we capture
+	// just before that call.
 	done := make(chan struct{})
 	go func() {
 		svc.StartScheduler(ctx)
 		close(done)
 	}()
 
-	// Let the scheduler enter the select with the long interval.
-	time.Sleep(20 * time.Millisecond)
+	// Let the scheduler enter the select with the long interval and
+	// drain any startup-time check.
+	time.Sleep(50 * time.Millisecond)
+	svc.mu.Lock()
+	svc.lastChecked = time.Time{}
+	svc.mu.Unlock()
+
+	// Capture the moment just before the reactive SetConfig so we can
+	// assert lastChecked moves past it.
+	beforeReactive := time.Now()
 
 	// Drop the interval to 1h (1ms in test). The configChange wakeup
-	// should reset the timer; we then verify the loop survives the
-	// reset by canceling and observing prompt return.
-	startSwap := time.Now()
+	// should reset the timer to the new short interval; the next
+	// timer.C tick should then fire promptly and run Check, advancing
+	// lastChecked. If reactivity were broken, the scheduler would
+	// stay parked on the seeded 1s timer and lastChecked would remain
+	// zero for the entire test window.
 	if err := svc.SetConfig(ctx, Config{
 		Channel:            ChannelStable,
-		Enabled:            false,
-		AutoCheck:          false,
+		Enabled:            true,
+		AutoCheck:          true,
 		CheckIntervalHours: 1,
 	}); err != nil {
 		t.Fatalf("reactive SetConfig: %v", err)
 	}
 
-	// Cancel and assert prompt return: a stuck scheduler waiting out
-	// the previous 1000ms timer would block here. The new 1ms timer
-	// being honored means the next select iteration runs quickly and
-	// observes the canceled context.
+	// Wait up to 500ms for the post-reactivity check to fire. A stuck
+	// scheduler sitting on the old 1s timer would not advance
+	// lastChecked within this window.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var lastChecked time.Time
+	for time.Now().Before(deadline) {
+		svc.mu.RLock()
+		lastChecked = svc.lastChecked
+		svc.mu.RUnlock()
+		if !lastChecked.IsZero() && lastChecked.After(beforeReactive) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if lastChecked.IsZero() || !lastChecked.After(beforeReactive) {
+		t.Errorf("scheduler did not run Check within 500ms after reactive SetConfig; "+
+			"lastChecked=%v, beforeReactive=%v -- reactivity path likely broken",
+			lastChecked, beforeReactive)
+	}
+
 	cancel()
 	select {
 	case <-done:
-		elapsed := time.Since(startSwap)
-		// Generous bound: the reactivity itself happens in microseconds,
-		// but the goroutine join has scheduling jitter. 500ms is well
-		// under the 1000ms-without-reactivity worst case.
-		if elapsed > 500*time.Millisecond {
-			t.Errorf("scheduler took %v to react to config change + cancel; expected <500ms", elapsed)
-		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("scheduler did not return after config change + cancel")
 	}

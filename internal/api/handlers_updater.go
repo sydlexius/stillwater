@@ -119,6 +119,12 @@ func (r *Router) handleGetUpdateConfig(w http.ResponseWriter, req *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// Normalize a nil skip list to [] so the JSON shape is stable for
+	// clients (the field is documented as always-present in openapi.yaml
+	// and matches the dedicated /updates/skips endpoint behavior).
+	if cfg.SkippedVersions == nil {
+		cfg.SkippedVersions = []string{}
+	}
 
 	writeJSON(w, http.StatusOK, cfg)
 }
@@ -197,6 +203,9 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		r.logger.Error("re-reading updater config after save", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
+	}
+	if cfg.SkippedVersions == nil {
+		cfg.SkippedVersions = []string{}
 	}
 
 	writeJSON(w, http.StatusOK, cfg)

@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -6446,7 +6447,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 							{ t(ctx, "settings.updates.auto_update.rollback_link") }
 						</a>
 					</div>
-					if data.UpdateAvailable && data.LatestVersion != "" {
+					if data.UpdateAvailable && data.LatestVersion != "" && !slices.Contains(data.SkippedVersions, data.LatestVersion) {
 						<div class="mt-2">
 							<button
 								type="button"
@@ -7109,17 +7110,44 @@ templ updatesTabScript() {
 					intervalEl.addEventListener('change', function() { window.saveUpdaterConfig(); });
 				}
 
-				// AutoUpdate toggle: confirm on off->on transition. Track the
-				// last-confirmed state so a checkbox flicker (off -> on -> off
-				// inside the same tab session) does not re-prompt on every on.
-				// The first-toggle confirmation gate is satisfied once: after
-				// the user accepts, subsequent on toggles persist directly.
+				// AutoUpdate toggle: confirm on off->on transition. The
+				// confirmed state is persisted in localStorage under
+				// "ui.confirm.autoUpdate" so a page reload does not re-prompt
+				// after the user has already acknowledged. Existing
+				// AutoUpdate=true (e.g. a server-side default or a prior
+				// session) also counts as confirmed so the modal does not
+				// pop on every load. The "Reset confirmation preferences"
+				// flow can clear this key to replay the modal.
 				var autoUpdateEl = document.getElementById('updates-auto-update');
-				var autoUpdateConfirmed = autoUpdateEl ? autoUpdateEl.checked : false;
+				var autoUpdateConfirmKey = 'ui.confirm.autoUpdate';
+				var readAutoUpdateConfirmed = function() {
+					try {
+						return window.localStorage.getItem(autoUpdateConfirmKey) === 'true';
+					} catch (_e) {
+						// Some sandboxed contexts (private mode, restrictive
+						// CSP) deny localStorage access; fall back to the
+						// page-local boolean for the current session.
+						return false;
+					}
+				};
+				var writeAutoUpdateConfirmed = function() {
+					try {
+						window.localStorage.setItem(autoUpdateConfirmKey, 'true');
+					} catch (_e) {
+						// Best-effort: a write failure just means the modal
+						// will re-prompt on next load.
+					}
+				};
+				// Treat an already-on toggle at page load as confirmed so we
+				// do not re-prompt on every reload after the user accepted.
+				var autoUpdateConfirmed = readAutoUpdateConfirmed() || (autoUpdateEl ? autoUpdateEl.checked : false);
+				if (autoUpdateConfirmed) {
+					writeAutoUpdateConfirmed();
+				}
 				if (autoUpdateEl) {
 					autoUpdateEl.addEventListener('change', function() {
-						// Off -> on transition that has not been confirmed in
-						// this session yet: surface the modal and short-circuit
+						// Off -> on transition that has not been confirmed
+						// previously: surface the modal and short-circuit
 						// the save until the user accepts.
 						if (autoUpdateEl.checked && !autoUpdateConfirmed) {
 							var modal = document.getElementById('updates-auto-update-confirm-modal');
@@ -7128,6 +7156,7 @@ templ updatesTabScript() {
 								// reason, fall back to the old direct-save path
 								// rather than wedging the toggle.
 								autoUpdateConfirmed = true;
+								writeAutoUpdateConfirmed();
 								window.saveUpdaterConfig();
 								return;
 							}
@@ -7142,6 +7171,7 @@ templ updatesTabScript() {
 							if (accept) {
 								accept.onclick = function() {
 									autoUpdateConfirmed = true;
+									writeAutoUpdateConfirmed();
 									cleanup();
 									window.saveUpdaterConfig();
 								};

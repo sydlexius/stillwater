@@ -1592,21 +1592,25 @@ components:
         last_auto_applied:
           type: string
           format: date-time
+          readOnly: true
           description: >-
             RFC3339 timestamp of the last successful auto-apply. Read-only
             output: written by the scheduler after a successful Apply, not
             by user PUT.
         last_auto_applied_version:
           type: string
+          readOnly: true
           description: >-
             Tag of the release installed in the last auto-apply. Empty when
             `last_auto_applied` is unset.
         skipped_versions:
           type: array
+          readOnly: true
           items:
             type: string
           description: >-
-            Read-only mirror of the persisted skip list. Mutate via the
+            Read-only mirror of the persisted skip list, always present
+            (empty array when no versions are skipped). Mutate via the
             `/updates/skips` POST/DELETE endpoints (PUT here ignores the
             field).
 

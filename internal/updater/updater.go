@@ -162,12 +162,18 @@ type Config struct {
 	// in the last auto-apply. Empty when LastAutoApplied is zero.
 	LastAutoAppliedVersion string `json:"last_auto_applied_version,omitempty"`
 
+	// SkippedVersionsJSON tag note: the field intentionally omits
+	// ,omitempty so the response shape is stable for clients (always
+	// present as [] when empty). This matches the dedicated
+	// /updates/skips endpoint and lets the UI's compositional auto-save
+	// flow round-trip the field without defensive nil checks.
+	//
 	// SkippedVersions is the persisted list of release tags that the
 	// scheduler must NOT auto-apply. The skip-this-version button
 	// appends to this list; the scheduler honors it on every tick by
 	// short-circuiting auto-apply when the candidate tag is present.
 	// Stored as a JSON array of strings under SettingSkippedVersions.
-	SkippedVersions []string `json:"skipped_versions,omitempty"`
+	SkippedVersions []string `json:"skipped_versions"`
 }
 
 // CheckResult is returned by Check.
@@ -265,6 +271,13 @@ type Service struct {
 	// single indivisible operation (CompareAndSwap), eliminating the TOCTOU race
 	// where two callers could both pass the idle check before either launches.
 	applyRunning atomic.Int32
+
+	// skippedVersionsMu serializes the read-modify-write sequence in
+	// AddSkippedVersion / RemoveSkippedVersion so two concurrent admin
+	// requests cannot lose an update by both reading the same snapshot
+	// and clobbering each other on writeSkippedVersions. Held across the
+	// entire GetConfig -> mutate -> persist window.
+	skippedVersionsMu sync.Mutex
 
 	// configChange is a buffered (capacity 1) signal channel that SetConfig
 	// pulses non-blockingly after a successful persist. The scheduler
@@ -786,12 +799,20 @@ func (s *Service) Apply(ctx context.Context) error {
 	// HTTP request. The handler already detaches via context.WithoutCancel, but
 	// using context.Background() here makes the intent explicit at the service
 	// layer and avoids any inherited deadline or cancellation from the caller.
-	go s.runApply(context.Background()) //nolint:gosec // G118: intentional -- goroutine must outlive request context
+	go s.runApply(context.Background(), "") //nolint:gosec // G118: intentional -- goroutine must outlive request context
 	return nil
 }
 
 // runApply is the internal goroutine body for Apply.
-func (s *Service) runApply(ctx context.Context) {
+//
+// pinnedVersion, when non-empty, requires the live-fetched latest
+// release to match this exact tag. Used by the auto-apply path so a
+// release that drifts between maybeAutoApply's gating decision and the
+// goroutine's fetch (e.g. channel switch, newer tag published) is
+// rejected with a logged skip rather than silently installed. The
+// manual Apply path passes "" (no pin) since the user just clicked
+// Apply on whatever the UI currently surfaces as the latest.
+func (s *Service) runApply(ctx context.Context, pinnedVersion string) {
 	// Always clear the running flag when we exit, so Apply can be called again.
 	defer s.applyRunning.Store(0)
 
@@ -811,6 +832,18 @@ func (s *Service) runApply(ctx context.Context) {
 
 	latest := pickLatest(releases, cfg.Channel)
 	if latest == nil || !s.newerThan(latest.TagName, version.Version) {
+		s.setState(StateIdle, 100, "")
+		return
+	}
+
+	// Auto-apply: require the live-fetched candidate to match the tag
+	// the scheduler vetted (channel + skip-list) at the gating moment.
+	// A mismatch means the channel changed or a newer tag was published
+	// in the gap between gating and goroutine execution; bail rather
+	// than install a release that did not pass the gate.
+	if pinnedVersion != "" && latest.TagName != pinnedVersion {
+		s.logger.Info("updater: auto-apply candidate drifted, skipping",
+			"vetted", pinnedVersion, "live", latest.TagName)
 		s.setState(StateIdle, 100, "")
 		return
 	}
@@ -1408,7 +1441,7 @@ func (s *Service) applyAuto(candidateVersion string) error {
 		return ErrAlreadyRunning
 	}
 	go func() {
-		s.runApply(context.Background()) //nolint:gosec // G118: detached on purpose; the apply must outlive the originating scheduler tick
+		s.runApply(context.Background(), candidateVersion) //nolint:gosec // G118: detached on purpose; the apply must outlive the originating scheduler tick
 		// runApply has already toggled state. Check status to confirm
 		// the swap actually succeeded (markRestartRequired was called)
 		// and only then persist the auto-apply marker.
@@ -1463,6 +1496,8 @@ func (s *Service) AddSkippedVersion(ctx context.Context, version string) error {
 	if version == "" {
 		return fmt.Errorf("version tag must be non-empty")
 	}
+	s.skippedVersionsMu.Lock()
+	defer s.skippedVersionsMu.Unlock()
 	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
@@ -1479,6 +1514,8 @@ func (s *Service) AddSkippedVersion(ctx context.Context, version string) error {
 // RemoveSkippedVersion removes a tag from the skip list. Idempotent:
 // removing a tag that is not present is a no-op.
 func (s *Service) RemoveSkippedVersion(ctx context.Context, version string) error {
+	s.skippedVersionsMu.Lock()
+	defer s.skippedVersionsMu.Unlock()
 	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
