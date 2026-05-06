@@ -1117,7 +1117,15 @@ func (r *Router) resolveAndBackfillPlatformID(
 	connLib *library.Library,
 	manualLibs []library.Library,
 ) *artist.Artist {
-	a := r.findArtistInLibrary(ctx, mbid, name, connLib.ID)
+	// Library-scoped lookup: distinguish "not found" (a == nil, err == nil)
+	// from a real DB/load failure (err != nil). Falling back to the unscoped
+	// match on a real error during the duplicate-row transition could attach
+	// the platform ID to a sibling-library artist instead of failing safely.
+	a, err := r.findArtistInLibrary(ctx, mbid, name, connLib.ID)
+	if err != nil {
+		r.logger.Warn("scan artist library-scoped lookup", "name", name, "mbid", mbid, "platform", connLib.Source, "error", err)
+		return nil
+	}
 	if a == nil {
 		var lookupErr error
 		a, lookupErr = r.artistService.FindByMBIDOrNameUnscoped(ctx, mbid, name)
@@ -1146,19 +1154,30 @@ func (r *Router) resolveAndBackfillPlatformID(
 // if no match exists. Used by resolveAndBackfillPlatformID to prefer the
 // connection-library artist over a sibling-library artist that shares the
 // same identity (transitional duplicate-row state under M:N).
-func (r *Router) findArtistInLibrary(ctx context.Context, mbid, name, libraryID string) *artist.Artist {
+// findArtistInLibrary returns (artist, nil) on a hit, (nil, nil) on a genuine
+// "no match" result, and (nil, err) on a real DB/load failure. Callers must
+// distinguish the latter so they do not silently fall back to an unscoped
+// lookup that could attach IDs to the wrong sibling-library artist.
+func (r *Router) findArtistInLibrary(ctx context.Context, mbid, name, libraryID string) (*artist.Artist, error) {
 	if mbid != "" {
-		if a := r.lookupByMBIDInLibrary(ctx, mbid, libraryID); a != nil {
-			return a
+		a, err := r.lookupByMBIDInLibrary(ctx, mbid, libraryID)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			return a, nil
 		}
 	}
 	if name == "" {
-		return nil
+		return nil, nil
 	}
 	return r.lookupByNameInLibrary(ctx, name, libraryID)
 }
 
-func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID string) *artist.Artist {
+// lookupByMBIDInLibrary returns (nil, nil) when no row matches and (nil, err)
+// when the query or follow-up load fails. The caller decides whether to fall
+// back; this function never silently swallows a DB error as "not found".
+func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID string) (*artist.Artist, error) {
 	var artistID string
 	err := r.db.QueryRowContext(ctx, `
 		SELECT a.id FROM artists a
@@ -1169,21 +1188,22 @@ func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID stri
 		LIMIT 1
 	`, libraryID, mbid).Scan(&artistID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		r.logger.Warn("library-scoped mbid lookup", "mbid", mbid, "library_id", libraryID, "error", err)
-		return nil
+		return nil, fmt.Errorf("library-scoped mbid lookup (mbid=%s library=%s): %w", mbid, libraryID, err)
 	}
 	a, err := r.artistService.GetByID(ctx, artistID)
 	if err != nil {
-		r.logger.Warn("loading library-scoped artist by id", "artist_id", artistID, "error", err)
-		return nil
+		return nil, fmt.Errorf("loading library-scoped artist by id (%s): %w", artistID, err)
 	}
-	return a
+	return a, nil
 }
 
-func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID string) *artist.Artist {
+// lookupByNameInLibrary mirrors lookupByMBIDInLibrary's error contract: a
+// real DB/load failure surfaces to the caller, only sql.ErrNoRows collapses
+// to (nil, nil).
+func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID string) (*artist.Artist, error) {
 	var artistID string
 	err := r.db.QueryRowContext(ctx, `
 		SELECT a.id FROM artists a
@@ -1192,18 +1212,16 @@ func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID stri
 		LIMIT 1
 	`, libraryID, name).Scan(&artistID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		r.logger.Warn("library-scoped name lookup", "name", name, "library_id", libraryID, "error", err)
-		return nil
+		return nil, fmt.Errorf("library-scoped name lookup (name=%s library=%s): %w", name, libraryID, err)
 	}
 	a, err := r.artistService.GetByID(ctx, artistID)
 	if err != nil {
-		r.logger.Warn("loading library-scoped artist by id", "artist_id", artistID, "error", err)
-		return nil
+		return nil, fmt.Errorf("loading library-scoped artist by id (%s): %w", artistID, err)
 	}
-	return a
+	return a, nil
 }
 
 // scanFromEmby pages through Emby artists and updates image existence flags.

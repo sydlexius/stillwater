@@ -260,6 +260,16 @@ func TestNewestWriteTimesByArtist_NoWrites(t *testing.T) {
 	ctx := context.Background()
 	repo := newSQLiteImageRepo(db)
 
+	// Seed lib-empty so Service.Create's derive-source membership insert
+	// lands a real artist_libraries row (matches the membership-backed
+	// precondition the sibling TestNewestWriteTimesByArtist test enforces).
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, type, source, created_at, updated_at)
+			VALUES (?, ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		"lib-empty", "lib-empty"); err != nil {
+		t.Fatalf("seeding library lib-empty: %v", err)
+	}
+
 	// Create an artist with an image but no provenance (empty last_written_at).
 	a := testArtist("Silent Artist", "/music/Silent")
 	a.LibraryID = "lib-empty"

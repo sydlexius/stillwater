@@ -69,6 +69,13 @@ func newSQLiteArtistRepo(db *sql.DB) *sqliteArtistRepo {
 	return &sqliteArtistRepo{db: db}
 }
 
+// DB satisfies the dbProvider interface used by Service.hydratePrimaryLibrary
+// (and its batch sibling) so wrapped repositories that embed *sqliteArtistRepo
+// continue to expose the underlying handle without a concrete type assertion.
+func (r *sqliteArtistRepo) DB() *sql.DB {
+	return r.db
+}
+
 func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 	if a.ID == "" {
 		a.ID = uuid.New().String()

@@ -1335,6 +1335,14 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context, p Violati
 	if needJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
 	} else if strings.Contains(where, "FROM artist_libraries") {
+		// buildViolationFilter (in this same file) emits an EXISTS
+		// (SELECT 1 FROM artist_libraries ... WHERE al.artist_id = a.id ...)
+		// clause whenever ViolationListParams.LibraryID is set. That
+		// subquery references the `a` alias, so we must materialize the
+		// join even when the facet-count filter does not otherwise need
+		// it. The string check is coupled to that emitted SQL pattern;
+		// any change to buildViolationFilter's library-scoping clause
+		// must update this guard too.
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT rv.severity, COUNT(*)` + from + where + ` GROUP BY rv.severity` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders

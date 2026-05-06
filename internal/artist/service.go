@@ -1430,27 +1430,44 @@ func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {
 	return nil
 }
 
+// dbProvider is the minimal interface hydratePrimaryLibrary needs from the
+// repository: a handle to the underlying *sql.DB so it can issue the
+// membership lookup. Decorated/wrapped repositories (NewServiceWithRepos)
+// satisfy this contract by either embedding *sqliteArtistRepo or
+// re-exposing DB(); fake repos used in unit tests omit it and the
+// hydration becomes a silent no-op.
+type dbProvider interface {
+	DB() *sql.DB
+}
+
 // hydratePrimaryLibrary populates a.LibraryID from artist_libraries by
 // picking the earliest membership row (oldest added_at). The legacy
 // artists.library_id column was dropped in migration 004; readers that
 // still rely on Artist.LibraryID (rule engine shared-fs detection,
 // compliance CSV export, library-name display in artist detail pages)
-// continue to see a value derived from the M:N table. A nil or unset
-// repository is a silent no-op so tests using fake repos without a real
-// DB are unaffected.
+// continue to see a value derived from the M:N table. A repository that
+// does not expose a *sql.DB is a silent no-op so tests using fake repos
+// without a real DB are unaffected.
 func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
 	if a == nil || a.ID == "" {
 		return nil
 	}
-	// Use the underlying *sql.DB through the repo when available; fall back
-	// to a no-op when no DB is wired (e.g. tests with fake repos).
-	repo, ok := s.artists.(*sqliteArtistRepo)
+	// Use the underlying *sql.DB through the dbProvider interface so wrapped
+	// repos (decorators that embed *sqliteArtistRepo) still hydrate correctly.
+	provider, ok := s.artists.(dbProvider)
 	if !ok {
 		return nil
 	}
+	db := provider.DB()
+	if db == nil {
+		return nil
+	}
+	// added_at can hold mixed SQLite ("YYYY-MM-DD HH:MM:SS") and RFC3339
+	// timestamps from different writers, so wrap with datetime() to compare
+	// chronologically rather than lexicographically.
 	var libID string
-	err := repo.db.QueryRowContext(ctx,
-		`SELECT library_id FROM artist_libraries WHERE artist_id = ? ORDER BY added_at, library_id LIMIT 1`,
+	err := db.QueryRowContext(ctx,
+		`SELECT library_id FROM artist_libraries WHERE artist_id = ? ORDER BY datetime(added_at), library_id LIMIT 1`,
 		a.ID).Scan(&libID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -1470,8 +1487,12 @@ func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Ar
 	if len(artists) == 0 {
 		return nil
 	}
-	repo, ok := s.artists.(*sqliteArtistRepo)
+	provider, ok := s.artists.(dbProvider)
 	if !ok {
+		return nil
+	}
+	db := provider.DB()
+	if db == nil {
 		return nil
 	}
 	placeholders := make([]string, len(artists))
@@ -1482,17 +1503,20 @@ func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Ar
 	}
 	// Window-style "first per group" via NOT EXISTS so we get exactly one
 	// row per artist_id (the one with the smallest added_at, ties broken
-	// by library_id).
+	// by library_id). Wrap added_at with datetime() to normalize the mixed
+	// "YYYY-MM-DD HH:MM:SS" + RFC3339 formats present in production data;
+	// raw TEXT comparison would order RFC3339 (T separator) after SQLite
+	// (space separator) and pick the wrong "earliest" membership.
 	//nolint:gosec // G202: placeholders is a literal "?,?,..." string built by joining "?" literals; no user input.
 	query := `SELECT al.artist_id, al.library_id FROM artist_libraries al
 		WHERE al.artist_id IN (` + strings.Join(placeholders, ",") + `)
 		AND NOT EXISTS (
 			SELECT 1 FROM artist_libraries al2
 			WHERE al2.artist_id = al.artist_id
-			AND (al2.added_at < al.added_at
-				OR (al2.added_at = al.added_at AND al2.library_id < al.library_id))
+			AND (datetime(al2.added_at) < datetime(al.added_at)
+				OR (datetime(al2.added_at) = datetime(al.added_at) AND al2.library_id < al.library_id))
 		)`
-	rows, err := repo.db.QueryContext(ctx, query, args...)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("batch hydrating primary library: %w", err)
 	}
