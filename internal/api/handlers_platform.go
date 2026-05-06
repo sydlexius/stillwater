@@ -455,7 +455,13 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 
 	cfg, err := r.updaterService.GetConfig(ctx)
 	if err != nil {
-		r.logger.Warn("loading updater config for settings page", "error", err)
+		// Elevated to Error: rendering with the in-code defaults makes the
+		// tab look indistinguishable from a healthy "stable + auto-check off"
+		// install, and a Save click would silently overwrite the user's real
+		// configuration with those defaults. The template surfaces LoadFailed
+		// to users; the Error log surfaces the same condition to operators.
+		r.logger.Error("loading updater config for settings page", "error", err)
+		data.LoadFailed = true
 	} else {
 		data.Channel = string(cfg.Channel)
 		data.Enabled = cfg.Enabled
