@@ -8236,6 +8236,9 @@ paths:
                   type: string
                 envelope:
                   type: object
+                admin_fallback_tokens:
+                  type: boolean
+                  description: Opt-in. When true, API tokens whose original owner is absent on the target after the envelope's Users block has been applied are reassigned to the importing admin instead of skipped. The reassignment count surfaces in the response under ownership_reassigned.
               required: [passphrase, envelope]
           multipart/form-data:
             schema:
@@ -8246,6 +8249,9 @@ paths:
                 file:
                   type: string
                   format: binary
+                admin_fallback_tokens:
+                  type: string
+                  description: Opt-in. Truthy values ("1", "true", "on") request the same admin-fallback behavior as the JSON field of the same name.
               required: [passphrase, file]
       responses:
         "200":
@@ -8283,6 +8289,24 @@ paths:
                   user_preferences:
                     type: integer
                     description: Number of user preference entries imported.
+                  libraries:
+                    type: integer
+                    description: Number of libraries imported (envelope >= 1.2).
+                  libraries_skipped:
+                    type: integer
+                    description: Number of libraries skipped because the source-side connection has no equivalent on the target instance.
+                  api_tokens:
+                    type: integer
+                    description: Number of API tokens imported (envelope >= 1.2).
+                  api_tokens_skipped:
+                    type: integer
+                    description: Number of API tokens skipped (e.g. owner absent on target and admin-fallback not requested).
+                  users_imported:
+                    type: integer
+                    description: Number of users recreated from the envelope's Users block (envelope >= 1.3). Users that already existed on the target are NOT counted.
+                  ownership_reassigned:
+                    type: integer
+                    description: Number of API tokens whose owner was absent on the target and were reassigned to the importing admin via admin_fallback_tokens=true.
             text/html:
               schema:
                 type: string
