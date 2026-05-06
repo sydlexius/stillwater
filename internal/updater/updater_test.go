@@ -1664,3 +1664,384 @@ func (t *rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, err
 	req2.URL.Host = host
 	return http.DefaultTransport.RoundTrip(req2)
 }
+
+// withSchedulerHourUnit swaps schedulerHourUnit for the duration of a test.
+// Production multiplies CheckIntervalHours by time.Hour; tests swap to
+// time.Millisecond so a "1h" interval expires in 1ms and reactivity bounds
+// can be asserted in milliseconds rather than hours.
+func withSchedulerHourUnit(t *testing.T, unit time.Duration) {
+	t.Helper()
+	prev := schedulerHourUnit
+	schedulerHourUnit = unit
+	t.Cleanup(func() { schedulerHourUnit = prev })
+}
+
+// TestStartSchedulerReactsToConfigChange verifies SetConfig wakes the
+// scheduler so a cadence change takes effect on the very next loop
+// iteration, instead of waiting out the previous (long) interval.
+func TestStartSchedulerReactsToConfigChange(t *testing.T) {
+	withSchedulerHourUnit(t, time.Millisecond)
+
+	svc := buildTestService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Seed a long interval so the timer would not fire on its own
+	// during the test window. With schedulerHourUnit==1ms, "1000h"
+	// is 1s; well outside the test bound.
+	if err := svc.SetConfig(ctx, Config{
+		Channel:            ChannelStable,
+		Enabled:            false, // Disable so /check is not triggered (no GitHub).
+		AutoCheck:          false,
+		CheckIntervalHours: 1000,
+	}); err != nil {
+		t.Fatalf("seed SetConfig: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		svc.StartScheduler(ctx)
+		close(done)
+	}()
+
+	// Let the scheduler enter the select with the long interval.
+	time.Sleep(20 * time.Millisecond)
+
+	// Drop the interval to 1h (1ms in test). The configChange wakeup
+	// should reset the timer; we then verify the loop survives the
+	// reset by canceling and observing prompt return.
+	startSwap := time.Now()
+	if err := svc.SetConfig(ctx, Config{
+		Channel:            ChannelStable,
+		Enabled:            false,
+		AutoCheck:          false,
+		CheckIntervalHours: 1,
+	}); err != nil {
+		t.Fatalf("reactive SetConfig: %v", err)
+	}
+
+	// Cancel and assert prompt return: a stuck scheduler waiting out
+	// the previous 1000ms timer would block here. The new 1ms timer
+	// being honored means the next select iteration runs quickly and
+	// observes the canceled context.
+	cancel()
+	select {
+	case <-done:
+		elapsed := time.Since(startSwap)
+		// Generous bound: the reactivity itself happens in microseconds,
+		// but the goroutine join has scheduling jitter. 500ms is well
+		// under the 1000ms-without-reactivity worst case.
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("scheduler took %v to react to config change + cancel; expected <500ms", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not return after config change + cancel")
+	}
+}
+
+// TestSetConfigConfigChangeIsNonBlocking verifies SetConfig does not
+// block when the scheduler is not draining the configChange channel
+// (e.g. between iterations), and that rapid back-to-back changes
+// coalesce into a single wakeup.
+func TestSetConfigConfigChangeIsNonBlocking(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	// No scheduler running. The channel has capacity 1; the first
+	// SetConfig fills it, subsequent ones drop their signal.
+	for i := 0; i < 5; i++ {
+		if err := svc.SetConfig(ctx, Config{Channel: ChannelStable}); err != nil {
+			t.Fatalf("SetConfig #%d: %v", i, err)
+		}
+	}
+	// Drain: exactly one signal should be queued.
+	select {
+	case <-svc.configChange:
+	default:
+		t.Fatal("expected one queued configChange signal")
+	}
+	select {
+	case <-svc.configChange:
+		t.Fatal("expected configChange to be empty after drain")
+	default:
+	}
+}
+
+// TestGetSetConfigAutoUpdate verifies the AutoUpdate field round-trips
+// through the settings table.
+func TestGetSetConfigAutoUpdate(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	cfg, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if cfg.AutoUpdate {
+		t.Error("default AutoUpdate should be false")
+	}
+
+	if err := svc.SetConfig(ctx, Config{
+		Channel:            ChannelStable,
+		Enabled:            true,
+		AutoCheck:          true,
+		AutoUpdate:         true,
+		CheckIntervalHours: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	cfg, err = svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig after set: %v", err)
+	}
+	if !cfg.AutoUpdate {
+		t.Error("AutoUpdate should be true after SetConfig")
+	}
+}
+
+// TestSkippedVersionsRoundTrip verifies AddSkippedVersion / RemoveSkippedVersion
+// and the round-trip through GetConfig.
+func TestSkippedVersionsRoundTrip(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	if err := svc.AddSkippedVersion(ctx, "v1.2.3"); err != nil {
+		t.Fatalf("AddSkippedVersion: %v", err)
+	}
+	if err := svc.AddSkippedVersion(ctx, "v1.2.4"); err != nil {
+		t.Fatalf("AddSkippedVersion #2: %v", err)
+	}
+	// Idempotent: re-adding is a no-op.
+	if err := svc.AddSkippedVersion(ctx, "v1.2.3"); err != nil {
+		t.Fatalf("AddSkippedVersion idempotent: %v", err)
+	}
+
+	cfg, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got, want := len(cfg.SkippedVersions), 2; got != want {
+		t.Fatalf("SkippedVersions len = %d, want %d (%v)", got, want, cfg.SkippedVersions)
+	}
+
+	// Empty version rejected.
+	if err := svc.AddSkippedVersion(ctx, ""); err == nil {
+		t.Error("AddSkippedVersion(empty) should error")
+	}
+
+	// Remove one.
+	if err := svc.RemoveSkippedVersion(ctx, "v1.2.3"); err != nil {
+		t.Fatalf("RemoveSkippedVersion: %v", err)
+	}
+	cfg, err = svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if got, want := len(cfg.SkippedVersions), 1; got != want {
+		t.Fatalf("after remove len = %d, want %d (%v)", got, want, cfg.SkippedVersions)
+	}
+	if cfg.SkippedVersions[0] != "v1.2.4" {
+		t.Errorf("remaining version = %q, want v1.2.4", cfg.SkippedVersions[0])
+	}
+
+	// Remove all -> empty list persisted as empty value.
+	if err := svc.RemoveSkippedVersion(ctx, "v1.2.4"); err != nil {
+		t.Fatalf("RemoveSkippedVersion #2: %v", err)
+	}
+	cfg, err = svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if len(cfg.SkippedVersions) != 0 {
+		t.Errorf("after remove-all SkippedVersions = %v, want empty", cfg.SkippedVersions)
+	}
+}
+
+// TestMaybeAutoApplyDockerNoOp verifies maybeAutoApply does nothing when
+// the host is detected as Docker, even with AutoUpdate=true and an
+// available newer release.
+func TestMaybeAutoApplyDockerNoOp(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(true)
+	ctx := context.Background()
+
+	// Fake: pretend Apply would be invoked. We assert by checking that
+	// applyRunning stays at 0 (CompareAndSwap never fired).
+	cfg := Config{AutoUpdate: true}
+	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
+	svc.maybeAutoApply(ctx, cfg, result)
+
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d after Docker no-op; want 0", got)
+	}
+}
+
+// TestMaybeAutoApplyHonorsSkipList verifies a candidate tag in
+// SkippedVersions short-circuits the auto-apply path even when every
+// other gate is satisfied.
+func TestMaybeAutoApplyHonorsSkipList(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false) // Non-Docker so the Docker no-op branch does not mask the skip-list branch.
+	ctx := context.Background()
+
+	cfg := Config{
+		AutoUpdate:      true,
+		SkippedVersions: []string{"v9.9.9"},
+	}
+	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
+	svc.maybeAutoApply(ctx, cfg, result)
+
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d after skip-list no-op; want 0", got)
+	}
+}
+
+// TestMaybeAutoApplyDisabledIsNoOp verifies AutoUpdate=false is a no-op.
+func TestMaybeAutoApplyDisabledIsNoOp(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false)
+	ctx := context.Background()
+
+	cfg := Config{AutoUpdate: false}
+	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
+	svc.maybeAutoApply(ctx, cfg, result)
+
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d when AutoUpdate=false; want 0", got)
+	}
+}
+
+// TestMarkAutoAppliedPersists verifies the last-auto-applied marker
+// round-trips through the settings table.
+func TestMarkAutoAppliedPersists(t *testing.T) {
+	svc := buildTestService(t)
+	ctx := context.Background()
+
+	if err := svc.markAutoApplied(ctx, "v1.2.3"); err != nil {
+		t.Fatalf("markAutoApplied: %v", err)
+	}
+	cfg, err := svc.GetConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if cfg.LastAutoApplied.IsZero() {
+		t.Error("LastAutoApplied should be non-zero after markAutoApplied")
+	}
+	if cfg.LastAutoAppliedVersion != "v1.2.3" {
+		t.Errorf("LastAutoAppliedVersion = %q, want v1.2.3", cfg.LastAutoAppliedVersion)
+	}
+}
+
+// TestApplyAutoDockerBlocked verifies applyAuto returns an error on
+// Docker hosts even when CompareAndSwap would otherwise succeed.
+func TestApplyAutoDockerBlocked(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(true)
+	if err := svc.applyAuto("v9.9.9"); err == nil {
+		t.Error("applyAuto should error on Docker hosts")
+	}
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d after Docker rejection; want 0", got)
+	}
+}
+
+// TestApplyAutoRestartRequired verifies applyAuto returns
+// ErrRestartRequired when a previous Apply already staged a binary.
+func TestApplyAutoRestartRequired(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false)
+	svc.MarkRestartRequiredForTest("v1.0.0")
+	if err := svc.applyAuto("v9.9.9"); !errors.Is(err, ErrRestartRequired) {
+		t.Errorf("applyAuto err = %v, want ErrRestartRequired", err)
+	}
+}
+
+// TestApplyAutoAlreadyRunning verifies applyAuto returns ErrAlreadyRunning
+// when a manual Apply is in flight.
+func TestApplyAutoAlreadyRunning(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false)
+	// Manually set the running flag to simulate an in-flight Apply.
+	if !svc.applyRunning.CompareAndSwap(0, 1) {
+		t.Fatal("could not seed applyRunning")
+	}
+	t.Cleanup(func() { svc.applyRunning.Store(0) })
+	if err := svc.applyAuto("v9.9.9"); !errors.Is(err, ErrAlreadyRunning) {
+		t.Errorf("applyAuto err = %v, want ErrAlreadyRunning", err)
+	}
+}
+
+// TestListSkippedVersionsEmpty verifies ListSkippedVersions returns nil/[]
+// when no skips are persisted.
+func TestListSkippedVersionsEmpty(t *testing.T) {
+	svc := buildTestService(t)
+	skips, err := svc.ListSkippedVersions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSkippedVersions: %v", err)
+	}
+	if len(skips) != 0 {
+		t.Errorf("skips = %v, want empty", skips)
+	}
+}
+
+// TestStartSchedulerTimerTickRunsCheck exercises the timer.C arm of the
+// scheduler select with a fake GitHub server. With Enabled+AutoCheck=true
+// and schedulerHourUnit shrunken, a single iteration should invoke
+// Check() and update lastChecked.
+func TestStartSchedulerTimerTickRunsCheck(t *testing.T) {
+	withSchedulerHourUnit(t, time.Millisecond)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Return a single stable release older than the current build so
+		// no auto-apply is attempted (this test only asserts Check ran).
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.0.1","prerelease":false,"draft":false,"html_url":"https://example.com/release","published_at":"2026-01-01T00:00:00Z"}]`))
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := buildTestService(t)
+	svc.SetHTTPClient(&http.Client{Transport: &rewriteHostTransport{base: srv.URL}})
+	svc.SetDockerForTest(false)
+
+	if err := svc.SetConfig(context.Background(), Config{
+		Channel:            ChannelStable,
+		Enabled:            true,
+		AutoCheck:          true,
+		CheckIntervalHours: 1, // 1ms with unit swap
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan struct{})
+	go func() {
+		svc.StartScheduler(ctx)
+		close(done)
+	}()
+
+	// Wait until lastChecked is non-zero (meaning Check fired) or fail.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		svc.mu.RLock()
+		fired := !svc.lastChecked.IsZero()
+		svc.mu.RUnlock()
+		if fired {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	svc.mu.RLock()
+	fired := !svc.lastChecked.IsZero()
+	svc.mu.RUnlock()
+	if !fired {
+		t.Error("scheduler did not run Check within deadline")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler did not return after cancel")
+	}
+}

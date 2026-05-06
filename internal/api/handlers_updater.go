@@ -141,6 +141,7 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		Channel            updater.Channel `json:"channel"`
 		Enabled            *bool           `json:"enabled,omitempty"`
 		AutoCheck          *bool           `json:"auto_check,omitempty"`
+		AutoUpdate         *bool           `json:"auto_update,omitempty"`
 		CheckIntervalHours int             `json:"check_interval_hours"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&raw); err != nil {
@@ -151,6 +152,7 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 		Channel:            raw.Channel,
 		Enabled:            true,
 		AutoCheck:          false,
+		AutoUpdate:         false,
 		CheckIntervalHours: raw.CheckIntervalHours,
 	}
 	if raw.Enabled != nil {
@@ -158,6 +160,9 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 	}
 	if raw.AutoCheck != nil {
 		body.AutoCheck = *raw.AutoCheck
+	}
+	if raw.AutoUpdate != nil {
+		body.AutoUpdate = *raw.AutoUpdate
 	}
 
 	// Validate channel value before persisting.
@@ -195,4 +200,81 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// handleGetUpdateSkips returns the current list of skipped release tags.
+// GET /api/v1/updates/skips
+func (r *Router) handleGetUpdateSkips(w http.ResponseWriter, req *http.Request) {
+	if r.updaterService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "updater service not available"})
+		return
+	}
+	skips, err := r.updaterService.ListSkippedVersions(req.Context())
+	if err != nil {
+		r.logger.Error("listing skipped versions", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if skips == nil {
+		skips = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"skipped_versions": skips})
+}
+
+// handlePostUpdateSkips appends a release tag to the skip list. The
+// scheduler honors the post-write list on the next tick, so a click on
+// "skip this version" gates the in-flight auto-apply candidate without
+// any further coordination.
+// POST /api/v1/updates/skips
+func (r *Router) handlePostUpdateSkips(w http.ResponseWriter, req *http.Request) {
+	if r.updaterService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "updater service not available"})
+		return
+	}
+	var body struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if body.Version == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "version must be non-empty"})
+		return
+	}
+	if err := r.updaterService.AddSkippedVersion(req.Context(), body.Version); err != nil {
+		r.logger.Error("adding skipped version", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	skips, err := r.updaterService.ListSkippedVersions(req.Context())
+	if err != nil {
+		r.logger.Error("re-reading skipped versions", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if skips == nil {
+		skips = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"skipped_versions": skips})
+}
+
+// handleDeleteUpdateSkip removes a release tag from the skip list.
+// DELETE /api/v1/updates/skips/{version}
+func (r *Router) handleDeleteUpdateSkip(w http.ResponseWriter, req *http.Request) {
+	if r.updaterService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "updater service not available"})
+		return
+	}
+	version := req.PathValue("version")
+	if version == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "version path parameter required"})
+		return
+	}
+	if err := r.updaterService.RemoveSkippedVersion(req.Context(), version); err != nil {
+		r.logger.Error("removing skipped version", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

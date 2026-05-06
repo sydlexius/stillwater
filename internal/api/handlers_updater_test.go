@@ -1013,3 +1013,219 @@ func (b *blockingTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	<-b.block
 	return nil, &unavailableError{}
 }
+
+// TestHandlePutUpdateConfig_AutoUpdate verifies the AutoUpdate field
+// round-trips through the PUT decoder.
+func TestHandlePutUpdateConfig_AutoUpdate(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	body := `{"channel":"stable","auto_check":true,"auto_update":true}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/updates/config",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handlePutUpdateConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var cfg updater.Config
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !cfg.AutoUpdate {
+		t.Error("auto_update should be true after PUT")
+	}
+}
+
+// TestHandleGetUpdateSkips_Empty verifies the GET /updates/skips endpoint
+// returns an empty array (not null) when no skips are persisted.
+func TestHandleGetUpdateSkips_Empty(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/updates/skips", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateSkips(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		SkippedVersions []string `json:"skipped_versions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.SkippedVersions == nil {
+		t.Error("skipped_versions should be [] not null")
+	}
+	if len(resp.SkippedVersions) != 0 {
+		t.Errorf("skipped_versions = %v, want empty", resp.SkippedVersions)
+	}
+}
+
+// TestHandlePostUpdateSkips_Append verifies POST /updates/skips appends
+// a tag and returns the post-write list.
+func TestHandlePostUpdateSkips_Append(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	body := `{"version":"v9.9.9"}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/skips",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handlePostUpdateSkips(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		SkippedVersions []string `json:"skipped_versions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.SkippedVersions) != 1 || resp.SkippedVersions[0] != "v9.9.9" {
+		t.Errorf("skipped_versions = %v, want [v9.9.9]", resp.SkippedVersions)
+	}
+}
+
+// TestHandlePostUpdateSkips_EmptyVersion verifies POST with empty
+// version returns 400.
+func TestHandlePostUpdateSkips_EmptyVersion(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/skips",
+		strings.NewReader(`{"version":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handlePostUpdateSkips(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeleteUpdateSkip_Removes verifies DELETE removes a tag.
+func TestHandleDeleteUpdateSkip_Removes(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	if err := r.updaterService.AddSkippedVersion(context.Background(), "v1.0.0"); err != nil {
+		t.Fatalf("AddSkippedVersion: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/updates/skips/v1.0.0", nil)
+	req.SetPathValue("version", "v1.0.0")
+	w := httptest.NewRecorder()
+	r.handleDeleteUpdateSkip(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	skips, err := r.updaterService.ListSkippedVersions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSkippedVersions: %v", err)
+	}
+	if len(skips) != 0 {
+		t.Errorf("skips after delete = %v, want empty", skips)
+	}
+}
+
+// TestHandleGetUpdateSkips_NilService verifies nil updaterService -> 503.
+func TestHandleGetUpdateSkips_NilService(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	r.updaterService = nil
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/updates/skips", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateSkips(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+// TestHandlePostUpdateSkips_NilService verifies nil updaterService -> 503.
+func TestHandlePostUpdateSkips_NilService(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	r.updaterService = nil
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/updates/skips",
+		strings.NewReader(`{"version":"v1"}`))
+	w := httptest.NewRecorder()
+	r.handlePostUpdateSkips(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+// TestHandlePostUpdateSkips_BadBody verifies a malformed JSON body returns 400.
+func TestHandlePostUpdateSkips_BadBody(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/updates/skips",
+		strings.NewReader(`{not-json`))
+	w := httptest.NewRecorder()
+	r.handlePostUpdateSkips(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleDeleteUpdateSkip_NilService verifies nil updaterService -> 503.
+func TestHandleDeleteUpdateSkip_NilService(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	r.updaterService = nil
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/updates/skips/v1", nil)
+	req.SetPathValue("version", "v1")
+	w := httptest.NewRecorder()
+	r.handleDeleteUpdateSkip(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+// TestHandleDeleteUpdateSkip_MissingVersion verifies an empty path
+// parameter returns 400.
+func TestHandleDeleteUpdateSkip_MissingVersion(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/updates/skips/", nil)
+	// PathValue is unset; handler must reject.
+	w := httptest.NewRecorder()
+	r.handleDeleteUpdateSkip(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestHandleGetUpdateSkips_ReturnsList verifies an existing skip is
+// returned in the GET response.
+func TestHandleGetUpdateSkips_ReturnsList(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	if err := r.updaterService.AddSkippedVersion(context.Background(), "v1.2.3"); err != nil {
+		t.Fatalf("AddSkippedVersion: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/updates/skips", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateSkips(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var resp struct {
+		SkippedVersions []string `json:"skipped_versions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.SkippedVersions) != 1 || resp.SkippedVersions[0] != "v1.2.3" {
+		t.Errorf("skipped_versions = %v, want [v1.2.3]", resp.SkippedVersions)
+	}
+}
