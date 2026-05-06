@@ -448,6 +448,13 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 // ImportWithOptions decrypts and applies settings from an Envelope, honoring
 // the supplied ImportOptions. See ImportOptions for the available knobs.
 func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphrase string, opts ImportOptions) (*ImportResult, error) {
+	// Reject nil envelope before touching any field. The HTTP handler is the
+	// only documented caller and constructs env from a decoded JSON body, but
+	// the receiver is exported and a nil pass would otherwise panic in the
+	// middle of the import path -- worse than a clean 400.
+	if env == nil {
+		return nil, fmt.Errorf("nil envelope")
+	}
 	if env.Data == "" {
 		return nil, fmt.Errorf("empty export data")
 	}

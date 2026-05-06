@@ -187,6 +187,92 @@ components:
                 type: string
                 enum: [genres, styles, moods]
           additionalProperties: false
+    PortableSettingsEnvelope:
+      type: object
+      description: |
+        Outer JSON wrapper for an exported settings file. The encrypted
+        configuration payload lives in `data` (base64 nonce+ciphertext, decrypted
+        with `salt` + the import passphrase via PBKDF2). `summary` carries
+        plaintext per-section row counts so an operator can sanity-check the
+        export shape without decrypting. Used as the import request payload
+        and the export response body, so the contract stays in sync across
+        directions.
+      required: [version, app_version, created_at, salt, data]
+      properties:
+        version:
+          type: string
+          description: |
+            Envelope format version. Current writer emits `1.3`; importer
+            accepts `1.0`-`1.3`. Each minor bump adds optional fields without
+            breaking older readers (1.1: rules/scraper_configs/user_preferences;
+            1.2: libraries/api_tokens; 1.3: users).
+        app_version:
+          type: string
+          description: Application version that produced the export.
+        created_at:
+          type: string
+          format: date-time
+          description: When the export was created (UTC, RFC 3339).
+        salt:
+          type: string
+          description: Base64-encoded PBKDF2 salt used to derive the symmetric key from the passphrase.
+        data:
+          type: string
+          description: Base64-encoded ciphertext (nonce + AES-GCM payload) of the inner Payload struct.
+        summary:
+          type: object
+          description: |
+            Plaintext per-section row counts for sanity-checking without
+            decryption. Same shape as the import response, so the same fields
+            cover both export-side ("rows packed") and import-side
+            ("rows applied") semantics.
+          required: [settings, connections, platform_profiles, webhooks, provider_keys, priorities, rules, scraper_configs, user_preferences]
+          properties:
+            settings:
+              type: integer
+              description: Number of plain-KV settings rows.
+            connections:
+              type: integer
+              description: Number of platform connections.
+            platform_profiles:
+              type: integer
+              description: Number of platform profiles.
+            webhooks:
+              type: integer
+              description: Number of outbound webhooks.
+            provider_keys:
+              type: integer
+              description: Number of provider API key rows.
+            priorities:
+              type: integer
+              description: Number of provider-priority entries.
+            rules:
+              type: integer
+              description: Number of rule configurations (envelope >= 1.1).
+            scraper_configs:
+              type: integer
+              description: Number of scraper configuration scopes (envelope >= 1.1).
+            user_preferences:
+              type: integer
+              description: Number of user-preference rows (envelope >= 1.1).
+            libraries:
+              type: integer
+              description: Number of libraries (envelope >= 1.2).
+            libraries_skipped:
+              type: integer
+              description: Number of libraries skipped because the source-side connection has no equivalent on the target instance.
+            api_tokens:
+              type: integer
+              description: Number of API tokens (envelope >= 1.2). Token plaintexts are never carried; only the stored hash + metadata.
+            api_tokens_skipped:
+              type: integer
+              description: Number of API tokens skipped (e.g. owner absent on target and admin-fallback not requested).
+            users_imported:
+              type: integer
+              description: Number of users recreated from the envelope's Users block (envelope >= 1.3). Pre-existing users on the target are NOT counted.
+            ownership_reassigned:
+              type: integer
+              description: Number of API tokens whose owner was absent on the target and were reassigned to the importing admin via admin_fallback_tokens=true.
     Status:
       type: object
       properties:
@@ -8159,48 +8245,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [version, app_version, created_at, salt, data, summary]
-                properties:
-                  version:
-                    type: string
-                    description: Export format version number.
-                  app_version:
-                    type: string
-                    description: Application version that created this export.
-                  created_at:
-                    type: string
-                    format: date-time
-                    description: When the export was created (UTC, RFC 3339).
-                  salt:
-                    type: string
-                    description: Encryption salt for the settings payload.
-                  data:
-                    type: string
-                    description: Encrypted settings payload.
-                  summary:
-                    type: object
-                    description: Plaintext section counts for sanity-checking without decryption.
-                    required: [settings, connections, platform_profiles, webhooks, provider_keys, priorities, rules, scraper_configs, user_preferences]
-                    properties:
-                      settings:
-                        type: integer
-                      connections:
-                        type: integer
-                      platform_profiles:
-                        type: integer
-                      webhooks:
-                        type: integer
-                      provider_keys:
-                        type: integer
-                      priorities:
-                        type: integer
-                      rules:
-                        type: integer
-                      scraper_configs:
-                        type: integer
-                      user_preferences:
-                        type: integer
+                $ref: "#/components/schemas/PortableSettingsEnvelope"
         "400":
           description: Missing passphrase
           content:
@@ -8235,7 +8280,7 @@ paths:
                 passphrase:
                   type: string
                 envelope:
-                  type: object
+                  $ref: "#/components/schemas/PortableSettingsEnvelope"
                 admin_fallback_tokens:
                   type: boolean
                   description: Opt-in. When true, API tokens whose original owner is absent on the target after the envelope's Users block has been applied are reassigned to the importing admin instead of skipped. The reassignment count surfaces in the response under ownership_reassigned.
