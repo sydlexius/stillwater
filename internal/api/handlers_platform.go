@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -314,6 +315,15 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Seed canonical defaults for tracked auth-provider keys before reading
+	// them, so that values matching the code default still produce a real
+	// row in the settings table (and therefore survive an export/import
+	// round trip). Without this, a user who views the page, sees Operator
+	// already selected, and moves on never fires a DB write -- the key
+	// stays absent, the export carries nothing, and the target instance
+	// renders its own default which may differ from the source's (#1188).
+	r.seedAuthProviderDefaults(req.Context())
+
 	authProvidersData := templates.AuthProvidersData{
 		BasePath:              r.basePath,
 		LocalEnabled:          r.getBoolSetting(req.Context(), "auth.providers.local.enabled", true),
@@ -483,4 +493,66 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 	data.PendingVersion = status.PendingVersion
 
 	return data
+}
+
+// authProviderDefaults is the canonical list of auth.providers.* settings
+// keys that the Settings > Auth Providers page reads, paired with their
+// code defaults. seedAuthProviderDefaults inserts a row at this default
+// for any key that has no row yet, so a "user looked at the page and
+// accepted the defaults" instance round-trips faithfully through
+// export/import (#1188).
+//
+// Boolean-shaped keys are stored as the strings "true" / "false" to match
+// the parsing in getBoolSetting (which treats "true" or "1" as true).
+var authProviderDefaults = []struct {
+	Key     string
+	Default string
+}{
+	// Local provider is always on; persist that fact so disabling it on the
+	// source can be exported (the toggle is currently disabled in the UI but
+	// the storage shape is symmetric).
+	{"auth.providers.local.enabled", "true"},
+
+	// Emby provider.
+	{"auth.providers.emby.enabled", "false"},
+	{"auth.providers.emby.auto_provision", "false"},
+	{"auth.providers.emby.guard_rail", "admin"},
+	{"auth.providers.emby.default_role", "operator"},
+
+	// Jellyfin provider.
+	{"auth.providers.jellyfin.enabled", "false"},
+	{"auth.providers.jellyfin.auto_provision", "false"},
+	{"auth.providers.jellyfin.guard_rail", "admin"},
+	{"auth.providers.jellyfin.default_role", "operator"},
+
+	// OIDC provider. Optional URL/string fields are NOT seeded with empty
+	// strings: an "unset" OIDC issuer URL must remain absent (not present-
+	// but-empty) so the export omits it cleanly. Only the role default is
+	// seeded because it matches the same UI-default-masks-absent-row hazard
+	// as the Emby/Jellyfin selects.
+	{"auth.providers.oidc.enabled", "false"},
+	{"auth.providers.oidc.auto_provision", "false"},
+	{"auth.providers.oidc.default_role", "operator"},
+}
+
+// seedAuthProviderDefaults writes each canonical default to the settings
+// table only when the key has no row yet. INSERT OR IGNORE keeps the call
+// idempotent across page renders -- a key that has been changed (or even
+// re-set to the default explicitly) keeps its existing row.
+//
+// Errors are logged but not returned; the page must still render even if
+// the seed fails (e.g. because the DB is briefly read-only during a
+// maintenance window). The follow-up render will read the in-memory
+// fallbacks via getStringSetting / getBoolSetting, which preserves the
+// pre-#1188 behavior.
+func (r *Router) seedAuthProviderDefaults(ctx context.Context) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, d := range authProviderDefaults {
+		if _, err := r.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
+			d.Key, d.Default, now,
+		); err != nil {
+			r.logger.Warn("seeding auth provider default", "key", d.Key, "error", err)
+		}
+	}
 }

@@ -64,10 +64,19 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 }
 
 // importAPITokens upserts API tokens by token_hash (which is UNIQUE in the
-// schema). The owning user is resolved by username; if no matching user
-// exists on the target instance, the token is skipped with a warning so a
-// minor user-set drift does not abort the whole import.
-func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, result *ImportResult) error {
+// schema). The owning user is resolved by username on the target instance.
+//
+// Resolution order (#1283):
+//  1. Username found on target (either pre-existing OR just recreated from
+//     the envelope's Users block) -> token attributes back to that user.
+//  2. Username absent AND opts.AdminFallbackTokens=true -> token is
+//     attributed to opts.ImportingAdminUserID and OwnershipReassigned is
+//     incremented in the result so the operator can see the audit count.
+//  3. Username absent AND admin-fallback is off (the historical default) ->
+//     token is skipped and APITokensSkipped is incremented; this preserves
+//     the prior behavior for callers that prefer a quiet skip over a silent
+//     ownership change (e.g. prod->staging clones).
+func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, result *ImportResult, opts ImportOptions) error {
 	for _, te := range tokens {
 		if te.TokenHash == "" {
 			// A blank hash cannot satisfy authentication and would collide
@@ -82,12 +91,47 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 		err := s.db.QueryRowContext(ctx,
 			`SELECT id FROM users WHERE username = ?`, te.Username,
 		).Scan(&userID)
-		if errors.Is(err, sql.ErrNoRows) {
-			slog.Warn("import: skipping api token whose owner is absent on target",
-				"token_name", te.Name, "username", te.Username)
-			result.APITokensSkipped++
-			continue
-		} else if err != nil {
+		switch {
+		case err == nil:
+			// Owner found (pre-existing or just recreated from envelope).
+		case errors.Is(err, sql.ErrNoRows):
+			if opts.AdminFallbackTokens && opts.ImportingAdminUserID != "" {
+				// Verify the importing admin still exists on the target.
+				// A tampered or stale opt would otherwise insert a token
+				// with a dangling user_id FK.
+				var adminProbe string
+				probeErr := s.db.QueryRowContext(ctx,
+					`SELECT id FROM users WHERE id = ?`, opts.ImportingAdminUserID,
+				).Scan(&adminProbe)
+				switch {
+				case errors.Is(probeErr, sql.ErrNoRows):
+					// Genuine "admin deleted between resolution and import":
+					// skip the token, do not fail the whole import.
+					slog.Warn("import: admin-fallback configured but admin id missing on target; skipping token",
+						"token_name", te.Name, "username", te.Username,
+						"admin_id", opts.ImportingAdminUserID)
+					result.APITokensSkipped++
+					continue
+				case probeErr != nil:
+					// A real DB error (connectivity, locking, EIO) must not
+					// be silently swallowed as "admin missing"; that turns a
+					// transient outage into a quiet bulk-token loss. Fail
+					// fast so the operator sees the underlying cause.
+					return fmt.Errorf("probing importing admin %q for token fallback: %w", opts.ImportingAdminUserID, probeErr)
+				}
+				slog.Info("import: reassigning api token to importing admin (admin-fallback)",
+					"token_name", te.Name,
+					"original_username", te.Username,
+					"new_owner_id", opts.ImportingAdminUserID)
+				userID = opts.ImportingAdminUserID
+				result.OwnershipReassigned++
+			} else {
+				slog.Warn("import: skipping api token whose owner is absent on target",
+					"token_name", te.Name, "username", te.Username)
+				result.APITokensSkipped++
+				continue
+			}
+		default:
 			return fmt.Errorf("looking up user %q for token %q: %w", te.Username, te.Name, err)
 		}
 

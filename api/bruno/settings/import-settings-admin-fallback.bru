@@ -1,0 +1,57 @@
+meta {
+  name: Import Settings (admin-fallback)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{apiBase}}/settings/import
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "passphrase": "round-trip-test-passphrase",
+    "envelope": {{lastExportedEnvelope}},
+    "admin_fallback_tokens": true
+  }
+}
+
+docs {
+  Cross-instance scenario for #1283. Use this against an envelope that
+  was exported from a DIFFERENT Stillwater instance whose user set does
+  not match the target. With admin_fallback_tokens=true, API tokens
+  whose original owner is absent on the target are reassigned to the
+  importing admin instead of skipped. The reassignment count appears in
+  the response under ownership_reassigned.
+
+  Pre-flight: run "Export Settings" on the source instance, copy the
+  envelope into a Bruno variable named lastExportedEnvelope, then run
+  this request on the target instance.
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("ImportResult exposes ownership_reassigned counter", function() {
+    expect(res.body).to.have.property("ownership_reassigned");
+  });
+
+  test("ImportResult exposes users_imported counter", function() {
+    expect(res.body).to.have.property("users_imported");
+  });
+
+  test("either users_imported or ownership_reassigned should fire on cross-instance restore", function() {
+    var users = res.body.users_imported || 0;
+    var reassigned = res.body.ownership_reassigned || 0;
+    expect(users + reassigned).to.be.at.least(1);
+  });
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/settingsio"
 )
 
@@ -85,6 +86,12 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 
 	var envelope settingsio.Envelope
 	var passphrase string
+	// adminFallbackTokens is the opt-in for #1283. When true, api_tokens
+	// whose original owner is absent on the target (after the envelope's
+	// Users block has been applied) are reassigned to the importing admin
+	// rather than skipped. The form field is "admin_fallback_tokens" and
+	// the JSON field is the same; "1", "true", and "on" are accepted.
+	var adminFallbackTokens bool
 
 	ct := req.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
@@ -101,8 +108,9 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 
 		// Expect {"passphrase": "...", "envelope": {...}}
 		var payload struct {
-			Passphrase string              `json:"passphrase"`
-			Envelope   settingsio.Envelope `json:"envelope"`
+			Passphrase          string              `json:"passphrase"`
+			Envelope            settingsio.Envelope `json:"envelope"`
+			AdminFallbackTokens bool                `json:"admin_fallback_tokens"`
 		}
 		if err := json.Unmarshal(body, &payload); err != nil {
 			writeImportErr(http.StatusBadRequest, "invalid JSON")
@@ -110,6 +118,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		}
 		envelope = payload.Envelope
 		passphrase = payload.Passphrase
+		adminFallbackTokens = payload.AdminFallbackTokens
 	} else {
 		// Multipart form upload
 		if err := req.ParseMultipartForm(maxImportSize); err != nil {
@@ -118,6 +127,13 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		}
 
 		passphrase = req.FormValue("passphrase")
+		// HTML checkboxes submit "on" when checked; accept the common
+		// truthy variants so a JSON-style form value (some HTMX form
+		// helpers emit "true") is interpreted the same way.
+		switch req.FormValue("admin_fallback_tokens") {
+		case "1", "true", "on":
+			adminFallbackTokens = true
+		}
 
 		file, _, err := req.FormFile("file")
 		if err != nil {
@@ -146,7 +162,21 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	result, err := r.settingsIOService.Import(req.Context(), &envelope, passphrase)
+	// Resolve the importing admin from the session so admin-fallback (if
+	// requested) has a valid user_id to reassign tokens to. The settings
+	// import endpoint is admin-only via middleware, so a missing user id
+	// here means the request bypassed the auth chain -- treat that as a
+	// hard refusal rather than silently disabling the fallback.
+	importingAdminID := middleware.UserIDFromContext(req.Context())
+	if adminFallbackTokens && importingAdminID == "" {
+		writeImportErr(http.StatusUnauthorized, "admin-fallback requires an authenticated session")
+		return
+	}
+
+	result, err := r.settingsIOService.ImportWithOptions(req.Context(), &envelope, passphrase, settingsio.ImportOptions{
+		AdminFallbackTokens:  adminFallbackTokens,
+		ImportingAdminUserID: importingAdminID,
+	})
 	if err != nil {
 		r.logger.Error("settings import failed", "error", err)
 		// Build a safe user-facing message: never expose raw internal errors.
@@ -176,13 +206,23 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		w.Header().Set("Content-Type", "text/html")
 		// Local name avoids shadowing the html stdlib import used in
 		// writeImportErr above.
+		// Append users + token-reassignment counts only when non-zero so the
+		// happy path stays compact for instances that don't exercise the
+		// cross-instance restore code path.
+		extras := ""
+		if result.UsersImported > 0 {
+			extras += fmt.Sprintf(" %d users recreated.", result.UsersImported)
+		}
+		if result.OwnershipReassigned > 0 {
+			extras += fmt.Sprintf(" %d API tokens reassigned to the importing admin.", result.OwnershipReassigned)
+		}
 		fragment := fmt.Sprintf(
 			`<div class="text-sm text-green-600 dark:text-green-400">`+
 				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities,`+
-				` %d rules, %d scraper configs, %d preferences.`+
+				` %d rules, %d scraper configs, %d preferences.%s`+
 				`</div>`,
 			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
-			result.Rules, result.ScraperConfigs, result.UserPreferences,
+			result.Rules, result.ScraperConfigs, result.UserPreferences, extras,
 		)
 		w.Write([]byte(fragment)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
 		return

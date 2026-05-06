@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -860,6 +861,26 @@ func TestImport_EmptyData(t *testing.T) {
 	}
 }
 
+// TestImport_NilEnvelope covers the explicit nil-envelope guard at the top of
+// ImportWithOptions. The HTTP handler always passes a decoded body, but the
+// function is exported so a nil pass from another caller is a real possibility;
+// failing fast prevents a partial import from panicking on env.Data.
+func TestImport_NilEnvelope(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	_, err := svc.Import(ctx, nil, "any-passphrase")
+	if err == nil {
+		t.Fatal("expected error for nil envelope, got nil")
+	}
+	if !strings.Contains(err.Error(), "nil envelope") {
+		t.Errorf("error must reference 'nil envelope'; got: %v", err)
+	}
+}
+
 // TestRoundTrip_LibrariesAndTokens covers the v1.2 envelope additions:
 // libraries (with both manual and connection-bound flavors, exercising the
 // (type, url) -> connection_id remap on import) and api_tokens (verifying the
@@ -925,8 +946,10 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	if envelope.Version != "1.2" {
-		t.Errorf("envelope version: got %q, want 1.2", envelope.Version)
+	// Envelope version was bumped to 1.3 when the Users block was added
+	// (#1283). Older versions remain importable; see TestImport_LegacyEnvelopeWithoutUsers.
+	if envelope.Version != "1.3" {
+		t.Errorf("envelope version: got %q, want 1.3", envelope.Version)
 	}
 	if envelope.Summary == nil {
 		t.Fatal("expected non-nil export summary")
@@ -1048,8 +1071,16 @@ func TestRoundTrip_LibrariesAndTokens(t *testing.T) {
 	if res3.Libraries != 2 {
 		t.Errorf("target #2 libraries imported: got %d, want 2 (connection imported alongside)", res3.Libraries)
 	}
-	if res3.APITokens != 0 || res3.APITokensSkipped != 1 {
-		t.Errorf("target #2 tokens: imported=%d skipped=%d, want 0/1 (no matching user)", res3.APITokens, res3.APITokensSkipped)
+	// As of envelope v1.3 (#1283), the envelope carries its own users so
+	// target #2 recreates "tokenowner" and the token round-trips even
+	// though target #2 had no matching user pre-import. This is the whole
+	// point of the v1.3 fix; the previous "skipped=1, imported=0" assertion
+	// is what the bug looked like before the fix.
+	if res3.APITokens != 1 || res3.APITokensSkipped != 0 {
+		t.Errorf("target #2 tokens: imported=%d skipped=%d, want 1/0 (envelope users recreated owner)", res3.APITokens, res3.APITokensSkipped)
+	}
+	if res3.UsersImported < 1 {
+		t.Errorf("target #2 users imported: got %d, want >=1 (tokenowner)", res3.UsersImported)
 	}
 
 	// --- Target #3: idempotency. Re-importing into target #1 must not

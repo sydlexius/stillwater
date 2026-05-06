@@ -2,7 +2,7 @@
 description: Move your Stillwater configuration to another instance with an encrypted bundle.
 ---
 
-<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.1, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, pbkdf2Iterations 600_000), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import), web/templates/settings.templ maintenance tab (export passphrase + import upload). Future: W2.D adds Libraries + APITokens to Payload, bumps to 1.2 (#1186, #1189). -->
+<!-- code: internal/settingsio/export.go (Payload, CurrentEnvelopeVersion 1.3, ConnectionExport, RuleExport, PriorityExport, UserPrefsExport, UserExport, ImportOptions.AdminFallbackTokens, pbkdf2Iterations 600_000), internal/settingsio/users.go, internal/settingsio/tokens.go (admin-fallback path), internal/api/router.go (POST /api/v1/settings/export, /api/v1/settings/import), web/templates/settings.templ maintenance tab (export passphrase + import upload + admin-fallback checkbox). -->
 
 # Export and import settings
 
@@ -27,6 +27,8 @@ The export includes everything that lives in Stillwater's database that you'd wa
 - **Rules** -- enable state, automation mode, and config for each rule. Names and descriptions are *not* exported (the receiving instance keeps its own current copy).
 - **Scraper configurations** -- custom scraper YAMLs you've added.
 - **User preferences** -- per-user UI prefs.
+- **Users** -- usernames and roles for every account, plus stored password hashes for local (non-federated) accounts and, separately, federated identity references (provider type and external id) for federated accounts. Federated identities have no password hashes. Password hashes are bcrypt digests, never plaintext. The user list is included so that a backup taken on instance A can be restored on instance B without losing the API tokens or user preferences that are owned by users on A whose names B has not seen before.
+- **API tokens** -- the stored hash, scopes, and ownership metadata. The plaintext token value is not stored in the database and so is never carried in the bundle.
 
 What's **not** in the bundle:
 
@@ -76,6 +78,19 @@ For each item in the bundle:
 - **Item types not in the bundle** are left untouched on the receiving instance.
 
 So an import on a fresh instance fully populates it; an import on an instance with existing config merges -- the bundle's view wins where things overlap.
+
+### How users are handled
+
+Users get a softer treatment than other items because their state on the receiving instance often reflects local choices (rotated passwords, role changes) that should not be silently overwritten:
+
+- **Users present on the receiving instance with the same username** are left exactly as they are. The bundle's row is ignored. This means an admin who has rotated their password on the target keeps the new password, even if the source is older.
+- **Users absent on the receiving instance** are recreated from the bundle so any of their API tokens or preferences in the same import can attribute back to them.
+
+### When the source's owner is missing on the target
+
+If an API token's original owner is not in the bundle (e.g., the bundle came from an older Stillwater that did not include users) and is also not present on the receiving instance, the import treats the token as orphaned. By default, orphaned tokens are skipped and the result reports them under `api_tokens_skipped` so you can see what was lost.
+
+There is an optional **Reassign orphan tokens to me** checkbox on the import form for the case where you would rather inherit those tokens than lose them. With it checked, orphan tokens are reattributed to the admin running the import; the result reports the count under `ownership_reassigned` so the change is visible. Enable it deliberately -- it is silent ownership transfer if you forget you ticked it.
 
 ## Common workflows
 
