@@ -852,6 +852,42 @@ func TestBuildUpdatesTabData_NightlyChannel(t *testing.T) {
 	}
 }
 
+// TestBuildUpdatesTabData_GetConfigError verifies that buildUpdatesTabData
+// flips LoadFailed=true when the underlying GetConfig call returns an error,
+// rather than silently rendering the in-code defaults. The previous behavior
+// (a Warn log + silent fallthrough) made the tab look identical to a healthy
+// "stable + auto-check off" install, and a Save click would overwrite the
+// user's real configuration with those defaults. Issue #1172.
+//
+// We force GetConfig to fail by closing the underlying *sql.DB before
+// calling buildUpdatesTabData; this drives the QueryContext path in
+// updater.Service.GetConfig to return an error without needing a mock.
+func TestBuildUpdatesTabData_GetConfigError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+
+	// Close the database so the next GetConfig call fails. The router's
+	// db field is shared with the updater service, so closing here propagates
+	// to s.db.QueryContext inside GetConfig.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	data := r.buildUpdatesTabData(context.Background())
+
+	if !data.LoadFailed {
+		t.Error("LoadFailed = false, want true after GetConfig error")
+	}
+	// In-code defaults should still be present so the template can render
+	// without panicking on missing values.
+	if data.Channel != "stable" {
+		t.Errorf("Channel = %q, want %q on LoadFailed", data.Channel, "stable")
+	}
+	if data.CheckIntervalHours != updater.DefaultCheckIntervalHours {
+		t.Errorf("CheckIntervalHours = %d, want %d on LoadFailed", data.CheckIntervalHours, updater.DefaultCheckIntervalHours)
+	}
+}
+
 // TestNormalizeSettingsSectionUpdates verifies that "updates" is a valid
 // settings section that routes to the updates tab.
 func TestNormalizeSettingsSectionUpdates(t *testing.T) {

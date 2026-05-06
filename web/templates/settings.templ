@@ -88,6 +88,13 @@ type UpdatesTabData struct {
 	// PendingVersion is the tag of the installed-but-not-yet-running binary,
 	// shown in the restart-required banner. Empty unless RestartRequired.
 	PendingVersion string
+	// LoadFailed is true when the server-side render could not read the
+	// updater config (e.g. settings table read error). When true, the tab
+	// renders an error banner and disables the Save path, because the
+	// rendered controls show the in-code defaults rather than the user's
+	// actual persisted configuration; a naive Save click would overwrite
+	// real values with those defaults.
+	LoadFailed bool
 }
 
 // inboundWebhookURL builds a pre-populated inbound webhook URL for the given
@@ -6159,6 +6166,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 		data-restart-required-title={ t(ctx, "settings.updates.restart_required_title") }
 		data-restart-required-body={ t(ctx, "settings.updates.restart_required_body") }
 		data-restart-required-native-instruction={ t(ctx, "settings.updates.restart_required_native_instruction") }
+		data-load-failed-save-blocked={ t(ctx, "settings.updates.load_failed_save_blocked") }
 	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -6303,6 +6311,47 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config.description") }</p>
 		</div>
 		<div class="px-6 py-4 space-y-5">
+			<!-- Load-failed banner: shown when the server-side render could
+			     not read the persisted updater config. Without this, the
+			     controls below show the in-code defaults, which look
+			     indistinguishable from a healthy "stable + auto-check off"
+			     install. The dismiss button is cosmetic; the underlying
+			     LoadFailed condition still gates auto-save in JS so a
+			     dismissed banner cannot lead to a destructive write. -->
+			if data.LoadFailed {
+				<div
+					id="updates-load-failed-row"
+					data-load-failed="true"
+					class="rounded-md border px-4 py-3 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700"
+					role="alert"
+					aria-live="assertive"
+					aria-atomic="true"
+				>
+					<div class="flex items-start gap-3">
+						<svg class="mt-0.5 h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path>
+						</svg>
+						<div class="flex-1 text-sm">
+							<div class="font-semibold text-red-800 dark:text-red-200">
+								{ t(ctx, "settings.updates.load_failed_title") }
+							</div>
+							<div class="mt-1 text-red-700 dark:text-red-300">
+								{ t(ctx, "settings.updates.load_failed_body") }
+							</div>
+						</div>
+						<button
+							type="button"
+							onclick="document.getElementById('updates-load-failed-row').classList.add('hidden')"
+							class="flex-shrink-0 rounded-md p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500"
+							aria-label={ t(ctx, "common.dismiss") }
+						>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+				</div>
+			}
 			<!-- Top-level Enabled toggle -->
 			<div class="flex items-center justify-between gap-4">
 				@components.Toggle(
@@ -6365,16 +6414,6 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					@updaterIntervalOption(168, data.CheckIntervalHours, t(ctx, "settings.updates.interval_7d"))
 				</select>
 			</div>
-			<!-- Save button -->
-			<div class="flex justify-end pt-2">
-				<button
-					type="button"
-					onclick="saveUpdaterConfig()"
-					class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-				>
-					{ t(ctx, "actions.save") }
-				</button>
-			</div>
 		</div>
 	</div>
 	<!-- Actions -->
@@ -6433,7 +6472,6 @@ templ updatesTabScript() {
 				// suppressing. Skip until restart finishes (issue #1169).
 				if (restartRequiredActive()) return;
 				var btn = document.getElementById('updates-check-btn');
-				setUpdaterStatus('checking', '');
 				if (btn) btn.disabled = true;
 
 				fetch(updBp + '/api/v1/updates/check', {
@@ -6444,7 +6482,7 @@ templ updatesTabScript() {
 					if (!resp.ok) return throwFromResponse(resp, 'check failed');
 					return resp.json();
 				})
-				.then(function() {
+				.then(function(data) {
 					// /check mutates last_checked and the cached release fields, so
 					// re-hydrate from /status to keep every updater DOM node
 					// (last-checked timestamp, latest version badge, release-notes
@@ -6454,9 +6492,24 @@ templ updatesTabScript() {
 					// Notify other page components (sidebar pill/dot) that the
 					// cached updater status has changed so they can re-read it.
 					document.dispatchEvent(new CustomEvent('sw:update-status-changed'));
+					// Surface the check result via the canonical toast so it
+					// matches the pattern used elsewhere in Settings.
+					if (typeof window.showSuccessToast === 'function') {
+						var i18nEl = document.getElementById('updates-i18n');
+						var upMsg = (i18nEl && i18nEl.dataset.upToDate) || 'Up to date';
+						var availMsg = (i18nEl && i18nEl.dataset.updateAvailable) || 'Update available';
+						if (data && data.update_available) {
+							showSuccessToast(data.latest ? availMsg + ': ' + data.latest : availMsg);
+						} else {
+							showSuccessToast(upMsg);
+						}
+					}
 				})
 				.catch(function(err) {
-					setUpdaterStatus('error', err.message);
+					clearUpdaterStatus();
+					if (typeof window.showToast === 'function') {
+						showToast((err && err.message) || 'Failed to check for updates');
+					}
 				})
 				.finally(function() {
 					if (btn) btn.disabled = false;
@@ -6511,6 +6564,19 @@ templ updatesTabScript() {
 				var el = document.getElementById('updates-enabled');
 				return el ? el.checked : true;
 			})();
+
+			// updatesSaveSeq + updatesSaveAbort sequence overlapping auto-saves.
+			// Auto-save fires on every channel/checkbox/interval change, so a
+			// rapid toggle (stable -> prerelease -> nightly) issues overlapping
+			// PUTs whose responses can land out of order. Without sequencing,
+			// the older response can run its post-save UI updates after the
+			// newer one, snapping the UI back to a stale value while the server
+			// holds the latest. The AbortController cancels the previous in-
+			// flight request on each new save; the saveSeq compare ensures any
+			// late .then/.catch from a superseded request no-ops instead of
+			// clobbering the current state.
+			var updatesSaveSeq = 0;
+			var updatesSaveAbort = null;
 
 			// computeApplyDisabled is the single source of truth for the Apply
 			// button's disabled state on every /status hydrate. It mirrors the
@@ -6627,9 +6693,69 @@ templ updatesTabScript() {
 				if (checkBtn) checkBtn.disabled = true;
 			}
 
+			// updatesLoadFailed reports whether the server-side render flagged
+			// LoadFailed. When true, every persistence path is short-circuited:
+			// the rendered controls show in-code defaults (not the user's
+			// real config) and a PUT would overwrite real values with those
+			// defaults. The DOM marker survives a user dismissing the
+			// banner because dismissal is purely visual.
+			function updatesLoadFailed() {
+				var row = document.getElementById('updates-load-failed-row');
+				return !!(row && row.dataset.loadFailed === 'true');
+			}
+
+			// revertUpdatesUIFromConfig refetches the persisted updater config
+			// and snaps the channel segmented control, enabled toggle,
+			// auto-check checkbox, and check-interval select back to server
+			// state. Called after a failed PUT so the optimistic UI does not
+			// drift from what was actually saved (auto-save makes the user's
+			// last click feel persisted; a failed PUT silently leaves the
+			// drifted UI without this revert).
+			function revertUpdatesUIFromConfig() {
+				fetch(updBp + '/api/v1/updates/config', {headers: {'Accept': 'application/json'}})
+				.then(function(resp) {
+					if (!resp.ok) return null;
+					return resp.json();
+				})
+				.then(function(cfg) {
+					if (!cfg) return;
+					var channelEl = document.querySelector('[name="updates_channel"][value="' + cfg.channel + '"]');
+					if (channelEl) channelEl.checked = true;
+					// Re-paint segmented visuals if the component exposes a hook.
+					var seg = document.getElementById('updates-channel');
+					if (seg && typeof seg.swSegmentedSync === 'function') {
+						seg.swSegmentedSync();
+					}
+					var enabledEl = document.getElementById('updates-enabled');
+					if (enabledEl) enabledEl.checked = !!cfg.enabled;
+					var autoEl = document.getElementById('updates-auto-check');
+					if (autoEl) autoEl.checked = !!cfg.auto_check;
+					var intervalEl = document.getElementById('updates-check-interval');
+					if (intervalEl && cfg.check_interval_hours) {
+						intervalEl.value = String(cfg.check_interval_hours);
+					}
+				})
+				.catch(function() {
+					// Best effort revert; if /config itself fails, leave the
+					// last-known UI state. The error toast from the original
+					// PUT failure is still visible.
+				});
+			}
+
 			// saveUpdaterConfig persists channel + enabled + auto-check + interval.
 			// Read the checked radio, not the first radio, or Save always sends "stable".
 			window.saveUpdaterConfig = function() {
+				if (updatesLoadFailed()) {
+					// Refuse to PUT when the render-time read failed: the
+					// rendered values are defaults, not the user's real
+					// config, and saving them would overwrite real settings.
+					var i18nEl = document.getElementById('updates-i18n');
+					var msg = (i18nEl && i18nEl.dataset.loadFailedSaveBlocked) || 'save blocked: configuration failed to load';
+					if (typeof window.showToast === 'function') {
+						showToast(msg);
+					}
+					return;
+				}
 				var channelEl = document.querySelector('[name="updates_channel"]:checked');
 				var enabledEl = document.getElementById('updates-enabled');
 				var autoEl = document.getElementById('updates-auto-check');
@@ -6642,6 +6768,15 @@ templ updatesTabScript() {
 					interval = 24;
 				}
 
+				// Cancel any prior in-flight save and bump the sequence so
+				// stale .then/.catch handlers from the superseded request can
+				// detect they are no longer the current save and no-op.
+				if (updatesSaveAbort) {
+					updatesSaveAbort.abort();
+				}
+				updatesSaveAbort = new AbortController();
+				var saveSeq = ++updatesSaveSeq;
+
 				fetch(updBp + '/api/v1/updates/config', {
 					method: 'PUT',
 					headers: {
@@ -6653,13 +6788,21 @@ templ updatesTabScript() {
 						enabled: enabled,
 						auto_check: autoCheck,
 						check_interval_hours: interval
-					})
+					}),
+					signal: updatesSaveAbort.signal
 				})
 				.then(function(resp) {
 					if (!resp.ok) return throwFromResponse(resp, 'save failed');
 					return resp.json();
 				})
 				.then(function() {
+					// Skip post-save UI updates if a newer save has superseded
+					// this one. The newer save's handlers will run shortly with
+					// up-to-date values; running these now would briefly paint
+					// stale state.
+					if (saveSeq !== updatesSaveSeq) {
+						return;
+					}
 					// Save succeeded: the value the user just submitted is now the
 					// persisted state, so the Apply gate (consulted by the upcoming
 					// fetchAndPopulateUpdateStatus call) reflects the correct
@@ -6671,21 +6814,39 @@ templ updatesTabScript() {
 					// updater UI from /status immediately. fetchAndPopulateUpdateStatus
 					// drives last-checked, latest, release-notes row, and the Apply
 					// button through the single /status code path so nothing stays
-					// stale in the DOM. The transient "saved" toast still fires so
-					// the admin gets save confirmation.
-					setUpdaterStatus('saved', '');
+					// stale in the DOM.
+					var savedI18n = document.getElementById('updates-i18n');
+					var savedMsg = (savedI18n && savedI18n.dataset.saved) || 'Settings saved';
+					if (typeof window.showSuccessToast === 'function') {
+						showSuccessToast(savedMsg);
+					}
 					fetchAndPopulateUpdateStatus();
 					// Notify the sidebar pill/dot: the server cleared its cached
 					// release fields if the channel actually changed, so the
 					// sidebar must re-read /status too.
 					document.dispatchEvent(new CustomEvent('sw:update-status-changed'));
-					// Deferred clear uses the state-guard helper so a failure
-					// from the /status fetch above (which sets the row to
-					// "error") does not get wiped by this timeout.
-					setTimeout(function() { clearUpdaterStatusIfState('saved'); }, 2000);
 				})
 				.catch(function(err) {
-					setUpdaterStatus('error', err.message);
+					// AbortError fires when a newer save cancelled this one; it
+					// is not a real failure, the newer save will surface its own
+					// outcome.
+					if (err && err.name === 'AbortError') {
+						return;
+					}
+					// A superseded save's network failure is also irrelevant:
+					// the newer save's outcome is what the user cares about.
+					if (saveSeq !== updatesSaveSeq) {
+						return;
+					}
+					if (typeof window.showToast === 'function') {
+						showToast((err && err.message) || 'Failed to save updater settings');
+					}
+					// Revert optimistic UI: with the Save button gone, an
+					// auto-save event already painted the new control state.
+					// On failure we re-read /config and snap controls back to
+					// the persisted values so the rendered state matches what
+					// is actually saved on the server.
+					revertUpdatesUIFromConfig();
 				});
 			};
 
@@ -6731,18 +6892,6 @@ templ updatesTabScript() {
 				}
 			}
 
-			// clearUpdaterStatusIfState clears the status row only when it is
-			// still displaying the expected state. Intended for deferred cleanup
-			// paths (e.g. the "saved" toast) that must not overwrite a status
-			// later set by a concurrent update (like an error from a
-			// post-save /status hydration).
-			function clearUpdaterStatusIfState(expected) {
-				var row = document.getElementById('updates-status-row');
-				if (row && row.dataset.updaterState === expected) {
-					clearUpdaterStatus();
-				}
-			}
-
 			function escHtml(s) {
 				return String(s)
 					.replace(/&/g, '&amp;')
@@ -6783,6 +6932,33 @@ templ updatesTabScript() {
 					});
 				});
 				hydrateIfUpdatesActive();
+
+				// Auto-save wiring: every Updates-tab control persists on
+				// change. The Segmented component dispatches a custom
+				// 'segmented:changed' event with detail.name; we filter on
+				// 'updates_channel' so adding another segmented control on
+				// this page in the future does not accidentally trigger a
+				// PUT. Native checkboxes and the interval <select> use the
+				// standard 'change' event. saveUpdaterConfig itself short
+				// circuits when LoadFailed is set, so dismissing the banner
+				// cannot reach the destructive write path.
+				document.addEventListener('segmented:changed', function(e) {
+					if (e && e.detail && e.detail.name === 'updates_channel') {
+						window.saveUpdaterConfig();
+					}
+				});
+				var enabledEl = document.getElementById('updates-enabled');
+				if (enabledEl) {
+					enabledEl.addEventListener('change', function() { window.saveUpdaterConfig(); });
+				}
+				var autoEl = document.getElementById('updates-auto-check');
+				if (autoEl) {
+					autoEl.addEventListener('change', function() { window.saveUpdaterConfig(); });
+				}
+				var intervalEl = document.getElementById('updates-check-interval');
+				if (intervalEl) {
+					intervalEl.addEventListener('change', function() { window.saveUpdaterConfig(); });
+				}
 			});
 
 			// popstate fires on browser back/forward. If that navigation leaves
@@ -6887,15 +7063,7 @@ templ updatesTabScript() {
 						setUpdaterStatus(d.state, '');
 						pollUpdateStatus();
 					} else {
-						// Preserve a displayed "saved" toast: saveUpdaterConfig()
-						// calls fetchAndPopulateUpdateStatus() immediately after a
-						// successful save, and /status typically returns state=idle,
-						// which would otherwise wipe the toast before the 2s deferred
-						// clearUpdaterStatusIfState('saved') could run.
-						var row = document.getElementById('updates-status-row');
-						if (!row || row.dataset.updaterState !== 'saved') {
-							clearUpdaterStatus();
-						}
+						clearUpdaterStatus();
 					}
 				})
 				.catch(function(err) {
