@@ -98,6 +98,10 @@ To delete many at once:
 
 When you want to compare what's currently saved against the candidates from providers, the comparison view shows the current image and N candidates side by side, all at the same display size, with a "select this" button on each. Useful for picking between visually similar options.
 
+## What happens after a successful fetch
+
+Once a fetch or upload writes a new image, Stillwater reruns the artist's image rules immediately. Violations like "missing thumb" or "missing fanart" disappear from the artist's row and the dashboard the moment the slot is populated, instead of waiting for the next scheduled rule scan.
+
 ## Skip rule violations during a fetch
 
 If a fetch returns nothing satisfactory and the rule has "select best candidate" turned on, Stillwater picks the highest-resolution candidate and saves it -- even if it doesn't meet the threshold. The result still flags as a violation, but you've at least populated the slot.
