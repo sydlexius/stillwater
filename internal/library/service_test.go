@@ -1525,3 +1525,119 @@ func TestFindForArtistPath(t *testing.T) {
 		})
 	}
 }
+
+// TestListByConnectionID_AndCountArtists verifies the per-connection helpers
+// after the M:N storage cleanup. CountArtistsByConnectionID joins through
+// artist_libraries, so an artist that belongs to TWO libraries on the same
+// connection must only be counted once (DISTINCT).
+func TestListByConnectionID_AndCountArtists(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Two connections; one of them has two libraries.
+	for _, conn := range []struct{ id, name string }{
+		{"conn-emby", "Emby"},
+		{"conn-jelly", "Jellyfin"},
+	} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES (?, ?, 'emby', 'http://x:8096', 'enc', 1, 'ok', datetime('now'), datetime('now'))
+		`, conn.id, conn.name); err != nil {
+			t.Fatalf("inserting connection %s: %v", conn.id, err)
+		}
+	}
+
+	libs := []*Library{
+		{Name: "Emby Main", Type: TypeRegular, Source: SourceEmby, ConnectionID: "conn-emby", ExternalID: "ext-1"},
+		{Name: "Emby Side", Type: TypeRegular, Source: SourceEmby, ConnectionID: "conn-emby", ExternalID: "ext-2"},
+		{Name: "Jelly Main", Type: TypeRegular, Source: SourceJellyfin, ConnectionID: "conn-jelly", ExternalID: "ext-3"},
+	}
+	for _, lib := range libs {
+		if err := svc.Create(ctx, lib); err != nil {
+			t.Fatalf("Create %s: %v", lib.Name, err)
+		}
+	}
+
+	// ListByConnectionID returns libraries belonging to a connection, sorted by name.
+	embyLibs, err := svc.ListByConnectionID(ctx, "conn-emby")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(conn-emby): %v", err)
+	}
+	if len(embyLibs) != 2 {
+		t.Fatalf("len(embyLibs) = %d, want 2", len(embyLibs))
+	}
+	if embyLibs[0].Name != "Emby Main" || embyLibs[1].Name != "Emby Side" {
+		t.Errorf("embyLibs names = [%q, %q], want [Emby Main, Emby Side]",
+			embyLibs[0].Name, embyLibs[1].Name)
+	}
+
+	jellyLibs, err := svc.ListByConnectionID(ctx, "conn-jelly")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(conn-jelly): %v", err)
+	}
+	if len(jellyLibs) != 1 {
+		t.Fatalf("len(jellyLibs) = %d, want 1", len(jellyLibs))
+	}
+
+	// Empty result for an unknown connection.
+	none, err := svc.ListByConnectionID(ctx, "nope")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(nope): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("len(none) = %d, want 0", len(none))
+	}
+
+	// Insert artists with memberships:
+	//   art-shared belongs to BOTH Emby libraries (must count as 1).
+	//   art-side belongs only to Emby Side.
+	//   art-jelly belongs only to Jelly Main.
+	for _, a := range []struct{ id string }{{"art-shared"}, {"art-side"}, {"art-jelly"}} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+			VALUES (?, ?, ?, '/music/'||?, datetime('now'), datetime('now'))
+		`, a.id, a.id, a.id, a.id); err != nil {
+			t.Fatalf("inserting artist %s: %v", a.id, err)
+		}
+	}
+	for _, link := range []struct{ artistID, libID string }{
+		{"art-shared", embyLibs[0].ID},
+		{"art-shared", embyLibs[1].ID},
+		{"art-side", embyLibs[1].ID},
+		{"art-jelly", jellyLibs[0].ID},
+	} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			link.artistID, link.libID); err != nil {
+			t.Fatalf("inserting artist_libraries (%s, %s): %v", link.artistID, link.libID, err)
+		}
+	}
+
+	embyCount, err := svc.CountArtistsByConnectionID(ctx, "conn-emby")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(conn-emby): %v", err)
+	}
+	// art-shared (1) + art-side (1) = 2 distinct, even though art-shared has
+	// two membership rows on conn-emby's libraries.
+	if embyCount != 2 {
+		t.Errorf("embyCount = %d, want 2 (DISTINCT artists across both Emby libraries)", embyCount)
+	}
+
+	jellyCount, err := svc.CountArtistsByConnectionID(ctx, "conn-jelly")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(conn-jelly): %v", err)
+	}
+	if jellyCount != 1 {
+		t.Errorf("jellyCount = %d, want 1", jellyCount)
+	}
+
+	zeroCount, err := svc.CountArtistsByConnectionID(ctx, "nope")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(nope): %v", err)
+	}
+	if zeroCount != 0 {
+		t.Errorf("zeroCount = %d, want 0", zeroCount)
+	}
+}

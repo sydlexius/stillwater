@@ -219,3 +219,77 @@ func TestCount_ConsistentWithList(t *testing.T) {
 		})
 	}
 }
+
+// TestCount_WithLibraryFlyoutFilters covers the M:N membership EXISTS/NOT
+// EXISTS clauses emitted by buildWhereClause for the per-library include and
+// exclude flyout filters (Filters["library_<id>"] = include|exclude). After
+// the legacy library_id column was dropped in migration 004, these clauses
+// must filter via artist_libraries; this test pins the M:N behavior so it
+// cannot silently regress.
+func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-a", "lib-b", "lib-c")
+
+	// art-a only in lib-a; art-b only in lib-b; art-ab in BOTH lib-a + lib-b;
+	// art-c only in lib-c. Capture the generated IDs from Create so the
+	// membership rows reference the real artist row.
+	artistIDs := map[string]string{}
+	for _, name := range []string{"art-a", "art-b", "art-ab", "art-c"} {
+		a := testArtist(name, "/music/"+name)
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		artistIDs[name] = a.ID
+	}
+	for _, link := range []struct{ name, libID string }{
+		{"art-a", "lib-a"},
+		{"art-b", "lib-b"},
+		{"art-ab", "lib-a"},
+		{"art-ab", "lib-b"},
+		{"art-c", "lib-c"},
+	} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			artistIDs[link.name], link.libID); err != nil {
+			t.Fatalf("insert artist_libraries (%s, %s): %v", link.name, link.libID, err)
+		}
+	}
+
+	// Include lib-a OR lib-b: art-a, art-b, art-ab match (3).
+	includeAB, err := svc.Count(ctx, CountParams{
+		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "include"},
+	})
+	if err != nil {
+		t.Fatalf("Count include lib-a + lib-b: %v", err)
+	}
+	if includeAB != 3 {
+		t.Errorf("include lib-a + lib-b count = %d, want 3", includeAB)
+	}
+
+	// Exclude lib-c: drop art-c, leaving 3.
+	excludeC, err := svc.Count(ctx, CountParams{
+		Filters: map[string]string{"library_lib-c": "exclude"},
+	})
+	if err != nil {
+		t.Fatalf("Count exclude lib-c: %v", err)
+	}
+	if excludeC != 3 {
+		t.Errorf("exclude lib-c count = %d, want 3", excludeC)
+	}
+
+	// Include lib-a, exclude lib-b: only art-a (art-ab is in both, so the
+	// exclude clause drops it).
+	mixed, err := svc.Count(ctx, CountParams{
+		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "exclude"},
+	})
+	if err != nil {
+		t.Fatalf("Count include lib-a exclude lib-b: %v", err)
+	}
+	if mixed != 1 {
+		t.Errorf("include lib-a exclude lib-b count = %d, want 1 (art-a only)", mixed)
+	}
+}
