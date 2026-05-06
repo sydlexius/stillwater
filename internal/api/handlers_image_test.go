@@ -2326,6 +2326,15 @@ func TestHandleDeleteImage_PreservesFlagOnStatError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.handleDeleteImage(w, req)
 
+	// Pin the handler-contract status so a regression that returns a
+	// non-2xx for this EACCES-on-post-probe path is caught here, not just
+	// "ThumbExists stayed true." StatusOK is the contract for delete: the
+	// remove itself reports success and the flag-preservation is the
+	// follow-on probe behavior, not the response.
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
 	// Restore permissions so subsequent DB reads / cleanup are unaffected.
 	_ = os.Chmod(parent, 0o755)
 
