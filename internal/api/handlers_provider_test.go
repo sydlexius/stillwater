@@ -371,11 +371,28 @@ func TestHandleResetPriorities(t *testing.T) {
 		t.Errorf("status = %q, want %q", resp.Status, "reset")
 	}
 
+	// Validate the handler response payload directly so a serialization
+	// regression in resp.Priorities cannot slip past the persisted-state check.
+	want := provider.DefaultPriorities()
+	if len(resp.Priorities) != len(want) {
+		t.Fatalf("response priorities count mismatch: got %d, want %d", len(resp.Priorities), len(want))
+	}
+	for i := range want {
+		if resp.Priorities[i].Field != want[i].Field {
+			t.Errorf("response field[%d] = %q, want %q", i, resp.Priorities[i].Field, want[i].Field)
+		}
+		if !providersEqual(resp.Priorities[i].Providers, want[i].Providers) {
+			t.Errorf("response providers[%s] = %v, want %v", want[i].Field, resp.Priorities[i].Providers, want[i].Providers)
+		}
+		if len(resp.Priorities[i].Disabled) != 0 {
+			t.Errorf("response disabled[%s] = %v, want empty", want[i].Field, resp.Priorities[i].Disabled)
+		}
+	}
+
 	got, err := r.providerSettings.GetPriorities(ctx)
 	if err != nil {
 		t.Fatalf("GetPriorities post-reset: %v", err)
 	}
-	want := provider.DefaultPriorities()
 	if len(got) != len(want) {
 		t.Fatalf("priority count mismatch: got %d, want %d", len(got), len(want))
 	}

@@ -416,9 +416,7 @@ func (r *Router) handleToggleFieldProvider(w http.ResponseWriter, req *http.Requ
 // so GetPriorities falls back to DefaultPriorities. For HTMX requests, returns
 // the re-rendered priority chip rows fragment; otherwise returns JSON.
 func (r *Router) handleResetPriorities(w http.ResponseWriter, req *http.Request) {
-	// Single DELETE covers both `provider.priority.<field>` and
-	// `provider.priority.<field>.disabled` rows because both share the prefix.
-	if _, err := r.db.ExecContext(req.Context(), "DELETE FROM settings WHERE key LIKE 'provider.priority.%'"); err != nil {
+	if err := r.providerSettings.ResetPriorities(req.Context()); err != nil {
 		r.logger.Error("resetting priorities", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to reset priorities")
 		return

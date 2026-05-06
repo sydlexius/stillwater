@@ -4039,6 +4039,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "500":
+          description: Internal server error while resetting priorities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /providers/search:
     post:

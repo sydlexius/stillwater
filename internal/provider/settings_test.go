@@ -984,3 +984,62 @@ func TestNameSimilarityThresholdValidation(t *testing.T) {
 		t.Errorf("expected default %d after invalid sets, got %d", DefaultNameSimilarityThreshold, threshold)
 	}
 }
+
+// TestResetPriorities seeds custom priority + disabled rows for two fields,
+// calls ResetPriorities, and verifies the stored rows are gone (so
+// GetPriorities falls back to the built-in DefaultPriorities).
+func TestResetPriorities(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Seed two fields with custom priority + disabled overrides.
+	if err := svc.SetPriority(ctx, "biography", []ProviderName{NameLastFM, NameWikipedia}); err != nil {
+		t.Fatalf("seeding biography priority: %v", err)
+	}
+	if err := svc.SetDisabledProviders(ctx, "biography", []ProviderName{NameLastFM}); err != nil {
+		t.Fatalf("seeding biography disabled: %v", err)
+	}
+	if err := svc.SetPriority(ctx, "genres", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("seeding genres priority: %v", err)
+	}
+
+	// Sanity-check: at least three provider.priority.% rows now exist.
+	var beforeCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM settings WHERE key LIKE 'provider.priority.%'").Scan(&beforeCount); err != nil {
+		t.Fatalf("counting seeded rows: %v", err)
+	}
+	if beforeCount < 3 {
+		t.Fatalf("expected at least 3 seeded rows, got %d", beforeCount)
+	}
+
+	if err := svc.ResetPriorities(ctx); err != nil {
+		t.Fatalf("ResetPriorities: %v", err)
+	}
+
+	var afterCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM settings WHERE key LIKE 'provider.priority.%'").Scan(&afterCount); err != nil {
+		t.Fatalf("counting rows post-reset: %v", err)
+	}
+	if afterCount != 0 {
+		t.Errorf("expected 0 provider.priority.* rows after reset, got %d", afterCount)
+	}
+}
+
+// TestResetPrioritiesDBError covers the wrapped-error path by closing the
+// underlying database before invoking ResetPriorities.
+func TestResetPrioritiesDBError(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	err := svc.ResetPriorities(context.Background())
+	if err == nil {
+		t.Fatal("expected error after db close, got nil")
+	}
+}

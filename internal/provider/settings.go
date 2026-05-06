@@ -420,6 +420,17 @@ func (s *SettingsService) SetDisabledProviders(ctx context.Context, field string
 	return nil
 }
 
+// ResetPriorities deletes every stored provider.priority.* settings row so
+// GetPriorities falls back to the built-in DefaultPriorities. The single
+// DELETE covers both `provider.priority.<field>` and
+// `provider.priority.<field>.disabled` rows because both share the prefix.
+func (s *SettingsService) ResetPriorities(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'provider.priority.%'"); err != nil {
+		return fmt.Errorf("resetting priorities: %w", err)
+	}
+	return nil
+}
+
 // AvailableProviderNames returns the set of provider names that are configured
 // (either they do not require a key, or they have one stored). Unconfigured
 // providers are excluded so the orchestrator can skip them without producing
