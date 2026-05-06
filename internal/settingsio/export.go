@@ -35,7 +35,11 @@ const pbkdf2Iterations = 600_000
 //   - "1.1": adds rules, scraper_configs, user_preferences, plaintext summary
 //   - "1.2": adds libraries (connection refs remapped by type+url) and api_tokens
 //     (token_hash + metadata only; never plaintext)
-const CurrentEnvelopeVersion = "1.2"
+//   - "1.3": adds users block so cross-instance restore can recreate absent
+//     owners before remapping api_tokens / user_preferences (#1283). The
+//     password_hash inside Users is a bcrypt digest -- never plaintext --
+//     and only crosses the wire inside the passphrase-encrypted envelope.
+const CurrentEnvelopeVersion = "1.3"
 
 // supportedEnvelopeVersions lists the envelope versions Import will accept.
 // Older versions are accepted for backward compatibility (their newer fields
@@ -44,6 +48,7 @@ var supportedEnvelopeVersions = map[string]bool{
 	"1.0": true,
 	"1.1": true,
 	"1.2": true,
+	"1.3": true,
 }
 
 // ErrWrongPassphrase is returned by Import when the AES-GCM tag verification
@@ -82,6 +87,7 @@ type Payload struct {
 	UserPreferences    []UserPrefsExport     `json:"user_preferences,omitempty"`
 	Libraries          []LibraryExport       `json:"libraries,omitempty"`
 	APITokens          []APITokenExport      `json:"api_tokens,omitempty"`
+	Users              []UserExport          `json:"users,omitempty"`
 }
 
 // ConnectionExport is a connection with its API key decrypted for export.
@@ -149,6 +155,38 @@ type ImportResult struct {
 	LibrariesSkipped int `json:"libraries_skipped,omitempty"`
 	APITokens        int `json:"api_tokens"`
 	APITokensSkipped int `json:"api_tokens_skipped,omitempty"`
+	// UsersImported counts user rows recreated from the envelope on import
+	// because they were absent on the target instance (#1283). Users that
+	// already existed on the target are NOT counted -- their rows are left
+	// untouched so the operator's local setup wins over the envelope.
+	UsersImported int `json:"users_imported,omitempty"`
+	// OwnershipReassigned counts api_tokens whose original owner is absent
+	// on the target AND who were attributed to the importing admin via the
+	// admin-fallback opt-in. This is a deliberate ownership change and is
+	// surfaced in the result so it cannot be silent (#1283).
+	OwnershipReassigned int `json:"ownership_reassigned,omitempty"`
+}
+
+// ImportOptions controls optional behaviors at import time. The zero value
+// reproduces the historical behavior: tokens whose owning username is absent
+// on the target are skipped (their count surfaces via APITokensSkipped) and
+// no automatic ownership reassignment occurs.
+type ImportOptions struct {
+	// AdminFallbackTokens, when true, attributes api_tokens whose original
+	// username remains absent on the target (after the envelope's Users
+	// block has been applied) to ImportingAdminUserID. Each reassignment
+	// increments ImportResult.OwnershipReassigned so the audit is visible
+	// to the operator.
+	//
+	// This is opt-in because silent ownership reassignment surprises
+	// operators who rely on the historical "skip unknown owner" semantics
+	// for cross-environment exports (e.g. prod -> staging clones).
+	AdminFallbackTokens bool
+
+	// ImportingAdminUserID is the user_id to attribute reassigned tokens to
+	// when AdminFallbackTokens is true. The HTTP handler resolves it from
+	// the authenticated session before calling ImportWithOptions.
+	ImportingAdminUserID string
 }
 
 // Service handles settings export and import.
@@ -343,6 +381,18 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	}
 	payload.APITokens = tokens
 
+	// Collect users so the import side can recreate any owner that is
+	// absent on the target instance, before remapping api_tokens and
+	// user_preferences (#1283). Without this, a backup whose admin had a
+	// different username than the target's admin would silently lose every
+	// API token. Users that already exist on the target are NOT modified
+	// on import; this block is restore data, not authoritative state.
+	users, err := s.exportUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("exporting users: %w", err)
+	}
+	payload.Users = users
+
 	// Marshal and encrypt payload
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -374,6 +424,11 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 			UserPreferences: countUserPreferences(payload.UserPreferences),
 			Libraries:       len(payload.Libraries),
 			APITokens:       len(payload.APITokens),
+			// UsersImported in the export Summary reports the count of user
+			// rows the envelope is carrying (not yet imported). The import
+			// path increments this same field with the count of users
+			// actually inserted on the target.
+			UsersImported: len(payload.Users),
 		},
 	}
 
@@ -382,7 +437,17 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 
 // Import decrypts and applies settings from an Envelope using the given
 // passphrase. The passphrase must match the one used during export.
+//
+// This is a thin wrapper around ImportWithOptions that preserves the
+// historical default (no admin-fallback for token ownership). New callers
+// that need to opt into admin-fallback should call ImportWithOptions directly.
 func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) (*ImportResult, error) {
+	return s.ImportWithOptions(ctx, env, passphrase, ImportOptions{})
+}
+
+// ImportWithOptions decrypts and applies settings from an Envelope, honoring
+// the supplied ImportOptions. See ImportOptions for the available knobs.
+func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphrase string, opts ImportOptions) (*ImportResult, error) {
 	if env.Data == "" {
 		return nil, fmt.Errorf("empty export data")
 	}
@@ -583,6 +648,15 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 		}
 	}
 
+	// Import users from the envelope FIRST (before user_preferences and
+	// api_tokens) so absent owners are recreated and their downstream rows
+	// can attribute back to them via the username -> user_id lookup. Users
+	// that already exist on the target are left untouched; the operator's
+	// existing setup wins over the envelope (#1283).
+	if err := s.importUsers(ctx, payload.Users, result); err != nil {
+		return nil, fmt.Errorf("importing users: %w", err)
+	}
+
 	// Import user preferences. Preferences are matched by username; rows for users
 	// that do not exist on this instance are silently skipped.
 	if err := s.importUserPreferences(ctx, payload.UserPreferences, result); err != nil {
@@ -595,9 +669,12 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 		return nil, fmt.Errorf("importing libraries: %w", err)
 	}
 
-	// Import API tokens. Must run AFTER user_preferences so the username ->
-	// user_id lookup sees the final user set on the target instance.
-	if err := s.importAPITokens(ctx, payload.APITokens, result); err != nil {
+	// Import API tokens. Must run AFTER importUsers so the username ->
+	// user_id lookup sees the final user set on the target instance,
+	// including any users just recreated from the envelope. The opts
+	// parameter controls the admin-fallback opt-in behavior for tokens
+	// whose original owner is still absent after user import.
+	if err := s.importAPITokens(ctx, payload.APITokens, result, opts); err != nil {
 		return nil, fmt.Errorf("importing api tokens: %w", err)
 	}
 
