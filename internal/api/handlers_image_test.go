@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // testRouterWithPlatform returns a Router that includes a platform service,
@@ -2039,4 +2041,352 @@ func TestSortImageResults(t *testing.T) {
 				imgs[0].URL, imgs[1].URL, imgs[2].URL, imgs[3].URL)
 		}
 	})
+}
+
+// TestHandleImageUpload_RerunsRulesAfterWrite verifies that a successful image
+// upload triggers a best-effort rule re-evaluation so image violations
+// (missing thumbnail, etc.) auto-clear without waiting for the next scheduled
+// scan. See issue #1028.
+func TestHandleImageUpload_RerunsRulesAfterWrite(t *testing.T) {
+	t.Parallel()
+	called := make(chan string, 1)
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			select {
+			case called <- a.ID:
+			default:
+			}
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	// Wire a platform service + publisher so the upload path resolves naming
+	// config and runs to completion.
+	platSvc := platform.NewService(r.db)
+	r.platformService = platSvc
+	r.publisher = publish.New(publish.Deps{
+		ArtistService:      r.artistService,
+		ConnectionService:  r.connectionService,
+		NFOSnapshotService: r.nfoSnapshotService,
+		PlatformService:    platSvc,
+		ImageCacheDir:      r.imageCacheDir,
+		Logger:             r.logger,
+	})
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Rerun Rules", SortName: "Rerun Rules", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("type", "thumb"); err != nil {
+		t.Fatalf("writing field: %v", err)
+	}
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	// Use a roughly-1:1 image so it does not trigger the needs_crop branch.
+	testImg := image.NewRGBA(image.Rect(0, 0, 500, 500))
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload?skip_crop=true", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	select {
+	case got := <-called:
+		if got != a.ID {
+			t.Errorf("RunForArtist called with %q, want %q", got, a.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("RunForArtist was not invoked after successful image upload")
+	}
+}
+
+// TestHandleServeImage_PreservesFlagOnStatError verifies that when the artist
+// directory cannot be stat-walked (EACCES from an unreadable parent dir), the
+// serve handler returns 404 but does NOT clear the exists_flag. Without the
+// strict variant of FindExistingImage, a single permission-denied directory
+// would silently drop every flag for artists under it on each request. See
+// issue #1161.
+func TestHandleServeImage_PreservesFlagOnStatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 semantics are Unix-specific")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	// Create an artist whose Path is a child of a directory we will make
+	// unreadable. The serve handler will then hit EACCES when stat-ing files.
+	parent := t.TempDir()
+	child := filepath.Join(parent, "stat-error-artist")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	a := &artist.Artist{Name: "Stat Error", SortName: "Stat Error", Path: child}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Place a real thumb so the flag is set, then drop the parent's exec bit so
+	// traversal fails with EACCES (the file is still on disk, but unreachable).
+	writeJPEG(t, filepath.Join(child, "folder.jpg"), 500, 500)
+	r.setArtistImageFlag(ctx, a, "thumb", true)
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true after setting flag")
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("Chmod parent: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID)
+	req := httptest.NewRequest("GET", url, nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleServeImage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 on stat error, got %d", w.Code)
+	}
+
+	// Wait briefly so any (incorrect) async clear would have time to run.
+	time.Sleep(200 * time.Millisecond)
+
+	// Restore permissions so the DB read can use the path freely (defensive).
+	_ = os.Chmod(parent, 0o755)
+
+	updated, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !updated.ThumbExists {
+		t.Error("ThumbExists must remain true after a non-ENOENT stat error; otherwise transient FS hiccups corrupt flags")
+	}
+}
+
+// TestHandleDeleteImage_PreservesFlagOnStatError verifies that when the delete
+// path's post-delete probe encounters a non-ENOENT stat error (here EACCES from
+// an unreadable parent directory), the exists_flag is NOT cleared. Without the
+// strict variant, a transient permission-denied stat would silently drop a
+// flag whose underlying file may still be on disk. See issue #1161.
+func TestHandleDeleteImage_PreservesFlagOnStatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 semantics are Unix-specific")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	parent := t.TempDir()
+	child := filepath.Join(parent, "delete-stat-error")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	a := &artist.Artist{Name: "Delete Stat Error", SortName: "Delete Stat Error", Path: child}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Place a thumb and set the flag, then drop the parent's exec bit so the
+	// post-delete strict probe hits EACCES rather than ENOENT.
+	writeJPEG(t, filepath.Join(child, "folder.jpg"), 500, 500)
+	r.setArtistImageFlag(ctx, a, "thumb", true)
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true after setting flag")
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("Chmod parent: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb", a.ID)
+	req := httptest.NewRequest(http.MethodDelete, url, nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	// Restore permissions so subsequent DB reads / cleanup are unaffected.
+	_ = os.Chmod(parent, 0o755)
+
+	updated, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !updated.ThumbExists {
+		t.Error("ThumbExists must remain true after a non-ENOENT post-delete stat error")
+	}
+}
+
+// TestHandleRandomBackdrop_PreservesFlagOnStatError verifies that the random
+// backdrop endpoint does not clear the fanart exists_flag when probing the
+// artist directory hits a non-ENOENT stat error (EACCES). Without the strict
+// variant, a single unreadable parent dir would silently drop the flag for
+// every artist under it on each request. See issue #1161.
+func TestHandleRandomBackdrop_PreservesFlagOnStatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 semantics are Unix-specific")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits; cannot trigger EACCES")
+	}
+	t.Parallel()
+	r, artistSvc := testRouterWithPlatform(t)
+	ctx := context.Background()
+
+	parent := t.TempDir()
+	child := filepath.Join(parent, "backdrop-stat-error")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	a := &artist.Artist{Name: "Backdrop Stat Error", SortName: "Backdrop Stat Error", Path: child}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Seed the fanart flag (file present on disk) then drop parent permissions.
+	writeJPEG(t, filepath.Join(child, "fanart.jpg"), 100, 56)
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag)
+		 VALUES (lower(hex(randomblob(16))), ?, 'fanart', 0, 1)
+		 ON CONFLICT (artist_id, image_type, slot_index) DO UPDATE SET exists_flag = 1`,
+		a.ID); err != nil {
+		t.Fatalf("seeding artist_images: %v", err)
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("Chmod parent: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	w := httptest.NewRecorder()
+	r.handleRandomBackdrop(w, req)
+
+	// Endpoint returns 404 because all candidates were skipped due to stat error.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when all candidates skipped, got %d", w.Code)
+	}
+
+	// Restore permissions so subsequent DB queries are unaffected.
+	_ = os.Chmod(parent, 0o755)
+
+	images, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	var sawFanart bool
+	for _, im := range images {
+		if im.ImageType == "fanart" && im.SlotIndex == 0 {
+			sawFanart = true
+			if !im.Exists {
+				t.Error("fanart exists_flag must remain true after a non-ENOENT stat error")
+			}
+		}
+	}
+	if !sawFanart {
+		t.Error("expected to find fanart row in artist_images")
+	}
+}
+
+// TestHandleImageUpload_FanartAppend_RerunsRules verifies that the fanart
+// append branch (a.FanartExists == true) of handleImageUpload also calls
+// RunForArtist after a successful write. The primary path is covered by
+// TestHandleImageUpload_RerunsRulesAfterWrite. See #1028.
+func TestHandleImageUpload_FanartAppend_RerunsRules(t *testing.T) {
+	t.Parallel()
+	called := make(chan string, 1)
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			select {
+			case called <- a.ID:
+			default:
+			}
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	platSvc := platform.NewService(r.db)
+	r.platformService = platSvc
+	r.publisher = publish.New(publish.Deps{
+		ArtistService:      r.artistService,
+		ConnectionService:  r.connectionService,
+		NFOSnapshotService: r.nfoSnapshotService,
+		PlatformService:    platSvc,
+		ImageCacheDir:      r.imageCacheDir,
+		Logger:             r.logger,
+	})
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Fanart Append", SortName: "Fanart Append", Path: dir, FanartExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Seed a primary fanart so the append branch produces fanart2.jpg.
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("type", "fanart"); err != nil {
+		t.Fatalf("writing field: %v", err)
+	}
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="fanart.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	// 16:9 aspect to satisfy fanart geometry without triggering needs_crop.
+	testImg := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload?skip_crop=true", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	select {
+	case got := <-called:
+		if got != a.ID {
+			t.Errorf("RunForArtist called with %q, want %q", got, a.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("RunForArtist was not invoked after successful fanart append")
+	}
 }

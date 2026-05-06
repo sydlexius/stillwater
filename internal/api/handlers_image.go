@@ -194,6 +194,10 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			})
 		}
 		r.InvalidateHealthCache()
+		// Re-evaluate rules after a successful image write so image-related
+		// violations (missing thumbnail, fanart count, etc.) auto-clear in
+		// auto mode without waiting for the next scheduled scan. See #1028.
+		r.runRulesAfterRefresh(req.Context(), a)
 		// Skip platform sync for fanart appends: platforms only support a single
 		// backdrop image, and the primary (fanart.jpg) was already synced when
 		// first saved. Re-syncing here would re-push the primary, not the new
@@ -231,6 +235,9 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		})
 	}
 	r.InvalidateHealthCache()
+	// Re-evaluate rules after a successful image write so image-related
+	// violations auto-clear in auto mode. See #1028.
+	r.runRulesAfterRefresh(req.Context(), a)
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -350,6 +357,8 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
 		r.InvalidateHealthCache()
+		// Re-evaluate rules after a successful image write. See #1028.
+		r.runRulesAfterRefresh(req.Context(), a)
 
 		if r.eventBus != nil {
 			r.eventBus.Publish(event.Event{
@@ -399,6 +408,8 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		})
 	}
 	r.InvalidateHealthCache()
+	// Re-evaluate rules after a successful image write. See #1028.
+	r.runRulesAfterRefresh(req.Context(), a)
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -1079,11 +1090,22 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := img.FindExistingImage(dir, patterns)
+	// Strict variant: a non-ENOENT stat error must NOT clear the exists_flag.
+	// A permission-denied or unmounted-filesystem hiccup that returned EACCES
+	// or EIO would otherwise drop a flag that is still correct on disk. See #1161.
+	filePath, found, statErr := img.FindExistingImageStrict(dir, patterns)
+	if statErr != nil {
+		r.logger.Warn("serve image: stat error probing artist dir; preserving exists_flag",
+			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
+			slog.String("error", statErr.Error()))
+		http.NotFound(w, req)
+		return
+	}
 	if !found {
-		// If the DB flag says the image exists but the file is gone, clear
-		// the stale flag so subsequent UI renders show a placeholder instead
-		// of a broken image tag. This is best-effort and non-blocking.
+		// If the DB flag says the image exists but the file is genuinely gone
+		// (every probe returned ENOENT), clear the stale flag so subsequent UI
+		// renders show a placeholder instead of a broken image tag. Best-effort.
 		if imageExistsFlag(a, imageType) {
 			go func() { //nolint:gosec // Background context is intentional: this goroutine outlives the request.
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:gosec
@@ -1291,7 +1313,15 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 
-	if _, found := img.FindExistingImage(r.imageDir(a), patterns); !found {
+	// Strict variant: only clear the exists_flag when every probe returned
+	// ENOENT (file genuinely gone). A transient stat error means we cannot
+	// confirm absence and must leave the flag alone. See #1161.
+	if _, found, statErr := img.FindExistingImageStrict(r.imageDir(a), patterns); statErr != nil {
+		r.logger.Warn("delete image: post-delete stat error; preserving exists_flag",
+			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
+			slog.String("error", statErr.Error()))
+	} else if !found {
 		r.clearArtistImageFlag(req.Context(), a, imageType)
 	}
 	if r.eventBus != nil {
@@ -2120,9 +2150,18 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 			continue
 		}
 
-		filePath, found := img.FindExistingImage(dir, patterns)
+		// Strict variant: only clear the exists_flag when every probe returned
+		// ENOENT. A transient stat error must skip this artist without
+		// touching the flag (see #1161).
+		filePath, found, statErr := img.FindExistingImageStrict(dir, patterns)
+		if statErr != nil {
+			r.logger.Warn("random backdrop: stat error probing artist dir; preserving exists_flag",
+				slog.String("artist_id", a.ID),
+				slog.String("error", statErr.Error()))
+			continue
+		}
 		if !found {
-			// File is gone despite exists_flag=1; clear the stale flag and keep looking.
+			// File is genuinely gone despite exists_flag=1; clear the stale flag and keep looking.
 			if err := r.artistService.ClearImageFlag(req.Context(), a.ID, "fanart", 0); err != nil {
 				r.logger.Warn("failed to clear stale backdrop flag",
 					slog.String("artist_id", a.ID),

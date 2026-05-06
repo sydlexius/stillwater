@@ -1,6 +1,8 @@
 package image
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,11 +105,33 @@ var AllSlots = []string{"thumb", "fanart", "logo", "banner"}
 // For each configured pattern it first checks the exact filename, then probes
 // alternate supported extensions (.jpg, .png) to handle cases where the saved
 // format differs from the configured name (e.g. a PNG crop saved over folder.jpg).
+//
+// This is a thin wrapper over FindExistingImageStrict that discards the error.
+// Callers that branch on `found == false` to drive destructive state (clearing
+// flags, deleting rows, overwriting NFOs) MUST call FindExistingImageStrict
+// instead so transient stat errors (EACCES, EIO, ESTALE, ELOOP) are not
+// silently treated as "file absent". See issue #1161.
 func FindExistingImage(dir string, patterns []string) (string, bool) {
+	path, found, _ := FindExistingImageStrict(dir, patterns)
+	return path, found
+}
+
+// FindExistingImageStrict is the same as FindExistingImage but surfaces the
+// first non-fs.ErrNotExist stat error encountered. Callers that act
+// destructively on `found == false` should use this variant: an error means
+// "we don't know whether the file is absent" and the caller should refuse to
+// proceed (skip the destructive write, log, retry next cycle).
+//
+// On a clean miss (every probe returned fs.ErrNotExist), the result is
+// ("", false, nil). On a hit, the result is (path, true, nil). On the first
+// non-ENOENT error, the result is ("", false, err) and probing stops.
+func FindExistingImageStrict(dir string, patterns []string) (string, bool, error) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
 		if _, err := os.Stat(p); err == nil { //nolint:gosec // path from trusted naming patterns
-			return p, true
+			return p, true, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", false, err
 		}
 		// Check alternate extensions in case the format changed after save.
 		base := strings.TrimSuffix(pattern, filepath.Ext(pattern))
@@ -117,9 +141,11 @@ func FindExistingImage(dir string, patterns []string) (string, bool) {
 			}
 			alt := filepath.Join(dir, base+ext)
 			if _, err := os.Stat(alt); err == nil { //nolint:gosec // path from trusted naming patterns
-				return alt, true
+				return alt, true, nil
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				return "", false, err
 			}
 		}
 	}
-	return "", false
+	return "", false, nil
 }
