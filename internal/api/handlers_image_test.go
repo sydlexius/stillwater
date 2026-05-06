@@ -2183,7 +2183,11 @@ func TestHandleImageFetch_RerunsRulesAfterWrite(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	body := strings.NewReader(`{"url":"https://example.com/test.jpg","type":"thumb"}`)
+	// Use a public IP literal rather than a hostname so isPrivateURL's DNS
+	// lookup is skipped: in offline / locked-down CI a hostname lookup can
+	// fail and isPrivateURL fails closed (returns true), which would block
+	// the fetch path before the stub transport ever runs.
+	body := strings.NewReader(`{"url":"https://8.8.8.8/test.jpg","type":"thumb"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
