@@ -1160,40 +1160,111 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 		}, nil
 	}
 
-	newPath := filepath.Join(filepath.Dir(a.Path), canonical)
+	parentDir := filepath.Dir(a.Path)
+	newPath := filepath.Join(parentDir, canonical)
 
 	if a.Path == newPath {
 		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "paths already match"}, nil
 	}
 
-	// Check destination does not already exist.
-	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
-		if err == nil {
+	// Probe the canonical destination. ENOENT means the path is free; any
+	// other error is a real filesystem failure surfaced to the caller. When
+	// the canonical target already exists, fall back to a sort-name-derived
+	// secondary target before refusing -- this matches the disambiguation
+	// many users encode into Artist.SortName (e.g. "Carter Family, The
+	// (later generations of the family after 1943)") so the auto-fixer can
+	// still rename without forcing a manual collision-resolution step.
+	canonicalFree, err := pathIsFree(newPath)
+	if err != nil {
+		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
+	}
+
+	target := newPath
+	chosen := canonical
+	usedFallback := false
+	if !canonicalFree {
+		fallback := canonicalDirName(a.SortName, v.Config.ArticleMode)
+		if fallback == "" || fallback == canonical {
+			// No usable sort-name-derived alternative: refuse as before.
 			return &FixResult{
 				RuleID:  v.RuleID,
 				Fixed:   false,
 				Message: fmt.Sprintf("destination '%s' already exists", canonical),
 			}, nil
 		}
-		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
+		fallbackPath := filepath.Join(parentDir, fallback)
+		// Idempotency: if a prior run already renamed a.Path to fallbackPath,
+		// pathIsFree would return false (the current directory occupies the
+		// target) and bounce the artist back into a "destination collides"
+		// state on every rescan. Treat "fallback target equals current path"
+		// as already-fixed.
+		if fallbackPath == a.Path {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   true,
+				Message: fmt.Sprintf("directory already uses sort-name fallback '%s' (canonical name collided)", fallback),
+			}, nil
+		}
+		fallbackFree, err := pathIsFree(fallbackPath)
+		if err != nil {
+			return nil, fmt.Errorf("checking fallback destination %q: %w", fallbackPath, err)
+		}
+		if !fallbackFree {
+			// Both canonical and sort-name targets collide; refuse.
+			return &FixResult{
+				RuleID: v.RuleID,
+				Fixed:  false,
+				Message: fmt.Sprintf(
+					"destination '%s' already exists and sort-name fallback '%s' also collides",
+					canonical, fallback,
+				),
+			}, nil
+		}
+		target = fallbackPath
+		chosen = fallback
+		usedFallback = true
 	}
 
-	if err := filesystem.RenameDirAtomic(a.Path, newPath); err != nil {
-		return nil, fmt.Errorf("renaming %q to %q: %w", a.Path, newPath, err)
+	if err := filesystem.RenameDirAtomic(a.Path, target); err != nil {
+		return nil, fmt.Errorf("renaming %q to %q: %w", a.Path, target, err)
 	}
 
 	f.logger.Info("renamed artist directory",
 		"artist", a.Name,
 		"old_path", a.Path,
-		"new_path", newPath)
+		"new_path", target,
+		"used_sort_name_fallback", usedFallback)
 
-	a.Path = newPath
+	a.Path = target
 
+	msg := fmt.Sprintf("renamed directory to canonical name '%s'", chosen)
+	if usedFallback {
+		msg = fmt.Sprintf("renamed directory to sort-name fallback '%s' (canonical name collided)", chosen)
+	}
 	return &FixResult{
 		RuleID:  v.RuleID,
 		Fixed:   true,
-		Message: fmt.Sprintf("renamed directory to '%s'", canonical),
+		Message: msg,
 	}, nil
+}
+
+// pathIsFree reports whether the given path is available for use as a rename
+// target. Returns true when the path does not exist (ENOENT). Any other stat
+// error is surfaced so the caller can refuse rather than guess.
+//
+// Uses Lstat so a dangling symlink at the target counts as occupied; Stat
+// would follow the broken link and report ENOENT, classifying the path
+// as free even though it is occupied, and the subsequent rename then
+// fails mid-flight instead of being rejected upfront.
+func pathIsFree(p string) (bool, error) {
+	_, err := os.Lstat(p)
+	if err == nil {
+		return false, nil
+	}
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	return false, err
 }
 
 // BackdropSequencingFixer renames fanart files to fill gaps and create a
