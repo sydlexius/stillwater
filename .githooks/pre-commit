@@ -11,6 +11,7 @@
 #   5. golangci-lint -- full linter suite from .golangci.yml
 #   6. govulncheck -- known vulnerabilities in dependencies
 #   7. hadolint -- Dockerfile best-practice linting
+#   8. markdownlint -- staged markdown files (mirrors CI Docs / Markdown Lint job)
 #
 # Skip with: git commit --no-verify (use sparingly)
 
@@ -194,6 +195,37 @@ if [ -n "$STAGED_DOCKER" ]; then
     fi
 else
     warn "hadolint (no staged Dockerfile changes)"
+fi
+
+# --------------------------------------------------------------------------
+# 8. markdownlint -- lint staged markdown files (mirrors CI Docs / Markdown Lint)
+# --------------------------------------------------------------------------
+# Markdown filenames in this repo do not contain whitespace; newline-delimited
+# is safe. Configuration lives in .markdownlint-cli2.yaml at the repo root.
+# Version pin (v0.22.1) matches .pre-commit-config.yaml so contributors using
+# either entrypoint get identical results.
+STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM -- '*.md' || true)
+if [ -n "$STAGED_MD" ]; then
+    if command -v markdownlint-cli2 &>/dev/null; then
+        MDL_CMD=(markdownlint-cli2)
+    elif command -v npx &>/dev/null; then
+        MDL_CMD=(npx -y markdownlint-cli2@v0.22.1)
+    else
+        warn "markdownlint (markdownlint-cli2 and npx not installed, skipping)"
+        MDL_CMD=()
+    fi
+    if [ "${#MDL_CMD[@]}" -gt 0 ]; then
+        # markdownlint-cli2 takes file globs/paths positionally and reads
+        # .markdownlint-cli2.yaml automatically from the working directory.
+        if ! MDL_OUTPUT=$(echo "$STAGED_MD" | xargs "${MDL_CMD[@]}" 2>&1); then
+            echo -e "${RED}${BOLD}FAIL${RESET} markdownlint:"
+            echo "$MDL_OUTPUT"
+            exit 1
+        fi
+        pass "markdownlint"
+    fi
+else
+    warn "markdownlint (no staged .md files)"
 fi
 
 echo ""

@@ -1,3 +1,9 @@
+# Alternative pre-commit entrypoint for contributors who use the
+# pre-commit framework (https://pre-commit.com). The canonical hook
+# wired via `core.hooksPath = .githooks` is `.githooks/pre-commit`,
+# which mirrors these checks in plain bash and is what CI expects.
+# Tool version pins below should stay in sync with the canonical hook
+# (notably: markdownlint-cli2 v0.22.1, golangci-lint v2.11.4, typos v1.44.0).
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
