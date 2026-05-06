@@ -1251,8 +1251,13 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 // pathIsFree reports whether the given path is available for use as a rename
 // target. Returns true when the path does not exist (ENOENT). Any other stat
 // error is surfaced so the caller can refuse rather than guess.
+//
+// Uses Lstat so a dangling symlink at the target counts as occupied; Stat
+// would follow the broken link and report ENOENT, classifying the path
+// as free even though it is occupied, and the subsequent rename then
+// fails mid-flight instead of being rejected upfront.
 func pathIsFree(p string) (bool, error) {
-	_, err := os.Stat(p)
+	_, err := os.Lstat(p)
 	if err == nil {
 		return false, nil
 	}
