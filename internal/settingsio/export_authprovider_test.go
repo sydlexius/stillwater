@@ -54,7 +54,11 @@ func nonDefaultValue(key string) string {
 		"auth.providers.oidc.default_role":
 		return "administrator"
 	}
-	return "non-default"
+	// Panic instead of returning a placeholder. A new entry in
+	// canonicalAuthKeys without a matching switch arm here is a test bug:
+	// the placeholder would silently equal the code default for some types,
+	// hiding the very drift this helper exists to catch.
+	panic("nonDefaultValue: unmapped canonical auth key: " + key)
 }
 
 // TestRoundTrip_AuthProviderKeys_NonDefaults seeds every canonical
@@ -146,6 +150,17 @@ func TestRoundTrip_AuthProviderKeys_SeededDefaults(t *testing.T) {
 		"auth.providers.oidc.enabled":            "false",
 		"auth.providers.oidc.auto_provision":     "false",
 		"auth.providers.oidc.default_role":       "operator",
+	}
+	// Parity guard: a new entry in canonicalAuthKeys with no matching default
+	// here would silently skip seeding for that key, masking the very drift
+	// the SeededDefaults round-trip exists to catch.
+	if len(defaults) != len(canonicalAuthKeys) {
+		t.Fatalf("defaults/canonical key count mismatch: defaults=%d canonical=%d", len(defaults), len(canonicalAuthKeys))
+	}
+	for _, k := range canonicalAuthKeys {
+		if _, ok := defaults[k]; !ok {
+			t.Fatalf("missing default for canonical auth key %q", k)
+		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range defaults {

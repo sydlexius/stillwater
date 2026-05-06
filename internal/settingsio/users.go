@@ -14,7 +14,6 @@ package settingsio
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -93,29 +92,18 @@ func (s *Service) importUsers(ctx context.Context, users []UserExport, result *I
 	if len(users) == 0 {
 		return nil
 	}
+	if result == nil {
+		// Counter writes below dereference result unconditionally; reject a
+		// nil caller up front rather than panicking partway through the
+		// import (which would leave the DB in a partially-applied state).
+		return errors.New("importUsers requires non-nil ImportResult")
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, u := range users {
 		if u.Username == "" {
 			slog.Warn("import: skipping user with empty username")
 			continue
 		}
-		// Probe for existing row first. We do not UPDATE on conflict because
-		// overwriting the operator's password_hash or role with the source
-		// instance's older snapshot is far worse than leaving the target's
-		// row alone; the only data loss case (user does not exist on target)
-		// is what this import path is designed to fix.
-		var existingID string
-		err := s.db.QueryRowContext(ctx,
-			`SELECT id FROM users WHERE username = ?`, u.Username,
-		).Scan(&existingID)
-		if err == nil {
-			// Already exists: keep target's row; do not overwrite.
-			continue
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("looking up user %q: %w", u.Username, err)
-		}
-
 		role := u.Role
 		if role != "administrator" && role != "operator" && role != "admin" {
 			// Unknown role -- coerce to operator (least privilege). Auth
@@ -136,8 +124,16 @@ func (s *Service) importUsers(ctx context.Context, users []UserExport, result *I
 			createdAt = now
 		}
 		id := uuid.New().String()
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO users (
+		// INSERT OR IGNORE: a probe-then-insert flow would race against a
+		// concurrent import or interactive create on the same username,
+		// failing the whole import with a UNIQUE-violation when the
+		// intended semantic is "if the row already exists, leave it
+		// alone." The IGNORE branch matches the prior probe behavior
+		// (do not overwrite the operator's password_hash or role), and
+		// gating UsersImported++ on RowsAffected() == 1 keeps the audit
+		// counter honest when a concurrent insert wins the race.
+		res, err := s.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO users (
 				id, username, display_name, password_hash, role,
 				auth_provider, provider_id, is_active, is_protected,
 				invited_by, created_at, updated_at
@@ -146,10 +142,17 @@ func (s *Service) importUsers(ctx context.Context, users []UserExport, result *I
 			id, u.Username, u.DisplayName, u.PasswordHash, role,
 			authProvider, u.ProviderID, isActive,
 			createdAt, now,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("inserting user %q: %w", u.Username, err)
 		}
-		result.UsersImported++
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("reading insert result for user %q: %w", u.Username, err)
+		}
+		if affected == 1 {
+			result.UsersImported++
+		}
 	}
 	return nil
 }

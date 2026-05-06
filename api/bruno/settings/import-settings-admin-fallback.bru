@@ -52,6 +52,6 @@ tests {
   test("either users_imported or ownership_reassigned should fire on cross-instance restore", function() {
     var users = res.body.users_imported || 0;
     var reassigned = res.body.ownership_reassigned || 0;
-    expect(users + reassigned).to.be.at.least(0);
+    expect(users + reassigned).to.be.at.least(1);
   });
 }

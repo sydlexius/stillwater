@@ -100,6 +100,9 @@ func TestSeedAuthProviderDefaults_Idempotent(t *testing.T) {
 			}
 			first[k] = rowState{v, u}
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("first rows iteration: %v", err)
+		}
 	}()
 
 	// Second seed call.
@@ -127,5 +130,8 @@ func TestSeedAuthProviderDefaults_Idempotent(t *testing.T) {
 		if prev.updated != u {
 			t.Errorf("%s: updated_at drifted across idempotent seed (INSERT OR IGNORE should not touch existing row): %q -> %q", k, prev.updated, u)
 		}
+	}
+	if err := rows2.Err(); err != nil {
+		t.Fatalf("second rows iteration: %v", err)
 	}
 }

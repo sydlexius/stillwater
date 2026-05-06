@@ -8260,7 +8260,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [settings, connections, platform_profiles, webhooks, provider_keys, priorities, rules, scraper_configs, user_preferences]
+                required: [settings, connections, platform_profiles, webhooks, provider_keys, priorities, rules, scraper_configs, user_preferences, libraries, libraries_skipped, api_tokens, api_tokens_skipped, users_imported, ownership_reassigned]
                 properties:
                   settings:
                     type: integer

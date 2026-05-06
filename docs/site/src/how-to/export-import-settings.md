@@ -27,7 +27,7 @@ The export includes everything that lives in Stillwater's database that you'd wa
 - **Rules** -- enable state, automation mode, and config for each rule. Names and descriptions are *not* exported (the receiving instance keeps its own current copy).
 - **Scraper configurations** -- custom scraper YAMLs you've added.
 - **User preferences** -- per-user UI prefs.
-- **Users** -- usernames, roles, and stored password hashes for local accounts plus federated identity references (provider type and external id). Password hashes are bcrypt digests, never plaintext. The user list is included so that a backup taken on instance A can be restored on instance B without losing the API tokens or user preferences that are owned by users on A whose names B has not seen before.
+- **Users** -- usernames and roles for every account, plus stored password hashes for local (non-federated) accounts and, separately, federated identity references (provider type and external id) for federated accounts. Federated identities have no password hashes. Password hashes are bcrypt digests, never plaintext. The user list is included so that a backup taken on instance A can be restored on instance B without losing the API tokens or user preferences that are owned by users on A whose names B has not seen before.
 - **API tokens** -- the stored hash, scopes, and ownership metadata. The plaintext token value is not stored in the database and so is never carried in the bundle.
 
 What's **not** in the bundle:

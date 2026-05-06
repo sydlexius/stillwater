@@ -103,12 +103,21 @@ func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, 
 				probeErr := s.db.QueryRowContext(ctx,
 					`SELECT id FROM users WHERE id = ?`, opts.ImportingAdminUserID,
 				).Scan(&adminProbe)
-				if probeErr != nil {
+				switch {
+				case errors.Is(probeErr, sql.ErrNoRows):
+					// Genuine "admin deleted between resolution and import":
+					// skip the token, do not fail the whole import.
 					slog.Warn("import: admin-fallback configured but admin id missing on target; skipping token",
 						"token_name", te.Name, "username", te.Username,
-						"admin_id", opts.ImportingAdminUserID, "probe_error", probeErr)
+						"admin_id", opts.ImportingAdminUserID)
 					result.APITokensSkipped++
 					continue
+				case probeErr != nil:
+					// A real DB error (connectivity, locking, EIO) must not
+					// be silently swallowed as "admin missing"; that turns a
+					// transient outage into a quiet bulk-token loss. Fail
+					// fast so the operator sees the underlying cause.
+					return fmt.Errorf("probing importing admin %q for token fallback: %w", opts.ImportingAdminUserID, probeErr)
 				}
 				slog.Info("import: reassigning api token to importing admin (admin-fallback)",
 					"token_name", te.Name,

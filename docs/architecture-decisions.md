@@ -42,6 +42,8 @@ The encrypted settings export/import bundle (`internal/settingsio`) is the porta
 
 2. **Cross-instance ownership-bearing rows carry their own owners.** As of envelope version 1.3, the payload includes a `users` block. On import, users that already exist on the target are left untouched (the operator's setup wins); users absent on the target are recreated so downstream rows (api_tokens, user_preferences) can attribute back to them via the username -> user_id remap. An opt-in `admin_fallback_tokens` flag exists for environments that prefer to attribute orphan tokens to the importing admin instead of recreating users; the reassignment count surfaces in the import result so it cannot be silent.
 
+   Security constraints on the import path: recreated users land with `is_protected=0` (the bootstrap-admin protection bit cannot be smuggled across instances) and any role outside `administrator | operator | admin` coerces to `operator` (least privilege; an unknown future role must not silently grant elevated access). The `admin_fallback_tokens` opt is a trust-boundary tradeoff: reassigning an orphan token to the importing admin can effectively raise its privileges if the original owner had a lower role on the source, so the flag is opt-in per import and only appropriate for migrations between instances under the same operator's control.
+
 Envelope versions:
 
 - `1.0`: original (settings, connections, platform profiles, webhooks, provider keys, priorities)
