@@ -6488,7 +6488,9 @@ templ updatesTabScript() {
 					// (last-checked timestamp, latest version badge, release-notes
 					// row, apply button) consistent with a single code path.
 					clearUpdaterStatus();
-					fetchAndPopulateUpdateStatus();
+					// Passive refresh after /check: a /status failure must
+					// not bring back the inline status row this PR retires.
+					fetchAndPopulateUpdateStatus({silent: true});
 					// Notify other page components (sidebar pill/dot) that the
 					// cached updater status has changed so they can re-read it.
 					document.dispatchEvent(new CustomEvent('sw:update-status-changed'));
@@ -6608,6 +6610,12 @@ templ updatesTabScript() {
 			//   - !d.latest:           no successful check has populated a
 			//                          target version yet.
 			function computeApplyDisabled(d) {
+				// Fail closed when the render-time read failed: every
+				// updater control was seeded from in-code defaults rather
+				// than the user's real config, so trusting them to enable
+				// Apply would invite a click that the server rejects on a
+				// stale-state mirror miss.
+				if (updatesLoadFailed()) return true;
 				if (!persistedUpdatesEnabled) return true;
 				if (!d.update_available || !d.latest) return true;
 				if (d.restart_required) return true;
@@ -6754,6 +6762,15 @@ templ updatesTabScript() {
 					if (typeof window.showToast === 'function') {
 						showToast(msg);
 					}
+					// The change event already mutated the touched control in
+					// the DOM. Snap every updater control back to the actually
+					// persisted server state so the tab does not show a value
+					// that cannot be saved. revertUpdatesUIFromConfig is a
+					// best-effort fetch of /api/v1/updates/config; if /config
+					// itself fails too, the caller-visible toast above is the
+					// only signal, but the controls stay in their post-change
+					// state (which is no worse than the prior behavior).
+					revertUpdatesUIFromConfig();
 					return;
 				}
 				var channelEl = document.querySelector('[name="updates_channel"]:checked');
@@ -6820,7 +6837,9 @@ templ updatesTabScript() {
 					if (typeof window.showSuccessToast === 'function') {
 						showSuccessToast(savedMsg);
 					}
-					fetchAndPopulateUpdateStatus();
+					// Passive refresh after save: a /status failure must not
+					// resurface the inline status row.
+					fetchAndPopulateUpdateStatus({silent: true});
 					// Notify the sidebar pill/dot: the server cleared its cached
 					// release fields if the channel actually changed, so the
 					// sidebar must re-read /status too.
@@ -6966,7 +6985,13 @@ templ updatesTabScript() {
 			// stale values were in the DOM before the back/forward event.
 			window.addEventListener('popstate', hydrateIfUpdatesActive);
 
-			function fetchAndPopulateUpdateStatus() {
+			// fetchAndPopulateUpdateStatus refreshes the updater DOM from /status.
+			// Pass {silent: true} for passive follow-up calls (after Check or
+			// Save) where a /status failure should NOT resurface the inline
+			// status row. Without that, a transient /status hiccup brings back
+			// the non-Apply use of the row that this PR is retiring.
+			function fetchAndPopulateUpdateStatus(opts) {
+				var silent = !!(opts && opts.silent);
 				fetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})
 				.then(function(r) {
 					if (!r.ok) return throwFromResponse(r, 'status failed');
@@ -7067,6 +7092,14 @@ templ updatesTabScript() {
 					}
 				})
 				.catch(function(err) {
+					if (silent) {
+						// Passive refresh: surface a toast (if available) and
+						// leave the inline status row alone.
+						if (typeof window.showToast === 'function') {
+							showToast(err && err.message ? err.message : 'status refresh failed');
+						}
+						return;
+					}
 					setUpdaterStatus('error', err.message || 'status failed');
 				});
 			}
