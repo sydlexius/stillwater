@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -2117,6 +2118,89 @@ func TestHandleImageUpload_RerunsRulesAfterWrite(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("RunForArtist was not invoked after successful image upload")
+	}
+}
+
+// stubRoundTripper returns a fixed response without touching the network.
+// Used to replace Router.ssrfClient.Transport in fetch-path tests so the
+// handler runs end-to-end without an actual HTTP request.
+type stubRoundTripper struct {
+	body []byte
+}
+
+func (s *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"image/jpeg"}},
+		Body:       io.NopCloser(bytes.NewReader(s.body)),
+		Request:    req,
+	}, nil
+}
+
+// TestHandleImageFetch_RerunsRulesAfterWrite mirrors
+// TestHandleImageUpload_RerunsRulesAfterWrite for the fetch path. The PR's
+// runRulesAfterRefresh hook is wired into BOTH save paths; covering only one
+// would let a regression in the fetch handler's call site land unnoticed.
+//
+// example.com resolves to a public IP so isPrivateURL passes; the stub
+// RoundTripper short-circuits the actual HTTP request so no network is
+// involved at test time.
+func TestHandleImageFetch_RerunsRulesAfterWrite(t *testing.T) {
+	t.Parallel()
+	called := make(chan string, 1)
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, a *artist.Artist) (*rule.RunResult, error) {
+			select {
+			case called <- a.ID:
+			default:
+			}
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	platSvc := platform.NewService(r.db)
+	r.platformService = platSvc
+	r.publisher = publish.New(publish.Deps{
+		ArtistService:      r.artistService,
+		ConnectionService:  r.connectionService,
+		NFOSnapshotService: r.nfoSnapshotService,
+		PlatformService:    platSvc,
+		ImageCacheDir:      r.imageCacheDir,
+		Logger:             r.logger,
+	})
+
+	// Encode a 1:1 JPEG and serve it via the stubbed Transport so the fetch
+	// path runs without a real network round trip.
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 500, 500)), nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	r.ssrfClient = &http.Client{Transport: &stubRoundTripper{body: buf.Bytes()}}
+
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Fetch Rerun Rules", SortName: "Fetch Rerun Rules", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	body := strings.NewReader(`{"url":"https://example.com/test.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageFetch(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	select {
+	case got := <-called:
+		if got != a.ID {
+			t.Errorf("RunForArtist called with %q, want %q", got, a.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("RunForArtist was not invoked after successful image fetch")
 	}
 }
 
