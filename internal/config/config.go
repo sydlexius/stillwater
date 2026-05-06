@@ -224,6 +224,10 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// loadFromFile reads the config file at path and merges its contents into c
+// using the format detected from the extension (or sniffed from the first
+// non-comment byte for ambiguous filenames). A missing file is not an error;
+// the caller falls back to env-var overrides plus in-code defaults.
 func (c *Config) loadFromFile(path string) error {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: path is from trusted config, not user input
 	if err != nil {
@@ -297,6 +301,9 @@ func detectFormat(path string, data []byte) configFormat {
 	return formatYAML
 }
 
+// loadFromEnv overlays environment variables onto c. Env-var values take
+// precedence over any file-loaded values per the API-first contract: an
+// operator can override one knob via env without rewriting the whole file.
 func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
@@ -349,6 +356,9 @@ func (c *Config) loadFromEnv() {
 	}
 }
 
+// validate enforces required fields and normalizes a few values that the
+// rest of the codebase assumes are well-formed (e.g. trimming a trailing
+// slash from BasePath so route registration is unambiguous).
 func (c *Config) validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid port: %d", c.Server.Port)
@@ -357,8 +367,5 @@ func (c *Config) validate() error {
 		return fmt.Errorf("database path is required")
 	}
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
-	if c.Server.BasePath == "" {
-		c.Server.BasePath = ""
-	}
 	return nil
 }
