@@ -229,17 +229,6 @@ Generate tokens for external applications to access the Stillwater API.
 - **Admin**
 {: #settings-automation-api-tokens-scope-admin }
 
-### Inbound Webhooks  {#settings-automation-inbound-webhooks}
-
-Receive events from external applications to trigger actions in Stillwater.
-
-- **Webhook URL**
-{: #settings-automation-inbound-webhooks-url-label }
-- **Supported events**
-{: #settings-automation-inbound-webhooks-supported-events }
-- **Supported events (Emby internal names)**
-{: #settings-automation-inbound-webhooks-supported-events-emby }
-
 ## Rules  {#tab-rules}
 
 ### Rules  {#settings-rules-rules}

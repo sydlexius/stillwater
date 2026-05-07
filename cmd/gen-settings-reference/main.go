@@ -710,6 +710,13 @@ func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection,
 		case "description":
 			acc.descKey = k
 			continue
+		case "help":
+			// Section-level .help i18n keys back the in-app ContextHelp
+			// popover next to the section heading and are deliberately
+			// not rendered in the docs reference (the matching .description
+			// is the docs surface). Skip the key here so it isn't treated
+			// as an orphaned metadata bag with no parent control.
+			continue
 		}
 
 		ctrlID := controlIDFor(parts[2:])

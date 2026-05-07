@@ -38,10 +38,6 @@ settings-automation-api-tokens-scope-admin
 settings-automation-api-tokens-scope-read
 settings-automation-api-tokens-scope-webhook
 settings-automation-api-tokens-scope-write
-settings-automation-inbound-webhooks
-settings-automation-inbound-webhooks-supported-events
-settings-automation-inbound-webhooks-supported-events-emby
-settings-automation-inbound-webhooks-url-label
 settings-automation-notif-badges
 settings-automation-notif-badges-count-by-severity
 settings-automation-notif-badges-enable-badge
