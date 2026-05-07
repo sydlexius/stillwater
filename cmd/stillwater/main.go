@@ -684,11 +684,18 @@ func run() error {
 		go watcherService.Start(ctx)
 	}
 
-	logger.Info("server starting",
+	startAttrs := []any{
 		slog.Int("port", cfg.Server.Port),
 		slog.String("base_path", cfg.Server.BasePath),
-		slog.Bool("tls", cfg.Server.TLS.CertFile != ""),
-	)
+		slog.Bool("tls", cfg.Server.TLS.Enabled()),
+	}
+	// Surface tls_port only when split-port mode is active so the startup
+	// line is unambiguous about which port serves HTTPS. In collapse mode
+	// (TLS.Port == 0) the existing port field already names the bind.
+	if cfg.Server.TLS.Enabled() && cfg.Server.TLS.Port != 0 && cfg.Server.TLS.Port != cfg.Server.Port {
+		startAttrs = append(startAttrs, slog.Int("tls_port", cfg.Server.TLS.Port))
+	}
+	logger.Info("server starting", startAttrs...)
 
 	// RunListeners blocks until ctx is canceled or a listener fails. It
 	// drains in-flight requests under a 10s shared deadline before

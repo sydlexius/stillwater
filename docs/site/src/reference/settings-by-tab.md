@@ -27,6 +27,15 @@ Edit filenames for each image type. Changes are saved to the profile.
 
 - **Symlinks are not supported on this filesystem. The library path does not support symbolic links.** {#settings-general-symlinks-unsupported-description}
 
+### TLS Status  {#settings-general-tls-status}
+
+Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml; see the Direct TLS Setup how-to.
+
+- **Active (BYO certificate)** {#settings-general-tls-status-active-byo}
+- **Active (ACME)** {#settings-general-tls-status-active-acme}
+- **Inactive** {#settings-general-tls-status-inactive}
+- **Listening:** {#settings-general-tls-status-listening-label}
+
 ### Base Path  {#settings-general-base-path}
 
 URL path prefix for running Stillwater behind a reverse proxy at a sub-path.

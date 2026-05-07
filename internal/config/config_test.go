@@ -857,6 +857,7 @@ func TestValidate_TLSConfiguredWithoutPortCollapsesToServerPort(t *testing.T) {
 // surfaces the new sections so users discover the knobs without reading the
 // docs.
 func TestEnsureScaffold_IncludesTLSSection(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	if _, err := EnsureScaffold(path); err != nil {

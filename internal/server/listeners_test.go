@@ -117,7 +117,10 @@ func pollUntilServing(t *testing.T, addr string) {
 // plain-HTTP listener, serves at least one request, and exits cleanly when
 // the parent context is canceled.
 func TestRunListeners_PlainHTTPStartAndShutdown(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel: freePort closes its socket before RunListeners rebinds,
+	// so two parallel tests within this package could end up racing for the
+	// same OS-allocated port. Serializing the real-socket tests closes that
+	// window without changing RunListeners' public API.
 	port := freePort(t)
 	cfg := &config.Config{
 		Server: config.ServerConfig{Port: port},
@@ -156,7 +159,7 @@ func TestRunListeners_PlainHTTPStartAndShutdown(t *testing.T) {
 // TestRunListeners_TLSStartAndShutdown asserts the helper serves HTTPS when
 // cert and key are configured and exits cleanly on context cancel.
 func TestRunListeners_TLSStartAndShutdown(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel: see TestRunListeners_PlainHTTPStartAndShutdown.
 	dir := t.TempDir()
 	certPath, keyPath := generateSelfSignedCert(t, dir)
 	port := freePort(t)
@@ -218,7 +221,7 @@ func TestRunListeners_TLSStartAndShutdown(t *testing.T) {
 // configured but TLS.Port is unset, HTTPS binds Server.Port (the collapse
 // semantics documented in the M47 plan).
 func TestRunListeners_TLSCollapseToServerPort(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel: see TestRunListeners_PlainHTTPStartAndShutdown.
 	dir := t.TempDir()
 	certPath, keyPath := generateSelfSignedCert(t, dir)
 	serverPort := freePort(t)
@@ -258,7 +261,14 @@ func TestRunListeners_TLSCollapseToServerPort(t *testing.T) {
 		t.Errorf("status = %d", resp.StatusCode)
 	}
 	cancel()
-	<-done
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("RunListeners returned %v; want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunListeners did not exit within 5s of cancel")
+	}
 }
 
 // TestRunListeners_TLSSplitPort asserts that when TLS.Port is set, HTTPS
@@ -267,7 +277,7 @@ func TestRunListeners_TLSCollapseToServerPort(t *testing.T) {
 // the test suite (both serve HTTPS), letting a regression that flips the
 // branch slip past every other test.
 func TestRunListeners_TLSSplitPort(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel: see TestRunListeners_PlainHTTPStartAndShutdown.
 	dir := t.TempDir()
 	certPath, keyPath := generateSelfSignedCert(t, dir)
 	serverPort := freePort(t)
@@ -321,7 +331,14 @@ func TestRunListeners_TLSSplitPort(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("RunListeners returned %v; want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunListeners did not exit within 5s of cancel")
+	}
 }
 
 // TestRunListeners_NilArgs covers the defensive nil checks at the top of
