@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Findings — Stillwater UX review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../tokens.css">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body { margin: 0; background: #050810; color: var(--sw-ink); font-family: var(--sw-sans); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 32px 80px; }
+    h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.022em; margin: 0 0 8px; }
+    .deck { color: var(--sw-ink-3); font-size: 14.5px; line-height: 1.55; max-width: 65ch; margin: 0 0 32px; }
+    .back-link { display: inline-block; margin-bottom: 28px; font-size: 13px; color: var(--sw-blue-ink); text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back-link" href="../index.html">← Back to index</a>
+    <h1>Findings & rationale</h1>
+    <p class="deck">Each card pairs a problem we observed in the current Stillwater UI with the proposed fix and the user-facing benefit.</p>
+    <div id="root"></div>
+  </div>
+  <script type="text/babel">
+    const items = [
+      { area: "Settings", problem: "11 horizontal tabs, no search, content scrolls infinitely within each tab.", fix: "Searchable left rail (4 groups, 14 sections). \u2318K palette indexes every setting + common actions. Each section gets a stable URL anchor.", win: "Fewer clicks to any specific control. Settings becomes documentable." },
+      { area: "Filtering inconsistency", problem: "Dashboard, Artists, Reports each have differently-shaped filter UIs.", fix: "Single UniversalFilterBar with typed facet API. Same /, f, esc shortcuts everywhere. Saved Views per surface.", win: "Cross-page muscle memory; one bug fix propagates." },
+      { area: "Onboarding", problem: "6 steps + verbose hand-holding copy; treats homelabbers as neophytes.", fix: "Tighter copy. Show paths/env-vars up front. \u2018I know my setup\u2019 express lane = single dense form, with a curl snippet for scripted setups.", win: "Same wizard for new self-hosters; respect for power users." },
+      { area: "Reports + Compliance merged", problem: "Compliance was a separate sidebar entry with its own UI; Reports was a thin shell.", fix: "Compliance becomes a canned report. Reports landing = list of canned + saved. Per-column tri-state filters; full CRUD on saved reports.", win: "One mental model. 8 default columns; \u2018+ Add column\u2019 keeps the table approachable." },
+      { area: "A11y \u2014 severity color-only", problem: "Severity is communicated by red/amber/blue text alone.", fix: "Severity = colored dot + label, larger size, higher contrast. Card border carries category; severity chip is redundancy.", win: "WCAG 1.4.1 (Use of Color) compliant." },
+      { area: "A11y \u2014 click-to-expand on <p>", problem: "Truncated messages expand via onclick on <p> \u2014 keyboard users can't reach.", fix: "Wrap in <button> with aria-expanded; add a Details kebab for full message.", win: "Keyboard + screen-reader parity." },
+      { area: "A11y \u2014 ambient backdrop contrast", problem: "Random fanart blurred behind text-bearing cards can dip below 4.5:1.", fix: "70% solid scrim behind text. Honor prefers-reduced-transparency.", win: "Text always readable; aesthetic stays." },
+      { area: "Color economy", problem: "Blue does too many jobs: nav, primary, info severity, active chips, focus, brand.", fix: "Reserve a warm accent for the one thing wanting action (\u2018Fix 41 fixable\u2019). Blue stays for navigation/affordance.", win: "Eyes go where you want them." },
+      { area: "Microcopy / homelab tone", problem: "Generic, verbose copy.", fix: "Show file paths, env vars, API endpoints. Mono font for paths/keys.", win: "Speaks the user's language without docs." },
+    ];
+    function App() {
+      return (
+        <div style={{ display: "grid", gap: 14 }}>
+          {items.map((it, i) => (
+            <div key={i} className="sw-card" style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 0 }}>
+              <div style={{ padding: "16px 18px", borderRight: "1px solid var(--sw-line)", background: "var(--sw-bg-sunken)", borderRadius: "14px 0 0 14px" }}>
+                <div className="mono" style={{ fontSize: 11, color: "var(--sw-warm)", marginBottom: 4 }}>FINDING {String(i + 1).padStart(2, "0")}</div>
+                <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.01em" }}>{it.area}</div>
+              </div>
+              <div style={{ padding: "16px 22px" }}>
+                <div style={{ fontSize: 11.5, color: "var(--sw-err)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Problem</div>
+                <div style={{ fontSize: 13.5, marginBottom: 12, lineHeight: 1.55 }}>{it.problem}</div>
+                <div style={{ fontSize: 11.5, color: "var(--sw-blue-ink)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Fix</div>
+                <div style={{ fontSize: 13.5, marginBottom: 12, lineHeight: 1.55 }}>{it.fix}</div>
+                <div style={{ fontSize: 11.5, color: "var(--sw-ok)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Win</div>
+                <div style={{ fontSize: 13.5, color: "var(--sw-ink-2)", lineHeight: 1.55 }}>{it.win}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    {
+      const rootEl = document.getElementById("root");
+      if (rootEl) ReactDOM.createRoot(rootEl).render(<App/>);
+    }
+  </script>
+</body>
+</html>
