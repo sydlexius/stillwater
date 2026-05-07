@@ -817,6 +817,19 @@ func humanize(id string) string {
 // Rendering
 // ---------------------------------------------------------------------------
 
+// markdownEscape entity-encodes the angle brackets in user-facing prose so
+// XML/HTML-like tokens (e.g. <lockdata>true</lockdata>) render as literal
+// text in MkDocs Material output rather than being silently dropped as
+// unknown inline HTML elements. Ampersands are intentionally NOT escaped:
+// prose contains them legitimately ("save & restart"), and the runtime UI
+// reads the same i18n strings unescaped (tooltips, screen readers) so
+// escaping the source would leak literal entities into the live UI.
+func markdownEscape(s string) string {
+	return mdEscapeReplacer.Replace(s)
+}
+
+var mdEscapeReplacer = strings.NewReplacer("<", "&lt;", ">", "&gt;")
+
 // renderDocument walks the document tree and emits the Markdown body that
 // goes between the BEGIN/END markers. Tabs render as `##` headings, sections
 // as `###` headings with optional prose description, and controls as bullet
@@ -832,7 +845,7 @@ func renderDocument(doc document) string {
 	// last section, which already emits a trailing blank in renderSection.
 	b.WriteString("\n")
 	for _, tab := range doc.Tabs {
-		fmt.Fprintf(&b, "## %s  {#%s}\n\n", tab.Label, tabAnchor(tab.ID))
+		fmt.Fprintf(&b, "## %s  {#%s}\n\n", markdownEscape(tab.Label), tabAnchor(tab.ID))
 		for _, sec := range tab.Sections {
 			renderSection(&b, tab.ID, sec)
 		}
@@ -841,9 +854,9 @@ func renderDocument(doc document) string {
 }
 
 func renderSection(b *strings.Builder, tabID string, sec docSection) {
-	fmt.Fprintf(b, "### %s  {#%s}\n\n", sec.Title, sectionAnchor(tabID, sec.ID))
+	fmt.Fprintf(b, "### %s  {#%s}\n\n", markdownEscape(sec.Title), sectionAnchor(tabID, sec.ID))
 	if sec.Description != "" {
-		b.WriteString(sec.Description)
+		b.WriteString(markdownEscape(sec.Description))
 		b.WriteString("\n\n")
 	}
 	if len(sec.Controls) == 0 {
@@ -861,7 +874,7 @@ func renderSection(b *strings.Builder, tabID string, sec docSection) {
 // fold into the bullet's prose with simple inline markers; if the control has
 // none of those, only the label and anchor render.
 func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
-	fmt.Fprintf(b, "- **%s** {#%s}", ctrl.Label, controlAnchor(tabID, secID, ctrl.ID))
+	fmt.Fprintf(b, "- **%s** {#%s}", markdownEscape(ctrl.Label), controlAnchor(tabID, secID, ctrl.ID))
 
 	prose := composeControlProse(ctrl)
 	if prose != "" {
@@ -878,13 +891,13 @@ func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 func composeControlProse(ctrl docControl) string {
 	parts := []string{}
 	if ctrl.Description != "" {
-		parts = append(parts, ctrl.Description)
+		parts = append(parts, markdownEscape(ctrl.Description))
 	}
 	if ctrl.Visibility != "" {
-		parts = append(parts, "*Visibility:* "+ctrl.Visibility)
+		parts = append(parts, "*Visibility:* "+markdownEscape(ctrl.Visibility))
 	}
 	if ctrl.Help != "" {
-		parts = append(parts, "**Help:** "+ctrl.Help)
+		parts = append(parts, "**Help:** "+markdownEscape(ctrl.Help))
 	}
 	return strings.Join(parts, " ")
 }

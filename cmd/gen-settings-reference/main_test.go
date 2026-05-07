@@ -221,6 +221,72 @@ func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	}
 }
 
+// TestMarkdownEscape verifies that user-facing prose containing XML-like
+// tokens (e.g. <lockdata>true</lockdata>) is entity-encoded so MkDocs
+// Material renders the brackets as literal text rather than dropping them
+// as unknown inline HTML elements. Ampersands stay unescaped because prose
+// contains them legitimately and the runtime UI reads the source strings
+// unescaped.
+func TestMarkdownEscape(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "lock_nfo case",
+			in:   "stamps <lockdata>true</lockdata> into every NFO",
+			want: "stamps &lt;lockdata&gt;true&lt;/lockdata&gt; into every NFO",
+		},
+		{
+			name: "ampersand preserved",
+			in:   "save & restart",
+			want: "save & restart",
+		},
+		{
+			name: "no angle brackets",
+			in:   "plain prose with no special chars",
+			want: "plain prose with no special chars",
+		},
+		{
+			name: "empty string",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "mixed angles and ampersand",
+			in:   "<a href=\"x?y=1&z=2\">link</a>",
+			want: "&lt;a href=\"x?y=1&z=2\"&gt;link&lt;/a&gt;",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := markdownEscape(tc.in); got != tc.want {
+				t.Errorf("markdownEscape(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderControl_EscapesAngleBrackets is a regression guard for #1305:
+// the bullet's prose must entity-encode XML tokens emitted from i18n values
+// so the rendered docs page shows them as literal text.
+func TestRenderControl_EscapesAngleBrackets(t *testing.T) {
+	var b strings.Builder
+	renderControl(&b, "libraries", "libraries", docControl{
+		ID:          "lock_nfo_label",
+		Label:       "Lock NFOs",
+		Description: "stamps <lockdata>true</lockdata> into every NFO",
+	})
+	out := b.String()
+	if !strings.Contains(out, "&lt;lockdata&gt;true&lt;/lockdata&gt;") {
+		t.Errorf("expected entity-encoded <lockdata> in output, got: %q", out)
+	}
+	if strings.Contains(out, "<lockdata>") {
+		t.Errorf("output still contains raw <lockdata>: %q", out)
+	}
+}
+
 // TestCollectAnchors_DeterministicAndUnique verifies the companion file is
 // sorted, deduplicated, and contains every kind of anchor the document
 // emits (tab, section, control).

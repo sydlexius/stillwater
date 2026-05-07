@@ -124,7 +124,7 @@ Manage your music library paths. Each library maps to a directory containing art
 
 - **Connection** {#settings-libraries-libraries-connection-badge}
 - **Lock NFOs** {#settings-libraries-libraries-lock-nfo-label}
-- **When on, Stillwater stamps <lockdata>true</lockdata> into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists, preserving Stillwater's curated values from being overwritten by the platform's own scrapers. Off by default. Tip: artists whose NFO already contains <lockdata>true</lockdata> (set by Stillwater or another tool) are automatically marked as locked at the artist level.** {#settings-libraries-libraries-lock-nfo-title}
+- **When on, Stillwater stamps &lt;lockdata&gt;true&lt;/lockdata&gt; into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists, preserving Stillwater's curated values from being overwritten by the platform's own scrapers. Off by default. Tip: artists whose NFO already contains &lt;lockdata&gt;true&lt;/lockdata&gt; (set by Stillwater or another tool) are automatically marked as locked at the artist level.** {#settings-libraries-libraries-lock-nfo-title}
 - **Add Library** {#settings-libraries-libraries-add}
 - **Regular** {#settings-libraries-libraries-type-regular}
 - **Classical** {#settings-libraries-libraries-type-classical}
