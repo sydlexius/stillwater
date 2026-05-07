@@ -982,7 +982,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.ProviderKeys) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.provider_keys.title") }</h2>
+							<div class="flex items-center gap-2">
+								<h2 class="text-lg font-semibold">{ t(ctx, "settings.provider_keys.title") }</h2>
+								@components.ContextHelp("help-provider-keys", t(ctx, "settings.provider_keys.title"), t(ctx, "settings.provider_keys.help"), "settings-providers-provider-keys")
+							</div>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.provider_keys.description") }
 							</p>
@@ -999,7 +1002,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.WebSearchProviders) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.web_search.title") }</h2>
+							<div class="flex items-center gap-2">
+								<h2 class="text-lg font-semibold">{ t(ctx, "settings.web_search.title") }</h2>
+								@components.ContextHelp("help-web-search", t(ctx, "settings.web_search.title"), t(ctx, "settings.web_search.help"), "settings-providers-web-search")
+							</div>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.web_search.description") }
 							</p>
@@ -1017,7 +1023,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="flex items-center justify-between gap-2">
 								<div class="flex items-center gap-2">
 									<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
-									@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.", "settings-providers-priorities")
+									@components.ContextHelp("help-provider-priorities", t(ctx, "settings.priorities.title"), t(ctx, "settings.priorities.help"), "settings-providers-priorities")
 								</div>
 								<button
 									type="button"
@@ -1044,7 +1050,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.metadata_languages.title") }</h2>
-							@components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.", "settings-providers-metadata-languages")
+							@components.ContextHelp("help-metadata-languages", t(ctx, "settings.metadata_languages.title"), t(ctx, "settings.metadata_languages.help"), "settings-providers-metadata-languages")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.metadata_languages.description") }
@@ -1090,7 +1096,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
+							@components.ContextHelp("help-advanced", t(ctx, "settings.advanced.title"), t(ctx, "settings.advanced.help"), "settings-providers-advanced")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.advanced.description") }
 						</p>
@@ -1101,7 +1110,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 									{ t(ctx, "settings.name_similarity.label") }
 								</label>
-								@components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).", "settings-providers-name-similarity")
+								@components.ContextHelp("help-name-similarity", t(ctx, "settings.name_similarity.label"), t(ctx, "settings.name_similarity.help"), "settings-providers-name-similarity")
 							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
 								{ t(ctx, "settings.name_similarity.description") }
