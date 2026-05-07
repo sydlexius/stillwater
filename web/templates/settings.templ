@@ -3455,22 +3455,19 @@ templ settingsLibraryRow(lib library.Library) {
 						<option value="1800" selected?={ lib.FSPollInterval == 1800 }>30m</option>
 					</select>
 				}
-				<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer" title={ t(ctx, "settings.libraries.lock_nfo_title") }>
-					<input
-						type="checkbox"
-						class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"
-						checked?={ lib.NFOLockData }
-						onchange={ settingsUpdateLockNFO(lib.ID) }
-						aria-describedby={ "lock-nfo-help-" + lib.ID }
-					/>
-					<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
-					<span aria-hidden="true" class="inline-flex items-center text-gray-400 dark:text-gray-500 cursor-help">
-						<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
-						</svg>
-					</span>
-				</label>
-				<span id={ "lock-nfo-help-" + lib.ID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_title") }</span>
+				<span class="inline-flex items-center gap-1">
+					<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+						<input
+							type="checkbox"
+							class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"
+							checked?={ lib.NFOLockData }
+							onchange={ settingsUpdateLockNFO(lib.ID) }
+							aria-describedby={ "lock-nfo-help-" + lib.ID + "-popover" }
+						/>
+						<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
+					</label>
+					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_title"), "settings-libraries-libraries-lock-nfo-label")
+				</span>
 			}
 			if lib.ConnectionID != "" {
 				<button
@@ -3642,14 +3639,22 @@ templ settingsLibraryScript() {
 					if (lib.path) {
 						var helpId = 'lock-nfo-help-' + lib.id;
 						var checked = lib.nfo_lock_data ? ' checked' : '';
-						lockNfo = '<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer" title="' + safeLockNfoTitle + '">'
-							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this, this.checked)"/>'
+						// Mirror the templ ContextHelp render for the static row at
+						// settings.templ:3383. The JS path is exercised only for
+						// libraries added without a page refresh; on refresh the
+						// templ render takes over and these strings disappear.
+						lockNfo = '<span class="inline-flex items-center gap-1">'
+							+ '<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">'
+							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '-popover" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this, this.checked)"/>'
 							+ '<span>' + safeLockNfoLabel + '</span>'
-							+ '<span aria-hidden="true" class="inline-flex items-center text-gray-400 dark:text-gray-500 cursor-help">'
-							+ '<svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h2a1 1 0 100-2h-1V10a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>'
-							+ '</span>'
 							+ '</label>'
-							+ '<span id="' + helpId + '" class="sr-only">' + safeLockNfoTitle + '</span>';
+							+ '<span class="sw-context-help" id="' + helpId + '">'
+							+ '<button type="button" class="sw-context-help-btn" aria-label="Help: ' + safeLockNfoLabel + '" aria-expanded="false" aria-controls="' + helpId + '-popover" onclick="swContextHelpToggle(this)" onkeydown="if(event.key===&apos;Escape&apos;)swContextHelpClose(this)">?</button>'
+							+ '<span id="' + helpId + '-popover" role="tooltip" class="sw-context-help-popover" aria-hidden="true">' + safeLockNfoTitle
+							+ '<a href="https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-libraries-libraries-lock-nfo-label" target="_blank" rel="noopener" class="sw-context-help-link">Read more →</a>'
+							+ '</span>'
+							+ '</span>'
+							+ '</span>';
 					}
 					var populateBtn = '';
 					if (lib.connection_id) {
