@@ -2947,3 +2947,112 @@ func TestResolveViolationIfActive(t *testing.T) {
 		}
 	}
 }
+
+// TestCountActiveViolations_LibraryFilterMaterializesArtistJoin exercises the
+// new `else if strings.Contains(where, "FROM artist_libraries")` guards added
+// to BySeverity, ByCategory, ByRule, and ByFixable. When the caller sets
+// LibraryID, buildViolationFilter emits an EXISTS subquery referencing the
+// `a` alias, so each facet count must materialize the LEFT JOIN to artists
+// even when its own filter dimension does not otherwise need it. Without
+// the guard the SQL would fail with "no such column: a.id".
+func TestCountActiveViolations_LibraryFilterMaterializesArtistJoin(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// SeedDefaults populates the rules table so the ByCategory facet
+	// (which JOINs rules) and ByRule (which selects rule metadata) return
+	// non-empty rows for our seeded violations.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Seed two libraries and link two artists, one per library.
+	for _, lib := range []struct{ id, name string }{
+		{"lib-x", "Library X"},
+		{"lib-y", "Library Y"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
+			t.Fatalf("insert library %s: %v", lib.id, err)
+		}
+	}
+	for _, a := range []struct{ id, libID string }{
+		{"ax", "lib-x"},
+		{"ay", "lib-y"},
+	} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path)
+			VALUES (?, ?, ?, 'person', '/music/'||?)`, a.id, a.id, a.id, a.id); err != nil {
+			t.Fatalf("insert artist %s: %v", a.id, err)
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			a.id, a.libID); err != nil {
+			t.Fatalf("insert artist_libraries: %v", err)
+		}
+	}
+
+	// One open violation per artist.
+	for _, v := range []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "ax", ArtistName: "ax",
+			Severity: "error", Message: "m", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleNFOExists, ArtistID: "ay", ArtistName: "ay",
+			Severity: "warning", Message: "m", Fixable: false, Status: ViolationStatusOpen},
+	} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	p := ViolationListParams{LibraryID: "lib-x"}
+
+	bySev, err := svc.CountActiveViolationsBySeverity(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity: %v", err)
+	}
+	if bySev["error"] != 1 || bySev["warning"] != 0 {
+		t.Errorf("bySev (lib-x) = %+v, want error=1 warning=0", bySev)
+	}
+
+	byCat, err := svc.CountActiveViolationsByCategory(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory: %v", err)
+	}
+	totalCat := 0
+	for _, n := range byCat {
+		totalCat += n
+	}
+	if totalCat != 1 {
+		t.Errorf("byCat (lib-x) total = %d, want 1, full = %+v", totalCat, byCat)
+	}
+
+	byRule, err := svc.CountActiveViolationsByRule(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByRule: %v", err)
+	}
+	totalRule := 0
+	for _, c := range byRule {
+		totalRule += c.Count
+	}
+	if totalRule != 1 {
+		t.Errorf("byRule (lib-x) total = %d, want 1, full = %+v", totalRule, byRule)
+	}
+
+	fixable, notFixable, err := svc.CountActiveViolationsByFixable(ctx, p)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByFixable: %v", err)
+	}
+	if fixable != 1 || notFixable != 0 {
+		t.Errorf("byFixable (lib-x) = (%d, %d), want (1, 0)", fixable, notFixable)
+	}
+
+	// Sanity: lib-y sees the inverse counts (the warning, non-fixable row).
+	pY := ViolationListParams{LibraryID: "lib-y"}
+	bySevY, err := svc.CountActiveViolationsBySeverity(ctx, pY)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity(lib-y): %v", err)
+	}
+	if bySevY["warning"] != 1 || bySevY["error"] != 0 {
+		t.Errorf("bySev (lib-y) = %+v, want warning=1 error=0", bySevY)
+	}
+}
