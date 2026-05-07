@@ -34,60 +34,35 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-dockers:
-  - id: amd64
-    goos: linux
-    goarch: amd64
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
+dockers_v2:
+  - id: stillwater
+    images:
+      - "ghcr.io/sydlexius/stillwater"
+    # dockers_v2 ignores empty tag templates, so prerelease gating is encoded
+    # by emitting "" for the disallowed branch:
+    #   :VERSION       always
+    #   :MAJOR.MINOR   non-prerelease only
+    #   :latest        non-prerelease only
+    #   :beta          prerelease only
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+      - "{{ if .Prerelease }}beta{{ end }}"
     dockerfile: build/docker/Dockerfile.goreleaser
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
+    platforms:
+      - linux/amd64
+      - linux/arm64
     extra_files:
       - build/docker/entrypoint.sh
-
-  - id: arm64
-    goos: linux
-    goarch: arm64
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
-    dockerfile: build/docker/Dockerfile.goreleaser
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-    extra_files:
-      - build/docker/entrypoint.sh
-
-docker_manifests:
-  - name_template: "ghcr.io/sydlexius/stillwater:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
-
-  - name_template: "ghcr.io/sydlexius/stillwater:{{ .Major }}.{{ .Minor }}"
-    skip_push: "{{ .Prerelease }}"
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
-
-  - name_template: "ghcr.io/sydlexius/stillwater:latest"
-    skip_push: "{{ .Prerelease }}"
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
-
-  - name_template: "ghcr.io/sydlexius/stillwater:beta"
-    skip_push: '{{ not .Prerelease }}'
-    image_templates:
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
-      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
 
 signs:
   - cmd: cosign
@@ -106,8 +81,12 @@ docker_signs:
     args:
       - sign
       - --yes
-      - ${artifact}
-    artifacts: all
+      # Sign by immutable digest, not the mutable tag reference. dockers_v2
+      # produces multiple logical tags (:VERSION, :MAJOR.MINOR, :latest,
+      # :beta) all pointing at the same image; signing ${artifact} alone
+      # races against concurrent tag updates, while ${artifact}@${digest}
+      # pins the signature to the specific image content.
+      - ${artifact}@${digest}
 
 changelog:
   sort: asc
