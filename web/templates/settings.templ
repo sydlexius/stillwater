@@ -1275,7 +1275,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.webhooks.title") }</h2>
-							@components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.", "settings-automation-webhooks")
+							@components.ContextHelp("help-webhooks", t(ctx, "settings.webhooks.title"), t(ctx, "settings.webhooks.help"), "settings-automation-webhooks")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.webhooks.description") }
@@ -1329,7 +1329,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.notif_badges.title") }</h2>
-							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation count badge shown on the Reports link in the sidebar. 'Enable badge' and severity filters control which violations contribute to the numeric counter.", "settings-automation-notif-badges")
+							@components.ContextHelp("help-notif-badges", t(ctx, "settings.notif_badges.title"), t(ctx, "settings.notif_badges.help"), "settings-automation-notif-badges")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.notif_badges.description") }
@@ -1385,7 +1385,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- API Tokens -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.api_tokens.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.api_tokens.title") }</h2>
+							@components.ContextHelp("help-api-tokens", t(ctx, "settings.api_tokens.title"), t(ctx, "settings.api_tokens.help"), "settings-automation-api-tokens")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.api_tokens.description") }
 						</p>
@@ -1525,7 +1528,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Inbound Webhooks -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.inbound_webhooks.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.inbound_webhooks.title") }</h2>
+							@components.ContextHelp("help-inbound-webhooks", t(ctx, "settings.inbound_webhooks.title"), t(ctx, "settings.inbound_webhooks.help"), "settings-automation-inbound-webhooks")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.inbound_webhooks.description") }
 						</p>
