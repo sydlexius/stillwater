@@ -201,8 +201,11 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 	}
 }
 
-// TestRenderControl_VisibilityAndHelp verifies that visibility and help text
-// fold into the bullet's prose with the documented marker syntax.
+// TestRenderControl_VisibilityAndHelp verifies that visibility folds into
+// the bullet's prose with its documented marker, and that .help i18n keys
+// are intentionally dropped from the rendered docs because they back the
+// in-app ContextHelp popover (terse) and pair with the longer-form
+// .description that is the docs surface.
 func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	var b strings.Builder
 	renderControl(&b, "general", "base_path", docControl{
@@ -216,8 +219,11 @@ func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	if !strings.Contains(out, "*Visibility:*") {
 		t.Errorf("expected *Visibility:* marker in output: %q", out)
 	}
-	if !strings.Contains(out, "**Help:**") {
-		t.Errorf("expected **Help:** marker in output: %q", out)
+	if strings.Contains(out, "**Help:**") {
+		t.Errorf("**Help:** should not render in docs (popover-only); got: %q", out)
+	}
+	if strings.Contains(out, "Restart required for changes to take effect.") {
+		t.Errorf("help body should not leak into docs prose: %q", out)
 	}
 	if !strings.Contains(out, "URL prefix served by Stillwater.") {
 		t.Errorf("expected description text in output: %q", out)

@@ -956,9 +956,14 @@ func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 }
 
 // composeControlProse returns the inline prose that follows the bullet's
-// label. Description leads; visibility and help append in italic / bold tags
-// when present. Empty when the control carries no prose at all (label-only
-// bullet, anchor still emitted for HelpHint deep links).
+// label. Description leads, visibility appends in italic when present.
+// Empty when the control carries no prose at all (label-only bullet,
+// anchor still emitted for HelpHint deep links).
+//
+// .help i18n keys are deliberately NOT rendered: they back the in-app
+// ContextHelp popover (terse, one-sentence) and are paired with a
+// longer-form .description that is the docs surface. Surfacing both
+// produces visible duplication on the rendered reference page.
 func composeControlProse(ctrl docControl) string {
 	parts := []string{}
 	if ctrl.Description != "" {
@@ -966,9 +971,6 @@ func composeControlProse(ctrl docControl) string {
 	}
 	if ctrl.Visibility != "" {
 		parts = append(parts, "*Visibility:* "+markdownEscape(ctrl.Visibility))
-	}
-	if ctrl.Help != "" {
-		parts = append(parts, "**Help:** "+markdownEscape(ctrl.Help))
 	}
 	return strings.Join(parts, " ")
 }
