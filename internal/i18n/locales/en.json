@@ -1221,6 +1221,7 @@
   "settings.connections.api_key_placeholder": "API Key",
   "settings.connections.checking_saver_status": "Checking server-side saver status…",
   "settings.connections.description": "Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.",
+  "settings.connections.help": "Each connection links Stillwater to one media server. Connections drive library imports, NFO writes, and image writes; per-server feature toggles let you opt in or out of each behavior. Stillwater encrypts API keys at rest.",
   "settings.connections.discover": "Discover Libraries",
   "settings.connections.feature_image_write": "Image download/write",
   "settings.connections.feature_image_write_tooltip": "When on, Stillwater writes image files for artists in this server's libraries. Writes can still be gated while conflict gating is active (write-back or round-trip overlap) -- see the top banner for details.",
