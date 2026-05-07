@@ -251,7 +251,9 @@ function ComplianceMatrix() {
     });
   }
 
-  // Apply column filters to rows (for the visible-row count)
+  // Apply column filters to rows (for the visible-row count) and apply the
+  // Artist column sort so the chevron-toggle in the header actually moves
+  // rows. `name` is the only sortable column today.
   const filtered = matrixArtists.filter(a => {
     for (const [k, v] of Object.entries(colFilters)) {
       if (!v) continue;
@@ -260,6 +262,9 @@ function ComplianceMatrix() {
       if (v === "miss" && has) return false;
     }
     return true;
+  }).sort((a, b) => {
+    const cmp = (a.name || "").localeCompare(b.name || "");
+    return sortDir === "asc" ? cmp : -cmp;
   });
 
   return (

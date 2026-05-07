@@ -191,6 +191,9 @@ function TweaksPanel({ title = 'Tweaks', children }) {
 
   React.useEffect(() => {
     const onMsg = (e) => {
+      // Only honour messages from our embedding parent. Without this guard
+      // any iframe/extension on the same window could toggle edit mode.
+      if (e.source !== window.parent) return;
       const t = e?.data?.type;
       if (t === '__activate_edit_mode') setOpen(true);
       else if (t === '__deactivate_edit_mode') setOpen(false);
@@ -294,8 +297,11 @@ function TweakRadio({ label, value, options, onChange }) {
   const trackRef = React.useRef(null);
   const [dragging, setDragging] = React.useState(false);
   const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
-  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
   const n = opts.length;
+  // With zero options, idx (-1) and segAt would index past the array end.
+  // Render nothing rather than crash — caller bug to be fixed upstream.
+  if (n === 0) return null;
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
 
   // The active value is read by pointer-move handlers attached for the lifetime
   // of a drag — ref it so a stale closure doesn't fire onChange for every move.
@@ -303,6 +309,7 @@ function TweakRadio({ label, value, options, onChange }) {
   valueRef.current = value;
 
   const segAt = (clientX) => {
+    if (!trackRef.current) return valueRef.current;
     const r = trackRef.current.getBoundingClientRect();
     const inner = r.width - 4;
     const i = Math.floor(((clientX - r.left - 2) / inner) * n);

@@ -62,7 +62,10 @@
         </div>
       );
     }
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    {
+      const rootEl = document.getElementById("root");
+      if (rootEl) ReactDOM.createRoot(rootEl).render(<App/>);
+    }
   </script>
 </body>
 </html>

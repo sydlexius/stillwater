@@ -147,8 +147,8 @@ const ARTIST_DETAIL = {
     { time: "12 min ago",  kind: "scan",     who: "system",       message: "Re-scanned · 0 changes" },
     { time: "2 hours ago", kind: "fetch",    who: "system",       message: "Re-fetched MusicBrainz, Discogs, Wikidata, Spotify" },
     { time: "2 hours ago", kind: "error",    who: "system",       message: "fanart.tv image fetch failed (connection reset)" },
-    { time: "yesterday",   kind: "manual",   who: "alex@dox.az",  message: "Set genres manually (was: 'metal'; now: 'heavy metal, progressive metal, sludge metal')" },
-    { time: "3 days ago",  kind: "resolve",  who: "alex@dox.az",  message: "Resolved finding 'id.discogs not linked' by running Match identifiers" },
+    { time: "yesterday",   kind: "manual",   who: "operator@example.test",  message: "Set genres manually (was: 'metal'; now: 'heavy metal, progressive metal, sludge metal')" },
+    { time: "3 days ago",  kind: "resolve",  who: "operator@example.test",  message: "Resolved finding 'id.discogs not linked' by running Match identifiers" },
   ],
 
   // Compliance / coverage summary (mirrors the artists list row)

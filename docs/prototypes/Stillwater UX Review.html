@@ -132,7 +132,7 @@ function ReviewNav({ tweaks }) {
   ];
   return (
     <nav className="review-nav">
-      <a href="#top" className="brand">
+      <a href="#" className="brand">
         <span style={{ width: 18, height: 18, borderRadius: 4, background: "linear-gradient(135deg,#3b82f6,#6366f1)", display: "inline-block" }}/>
         Stillwater UX Review
       </a>
@@ -491,7 +491,10 @@ function Findings() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+{
+  const rootEl = document.getElementById("root");
+  if (rootEl) ReactDOM.createRoot(rootEl).render(<App />);
+}
 </script>
 
 </body>

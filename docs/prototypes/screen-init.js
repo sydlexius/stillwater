@@ -30,5 +30,7 @@
     );
   }
 
-  ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  const rootEl = document.getElementById("root");
+  if (!rootEl) return;
+  ReactDOM.createRoot(rootEl).render(React.createElement(App));
 })();

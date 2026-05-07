@@ -102,7 +102,7 @@ function UniversalFilterBar({
           {query && (
             <span className="chip active">
               search: <span className="mono">{query}</span>
-              <button className="x" onClick={() => setQuery("")}><Icon name="x" size={10} /></button>
+              <button className="x" aria-label="Clear search" onClick={() => setQuery("")}><Icon name="x" size={10} /></button>
             </span>
           )}
           {activeChips.map(([k, v]) => {
@@ -112,7 +112,7 @@ function UniversalFilterBar({
               <span key={k} className="chip active">
                 <span className="muted" style={{ marginRight: 4 }}>{f?.label || k}:</span>
                 {opt?.label || v}
-                <button className="x" onClick={() => clearChip(k)}><Icon name="x" size={10} /></button>
+                <button className="x" aria-label={`Remove ${f?.label || k} filter`} onClick={() => clearChip(k)}><Icon name="x" size={10} /></button>
               </span>
             );
           })}

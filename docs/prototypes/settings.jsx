@@ -56,6 +56,7 @@ const settingsGroups = [
 ];
 
 const allItems = settingsGroups.flatMap(g => g.items);
+const allItemIds = new Set(allItems.map(it => it.id));
 
 /* Wrap the matching substring in <mark> so users see why a result surfaced.
  * Returns either the original string (no match) or a fragment with one <mark>.
@@ -79,6 +80,23 @@ function SettingsProposal({ density = "comfy", layout = "rail", showAnnotations 
   const [active, setActive] = ufState("providers");
   const [query, setQuery] = ufState("");
   const [paletteOpen, setPaletteOpen] = ufState(false);
+
+  // Honour the deep-link contract advertised below the pane:
+  // /settings#providers.musicbrainz scrolls/activates the matching section.
+  // On mount we look up the hash once; on selection we write it back so the
+  // URL stays shareable. The valid-id set is module-scope (allItemIds).
+  function selectActive(id) {
+    setActive(id);
+    if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+      window.history.replaceState(null, "", "#" + id);
+    }
+  }
+
+  ufEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (hash && allItemIds.has(hash)) setActive(hash);
+  }, []);
 
   ufEffect(() => {
     function onKey(e) {
@@ -149,8 +167,8 @@ function SettingsProposal({ density = "comfy", layout = "rail", showAnnotations 
                         className={`item ${active === it.id ? "active" : ""}`}
                         role="button"
                         tabIndex={0}
-                        onClick={() => setActive(it.id)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(it.id); } }}
+                        onClick={() => selectActive(it.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectActive(it.id); } }}
                         style={it._hit ? { alignItems: "flex-start", paddingTop: 8, paddingBottom: 8 } : undefined}
                       >
                         <Icon name={it.icon} size={13} style={it._hit ? { marginTop: 2 } : undefined} />
@@ -184,7 +202,15 @@ function SettingsProposal({ density = "comfy", layout = "rail", showAnnotations 
         </div>
       </div>
 
-      {paletteOpen && <CommandPalette items={allItems} onSelect={(id) => { setActive(id); setPaletteOpen(false); }} onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && <CommandPalette items={allItems} onSelect={(id) => {
+        // Palette emits two id shapes: real section ids ("providers",
+        // "tokens", ...) and fake-action ids ("act-add-library", ...).
+        // Real ids select the section + update the URL hash; fake actions
+        // are no-ops in the prototype (in a real build they'd dispatch
+        // handlers). Either way we close the palette.
+        if (id && !id.startsWith("act-")) selectActive(id);
+        setPaletteOpen(false);
+      }} onClose={() => setPaletteOpen(false)} />}
 
       {showAnnotations && (
         <>

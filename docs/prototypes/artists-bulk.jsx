@@ -162,6 +162,13 @@ function BulkPreviewDrawer({ action, rows, selectedNames, onCancel, onApply }) {
       )
     : rows;
 
+  // The drawer foot advertises Esc-to-close; honour it.
+  React.useEffect(() => {
+    function onKey(e) { if (e.key === "Escape") onCancel(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   // Pretend each action affects a slightly different subset.
   const summary = computeBulkSummary(action.kind, targetRows);
 

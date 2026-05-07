@@ -33,7 +33,7 @@ The prototype reconciles five points the original spec didn't pin down:
 2. **Errors-first is a tally chip, not a default filter.** Above the stream: `12 errors · 4 warns in last hour`, click-to-filter. The default stream is all-levels.
 3. **Attrs are hybrid-density.** `LogEntry.Attrs` is rendered as **pinned chips inline** (`artist_id`, `request_id`, `provider`, `error` — see PINNED_ATTRS below) plus a chevron that opens an inline panel under the row showing the rest, with raw JSON and the `Source` (`probe.go:142`).
 4. **Row density follows the existing `data-density` token.** Comfortable (default) and Dense, persisted to the same user preference key the rest of the app uses.
-5. **Bug-report export prefills the existing GitHub issue template.** `Open in bug report` opens a new tab with the body pre-filled with: filter state, last 200 visible lines (already filtered), Stillwater version, and the same redaction rules used by the support-bundle exporter (path strings, MBIDs preserved; bearer tokens, API keys, and absolute home paths redacted).
+5. **Bug-report export prefills the existing GitHub issue template.** `Open in bug report` opens a new tab with the body prefilled with: filter state, last 200 visible lines (already filtered), Stillwater version, and the same redaction rules used by the support-bundle exporter (path strings, MBIDs preserved; bearer tokens, API keys, and absolute home paths redacted).
 
 `PINNED_ATTRS = ["artist_id", "request_id", "provider", "error", "rule"]` — first match wins; remaining attrs go behind the chevron. The list is a per-page constant in v1.6.0; making it user-configurable is a follow-up.
 
@@ -154,7 +154,7 @@ DB touchpoints: **none.** Logs are file-backed (rotated on disk).
 - [ ] Backfill loads the last 500 lines on open; live tail subscribes after.
 - [ ] Auto-follow pauses on scroll-up, resumes on `Jump to bottom`.
 - [ ] Per-line: timestamp, level pill, scope chip, message, trailing meta chips render correctly.
-- [ ] `artist_id:NNNN` and `rule:XXX` chips are clickable and open the right destinations.
+- [ ] `artist_id:NNNN` and `rule:XXX` chips add the matching filter on click; modifier-click on `artist_id:NNNN` opens artist detail in a new tab.
 - [ ] Filters AND-combine; URL syncs; backfill and live-tail both honour filters.
 - [ ] Throttle banner appears when `logs.throttled` SSE fires.
 - [ ] Wrap toggle, side-drawer expand for long lines, copy-on-click — all work.

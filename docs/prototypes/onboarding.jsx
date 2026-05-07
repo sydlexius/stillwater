@@ -505,7 +505,7 @@ function ConflictStep({ onNext, onBack }) {
             <div className="d">
               Lidarr will overwrite <span className="mono">artist.nfo</span> on its next refresh. Either disable
               that in Lidarr (Settings → Metadata → Kodi/Emby), or{" "}
-              <a style={{ color: "var(--sw-blue-ink)" }}>let Stillwater manage it for you →</a>
+              <a href="#" style={{ color: "var(--sw-blue-ink)" }}>let Stillwater manage it for you →</a>
             </div>
           </div>
         </div>
@@ -557,7 +557,7 @@ function DiscoverStep({ onBack }) {
   );
 }
 
-/* Right-hand pane: live YAML preview, with the active section highlighted.
+/* Right-hand pane: live TOML preview, with the active section highlighted.
  * Sections are computed from the user's source choices — the TOML mirrors
  * the rail. */
 function ConfigPane({ stepKey, sources }) {

@@ -76,7 +76,7 @@ function ActionRow({ v, dense = false }) {
   const sevMap = { err: "err", warn: "warn", info: "info" };
   return (
     <div className={`sw-action cat-${v.cat === "meta" ? "meta" : v.cat}`} style={{ paddingTop: dense ? 6 : 8, paddingBottom: dense ? 6 : 8 }}>
-      <input type="checkbox" />
+      <input type="checkbox" aria-label={`Select ${v.who}`} />
       <div className="av">{v.initials}</div>
       <div className="flex-1">
         <div className="row" style={{ gap: 6 }}>
@@ -181,7 +181,7 @@ function DashboardProposal({ density = "comfy", layout = "rail", showAnnotations
                 </div>
               ))}
               <div className="divider"/>
-              <a className="row muted" style={{ fontSize: 12, padding: "0 10px", color: "var(--sw-blue-ink)" }}>
+              <a className="row muted" href="activity.html" style={{ fontSize: 12, padding: "0 10px", color: "var(--sw-blue-ink)" }}>
                 View all activity <Icon name="chevron" size={12}/>
               </a>
             </div>
@@ -235,12 +235,12 @@ function DashboardCurrent() {
           </div>
           <div className="row" style={{ marginTop: 8, gap: 6 }}>
             <span className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>Active</span>
-            <span className="chip active">Warning <button className="x"><Icon name="x" size={10}/></button></span>
+            <span className="chip active">Warning <button className="x" aria-label="Remove Warning filter"><Icon name="x" size={10}/></button></span>
             <button className="muted" style={{ fontSize: 12, color: "var(--sw-blue-ink)" }}>Clear all</button>
           </div>
         </div>
         <div className="row muted" style={{ marginBottom: 6, paddingLeft: 4, gap: 8 }}>
-          <input type="checkbox" /><span style={{ fontSize: 11.5 }}>Select all</span>
+          <input type="checkbox" aria-label="Select all" /><span style={{ fontSize: 11.5 }}>Select all</span>
         </div>
         <div className="col" style={{ gap: 6 }}>
           {dashViolations.slice(0, 5).map(v => <ActionRow key={v.id} v={v} />)}

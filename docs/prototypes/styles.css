@@ -291,7 +291,7 @@ input, select, textarea { font: inherit; color: inherit; }
   font-family: inherit; cursor: pointer; border: 1px solid var(--sw-line);
 }
 .sw-ob-editor .btn-ghost { background: transparent; color: var(--sw-ink-2); }
-.sw-ob-editor .btn-ghost:hover { background: var(--sw-bg-1); }
+.sw-ob-editor .btn-ghost:hover { background: var(--sw-bg-elev); }
 .sw-ob-editor .btn-primary { background: var(--sw-blue); border-color: var(--sw-blue); color: white; font-weight: 600; }
 .sw-ob-editor .btn-primary:hover { filter: brightness(1.08); }
 
@@ -313,7 +313,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .sw-ob-editor .ed-text {
   margin: 0; padding: 16px 18px;
   font-family: var(--sw-mono); font-size: 12.5px; line-height: 1.7;
-  color: var(--sw-ink-1);
+  color: var(--sw-ink);
   white-space: pre;
   overflow: auto;
   outline: none;
@@ -332,7 +332,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .sw-ob-editor .ed-foot .kbd {
   font-family: var(--sw-mono); font-size: 10px;
   padding: 2px 6px; border-radius: 3px;
-  background: var(--sw-bg-1); border: 1px solid var(--sw-line); color: var(--sw-ink-2);
+  background: var(--sw-bg-elev); border: 1px solid var(--sw-line); color: var(--sw-ink-2);
 }
 
 /* Annotations layer — also acts as the app shell grid (sidebar + main).
@@ -687,7 +687,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .cmdk-input-row input {
   flex: 1; min-width: 0;
   background: transparent; border: 0; outline: 0;
-  font: inherit; color: var(--sw-ink-1);
+  font: inherit; color: var(--sw-ink);
   font-size: 14px;
 }
 .cmdk-spotlight .cmdk-input-row { padding: 16px 18px; }
@@ -737,7 +737,7 @@ input, select, textarea { font: inherit; color: inherit; }
   font-family: var(--sw-mono); font-size: 10px;
   text-transform: uppercase; letter-spacing: 0.06em;
   padding: 2px 6px; border-radius: 3px;
-  background: var(--sw-bg-1); color: var(--sw-ink-3);
+  background: var(--sw-bg-elev); color: var(--sw-ink-3);
   border: 1px solid var(--sw-line);
 }
 .cmdk-tag.muted { opacity: 0.7; }
@@ -775,7 +775,7 @@ input, select, textarea { font: inherit; color: inherit; }
   background: var(--sw-bg-raised); border: 1px solid var(--sw-line-strong);
   border-radius: 999px; padding: 8px 14px;
   box-shadow: var(--sw-shadow-2);
-  font-size: 12.5px; color: var(--sw-ink-1);
+  font-size: 12.5px; color: var(--sw-ink);
   opacity: 0; transform: translateY(8px);
   transition: opacity 180ms, transform 180ms;
 }
@@ -789,9 +789,9 @@ input, select, textarea { font: inherit; color: inherit; }
   border: 1px solid transparent; background: transparent; color: var(--sw-ink-3);
   cursor: pointer;
 }
-.cmdk-layout-switch button:hover { color: var(--sw-ink-1); }
+.cmdk-layout-switch button:hover { color: var(--sw-ink); }
 .cmdk-layout-switch button.on {
-  background: var(--sw-bg-1); border-color: var(--sw-line); color: var(--sw-ink-1);
+  background: var(--sw-bg-elev); border-color: var(--sw-line); color: var(--sw-ink);
 }
 
 /* ============================================================

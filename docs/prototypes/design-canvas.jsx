@@ -98,7 +98,11 @@ function DesignCanvas({ children, minScale, maxScale, style }) {
     if (!didRead.current) return;
     if (skipNextWrite.current) { skipNextWrite.current = false; return; }
     const t = setTimeout(() => {
-      window.omelette?.writeFile(DC_STATE_FILE, JSON.stringify({ sections: state.sections })).catch(() => {});
+      // The optional-chain short-circuits to `undefined` when `omelette` is
+      // missing, and `undefined.catch(...)` would then throw. Guard explicitly.
+      if (window.omelette) {
+        window.omelette.writeFile(DC_STATE_FILE, JSON.stringify({ sections: state.sections })).catch(() => {});
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [state.sections]);
@@ -530,6 +534,7 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
   const [ddOpen, setDd] = React.useState(false);
   const Arrow = ({ dir, onClick }) => (
     <button onClick={(e) => { e.stopPropagation(); onClick(); }}
+      aria-label={dir === 'left' ? 'Previous artboard' : 'Next artboard'}
       style={{ position: 'absolute', top: '50%', [dir]: 28, transform: 'translateY(-50%)',
         border: 'none', background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.9)',
         width: 44, height: 44, borderRadius: 22, fontSize: 18, cursor: 'pointer',
@@ -578,6 +583,7 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
         </div>
         <div style={{ flex: 1 }} />
         <button onClick={() => ctx.setFocus(null)}
+          aria-label="Close focus view"
           onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,.7)', width: 32, height: 32,
@@ -609,6 +615,8 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
         style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8 }}>
         {peers.map((p, i) => (
           <button key={p} onClick={() => ctx.setFocus(`${sectionId}/${p}`)}
+            aria-label={`Go to artboard ${i + 1} of ${peers.length}`}
+            aria-current={i === idx ? 'true' : undefined}
             style={{ border: 'none', padding: 0, cursor: 'pointer', width: 6, height: 6, borderRadius: 3,
               background: i === idx ? '#fff' : 'rgba(255,255,255,.3)' }} />
         ))}
