@@ -2064,16 +2064,50 @@ func TestApplyAutoAlreadyRunning(t *testing.T) {
 	}
 }
 
-// TestListSkippedVersionsEmpty verifies ListSkippedVersions returns nil/[]
-// when no skips are persisted.
+// TestListSkippedVersionsEmpty verifies ListSkippedVersions returns a
+// non-nil empty slice when no skips are persisted, so JSON marshaling
+// produces "[]" rather than "null". A nil slice would pass len(...) == 0
+// but break the documented response shape.
 func TestListSkippedVersionsEmpty(t *testing.T) {
 	svc := buildTestService(t)
 	skips, err := svc.ListSkippedVersions(context.Background())
 	if err != nil {
 		t.Fatalf("ListSkippedVersions: %v", err)
 	}
+	if skips == nil {
+		t.Fatal("skips is nil; want non-nil empty slice (would marshal to JSON null instead of [])")
+	}
 	if len(skips) != 0 {
 		t.Errorf("skips = %v, want empty", skips)
+	}
+	body, err := json.Marshal(skips)
+	if err != nil {
+		t.Fatalf("json.Marshal(skips): %v", err)
+	}
+	if string(body) != "[]" {
+		t.Errorf("json.Marshal(skips) = %s; want []", string(body))
+	}
+}
+
+// TestGetConfigSkippedVersionsEmptyMarshalsToArray verifies the documented
+// JSON contract for the SkippedVersions field on a fresh install: the
+// settings row is absent, GetConfig returns an empty slice (not nil), and
+// json.Marshal emits "skipped_versions":[] rather than "skipped_versions":null.
+func TestGetConfigSkippedVersionsEmptyMarshalsToArray(t *testing.T) {
+	svc := buildTestService(t)
+	cfg, err := svc.GetConfig(context.Background())
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if cfg.SkippedVersions == nil {
+		t.Fatal("cfg.SkippedVersions is nil; want non-nil empty slice")
+	}
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal(cfg): %v", err)
+	}
+	if !strings.Contains(string(body), `"skipped_versions":[]`) {
+		t.Errorf("json.Marshal(cfg) = %s; want substring \"skipped_versions\":[]", string(body))
 	}
 }
 

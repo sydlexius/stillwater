@@ -163,10 +163,12 @@ type Config struct {
 	LastAutoAppliedVersion string `json:"last_auto_applied_version,omitempty"`
 
 	// SkippedVersionsJSON tag note: the field intentionally omits
-	// ,omitempty so the response shape is stable for clients (always
-	// present as [] when empty). This matches the dedicated
-	// /updates/skips endpoint and lets the UI's compositional auto-save
-	// flow round-trip the field without defensive nil checks.
+	// ,omitempty so the key is always present in the response. The empty
+	// shape is guaranteed by initializing the slice to []string{} (not
+	// nil) wherever Config is constructed -- a nil slice marshals to
+	// "null", not "[]". This matches the dedicated /updates/skips
+	// endpoint and lets the UI's compositional auto-save flow round-trip
+	// the field without defensive nil checks.
 	//
 	// SkippedVersions is the persisted list of release tags that the
 	// scheduler must NOT auto-apply. The skip-this-version button
@@ -425,6 +427,9 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 		AutoCheck:          false,
 		AutoUpdate:         false,
 		CheckIntervalHours: DefaultCheckIntervalHours,
+		// Initialize to empty slice (not nil) so JSON output is "[]"
+		// rather than "null" when no skipped_versions row exists.
+		SkippedVersions: []string{},
 	}
 
 	rows, err := s.db.QueryContext(ctx,
