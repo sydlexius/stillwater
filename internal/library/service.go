@@ -222,12 +222,18 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// CountArtists returns the number of artists assigned to a library, as
-// recorded in artist_libraries.
+// CountArtists returns the number of distinct artists assigned to a
+// library. The PRIMARY KEY (artist_id, library_id) on artist_libraries
+// already guarantees one-row-per-artist for a given library, so
+// COUNT(DISTINCT artist_id) is mathematically equivalent to COUNT(*) on
+// today's schema. The DISTINCT spelling is kept because it expresses
+// the intent of the function literally and stays correct under any
+// future schema change that loosens the PK (for example, splitting the
+// PK into (artist_id, library_id, source)).
 func (s *Service) CountArtists(ctx context.Context, libraryID string) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM artist_libraries WHERE library_id = ?`, libraryID).Scan(&count)
+		`SELECT COUNT(DISTINCT artist_id) FROM artist_libraries WHERE library_id = ?`, libraryID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting artists for library: %w", err)
 	}
