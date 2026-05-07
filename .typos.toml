@@ -7,6 +7,8 @@ extend-exclude = [
     "*.min.css",
     "go.sum",
     "*_templ.go",
+    "docs/milestone-55/prototypes/standalone/*.html",
+    "docs/prototypes/**",
 ]
 
 [default.extend-identifiers]
