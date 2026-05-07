@@ -166,13 +166,23 @@ function ArtistDetailProposal() {
       ...k, items: k.items.map(it => ({ ...it, primary: it.id === itemId }))
     }));
   };
+  // Keep `status` in sync with the items array so the Artwork summary and
+  // empty-state copy don't drift after add/delete. A kind with zero items
+  // is "missing"; otherwise we leave the status alone (it may still be
+  // "flagged" or "error" for reasons unrelated to count, e.g. a rule
+  // failure on the primary item).
+  const reconcileStatus = (k, items) => {
+    if (items.length === 0) return "missing";
+    if (k.status === "missing") return "ok";
+    return k.status;
+  };
   const deleteItem = (kind, itemId) => {
     setArtwork(prev => prev.map(k => {
       if (k.kind !== kind) return k;
       const items = k.items.filter(it => it.id !== itemId);
       // If we removed the primary, promote the first remaining (if any).
       if (items.length && !items.some(it => it.primary)) items[0] = { ...items[0], primary: true };
-      return { ...k, items };
+      return { ...k, items, status: reconcileStatus(k, items) };
     }));
   };
   // addItem inserts a new artwork item alongside existing ones. Used by Crop/Trim
@@ -190,7 +200,8 @@ function ArtistDetailProposal() {
         primary: false,
         ...partial,
       };
-      return { ...k, items: [...k.items, item] };
+      const items = [...k.items, item];
+      return { ...k, items, status: reconcileStatus(k, items) };
     }));
     return id;
   };

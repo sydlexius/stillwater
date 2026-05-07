@@ -85,7 +85,7 @@ function ChartStrip({ artists, totalIDs }) {
           {charts.map(c => (
             <ChartCard key={c.id} chart={c} artists={artists} totalIDs={totalIDs} onRemove={() => removeChart(c.id)} />
           ))}
-          {charts.length < 6 && (
+          {charts.length < MAX_CHARTS && (
             <button
               onClick={addChart}
               style={{
@@ -217,15 +217,19 @@ function DonutChart({ artists }) {
     { label: "Info",    v: info, color: SW.blue },
     { label: "OK",      v: ok,   color: SW.ok   },
   ].filter(s => s.v > 0);
-  const total = segs.reduce((a, b) => a + b.v, 0) || 1;
+  // Real total for display; `denom` only feeds the SVG arc math so we don't
+  // divide by zero when there are no segments. The center label still renders
+  // the true total (which is 0) instead of a synthetic 1.
+  const total = segs.reduce((a, b) => a + b.v, 0);
+  const denom = total || 1;
 
   // SVG donut (90 viewbox, r=32 / inner 22)
   const cx = 50, cy = 50, r = 32, ir = 22;
   let acc = 0;
   const arcs = segs.map(s => {
-    const start = acc / total;
+    const start = acc / denom;
     acc += s.v;
-    const end = acc / total;
+    const end = acc / denom;
     return { ...s, d: arcPath(cx, cy, r, ir, start, end) };
   });
 
@@ -295,7 +299,8 @@ function StackedBarChart({ artists }) {
     { key: "fanart", label: "Fanart" },
     { key: "nfo",    label: "NFO" },
   ];
-  const total = artists.length || 1;
+  const total = artists.length;
+  const denom = total || 1;
   const rows = fields.map(f => {
     const have = artists.filter(a => a[f.key]).length;
     return { ...f, have, miss: total - have };
@@ -304,7 +309,7 @@ function StackedBarChart({ artists }) {
   return (
     <div style={{ width: "100%", display: "grid", gap: 6 }}>
       {rows.map(r => {
-        const havePct = (r.have / total) * 100;
+        const havePct = (r.have / denom) * 100;
         return (
           <div key={r.key} className="row" style={{ gap: 8, fontSize: 10.5 }}>
             <span style={{ width: 42, color: SW.ink3 }}>{r.label}</span>
@@ -329,10 +334,13 @@ function HBarChart({ artists }) {
     { key: "fanart", label: "Fanart" },
     { key: "nfo",    label: "NFO" },
   ];
-  const total = artists.length || 1;
+  const total = artists.length;
   const rows = fields
     .map(f => ({ ...f, miss: artists.filter(a => !a[f.key]).length }))
     .sort((a, b) => b.miss - a.miss);
+  // `max || 1` keeps the bar-width math safe when nothing is missing; the
+  // displayed `total` (the `/ {total}` denominator label) always shows the
+  // real artist count, including 0.
   const max = rows[0]?.miss || 1;
 
   return (

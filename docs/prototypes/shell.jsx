@@ -57,16 +57,19 @@ function Icon({ name, size = 16, ...props }) {
 }
 
 function Sidebar({ active = "dashboard", rail = "full", actionsCount = 24 }) {
+  // `href` points at the relative prototype shell for each surface. Activity
+  // and Compliance fold into the dashboard for the prototype since neither
+  // has a dedicated prototype page yet.
   const items = [
-    { id: "dashboard", label: "Dashboard", icon: "home", badge: actionsCount },
-    { id: "artists", label: "Artists", icon: "artists" },
-    { id: "reports", label: "Reports", icon: "reports" },
-    { id: "activity", label: "Activity", icon: "activity" },
-    { id: "compliance", label: "Compliance", icon: "compliance" },
+    { id: "dashboard",  label: "Dashboard",  icon: "home",       href: "dashboard.html",  badge: actionsCount },
+    { id: "artists",    label: "Artists",    icon: "artists",    href: "artists.html" },
+    { id: "reports",    label: "Reports",    icon: "reports",    href: "reports.html" },
+    { id: "activity",   label: "Activity",   icon: "activity",   href: "dashboard.html" },
+    { id: "compliance", label: "Compliance", icon: "compliance", href: "reports.html" },
   ];
   const sysItems = [
-    { id: "logs", label: "Logs", icon: "logs" },
-    { id: "settings", label: "Settings", icon: "settings" },
+    { id: "logs",     label: "Logs",     icon: "logs",     href: "logs.html" },
+    { id: "settings", label: "Settings", icon: "settings", href: "settings.html" },
   ];
   return (
     <aside className="sw-side">
@@ -77,7 +80,12 @@ function Sidebar({ active = "dashboard", rail = "full", actionsCount = 24 }) {
       </div>
       <nav className="nav">
         {items.map(it => (
-          <a key={it.id} className={`sw-nav-item ${active === it.id ? "active" : ""}`}>
+          <a
+            key={it.id}
+            href={it.href}
+            aria-current={active === it.id ? "page" : undefined}
+            className={`sw-nav-item ${active === it.id ? "active" : ""}`}
+          >
             <Icon name={it.icon} />
             {rail === "full" && <span>{it.label}</span>}
             {rail === "full" && it.badge > 0 && <span className="badge">{it.badge}</span>}
@@ -85,7 +93,12 @@ function Sidebar({ active = "dashboard", rail = "full", actionsCount = 24 }) {
         ))}
         {rail === "full" && <div className="sw-nav-section">System</div>}
         {sysItems.map(it => (
-          <a key={it.id} className={`sw-nav-item ${active === it.id ? "active" : ""}`}>
+          <a
+            key={it.id}
+            href={it.href}
+            aria-current={active === it.id ? "page" : undefined}
+            className={`sw-nav-item ${active === it.id ? "active" : ""}`}
+          >
             <Icon name={it.icon} />
             {rail === "full" && <span>{it.label}</span>}
           </a>

@@ -102,11 +102,6 @@ function SettingsProposal({ density = "comfy", layout = "rail", showAnnotations 
     if (kw) return { ok: true, hit: kw };
     return { ok: false, hit: null };
   }
-  const filtered = (q) =>
-    allItems
-      .map(it => ({ it, m: matchItem(it, q) }))
-      .filter(x => x.m.ok)
-      .map(x => ({ ...x.it, _hit: x.m.hit }));
 
   return (
     <div data-density={density} data-settings-layout={layout} className="sw-anno" style={{ position: "relative" }}>
@@ -303,6 +298,8 @@ function CommandPalette({ items, onSelect, onClose }) {
             return (
               <div
                 key={it.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(it.id)}
                 onMouseEnter={() => setIdx(off)}
                 className="row"

@@ -424,10 +424,13 @@ function ProgressStack({ jobs }) {
 
 function Toast({ toast, onDismiss }) {
   const { useEffect } = React;
+  // Key the timeout off the toast identity so a parent that swaps the toast
+  // in place (same component instance, new payload) restarts the 6s timer
+  // instead of inheriting the previous one and disappearing prematurely.
   useEffect(() => {
     const t = setTimeout(onDismiss, 6000);
     return () => clearTimeout(t);
-  }, [onDismiss]);
+  }, [toast?.id, onDismiss]);
   return (
     <div className="sw-toast" role="status">
       <span className="sev info"><span className="dot"></span></span>

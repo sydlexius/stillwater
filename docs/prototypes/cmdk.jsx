@@ -290,15 +290,26 @@ function CommandPaletteSurface({ onClose }) {
     onClose();
   }
 
+  // Stash the per-render values in refs so the keydown listener doesn't have
+  // to be re-registered on every keystroke (flatItems / activate are
+  // recreated each render). The effect's deps stay empty; the listener
+  // reads the latest state through the refs.
+  const flatItemsRef = cmUseRef(flatItems);
+  const safeIdxRef = cmUseRef(safeIdx);
+  const activateRef = cmUseRef(activate);
+  flatItemsRef.current = flatItems;
+  safeIdxRef.current = safeIdx;
+  activateRef.current = activate;
+
   cmUseEffect(() => {
     function onKey(e) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setIdx(i => Math.min(i + 1, flatItems.length - 1)); }
+      if (e.key === "ArrowDown") { e.preventDefault(); setIdx(i => Math.min(i + 1, flatItemsRef.current.length - 1)); }
       if (e.key === "ArrowUp")   { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
-      if (e.key === "Enter")     { e.preventDefault(); activate(flatItems[safeIdx]); }
+      if (e.key === "Enter")     { e.preventDefault(); activateRef.current(flatItemsRef.current[safeIdxRef.current]); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [flatItems, safeIdx]);
+  }, []);
 
   // Layout-specific positioning. VS Code is top-anchored and narrow;
   // Spotlight is centered and large; Raycast is top-anchored, wider,

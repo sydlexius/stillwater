@@ -254,7 +254,16 @@ function LogsProposal({ density = "comfy", showAnnotations = false }) {
   const [range, setRange] = lState("1h");
   const [levels, setLevels] = lState(new Set(LEVEL_ORDER));   // multi-select
   const [components, setComponents] = lState(new Set());      // include set
-  const [search, setSearch] = lState("");
+  // Seed the search from `?artist_id=NNNN` (or generic `?q=...`) so deep-links
+  // from artist-detail and other surfaces land on a filtered stream. Matches
+  // the inbound deep-link contract documented in docs/milestone-55/05-logs.md.
+  const [search, setSearch] = lState(() => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    const artistId = params.get("artist_id");
+    if (artistId) return `artist_id:${artistId}`;
+    return params.get("q") || "";
+  });
   const [pendingNew, setPendingNew] = lState(0);              // for the "↓ N new" pill mock
   const streamRef = lRef(null);
 
