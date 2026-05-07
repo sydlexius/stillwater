@@ -445,6 +445,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/{name}/test", wrapAuth(middleware.RequireAdmin(r.handleTestProvider), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/providers/priorities", wrapAuth(middleware.RequireAdmin(r.handleGetPriorities), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(middleware.RequireAdmin(r.handleSetPriorities), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/providers/priorities/reset", wrapAuth(middleware.RequireAdmin(r.handleResetPriorities), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities/{field}/{provider}/toggle", wrapAuth(middleware.RequireAdmin(r.handleToggleFieldProvider), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(middleware.RequireAdmin(r.handleSetMirror), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(middleware.RequireAdmin(r.handleDeleteMirror), authMw))

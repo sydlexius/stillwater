@@ -915,20 +915,28 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.Priorities) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<div class="flex items-center gap-2">
-								<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
-								@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.")
+							<div class="flex items-center justify-between gap-2">
+								<div class="flex items-center gap-2">
+									<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
+									@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.")
+								</div>
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+									hx-post="/api/v1/providers/priorities/reset"
+									hx-target="#priority-rows"
+									hx-swap="outerHTML"
+									hx-confirm={ t(ctx, "settings.priorities.confirm_restore") }
+								>
+									{ t(ctx, "settings.priorities.restore_defaults") }
+								</button>
 							</div>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 								{ t(ctx, "settings.priorities.description") }
 							</p>
 						</div>
 						<div class="px-6 py-4">
-							<div class="space-y-3">
-								for _, pri := range data.Priorities {
-									@PriorityChipRow(pri, data.ProviderKeys)
-								}
-							</div>
+							@PriorityChipRows(data.Priorities, data.ProviderKeys)
 						</div>
 					</div>
 				}
@@ -4928,6 +4936,16 @@ templ providerTestSaveFailureInner(name provider.ProviderName, apiKey string, er
 
 templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) {
 	@priorityChipRowInner(pri, availableProviders(pri, keys))
+}
+
+// PriorityChipRows renders the full set of priority chip rows wrapped in the
+// container element targeted by the "Restore defaults" button (hx-swap=outerHTML).
+templ PriorityChipRows(priorities []provider.FieldPriority, keys []provider.ProviderKeyStatus) {
+	<div id="priority-rows" class="space-y-3">
+		for _, pri := range priorities {
+			@PriorityChipRow(pri, keys)
+		}
+	</div>
 }
 
 templ priorityChipRowInner(pri provider.FieldPriority, available []provider.ProviderName) {

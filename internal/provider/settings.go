@@ -420,6 +420,84 @@ func (s *SettingsService) SetDisabledProviders(ctx context.Context, field string
 	return nil
 }
 
+// ResetPriorities deletes every stored provider.priority.* settings row so
+// GetPriorities falls back to the built-in DefaultPriorities. The single
+// DELETE covers both `provider.priority.<field>` and
+// `provider.priority.<field>.disabled` rows because both share the prefix.
+//
+// Web search providers are tracked by a separate provider.websearch.<name>.enabled
+// flag (see SetWebSearchEnabled). Toggling one of those flags on appends the
+// provider to each image-field priority list so it actually participates in
+// fetches; toggling it off removes it. Because that enabled state is not part
+// of provider.priority.*, a bare DELETE here would leave currently-enabled web
+// search providers flagged as enabled while silently dropping them from every
+// image-field priority list until the user toggled them off and back on. To
+// preserve the documented invariant ("enabled web search providers appear in
+// image-field priority lists"), we re-append any currently-enabled web search
+// providers to each image field after the delete. The defaults themselves do
+// not include web search providers, so this only adds entries that the user
+// has explicitly opted into.
+func (s *SettingsService) ResetPriorities(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'provider.priority.%'"); err != nil {
+		return fmt.Errorf("resetting priorities: %w", err)
+	}
+
+	// Collect currently-enabled web search providers so they can be re-appended
+	// to the image-field priority rows that the DELETE just cleared.
+	var enabledWebSearch []ProviderName
+	for _, name := range AllWebSearchProviderNames() {
+		enabled, err := s.IsWebSearchEnabled(ctx, name)
+		if err != nil {
+			return fmt.Errorf("reading web search enabled state for %s during reset: %w", name, err)
+		}
+		if enabled {
+			enabledWebSearch = append(enabledWebSearch, name)
+		}
+	}
+	if len(enabledWebSearch) == 0 {
+		return nil
+	}
+
+	// Mirror the image-field set used by handleSetWebSearchEnabled. Keep this
+	// list in sync with that handler (and with DefaultPriorities) if image
+	// fields are ever added or renamed.
+	imageFields := []string{"thumb", "fanart", "logo", "banner"}
+	defaults := DefaultPriorities()
+	defaultsByField := make(map[string][]ProviderName, len(defaults))
+	for _, d := range defaults {
+		defaultsByField[d.Field] = d.Providers
+	}
+	for _, field := range imageFields {
+		base, ok := defaultsByField[field]
+		if !ok {
+			continue
+		}
+		// Start from the default order and append enabled web search providers
+		// at the end (lowest priority), matching handleSetWebSearchEnabled.
+		// Skip any web search names that already appear in the defaults to
+		// avoid duplicates if the defaults ever start including them.
+		merged := make([]ProviderName, 0, len(base)+len(enabledWebSearch))
+		merged = append(merged, base...)
+		seen := make(map[ProviderName]bool, len(merged))
+		for _, p := range merged {
+			seen[p] = true
+		}
+		for _, name := range enabledWebSearch {
+			if !seen[name] {
+				merged = append(merged, name)
+				seen[name] = true
+			}
+		}
+		if len(merged) == len(base) {
+			continue
+		}
+		if err := s.SetPriority(ctx, field, merged); err != nil {
+			return fmt.Errorf("re-applying enabled web search providers to %s during reset: %w", field, err)
+		}
+	}
+	return nil
+}
+
 // AvailableProviderNames returns the set of provider names that are configured
 // (either they do not require a key, or they have one stored). Unconfigured
 // providers are excluded so the orchestrator can skip them without producing
