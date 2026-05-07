@@ -218,14 +218,31 @@ function CommandPalette({ items, onSelect, onClose }) {
     { id: "act-rules-now",     label: "Run rules now",          icon: "shield" },
   ] : [];
 
+  // Single activation path used by Enter, click, and (later) keyboard
+  // activation on the action rows. Resolves the current row index across
+  // the two row groups (Actions appear above Settings when q is empty).
+  function activateAt(rowIdx) {
+    if (rowIdx < fakeActions.length) {
+      const a = fakeActions[rowIdx];
+      // Faux-execute — in a real build this would dispatch to a handler.
+      // For the prototype we close and let the host show a toast.
+      onSelect(a.id);
+    } else {
+      const it = filtered[rowIdx - fakeActions.length];
+      if (it) onSelect(it.id);
+    }
+  }
+
   ufEffect(() => {
     function onKey(e) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setIdx(i => Math.min(i + 1, filtered.length + fakeActions.length - 1)); }
+      const total = filtered.length + fakeActions.length;
+      if (e.key === "ArrowDown") { e.preventDefault(); setIdx(i => Math.min(i + 1, total - 1)); }
       if (e.key === "ArrowUp")   { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+      if (e.key === "Enter")     { e.preventDefault(); activateAt(idx); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered.length, fakeActions.length]);
+  }, [filtered.length, fakeActions.length, idx]);
 
   return (
     <div
@@ -258,12 +275,20 @@ function CommandPalette({ items, onSelect, onClose }) {
             <>
               <div style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--sw-ink-4)", padding: "8px 10px 4px" }}>Actions</div>
               {fakeActions.map((a, i) => (
-                <div key={a.id} className={`row ${idx === i ? "" : ""}`} style={{
-                  padding: "8px 10px", gap: 10, borderRadius: 6,
-                  background: idx === i ? "var(--sw-blue-soft)" : "transparent",
-                  color: idx === i ? "var(--sw-blue-ink)" : "var(--sw-ink-2)",
-                  fontSize: 13,
-                }}>
+                <div
+                  key={a.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => activateAt(i)}
+                  onMouseEnter={() => setIdx(i)}
+                  className="row"
+                  style={{
+                    padding: "8px 10px", gap: 10, borderRadius: 6,
+                    background: idx === i ? "var(--sw-blue-soft)" : "transparent",
+                    color: idx === i ? "var(--sw-blue-ink)" : "var(--sw-ink-2)",
+                    fontSize: 13, cursor: "pointer",
+                  }}
+                >
                   <Icon name={a.icon} size={13} />
                   <span className="flex-1">{a.label}</span>
                   {idx === i && <span className="kbd">⏎</span>}
@@ -316,13 +341,35 @@ function CommandPalette({ items, onSelect, onClose }) {
 }
 
 function SettingsPaneContent({ active }) {
-  if (active === "providers") return <ProvidersPane />;
-  if (active === "general") return <GeneralPane />;
-  if (active === "libraries") return <LibrariesPane />;
+  // Concrete panes — every section that has bespoke prototype copy.
+  if (active === "providers")   return <ProvidersPane />;
+  if (active === "general")     return <GeneralPane />;
+  if (active === "libraries")   return <LibrariesPane />;
   if (active === "connections") return <ConnectionsPane />;
-  if (active === "rules") return <RulesPane />;
+  if (active === "rules")       return <RulesPane />;
   if (active === "config-file") return <ConfigFilePane />;
-  return <GeneralPane />;
+  // Sections from the rail that don't have a bespoke prototype yet.
+  // We resolve to a stub rather than silently re-rendering GeneralPane so
+  // reviewers can tell which surfaces still need a real layout pass.
+  const knownStubs = ["platform", "languages", "schedule", "webhooks", "tokens",
+                      "users", "auth", "maintenance", "logs", "updates"];
+  if (knownStubs.includes(active)) return <StubPane sectionId={active} />;
+  // Truly unknown id — surface it instead of falling through.
+  return <StubPane sectionId={active} unknown />;
+}
+
+function StubPane({ sectionId, unknown }) {
+  const label = (settingsGroups.flatMap(g => g.items).find(it => it.id === sectionId) || {}).label || sectionId;
+  return (
+    <div className="sw-card" style={{ padding: 24, marginTop: 8 }}>
+      <h2 style={{ margin: 0, fontSize: 16 }}>{label}</h2>
+      <p className="muted" style={{ marginTop: 8, fontSize: 13 }}>
+        {unknown
+          ? <>Unknown section <span className="mono">{sectionId}</span>. The rail item points at a section the prototype doesn't render yet.</>
+          : <>This section's prototype layout hasn't been authored yet — the rail is here so reviewers can see the navigation surface even before each pane lands.</>}
+      </p>
+    </div>
+  );
 }
 
 function SettingRow({ label, desc, children }) {

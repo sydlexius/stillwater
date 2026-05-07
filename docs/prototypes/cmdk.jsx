@@ -255,6 +255,20 @@ function CommandPaletteSurface({ onClose }) {
 
   cmUseEffect(() => { setIdx(0); }, [q]);
 
+  // Mirror the resolution that the `g` leader shortcut performs: when the
+  // palette is opened from outside `/screens/` (e.g. the index or the design
+  // canvas review shell), prefix `screens/` to plain relative hrefs so the
+  // browser doesn't 404. Items already starting with `screens/`, `/`, or a
+  // protocol are passed through untouched.
+  function resolvePrototypeHref(href) {
+    const inScreens = /\/screens\//.test(location.pathname);
+    if (inScreens) return href;
+    if (/^(screens\/|\/|[a-z]+:)/i.test(href)) return href;
+    const [path, hash] = href.split("#");
+    const resolved = `screens/${path}`;
+    return hash ? `${resolved}#${hash}` : resolved;
+  }
+
   function activate(item) {
     if (!item) return;
     if (item.kind === "action") {
@@ -270,7 +284,7 @@ function CommandPaletteSurface({ onClose }) {
       if (here === target && item.href.includes("#")) {
         location.hash = item.href.split("#")[1];
       } else {
-        location.href = item.href;
+        location.href = resolvePrototypeHref(item.href);
       }
     }
     onClose();

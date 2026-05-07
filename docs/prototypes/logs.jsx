@@ -269,7 +269,20 @@ function LogsProposal({ density = "comfy", showAnnotations = false }) {
     return LOG_ENTRIES.filter(e => {
       if (!levels.has(e.level)) return false;
       if (components.size > 0 && !components.has(e.component)) return false;
-      if (q && !(e.message.toLowerCase().includes(q) || e.component.toLowerCase().includes(q))) return false;
+      if (q) {
+        // Match against message + component AND the attrs (rendered as
+        // `key:value` chips). Without this, clicking an attr chip
+        // populates the search box with `artist_id:8821` and the predicate
+        // immediately empties the stream.
+        const attrText = e.attrs
+          ? Object.entries(e.attrs).map(([k, v]) => `${k}:${fmtAttrValue(v)}`).join(" ").toLowerCase()
+          : "";
+        if (!(
+          e.message.toLowerCase().includes(q) ||
+          e.component.toLowerCase().includes(q) ||
+          attrText.includes(q)
+        )) return false;
+      }
       return true;
     });
   }, [levels, components, search]);

@@ -278,7 +278,7 @@ function ArtistDetailProposal() {
               </div>
               <div className="sw-ad-summary-divider" />
               <div className="sw-ad-summary-findings">
-                <a href="#findings" className="sw-ad-summary-link">
+                <a href={placeFindingsInSidebar ? "#findings-sidebar" : "#findings"} className="sw-ad-summary-link">
                   {findingsBySev.err  > 0 && <span className="row" style={{ gap: 4 }}><SeverityDot sev="err"/>  <b>{findingsBySev.err}</b> error{findingsBySev.err  === 1 ? "" : "s"}</span>}
                   {findingsBySev.warn > 0 && <span className="row" style={{ gap: 4 }}><SeverityDot sev="warn"/> <b>{findingsBySev.warn}</b> warning{findingsBySev.warn === 1 ? "" : "s"}</span>}
                   {findingsBySev.info > 0 && <span className="row" style={{ gap: 4 }}><SeverityDot sev="info"/> <b>{findingsBySev.info}</b> info</span>}
@@ -419,7 +419,7 @@ function ArtistDetailProposal() {
             )}
 
             {/* Activity */}
-            <SectionCard id="activity" title="Recent activity" meta={<a href="logs.html" className="sw-ad-section-link">Open in Logs ↗</a>}>
+            <SectionCard id="activity" title="Recent activity" meta={<a href={a.id ? `logs.html?artist_id=${encodeURIComponent(a.id)}` : "logs.html"} className="sw-ad-section-link">Open in Logs ↗</a>}>
               <div className="sw-ad-activity">
                 {a.activity.map((ev, i) => (
                   <div key={i} className={`sw-ad-act kind-${ev.kind}`}>
@@ -436,7 +436,7 @@ function ArtistDetailProposal() {
 
           {/* Optional sidebar (Tweak: findingsPlacement = sidebar) */}
           {placeFindingsInSidebar && (
-            <aside className="sw-ad-rail">
+            <aside className="sw-ad-rail" id="findings-sidebar">
               <div className="sw-ad-rail-stick">
                 <div className="sw-card">
                   <div className="head">

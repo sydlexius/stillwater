@@ -38,11 +38,15 @@ function ChartStrip({ artists, totalIDs }) {
     { id: "c4", kind: "hbar",    title: "Top missing fields", by: "field" },
   ]);
 
+  const MAX_CHARTS = 6;
   function removeChart(id) { setCharts(cs => cs.filter(c => c.id !== id)); }
   function addChart() {
-    const types = ["donut", "stacked", "hbar", "kpi"];
-    const t = types[charts.length % types.length];
-    setCharts(cs => [...cs, { id: "c" + Date.now(), kind: t, title: "New chart", by: "field" }]);
+    setCharts(cs => {
+      if (cs.length >= MAX_CHARTS) return cs;
+      const types = ["donut", "stacked", "hbar", "kpi"];
+      const t = types[cs.length % types.length];
+      return [...cs, { id: "c" + Date.now(), kind: t, title: "New chart", by: "field" }];
+    });
   }
 
   return (
@@ -59,7 +63,7 @@ function ChartStrip({ artists, totalIDs }) {
         </button>
         <span className="muted" style={{ fontSize: 11.5 }}>Click a slice to filter the table.</span>
         <span className="flex-1"></span>
-        {open && charts.length > 0 && (
+        {open && charts.length > 0 && charts.length < MAX_CHARTS && (
           <button
             className="btn ghost sm"
             onClick={addChart}

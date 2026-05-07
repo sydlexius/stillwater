@@ -62,5 +62,3 @@
 
 [data-settings-layout="rail"] .sw-settings { grid-template-columns: 240px minmax(0, 1fr); }
 [data-settings-layout="palette"] .sw-settings { grid-template-columns: minmax(0, 1fr); }
-</content>
-</invoke>

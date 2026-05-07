@@ -9,8 +9,6 @@
  * screen feeling like a real app screen, not a review surface.
  */
 (function () {
-  const { useState, useEffect } = React;
-
   function App() {
     const screen = window.__screen;
     const Component = window[screen];

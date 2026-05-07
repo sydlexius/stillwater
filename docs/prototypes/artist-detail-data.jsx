@@ -15,6 +15,12 @@
 const F = (value, source = "musicbrainz", extras = {}) => ({ value, source, ...extras });
 
 const ARTIST_DETAIL = {
+  // Stillwater's internal artist identifier — used as the canonical key in
+  // log lines (`artist_id:NNNN`), in deep-link URL params, and in the rules
+  // engine. The mock value here matches the example in
+  // `docs/milestone-55/05-logs.md` so the prototype's Logs deep-link demos
+  // the actual contract, not a placeholder.
+  id:          8821,
   // Header
   name:        F("Mastodon", "musicbrainz", {
     conflicts: [{ provider: "nfo", value: "Mastodon (FR)" }],

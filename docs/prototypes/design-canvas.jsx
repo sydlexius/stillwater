@@ -131,6 +131,13 @@ function DesignCanvas({ children, minScale, maxScale, style }) {
     };
   });
 
+  // Stable setFocus reference so the keydown/pointerdown effect below isn't
+  // re-registered on every state change. setState's functional form means we
+  // don't need to read `state` inside the callback.
+  const setFocus = React.useCallback((slotId) => {
+    setState((s) => ({ ...s, focus: slotId }));
+  }, []);
+
   const api = React.useMemo(() => ({
     state,
     section: (id) => state.sections[id] || {},
@@ -138,12 +145,14 @@ function DesignCanvas({ children, minScale, maxScale, style }) {
       ...s,
       sections: { ...s.sections, [id]: { ...s.sections[id], ...(typeof p === 'function' ? p(s.sections[id] || {}) : p) } },
     })),
-    setFocus: (slotId) => setState((s) => ({ ...s, focus: slotId })),
-  }), [state]);
+    setFocus,
+  }), [state, setFocus]);
 
   // Esc exits focus; any outside pointerdown commits an in-progress rename.
+  // Depending only on the stable `setFocus` keeps the listeners pinned for
+  // the component's lifetime instead of churning on every state update.
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') api.setFocus(null); };
+    const onKey = (e) => { if (e.key === 'Escape') setFocus(null); };
     const onPd = (e) => {
       const ae = document.activeElement;
       if (ae && ae.isContentEditable && !ae.contains(e.target)) ae.blur();
@@ -154,7 +163,7 @@ function DesignCanvas({ children, minScale, maxScale, style }) {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerdown', onPd, true);
     };
-  }, [api]);
+  }, [setFocus]);
 
   return (
     <DCCtx.Provider value={api}>
@@ -494,16 +503,24 @@ function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
     if (first) ctx.setFocus(`${ns}/${first}`);
   };
 
+  // `go` and `goSection` are redefined every render, so we stash them in
+  // refs and read through the refs in the listener. With `[]` deps the
+  // listener is registered once and torn down on unmount instead of
+  // churning on every render.
+  const goRef = React.useRef(go);
+  const goSectionRef = React.useRef(goSection);
+  React.useLayoutEffect(() => { goRef.current = go; goSectionRef.current = goSection; });
+
   React.useEffect(() => {
     const k = (e) => {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); goSection(-1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); goSection(1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goRef.current(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goRef.current(1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); goSectionRef.current(-1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); goSectionRef.current(1); }
     };
     document.addEventListener('keydown', k);
     return () => document.removeEventListener('keydown', k);
-  });
+  }, []);
 
   const { width = 260, height = 480, children } = artboard.props;
   const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });

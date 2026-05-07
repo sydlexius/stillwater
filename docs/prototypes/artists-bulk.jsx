@@ -15,6 +15,20 @@ function BulkActionBar({
   selectedCount, visibleCount, filterIsActive, totalCount,
   ceiling, onClear, onAction,
 }) {
+  // Default scope: prefer "selected" when there's a selection, otherwise the
+  // filter narrows the set to "matching". The scope buttons let the user
+  // override that default — e.g. with a selection AND a filter, switch to
+  // "matching" to apply across the filtered superset rather than the picks.
+  const defaultTarget = selectedCount > 0 ? "selected" : "matching";
+  const [target, setTarget] = React.useState(defaultTarget);
+
+  // Re-anchor the target when prerequisites flip (selection cleared,
+  // filter cleared) so we never end up pointing at a disabled button.
+  React.useEffect(() => {
+    if (target === "selected" && selectedCount === 0) setTarget("matching");
+    if (target === "matching" && !filterIsActive) setTarget("selected");
+  }, [selectedCount, filterIsActive, target]);
+
   if (selectedCount === 0 && !filterIsActive) return null;
 
   const overCeiling = visibleCount > ceiling;
@@ -51,16 +65,18 @@ function BulkActionBar({
 
         <div className="sw-scope-toggle" role="group" aria-label="Action target">
           <button
-            className={selectedCount > 0 ? "active" : ""}
+            className={target === "selected" ? "active" : ""}
             disabled={selectedCount === 0}
-            onClick={() => {/* visual only */}}
+            onClick={() => setTarget("selected")}
+            aria-pressed={target === "selected"}
           >
             Selected ({selectedCount})
           </button>
           <button
-            className={selectedCount === 0 && filterIsActive ? "active" : ""}
+            className={target === "matching" ? "active" : ""}
             disabled={!filterIsActive}
-            onClick={() => {/* visual only */}}
+            onClick={() => setTarget("matching")}
+            aria-pressed={target === "matching"}
             title={overCeiling ? `Above ${ceiling}-row soft ceiling — confirm in preview` : undefined}
           >
             All matching ({visibleCount}){overCeiling && " ⚠"}
@@ -68,7 +84,7 @@ function BulkActionBar({
         </div>
 
         <BulkActionMenu
-          target={selectedCount > 0 ? "selected" : "matching"}
+          target={target}
           onAction={onAction}
           disabled={selectedCount === 0 && !filterIsActive}
         />
@@ -186,12 +202,29 @@ function BulkPreviewDrawer({ action, rows, selectedNames, onCancel, onApply }) {
           </div>
         </div>
 
+        {/* Undo contract — must match the action contract in artists.jsx.
+            `rerun-rules`, `refetch`, and `refetch-images` are not undoable
+            because they re-derive state from external sources rather than
+            mutating it; everything else lands an undo entry in Activity. */}
+        {(() => {
+          const NON_UNDOABLE = ["rerun-rules", "refetch", "refetch-images"];
+          const undoable = !NON_UNDOABLE.includes(action.kind);
+          return (
         <div className="sw-card" style={{ marginTop: 12 }}>
           <div className="head"><h2>Behaviour</h2></div>
           <div className="body" style={{ fontSize: 12.5 }}>
             <div className="row" style={{ gap: 8, padding: "6px 0" }}>
-              <span className="sev info"><span className="dot"></span>Reversible</span>
-              <span className="muted">Undo from Activity for {UNDO_WINDOW_DAYS} days.</span>
+              {undoable ? (
+                <>
+                  <span className="sev info"><span className="dot"></span>Reversible</span>
+                  <span className="muted">Undo from Activity for {UNDO_WINDOW_DAYS} days.</span>
+                </>
+              ) : (
+                <>
+                  <span className="sev warn"><span className="dot"></span>Not undoable</span>
+                  <span className="muted">This action re-derives data from providers and can't be reverted.</span>
+                </>
+              )}
             </div>
             <div className="row" style={{ gap: 8, padding: "6px 0" }}>
               <span className="sev info"><span className="dot"></span>Skip rules</span>
@@ -203,6 +236,8 @@ function BulkPreviewDrawer({ action, rows, selectedNames, onCancel, onApply }) {
             </div>
           </div>
         </div>
+          );
+        })()}
       </div>
 
       <div className="sw-drawer-foot">
