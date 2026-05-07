@@ -1,5 +1,7 @@
 /* Dashboard — proposal vs current */
 
+const { useState: ufState, useEffect: ufEffect, useRef: ufRef } = React;
+
 const dashFacets = [
   { key: "severity", label: "Severity", options: [
     { value: "error",   label: "Errors",   count: 12 },

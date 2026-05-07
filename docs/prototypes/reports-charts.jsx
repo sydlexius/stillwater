@@ -14,6 +14,8 @@
  * placeholder card in.
  */
 
+const { useState: ufState, useEffect: ufEffect, useRef: ufRef } = React;
+
 const SW = {
   blue:  "var(--sw-blue)",
   warm:  "var(--sw-warm)",
@@ -61,7 +63,7 @@ function ChartStrip({ artists, totalIDs }) {
           <Icon name="chevron" size={10} style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}/>
           Charts <span className="muted">({charts.length})</span>
         </button>
-        <span className="muted" style={{ fontSize: 11.5 }}>Click a slice to filter the table.</span>
+        <span className="muted" style={{ fontSize: 11.5 }}>Hover a slice for details.</span>
         <span className="flex-1"></span>
         {open && charts.length > 0 && charts.length < MAX_CHARTS && (
           <button
@@ -98,7 +100,7 @@ function ChartStrip({ artists, totalIDs }) {
             >
               <Icon name="plus" size={16}/>
               <span>Add chart</span>
-              <span className="muted" style={{ fontSize: 10.5 }}>donut · bar · KPI · sparkline</span>
+              <span className="muted" style={{ fontSize: 10.5 }}>donut · stacked · hbar · KPI</span>
             </button>
           )}
         </div>
@@ -348,11 +350,12 @@ function HBarChart({ artists }) {
     <div style={{ width: "100%", display: "grid", gap: 6 }}>
       {rows.map(r => {
         const pct = (r.miss / max) * 100;
+        const width = r.miss === 0 ? "0%" : Math.max(pct, 4) + "%";
         return (
           <div key={r.key} className="row" style={{ gap: 8, fontSize: 11 }}>
             <span style={{ width: 80, color: SW.ink2, fontSize: 10.5 }}>{r.label}</span>
             <div style={{ flex: 1, height: 12, background: SW.sunken, borderRadius: 3, position: "relative", overflow: "hidden" }}>
-              <div style={{ width: Math.max(pct, 4) + "%", height: "100%", background: SW.warm, transition: "width .3s" }}></div>
+              <div style={{ width, height: "100%", background: SW.warm, transition: "width .3s" }}></div>
             </div>
             <span style={{ width: 32, textAlign: "right", color: SW.warm, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{r.miss}</span>
             <span className="muted" style={{ fontSize: 10, width: 28, textAlign: "right" }}>/ {total}</span>

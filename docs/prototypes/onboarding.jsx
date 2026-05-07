@@ -23,6 +23,8 @@
  * they've made their choice.
  */
 
+const { useState: ufState, useEffect: ufEffect, useRef: ufRef } = React;
+
 function OnboardingProposal() {
   const [sources, setSources] = ufState({ local: true, emby: true, jellyfin: false, lidarr: true });
   const [step, setStep] = ufState(1); // start mid-flow so TOML preview is interesting

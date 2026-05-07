@@ -24,9 +24,16 @@ function BulkActionBar({
 
   // Re-anchor the target when prerequisites flip (selection cleared,
   // filter cleared) so we never end up pointing at a disabled button.
+  // Skip when the bar is in its hidden state (no selection AND no filter)
+  // — otherwise the two flips below ping-pong target back and forth in an
+  // infinite render loop even though the component is returning null.
   React.useEffect(() => {
-    if (target === "selected" && selectedCount === 0) setTarget("matching");
-    if (target === "matching" && !filterIsActive) setTarget("selected");
+    if (selectedCount === 0 && !filterIsActive) return;
+    if (target === "selected" && selectedCount === 0) {
+      setTarget("matching");
+    } else if (target === "matching" && !filterIsActive) {
+      setTarget("selected");
+    }
   }, [selectedCount, filterIsActive, target]);
 
   if (selectedCount === 0 && !filterIsActive) return null;

@@ -8,6 +8,8 @@
  * not "this fails rule X."
  */
 
+const { useState: ufState, useEffect: ufEffect, useRef: ufRef } = React;
+
 const cannedReports = [
   { id: "compliance",     label: "Compliance overview",   icon: "shield",     desc: "Field & ID coverage across your library", count: 1284 },
   { id: "unidentified",   label: "Unidentified artists",  icon: "warn",       desc: "No MusicBrainz ID set",                   count: 47 },

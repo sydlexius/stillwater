@@ -3,6 +3,8 @@
  * deep-linkable section anchors.
  */
 
+const { useState: ufState, useEffect: ufEffect, useRef: ufRef } = React;
+
 /* Each item carries `keywords`: a flat list of strings that exist on the
  * actual content pane (section headings, control labels, env vars, file
  * paths, provider names, etc). Search matches the item label OR any

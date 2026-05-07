@@ -683,7 +683,7 @@ function ArtworkLightbox({ artwork, state, onNavigate, onClose, onSetPrimary, on
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [idx, flat, mode]);
+  }, [idx, flat, mode, onClose, onNavigate]);
 
   if (!cur) return null;
   const { kind, kindLabel, item } = cur;
