@@ -708,6 +708,33 @@ func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection,
 		acc.controlKeys[ctrlID] = append(acc.controlKeys[ctrlID], k)
 	}
 
+	// Fold sibling metadata keys from allKeys into discovered controls. The
+	// panel scan only sees keys actually referenced by t(ctx, "...") in the
+	// templ; for docs-only metadata such as settings.X.Y.description that
+	// nothing renders inline, the corresponding key never enters panelKeys.
+	// Without this pass, contributors writing prose in en.json would see
+	// the key dropped silently from the rendered reference.
+	for _, acc := range accums {
+		for _, ctrlID := range acc.controlIDs {
+			for _, suffix := range metadataSuffixes {
+				metaKey := "settings." + acc.id + "." + ctrlID + suffix
+				if _, ok := allKeys[metaKey]; !ok {
+					continue
+				}
+				present := false
+				for _, existing := range acc.controlKeys[ctrlID] {
+					if existing == metaKey {
+						present = true
+						break
+					}
+				}
+				if !present {
+					acc.controlKeys[ctrlID] = append(acc.controlKeys[ctrlID], metaKey)
+				}
+			}
+		}
+	}
+
 	out := make([]docSection, 0, len(sectionOrder))
 	for _, secID := range sectionOrder {
 		acc := accums[seenSection[secID]]

@@ -20,9 +20,9 @@ Select the target platform to control NFO output and image naming conventions.
 
 Edit filenames for each image type. Changes are saved to the profile.
 
-- **NFO Output**
+- **NFO Output** -- Whether the active platform profile is configured to write NFO files. The profile editor controls the on/off state and the NFO format (Emby, Jellyfin, Kodi).
 {: #settings-general-active-profile-nfo-output }
-- **Save Filenames**
+- **Save Filenames** -- Save the filename overrides above to the active platform profile so future writes use them.
 {: #settings-general-active-profile-save-filenames }
 
 ### Use symlinks for duplicates  {#settings-general-symlinks}
@@ -55,11 +55,11 @@ When enabled, a Debug tab appears on artist detail pages for platform-connected 
 
 Manage cached images for artists without filesystem paths.
 
-- **Maximum size**
+- **Maximum size** -- Cap the total disk space the image cache may use. When the cache reaches this size, the oldest entries are evicted first. Pick from 256 MB, 512 MB, 1 GB, 2 GB, or Unlimited.
 {: #settings-general-image-cache-max-size }
-- **Unlimited**
+- **Unlimited** -- When the maximum size is set to Unlimited, Stillwater never evicts cached images automatically. Disk usage grows with each new image fetched.
 {: #settings-general-image-cache-unlimited }
-- **Clear Cache**
+- **Clear Cache** -- Remove every image currently held in the local cache. Cached images are re-fetched from providers the next time an artist screen is opened.
 {: #settings-general-image-cache-clear }
 
 ## Providers  {#tab-providers}
