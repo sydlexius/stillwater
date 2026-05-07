@@ -364,11 +364,11 @@ View application logs in real time with level filtering and search.
 Check for new Stillwater releases and apply binary updates.
 
 - **Update channel and schedule** {#settings-updates-updates-config} -- Control how the updater discovers and applies new releases.
-- **Updater enabled** {#settings-updates-updates-enabled} -- Top-level kill switch. When off, both the background loop and the Apply button are disabled.
-- **Release channel** {#settings-updates-updates-channel} -- Stable tracks only non-prerelease versions. Prerelease includes release candidates. Nightly tracks date-stamped builds from the default branch.
+- **Updater enabled** {#settings-updates-updates-enabled} -- Master toggle for the updater. When off, Stillwater stops checking for new releases and the Apply Update button is disabled.
+- **Release channel** {#settings-updates-updates-channel} -- Pick which kinds of releases to receive. Stable is the recommended default and only delivers fully tested versions. Prerelease also includes release candidates that are still being polished. Nightly delivers in-progress builds from active development; expect rough edges.
 - **Automatic update checks** {#settings-updates-updates-auto-check} -- Periodically check for new releases in the background at the configured interval.
-- **Automatically install updates** {#settings-updates-updates-auto-update} -- When enabled, the scheduler installs new releases automatically on non-Docker hosts. Docker installs ignore this toggle and rely on container orchestration.
+- **Automatically install updates** {#settings-updates-updates-auto-update} -- When on, Stillwater installs new releases automatically as they become available. This setting has no effect on Docker installs; Docker users update by pulling a new image and recreating the container.
 - **Last auto-applied** {#settings-updates-updates-last-auto-applied}
 - **Skipped versions** {#settings-updates-updates-skip-version-list-label}
-- **Check interval** {#settings-updates-updates-check-interval} -- How often the background loop polls GitHub for new releases. Minimum is 1 hour.
+- **Check interval** {#settings-updates-updates-check-interval} -- How often Stillwater checks GitHub for new releases. Minimum is once per hour.
 <!-- END GENERATED: settings-reference -->
