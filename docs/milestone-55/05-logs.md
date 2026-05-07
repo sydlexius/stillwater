@@ -2,7 +2,7 @@
 
 > Part of [Milestone 55 — v1.6.0 UX Refresh](../milestone-55.md).
 >
-> Prototype: [`screens/logs.html`](../../screens/logs.html).
+> Prototype: [`docs/prototypes/screens/logs.html`](../prototypes/screens/logs.html).
 >
 > Source-truth references: [`internal/logging/ringbuffer.go`](../../internal/logging/ringbuffer.go),
 > [`internal/logging/ringhandler.go`](../../internal/logging/ringhandler.go),
@@ -18,8 +18,8 @@
 **Proposed.** Promote Logs to a top-level screen (`/v2/logs`, with `g l` shortcut) and replace the static dump with a **live tail** backed by SSE. Specifically:
 
 - Stream new log lines into the bottom of the view as they're written, with auto-follow that pauses when the user scrolls up.
-- Per-line structured rendering: timestamp · level pill · scope chip · message · optional trailing meta (`artist:1234`, `rule:bio.length`, `duration:412ms`).
-- Click a `artist:NNNN` chip → open that artist detail in a new tab.
+- Per-line structured rendering: timestamp · level pill · scope chip · message · optional trailing meta (`artist_id:1234`, `rule:bio.length`, `duration:412ms`).
+- Click an `artist_id:NNNN` chip → open that artist detail in a new tab.
 - Filter facets: level, scope (e.g. `scanner`, `rules`, `provider.musicbrainz`), free-text. Filters apply both to backfill and to the live tail.
 - Search across the **on-disk** log buffer (the last ~100 MB; existing rotated-log pattern), not just what's currently in memory.
 
@@ -138,7 +138,7 @@ Existing:
 
 New (this milestone):
 
-- `GET /api/v1/logs/stream?level=&scope=&q=` (SSE) — live-tail. Filters are honoured server-side. Rate-limited to 200 lines/s with a `throttled` event when shedding.
+- `GET /api/v1/logs/stream?level=&scope=&q=` (SSE) — live-tail. Filters are honoured server-side. Rate-limited to 200 lines/s with a `logs.throttled` event when shedding.
 
 SSE channel (see [`07-backend.md`](07-backend.md)):
 
@@ -154,7 +154,7 @@ DB touchpoints: **none.** Logs are file-backed (rotated on disk).
 - [ ] Backfill loads the last 500 lines on open; live tail subscribes after.
 - [ ] Auto-follow pauses on scroll-up, resumes on `Jump to bottom`.
 - [ ] Per-line: timestamp, level pill, scope chip, message, trailing meta chips render correctly.
-- [ ] `artist:NNNN` and `rule:XXX` chips are clickable and open the right destinations.
+- [ ] `artist_id:NNNN` and `rule:XXX` chips are clickable and open the right destinations.
 - [ ] Filters AND-combine; URL syncs; backfill and live-tail both honour filters.
 - [ ] Throttle banner appears when `logs.throttled` SSE fires.
 - [ ] Wrap toggle, side-drawer expand for long lines, copy-on-click — all work.

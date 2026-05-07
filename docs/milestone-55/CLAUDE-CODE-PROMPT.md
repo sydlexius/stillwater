@@ -17,10 +17,10 @@ Implement Milestone 55 of `sydlexius/stillwater`: a UX refresh that ships under 
 
 **Working prototypes live in two places** and are the visual source-of-truth:
 
-- `screens/*.html` — full hi-fi prototypes, JSX-backed, drive against mocked data. Drive these in a browser to see the intended interaction model.
-- `docs/milestone-55/prototypes/standalone/*.html` — self-contained single-file bundles (offline) for issue attachments. Same designs as `screens/`, no JSX dependency.
+- `docs/prototypes/screens/*.html` — full hi-fi prototypes, JSX-backed (React 18 + Babel-standalone via CDN, no build step), drive against mocked data. Open in a browser to see the intended interaction model. The companion JSX/CSS bundle sits one level up at `docs/prototypes/`.
+- `docs/milestone-55/prototypes/standalone/*.html` — self-contained single-file bundles (offline) for issue attachments. Same designs as the hi-fi screens, no JSX dependency.
 
-A given issue may reference one, the other, or both. Where they disagree, **the spec doc wins**, then `screens/*.html`, then the standalone bundle.
+A given issue may reference one, the other, or both. Where they disagree, **the spec doc wins**, then `docs/prototypes/screens/*.html`, then the standalone bundle.
 
 ---
 

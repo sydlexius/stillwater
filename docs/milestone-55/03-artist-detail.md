@@ -2,7 +2,7 @@
 
 > Part of [Milestone 55 — v1.6.0 UX Refresh](../milestone-55.md). Read [`migration-plan.md`](migration-plan.md) §2.1 first — this is the heaviest issue in the milestone and the one that earlier prototypes got wrong.
 >
-> Prototype: [`screens/artist-detail.html`](../../screens/artist-detail.html) (working hi-fi, drives `artist-detail.jsx` + `artist-detail-data.jsx`).
+> Prototype: [`docs/prototypes/screens/artist-detail.html`](../prototypes/screens/artist-detail.html) (working hi-fi, drives `artist-detail.jsx` + `artist-detail-data.jsx` from `docs/prototypes/`).
 
 ## Today / Proposed / Why
 

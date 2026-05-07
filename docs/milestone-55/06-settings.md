@@ -10,9 +10,9 @@
 
 **Today.** Settings is 11 horizontal tabs above an infinite-scroll content pane: General, Providers, Connections, Libraries, Automation, Rules, Users, Auth, Maintenance, Logs, Updates. Tabs overflow on narrower viewports and hide behind a `…` chevron. There is no search; finding "biography minimum length" means knowing it lives under Rules, scrolling, and Ctrl+F-ing the page. (Note: in v2, **Logs is promoted out of Settings to a top-level screen** — see issue 05.)
 
-**Proposed.** A left rail with four collapsible groups (`Essentials`, `Data`, `Integrations`, `System`) holding 13 sections, plus a filter input at the top of the rail that hits both labels and *content keywords* (so typing "biography" highlights Providers, Languages, and Rules — not just sections with the word in the title). The right pane shows one section at a time and is deep-linkable via `#section-id`.
+**Proposed.** A left rail with four collapsible groups (`Essentials`, `Data`, `Integrations`, `System`) holding 16 sections, plus a filter input at the top of the rail that hits both labels and *content keywords* (so typing "biography" highlights Providers, Languages, and Rules — not just sections with the word in the title). The right pane shows one section at a time and is deep-linkable via `#section-id`.
 
-**Why.** 13 sections is too many for tabs and too few to justify a separate page per section. A rail with a filter is the standard pattern when the section count crosses ~8. The keyword index is what makes the filter useful — without it, search degenerates into "did I remember the section name."
+**Why.** 16 sections is too many for tabs and too few to justify a separate page per section. A rail with a filter is the standard pattern when the section count crosses ~8. The keyword index is what makes the filter useful — without it, search degenerates into "did I remember the section name."
 
 ## UX requirements
 
@@ -113,7 +113,7 @@ DB touchpoints: **none.** v1 already records `updated_by_user_id` and `updated_a
 ## Acceptance
 
 ### UI
-- [ ] All 13 sections render under the four groups, in the order listed above. Logs is **not** here.
+- [ ] All 16 sections render under the four groups, in the order listed above. Logs is **not** here.
 - [ ] Rail filter matches labels + keywords; matching keyword shown inline.
 - [ ] Active section deep-links via `#section-id` (`/v2/settings#providers`).
 - [ ] Auto-save fires on blur; toast appears with undo via the existing `showUndoToast` global.

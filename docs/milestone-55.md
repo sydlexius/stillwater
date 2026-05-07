@@ -4,7 +4,7 @@
 > **Owner:** @syd
 > **Implementer audience:** an LLM coding agent picking up issues from this milestone, with @syd reviewing.
 > **Source of truth for the v1 → v2 mapping:** [`migration-plan.md`](milestone-55/migration-plan.md), which is grounded in the actual `web/templates/*.templ` source. The per-screen issues defer to it where they conflict.
-> **Source of truth for designs:** the in-repo prototype under `screens/*.html` (proposed) and `screens/*-current.html` (today's UI, recreated for contrast).
+> **Source of truth for designs:** the in-repo prototypes under `docs/prototypes/screens/*.html` (proposed) and `docs/prototypes/screens/*-current.html` (today's UI, recreated for contrast). The companion JSX/CSS bundle sits at `docs/prototypes/`.
 
 ## Goals
 
@@ -29,9 +29,9 @@ These are explicitly **out of scope**, even though the prototype gestures at the
 |---|---|---|---|
 | 01 | Dashboard / Action queue | [`docs/milestone-55/01-dashboard.md`](milestone-55/01-dashboard.md) | [proposed](milestone-55/prototypes/standalone/dashboard.html) · [current](milestone-55/prototypes/standalone/dashboard-current.html) |
 | 02 | Artists list (table + grid) | [`docs/milestone-55/02-artists.md`](milestone-55/02-artists.md) | [proposed](milestone-55/prototypes/standalone/artists.html) |
-| 03 | Artist detail | [`docs/milestone-55/03-artist-detail.md`](milestone-55/03-artist-detail.md) | [hi-fi](../screens/artist-detail.html) |
+| 03 | Artist detail | [`docs/milestone-55/03-artist-detail.md`](milestone-55/03-artist-detail.md) | [hi-fi](prototypes/screens/artist-detail.html) |
 | 04 | Reports | [`docs/milestone-55/04-reports.md`](milestone-55/04-reports.md) | [proposed](milestone-55/prototypes/standalone/reports.html) |
-| 05 | Logs viewer | [`docs/milestone-55/05-logs.md`](milestone-55/05-logs.md) | [hi-fi](../screens/logs.html) |
+| 05 | Logs viewer | [`docs/milestone-55/05-logs.md`](milestone-55/05-logs.md) | [hi-fi](prototypes/screens/logs.html) |
 | 06 | Settings — sectioned rail | [`docs/milestone-55/06-settings.md`](milestone-55/06-settings.md) | [proposed](milestone-55/prototypes/standalone/settings.html) · [current](milestone-55/prototypes/standalone/settings-current.html) |
 | 07 | Cross-cutting backend (SSE channels, v2 chrome) | [`docs/milestone-55/07-backend.md`](milestone-55/07-backend.md) | — |
 

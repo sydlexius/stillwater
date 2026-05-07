@@ -60,7 +60,7 @@ A second tab at the top of the right pane: `Results | Matrix`. The matrix is the
 
 ### Edge cases
 
-- **Run in progress** — header shows a determinate progress bar; SSE-driven via the existing `report.run` channel (no new event names this milestone).
+- **Run in progress** — header shows a determinate progress bar; SSE-driven via the existing `report.run.progress` channel (no new event names this milestone).
 - **No violations at all** — Results tab shows the empty state; Matrix tab shows: `Everything passes the current rules.`
 - **User on `viewer` role** — same access as v1; this issue does not change roles.
 

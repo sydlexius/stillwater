@@ -1,0 +1,66 @@
+/* Stillwater UX Review — design tokens
+ * Extends the existing /web/static/css/design-tokens.css with refinements.
+ * All values use the existing slate/blue base so the proposal stays drop-in.
+ */
+
+:root {
+  /* Surfaces — same as upstream, but with a single neutral name per role */
+  --sw-bg-base: #0b1220;            /* deeper than 0f172a; lets cards breathe */
+  --sw-bg-raised: #111a2e;          /* card */
+  --sw-bg-elev: #1a253f;            /* hover / popover */
+  --sw-bg-sunken: #070c18;          /* well / input */
+  --sw-line: rgba(148, 163, 184, 0.14);
+  --sw-line-strong: rgba(148, 163, 184, 0.28);
+
+  /* Ink */
+  --sw-ink: #e6edf7;
+  --sw-ink-2: #b6c2d4;
+  --sw-ink-3: #7d8aa1;
+  --sw-ink-4: #54607a;
+
+  /* Accents — keep blue for nav, introduce warm amber for "do something" */
+  --sw-blue: #3b82f6;
+  --sw-blue-soft: rgba(59, 130, 246, 0.16);
+  --sw-blue-ink: #93c5fd;
+  --sw-warm: oklch(74% 0.15 60);    /* attention */
+  --sw-warm-soft: oklch(74% 0.15 60 / 0.16);
+
+  /* Severity (matches existing rules) */
+  --sw-err: #f87171;
+  --sw-err-soft: rgba(248, 113, 113, 0.14);
+  --sw-warn: #fbbf24;
+  --sw-warn-soft: rgba(251, 191, 36, 0.14);
+  --sw-info: #818cf8;
+  --sw-info-soft: rgba(129, 140, 248, 0.14);
+  --sw-ok: #4ade80;
+  --sw-ok-soft: rgba(74, 222, 128, 0.14);
+
+  /* Type */
+  --sw-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --sw-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii */
+  --sw-r-1: 6px;
+  --sw-r-2: 10px;
+  --sw-r-3: 14px;
+  --sw-r-4: 20px;
+
+  /* Shadows */
+  --sw-shadow-1: 0 1px 0 rgba(255,255,255,0.02) inset, 0 1px 2px rgba(0,0,0,0.25);
+  --sw-shadow-2: 0 8px 32px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.03) inset;
+}
+
+/* Density (overrides, applied at body via data-density) */
+[data-density="compact"] { --sw-row-y: 6px; --sw-card-px: 14px; --sw-card-py: 12px; --sw-fs: 13px; }
+[data-density="comfy"]   { --sw-row-y: 10px; --sw-card-px: 18px; --sw-card-py: 16px; --sw-fs: 14px; }
+[data-density="cozy"]    { --sw-row-y: 14px; --sw-card-px: 22px; --sw-card-py: 20px; --sw-fs: 15px; }
+
+/* Layout variants (per-screen, set as attribute on the artboard root) */
+[data-dash-layout="rail"] .sw-dash { grid-template-columns: minmax(0, 1fr) 360px; }
+[data-dash-layout="stacked"] .sw-dash { grid-template-columns: minmax(0, 1fr); }
+[data-dash-layout="split"] .sw-dash { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+
+[data-settings-layout="rail"] .sw-settings { grid-template-columns: 240px minmax(0, 1fr); }
+[data-settings-layout="palette"] .sw-settings { grid-template-columns: minmax(0, 1fr); }
+</content>
+</invoke>
