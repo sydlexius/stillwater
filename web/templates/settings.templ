@@ -192,6 +192,22 @@ func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
 	return result
 }
 
+// ruleCatalogueURL returns the absolute URL of a rule's section in the rules
+// catalogue page on the docs site. The MkDocs Material toc plugin slugifies
+// each H2 heading by lowercasing and replacing whitespace with hyphens; the
+// codegen rule names map to that same slug, so we reproduce the slugify rule
+// here rather than wire a separate manifest. Punctuation that mkdocs strips
+// (the slash in "Artist/ID mismatch" -> "artistid-mismatch") is handled
+// inline.
+func ruleCatalogueURL(name string) string {
+	slug := strings.ToLower(name)
+	// Drop characters mkdocs strips entirely.
+	slug = strings.NewReplacer("/", "", "(", "", ")", "", ",", "", ".", "", ":", "").Replace(slug)
+	// Collapse runs of whitespace to a single hyphen.
+	slug = strings.Join(strings.Fields(slug), "-")
+	return "https://sydlexius.github.io/stillwater/reference/rules-catalogue/#" + slug
+}
+
 // categoryLabel returns a human-readable label for a rule category.
 func categoryLabel(category string) string {
 	switch category {
@@ -5552,6 +5568,18 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-2">
 					<span class="font-medium text-sm">{ rl.Name }</span>
+					<a
+						href={ templ.SafeURL(ruleCatalogueURL(rl.Name)) }
+						target="_blank"
+						rel="noopener"
+						class="text-xs text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+						aria-label={ "Read more about " + rl.Name + " in the rules catalogue" }
+						title="Open this rule's catalogue entry"
+					>
+						<svg class="h-3.5 w-3.5 inline-block" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path>
+						</svg>
+					</a>
 					@severityBadge(rl.Config.Severity)
 					if fsUnavailable {
 						<span
