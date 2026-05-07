@@ -369,6 +369,12 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 	if a.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
 		t.Errorf("MusicBrainzID = %q, want expected MBID", a.MusicBrainzID)
 	}
+	// M:N membership: populate switched from a library-scoped lookup to
+	// an unscoped GetByName, so this assertion is what now guarantees the
+	// artist_libraries join row was actually inserted alongside the
+	// artists row. A regression that creates only the artist would still
+	// satisfy GetByName above.
+	assertArtistInLibrary(t, r, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
@@ -438,6 +444,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 	if a.Formed != "1965-11-21T00:00:00.0000000Z" {
 		t.Errorf("Formed = %q, want 1965 date", a.Formed)
 	}
+	assertArtistInLibrary(t, r, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
@@ -508,6 +515,28 @@ func createTestJPEGForHandler(t *testing.T) []byte {
 		t.Fatalf("encoding test jpeg: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// assertArtistInLibrary fails the test unless the artist holds an
+// artist_libraries membership row for the given library. Populate/scan
+// happy-path tests now look up the artist via the unscoped GetByName /
+// GetByMBID path, so this helper is what guarantees the M:N membership
+// was actually inserted -- not just the artists row. A regression that
+// drops the membership insert would still satisfy the unscoped lookup
+// but fail here.
+func assertArtistInLibrary(t *testing.T, r *Router, ctx context.Context, artistID, libraryID string) {
+	t.Helper()
+	memberships, err := r.artistService.LibrariesForArtist(ctx, artistID)
+	if err != nil {
+		t.Fatalf("LibrariesForArtist(%s): %v", artistID, err)
+	}
+	for _, m := range memberships {
+		if m.LibraryID == libraryID {
+			return
+		}
+	}
+	t.Errorf("artist %s missing artist_libraries membership for library %s; got %+v",
+		artistID, libraryID, memberships)
 }
 
 func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
@@ -609,6 +638,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
@@ -771,6 +801,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	if !found {
 		t.Errorf("expected image in cache dir %s, got: %v", cacheDir, entries)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
@@ -872,6 +903,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
@@ -984,6 +1016,10 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	// Pre-existing artist was created with this library; membership must
+	// still be present after populate's skip path. A regression that
+	// dropped membership on the skip code-path would fail here.
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestValidatedArtistPath(t *testing.T) {
@@ -1090,6 +1126,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 	if a.Path != "" {
 		t.Errorf("artist path = %q, want empty (pathless library should not store platform path)", a.Path)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
@@ -1153,6 +1190,7 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 	if a.Path != artistDir {
 		t.Errorf("artist path = %q, want %q", a.Path, artistDir)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.T) {
@@ -1209,6 +1247,7 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 	if a.Path != "" {
 		t.Errorf("artist path = %q, want empty (path outside library root should be rejected)", a.Path)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
@@ -1284,6 +1323,9 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 	if a.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
 		t.Errorf("MusicBrainzID = %q, want backfilled MBID", a.MusicBrainzID)
 	}
+	// MBID-backfill code path is an UPDATE, not a CREATE; the membership
+	// recorded at pre-create time must still be present afterwards.
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
@@ -1537,6 +1579,7 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
@@ -1710,6 +1753,7 @@ func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_NoBackdropsWhenTagsEmpty(t *testing.T) {
@@ -2114,6 +2158,7 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestImportLibraries_AutoPopulate(t *testing.T) {

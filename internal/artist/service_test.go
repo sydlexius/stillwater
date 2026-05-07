@@ -581,7 +581,11 @@ func TestSearch_HydratesPrimaryLibrary(t *testing.T) {
 }
 
 // TestSearchWithAliases_HydratesPrimaryLibrary mirrors TestSearch_HydratesPrimaryLibrary
-// for the alias-aware search path.
+// for the alias-aware search path. The query token MUST be unique to the
+// alias row (not present in any artists.name) so the test exercises the
+// alias-resolution code path, not the plain name-search fallback. Using
+// a name-matching query like "Aliased" would still pass even if
+// SearchWithAliases regressed to a plain name search.
 func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -590,35 +594,42 @@ func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
 
 	seedLibraries(t, db, "lib-alias-a", "lib-alias-b")
 
-	a1 := testArtist("Aliased One", "/music/Aliased One")
+	a1 := testArtist("Radiohead", "/music/Radiohead")
 	a1.LibraryID = "lib-alias-a"
 	if err := svc.Create(ctx, a1); err != nil {
 		t.Fatalf("Create a1: %v", err)
 	}
 
-	a2 := testArtist("Aliased Two", "/music/Aliased Two")
+	a2 := testArtist("The Sugarcubes", "/music/The Sugarcubes")
 	a2.LibraryID = "lib-alias-b"
 	if err := svc.Create(ctx, a2); err != nil {
 		t.Fatalf("Create a2: %v", err)
 	}
 
-	results, err := svc.SearchWithAliases(ctx, "Aliased")
+	// Attach a unique alias token that does NOT appear in either
+	// artists.name row. Searching for this token forces the alias join
+	// path; a regression to plain name search would return zero rows.
+	const aliasToken = "OnlyAliasToken_xyz"
+	if _, err := svc.AddAlias(ctx, a1.ID, aliasToken, "manual"); err != nil {
+		t.Fatalf("AddAlias: %v", err)
+	}
+
+	results, err := svc.SearchWithAliases(ctx, aliasToken)
 	if err != nil {
 		t.Fatalf("SearchWithAliases: %v", err)
 	}
-	if len(results) != 2 {
-		t.Fatalf("search results = %d, want 2", len(results))
+	if len(results) != 1 {
+		t.Fatalf("search results = %d, want 1 (alias-only token must resolve to exactly one artist)", len(results))
 	}
-	want := map[string]string{
-		a1.ID: "lib-alias-a",
-		a2.ID: "lib-alias-b",
+	if results[0].ID != a1.ID {
+		t.Errorf("result ID = %q, want %q (alias must resolve to its owning artist)", results[0].ID, a1.ID)
 	}
-	for _, r := range results {
-		if got, ok := want[r.ID]; !ok {
-			t.Errorf("unexpected artist ID in results: %s", r.ID)
-		} else if r.LibraryID != got {
-			t.Errorf("SearchWithAliases result %q LibraryID = %q, want %q", r.Name, r.LibraryID, got)
-		}
+	// Pin the primary-library hydration on the alias-resolved row: this
+	// is the original assertion the test was added to cover, and it must
+	// still hold once the search reaches the artist via the alias join.
+	if results[0].LibraryID != "lib-alias-a" {
+		t.Errorf("SearchWithAliases result %q LibraryID = %q, want lib-alias-a (alias path must hydrate primary library)",
+			results[0].Name, results[0].LibraryID)
 	}
 }
 

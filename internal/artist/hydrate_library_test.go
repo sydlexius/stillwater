@@ -84,6 +84,57 @@ func TestHydratePrimaryLibrary_PicksOldestMembership(t *testing.T) {
 	}
 }
 
+// TestHydratePrimaryLibrary_TieBreaksOnLibraryID pins the documented
+// secondary ORDER BY library_id tie-breaker. Two memberships are seeded
+// with timestamps that normalize under datetime() to the IDENTICAL
+// instant; without the secondary library_id ASC sort, SQLite is free to
+// return either row, and the previous test would still pass if the
+// ORDER BY clause dropped its second key.
+func TestHydratePrimaryLibrary_TieBreaksOnLibraryID(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Library IDs chosen so lexicographic ordering is unambiguous:
+	// lib-aaa-tie sorts before lib-zzz-tie.
+	seedLibraries(t, db, "lib-aaa-tie", "lib-zzz-tie")
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		 VALUES ('a-tie', 'Tie', 'Tie', '/music/Tie', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+
+	// Both timestamps normalize to the same datetime() instant
+	// ("2026-02-01 12:00:00"), so the primary ORDER BY key is a tie.
+	// Insert lib-zzz-tie FIRST so neither natural insertion order nor
+	// reverse insertion order accidentally selects the documented winner.
+	rows := []struct {
+		libID, addedAt string
+	}{
+		{"lib-zzz-tie", "2026-02-01T12:00:00Z"}, // RFC3339 form
+		{"lib-aaa-tie", "2026-02-01 12:00:00"},  // SQLite form -> same instant
+	}
+	for _, r := range rows {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+			 VALUES ('a-tie', ?, 'manual', ?)`,
+			r.libID, r.addedAt); err != nil {
+			t.Fatalf("seeding membership %s: %v", r.libID, err)
+		}
+	}
+
+	a := &Artist{ID: "a-tie"}
+	if err := svc.hydratePrimaryLibrary(ctx, a); err != nil {
+		t.Fatalf("hydratePrimaryLibrary: %v", err)
+	}
+	if a.LibraryID != "lib-aaa-tie" {
+		t.Errorf("LibraryID = %q, want lib-aaa-tie (secondary ORDER BY library_id ASC must break datetime() ties)",
+			a.LibraryID)
+	}
+}
+
 // TestHydratePrimaryLibrariesBatch covers the batch hydration path: a
 // mix of artists with zero, one, and many memberships. Each artist's
 // LibraryID must reflect its own oldest membership independently.
@@ -93,13 +144,16 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	seedLibraries(t, db, "lib-a", "lib-b", "lib-c")
+	seedLibraries(t, db, "lib-a", "lib-b", "lib-c", "lib-aaa-tie", "lib-zzz-tie")
 
-	// Three artists:
+	// Four artists:
 	//   a-1: single membership in lib-a.
 	//   a-2: two memberships, lib-b should win (older).
 	//   a-3: zero memberships (orphan).
-	for _, id := range []string{"a-1", "a-2", "a-3"} {
+	//   a-4: two memberships whose timestamps normalize to the SAME
+	//        datetime() instant; lib-aaa-tie must win on the secondary
+	//        ORDER BY library_id ASC tie-breaker.
+	for _, id := range []string{"a-1", "a-2", "a-3", "a-4"} {
 		if _, err := db.ExecContext(ctx,
 			`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
@@ -113,6 +167,11 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 		// same datetime() normalization concern.
 		{"a-2", "lib-c", "2026-03-01T00:00:00Z"}, // RFC3339, later
 		{"a-2", "lib-b", "2026-01-01 00:00:00"},  // SQLite, earlier -> wins
+		// a-4 tie pair: both rows normalize to "2026-02-01 12:00:00"
+		// under SQLite's datetime(). Insert lib-zzz-tie first so neither
+		// insertion order accidentally selects the documented winner.
+		{"a-4", "lib-zzz-tie", "2026-02-01T12:00:00Z"},
+		{"a-4", "lib-aaa-tie", "2026-02-01 12:00:00"},
 	}
 	for _, m := range memberships {
 		if _, err := db.ExecContext(ctx,
@@ -127,6 +186,7 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 		{ID: "a-1"},
 		{ID: "a-2"},
 		{ID: "a-3", LibraryID: "stale-caller-value"},
+		{ID: "a-4"},
 	}
 	if err := svc.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
 		t.Fatalf("hydratePrimaryLibrariesBatch: %v", err)
@@ -142,6 +202,12 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 	if artists[2].LibraryID != "" {
 		t.Errorf("a-3 LibraryID = %q, want \"\" (zero memberships must clear LibraryID per OpenAPI contract)",
 			artists[2].LibraryID)
+	}
+	// a-4 pins the secondary ORDER BY library_id ASC tie-breaker for the
+	// batch path: identical datetime() instant, lower library_id wins.
+	if artists[3].LibraryID != "lib-aaa-tie" {
+		t.Errorf("a-4 LibraryID = %q, want lib-aaa-tie (batch path must apply secondary library_id ASC tie-breaker)",
+			artists[3].LibraryID)
 	}
 }
 
