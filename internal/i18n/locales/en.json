@@ -1279,6 +1279,7 @@
   "settings.libraries.add": "Add Library",
   "settings.libraries.connection_badge": "Connection",
   "settings.libraries.description": "Manage your music library paths. Each library maps to a directory containing artist folders.",
+  "settings.libraries.help": "A library is a directory full of artist folders that Stillwater scans, watches, and writes NFO/image files into. Add one library per top-level music root. Per-library settings control how Stillwater detects new files and whether NFO writes are locked for that library.",
   "settings.libraries.empty": "No libraries configured.",
   "settings.libraries.fs_both": "Watch + Poll",
   "settings.libraries.fs_mode_title": "Filesystem monitoring mode",
