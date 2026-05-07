@@ -8736,7 +8736,10 @@ paths:
       summary: Get update configuration
       description: >-
         Returns the current updater configuration: channel, enabled,
-        auto_check, and check_interval_hours.
+        auto_check, auto_update, and check_interval_hours. The
+        `auto_update` field defaults to false and is ignored on Docker
+        hosts (the scheduler no-ops on Docker; orchestration handles
+        container image refresh).
       operationId: getUpdateConfig
       responses:
         "200":
@@ -8769,8 +8772,27 @@ paths:
       description: |
         Persists the updater configuration: channel (`stable`, `prerelease`, or
         `nightly`), the top-level `enabled` switch, the `auto_check` toggle,
-        and the `check_interval_hours` cadence used by the background
-        auto-check loop. Config is stored in the settings key-value table.
+        the `auto_update` toggle, and the `check_interval_hours` cadence used
+        by the background auto-check loop. Config is stored in the settings
+        key-value table.
+
+        `auto_update` defaults to false and is ignored on Docker hosts (the
+        scheduler no-ops on Docker; orchestration handles container image
+        refresh). When true alongside `enabled` and `auto_check`, the
+        scheduler calls Apply automatically after a successful check finds a
+        newer release that is not on the skip list.
+
+        Example PUT body:
+
+        ```json
+        {
+          "channel": "stable",
+          "enabled": true,
+          "auto_check": true,
+          "auto_update": false,
+          "check_interval_hours": 24
+        }
+        ```
       operationId: setUpdateConfig
       requestBody:
         required: true
@@ -8867,6 +8889,7 @@ paths:
               properties:
                 version:
                   type: string
+                  minLength: 1
                   description: Release tag to skip (e.g. "v1.2.3" or "nightly-20260101").
       responses:
         "200":

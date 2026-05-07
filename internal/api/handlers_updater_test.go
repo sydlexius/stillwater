@@ -1265,3 +1265,85 @@ func TestHandleGetUpdateSkips_ReturnsList(t *testing.T) {
 		t.Errorf("skipped_versions = %v, want [v1.2.3]", resp.SkippedVersions)
 	}
 }
+
+// TestHandleGetUpdateSkips_ListError verifies a repository error from
+// ListSkippedVersions surfaces as 500. We force the error by closing the
+// shared *sql.DB so the next QueryContext returns sql.ErrConnDone.
+func TestHandleGetUpdateSkips_ListError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/updates/skips", nil)
+	w := httptest.NewRecorder()
+	r.handleGetUpdateSkips(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandlePostUpdateSkips_AddError verifies that when AddSkippedVersion
+// fails (forced by closing the DB) the handler returns 500.
+func TestHandlePostUpdateSkips_AddError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/updates/skips",
+		strings.NewReader(`{"version":"v9.9.9"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handlePostUpdateSkips(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDeleteUpdateSkip_RemoveError verifies that a repository
+// failure during RemoveSkippedVersion surfaces as 500.
+func TestHandleDeleteUpdateSkip_RemoveError(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/updates/skips/v1.0.0", nil)
+	req.SetPathValue("version", "v1.0.0")
+	w := httptest.NewRecorder()
+	r.handleDeleteUpdateSkip(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestBuildUpdatesTabData_LastAutoApplied verifies that a non-zero
+// LastAutoApplied timestamp from the underlying config is rendered into
+// the data struct as an RFC3339 string, exercising the formatter branch
+// in buildUpdatesTabData.
+func TestBuildUpdatesTabData_LastAutoApplied(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithUpdater(t)
+	ctx := context.Background()
+
+	// markAutoApplied persists both the timestamp and the version in one
+	// transaction; using it here mirrors the production write path that a
+	// successful auto-apply would take.
+	if err := r.updaterService.MarkAutoAppliedForTest(ctx, "v1.2.3"); err != nil {
+		t.Fatalf("MarkAutoAppliedForTest: %v", err)
+	}
+
+	data := r.buildUpdatesTabData(ctx)
+	if data.LoadFailed {
+		t.Fatalf("LoadFailed = true; want false (body: %+v)", data)
+	}
+	if data.LastAutoAppliedVersion != "v1.2.3" {
+		t.Errorf("LastAutoAppliedVersion = %q, want v1.2.3", data.LastAutoAppliedVersion)
+	}
+	if data.LastAutoApplied == "" {
+		t.Error("LastAutoApplied is empty; expected RFC3339-formatted string")
+	} else if _, err := time.Parse(time.RFC3339, data.LastAutoApplied); err != nil {
+		t.Errorf("LastAutoApplied = %q, not RFC3339: %v", data.LastAutoApplied, err)
+	}
+}

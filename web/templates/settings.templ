@@ -7169,10 +7169,32 @@ templ updatesTabScript() {
 							modal.classList.remove('hidden');
 							var accept = document.getElementById('updates-auto-update-confirm-accept');
 							var cancel = document.getElementById('updates-auto-update-confirm-cancel');
+							// Focus management: stash the element that had focus
+							// before the modal opened (typically the checkbox
+							// itself) so we can restore focus on every close path.
+							// Without this, focus stays on the checkbox while the
+							// modal is visible and a stray Space key re-toggles
+							// the checkbox + re-fires saveUpdaterConfig().
+							var previouslyFocused = document.activeElement;
+							var onKeydown = function(ev) {
+								if (ev.key === 'Escape' || ev.key === 'Esc') {
+									ev.preventDefault();
+									// Treat Escape as cancel: same path as the
+									// cancel button (revert the checkbox + close).
+									if (cancel) cancel.onclick && cancel.onclick();
+								}
+							};
 							var cleanup = function() {
 								modal.classList.add('hidden');
 								if (accept) accept.onclick = null;
 								if (cancel) cancel.onclick = null;
+								document.removeEventListener('keydown', onKeydown);
+								// Restore focus to the originally focused element
+								// (typically the checkbox) so keyboard users land
+								// back where they started rather than at <body>.
+								if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+									try { previouslyFocused.focus(); } catch (e) { /* ignore */ }
+								}
 							};
 							if (accept) {
 								accept.onclick = function() {
@@ -7187,6 +7209,12 @@ templ updatesTabScript() {
 									autoUpdateEl.checked = false;
 									cleanup();
 								};
+							}
+							document.addEventListener('keydown', onKeydown);
+							// Move focus into the modal so Space/Enter act on the
+							// accept button rather than the underlying checkbox.
+							if (accept && typeof accept.focus === 'function') {
+								try { accept.focus(); } catch (e) { /* ignore */ }
 							}
 							return;
 						}

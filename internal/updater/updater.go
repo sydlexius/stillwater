@@ -334,6 +334,15 @@ func (s *Service) MarkRestartRequiredForTest(version string) {
 	s.markRestartRequired(version)
 }
 
+// MarkAutoAppliedForTest exposes the internal markAutoApplied write so
+// cross-package tests (e.g. internal/api) can seed a "last auto-applied"
+// settings row without driving the full Apply pipeline. Production code
+// does NOT use this; the scheduler's applyAuto branch is the only caller
+// of markAutoApplied in the running service.
+func (s *Service) MarkAutoAppliedForTest(ctx context.Context, version string) error {
+	return s.markAutoApplied(ctx, version)
+}
+
 // detectDocker returns true when the process appears to be running inside a
 // Docker (or compatible) container. Minimal base images (distroless,
 // chainguard) may omit /.dockerenv and the conventional env vars, so we fall
@@ -1390,7 +1399,11 @@ func (s *Service) StartScheduler(ctx context.Context) {
 // Failures are logged but not fatal: the scheduler keeps running and
 // will retry on the next Check tick.
 func (s *Service) maybeAutoApply(_ context.Context, cfg Config, result CheckResult) {
-	if !cfg.AutoUpdate {
+	// Re-check the full enable chain. The scheduler reloads cfg right
+	// before calling us, but an admin may toggle Enabled or AutoCheck
+	// off while the network Check is in flight. Bailing on any of the
+	// three closes the disable-mid-flight race.
+	if !cfg.Enabled || !cfg.AutoCheck || !cfg.AutoUpdate {
 		return
 	}
 	if !result.UpdateAvailable || result.Latest == "" {

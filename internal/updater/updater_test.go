@@ -1597,6 +1597,12 @@ func TestGetConfigRecoversFromCorruptSettings(t *testing.T) {
 		{SettingEnabled, "not-a-bool"},
 		{SettingAutoCheck, "also-bad"},
 		{SettingCheckIntervalHours, "zero-ish"},
+		{SettingAutoUpdate, "definitely-not"},
+		{SettingLastAutoApplied, "not-a-timestamp"},
+		// Non-empty-but-invalid JSON drives the json.Unmarshal failure
+		// path; an empty string would skip the parse entirely and miss
+		// the warn branch.
+		{SettingSkippedVersions, "{not json"},
 	} {
 		if _, err := svc.db.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)`,
@@ -1618,6 +1624,15 @@ func TestGetConfigRecoversFromCorruptSettings(t *testing.T) {
 	if cfg.CheckIntervalHours != DefaultCheckIntervalHours {
 		t.Errorf("CheckIntervalHours = %d, want default %d",
 			cfg.CheckIntervalHours, DefaultCheckIntervalHours)
+	}
+	if cfg.AutoUpdate {
+		t.Error("AutoUpdate = true, want default false on malformed value")
+	}
+	if !cfg.LastAutoApplied.IsZero() {
+		t.Errorf("LastAutoApplied = %v, want zero on malformed RFC3339", cfg.LastAutoApplied)
+	}
+	if len(cfg.SkippedVersions) != 0 {
+		t.Errorf("SkippedVersions = %v, want empty on malformed JSON", cfg.SkippedVersions)
 	}
 }
 
@@ -1946,12 +1961,46 @@ func TestMaybeAutoApplyDisabledIsNoOp(t *testing.T) {
 	svc.SetDockerForTest(false)
 	ctx := context.Background()
 
-	cfg := Config{AutoUpdate: false}
+	cfg := Config{Enabled: true, AutoCheck: true, AutoUpdate: false}
 	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
 	svc.maybeAutoApply(ctx, cfg, result)
 
 	if got := svc.applyRunning.Load(); got != 0 {
 		t.Errorf("applyRunning = %d when AutoUpdate=false; want 0", got)
+	}
+}
+
+// TestMaybeAutoApplyEnabledFalseIsNoOp covers the disable-mid-flight race:
+// admin toggles the master Enabled switch off while a Check is in flight,
+// and the reloaded cfg now has Enabled=false even though AutoUpdate is set.
+func TestMaybeAutoApplyEnabledFalseIsNoOp(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false)
+	ctx := context.Background()
+
+	cfg := Config{Enabled: false, AutoCheck: true, AutoUpdate: true}
+	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
+	svc.maybeAutoApply(ctx, cfg, result)
+
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d when Enabled=false; want 0", got)
+	}
+}
+
+// TestMaybeAutoApplyAutoCheckFalseIsNoOp covers the same race for the
+// AutoCheck toggle: disabling auto-checks mid-flight must also bail
+// before Apply kicks off.
+func TestMaybeAutoApplyAutoCheckFalseIsNoOp(t *testing.T) {
+	svc := buildTestService(t)
+	svc.SetDockerForTest(false)
+	ctx := context.Background()
+
+	cfg := Config{Enabled: true, AutoCheck: false, AutoUpdate: true}
+	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
+	svc.maybeAutoApply(ctx, cfg, result)
+
+	if got := svc.applyRunning.Load(); got != 0 {
+		t.Errorf("applyRunning = %d when AutoCheck=false; want 0", got)
 	}
 }
 
