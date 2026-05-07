@@ -2568,6 +2568,81 @@ func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
 	}
 }
 
+// TestResolveAndBackfillPlatformID_StopsOnScopedLookupError verifies that a
+// real DB/load failure inside the library-scoped lookup short-circuits the
+// resolver: the unscoped fallback must NOT run, no platform-id mapping is
+// stored, and the function returns nil. This guards the safety contract that
+// callers rely on during the M:N transitional state -- a transient scoped
+// query error must never silently fall back to an unscoped match that could
+// attach the platform id to a sibling-library artist.
+//
+// The test forces the scoped query to fail by dropping the artist_libraries
+// table after seeding everything else. The unscoped path (GetByMBID against
+// the artists + artist_provider_ids tables) remains functional, so if the
+// short-circuit ever regresses, the unscoped match would resolve and
+// SetPlatformID would land a mapping -- the assertion below would catch it.
+func TestResolveAndBackfillPlatformID_StopsOnScopedLookupError(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// Seed an artist + MBID mapping that the UNSCOPED lookup would resolve.
+	// If short-circuit breaks, this artist gets a platform mapping and the
+	// final assertion fails.
+	const mbid = "11111111-1111-1111-1111-111111111111"
+	unscopedArtist := &artist.Artist{
+		Name:          "Backstop Artist",
+		SortName:      "Backstop Artist",
+		MusicBrainzID: mbid,
+		Path:          "/music/backstop",
+	}
+	if err := router.artistService.Create(ctx, unscopedArtist); err != nil {
+		t.Fatalf("creating unscoped artist: %v", err)
+	}
+
+	// Force the scoped query to fail without breaking the unscoped path.
+	// lookupByMBIDInLibrary joins artist_libraries; dropping it makes that
+	// query error. GetByMBID (used by the unscoped fallback) hits artists +
+	// artist_provider_ids only and is unaffected.
+	if _, err := router.db.ExecContext(ctx, `DROP TABLE artist_libraries`); err != nil {
+		t.Fatalf("dropping artist_libraries: %v", err)
+	}
+
+	a := router.resolveAndBackfillPlatformID(ctx,
+		mbid, "Backstop Artist",
+		"conn-emby-1", "emby-backstop-001", embyLib, nil)
+	if a != nil {
+		t.Errorf("expected nil, got %+v", a)
+	}
+
+	// If the unscoped fallback ran, SetPlatformID would have stored a row
+	// mapping unscopedArtist.ID -> emby-backstop-001 for conn-emby-1. Read
+	// the mapping directly via the DB so we do not depend on service-layer
+	// queries that also touch artist_libraries (which we just dropped).
+	var count int
+	if err := router.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = ? AND connection_id = ?`,
+		unscopedArtist.ID, "conn-emby-1").Scan(&count); err != nil {
+		t.Fatalf("counting platform ids: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 platform-id rows after short-circuit, got %d", count)
+	}
+}
+
 // TestFindArtistInLibrary_HitByMBID covers the success path of
 // lookupByMBIDInLibrary: an artist with an MBID provider row AND a membership
 // in the target library is returned. Pins the M:N membership-join behavior

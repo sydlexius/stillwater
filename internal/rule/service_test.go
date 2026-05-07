@@ -1447,19 +1447,23 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 		t.Fatalf("inserting artist: %v", err)
 	}
 
-	// lib-old joined first chronologically, but stored in legacy format.
-	// lib-new joined later, stored in RFC3339. Lexicographic compare of
-	// "2024-06-01 10:00:00" vs "2024-01-15T10:00:00Z" places the RFC3339 row
-	// FIRST (the 'T' character sorts after a space), which would incorrectly
-	// pick lib-new as primary if datetime() normalization is missing.
+	// Both rows are timestamped on the same calendar date so that month/day
+	// differences do not mask the bug. lib-old uses legacy format with a space
+	// separator at 23:00 (chronologically LATER on that day); lib-new uses
+	// RFC3339 with a 'T' separator at 00:30 (chronologically EARLIER).
+	// Under raw TEXT comparison, " " (0x20) sorts before "T" (0x54), so
+	// lib-old's "2024-01-15 23:00:00" lexicographically PRECEDES lib-new's
+	// "2024-01-15T00:30:00Z" -- an unwrapped ORDER BY added_at would pick
+	// lib-old as primary, which is wrong. Only datetime() normalization
+	// recovers the true chronological order and picks lib-new.
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
-		"artist-mixed", "lib-old", "2024-06-01 10:00:00"); err != nil {
+		"artist-mixed", "lib-old", "2024-01-15 23:00:00"); err != nil {
 		t.Fatalf("insert lib-old membership: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
-		"artist-mixed", "lib-new", "2024-01-15T10:00:00Z"); err != nil {
+		"artist-mixed", "lib-new", "2024-01-15T00:30:00Z"); err != nil {
 		t.Fatalf("insert lib-new membership: %v", err)
 	}
 

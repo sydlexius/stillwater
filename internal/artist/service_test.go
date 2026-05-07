@@ -532,6 +532,92 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// TestSearch_HydratesPrimaryLibrary asserts that Search populates LibraryID
+// from the artist_libraries membership table. Regression coverage for the
+// gap where Search/SearchWithAliases skipped hydratePrimaryLibrariesBatch
+// after the artists.library_id column was removed.
+func TestSearch_HydratesPrimaryLibrary(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-search-a", "lib-search-b")
+
+	a1 := testArtist("Searchable One", "/music/Searchable One")
+	a1.LibraryID = "lib-search-a"
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+
+	a2 := testArtist("Searchable Two", "/music/Searchable Two")
+	a2.LibraryID = "lib-search-b"
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	results, err := svc.Search(ctx, "Searchable")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("search results = %d, want 2", len(results))
+	}
+	want := map[string]string{
+		a1.ID: "lib-search-a",
+		a2.ID: "lib-search-b",
+	}
+	for _, r := range results {
+		if got, ok := want[r.ID]; !ok {
+			t.Errorf("unexpected artist ID in results: %s", r.ID)
+		} else if r.LibraryID != got {
+			t.Errorf("Search result %q LibraryID = %q, want %q", r.Name, r.LibraryID, got)
+		}
+	}
+}
+
+// TestSearchWithAliases_HydratesPrimaryLibrary mirrors TestSearch_HydratesPrimaryLibrary
+// for the alias-aware search path.
+func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-alias-a", "lib-alias-b")
+
+	a1 := testArtist("Aliased One", "/music/Aliased One")
+	a1.LibraryID = "lib-alias-a"
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+
+	a2 := testArtist("Aliased Two", "/music/Aliased Two")
+	a2.LibraryID = "lib-alias-b"
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	results, err := svc.SearchWithAliases(ctx, "Aliased")
+	if err != nil {
+		t.Fatalf("SearchWithAliases: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("search results = %d, want 2", len(results))
+	}
+	want := map[string]string{
+		a1.ID: "lib-alias-a",
+		a2.ID: "lib-alias-b",
+	}
+	for _, r := range results {
+		if got, ok := want[r.ID]; !ok {
+			t.Errorf("unexpected artist ID in results: %s", r.ID)
+		} else if r.LibraryID != got {
+			t.Errorf("SearchWithAliases result %q LibraryID = %q, want %q", r.Name, r.LibraryID, got)
+		}
+	}
+}
+
 func TestBandMembers_CRUD(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)

@@ -1157,6 +1157,9 @@ func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
+		return nil, err
+	}
 	return artists, nil
 }
 
@@ -1317,6 +1320,9 @@ func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist
 		return nil, err
 	}
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
 	return artists, nil

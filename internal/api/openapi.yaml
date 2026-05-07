@@ -1231,7 +1231,8 @@ components:
         library_id:
           type: string
           description: ID of the artist's primary library, derived from the
-            artist_libraries membership table (oldest membership wins).
+            artist_libraries membership table (oldest membership wins;
+            ties are resolved by lowest library_id).
             Empty when the artist has no library memberships.
         nfo_exists:
           type: boolean
