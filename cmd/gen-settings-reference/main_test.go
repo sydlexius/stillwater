@@ -167,7 +167,10 @@ func TestScanPanels_SubTemplateAttribution(t *testing.T) {
 }
 
 // TestRenderDocument_BulletShape spot-checks the rendered Markdown structure:
-// tabs are H2, sections are H3, controls are bullet items with inline anchors.
+// tabs are H2, sections are H3, controls are bullet items whose <li> id is
+// attached via an attr_list block-form line ({: #anchor }) on the line below
+// the bullet. The block form is required because the inline form (- **x**
+// {#a}) leaks raw text on bullet items rather than producing <li id="a">.
 func TestRenderDocument_BulletShape(t *testing.T) {
 	doc := document{Tabs: []docTab{{
 		ID:    "general",
@@ -188,8 +191,8 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 		"## General  {#tab-general}",
 		"### Platform profile  {#settings-general-platform-profile}",
 		"Pick the active platform profile.",
-		"- **Preset** {#settings-general-platform-profile-preset} -- Built-in presets.",
-		"- **Custom filenames** {#settings-general-platform-profile-custom-filenames}",
+		"- **Preset** -- Built-in presets.\n{: #settings-general-platform-profile-preset }",
+		"- **Custom filenames**\n{: #settings-general-platform-profile-custom-filenames }",
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {

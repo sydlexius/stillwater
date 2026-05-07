@@ -18,9 +18,9 @@ import templruntime "github.com/a-h/templ/runtime"
 //   - text:      1-3 sentences of help text shown in the popover
 //   - docAnchor: optional anchor slug on the settings reference page. When
 //     non-empty, a "Read more" link appears in the popover targeting
-//     /docs/reference/settings-by-tab/#<docAnchor>. The slug must
-//     exist in docs/site/src/reference/_settings-anchors.txt; the
-//     contract is enforced by TestContextHelpAnchors.
+//     https://sydlexius.github.io/stillwater/reference/settings-by-tab/#<docAnchor>.
+//     The slug must exist in docs/site/src/reference/_settings-anchors.txt;
+//     the contract is enforced by TestContextHelpAnchors.
 func ContextHelp(id, label, text, docAnchor string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -117,9 +117,9 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 templ.SafeURL
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/docs/reference/settings-by-tab/#" + docAnchor))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("https://sydlexius.github.io/stillwater/reference/settings-by-tab/#" + docAnchor))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 36, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 36, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {

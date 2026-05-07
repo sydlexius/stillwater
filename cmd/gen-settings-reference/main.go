@@ -891,13 +891,22 @@ func renderSection(b *strings.Builder, tabID string, sec docSection) {
 	b.WriteString("\n")
 }
 
-// renderControl emits a single bullet-list line for a control. The MkDocs
-// Material attr_list extension binds the {#anchor} suffix to the bullet so
-// `#anchor` URL fragments scroll to it. Description, visibility, and help
-// fold into the bullet's prose with simple inline markers; if the control has
-// none of those, only the label and anchor render.
+// renderControl emits a bullet-list entry for a control plus the canonical
+// attr_list block-form line ({: #anchor }) that attaches an HTML id to the
+// rendered <li>. Description, visibility, and help fold into the bullet's
+// prose with simple inline markers; if the control has none of those, only
+// the label and anchor render.
+//
+// We use the block form ({: #anchor } on its own line) rather than the
+// inline form (- **Label** {#anchor}) because Python-Markdown's attr_list
+// extension only attaches inline {#...} to the immediately preceding inline
+// element (the <strong>), not to the <li>; and on bullet items without an
+// adjacent inline element it leaks as raw text into the rendered prose.
+// The block form is the documented way to attach attributes to list items
+// and produces <li id="anchor"> as required by the HelpHint deep-link
+// contract for #1132.
 func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
-	fmt.Fprintf(b, "- **%s** {#%s}", markdownEscape(ctrl.Label), controlAnchor(tabID, secID, ctrl.ID))
+	fmt.Fprintf(b, "- **%s**", markdownEscape(ctrl.Label))
 
 	prose := composeControlProse(ctrl)
 	if prose != "" {
@@ -905,6 +914,7 @@ func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 		b.WriteString(prose)
 	}
 	b.WriteString("\n")
+	fmt.Fprintf(b, "{: #%s }\n", controlAnchor(tabID, secID, ctrl.ID))
 }
 
 // composeControlProse returns the inline prose that follows the bullet's

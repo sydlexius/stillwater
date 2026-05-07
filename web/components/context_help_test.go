@@ -202,7 +202,7 @@ func TestContextHelpRender_WithDocAnchor(t *testing.T) {
 	if !strings.Contains(out, "sw-context-help-link") {
 		t.Errorf("expected sw-context-help-link class; got: %s", out)
 	}
-	if !strings.Contains(out, "/docs/reference/settings-by-tab/#settings-general-base-path") {
+	if !strings.Contains(out, "https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-general-base-path") {
 		t.Errorf("expected docs deep link; got: %s", out)
 	}
 }
