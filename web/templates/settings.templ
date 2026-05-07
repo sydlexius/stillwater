@@ -619,7 +619,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.platform_profile.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.platform_profile.title") }</h2>
+							@components.ContextHelp("help-platform-profile", t(ctx, "settings.platform_profile.title"), t(ctx, "settings.platform_profile.help"), "settings-general-platform-profile")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.platform_profile.description") }
 						</p>
@@ -635,7 +638,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if data.ActiveProfile != nil {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">{ t(ctx, "settings.active_profile.title") }</h2>
+							<div class="flex items-center gap-2">
+								<h2 class="text-lg font-semibold">{ t(ctx, "settings.active_profile.title") }</h2>
+								@components.ContextHelp("help-active-profile", t(ctx, "settings.active_profile.title"), t(ctx, "settings.active_profile.help"), "settings-general-active-profile")
+							</div>
 							if profileEditable(data.ActiveProfile) {
 								<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 									{ t(ctx, "settings.active_profile.description") }
@@ -767,7 +773,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				     mux is wired at startup and cannot rebind on the fly. -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.base_path.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.base_path.title") }</h2>
+							@components.ContextHelp("help-base-path", t(ctx, "settings.base_path.title"), t(ctx, "settings.base_path.help"), "settings-general-base-path")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.base_path.description") }
 						</p>
@@ -875,7 +884,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.behavior.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.behavior.title") }</h2>
+							@components.ContextHelp("help-behavior", t(ctx, "settings.behavior.title"), t(ctx, "settings.behavior.help"), "settings-general-behavior")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.behavior.description") }
 						</p>
@@ -917,7 +929,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.image_cache.title") }</h2>
-							@components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.", "settings-general-image-cache")
+							@components.ContextHelp("help-image-cache", t(ctx, "settings.image_cache.title"), t(ctx, "settings.image_cache.help"), "settings-general-image-cache")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.image_cache.description") }
