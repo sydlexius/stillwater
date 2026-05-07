@@ -157,10 +157,24 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, checkOnly); err != nil {
 		return err
 	}
-	if err := writeAnchorsOrCheck(anchorsPath, anchors, checkOnly); err != nil {
-		return err
+	return writeAnchorMirrors([]string{anchorsPath, componentsAnchorsMirror}, anchors, checkOnly)
+}
+
+// writeAnchorMirrors writes the anchors body to every path in paths,
+// stopping at the first error. The settings reference codegen needs the
+// same anchor set in two places: docs/site/src/reference/ for the
+// rendered settings docs and web/components/ as the contract source for
+// the in-app HelpHint component (#1132). Pulling the loop out of run()
+// keeps the multi-path semantics independently testable -- run() itself
+// is hard to unit-test because of its working-directory dependency on
+// discoverTemplSources().
+func writeAnchorMirrors(paths []string, anchors []string, checkOnly bool) error {
+	for _, p := range paths {
+		if err := writeAnchorsOrCheck(p, anchors, checkOnly); err != nil {
+			return err
+		}
 	}
-	return writeAnchorsOrCheck(componentsAnchorsMirror, anchors, checkOnly)
+	return nil
 }
 
 // writeOrCheck applies rendered output to outPath between begin/end markers.

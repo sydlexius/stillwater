@@ -476,6 +476,43 @@ func TestRunCheckMode(t *testing.T) {
 	}
 }
 
+// TestWriteAnchorMirrors covers the multi-path anchor writer that fans the
+// codegen output to both docs/site/src/reference/_settings-anchors.txt and
+// the in-package web/components/_settings-anchors.txt mirror consumed by the
+// HelpHint component (#1132).
+func TestWriteAnchorMirrors(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.txt")
+	pathB := filepath.Join(dir, "b.txt")
+	anchors := []string{"settings-foo-bar", "settings-foo-baz"}
+
+	// Write to both paths; check mode then succeeds.
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, false); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, p := range []string{pathA, pathB} {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		want := "settings-foo-bar\nsettings-foo-baz\n"
+		if string(got) != want {
+			t.Errorf("%s = %q, want %q", p, got, want)
+		}
+	}
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, true); err != nil {
+		t.Errorf("check on fresh files: %v", err)
+	}
+
+	// Perturb the second mirror; check mode should fail at that path.
+	if err := os.WriteFile(pathB, []byte("settings-foo-bar\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, true); err == nil {
+		t.Error("check should fail when one mirror drifts")
+	}
+}
+
 // TestControlIDFor verifies the control ID derivation rules: a metadata
 // suffix is stripped to expose the control name; multi-segment paths beneath
 // a section preserve their parent segments; bare leaves are returned as-is.
