@@ -62,7 +62,7 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.theme.label") }</div>
 						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.theme.description") }</div>
 					</div>
-					@components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme.label"), t(ctx, "settings.appearance.theme.help"))
+					@components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme.label"), t(ctx, "settings.appearance.theme.help"), "")
 				</div>
 				@components.Segmented("pref-theme", "theme",
 					[]components.SegmentOption{
@@ -80,7 +80,7 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.bg_opacity.label") }</div>
 						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.bg_opacity.description") }</div>
 					</div>
-					@components.ContextHelp("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity.label"), t(ctx, "settings.appearance.bg_opacity.help"))
+					@components.ContextHelp("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity.label"), t(ctx, "settings.appearance.bg_opacity.help"), "")
 				</div>
 				<div class="flex items-center gap-3">
 					<input
@@ -205,7 +205,7 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.letter_spacing.label") }</div>
 						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.letter_spacing.description") }</div>
 					</div>
-					@components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing.label"), t(ctx, "settings.appearance.letter_spacing.help"))
+					@components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing.label"), t(ctx, "settings.appearance.letter_spacing.help"), "")
 				</div>
 				@components.Segmented("pref-letter-spacing", "letter_spacing",
 					[]components.SegmentOption{
@@ -249,7 +249,7 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.reduced_motion.label") }</div>
 						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.reduced_motion.description") }</div>
 					</div>
-					@components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help"))
+					@components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help"), "")
 				</div>
 				@components.Segmented("pref-reduced-motion", "reduced_motion",
 					[]components.SegmentOption{
@@ -267,7 +267,7 @@ templ settingsAppearanceTab(prefs PreferencesData) {
 						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.appearance.lite_mode.label") }</div>
 						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.lite_mode.description") }</div>
 					</div>
-					@components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode.label"), t(ctx, "settings.appearance.lite_mode.help"))
+					@components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode.label"), t(ctx, "settings.appearance.lite_mode.help"), "")
 				</div>
 				@components.Segmented("pref-lite-mode", "lite_mode",
 					[]components.SegmentOption{

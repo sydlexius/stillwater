@@ -1743,7 +1743,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2070,7 +2070,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.", "").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2143,7 +2143,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2346,7 +2346,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2813,7 +2813,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2967,7 +2967,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation count badge shown on the Reports link in the sidebar. 'Enable badge' and severity filters control which violations contribute to the numeric counter.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation count badge shown on the Reports link in the sidebar. 'Enable badge' and severity filters control which violations contribute to the numeric counter.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3968,19 +3968,19 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 						}
 					}
 					if cat == "nfo" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).", "").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 					if cat == "image" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.", "").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 					if cat == "metadata" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.", "").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -4037,7 +4037,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -4421,7 +4421,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.", "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

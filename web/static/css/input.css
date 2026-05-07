@@ -715,6 +715,25 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
+/* "Read more" deep link rendered after the popover text when the caller
+ * passes a docAnchor. Sits on its own line so the underline target is
+ * unambiguous. */
+.sw-context-help-link {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sw-accent-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sw-context-help-link:hover,
+.sw-context-help-link:focus-visible {
+  color: var(--sw-accent-primary-hover, var(--sw-accent-primary));
+  outline: none;
+}
+
 /* -- Segmented control ---------------------------------------------------- */
 .sw-segmented {
   display: inline-flex;

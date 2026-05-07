@@ -42,6 +42,12 @@ const (
 	defaultOutputPath  = "docs/site/src/reference/settings-by-tab.md"
 	defaultAnchorsPath = "docs/site/src/reference/_settings-anchors.txt"
 	defaultI18nPath    = "internal/i18n/locales/en.json"
+	// componentsAnchorsMirror keeps an in-package copy of the anchors file
+	// adjacent to the ContextHelp component so its tests can validate
+	// docAnchor arguments via go:embed without escaping the package
+	// directory. The codegen writes both paths atomically; check-generated
+	// asserts both are in sync via the same -check pass.
+	componentsAnchorsMirror = "web/components/_settings-anchors.txt"
 )
 
 // templTrunkPath is the page-rendering templ file: it owns the
@@ -151,7 +157,10 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, checkOnly); err != nil {
 		return err
 	}
-	return writeAnchorsOrCheck(anchorsPath, anchors, checkOnly)
+	if err := writeAnchorsOrCheck(anchorsPath, anchors, checkOnly); err != nil {
+		return err
+	}
+	return writeAnchorsOrCheck(componentsAnchorsMirror, anchors, checkOnly)
 }
 
 // writeOrCheck applies rendered output to outPath between begin/end markers.

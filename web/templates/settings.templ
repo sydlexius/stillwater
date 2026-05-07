@@ -917,7 +917,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.image_cache.title") }</h2>
-							@components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.")
+							@components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.image_cache.description") }
@@ -1005,7 +1005,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="flex items-center justify-between gap-2">
 								<div class="flex items-center gap-2">
 									<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
-									@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.")
+									@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.", "")
 								</div>
 								<button
 									type="button"
@@ -1032,7 +1032,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.metadata_languages.title") }</h2>
-							@components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.")
+							@components.ContextHelp("help-metadata-languages", "Metadata Languages", "Controls which language metadata providers return for artist names, biographies, and other text. The first language in the list takes priority. If a provider has no data in your preferred language, it falls back to the next one.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.metadata_languages.description") }
@@ -1089,7 +1089,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 									{ t(ctx, "settings.name_similarity.label") }
 								</label>
-								@components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).")
+								@components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).", "")
 							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
 								{ t(ctx, "settings.name_similarity.description") }
@@ -1248,7 +1248,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.webhooks.title") }</h2>
-							@components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.")
+							@components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.webhooks.description") }
@@ -1302,7 +1302,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.notif_badges.title") }</h2>
-							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation count badge shown on the Reports link in the sidebar. 'Enable badge' and severity filters control which violations contribute to the numeric counter.")
+							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation count badge shown on the Reports link in the sidebar. 'Enable badge' and severity filters control which violations contribute to the numeric counter.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.notif_badges.description") }
@@ -1636,13 +1636,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										</span>
 									}
 									if cat == "nfo" {
-										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).")
+										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).", "")
 									}
 									if cat == "image" {
-										@components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.")
+										@components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.", "")
 									}
 									if cat == "metadata" {
-										@components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.")
+										@components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.", "")
 									}
 								</div>
 							</div>
@@ -1664,7 +1664,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
-							@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.")
+							@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.rule_schedule.description") }
@@ -1748,7 +1748,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.db_maintenance.title") }</h2>
-							@components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.")
+							@components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.", "")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.db_maintenance.description") }
