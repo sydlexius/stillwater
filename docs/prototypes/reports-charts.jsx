@@ -313,10 +313,11 @@ function StackedBarChart({ artists }) {
         return (
           <div key={r.key} className="row" style={{ gap: 8, fontSize: 10.5 }}>
             <span style={{ width: 42, color: SW.ink3 }}>{r.label}</span>
-            <div style={{ flex: 1, height: 14, background: "rgba(248, 113, 113, 0.18)", borderRadius: 3, position: "relative", overflow: "hidden" }}>
-              <div style={{ width: havePct + "%", height: "100%", background: SW.ok, transition: "width .3s" }}>
-                <title>{r.label}: {r.have} have, {r.miss} missing</title>
-              </div>
+            <div
+              style={{ flex: 1, height: 14, background: "rgba(248, 113, 113, 0.18)", borderRadius: 3, position: "relative", overflow: "hidden" }}
+              title={`${r.label}: ${r.have} have, ${r.miss} missing`}
+            >
+              <div style={{ width: havePct + "%", height: "100%", background: SW.ok, transition: "width .3s" }}></div>
             </div>
             <span style={{ width: 28, textAlign: "right", color: SW.ink2, fontVariantNumeric: "tabular-nums" }}>{r.have}</span>
           </div>

@@ -267,7 +267,9 @@ function computeBulkSummary(kind, rows) {
     kind === "rerun-rules"    ? 0 :
     Math.floor(total * 0.15);
   const conflicts =
-    kind === "set-field"      ? Math.max(1, Math.floor(total * 0.04)) : 0;
+    kind === "set-field" && total > 0
+      ? Math.max(1, Math.floor(total * 0.04))
+      : 0;
   const willChange = Math.max(0, total - skipped - noChange - conflicts);
   const skipReason =
     kind === "set-field" ? "Field locked" :
@@ -436,7 +438,7 @@ function Toast({ toast, onDismiss }) {
       <span className="sev info"><span className="dot"></span></span>
       <span style={{ fontSize: 12.5 }}>{toast.msg}</span>
       <span className="flex-1"></span>
-      {toast.undo && <button className="btn ghost sm">Undo</button>}
+      {toast.undo && <span className="muted" style={{ fontSize: 11.5 }}>Undoable from Activity</span>}
       <button className="btn ghost sm" onClick={onDismiss} aria-label="Dismiss">
         <Icon name="x" size={11}/>
       </button>

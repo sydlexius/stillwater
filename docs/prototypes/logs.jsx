@@ -118,7 +118,7 @@ function AttrChip({ k, v, deepLink, onClick, muted }) {
       type="button"
       className={`sw-log-attr ${muted ? "muted" : ""} ${deepLink ? "linkish" : ""}`}
       onClick={(e) => { e.stopPropagation(); onClick && onClick(k, v); }}
-      title={deepLink ? `Filter by ${k}:${display} · ⌘-click to open artist` : `Filter by ${k}:${display}`}
+      title={`Filter by ${k}:${display}`}
     >
       <span className="k">{k}</span><span className="sep">:</span><span className="v">{display}</span>
     </button>
@@ -284,7 +284,7 @@ function LogsProposal({ density = "comfy", showAnnotations = false }) {
         // populates the search box with `artist_id:8821` and the predicate
         // immediately empties the stream.
         const attrText = e.attrs
-          ? Object.entries(e.attrs).map(([k, v]) => `${k}:${fmtAttrValue(v)}`).join(" ").toLowerCase()
+          ? Object.entries(e.attrs).map(([k, v]) => `${k}:${String(v)}`).join(" ").toLowerCase()
           : "";
         if (!(
           e.message.toLowerCase().includes(q) ||
@@ -341,7 +341,7 @@ function LogsProposal({ density = "comfy", showAnnotations = false }) {
   function onAttrFilter(k, v) {
     // Mock affordance: in real app, this would push to filter URL state.
     // Here we just append to search to make the click feel responsive.
-    setSearch(`${k}:${fmtAttrValue(v)}`);
+    setSearch(`${k}:${String(v)}`);
   }
 
   function onScroll() {

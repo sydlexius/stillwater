@@ -145,7 +145,10 @@ function SettingsProposal({ density = "comfy", layout = "rail", showAnnotations 
                       <div
                         key={it.id}
                         className={`item ${active === it.id ? "active" : ""}`}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setActive(it.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(it.id); } }}
                         style={it._hit ? { alignItems: "flex-start", paddingTop: 8, paddingBottom: 8 } : undefined}
                       >
                         <Icon name={it.icon} size={13} style={it._hit ? { marginTop: 2 } : undefined} />
@@ -300,7 +303,7 @@ function CommandPalette({ items, onSelect, onClose }) {
                 key={it.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelect(it.id)}
+                onClick={() => activateAt(off)}
                 onMouseEnter={() => setIdx(off)}
                 className="row"
                 style={{
@@ -381,7 +384,7 @@ function SettingRow({ label, desc, children }) {
   );
 }
 function Toggle({ on, onChange = () => {} }) {
-  return <button className={`tog ${on ? "on" : ""}`} onClick={onChange} aria-pressed={on}></button>;
+  return <button className={`tog ${on ? "on" : ""}`} onClick={onChange} aria-pressed={on} aria-label="Toggle"></button>;
 }
 
 function ProvidersPane() {

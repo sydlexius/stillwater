@@ -83,6 +83,7 @@ function Sidebar({ active = "dashboard", rail = "full", actionsCount = 24 }) {
           <a
             key={it.id}
             href={it.href}
+            aria-label={it.label}
             aria-current={active === it.id ? "page" : undefined}
             className={`sw-nav-item ${active === it.id ? "active" : ""}`}
           >
@@ -96,6 +97,7 @@ function Sidebar({ active = "dashboard", rail = "full", actionsCount = 24 }) {
           <a
             key={it.id}
             href={it.href}
+            aria-label={it.label}
             aria-current={active === it.id ? "page" : undefined}
             className={`sw-nav-item ${active === it.id ? "active" : ""}`}
           >

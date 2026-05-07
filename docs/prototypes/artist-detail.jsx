@@ -544,7 +544,10 @@ function FindingsList({ findings, activeId, onSelect, compact }) {
     <div className={`sw-ad-findings ${compact ? "compact" : ""}`}>
       {findings.map(f => (
         <div key={f.id} className={`sw-ad-finding-row sev-${f.severity} ${activeId === f.id ? "active" : ""}`}
-             onClick={() => onSelect(f.id === activeId ? null : f.id)}>
+             role="button"
+             tabIndex={0}
+             onClick={() => onSelect(f.id === activeId ? null : f.id)}
+             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(f.id === activeId ? null : f.id); } }}>
           <div className="sw-ad-finding-head">
             <SeverityDot sev={f.severity} size={7}/>
             <span className="rule">{f.title || f.rule}</span>
