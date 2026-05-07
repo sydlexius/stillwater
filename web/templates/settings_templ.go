@@ -9351,16 +9351,16 @@ func serviceConnectionCard(connType string, displayName string, exampleURL strin
 					return templ_7745c5c3_Err
 				}
 				if c.Type != "lidarr" {
-					templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip")).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import").Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -10055,7 +10055,17 @@ func toggleConnectionFeatures(connID string) templ.ComponentScript {
 	}
 }
 
-func connectionFeatureToggle(connID string, feature string, label string, enabled bool) templ.Component {
+// connectionFeatureToggleTT renders a labeled feature toggle for the
+// per-connection settings card with a visible "?" help icon adjacent to
+// the label. The help icon expands a popover with the precondition
+// semantics (e.g. "writes are still gated if the server has NFO saving
+// on") and a Read more link to the docs site when docAnchor is set.
+//
+// An sr-only <span> carrying the same tooltip text remains as the
+// aria-describedby target on the toggle button itself; that gives screen
+// readers the description on toggle focus without forcing them to
+// navigate to the help icon separately.
+func connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string, docAnchor string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -10076,331 +10086,179 @@ func connectionFeatureToggle(connID string, feature string, label string, enable
 			templ_7745c5c3_Var549 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 802, "<div class=\"flex items-center justify-between\"><span class=\"text-xs text-gray-700 dark:text-gray-300\">")
+		labelID := connID + "-" + feature + "-label"
+		ttID := connID + "-" + feature + "-tt"
+		helpID := connID + "-" + feature + "-help"
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 802, "<div class=\"flex items-center justify-between gap-2\"><span class=\"inline-flex items-center gap-1 min-w-0\"><span id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var550 string
-		templ_7745c5c3_Var550, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		templ_7745c5c3_Var550, templ_7745c5c3_Err = templ.JoinStringErrs(labelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5458, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5472, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var550))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 803, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 803, "\" class=\"text-xs text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var551 = []any{ruleToggleBtnClasses(enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var551...)
+		var templ_7745c5c3_Var551 string
+		templ_7745c5c3_Var551, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5472, Col: 80}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var551))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 804, "<button type=\"button\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 804, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var552 string
-		templ_7745c5c3_Var552, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var551).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var552))
+		templ_7745c5c3_Err = components.ContextHelp(helpID, label, tooltip, docAnchor).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 805, "\" role=\"switch\" aria-checked=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 805, "</span> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var552 = []any{ruleToggleBtnClasses(enabled)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var552...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 806, "<button type=\"button\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var553 string
-		templ_7745c5c3_Var553, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(enabled))
+		templ_7745c5c3_Var553, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var552).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5463, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var553))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 806, "\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 807, "\" role=\"switch\" aria-checked=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var554 string
-		templ_7745c5c3_Var554, templ_7745c5c3_Err = templ.JoinStringErrs("Toggle " + label)
+		templ_7745c5c3_Var554, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5464, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5479, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var554))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 807, "\" data-conn-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 808, "\" aria-labelledby=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var555 string
-		templ_7745c5c3_Var555, templ_7745c5c3_Err = templ.JoinStringErrs(connID)
+		templ_7745c5c3_Var555, templ_7745c5c3_Err = templ.JoinStringErrs(labelID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5465, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5480, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var555))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 808, "\" data-feature=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 809, "\" aria-describedby=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var556 string
-		templ_7745c5c3_Var556, templ_7745c5c3_Err = templ.JoinStringErrs(feature)
+		templ_7745c5c3_Var556, templ_7745c5c3_Err = templ.JoinStringErrs(ttID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5466, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5481, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var556))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 809, "\" onclick=\"toggleConnectionFeature(this)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 810, "\" data-conn-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var557 = []any{ruleToggleKnobClasses(enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var557...)
+		var templ_7745c5c3_Var557 string
+		templ_7745c5c3_Var557, templ_7745c5c3_Err = templ.JoinStringErrs(connID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5482, Col: 24}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var557))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 810, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 811, "\" data-feature=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var558 string
-		templ_7745c5c3_Var558, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var557).String())
+		templ_7745c5c3_Var558, templ_7745c5c3_Err = templ.JoinStringErrs(feature)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5483, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var558))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 811, "\"></span></button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 812, "\" onclick=\"toggleConnectionFeature(this)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		return nil
-	})
-}
-
-// connectionFeatureToggleTT is the tooltip-equipped variant of
-// connectionFeatureToggle. Used by the redesigned per-connection settings
-// card so users can hover a label and see the precondition semantics
-// (e.g. "writes are still gated if the server has NFO saving on").
-//
-// The template renders both a `title` attribute (mouse-hover affordance)
-// and a sibling sr-only <span> carrying the same tooltip text referenced
-// by aria-describedby. The sr-only node is the reliable screen-reader
-// description path since title is not consistently exposed by assistive
-// technology.
-func connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string) templ.Component {
-	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
-			return templ_7745c5c3_CtxErr
+		var templ_7745c5c3_Var559 = []any{ruleToggleKnobClasses(enabled)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var559...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-		if !templ_7745c5c3_IsBuffer {
-			defer func() {
-				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err == nil {
-					templ_7745c5c3_Err = templ_7745c5c3_BufErr
-				}
-			}()
-		}
-		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var559 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var559 == nil {
-			templ_7745c5c3_Var559 = templ.NopComponent
-		}
-		ctx = templ.ClearChildren(ctx)
-		labelID := connID + "-" + feature + "-label"
-		ttID := connID + "-" + feature + "-tt"
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 812, "<div class=\"flex items-center justify-between\" title=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 813, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var560 string
-		templ_7745c5c3_Var560, templ_7745c5c3_Err = templ.JoinStringErrs(tooltip)
+		templ_7745c5c3_Var560, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var559).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5487, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var560))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 813, "\"><span id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 814, "\"></span></button> <span id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var561 string
-		templ_7745c5c3_Var561, templ_7745c5c3_Err = templ.JoinStringErrs(labelID)
+		templ_7745c5c3_Var561, templ_7745c5c3_Err = templ.JoinStringErrs(ttID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5488, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5488, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var561))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 814, "\" class=\"text-xs text-gray-700 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 815, "\" class=\"sr-only\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var562 string
-		templ_7745c5c3_Var562, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		templ_7745c5c3_Var562, templ_7745c5c3_Err = templ.JoinStringErrs(tooltip)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5488, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5488, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var562))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 815, "</span> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var563 = []any{ruleToggleBtnClasses(enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var563...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 816, "<button type=\"button\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var564 string
-		templ_7745c5c3_Var564, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var563).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var564))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 817, "\" role=\"switch\" aria-checked=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var565 string
-		templ_7745c5c3_Var565, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(enabled))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5493, Col: 35}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var565))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 818, "\" aria-labelledby=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var566 string
-		templ_7745c5c3_Var566, templ_7745c5c3_Err = templ.JoinStringErrs(labelID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5494, Col: 28}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var566))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 819, "\" aria-describedby=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var567 string
-		templ_7745c5c3_Var567, templ_7745c5c3_Err = templ.JoinStringErrs(ttID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5495, Col: 26}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var567))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 820, "\" data-conn-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var568 string
-		templ_7745c5c3_Var568, templ_7745c5c3_Err = templ.JoinStringErrs(connID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5496, Col: 24}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var568))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 821, "\" data-feature=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var569 string
-		templ_7745c5c3_Var569, templ_7745c5c3_Err = templ.JoinStringErrs(feature)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5497, Col: 25}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var569))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 822, "\" onclick=\"toggleConnectionFeature(this)\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var570 = []any{ruleToggleKnobClasses(enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var570...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 823, "<span class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var571 string
-		templ_7745c5c3_Var571, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var570).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var571))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 824, "\"></span></button> <span id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var572 string
-		templ_7745c5c3_Var572, templ_7745c5c3_Err = templ.JoinStringErrs(ttID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5502, Col: 17}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var572))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 825, "\" class=\"sr-only\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var573 string
-		templ_7745c5c3_Var573, templ_7745c5c3_Err = templ.JoinStringErrs(tooltip)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5502, Col: 45}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var573))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 826, "</span></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 816, "</span></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -10434,122 +10292,122 @@ func webhookCard(wh webhook.Webhook) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var574 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var574 == nil {
-			templ_7745c5c3_Var574 = templ.NopComponent
+		templ_7745c5c3_Var563 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var563 == nil {
+			templ_7745c5c3_Var563 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 827, "<div class=\"flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3 min-w-0\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 817, "<div class=\"flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3 min-w-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var575 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
+		var templ_7745c5c3_Var564 = []any{"h-2.5 w-2.5 shrink-0 rounded-full",
 			templ.KV("bg-green-500", wh.Enabled),
 			templ.KV("bg-gray-400 dark:bg-gray-500", !wh.Enabled),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var575...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var564...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 828, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 818, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var576 string
-		templ_7745c5c3_Var576, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var575).String())
+		var templ_7745c5c3_Var565 string
+		templ_7745c5c3_Var565, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var564).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var576))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var565))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 829, "\"></div><div class=\"min-w-0\"><div class=\"font-medium text-sm flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 819, "\"></div><div class=\"min-w-0\"><div class=\"font-medium text-sm flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var577 string
-		templ_7745c5c3_Var577, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Name)
+		var templ_7745c5c3_Var566 string
+		templ_7745c5c3_Var566, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5522, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5508, Col: 14}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var577))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 830, " <span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var566))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var578 string
-		templ_7745c5c3_Var578, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Type)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5524, Col: 15}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var578))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 820, " <span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 831, "</span></div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		var templ_7745c5c3_Var567 string
+		templ_7745c5c3_Var567, templ_7745c5c3_Err = templ.JoinStringErrs(wh.Type)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5510, Col: 15}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var567))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 821, "</span></div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(wh.Events) > 0 {
-			var templ_7745c5c3_Var579 string
-			templ_7745c5c3_Var579, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(wh.Events))
+			var templ_7745c5c3_Var568 string
+			templ_7745c5c3_Var568, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(wh.Events))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5529, Col: 28}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5515, Col: 28}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var579))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var568))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 832, "All events")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 822, "All events")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 833, "</div></div></div><div class=\"flex items-center gap-2 shrink-0\"><button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 823, "</div></div></div><div class=\"flex items-center gap-2 shrink-0\"><button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var580 string
-		templ_7745c5c3_Var580, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/webhooks/" + wh.ID + "/test")
+		var templ_7745c5c3_Var569 string
+		templ_7745c5c3_Var569, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/webhooks/" + wh.ID + "/test")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5540, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5526, Col: 51}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var580))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 834, "\" hx-swap=\"none\">Test</button> <button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" hx-delete=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var569))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var581 string
-		templ_7745c5c3_Var581, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/webhooks/" + wh.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5548, Col: 43}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var581))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 824, "\" hx-swap=\"none\">Test</button> <button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" hx-delete=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 835, "\" hx-confirm=\"")
+		var templ_7745c5c3_Var570 string
+		templ_7745c5c3_Var570, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/webhooks/" + wh.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5534, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var570))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var582 string
-		templ_7745c5c3_Var582, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.confirm_delete"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5549, Col: 59}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var582))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 825, "\" hx-confirm=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 836, "\" hx-swap=\"none\" hx-on::after-request=\"window.location.reload()\">Delete</button></div></div>")
+		var templ_7745c5c3_Var571 string
+		templ_7745c5c3_Var571, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.webhooks.confirm_delete"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5535, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var571))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 826, "\" hx-swap=\"none\" hx-on::after-request=\"window.location.reload()\">Delete</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -10576,105 +10434,105 @@ func profileNamingRow(label, imageType string, names []string, readOnly bool) te
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var583 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var583 == nil {
-			templ_7745c5c3_Var583 = templ.NopComponent
+		templ_7745c5c3_Var572 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var572 == nil {
+			templ_7745c5c3_Var572 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 837, "<div><span class=\"font-medium text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 827, "<div><span class=\"font-medium text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var584 string
-		templ_7745c5c3_Var584, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+		var templ_7745c5c3_Var573 string
+		templ_7745c5c3_Var573, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5564, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5550, Col: 68}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var584))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var573))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 838, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 828, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if readOnly {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 839, "<p class=\"mt-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 829, "<p class=\"mt-1\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var585 string
-			templ_7745c5c3_Var585, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(names))
+			var templ_7745c5c3_Var574 string
+			templ_7745c5c3_Var574, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(names))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5566, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5552, Col: 37}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var585))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var574))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 840, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 830, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 841, "<div class=\"mt-1 flex flex-wrap items-center gap-1.5\" data-naming-type=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 831, "<div class=\"mt-1 flex flex-wrap items-center gap-1.5\" data-naming-type=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var586 string
-			templ_7745c5c3_Var586, templ_7745c5c3_Err = templ.JoinStringErrs(imageType)
+			var templ_7745c5c3_Var575 string
+			templ_7745c5c3_Var575, templ_7745c5c3_Err = templ.JoinStringErrs(imageType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5568, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5554, Col: 85}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var586))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var575))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 842, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 832, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, name := range names {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 843, "<span class=\"inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300\" data-naming-chip=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 833, "<span class=\"inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300\" data-naming-chip=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var587 string
-				templ_7745c5c3_Var587, templ_7745c5c3_Err = templ.JoinStringErrs(name)
+				var templ_7745c5c3_Var576 string
+				templ_7745c5c3_Var576, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5570, Col: 182}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5556, Col: 182}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var587))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 844, "\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var576))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var588 string
-				templ_7745c5c3_Var588, templ_7745c5c3_Err = templ.JoinStringErrs(name)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5571, Col: 12}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var588))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 834, "\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 845, " <button type=\"button\" class=\"ml-0.5 text-gray-400 hover:text-red-500 focus:outline-none\" aria-label=\"")
+				var templ_7745c5c3_Var577 string
+				templ_7745c5c3_Var577, templ_7745c5c3_Err = templ.JoinStringErrs(name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5557, Col: 12}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var577))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var589 string
-				templ_7745c5c3_Var589, templ_7745c5c3_Err = templ.JoinStringErrs("Remove " + name)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5575, Col: 36}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var589))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 835, " <button type=\"button\" class=\"ml-0.5 text-gray-400 hover:text-red-500 focus:outline-none\" aria-label=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 846, "\" onclick=\"this.closest('[data-naming-chip]').remove()\">&times;</button></span> ")
+				var templ_7745c5c3_Var578 string
+				templ_7745c5c3_Var578, templ_7745c5c3_Err = templ.JoinStringErrs("Remove " + name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5561, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var578))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 836, "\" onclick=\"this.closest('[data-naming-chip]').remove()\">&times;</button></span> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -10683,21 +10541,21 @@ func profileNamingRow(label, imageType string, names []string, readOnly bool) te
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 847, "<button type=\"button\" class=\"inline-flex items-center rounded-full border border-dashed border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 837, "<button type=\"button\" class=\"inline-flex items-center rounded-full border border-dashed border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var590 templ.ComponentScript = templ.ComponentScript{Call: "addNamingChip(this, '" + imageType + "')"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var590.Call)
+			var templ_7745c5c3_Var579 templ.ComponentScript = templ.ComponentScript{Call: "addNamingChip(this, '" + imageType + "')"}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var579.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 848, "\">+ Add</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 838, "\">+ Add</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 849, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 839, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -10721,216 +10579,216 @@ func profileCard(p platform.Profile) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var591 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var591 == nil {
-			templ_7745c5c3_Var591 = templ.NopComponent
+		templ_7745c5c3_Var580 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var580 == nil {
+			templ_7745c5c3_Var580 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var592 = []any{"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
+		var templ_7745c5c3_Var581 = []any{"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
 			templ.KV("border-blue-500 bg-blue-50 dark:bg-blue-900/20", p.IsActive),
 			templ.KV("border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600", !p.IsActive),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var592...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var581...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 850, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 840, "<div class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var582 string
+		templ_7745c5c3_Var582, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var581).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var582))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 841, "\" hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var583 string
+		templ_7745c5c3_Var583, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/platforms/" + p.ID + "/activate")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5587, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var583))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 842, "\" hx-swap=\"none\" hx-on::after-request=\"window.location.reload()\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if logoSrcSet(p.ID) != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 843, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var584 string
+			templ_7745c5c3_Var584, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5595, Col: 25}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var584))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 844, "\" srcset=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var585 string
+			templ_7745c5c3_Var585, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(p.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5596, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var585))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 845, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 846, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var586 string
+			templ_7745c5c3_Var586, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5603, Col: 25}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var586))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 847, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 848, "<h3 class=\"font-semibold text-sm\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var587 string
+		templ_7745c5c3_Var587, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5609, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var587))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 849, "</h3></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if p.IsActive {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 850, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">Active</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 851, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>NFO: ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if p.NFOEnabled {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 852, "<span class=\"text-green-600 dark:text-green-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var588 string
+			templ_7745c5c3_Var588, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5621, Col: 80}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var588))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 853, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 854, "<span class=\"text-gray-400 dark:text-gray-500\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var589 string
+			templ_7745c5c3_Var589, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5623, Col: 79}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var589))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 855, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 856, "</div><div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var590 string
+		templ_7745c5c3_Var590, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", p.Name))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5626, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var590))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 857, ": ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var591 string
+		templ_7745c5c3_Var591, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Thumb))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5626, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var591))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 858, "</div><div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var592 string
+		templ_7745c5c3_Var592, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", p.Name))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5627, Col: 44}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var592))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 859, ": ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var593 string
-		templ_7745c5c3_Var593, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var592).String())
+		templ_7745c5c3_Var593, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Fanart))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5627, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var593))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 851, "\" hx-post=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var594 string
-		templ_7745c5c3_Var594, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/platforms/" + p.ID + "/activate")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5601, Col: 53}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var594))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 852, "\" hx-swap=\"none\" hx-on::after-request=\"window.location.reload()\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if logoSrcSet(p.ID) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 853, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var595 string
-			templ_7745c5c3_Var595, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5609, Col: 25}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var595))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 854, "\" srcset=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var596 string
-			templ_7745c5c3_Var596, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(p.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5610, Col: 31}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var596))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 855, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 856, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var597 string
-			templ_7745c5c3_Var597, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5617, Col: 25}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var597))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 857, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 858, "<h3 class=\"font-semibold text-sm\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var598 string
-		templ_7745c5c3_Var598, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5623, Col: 46}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var598))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 859, "</h3></div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if p.IsActive {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 860, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">Active</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 861, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>NFO: ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if p.NFOEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 862, "<span class=\"text-green-600 dark:text-green-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var599 string
-			templ_7745c5c3_Var599, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.enabled"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5635, Col: 80}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var599))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 863, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 864, "<span class=\"text-gray-400 dark:text-gray-500\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var600 string
-			templ_7745c5c3_Var600, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.disabled"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5637, Col: 79}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var600))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 865, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 866, "</div><div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var601 string
-		templ_7745c5c3_Var601, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", p.Name))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5640, Col: 43}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var601))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 867, ": ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var602 string
-		templ_7745c5c3_Var602, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Thumb))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5640, Col: 79}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var602))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 868, "</div><div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var603 string
-		templ_7745c5c3_Var603, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", p.Name))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5641, Col: 44}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var603))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 869, ": ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var604 string
-		templ_7745c5c3_Var604, templ_7745c5c3_Err = templ.JoinStringErrs(joinNames(p.ImageNaming.Fanart))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5641, Col: 81}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var604))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 870, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 860, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -10954,69 +10812,69 @@ func ruleRow(rl rule.Rule, hasLocalLibrary bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var605 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var605 == nil {
-			templ_7745c5c3_Var605 = templ.NopComponent
+		templ_7745c5c3_Var594 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var594 == nil {
+			templ_7745c5c3_Var594 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		fsUnavailable := rl.FilesystemDependent && !hasLocalLibrary
-		var templ_7745c5c3_Var606 = []any{"py-4 space-y-2",
+		var templ_7745c5c3_Var595 = []any{"py-4 space-y-2",
 			templ.KV("opacity-50", fsUnavailable),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var606...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var595...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 871, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 861, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var607 string
-		templ_7745c5c3_Var607, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var606).String())
+		var templ_7745c5c3_Var596 string
+		templ_7745c5c3_Var596, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var595).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var607))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var596))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 872, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 862, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 873, " title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 863, " title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var608 string
-			templ_7745c5c3_Var608, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local_tooltip"))
+			var templ_7745c5c3_Var597 string
+			templ_7745c5c3_Var597, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local_tooltip"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5656, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5642, Col: 58}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var608))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var597))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 874, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 864, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 875, "><div class=\"flex items-center justify-between gap-4\"><div class=\"flex-1 min-w-0\"><div class=\"flex items-center gap-2\"><span class=\"font-medium text-sm\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 865, "><div class=\"flex items-center justify-between gap-4\"><div class=\"flex-1 min-w-0\"><div class=\"flex items-center gap-2\"><span class=\"font-medium text-sm\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var609 string
-		templ_7745c5c3_Var609, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Name)
+		var templ_7745c5c3_Var598 string
+		templ_7745c5c3_Var598, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5662, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5648, Col: 48}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var609))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var598))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 876, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 866, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11025,303 +10883,303 @@ func ruleRow(rl rule.Rule, hasLocalLibrary bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 877, "<span class=\"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 867, "<span class=\"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var610 string
-			templ_7745c5c3_Var610, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local_tooltip_short"))
+			var templ_7745c5c3_Var599 string
+			templ_7745c5c3_Var599, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local_tooltip_short"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5667, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5653, Col: 68}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var610))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 878, "\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var599))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var611 string
-			templ_7745c5c3_Var611, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5669, Col: 48}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var611))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 868, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 879, "</span>")
+			var templ_7745c5c3_Var600 string
+			templ_7745c5c3_Var600, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.requires_local"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5655, Col: 48}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var600))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 869, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 880, "</div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 870, "</div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var601 string
+		templ_7745c5c3_Var601, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Description)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5659, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var601))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 871, "</p></div><div class=\"flex items-center gap-3 shrink-0\"><button type=\"button\" class=\"text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed\" data-rule-id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var602 string
+		templ_7745c5c3_Var602, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5665, Col: 25}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var602))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 872, "\" data-run-btn onclick=\"runRule(this)\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if !rl.Enabled || fsUnavailable {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 873, " disabled")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 874, " aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var603 string
+		templ_7745c5c3_Var603, templ_7745c5c3_Err = templ.JoinStringErrs("Run " + rl.Name + " now")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5669, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var603))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 875, "\" title=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var604 string
+		templ_7745c5c3_Var604, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.run"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5670, Col: 34}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var604))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 876, "\">Run</button> <select class=\"text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var605 string
+		templ_7745c5c3_Var605, templ_7745c5c3_Err = templ.JoinStringErrs("Automation mode for " + rl.Name)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5676, Col: 50}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var605))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 877, "\" data-rule-id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var606 string
+		templ_7745c5c3_Var606, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5677, Col: 25}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var606))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 878, "\" onchange=\"patchRule(this.dataset.ruleId, {automation_mode: this.value})\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if !rl.Enabled || fsUnavailable {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 879, " disabled")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 880, "><option value=\"auto\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if rl.AutomationMode == "auto" || rl.AutomationMode == "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 881, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 882, ">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var607 string
+		templ_7745c5c3_Var607, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.auto_fix"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5681, Col: 130}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var607))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 883, "</option> <option value=\"manual\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if rl.AutomationMode == "manual" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 884, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 885, ">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var608 string
+		templ_7745c5c3_Var608, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.manual"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5682, Col: 105}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var608))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 886, "</option></select> ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var609 = []any{ruleToggleBtnClasses(rl.Enabled)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var609...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 887, "<button type=\"button\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var610 string
+		templ_7745c5c3_Var610, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var609).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var610))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 888, "\" role=\"switch\" aria-checked=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var611 string
+		templ_7745c5c3_Var611, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(rl.Enabled))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5688, Col: 40}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var611))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 889, "\" data-rule-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var612 string
-		templ_7745c5c3_Var612, templ_7745c5c3_Err = templ.JoinStringErrs(rl.Description)
+		templ_7745c5c3_Var612, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5673, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5689, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var612))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 881, "</p></div><div class=\"flex items-center gap-3 shrink-0\"><button type=\"button\" class=\"text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed\" data-rule-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 890, "\" onclick=\"toggleRuleEnabled(this)\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if fsUnavailable {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 891, " disabled")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 892, " aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var613 string
-		templ_7745c5c3_Var613, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
+		templ_7745c5c3_Var613, templ_7745c5c3_Err = templ.JoinStringErrs("Enable " + rl.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5679, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5692, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var613))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 882, "\" data-run-btn onclick=\"runRule(this)\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 893, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if !rl.Enabled || fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 883, " disabled")
+		if fsUnavailable {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 894, " title=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var614 string
+			templ_7745c5c3_Var614, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.cannot_enable_tooltip"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5694, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var614))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 895, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 884, " aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 896, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var614 string
-		templ_7745c5c3_Var614, templ_7745c5c3_Err = templ.JoinStringErrs("Run " + rl.Name + " now")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5683, Col: 43}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var614))
+		var templ_7745c5c3_Var615 = []any{ruleToggleKnobClasses(rl.Enabled)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var615...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 885, "\" title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var615 string
-		templ_7745c5c3_Var615, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.run"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5684, Col: 34}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var615))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 886, "\">Run</button> <select class=\"text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 897, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var616 string
-		templ_7745c5c3_Var616, templ_7745c5c3_Err = templ.JoinStringErrs("Automation mode for " + rl.Name)
+		templ_7745c5c3_Var616, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var615).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5690, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var616))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 887, "\" data-rule-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var617 string
-		templ_7745c5c3_Var617, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5691, Col: 25}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var617))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 888, "\" onchange=\"patchRule(this.dataset.ruleId, {automation_mode: this.value})\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if !rl.Enabled || fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 889, " disabled")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 890, "><option value=\"auto\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if rl.AutomationMode == "auto" || rl.AutomationMode == "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 891, " selected")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 892, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var618 string
-		templ_7745c5c3_Var618, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.auto_fix"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5695, Col: 130}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var618))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 893, "</option> <option value=\"manual\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if rl.AutomationMode == "manual" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 894, " selected")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 895, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var619 string
-		templ_7745c5c3_Var619, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.manual"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5696, Col: 105}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var619))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 896, "</option></select> ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var620 = []any{ruleToggleBtnClasses(rl.Enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var620...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 897, "<button type=\"button\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var621 string
-		templ_7745c5c3_Var621, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var620).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var621))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 898, "\" role=\"switch\" aria-checked=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var622 string
-		templ_7745c5c3_Var622, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(rl.Enabled))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5702, Col: 40}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var622))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 899, "\" data-rule-id=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var623 string
-		templ_7745c5c3_Var623, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5703, Col: 25}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var623))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 900, "\" onclick=\"toggleRuleEnabled(this)\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 901, " disabled")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 902, " aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var624 string
-		templ_7745c5c3_Var624, templ_7745c5c3_Err = templ.JoinStringErrs("Enable " + rl.Name)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5706, Col: 37}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var624))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 903, "\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if fsUnavailable {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 904, " title=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var625 string
-			templ_7745c5c3_Var625, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.cannot_enable_tooltip"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5708, Col: 60}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var625))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 905, "\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 906, ">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var626 = []any{ruleToggleKnobClasses(rl.Enabled)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var626...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 907, "<span class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var627 string
-		templ_7745c5c3_Var627, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var626).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var627))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 908, "\"></span></button></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 898, "\"></span></button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if ruleHasConfig(rl.ID) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 909, "<div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 899, "<div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11329,78 +11187,78 @@ func ruleRow(rl rule.Rule, hasLocalLibrary bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 910, "<button type=\"button\" class=\"text-xs text-blue-600 dark:text-blue-400 hover:underline\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 900, "<button type=\"button\" class=\"text-xs text-blue-600 dark:text-blue-400 hover:underline\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var628 templ.ComponentScript = toggleRuleConfig(rl.ID)
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var628.Call)
+			var templ_7745c5c3_Var617 templ.ComponentScript = toggleRuleConfig(rl.ID)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var617.Call)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 911, "\" aria-expanded=\"false\" aria-controls=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 901, "\" aria-expanded=\"false\" aria-controls=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var629 string
-			templ_7745c5c3_Var629, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
+			var templ_7745c5c3_Var618 string
+			templ_7745c5c3_Var618, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5722, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5708, Col: 40}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var629))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 912, "\" aria-label=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var618))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var630 string
-			templ_7745c5c3_Var630, templ_7745c5c3_Err = templ.JoinStringErrs("Configure " + rl.Name)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5723, Col: 40}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var630))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 902, "\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 913, "\"")
+			var templ_7745c5c3_Var619 string
+			templ_7745c5c3_Var619, templ_7745c5c3_Err = templ.JoinStringErrs("Configure " + rl.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5709, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var619))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 903, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if fsUnavailable {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 914, " disabled")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 904, " disabled")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 915, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 905, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var631 string
-			templ_7745c5c3_Var631, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.configure"))
+			var templ_7745c5c3_Var620 string
+			templ_7745c5c3_Var620, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "actions.configure"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5725, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5711, Col: 34}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var631))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 916, "</button><div id=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var620))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var632 string
-			templ_7745c5c3_Var632, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5726, Col: 33}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var632))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 906, "</button><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 917, "\" class=\"hidden mt-2\">")
+			var templ_7745c5c3_Var621 string
+			templ_7745c5c3_Var621, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5712, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var621))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 907, "\" class=\"hidden mt-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11408,12 +11266,12 @@ func ruleRow(rl rule.Rule, hasLocalLibrary bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 918, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 908, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 919, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 909, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11437,44 +11295,44 @@ func severityBadge(severity string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var633 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var633 == nil {
-			templ_7745c5c3_Var633 = templ.NopComponent
+		templ_7745c5c3_Var622 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var622 == nil {
+			templ_7745c5c3_Var622 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		cls := severityBadgeClasses(severity)
-		var templ_7745c5c3_Var634 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", cls}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var634...)
+		var templ_7745c5c3_Var623 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", cls}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var623...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 920, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 910, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var635 string
-		templ_7745c5c3_Var635, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var634).String())
+		var templ_7745c5c3_Var624 string
+		templ_7745c5c3_Var624, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var623).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var635))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var624))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 921, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 911, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var636 string
-		templ_7745c5c3_Var636, templ_7745c5c3_Err = templ.JoinStringErrs(severity)
+		var templ_7745c5c3_Var625 string
+		templ_7745c5c3_Var625, templ_7745c5c3_Err = templ.JoinStringErrs(severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5737, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5723, Col: 12}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var636))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var625))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 922, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 912, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11498,43 +11356,43 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var637 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var637 == nil {
-			templ_7745c5c3_Var637 = templ.NopComponent
+		templ_7745c5c3_Var626 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var626 == nil {
+			templ_7745c5c3_Var626 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 923, "<form class=\"grid grid-cols-2 gap-3 sm:grid-cols-3 items-end\" data-rule-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 913, "<form class=\"grid grid-cols-2 gap-3 sm:grid-cols-3 items-end\" data-rule-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var638 string
-		templ_7745c5c3_Var638, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
+		var templ_7745c5c3_Var627 string
+		templ_7745c5c3_Var627, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5744, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5730, Col: 22}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var638))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var627))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 924, "\" onsubmit=\"handleRuleConfigSubmit(event)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 914, "\" onsubmit=\"handleRuleConfigSubmit(event)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" || rl.ID == "logo_min_res" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 925, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 915, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var639 string
-			templ_7745c5c3_Var639, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.resolution_preset"))
+			var templ_7745c5c3_Var628 string
+			templ_7745c5c3_Var628, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.resolution_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5750, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5736, Col: 104}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var639))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var628))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 926, "</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyResPreset(this)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 916, "</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyResPreset(this)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11542,35 +11400,146 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 927, "</select></label></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 917, "</select></label></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 928, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 918, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var640 string
-			templ_7745c5c3_Var640, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
+			var templ_7745c5c3_Var629 string
+			templ_7745c5c3_Var629, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5762, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5748, Col: 95}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var640))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 929, "</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var629))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var641 string
-			templ_7745c5c3_Var641, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 919, "</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5767, Col: 69}
+				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var641))
+			var templ_7745c5c3_Var630 string
+			templ_7745c5c3_Var630, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5753, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var630))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 920, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var631 string
+			templ_7745c5c3_Var631, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_height"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5758, Col: 96}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var631))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 921, "</span> <input type=\"number\" name=\"min_height\" min=\"1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var632 string
+			templ_7745c5c3_Var632, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5763, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var632))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 922, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if rl.ID == "logo_min_res" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 923, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var633 string
+			templ_7745c5c3_Var633, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5770, Col: 95}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var633))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 924, "</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var634 string
+			templ_7745c5c3_Var634, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, 400))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5775, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var634))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 925, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if rl.ID == "thumb_square" || rl.ID == "fanart_aspect" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 926, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var635 string
+			templ_7745c5c3_Var635, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_preset"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5783, Col: 100}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var635))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 927, "</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyAspectPreset(this)\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = aspectPresetOptions(rl).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 928, "</select></label></div><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var636 string
+			templ_7745c5c3_Var636, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_ratio"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5793, Col: 98}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var636))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 929, "</span> <input type=\"number\" name=\"aspect_ratio\" step=\"0.001\" min=\"0.1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var637 string
+			templ_7745c5c3_Var637, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5799, Col: 77}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var637))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11578,25 +11547,25 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var642 string
-			templ_7745c5c3_Var642, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_height"))
+			var templ_7745c5c3_Var638 string
+			templ_7745c5c3_Var638, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.tolerance"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5772, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5804, Col: 95}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var642))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 931, "</span> <input type=\"number\" name=\"min_height\" min=\"1\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var638))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var643 string
-			templ_7745c5c3_Var643, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 931, "</span> <input type=\"number\" name=\"tolerance\" step=\"0.01\" min=\"0\" max=\"0.5\" value=\"")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5777, Col: 71}
+				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var643))
+			var templ_7745c5c3_Var639 string
+			templ_7745c5c3_Var639, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.Tolerance, 0.1))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5811, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var639))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11605,30 +11574,30 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if rl.ID == "logo_min_res" {
+		if rl.ID == "bio_exists" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 933, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var644 string
-			templ_7745c5c3_Var644, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_width"))
+			var templ_7745c5c3_Var640 string
+			templ_7745c5c3_Var640, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_length"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5784, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5818, Col: 96}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var644))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 934, "</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var640))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var645 string
-			templ_7745c5c3_Var645, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, 400))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 934, "</span> <input type=\"number\" name=\"min_length\" min=\"1\" value=\"")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5789, Col: 50}
+				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var645))
+			var templ_7745c5c3_Var641 string
+			templ_7745c5c3_Var641, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinLength, 10))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5823, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var641))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -11637,258 +11606,147 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if rl.ID == "thumb_square" || rl.ID == "fanart_aspect" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 936, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var646 string
-			templ_7745c5c3_Var646, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_preset"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5797, Col: 100}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var646))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 937, "</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyAspectPreset(this)\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = aspectPresetOptions(rl).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 938, "</select></label></div><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var647 string
-			templ_7745c5c3_Var647, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.aspect_ratio"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5807, Col: 98}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var647))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 939, "</span> <input type=\"number\" name=\"aspect_ratio\" step=\"0.001\" min=\"0.1\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var648 string
-			templ_7745c5c3_Var648, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5813, Col: 77}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var648))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 940, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var649 string
-			templ_7745c5c3_Var649, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.tolerance"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5818, Col: 95}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var649))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 941, "</span> <input type=\"number\" name=\"tolerance\" step=\"0.01\" min=\"0\" max=\"0.5\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var650 string
-			templ_7745c5c3_Var650, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.Tolerance, 0.1))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5825, Col: 53}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var650))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 942, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if rl.ID == "bio_exists" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 943, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var651 string
-			templ_7745c5c3_Var651, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.min_length"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5832, Col: 96}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var651))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 944, "</span> <input type=\"number\" name=\"min_length\" min=\"1\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var652 string
-			templ_7745c5c3_Var652, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinLength, 10))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5837, Col: 50}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var652))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 945, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
 		if rl.ID == "logo_padding" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 946, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 936, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var653 string
-			templ_7745c5c3_Var653, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.threshold_percent"))
+			var templ_7745c5c3_Var642 string
+			templ_7745c5c3_Var642, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.threshold_percent"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5844, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5830, Col: 103}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var653))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 947, "</span> <input type=\"number\" name=\"threshold_percent\" step=\"0.5\" min=\"1\" max=\"50\" value=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var642))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var654 string
-			templ_7745c5c3_Var654, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.ThresholdPercent, 15))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5851, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var654))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 937, "</span> <input type=\"number\" name=\"threshold_percent\" step=\"0.5\" min=\"1\" max=\"50\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 948, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+			var templ_7745c5c3_Var643 string
+			templ_7745c5c3_Var643, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.ThresholdPercent, 15))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5837, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var643))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var655 string
-			templ_7745c5c3_Var655, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.trim_margin"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5856, Col: 97}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var655))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 938, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 949, "</span> <input type=\"number\" name=\"trim_margin\" min=\"0\" max=\"20\" value=\"")
+			var templ_7745c5c3_Var644 string
+			templ_7745c5c3_Var644, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.trim_margin"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5842, Col: 97}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var644))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var656 string
-			templ_7745c5c3_Var656, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(rl.Config.TrimMargin))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5862, Col: 47}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var656))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 939, "</span> <input type=\"number\" name=\"trim_margin\" min=\"0\" max=\"20\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 950, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
+			var templ_7745c5c3_Var645 string
+			templ_7745c5c3_Var645, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(rl.Config.TrimMargin))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5848, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var645))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 940, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 951, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 941, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var657 string
-		templ_7745c5c3_Var657, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.severity_label"))
+		var templ_7745c5c3_Var646 string
+		templ_7745c5c3_Var646, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.severity_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5868, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5854, Col: 99}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var657))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var646))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 952, "</span> <select name=\"severity\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"error\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 942, "</span> <select name=\"severity\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"error\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "error" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 953, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 943, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 954, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 944, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var658 string
-		templ_7745c5c3_Var658, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.error"))
+		var templ_7745c5c3_Var647 string
+		templ_7745c5c3_Var647, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.error"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5873, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5859, Col: 94}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var658))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var647))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 955, "</option> <option value=\"warning\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 945, "</option> <option value=\"warning\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "warning" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 956, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 946, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 957, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 947, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var659 string
-		templ_7745c5c3_Var659, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.warning"))
+		var templ_7745c5c3_Var648 string
+		templ_7745c5c3_Var648, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.warning"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5874, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5860, Col: 100}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var659))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var648))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 958, "</option> <option value=\"info\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 948, "</option> <option value=\"info\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "info" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 959, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 949, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 960, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 950, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var660 string
-		templ_7745c5c3_Var660, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.info"))
+		var templ_7745c5c3_Var649 string
+		templ_7745c5c3_Var649, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.info"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5875, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5861, Col: 91}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var660))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var649))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 961, "</option></select></label><div class=\"flex gap-2 col-span-full\"><button type=\"submit\" class=\"text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 951, "</option></select></label><div class=\"flex gap-2 col-span-full\"><button type=\"submit\" class=\"text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11896,16 +11754,16 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 962, "<button type=\"button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 952, "<button type=\"button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var661 templ.ComponentScript = toggleRuleConfig(rl.ID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var661.Call)
+		var templ_7745c5c3_Var650 templ.ComponentScript = toggleRuleConfig(rl.ID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var650.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 963, "\">Cancel</button></div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 953, "\">Cancel</button></div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -11929,432 +11787,432 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var662 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var662 == nil {
-			templ_7745c5c3_Var662 = templ.NopComponent
+		templ_7745c5c3_Var651 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var651 == nil {
+			templ_7745c5c3_Var651 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if rl.ID == "fanart_min_res" {
 			key := fanartResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 964, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 954, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var663 string
-			templ_7745c5c3_Var663, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var652 string
+			templ_7745c5c3_Var652, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5899, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5885, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var663))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var652))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 965, "</option> <option value=\"1280,720\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 955, "</option> <option value=\"1280,720\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "720p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 966, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 956, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 967, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 957, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var664 string
-			templ_7745c5c3_Var664, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_720p"))
+			var templ_7745c5c3_Var653 string
+			templ_7745c5c3_Var653, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_720p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5900, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5886, Col: 94}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var664))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var653))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 968, "</option> <option value=\"1920,1080\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 958, "</option> <option value=\"1920,1080\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1080p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 969, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 959, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 970, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 960, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var665 string
-			templ_7745c5c3_Var665, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1080p"))
+			var templ_7745c5c3_Var654 string
+			templ_7745c5c3_Var654, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1080p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5901, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5887, Col: 97}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var665))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var654))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 971, "</option> <option value=\"2560,1440\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 961, "</option> <option value=\"2560,1440\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1440p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 972, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 962, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 973, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 963, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var666 string
-			templ_7745c5c3_Var666, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1440p"))
+			var templ_7745c5c3_Var655 string
+			templ_7745c5c3_Var655, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_1440p"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5902, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5888, Col: 97}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var666))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var655))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 974, "</option> <option value=\"3840,2160\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 964, "</option> <option value=\"3840,2160\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "4k" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 975, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 965, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 976, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 966, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var667 string
-			templ_7745c5c3_Var667, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_4k"))
+			var templ_7745c5c3_Var656 string
+			templ_7745c5c3_Var656, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.fanart_4k"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5903, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5889, Col: 91}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var667))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var656))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 977, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 967, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 978, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 968, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 979, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 969, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var668 string
-			templ_7745c5c3_Var668, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var657 string
+			templ_7745c5c3_Var657, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5904, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5890, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var668))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var657))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 980, "</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 970, "</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_min_res" {
 			key := thumbResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 981, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 971, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var669 string
-			templ_7745c5c3_Var669, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var658 string
+			templ_7745c5c3_Var658, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5908, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5894, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var669))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var658))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 982, "</option> <option value=\"500,500\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 972, "</option> <option value=\"500,500\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "std" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 983, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 973, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 984, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 974, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var670 string
-			templ_7745c5c3_Var670, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_standard"))
+			var templ_7745c5c3_Var659 string
+			templ_7745c5c3_Var659, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_standard"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5909, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5895, Col: 95}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var670))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var659))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 985, "</option> <option value=\"1000,1000\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 975, "</option> <option value=\"1000,1000\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "hd" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 986, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 976, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 987, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 977, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var671 string
-			templ_7745c5c3_Var671, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_hd"))
+			var templ_7745c5c3_Var660 string
+			templ_7745c5c3_Var660, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_hd"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5910, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5896, Col: 90}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var671))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var660))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 988, "</option> <option value=\"2000,2000\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 978, "</option> <option value=\"2000,2000\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "ultra" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 989, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 979, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 990, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 980, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var672 string
-			templ_7745c5c3_Var672, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_ultra"))
+			var templ_7745c5c3_Var661 string
+			templ_7745c5c3_Var661, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.thumb_ultra"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5911, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5897, Col: 96}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var672))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var661))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 991, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 981, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 992, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 982, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 993, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 983, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var673 string
-			templ_7745c5c3_Var673, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var662 string
+			templ_7745c5c3_Var662, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5912, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5898, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var673))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var662))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 994, "</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 984, "</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "banner_min_res" {
 			key := bannerResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 995, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 985, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var674 string
-			templ_7745c5c3_Var674, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var663 string
+			templ_7745c5c3_Var663, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5916, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5902, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var674))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var663))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 996, "</option> <option value=\"758,140\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 986, "</option> <option value=\"758,140\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "kodi" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 997, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 987, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 998, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 988, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var675 string
-			templ_7745c5c3_Var675, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_kodi"))
+			var templ_7745c5c3_Var664 string
+			templ_7745c5c3_Var664, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_kodi"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5917, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5903, Col: 93}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var675))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var664))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 999, "</option> <option value=\"1000,185\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 989, "</option> <option value=\"1000,185\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "wide" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1000, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 990, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1001, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 991, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var676 string
-			templ_7745c5c3_Var676, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_wide"))
+			var templ_7745c5c3_Var665 string
+			templ_7745c5c3_Var665, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.banner_wide"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5918, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5904, Col: 94}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var676))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var665))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1002, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 992, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1003, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 993, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1004, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 994, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var677 string
-			templ_7745c5c3_Var677, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var666 string
+			templ_7745c5c3_Var666, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5919, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5905, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var677))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var666))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1005, "</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 995, "</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "logo_min_res" {
 			key := logoWidthPresetKey(rl.Config.MinWidth)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1006, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 996, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var678 string
-			templ_7745c5c3_Var678, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var667 string
+			templ_7745c5c3_Var667, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5923, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5909, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var678))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var667))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1007, "</option> <option value=\"400\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 997, "</option> <option value=\"400\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "std" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1008, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 998, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1009, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 999, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var679 string
-			templ_7745c5c3_Var679, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_standard"))
+			var templ_7745c5c3_Var668 string
+			templ_7745c5c3_Var668, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_standard"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5924, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5910, Col: 90}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var679))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var668))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1010, "</option> <option value=\"800\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1000, "</option> <option value=\"800\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "large" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1011, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1001, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1012, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1002, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var680 string
-			templ_7745c5c3_Var680, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_large"))
+			var templ_7745c5c3_Var669 string
+			templ_7745c5c3_Var669, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.logo_large"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5925, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5911, Col: 89}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var680))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var669))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1013, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1003, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1014, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1004, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1015, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1005, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var681 string
-			templ_7745c5c3_Var681, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var670 string
+			templ_7745c5c3_Var670, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5926, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5912, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var681))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var670))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1016, "</option>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1006, "</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -12379,185 +12237,185 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var682 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var682 == nil {
-			templ_7745c5c3_Var682 = templ.NopComponent
+		templ_7745c5c3_Var671 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var671 == nil {
+			templ_7745c5c3_Var671 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if rl.ID == "fanart_aspect" {
 			key := fanartAspectPresetKey(rl.Config.AspectRatio)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1017, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1007, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var683 string
-			templ_7745c5c3_Var683, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var672 string
+			templ_7745c5c3_Var672, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5933, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5919, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var683))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var672))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1018, "</option> <option value=\"1.7778\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1008, "</option> <option value=\"1.7778\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "16:9" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1019, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1009, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1020, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1010, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var684 string
-			templ_7745c5c3_Var684, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_9"))
+			var templ_7745c5c3_Var673 string
+			templ_7745c5c3_Var673, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_9"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5934, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5920, Col: 92}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var684))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var673))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1021, "</option> <option value=\"1.6\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1011, "</option> <option value=\"1.6\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "16:10" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1022, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1012, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1023, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1013, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var685 string
-			templ_7745c5c3_Var685, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_10"))
+			var templ_7745c5c3_Var674 string
+			templ_7745c5c3_Var674, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_16_10"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5935, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5921, Col: 91}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var685))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var674))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1024, "</option> <option value=\"2.0\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1014, "</option> <option value=\"2.0\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "2:1" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1025, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1015, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1026, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1016, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var686 string
-			templ_7745c5c3_Var686, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_2_1"))
+			var templ_7745c5c3_Var675 string
+			templ_7745c5c3_Var675, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_2_1"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5936, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5922, Col: 87}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var686))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var675))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1027, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1017, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1028, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1018, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1029, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1019, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var687 string
-			templ_7745c5c3_Var687, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var676 string
+			templ_7745c5c3_Var676, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5937, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5923, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var687))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var676))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1030, "</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1020, "</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_square" {
 			key := thumbAspectPresetKey(rl.Config.AspectRatio)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1031, "<option value=\"\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1021, "<option value=\"\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var688 string
-			templ_7745c5c3_Var688, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
+			var templ_7745c5c3_Var677 string
+			templ_7745c5c3_Var677, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.rules.select_preset"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5941, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5927, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var688))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var677))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1032, "</option> <option value=\"1.0\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1022, "</option> <option value=\"1.0\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1:1" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1033, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1023, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1034, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1024, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var689 string
-			templ_7745c5c3_Var689, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_1_1"))
+			var templ_7745c5c3_Var678 string
+			templ_7745c5c3_Var678, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.preset.aspect_1_1"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5942, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5928, Col: 87}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var689))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var678))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1035, "</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1025, "</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1036, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1026, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1037, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1027, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var690 string
-			templ_7745c5c3_Var690, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
+			var templ_7745c5c3_Var679 string
+			templ_7745c5c3_Var679, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.custom"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5943, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 5929, Col: 80}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var690))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var679))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1038, "</option>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1028, "</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -12599,12 +12457,12 @@ func badgeSettingScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var691 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var691 == nil {
-			templ_7745c5c3_Var691 = templ.NopComponent
+		templ_7745c5c3_Var680 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var680 == nil {
+			templ_7745c5c3_Var680 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1039, "<script>\n\t\tfunction updateSetting(key, checked) {\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tvar body = {};\n\t\t\tbody[key] = checked ? \"true\" : \"false\";\n\t\t\tfetch(bp + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t}\n\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1029, "<script>\n\t\tfunction updateSetting(key, checked) {\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tvar body = {};\n\t\t\tbody[key] = checked ? \"true\" : \"false\";\n\t\t\tfetch(bp + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t}\n\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -12628,12 +12486,12 @@ func ruleScheduleScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var692 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var692 == nil {
-			templ_7745c5c3_Var692 = templ.NopComponent
+		templ_7745c5c3_Var681 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var681 == nil {
+			templ_7745c5c3_Var681 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1040, "<script>\n\t\tfunction updateRuleSchedule(value) {\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\"rule_schedule.interval_minutes\": value})\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1030, "<script>\n\t\tfunction updateRuleSchedule(value) {\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\"rule_schedule.interval_minutes\": value})\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -12657,12 +12515,12 @@ func ruleToggleScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var693 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var693 == nil {
-			templ_7745c5c3_Var693 = templ.NopComponent
+		templ_7745c5c3_Var682 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var682 == nil {
+			templ_7745c5c3_Var682 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1041, "<script>\n\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction patchRule(ruleID, changes) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/rules/' + ruleID, {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tbody: JSON.stringify(changes),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (!r.ok && typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Failed to update rule.');\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Network error updating rule.');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleRuleEnabled(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar isOn = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !isOn;\n\t\t\tpatchRule(ruleID, {enabled: newVal});\n\t\t\t// Optimistic update\n\t\t\tbtn.setAttribute('aria-checked', String(newVal));\n\t\t\tvar knob = btn.querySelector('span');\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar sel = row ? row.querySelector('select[data-rule-id]') : null;\n\t\t\tvar runBtn = row ? row.querySelector('[data-run-btn]') : null;\n\t\t\tif (newVal) {\n\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\tknob.classList.remove('translate-x-0');\n\t\t\t\tknob.classList.add('translate-x-5');\n\t\t\t\tif (sel) sel.disabled = false;\n\t\t\t\tif (runBtn) runBtn.disabled = false;\n\t\t\t} else {\n\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tknob.classList.remove('translate-x-5');\n\t\t\t\tknob.classList.add('translate-x-0');\n\t\t\t\tif (sel) sel.disabled = true;\n\t\t\t\tif (runBtn) runBtn.disabled = true;\n\t\t\t}\n\t\t}\n\n\t\tfunction runRule(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar origText = btn.textContent;\n\t\t\tbtn.dataset.running = 'true';\n\t\t\tbtn.disabled = true;\n\t\t\tbtn.textContent = 'Running...';\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/rules/' + ruleID + '/run', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 409) { showRuleToast('A rule evaluation is already running.', true); return null; }\n\t\t\t\tif (!r.ok) throw new Error('status ' + r.status);\n\t\t\t\treturn r.json();\n\t\t\t}).then(function(data) {\n\t\t\t\tif (!data) { finishRunBtn(btn, origText); return; }\n\t\t\t\t// Server accepted (202) -- poll for completion.\n\t\t\t\tpollRuleStatus(btn, origText);\n\t\t\t}).catch(function() {\n\t\t\t\tshowRuleToast('Failed to start rule evaluation.', true);\n\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(btn, origText) {\n\t\t\tpollAsyncStatus(bp + '/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(s) {\n\t\t\t\t\tif (s.status === 'running') return false;\n\t\t\t\t\tif (s.status === 'completed') {\n\t\t\t\t\t\tvar msg;\n\t\t\t\t\t\tif (s.violations_found === 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: no violations found';\n\t\t\t\t\t\t} else if (s.violations_remaining === 0 && s.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations, all auto-fixed';\n\t\t\t\t\t\t} else if (s.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_auto_fixed + ' auto-fixed, ' + s.violations_remaining + ' remaining)';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_remaining + ' remaining)';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tshowRuleToast(msg, false);\n\t\t\t\t\t} else if (s.status === 'failed') {\n\t\t\t\t\t\tvar errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';\n\t\t\t\t\t\tshowRuleToast(errMsg, true);\n\t\t\t\t\t} else if (s.status === 'idle') {\n\t\t\t\t\t\tshowRuleToast('Rule evaluation state lost (server may have restarted).', true);\n\t\t\t\t\t}\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t\treturn true;\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowRuleToast('Status check failed (HTTP ' + status + ').', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowRuleToast('Lost connection while running rule.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t}\n\t\t\t}, {maxAttempts: 0});\n\t\t}\n\n\t\tfunction finishRunBtn(btn, origText) {\n\t\t\tdelete btn.dataset.running;\n\t\t\tbtn.textContent = origText;\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar toggle = row ? row.querySelector('[role=\"switch\"]') : null;\n\t\t\tvar isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;\n\t\t\tbtn.disabled = !isEnabled;\n\t\t}\n\n\t\t// showRuleToast displays a brief toast for rule run results.\n\t\t// Uses green for success, red for errors.\n\t\tfunction showRuleToast(msg, isError) {\n\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\tif (!container) { if (typeof showToast === 'function') showToast(msg); return; }\n\t\t\tvar toast = document.createElement('div');\n\t\t\tvar colors = isError\n\t\t\t\t? 'bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'\n\t\t\t\t: 'bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';\n\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border transition-opacity duration-300 ' + colors;\n\t\t\tvar span = document.createElement('span');\n\t\t\tspan.textContent = msg;\n\t\t\tvar btn = document.createElement('button');\n\t\t\tbtn.type = 'button';\n\t\t\tbtn.setAttribute('aria-label', 'Dismiss notification');\n\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\tbtn.textContent = '\\u00d7';\n\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\ttoast.appendChild(span);\n\t\t\ttoast.appendChild(btn);\n\t\t\tcontainer.appendChild(toast);\n\t\t\tsetTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);\n\t\t}\n\n\t\tfunction handleRuleConfigSubmit(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar ruleID = form.dataset.ruleId;\n\t\t\tvar cfg = {};\n\t\t\tvar intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};\n\t\t\t['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {\n\t\t\t\tvar el = form.elements[f];\n\t\t\t\tif (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);\n\t\t\t});\n\t\t\tvar sev = form.elements['severity'];\n\t\t\tif (sev) cfg['severity'] = sev.value;\n\t\t\tpatchRule(ruleID, {config: cfg});\n\t\t\tvar panel = document.getElementById('rule-cfg-' + ruleID);\n\t\t\tif (panel) panel.classList.add('hidden');\n\t\t}\n\n\t\tfunction applyResPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar parts = val.split(',');\n\t\t\tvar form = select.closest('form');\n\t\t\tvar w = form.elements['min_width'];\n\t\t\tvar h = form.elements['min_height'];\n\t\t\tif (w && parts[0]) w.value = parts[0];\n\t\t\tif (h && parts.length > 1 && parts[1]) h.value = parts[1];\n\t\t}\n\n\t\tfunction applyAspectPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar form = select.closest('form');\n\t\t\tvar ar = form.elements['aspect_ratio'];\n\t\t\tif (ar) ar.value = val;\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1031, "<script>\n\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction patchRule(ruleID, changes) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/rules/' + ruleID, {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tbody: JSON.stringify(changes),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (!r.ok && typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Failed to update rule.');\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Network error updating rule.');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleRuleEnabled(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar isOn = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !isOn;\n\t\t\tpatchRule(ruleID, {enabled: newVal});\n\t\t\t// Optimistic update\n\t\t\tbtn.setAttribute('aria-checked', String(newVal));\n\t\t\tvar knob = btn.querySelector('span');\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar sel = row ? row.querySelector('select[data-rule-id]') : null;\n\t\t\tvar runBtn = row ? row.querySelector('[data-run-btn]') : null;\n\t\t\tif (newVal) {\n\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\tknob.classList.remove('translate-x-0');\n\t\t\t\tknob.classList.add('translate-x-5');\n\t\t\t\tif (sel) sel.disabled = false;\n\t\t\t\tif (runBtn) runBtn.disabled = false;\n\t\t\t} else {\n\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tknob.classList.remove('translate-x-5');\n\t\t\t\tknob.classList.add('translate-x-0');\n\t\t\t\tif (sel) sel.disabled = true;\n\t\t\t\tif (runBtn) runBtn.disabled = true;\n\t\t\t}\n\t\t}\n\n\t\tfunction runRule(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar origText = btn.textContent;\n\t\t\tbtn.dataset.running = 'true';\n\t\t\tbtn.disabled = true;\n\t\t\tbtn.textContent = 'Running...';\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/rules/' + ruleID + '/run', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 409) { showRuleToast('A rule evaluation is already running.', true); return null; }\n\t\t\t\tif (!r.ok) throw new Error('status ' + r.status);\n\t\t\t\treturn r.json();\n\t\t\t}).then(function(data) {\n\t\t\t\tif (!data) { finishRunBtn(btn, origText); return; }\n\t\t\t\t// Server accepted (202) -- poll for completion.\n\t\t\t\tpollRuleStatus(btn, origText);\n\t\t\t}).catch(function() {\n\t\t\t\tshowRuleToast('Failed to start rule evaluation.', true);\n\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(btn, origText) {\n\t\t\tpollAsyncStatus(bp + '/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(s) {\n\t\t\t\t\tif (s.status === 'running') return false;\n\t\t\t\t\tif (s.status === 'completed') {\n\t\t\t\t\t\tvar msg;\n\t\t\t\t\t\tif (s.violations_found === 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: no violations found';\n\t\t\t\t\t\t} else if (s.violations_remaining === 0 && s.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations, all auto-fixed';\n\t\t\t\t\t\t} else if (s.violations_auto_fixed > 0) {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_auto_fixed + ' auto-fixed, ' + s.violations_remaining + ' remaining)';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tmsg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_remaining + ' remaining)';\n\t\t\t\t\t\t}\n\t\t\t\t\t\tshowRuleToast(msg, false);\n\t\t\t\t\t} else if (s.status === 'failed') {\n\t\t\t\t\t\tvar errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';\n\t\t\t\t\t\tshowRuleToast(errMsg, true);\n\t\t\t\t\t} else if (s.status === 'idle') {\n\t\t\t\t\t\tshowRuleToast('Rule evaluation state lost (server may have restarted).', true);\n\t\t\t\t\t}\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t\treturn true;\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowRuleToast('Status check failed (HTTP ' + status + ').', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowRuleToast('Lost connection while running rule.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t}\n\t\t\t}, {maxAttempts: 0});\n\t\t}\n\n\t\tfunction finishRunBtn(btn, origText) {\n\t\t\tdelete btn.dataset.running;\n\t\t\tbtn.textContent = origText;\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar toggle = row ? row.querySelector('[role=\"switch\"]') : null;\n\t\t\tvar isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;\n\t\t\tbtn.disabled = !isEnabled;\n\t\t}\n\n\t\t// showRuleToast displays a brief toast for rule run results.\n\t\t// Uses green for success, red for errors.\n\t\tfunction showRuleToast(msg, isError) {\n\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\tif (!container) { if (typeof showToast === 'function') showToast(msg); return; }\n\t\t\tvar toast = document.createElement('div');\n\t\t\tvar colors = isError\n\t\t\t\t? 'bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'\n\t\t\t\t: 'bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';\n\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border transition-opacity duration-300 ' + colors;\n\t\t\tvar span = document.createElement('span');\n\t\t\tspan.textContent = msg;\n\t\t\tvar btn = document.createElement('button');\n\t\t\tbtn.type = 'button';\n\t\t\tbtn.setAttribute('aria-label', 'Dismiss notification');\n\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\tbtn.textContent = '\\u00d7';\n\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\ttoast.appendChild(span);\n\t\t\ttoast.appendChild(btn);\n\t\t\tcontainer.appendChild(toast);\n\t\t\tsetTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);\n\t\t}\n\n\t\tfunction handleRuleConfigSubmit(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar ruleID = form.dataset.ruleId;\n\t\t\tvar cfg = {};\n\t\t\tvar intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};\n\t\t\t['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {\n\t\t\t\tvar el = form.elements[f];\n\t\t\t\tif (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);\n\t\t\t});\n\t\t\tvar sev = form.elements['severity'];\n\t\t\tif (sev) cfg['severity'] = sev.value;\n\t\t\tpatchRule(ruleID, {config: cfg});\n\t\t\tvar panel = document.getElementById('rule-cfg-' + ruleID);\n\t\t\tif (panel) panel.classList.add('hidden');\n\t\t}\n\n\t\tfunction applyResPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar parts = val.split(',');\n\t\t\tvar form = select.closest('form');\n\t\t\tvar w = form.elements['min_width'];\n\t\t\tvar h = form.elements['min_height'];\n\t\t\tif (w && parts[0]) w.value = parts[0];\n\t\t\tif (h && parts.length > 1 && parts[1]) h.value = parts[1];\n\t\t}\n\n\t\tfunction applyAspectPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar form = select.closest('form');\n\t\t\tvar ar = form.elements['aspect_ratio'];\n\t\t\tif (ar) ar.value = val;\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -12686,12 +12544,12 @@ func apiTokenScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var694 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var694 == nil {
-			templ_7745c5c3_Var694 = templ.NopComponent
+		templ_7745c5c3_Var683 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var683 == nil {
+			templ_7745c5c3_Var683 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1042, "<script>\n\t\tfunction createAPIToken(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar name = form.elements['name'].value;\n\t\t\tvar scopes = [];\n\t\t\tif (form.elements['scope_read'].checked) scopes.push('read');\n\t\t\tif (form.elements['scope_write'].checked) scopes.push('write');\n\t\t\tif (form.elements['scope_webhook'].checked) scopes.push('webhook');\n\t\t\tif (form.elements['scope_admin'].checked) scopes.push('admin');\n\t\t\tif (scopes.length === 0) {\n\t\t\t\talert('Select at least one scope');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/auth/tokens', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({ name: name, scopes: scopes.join(',') })\n\t\t\t})\n\t\t\t.then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\t\tthrow new Error(body.error || 'Failed to create token');\n\t\t\t\t\t}, function() {\n\t\t\t\t\t\tthrow new Error('Failed to create token');\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t})\n\t\t\t.then(function(data) {\n\t\t\t\tdocument.getElementById('token-plaintext').textContent = data.token;\n\t\t\t\tdocument.getElementById('token-created-result').classList.remove('hidden');\n\t\t\t\tform.reset();\n\t\t\t\tform.elements['scope_read'].checked = true;\n\t\t\t})\n\t\t\t.catch(function(err) {\n\t\t\t\talert(err.message);\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1032, "<script>\n\t\tfunction createAPIToken(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar name = form.elements['name'].value;\n\t\t\tvar scopes = [];\n\t\t\tif (form.elements['scope_read'].checked) scopes.push('read');\n\t\t\tif (form.elements['scope_write'].checked) scopes.push('write');\n\t\t\tif (form.elements['scope_webhook'].checked) scopes.push('webhook');\n\t\t\tif (form.elements['scope_admin'].checked) scopes.push('admin');\n\t\t\tif (scopes.length === 0) {\n\t\t\t\talert('Select at least one scope');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch(bp + '/api/v1/auth/tokens', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({ name: name, scopes: scopes.join(',') })\n\t\t\t})\n\t\t\t.then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\t\tthrow new Error(body.error || 'Failed to create token');\n\t\t\t\t\t}, function() {\n\t\t\t\t\t\tthrow new Error('Failed to create token');\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t})\n\t\t\t.then(function(data) {\n\t\t\t\tdocument.getElementById('token-plaintext').textContent = data.token;\n\t\t\t\tdocument.getElementById('token-created-result').classList.remove('hidden');\n\t\t\t\tform.reset();\n\t\t\t\tform.elements['scope_read'].checked = true;\n\t\t\t})\n\t\t\t.catch(function(err) {\n\t\t\t\talert(err.message);\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -12718,70 +12576,70 @@ func updaterIntervalOption(value, current int, label string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var695 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var695 == nil {
-			templ_7745c5c3_Var695 = templ.NopComponent
+		templ_7745c5c3_Var684 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var684 == nil {
+			templ_7745c5c3_Var684 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if value == current {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1043, "<option value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1033, "<option value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var696 string
-			templ_7745c5c3_Var696, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(value))
+			var templ_7745c5c3_Var685 string
+			templ_7745c5c3_Var685, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6240, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6226, Col: 37}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var696))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1044, "\" selected>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var685))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var697 string
-			templ_7745c5c3_Var697, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6240, Col: 56}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var697))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1034, "\" selected>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1045, "</option>")
+			var templ_7745c5c3_Var686 string
+			templ_7745c5c3_Var686, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6226, Col: 56}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var686))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1035, "</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1046, "<option value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1036, "<option value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var698 string
-			templ_7745c5c3_Var698, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(value))
+			var templ_7745c5c3_Var687 string
+			templ_7745c5c3_Var687, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(value))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6242, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6228, Col: 37}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var698))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1047, "\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var687))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var699 string
-			templ_7745c5c3_Var699, templ_7745c5c3_Err = templ.JoinStringErrs(label)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6242, Col: 47}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var699))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1037, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1048, "</option>")
+			var templ_7745c5c3_Var688 string
+			templ_7745c5c3_Var688, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6228, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var688))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1038, "</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -12822,646 +12680,646 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var700 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var700 == nil {
-			templ_7745c5c3_Var700 = templ.NopComponent
+		templ_7745c5c3_Var689 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var689 == nil {
+			templ_7745c5c3_Var689 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1049, "<div id=\"updates-i18n\" class=\"hidden\" data-checking=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1039, "<div id=\"updates-i18n\" class=\"hidden\" data-checking=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var690 string
+		templ_7745c5c3_Var690, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_checking"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6254, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var690))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1040, "\" data-downloading=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var691 string
+		templ_7745c5c3_Var691, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_downloading"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6255, Col: 65}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var691))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1041, "\" data-applying=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var692 string
+		templ_7745c5c3_Var692, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_applying"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6256, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var692))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1042, "\" data-error=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var693 string
+		templ_7745c5c3_Var693, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_error"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6257, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var693))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1043, "\" data-saved=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var694 string
+		templ_7745c5c3_Var694, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_saved"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6258, Col: 53}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var694))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1044, "\" data-update-available=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var695 string
+		templ_7745c5c3_Var695, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6259, Col: 69}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var695))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1045, "\" data-up-to-date=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var696 string
+		templ_7745c5c3_Var696, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6260, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var696))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1046, "\" data-release-notes=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var697 string
+		templ_7745c5c3_Var697, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6261, Col: 63}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var697))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1047, "\" data-not-checked=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var698 string
+		templ_7745c5c3_Var698, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6262, Col: 59}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var698))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1048, "\" data-restart-required-title=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var699 string
+		templ_7745c5c3_Var699, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_title"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6263, Col: 81}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var699))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1049, "\" data-restart-required-body=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var700 string
+		templ_7745c5c3_Var700, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_body"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6264, Col: 79}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var700))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1050, "\" data-restart-required-native-instruction=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var701 string
-		templ_7745c5c3_Var701, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_checking"))
+		templ_7745c5c3_Var701, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_native_instruction"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6268, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6265, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var701))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1050, "\" data-downloading=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1051, "\" data-load-failed-save-blocked=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var702 string
-		templ_7745c5c3_Var702, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_downloading"))
+		templ_7745c5c3_Var702, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_save_blocked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6269, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6266, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var702))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1051, "\" data-applying=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1052, "\"></div><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var703 string
-		templ_7745c5c3_Var703, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_applying"))
+		templ_7745c5c3_Var703, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6270, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6270, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var703))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1052, "\" data-error=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1053, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var704 string
-		templ_7745c5c3_Var704, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_error"))
+		templ_7745c5c3_Var704, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6271, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6271, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var704))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1053, "\" data-saved=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1054, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Version info row --><div class=\"grid grid-cols-1 gap-4 sm:grid-cols-2\"><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var705 string
-		templ_7745c5c3_Var705, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.state_saved"))
+		templ_7745c5c3_Var705, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.current_version"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6272, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6277, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var705))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1054, "\" data-update-available=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1055, "</div><div class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var706 string
-		templ_7745c5c3_Var706, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
+		templ_7745c5c3_Var706, templ_7745c5c3_Err = templ.JoinStringErrs(data.CurrentVersion)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6273, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6278, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var706))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1055, "\" data-up-to-date=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1056, "</div></div><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var707 string
-		templ_7745c5c3_Var707, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
+		templ_7745c5c3_Var707, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.latest_version"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6274, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6281, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var707))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1056, "\" data-release-notes=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var708 string
-		templ_7745c5c3_Var708, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6275, Col: 63}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var708))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1057, "\" data-not-checked=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var709 string
-		templ_7745c5c3_Var709, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6276, Col: 59}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var709))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1058, "\" data-restart-required-title=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var710 string
-		templ_7745c5c3_Var710, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6277, Col: 81}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var710))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1059, "\" data-restart-required-body=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var711 string
-		templ_7745c5c3_Var711, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_body"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6278, Col: 79}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var711))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1060, "\" data-restart-required-native-instruction=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var712 string
-		templ_7745c5c3_Var712, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_native_instruction"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6279, Col: 107}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var712))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1061, "\" data-load-failed-save-blocked=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var713 string
-		templ_7745c5c3_Var713, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_save_blocked"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6280, Col: 85}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var713))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1062, "\"></div><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var714 string
-		templ_7745c5c3_Var714, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6284, Col: 104}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var714))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1063, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var715 string
-		templ_7745c5c3_Var715, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.description"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6285, Col: 100}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var715))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1064, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Version info row --><div class=\"grid grid-cols-1 gap-4 sm:grid-cols-2\"><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var716 string
-		templ_7745c5c3_Var716, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.current_version"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6291, Col: 115}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var716))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1065, "</div><div class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var717 string
-		templ_7745c5c3_Var717, templ_7745c5c3_Err = templ.JoinStringErrs(data.CurrentVersion)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6292, Col: 95}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var717))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1066, "</div></div><div><div class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var718 string
-		templ_7745c5c3_Var718, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.latest_version"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6295, Col: 114}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var718))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1067, "</div><div id=\"updates-latest-version\" class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1057, "</div><div id=\"updates-latest-version\" class=\"mt-1 text-sm font-mono text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.LatestVersion != "" {
 			if data.UpdateAvailable {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1068, "<span class=\"text-green-600 dark:text-green-400 font-semibold\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1058, "<span class=\"text-green-600 dark:text-green-400 font-semibold\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var719 string
-				templ_7745c5c3_Var719, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
+				var templ_7745c5c3_Var708 string
+				templ_7745c5c3_Var708, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6302, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6288, Col: 91}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var719))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1069, "</span> <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var708))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var720 string
-				templ_7745c5c3_Var720, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6304, Col: 54}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var720))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1059, "</span> <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1070, "</span>")
+				var templ_7745c5c3_Var709 string
+				templ_7745c5c3_Var709, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.update_available"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6290, Col: 54}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var709))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1060, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				var templ_7745c5c3_Var721 string
-				templ_7745c5c3_Var721, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
+				var templ_7745c5c3_Var710 string
+				templ_7745c5c3_Var710, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6307, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6293, Col: 28}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var721))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1071, " <span class=\"ml-2 text-gray-400 dark:text-gray-500\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var710))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var722 string
-				templ_7745c5c3_Var722, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6308, Col: 99}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var722))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1061, " <span class=\"ml-2 text-gray-400 dark:text-gray-500\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1072, "</span>")
+				var templ_7745c5c3_Var711 string
+				templ_7745c5c3_Var711, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.up_to_date"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6294, Col: 99}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var711))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1062, "</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1073, "<span class=\"text-gray-400 dark:text-gray-500 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1063, "<span class=\"text-gray-400 dark:text-gray-500 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var723 string
-			templ_7745c5c3_Var723, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
+			var templ_7745c5c3_Var712 string
+			templ_7745c5c3_Var712, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.not_checked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6311, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6297, Col: 101}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var723))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var712))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1074, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1064, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1075, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1065, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var724 = []any{"text-xs text-gray-400 dark:text-gray-500",
+		var templ_7745c5c3_Var713 = []any{"text-xs text-gray-400 dark:text-gray-500",
 			templ.KV("hidden", data.LastChecked == ""),
 		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var724...)
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var713...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1076, "<div id=\"updates-last-checked-row\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1066, "<div id=\"updates-last-checked-row\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var725 string
-		templ_7745c5c3_Var725, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var724).String())
+		var templ_7745c5c3_Var714 string
+		templ_7745c5c3_Var714, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var713).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var725))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var714))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1077, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1067, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var715 string
+		templ_7745c5c3_Var715, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_checked"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6309, Col: 45}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var715))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1068, ": <span id=\"updates-last-checked\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var716 string
+		templ_7745c5c3_Var716, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastChecked)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6309, Col: 99}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var716))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1069, "</span></div><!-- Release notes link: shown on initial render when the server already\n\t\t\t     knows about a newer version, and hydrated by fetchAndPopulateUpdateStatus\n\t\t\t     when /status returns a non-empty release_url. -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var717 = []any{"text-xs",
+			templ.KV("hidden", data.ReleaseURL == ""),
+		}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var717...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1070, "<div id=\"updates-release-link-row\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var718 string
+		templ_7745c5c3_Var718, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var717).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var718))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1071, "\"><a id=\"updates-release-link\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var719 templ.SafeURL
+		templ_7745c5c3_Var719, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.ReleaseURL))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6323, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var719))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1072, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var720 string
+		templ_7745c5c3_Var720, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6328, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var720))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1073, "</a></div><!-- Docker notice -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.IsDocker {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1074, "<div class=\"rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3\"><p class=\"text-sm text-blue-700 dark:text-blue-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var721 string
+			templ_7745c5c3_Var721, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.docker_notice"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6334, Col: 99}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var721))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1075, "</p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1076, "<!-- Status display --><div id=\"updates-status-row\" class=\"hidden rounded-md bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 px-4 py-3\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-center gap-2\"><span id=\"updates-status-spinner\" class=\"hidden animate-spin inline-block w-4 h-4 border-2 border-gray-400 border-t-blue-500 rounded-full\" aria-hidden=\"true\"></span> <span id=\"updates-status-text\" class=\"text-sm text-gray-700 dark:text-gray-300\"></span></div><div id=\"updates-error-row\" class=\"hidden mt-1 text-sm text-red-600 dark:text-red-400\" role=\"alert\"></div></div><!-- Restart-required banner: shown after a successful Apply has staged\n\t\t\t     the new binary. Always rendered in the DOM so the JS hydrate path\n\t\t\t     can flip its visibility without templating; on first server-render\n\t\t\t     after Apply, .hidden is dropped here so users who navigate back to\n\t\t\t     the tab still see the banner without waiting for the /status\n\t\t\t     fetch. role=status + aria-live=polite is intentionally weaker\n\t\t\t     than role=alert: the message is informational (\"here is what\n\t\t\t     happened\"), not an error or interruption. -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var722 = []any{"rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700",
+			templ.KV("hidden", !data.RestartRequired),
+		}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var722...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1077, "<div id=\"updates-restart-required-row\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var723 string
+		templ_7745c5c3_Var723, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var722).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var723))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1078, "\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-start gap-3\"><svg class=\"mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><div class=\"flex-1 text-sm\"><div class=\"font-semibold text-amber-800 dark:text-amber-200\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var724 string
+		templ_7745c5c3_Var724, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_title"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6375, Col: 58}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var724))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1079, " ")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.PendingVersion != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1080, "<span class=\"ml-1 font-mono font-normal\" id=\"updates-restart-pending-version\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var725 string
+			templ_7745c5c3_Var725, templ_7745c5c3_Err = templ.JoinStringErrs(data.PendingVersion)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6377, Col: 107}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var725))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1081, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1082, "<span class=\"ml-1 font-mono font-normal hidden\" id=\"updates-restart-pending-version\"></span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1083, "</div><div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-body\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var726 string
-		templ_7745c5c3_Var726, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_checked"))
+		templ_7745c5c3_Var726, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_body"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6323, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6383, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var726))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1078, ": <span id=\"updates-last-checked\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1084, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var727 string
-		templ_7745c5c3_Var727, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastChecked)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6323, Col: 99}
+		if data.IsDocker {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1085, "<div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-instruction\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var727 string
+			templ_7745c5c3_Var727, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_docker_instruction"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6392, Col: 72}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var727))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1086, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1087, "<div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-instruction\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var728 string
+			templ_7745c5c3_Var728, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_native_instruction"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6396, Col: 72}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var728))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1088, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var727))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1079, "</span></div><!-- Release notes link: shown on initial render when the server already\n\t\t\t     knows about a newer version, and hydrated by fetchAndPopulateUpdateStatus\n\t\t\t     when /status returns a non-empty release_url. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var728 = []any{"text-xs",
-			templ.KV("hidden", data.ReleaseURL == ""),
-		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var728...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1080, "<div id=\"updates-release-link-row\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1089, "</div></div></div></div></div><!-- Channel, scheduler, and apply-mode settings --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var729 string
-		templ_7745c5c3_Var729, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var728).String())
+		templ_7745c5c3_Var729, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6407, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var729))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1081, "\"><a id=\"updates-release-link\" href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1090, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var730 templ.SafeURL
-		templ_7745c5c3_Var730, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.ReleaseURL))
+		var templ_7745c5c3_Var730 string
+		templ_7745c5c3_Var730, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6337, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6408, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var730))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1082, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1091, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Load-failed banner: shown when the server-side render could\n\t\t\t     not read the persisted updater config. Without this, the\n\t\t\t     controls below show the in-code defaults, which look\n\t\t\t     indistinguishable from a healthy \"stable + auto-check off\"\n\t\t\t     install. The dismiss button is cosmetic; the underlying\n\t\t\t     LoadFailed condition still gates auto-save in JS so a\n\t\t\t     dismissed banner cannot lead to a destructive write. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var731 string
-		templ_7745c5c3_Var731, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.release_notes"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6342, Col: 47}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var731))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1083, "</a></div><!-- Docker notice -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1084, "<div class=\"rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-3\"><p class=\"text-sm text-blue-700 dark:text-blue-300\">")
+		if data.LoadFailed {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1092, "<div id=\"updates-load-failed-row\" data-load-failed=\"true\" class=\"rounded-md border px-4 py-3 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700\" role=\"alert\" aria-live=\"assertive\" aria-atomic=\"true\"><div class=\"flex items-start gap-3\"><svg class=\"mt-0.5 h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z\"></path></svg><div class=\"flex-1 text-sm\"><div class=\"font-semibold text-red-800 dark:text-red-200\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var731 string
+			templ_7745c5c3_Var731, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_title"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6433, Col: 54}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var731))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1093, "</div><div class=\"mt-1 text-red-700 dark:text-red-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var732 string
-			templ_7745c5c3_Var732, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.docker_notice"))
+			templ_7745c5c3_Var732, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6348, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6436, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var732))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1085, "</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1094, "</div></div><button type=\"button\" onclick=\"document.getElementById('updates-load-failed-row').classList.add('hidden')\" class=\"flex-shrink-0 rounded-md p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var733 string
+			templ_7745c5c3_Var733, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.dismiss"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6443, Col: 44}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var733))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1095, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1086, "<!-- Status display --><div id=\"updates-status-row\" class=\"hidden rounded-md bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 px-4 py-3\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-center gap-2\"><span id=\"updates-status-spinner\" class=\"hidden animate-spin inline-block w-4 h-4 border-2 border-gray-400 border-t-blue-500 rounded-full\" aria-hidden=\"true\"></span> <span id=\"updates-status-text\" class=\"text-sm text-gray-700 dark:text-gray-300\"></span></div><div id=\"updates-error-row\" class=\"hidden mt-1 text-sm text-red-600 dark:text-red-400\" role=\"alert\"></div></div><!-- Restart-required banner: shown after a successful Apply has staged\n\t\t\t     the new binary. Always rendered in the DOM so the JS hydrate path\n\t\t\t     can flip its visibility without templating; on first server-render\n\t\t\t     after Apply, .hidden is dropped here so users who navigate back to\n\t\t\t     the tab still see the banner without waiting for the /status\n\t\t\t     fetch. role=status + aria-live=polite is intentionally weaker\n\t\t\t     than role=alert: the message is informational (\"here is what\n\t\t\t     happened\"), not an error or interruption. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var733 = []any{"rounded-md border px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700",
-			templ.KV("hidden", !data.RestartRequired),
-		}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var733...)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1087, "<div id=\"updates-restart-required-row\" class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var734 string
-		templ_7745c5c3_Var734, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var733).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var734))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1088, "\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"><div class=\"flex items-start gap-3\"><svg class=\"mt-0.5 h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><div class=\"flex-1 text-sm\"><div class=\"font-semibold text-amber-800 dark:text-amber-200\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var735 string
-		templ_7745c5c3_Var735, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6389, Col: 58}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var735))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1089, " ")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.PendingVersion != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1090, "<span class=\"ml-1 font-mono font-normal\" id=\"updates-restart-pending-version\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var736 string
-			templ_7745c5c3_Var736, templ_7745c5c3_Err = templ.JoinStringErrs(data.PendingVersion)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6391, Col: 107}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var736))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1091, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1092, "<span class=\"ml-1 font-mono font-normal hidden\" id=\"updates-restart-pending-version\"></span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1093, "</div><div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-body\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var737 string
-		templ_7745c5c3_Var737, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_body"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6397, Col: 57}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var737))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1094, "</div>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1095, "<div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-instruction\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var738 string
-			templ_7745c5c3_Var738, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_docker_instruction"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6406, Col: 72}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var738))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1096, "</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1097, "<div class=\"mt-1 text-amber-700 dark:text-amber-300\" id=\"updates-restart-required-instruction\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var739 string
-			templ_7745c5c3_Var739, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.restart_required_native_instruction"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6410, Col: 72}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var739))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1098, "</div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1099, "</div></div></div></div></div><!-- Channel, scheduler, and apply-mode settings --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var740 string
-		templ_7745c5c3_Var740, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.label"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6421, Col: 111}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var740))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1100, "</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var741 string
-		templ_7745c5c3_Var741, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.config.description"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6422, Col: 107}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var741))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1101, "</p></div><div class=\"px-6 py-4 space-y-5\"><!-- Load-failed banner: shown when the server-side render could\n\t\t\t     not read the persisted updater config. Without this, the\n\t\t\t     controls below show the in-code defaults, which look\n\t\t\t     indistinguishable from a healthy \"stable + auto-check off\"\n\t\t\t     install. The dismiss button is cosmetic; the underlying\n\t\t\t     LoadFailed condition still gates auto-save in JS so a\n\t\t\t     dismissed banner cannot lead to a destructive write. -->")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if data.LoadFailed {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1102, "<div id=\"updates-load-failed-row\" data-load-failed=\"true\" class=\"rounded-md border px-4 py-3 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700\" role=\"alert\" aria-live=\"assertive\" aria-atomic=\"true\"><div class=\"flex items-start gap-3\"><svg class=\"mt-0.5 h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z\"></path></svg><div class=\"flex-1 text-sm\"><div class=\"font-semibold text-red-800 dark:text-red-200\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var742 string
-			templ_7745c5c3_Var742, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_title"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6447, Col: 54}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var742))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1103, "</div><div class=\"mt-1 text-red-700 dark:text-red-300\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var743 string
-			templ_7745c5c3_Var743, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.load_failed_body"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6450, Col: 53}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var743))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1104, "</div></div><button type=\"button\" onclick=\"document.getElementById('updates-load-failed-row').classList.add('hidden')\" class=\"flex-shrink-0 rounded-md p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500\" aria-label=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var744 string
-			templ_7745c5c3_Var744, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.dismiss"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6457, Col: 44}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var744))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1105, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1106, "<!-- Top-level Enabled toggle --><div class=\"flex items-center justify-between gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1096, "<!-- Top-level Enabled toggle --><div class=\"flex items-center justify-between gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -13475,33 +13333,33 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1107, "</div><!-- Channel selector --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1097, "</div><!-- Channel selector --><div class=\"flex items-center justify-between gap-4\"><div><div class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var745 string
-		templ_7745c5c3_Var745, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.label"))
+		var templ_7745c5c3_Var734 string
+		templ_7745c5c3_Var734, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6479, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6465, Col: 113}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var745))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1108, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var734))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var746 string
-		templ_7745c5c3_Var746, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.description"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6480, Col: 107}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var746))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1098, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1109, "</div></div>")
+		var templ_7745c5c3_Var735 string
+		templ_7745c5c3_Var735, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.channel.description"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6466, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var735))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1099, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -13516,7 +13374,7 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1110, "</div><!-- Auto-check toggle --><div class=\"flex items-center justify-between gap-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1100, "</div><!-- Auto-check toggle --><div class=\"flex items-center justify-between gap-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -13530,12 +13388,12 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1111, "</div><!-- Auto-update toggle. Hidden in Docker because the scheduler\n\t\t\t     no-ops on Docker hosts (orchestration handles container\n\t\t\t     image refresh); offering the toggle would advertise a\n\t\t\t     capability that does nothing. -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1101, "</div><!-- Auto-update toggle. Hidden in Docker because the scheduler\n\t\t\t     no-ops on Docker hosts (orchestration handles container\n\t\t\t     image refresh); offering the toggle would advertise a\n\t\t\t     capability that does nothing. -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1112, "<div><div class=\"flex items-center justify-between gap-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1102, "<div><div class=\"flex items-center justify-between gap-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -13549,295 +13407,295 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1113, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1103, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if data.AutoUpdate && data.LastAutoApplied != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1114, "<div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400\" id=\"updates-last-auto-applied-row\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1104, "<div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400\" id=\"updates-last-auto-applied-row\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var747 string
-				templ_7745c5c3_Var747, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_auto_applied.label"))
+				var templ_7745c5c3_Var736 string
+				templ_7745c5c3_Var736, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.last_auto_applied.label"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6518, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6504, Col: 59}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var747))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var736))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1115, ": ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1105, ": ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if data.LastAutoAppliedVersion != "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1116, "<span class=\"font-mono\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1106, "<span class=\"font-mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var748 string
-					templ_7745c5c3_Var748, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoAppliedVersion)
+					var templ_7745c5c3_Var737 string
+					templ_7745c5c3_Var737, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoAppliedVersion)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6520, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6506, Col: 61}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var748))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1117, "</span>, ")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var737))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1107, "</span>, ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1118, "<span class=\"font-mono\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1108, "<span class=\"font-mono\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var749 string
-				templ_7745c5c3_Var749, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoApplied)
+				var templ_7745c5c3_Var738 string
+				templ_7745c5c3_Var738, templ_7745c5c3_Err = templ.JoinStringErrs(data.LastAutoApplied)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6522, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6508, Col: 53}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var749))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1119, "</span></div>")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var738))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1109, "</span></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1120, "<div class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1110, "<div class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var750 string
-			templ_7745c5c3_Var750, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_hint"))
+			var templ_7745c5c3_Var739 string
+			templ_7745c5c3_Var739, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_hint"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6526, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6512, Col: 60}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var750))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1121, " <a href=\"https://github.com/sydlexius/stillwater/releases\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var739))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var751 string
-			templ_7745c5c3_Var751, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_link"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6528, Col: 61}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var751))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1111, " <a href=\"https://github.com/sydlexius/stillwater/releases\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-500 hover:underline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1122, "</a></div>")
+			var templ_7745c5c3_Var740 string
+			templ_7745c5c3_Var740, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.rollback_link"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6514, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var740))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1112, "</a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if data.UpdateAvailable && data.LatestVersion != "" && !slices.Contains(data.SkippedVersions, data.LatestVersion) {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1123, "<div class=\"mt-2\"><button type=\"button\" id=\"updates-skip-version-btn\" data-version=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1113, "<div class=\"mt-2\"><button type=\"button\" id=\"updates-skip-version-btn\" data-version=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var752 string
-				templ_7745c5c3_Var752, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
+				var templ_7745c5c3_Var741 string
+				templ_7745c5c3_Var741, templ_7745c5c3_Err = templ.JoinStringErrs(data.LatestVersion)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6536, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6522, Col: 41}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var752))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1124, "\" onclick=\"skipThisVersion()\" class=\"inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var741))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var753 string
-				templ_7745c5c3_Var753, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.skip_version.label", data.LatestVersion))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6540, Col: 76}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var753))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1114, "\" onclick=\"skipThisVersion()\" class=\"inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1125, "</button></div>")
+				var templ_7745c5c3_Var742 string
+				templ_7745c5c3_Var742, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.skip_version.label", data.LatestVersion))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6526, Col: 76}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var742))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1115, "</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			if len(data.SkippedVersions) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1126, "<div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400\" id=\"updates-skipped-versions-row\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1116, "<div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400\" id=\"updates-skipped-versions-row\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var754 string
-				templ_7745c5c3_Var754, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.skip_version.list_label"))
+				var templ_7745c5c3_Var743 string
+				templ_7745c5c3_Var743, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.skip_version.list_label"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6546, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6532, Col: 59}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var754))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var743))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1127, ": ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1117, ": ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for i, v := range data.SkippedVersions {
 					if i > 0 {
-						var templ_7745c5c3_Var755 string
-						templ_7745c5c3_Var755, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
+						var templ_7745c5c3_Var744 string
+						templ_7745c5c3_Var744, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6549, Col: 15}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6535, Col: 15}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var755))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var744))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1128, " <span class=\"font-mono\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1118, " <span class=\"font-mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var756 string
-					templ_7745c5c3_Var756, templ_7745c5c3_Err = templ.JoinStringErrs(v)
+					var templ_7745c5c3_Var745 string
+					templ_7745c5c3_Var745, templ_7745c5c3_Err = templ.JoinStringErrs(v)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6551, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6537, Col: 35}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var756))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var745))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1129, "</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1119, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1130, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1120, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1131, "</div><!-- First-toggle confirmation modal: shown only when the user\n\t\t\t\t     turns AutoUpdate on (off -> on). The modal is rendered\n\t\t\t\t     hidden by default; the auto-save handler intercepts the\n\t\t\t\t     change event, surfaces the modal, and only persists the\n\t\t\t\t     toggle when the user confirms. Cancel reverts the\n\t\t\t\t     checkbox to its previous state. --> <div id=\"updates-auto-update-confirm-modal\" class=\"hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"updates-auto-update-confirm-title\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 space-y-4\"><h3 id=\"updates-auto-update-confirm-title\" class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1121, "</div><!-- First-toggle confirmation modal: shown only when the user\n\t\t\t\t     turns AutoUpdate on (off -> on). The modal is rendered\n\t\t\t\t     hidden by default; the auto-save handler intercepts the\n\t\t\t\t     change event, surfaces the modal, and only persists the\n\t\t\t\t     toggle when the user confirms. Cancel reverts the\n\t\t\t\t     checkbox to its previous state. --> <div id=\"updates-auto-update-confirm-modal\" class=\"hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"updates-auto-update-confirm-title\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 space-y-4\"><h3 id=\"updates-auto-update-confirm-title\" class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var757 string
-			templ_7745c5c3_Var757, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_title"))
+			var templ_7745c5c3_Var746 string
+			templ_7745c5c3_Var746, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6571, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6557, Col: 61}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var757))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1132, "</h3><p class=\"text-sm text-gray-700 dark:text-gray-300\">")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var746))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var758 string
-			templ_7745c5c3_Var758, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_body"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6574, Col: 60}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var758))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1122, "</h3><p class=\"text-sm text-gray-700 dark:text-gray-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1133, "</p><div class=\"flex justify-end gap-2\"><button type=\"button\" id=\"updates-auto-update-confirm-cancel\" class=\"px-3 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500\">")
+			var templ_7745c5c3_Var747 string
+			templ_7745c5c3_Var747, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_body"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6560, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var747))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var759 string
-			templ_7745c5c3_Var759, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6582, Col: 33}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var759))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1123, "</p><div class=\"flex justify-end gap-2\"><button type=\"button\" id=\"updates-auto-update-confirm-cancel\" class=\"px-3 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1134, "</button> <button type=\"button\" id=\"updates-auto-update-confirm-accept\" class=\"px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500\">")
+			var templ_7745c5c3_Var748 string
+			templ_7745c5c3_Var748, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6568, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var748))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var760 string
-			templ_7745c5c3_Var760, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_accept"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6589, Col: 63}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var760))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1124, "</button> <button type=\"button\" id=\"updates-auto-update-confirm-accept\" class=\"px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1135, "</button></div></div></div>")
+			var templ_7745c5c3_Var749 string
+			templ_7745c5c3_Var749, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.auto_update.confirm_accept"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6575, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var749))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1125, "</button></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1136, "<!-- Check interval selector. The select is a fixed enum to keep\n\t\t\t     the UI simple and keep the request payload small; the API\n\t\t\t     accepts any integer >= 1, so power users can hit the\n\t\t\t     endpoint directly for non-listed cadences. If the persisted\n\t\t\t     CheckIntervalHours is not in the enum, a \"(custom)\" option\n\t\t\t     is rendered so Save does not silently overwrite it with the\n\t\t\t     browser's first-option fallback. --><div class=\"flex items-center justify-between gap-4\"><div><label for=\"updates-check-interval\" class=\"block text-sm font-medium text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1126, "<!-- Check interval selector. The select is a fixed enum to keep\n\t\t\t     the UI simple and keep the request payload small; the API\n\t\t\t     accepts any integer >= 1, so power users can hit the\n\t\t\t     endpoint directly for non-listed cadences. If the persisted\n\t\t\t     CheckIntervalHours is not in the enum, a \"(custom)\" option\n\t\t\t     is rendered so Save does not silently overwrite it with the\n\t\t\t     browser's first-option fallback. --><div class=\"flex items-center justify-between gap-4\"><div><label for=\"updates-check-interval\" class=\"block text-sm font-medium text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var761 string
-		templ_7745c5c3_Var761, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.label"))
+		var templ_7745c5c3_Var750 string
+		templ_7745c5c3_Var750, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6604, Col: 157}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6590, Col: 157}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var761))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1137, "</label><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var750))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var762 string
-		templ_7745c5c3_Var762, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.description"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6605, Col: 114}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var762))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1127, "</label><div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1138, "</div></div><select id=\"updates-check-interval\" name=\"updates_check_interval\" class=\"block w-44 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\">")
+		var templ_7745c5c3_Var751 string
+		templ_7745c5c3_Var751, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_interval.description"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6591, Col: 114}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var751))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1128, "</div></div><select id=\"updates-check-interval\" name=\"updates_check_interval\" class=\"block w-44 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !isKnownInterval(data.CheckIntervalHours) {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1139, "<option value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1129, "<option value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var763 string
-			templ_7745c5c3_Var763, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.CheckIntervalHours))
+			var templ_7745c5c3_Var752 string
+			templ_7745c5c3_Var752, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.CheckIntervalHours))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6613, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6599, Col: 59}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var763))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1140, "\" selected>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var752))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var764 string
-			templ_7745c5c3_Var764, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.interval_custom", data.CheckIntervalHours))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6613, Col: 141}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var764))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1130, "\" selected>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1141, "</option>")
+			var templ_7745c5c3_Var753 string
+			templ_7745c5c3_Var753, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "settings.updates.interval_custom", data.CheckIntervalHours))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6599, Col: 141}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var753))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1131, "</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -13862,66 +13720,66 @@ func settingsUpdatesTab(data UpdatesTabData, basePath string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1142, "</select></div></div></div><!-- Actions --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1132, "</select></div></div></div><!-- Actions --><div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var765 string
-		templ_7745c5c3_Var765, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.actions_title"))
+		var templ_7745c5c3_Var754 string
+		templ_7745c5c3_Var754, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.actions_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6627, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6613, Col: 112}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var765))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1143, "</h2></div><div class=\"px-6 py-4 flex flex-wrap gap-3\"><button type=\"button\" id=\"updates-check-btn\" onclick=\"checkForUpdates()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var754))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var766 string
-		templ_7745c5c3_Var766, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6636, Col: 42}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var766))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1133, "</h2></div><div class=\"px-6 py-4 flex flex-wrap gap-3\"><button type=\"button\" id=\"updates-check-btn\" onclick=\"checkForUpdates()\" class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1144, "</button> ")
+		var templ_7745c5c3_Var755 string
+		templ_7745c5c3_Var755, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.check_now"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6622, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var755))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1134, "</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !data.IsDocker {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1145, "<button type=\"button\" id=\"updates-apply-btn\" onclick=\"applyUpdate()\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1135, "<button type=\"button\" id=\"updates-apply-btn\" onclick=\"applyUpdate()\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if !data.Enabled || !data.UpdateAvailable || data.RestartRequired {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1146, " disabled")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1136, " disabled")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1147, " class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1137, " class=\"inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var767 string
-			templ_7745c5c3_Var767, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
+			var templ_7745c5c3_Var756 string
+			templ_7745c5c3_Var756, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.updates.apply_update"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6646, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 6632, Col: 46}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var767))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var756))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1148, "</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1138, "</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1149, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1139, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -13946,12 +13804,12 @@ func updatesTabScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var768 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var768 == nil {
-			templ_7745c5c3_Var768 = templ.NopComponent
+		templ_7745c5c3_Var757 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var757 == nil {
+			templ_7745c5c3_Var757 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1150, "<script>\n\t\t(function() {\n\t\t\tvar updBp = '';\n\t\t\tvar updMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tif (updMeta && updMeta.content) {\n\t\t\t\tupdBp = updMeta.content;\n\t\t\t}\n\n\t\t\t// restartRequiredActive reports whether the persistent\n\t\t\t// \"restart required\" banner is currently visible. Used to gate\n\t\t\t// updater actions that would otherwise re-surface stale state\n\t\t\t// against the still-running old version.\n\t\t\tfunction restartRequiredActive() {\n\t\t\t\tvar row = document.getElementById('updates-restart-required-row');\n\t\t\t\treturn !!(row && !row.classList.contains('hidden'));\n\t\t\t}\n\n\t\t\t// checkForUpdates calls the check endpoint and refreshes the UI.\n\t\t\twindow.checkForUpdates = function() {\n\t\t\t\t// After Apply staged the new binary, /check would re-run\n\t\t\t\t// against the old in-memory version and re-surface the same\n\t\t\t\t// \"update available\" pill the restart-required flow is\n\t\t\t\t// suppressing. Skip until restart finishes (issue #1169).\n\t\t\t\tif (restartRequiredActive()) return;\n\t\t\t\tvar btn = document.getElementById('updates-check-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/check', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'check failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function(data) {\n\t\t\t\t\t// /check mutates last_checked and the cached release fields, so\n\t\t\t\t\t// re-hydrate from /status to keep every updater DOM node\n\t\t\t\t\t// (last-checked timestamp, latest version badge, release-notes\n\t\t\t\t\t// row, apply button) consistent with a single code path.\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t// Passive refresh after /check: a /status failure must\n\t\t\t\t\t// not bring back the inline status row this PR retires.\n\t\t\t\t\tfetchAndPopulateUpdateStatus({silent: true});\n\t\t\t\t\t// Notify other page components (sidebar pill/dot) that the\n\t\t\t\t\t// cached updater status has changed so they can re-read it.\n\t\t\t\t\tdocument.dispatchEvent(new CustomEvent('sw:update-status-changed'));\n\t\t\t\t\t// Surface the check result via the canonical toast so it\n\t\t\t\t\t// matches the pattern used elsewhere in Settings.\n\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\tvar i18nEl = document.getElementById('updates-i18n');\n\t\t\t\t\t\tvar upMsg = (i18nEl && i18nEl.dataset.upToDate) || 'Up to date';\n\t\t\t\t\t\tvar availMsg = (i18nEl && i18nEl.dataset.updateAvailable) || 'Update available';\n\t\t\t\t\t\tif (data && data.update_available) {\n\t\t\t\t\t\t\tshowSuccessToast(data.latest ? availMsg + ': ' + data.latest : availMsg);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowSuccessToast(upMsg);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to check for updates');\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.finally(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// applyUpdate calls the apply endpoint.\n\t\t\twindow.applyUpdate = function() {\n\t\t\t\tvar btn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tsetUpdaterStatus('applying', '');\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/apply', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (resp.status === 422) return throwFromResponse(resp, 'not supported');\n\t\t\t\t\tif (resp.status === 409) return throwFromResponse(resp, 'already in progress');\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'apply failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('downloading', '');\n\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// updaterPollTimer is the single active poll interval. Only one poller\n\t\t\t// may run at a time; reopening the Updates tab during an apply would\n\t\t\t// otherwise stack multiple intervals, each racing to clear state.\n\t\t\tvar updaterPollTimer = null;\n\n\t\t\t// persistedUpdatesEnabled tracks the last server-confirmed value of\n\t\t\t// the updater kill switch. The Apply button must be gated on this\n\t\t\t// rather than the live #updates-enabled checkbox state, because POST\n\t\t\t// /api/v1/updates/apply is enforced from the persisted config: if\n\t\t\t// the user toggles the checkbox without clicking Save, the server\n\t\t\t// still 403s an Apply request, but a checkbox-driven gate would\n\t\t\t// happily re-enable the button on the next /status hydrate.\n\t\t\t//\n\t\t\t// Seeded at script load from the server-rendered checkbox state\n\t\t\t// (which IS the persisted value at render time), then updated only\n\t\t\t// when saveUpdaterConfig completes successfully. Defaults to true\n\t\t\t// when the checkbox is absent so the prior behaviour holds for\n\t\t\t// hydrate paths that fire before the form has fully rendered.\n\t\t\tvar persistedUpdatesEnabled = (function() {\n\t\t\t\tvar el = document.getElementById('updates-enabled');\n\t\t\t\treturn el ? el.checked : true;\n\t\t\t})();\n\n\t\t\t// updatesSaveSeq + updatesSaveAbort sequence overlapping auto-saves.\n\t\t\t// Auto-save fires on every channel/checkbox/interval change, so a\n\t\t\t// rapid toggle (stable -> prerelease -> nightly) issues overlapping\n\t\t\t// PUTs whose responses can land out of order. Without sequencing,\n\t\t\t// the older response can run its post-save UI updates after the\n\t\t\t// newer one, snapping the UI back to a stale value while the server\n\t\t\t// holds the latest. The AbortController cancels the previous in-\n\t\t\t// flight request on each new save; the saveSeq compare ensures any\n\t\t\t// late .then/.catch from a superseded request no-ops instead of\n\t\t\t// clobbering the current state.\n\t\t\tvar updatesSaveSeq = 0;\n\t\t\tvar updatesSaveAbort = null;\n\n\t\t\t// computeApplyDisabled is the single source of truth for the Apply\n\t\t\t// button's disabled state on every /status hydrate. It mirrors the\n\t\t\t// server-side rejection paths in POST /api/v1/updates/apply\n\t\t\t// (handlers_updater.go) so the UI never invites a click that can\n\t\t\t// only return 403 or 409. Keeping the predicate centralised here\n\t\t\t// (rather than inlined per render branch) prevents the recurring\n\t\t\t// pattern where a new server-side rejection condition gets added\n\t\t\t// or rediscovered and the per-branch checks fall out of sync.\n\t\t\t//\n\t\t\t// Server-side rejection map (must stay in lockstep):\n\t\t\t//   - IsDocker:           422  -> NOT checked here; the Apply button\n\t\t\t//                                 is not rendered at all in Docker\n\t\t\t//                                 mode (server-side branch in the\n\t\t\t//                                 updatesTab template), so applyBtn\n\t\t\t//                                 is null and every caller already\n\t\t\t//                                 guards on `if (applyBtn)`.\n\t\t\t//   - GetConfig errors:   500  -> transient server error; not\n\t\t\t//                                 reflected in /status payload, so\n\t\t\t//                                 not gateable client-side.\n\t\t\t//   - !cfg.Enabled:       403  -> persistedUpdatesEnabled.\n\t\t\t//   - ErrAlreadyRunning:  409  -> d.state && d.state !== 'idle'.\n\t\t\t//   - ErrRestartRequired: 409  -> d.restart_required.\n\t\t\t//\n\t\t\t// Plus two UX gates with no server analogue (the server would\n\t\t\t// happily 200 a no-op apply, but a clickable button advertising\n\t\t\t// \"apply nothing\" is just confusing):\n\t\t\t//   - !d.update_available: nothing newer than the running build.\n\t\t\t//   - !d.latest:           no successful check has populated a\n\t\t\t//                          target version yet.\n\t\t\tfunction computeApplyDisabled(d) {\n\t\t\t\t// Fail closed when the render-time read failed: every\n\t\t\t\t// updater control was seeded from in-code defaults rather\n\t\t\t\t// than the user's real config, so trusting them to enable\n\t\t\t\t// Apply would invite a click that the server rejects on a\n\t\t\t\t// stale-state mirror miss.\n\t\t\t\tif (updatesLoadFailed()) return true;\n\t\t\t\tif (!persistedUpdatesEnabled) return true;\n\t\t\t\tif (!d.update_available || !d.latest) return true;\n\t\t\t\tif (d.restart_required) return true;\n\t\t\t\tif (d.state && d.state !== 'idle') return true;\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\tfunction stopUpdaterPoll() {\n\t\t\t\tif (updaterPollTimer !== null) {\n\t\t\t\t\tclearInterval(updaterPollTimer);\n\t\t\t\t\tupdaterPollTimer = null;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// pollUpdateStatus polls /api/v1/updates/status until idle or error.\n\t\t\t// Fails closed on HTTP or parse errors: a 5xx or malformed body stops\n\t\t\t// the poller and surfaces the failure, otherwise the spinner would\n\t\t\t// spin indefinitely.\n\t\t\tfunction pollUpdateStatus() {\n\t\t\t\tif (updaterPollTimer !== null) return;\n\t\t\t\tupdaterPollTimer = setInterval(function() {\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t\t.then(function(r) {\n\t\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(d) {\n\t\t\t\t\t\tif (d.state === 'idle') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t\t\t// Distinguish post-Apply success from idle-no-op: when\n\t\t\t\t\t\t\t// the server reports restart_required=true, surface a\n\t\t\t\t\t\t\t// persistent \"restart to finish\" banner and stop here\n\t\t\t\t\t\t\t// rather than re-checking GitHub (which would re-show\n\t\t\t\t\t\t\t// the same \"Update available\" pill against the still-\n\t\t\t\t\t\t\t// running old version, masking the success). Issue #1169.\n\t\t\t\t\t\t\tif (d.restart_required) {\n\t\t\t\t\t\t\t\trenderRestartRequired(d.pending_version || '');\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t// Trigger a fresh check to show the new version.\n\t\t\t\t\t\t\t\tcheckForUpdates();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (d.state === 'error') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t\t});\n\t\t\t\t}, 2000);\n\t\t\t}\n\n\t\t\t// renderRestartRequired flips the persistent restart-required banner\n\t\t\t// visible and hard-disables the Apply button. The banner is the same\n\t\t\t// DOM that the server may have already rendered visible (when the\n\t\t\t// page is loaded after a successful Apply); both code paths converge\n\t\t\t// on the same element so a JS-driven flip and an SSR-driven flip\n\t\t\t// look identical to the user.\n\t\t\tfunction renderRestartRequired(pendingVersion) {\n\t\t\t\tvar row = document.getElementById('updates-restart-required-row');\n\t\t\t\tif (row) row.classList.remove('hidden');\n\t\t\t\tvar pv = document.getElementById('updates-restart-pending-version');\n\t\t\t\tif (pv) {\n\t\t\t\t\tif (pendingVersion) {\n\t\t\t\t\t\tpv.textContent = pendingVersion;\n\t\t\t\t\t\tpv.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tpv.textContent = '';\n\t\t\t\t\t\tpv.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t// Disable Check too so the user can't re-run /check against\n\t\t\t\t// the old in-memory version and re-surface the update pill.\n\t\t\t\t// checkForUpdates() also short-circuits via\n\t\t\t\t// restartRequiredActive(); this keeps the visual state in sync.\n\t\t\t\tvar checkBtn = document.getElementById('updates-check-btn');\n\t\t\t\tif (checkBtn) checkBtn.disabled = true;\n\t\t\t}\n\n\t\t\t// updatesLoadFailed reports whether the server-side render flagged\n\t\t\t// LoadFailed. When true, every persistence path is short-circuited:\n\t\t\t// the rendered controls show in-code defaults (not the user's\n\t\t\t// real config) and a PUT would overwrite real values with those\n\t\t\t// defaults. The DOM marker survives a user dismissing the\n\t\t\t// banner because dismissal is purely visual.\n\t\t\tfunction updatesLoadFailed() {\n\t\t\t\tvar row = document.getElementById('updates-load-failed-row');\n\t\t\t\treturn !!(row && row.dataset.loadFailed === 'true');\n\t\t\t}\n\n\t\t\t// revertUpdatesUIFromConfig refetches the persisted updater config\n\t\t\t// and snaps the channel segmented control, enabled toggle,\n\t\t\t// auto-check checkbox, and check-interval select back to server\n\t\t\t// state. Called after a failed PUT so the optimistic UI does not\n\t\t\t// drift from what was actually saved (auto-save makes the user's\n\t\t\t// last click feel persisted; a failed PUT silently leaves the\n\t\t\t// drifted UI without this revert).\n\t\t\tfunction revertUpdatesUIFromConfig() {\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return null;\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function(cfg) {\n\t\t\t\t\tif (!cfg) return;\n\t\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"][value=\"' + cfg.channel + '\"]');\n\t\t\t\t\tif (channelEl) channelEl.checked = true;\n\t\t\t\t\t// Re-paint segmented visuals if the component exposes a hook.\n\t\t\t\t\tvar seg = document.getElementById('updates-channel');\n\t\t\t\t\tif (seg && typeof seg.swSegmentedSync === 'function') {\n\t\t\t\t\t\tseg.swSegmentedSync();\n\t\t\t\t\t}\n\t\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\t\tif (enabledEl) enabledEl.checked = !!cfg.enabled;\n\t\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\t\tif (autoEl) autoEl.checked = !!cfg.auto_check;\n\t\t\t\t\tvar autoUpdateEl2 = document.getElementById('updates-auto-update');\n\t\t\t\t\tif (autoUpdateEl2 && cfg.auto_update !== undefined) {\n\t\t\t\t\t\tautoUpdateEl2.checked = !!cfg.auto_update;\n\t\t\t\t\t}\n\t\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\t\tif (intervalEl && cfg.check_interval_hours) {\n\t\t\t\t\t\tintervalEl.value = String(cfg.check_interval_hours);\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function() {\n\t\t\t\t\t// Best effort revert; if /config itself fails, leave the\n\t\t\t\t\t// last-known UI state. The error toast from the original\n\t\t\t\t\t// PUT failure is still visible.\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// saveUpdaterConfig persists channel + enabled + auto-check + interval.\n\t\t\t// Read the checked radio, not the first radio, or Save always sends \"stable\".\n\t\t\twindow.saveUpdaterConfig = function() {\n\t\t\t\tif (updatesLoadFailed()) {\n\t\t\t\t\t// Refuse to PUT when the render-time read failed: the\n\t\t\t\t\t// rendered values are defaults, not the user's real\n\t\t\t\t\t// config, and saving them would overwrite real settings.\n\t\t\t\t\tvar i18nEl = document.getElementById('updates-i18n');\n\t\t\t\t\tvar msg = (i18nEl && i18nEl.dataset.loadFailedSaveBlocked) || 'save blocked: configuration failed to load';\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast(msg);\n\t\t\t\t\t}\n\t\t\t\t\t// The change event already mutated the touched control in\n\t\t\t\t\t// the DOM. Snap every updater control back to the actually\n\t\t\t\t\t// persisted server state so the tab does not show a value\n\t\t\t\t\t// that cannot be saved. revertUpdatesUIFromConfig is a\n\t\t\t\t\t// best-effort fetch of /api/v1/updates/config; if /config\n\t\t\t\t\t// itself fails too, the caller-visible toast above is the\n\t\t\t\t\t// only signal, but the controls stay in their post-change\n\t\t\t\t\t// state (which is no worse than the prior behavior).\n\t\t\t\t\trevertUpdatesUIFromConfig();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"]:checked');\n\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tvar autoUpdateEl = document.getElementById('updates-auto-update');\n\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\tvar channel = channelEl ? channelEl.value : 'stable';\n\t\t\t\tvar enabled = enabledEl ? enabledEl.checked : true;\n\t\t\t\tvar autoCheck = autoEl ? autoEl.checked : false;\n\t\t\t\tvar autoUpdate = autoUpdateEl ? autoUpdateEl.checked : false;\n\t\t\t\tvar interval = intervalEl ? parseInt(intervalEl.value, 10) : 24;\n\t\t\t\tif (!interval || interval < 1) {\n\t\t\t\t\tinterval = 24;\n\t\t\t\t}\n\n\t\t\t\t// Cancel any prior in-flight save and bump the sequence so\n\t\t\t\t// stale .then/.catch handlers from the superseded request can\n\t\t\t\t// detect they are no longer the current save and no-op.\n\t\t\t\tif (updatesSaveAbort) {\n\t\t\t\t\tupdatesSaveAbort.abort();\n\t\t\t\t}\n\t\t\t\tupdatesSaveAbort = new AbortController();\n\t\t\t\tvar saveSeq = ++updatesSaveSeq;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\t\tchannel: channel,\n\t\t\t\t\t\tenabled: enabled,\n\t\t\t\t\t\tauto_check: autoCheck,\n\t\t\t\t\t\tauto_update: autoUpdate,\n\t\t\t\t\t\tcheck_interval_hours: interval\n\t\t\t\t\t}),\n\t\t\t\t\tsignal: updatesSaveAbort.signal\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'save failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\t// Skip post-save UI updates if a newer save has superseded\n\t\t\t\t\t// this one. The newer save's handlers will run shortly with\n\t\t\t\t\t// up-to-date values; running these now would briefly paint\n\t\t\t\t\t// stale state.\n\t\t\t\t\tif (saveSeq !== updatesSaveSeq) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Save succeeded: the value the user just submitted is now the\n\t\t\t\t\t// persisted state, so the Apply gate (consulted by the upcoming\n\t\t\t\t\t// fetchAndPopulateUpdateStatus call) reflects the correct\n\t\t\t\t\t// server-side authority on the next hydrate.\n\t\t\t\t\tpersistedUpdatesEnabled = enabled;\n\n\t\t\t\t\t// Channel changes can invalidate the cached latest/release_url\n\t\t\t\t\t// (new channel may have no matching release), so re-hydrate the\n\t\t\t\t\t// updater UI from /status immediately. fetchAndPopulateUpdateStatus\n\t\t\t\t\t// drives last-checked, latest, release-notes row, and the Apply\n\t\t\t\t\t// button through the single /status code path so nothing stays\n\t\t\t\t\t// stale in the DOM.\n\t\t\t\t\tvar savedI18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar savedMsg = (savedI18n && savedI18n.dataset.saved) || 'Settings saved';\n\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\tshowSuccessToast(savedMsg);\n\t\t\t\t\t}\n\t\t\t\t\t// Passive refresh after save: a /status failure must not\n\t\t\t\t\t// resurface the inline status row.\n\t\t\t\t\tfetchAndPopulateUpdateStatus({silent: true});\n\t\t\t\t\t// Notify the sidebar pill/dot: the server cleared its cached\n\t\t\t\t\t// release fields if the channel actually changed, so the\n\t\t\t\t\t// sidebar must re-read /status too.\n\t\t\t\t\tdocument.dispatchEvent(new CustomEvent('sw:update-status-changed'));\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\t// AbortError fires when a newer save cancelled this one; it\n\t\t\t\t\t// is not a real failure, the newer save will surface its own\n\t\t\t\t\t// outcome.\n\t\t\t\t\tif (err && err.name === 'AbortError') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// A superseded save's network failure is also irrelevant:\n\t\t\t\t\t// the newer save's outcome is what the user cares about.\n\t\t\t\t\tif (saveSeq !== updatesSaveSeq) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to save updater settings');\n\t\t\t\t\t}\n\t\t\t\t\t// Revert optimistic UI: with the Save button gone, an\n\t\t\t\t\t// auto-save event already painted the new control state.\n\t\t\t\t\t// On failure we re-read /config and snap controls back to\n\t\t\t\t\t// the persisted values so the rendered state matches what\n\t\t\t\t\t// is actually saved on the server.\n\t\t\t\t\trevertUpdatesUIFromConfig();\n\t\t\t\t});\n\t\t\t};\n\n\t\t\tfunction setUpdaterStatus(state, errMsg) {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tvar spinner = document.getElementById('updates-status-spinner');\n\t\t\t\tvar text = document.getElementById('updates-status-text');\n\t\t\t\tvar errRow = document.getElementById('updates-error-row');\n\t\t\t\tif (!row) return;\n\n\t\t\t\trow.classList.remove('hidden');\n\t\t\t\t// Record the active state so downstream timeouts can check\n\t\t\t\t// whether they still own the DOM before clearing it (prevents\n\t\t\t\t// a delayed \"saved\" cleanup from wiping a subsequent \"error\"\n\t\t\t\t// toast set by a concurrent /status fetch).\n\t\t\t\trow.dataset.updaterState = state;\n\t\t\t\tif (errMsg) {\n\t\t\t\t\terrRow.textContent = errMsg;\n\t\t\t\t\terrRow.classList.remove('hidden');\n\t\t\t\t} else {\n\t\t\t\t\terrRow.classList.add('hidden');\n\t\t\t\t\terrRow.textContent = '';\n\t\t\t\t}\n\n\t\t\t\t// Read translated labels from the data-* attributes on the i18n element.\n\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\tvar labels = i18n ? i18n.dataset : {};\n\t\t\t\tvar label = labels[state] || state;\n\t\t\t\ttext.textContent = label;\n\n\t\t\t\tvar inProgress = state === 'checking' || state === 'downloading' || state === 'applying';\n\t\t\t\tif (spinner) {\n\t\t\t\t\tif (inProgress) spinner.classList.remove('hidden');\n\t\t\t\t\telse spinner.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction clearUpdaterStatus() {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tif (row) {\n\t\t\t\t\trow.classList.add('hidden');\n\t\t\t\t\tdelete row.dataset.updaterState;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction escHtml(s) {\n\t\t\t\treturn String(s)\n\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t.replace(/\"/g, '&quot;');\n\t\t\t}\n\n\t\t\tfunction getCSRFToken() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\n\t\t\t// Parse a non-ok fetch response's JSON body and throw a useful error,\n\t\t\t// tolerating non-JSON bodies (e.g. proxy HTML 502s) that would otherwise\n\t\t\t// crash resp.json() with a SyntaxError before any user-visible message.\n\t\t\tfunction throwFromResponse(resp, fallback) {\n\t\t\t\treturn resp.json().catch(function() { return {}; }).then(function(d) {\n\t\t\t\t\tthrow new Error(d.error || fallback || ('HTTP ' + resp.status));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Shared hydrator used on DOMContentLoaded and popstate so browser\n\t\t\t// back/forward navigation also refreshes the panel instead of leaving\n\t\t\t// stale DOM behind when the user returns to the tab.\n\t\t\tfunction hydrateIfUpdatesActive() {\n\t\t\t\tvar panel = document.querySelector('[data-tab-panel=\"updates\"]');\n\t\t\t\tif (panel && !panel.classList.contains('hidden')) {\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar tabLinks = document.querySelectorAll('[data-tab=\"updates\"]');\n\t\t\t\ttabLinks.forEach(function(link) {\n\t\t\t\t\tlink.addEventListener('click', function() {\n\t\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\thydrateIfUpdatesActive();\n\n\t\t\t\t// Auto-save wiring: every Updates-tab control persists on\n\t\t\t\t// change. The Segmented component dispatches a custom\n\t\t\t\t// 'segmented:changed' event with detail.name; we filter on\n\t\t\t\t// 'updates_channel' so adding another segmented control on\n\t\t\t\t// this page in the future does not accidentally trigger a\n\t\t\t\t// PUT. Native checkboxes and the interval <select> use the\n\t\t\t\t// standard 'change' event. saveUpdaterConfig itself short\n\t\t\t\t// circuits when LoadFailed is set, so dismissing the banner\n\t\t\t\t// cannot reach the destructive write path.\n\t\t\t\tdocument.addEventListener('segmented:changed', function(e) {\n\t\t\t\t\tif (e && e.detail && e.detail.name === 'updates_channel') {\n\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\tif (enabledEl) {\n\t\t\t\t\tenabledEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tif (autoEl) {\n\t\t\t\t\tautoEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\tif (intervalEl) {\n\t\t\t\t\tintervalEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\n\t\t\t\t// AutoUpdate toggle: confirm on off->on transition. The\n\t\t\t\t// confirmed state is persisted in localStorage under\n\t\t\t\t// \"ui.confirm.autoUpdate\" so a page reload does not re-prompt\n\t\t\t\t// after the user has already acknowledged. Existing\n\t\t\t\t// AutoUpdate=true (e.g. a server-side default or a prior\n\t\t\t\t// session) also counts as confirmed so the modal does not\n\t\t\t\t// pop on every load. The \"Reset confirmation preferences\"\n\t\t\t\t// flow can clear this key to replay the modal.\n\t\t\t\tvar autoUpdateEl = document.getElementById('updates-auto-update');\n\t\t\t\tvar autoUpdateConfirmKey = 'ui.confirm.autoUpdate';\n\t\t\t\tvar readAutoUpdateConfirmed = function() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\treturn window.localStorage.getItem(autoUpdateConfirmKey) === 'true';\n\t\t\t\t\t} catch (_e) {\n\t\t\t\t\t\t// Some sandboxed contexts (private mode, restrictive\n\t\t\t\t\t\t// CSP) deny localStorage access; fall back to the\n\t\t\t\t\t\t// page-local boolean for the current session.\n\t\t\t\t\t\treturn false;\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t\tvar writeAutoUpdateConfirmed = function() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\twindow.localStorage.setItem(autoUpdateConfirmKey, 'true');\n\t\t\t\t\t} catch (_e) {\n\t\t\t\t\t\t// Best-effort: a write failure just means the modal\n\t\t\t\t\t\t// will re-prompt on next load.\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t\t// Treat an already-on toggle at page load as confirmed so we\n\t\t\t\t// do not re-prompt on every reload after the user accepted.\n\t\t\t\tvar autoUpdateConfirmed = readAutoUpdateConfirmed() || (autoUpdateEl ? autoUpdateEl.checked : false);\n\t\t\t\tif (autoUpdateConfirmed) {\n\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t}\n\t\t\t\tif (autoUpdateEl) {\n\t\t\t\t\tautoUpdateEl.addEventListener('change', function() {\n\t\t\t\t\t\t// Off -> on transition that has not been confirmed\n\t\t\t\t\t\t// previously: surface the modal and short-circuit\n\t\t\t\t\t\t// the save until the user accepts.\n\t\t\t\t\t\tif (autoUpdateEl.checked && !autoUpdateConfirmed) {\n\t\t\t\t\t\t\tvar modal = document.getElementById('updates-auto-update-confirm-modal');\n\t\t\t\t\t\t\tif (!modal) {\n\t\t\t\t\t\t\t\t// Defensive: if the modal is missing for any\n\t\t\t\t\t\t\t\t// reason, fall back to the old direct-save path\n\t\t\t\t\t\t\t\t// rather than wedging the toggle.\n\t\t\t\t\t\t\t\tautoUpdateConfirmed = true;\n\t\t\t\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tmodal.classList.remove('hidden');\n\t\t\t\t\t\t\tvar accept = document.getElementById('updates-auto-update-confirm-accept');\n\t\t\t\t\t\t\tvar cancel = document.getElementById('updates-auto-update-confirm-cancel');\n\t\t\t\t\t\t\t// Focus management: stash the element that had focus\n\t\t\t\t\t\t\t// before the modal opened (typically the checkbox\n\t\t\t\t\t\t\t// itself) so we can restore focus on every close path.\n\t\t\t\t\t\t\t// Without this, focus stays on the checkbox while the\n\t\t\t\t\t\t\t// modal is visible and a stray Space key re-toggles\n\t\t\t\t\t\t\t// the checkbox + re-fires saveUpdaterConfig().\n\t\t\t\t\t\t\tvar previouslyFocused = document.activeElement;\n\t\t\t\t\t\t\tvar onKeydown = function(ev) {\n\t\t\t\t\t\t\t\tif (ev.key === 'Escape' || ev.key === 'Esc') {\n\t\t\t\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\t\t\t\t// Treat Escape as cancel: same path as the\n\t\t\t\t\t\t\t\t\t// cancel button (revert the checkbox + close).\n\t\t\t\t\t\t\t\t\tif (cancel) cancel.onclick && cancel.onclick();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tvar cleanup = function() {\n\t\t\t\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\t\t\t\tif (accept) accept.onclick = null;\n\t\t\t\t\t\t\t\tif (cancel) cancel.onclick = null;\n\t\t\t\t\t\t\t\tdocument.removeEventListener('keydown', onKeydown);\n\t\t\t\t\t\t\t\t// Restore focus to the originally focused element\n\t\t\t\t\t\t\t\t// (typically the checkbox) so keyboard users land\n\t\t\t\t\t\t\t\t// back where they started rather than at <body>.\n\t\t\t\t\t\t\t\tif (previouslyFocused && typeof previouslyFocused.focus === 'function') {\n\t\t\t\t\t\t\t\t\ttry { previouslyFocused.focus(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tif (accept) {\n\t\t\t\t\t\t\t\taccept.onclick = function() {\n\t\t\t\t\t\t\t\t\tautoUpdateConfirmed = true;\n\t\t\t\t\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t\t\t\t\t\tcleanup();\n\t\t\t\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (cancel) {\n\t\t\t\t\t\t\t\tcancel.onclick = function() {\n\t\t\t\t\t\t\t\t\tautoUpdateEl.checked = false;\n\t\t\t\t\t\t\t\t\tcleanup();\n\t\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdocument.addEventListener('keydown', onKeydown);\n\t\t\t\t\t\t\t// Move focus into the modal so Space/Enter act on the\n\t\t\t\t\t\t\t// accept button rather than the underlying checkbox.\n\t\t\t\t\t\t\tif (accept && typeof accept.focus === 'function') {\n\t\t\t\t\t\t\t\ttry { accept.focus(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// On -> off, or already-confirmed on -> on: persist directly.\n\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Skip-this-version button: POST the latest version tag to the\n\t\t\t\t// skip-list endpoint and reload the tab so the skipped-versions\n\t\t\t\t// list and skip button hide consistently.\n\t\t\t\twindow.skipThisVersion = function() {\n\t\t\t\t\tvar btn = document.getElementById('updates-skip-version-btn');\n\t\t\t\t\tif (!btn) return;\n\t\t\t\t\tvar version = btn.dataset.version;\n\t\t\t\t\tif (!version) return;\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/skips', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'Accept': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({ version: version })\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'skip failed');\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function() {\n\t\t\t\t\t\t// Reload so the SSR'd skipped-list row picks up the\n\t\t\t\t\t\t// new entry without a separate hydrate path.\n\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to skip version');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t};\n\t\t\t});\n\n\t\t\t// popstate fires on browser back/forward. If that navigation leaves\n\t\t\t// the Updates tab active, rehydrate rather than showing whatever\n\t\t\t// stale values were in the DOM before the back/forward event.\n\t\t\twindow.addEventListener('popstate', hydrateIfUpdatesActive);\n\n\t\t\t// fetchAndPopulateUpdateStatus refreshes the updater DOM from /status.\n\t\t\t// Pass {silent: true} for passive follow-up calls (after Check or\n\t\t\t// Save) where a /status failure should NOT resurface the inline\n\t\t\t// status row. Without that, a transient /status hiccup brings back\n\t\t\t// the non-Apply use of the row that this PR is retiring.\n\t\t\tfunction fetchAndPopulateUpdateStatus(opts) {\n\t\t\t\tvar silent = !!(opts && opts.silent);\n\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(r) {\n\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\treturn r.json();\n\t\t\t\t})\n\t\t\t\t.then(function(d) {\n\t\t\t\t\tvar lcRow = document.getElementById('updates-last-checked-row');\n\t\t\t\t\tvar lcEl = document.getElementById('updates-last-checked');\n\t\t\t\t\tif (lcEl) {\n\t\t\t\t\t\tif (d.last_checked) {\n\t\t\t\t\t\t\tlcEl.textContent = d.last_checked;\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Clear stale display when the server has no record, e.g. after a\n\t\t\t\t\t\t\t// channel switch to one that was never checked.\n\t\t\t\t\t\t\tlcEl.textContent = '';\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the latest version and update-available badge from cached status.\n\t\t\t\t\tvar latestEl = document.getElementById('updates-latest-version');\n\t\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';\n\t\t\t\t\tvar lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';\n\t\t\t\t\tvar lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';\n\t\t\t\t\t// The latestEl branches below are display-only: they render\n\t\t\t\t\t// the version pill / \"up to date\" / \"not checked\" copy. The\n\t\t\t\t\t// Apply button's disabled state is computed from the full\n\t\t\t\t\t// server-rejection mirror in computeApplyDisabled(d) and\n\t\t\t\t\t// applied once after this block, so the per-branch render\n\t\t\t\t\t// no longer has to worry about getting the gate right.\n\t\t\t\t\tif (latestEl) {\n\t\t\t\t\t\tif (d.latest) {\n\t\t\t\t\t\t\tif (d.update_available) {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-green-600 dark:text-green-400 font-semibold\">' + escHtml(d.latest) + '</span>'\n\t\t\t\t\t\t\t\t\t+ ' <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">' + escHtml(lblAvailable) + '</span>';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = escHtml(d.latest) + ' <span class=\"ml-2 text-gray-400 dark:text-gray-500\">' + escHtml(lblUpToDate) + '</span>';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (!d.last_checked) {\n\t\t\t\t\t\t\t// No check has ever succeeded: keep the server-rendered\n\t\t\t\t\t\t\t// \"Not checked\" placeholder so the first /status hydrate\n\t\t\t\t\t\t\t// does not blank it out.\n\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-gray-400 dark:text-gray-500 italic\">' + escHtml(lblNotChecked) + '</span>';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Checked, but the current channel has no matching release\n\t\t\t\t\t\t\t// (e.g. after switching to a channel with no builds yet).\n\t\t\t\t\t\t\t// Leave blank rather than \"Not checked\" since the check did happen.\n\t\t\t\t\t\t\tlatestEl.textContent = '';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Single canonical Apply gate. Mirrors POST /updates/apply's\n\t\t\t\t\t// rejection paths via computeApplyDisabled (declared above\n\t\t\t\t\t// with the server-side parity map). Setting this once after\n\t\t\t\t\t// the display branches means a future server-side rejection\n\t\t\t\t\t// condition only needs an update in computeApplyDisabled,\n\t\t\t\t\t// not in N branches here.\n\t\t\t\t\tif (applyBtn) applyBtn.disabled = computeApplyDisabled(d);\n\t\t\t\t\t// Hydrate the release-notes link from /status so it is visible\n\t\t\t\t\t// after a page reload or tab re-open without a manual check.\n\t\t\t\t\tvar relLinkRow = document.getElementById('updates-release-link-row');\n\t\t\t\t\tvar relLink = document.getElementById('updates-release-link');\n\t\t\t\t\tif (relLinkRow && relLink) {\n\t\t\t\t\t\tif (d.release_url) {\n\t\t\t\t\t\t\trelLink.href = d.release_url;\n\t\t\t\t\t\t\trelLinkRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trelLinkRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the persistent restart-required banner. Because the\n\t\t\t\t\t// flag is sticky in-memory on the server, every /status hit\n\t\t\t\t\t// after a successful Apply re-confirms restart_required=true,\n\t\t\t\t\t// so a page refresh or back/forward navigation does not lose\n\t\t\t\t\t// the success indicator. Issue #1169.\n\t\t\t\t\tvar restartRow = document.getElementById('updates-restart-required-row');\n\t\t\t\t\tif (restartRow) {\n\t\t\t\t\t\tif (d.restart_required) {\n\t\t\t\t\t\t\trenderRestartRequired(d.pending_version || '');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trestartRow.classList.add('hidden');\n\t\t\t\t\t\t\t// Mirror the inverse of renderRestartRequired() so a tab\n\t\t\t\t\t\t\t// kept open across a real restart re-enables Check (and\n\t\t\t\t\t\t\t// Apply, if the page-load handler doesn't reset it).\n\t\t\t\t\t\t\tvar checkBtn = document.getElementById('updates-check-btn');\n\t\t\t\t\t\t\tif (checkBtn) checkBtn.disabled = false;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// If an operation is in progress, show its state and start polling.\n\t\t\t\t\tif (d.state === 'error') {\n\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t} else if (d.state && d.state !== 'idle') {\n\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tif (silent) {\n\t\t\t\t\t\t// Passive refresh: surface a toast (if available) and\n\t\t\t\t\t\t// leave the inline status row alone.\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast(err && err.message ? err.message : 'status refresh failed');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t});\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1140, "<script>\n\t\t(function() {\n\t\t\tvar updBp = '';\n\t\t\tvar updMeta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\tif (updMeta && updMeta.content) {\n\t\t\t\tupdBp = updMeta.content;\n\t\t\t}\n\n\t\t\t// restartRequiredActive reports whether the persistent\n\t\t\t// \"restart required\" banner is currently visible. Used to gate\n\t\t\t// updater actions that would otherwise re-surface stale state\n\t\t\t// against the still-running old version.\n\t\t\tfunction restartRequiredActive() {\n\t\t\t\tvar row = document.getElementById('updates-restart-required-row');\n\t\t\t\treturn !!(row && !row.classList.contains('hidden'));\n\t\t\t}\n\n\t\t\t// checkForUpdates calls the check endpoint and refreshes the UI.\n\t\t\twindow.checkForUpdates = function() {\n\t\t\t\t// After Apply staged the new binary, /check would re-run\n\t\t\t\t// against the old in-memory version and re-surface the same\n\t\t\t\t// \"update available\" pill the restart-required flow is\n\t\t\t\t// suppressing. Skip until restart finishes (issue #1169).\n\t\t\t\tif (restartRequiredActive()) return;\n\t\t\t\tvar btn = document.getElementById('updates-check-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/check', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'check failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function(data) {\n\t\t\t\t\t// /check mutates last_checked and the cached release fields, so\n\t\t\t\t\t// re-hydrate from /status to keep every updater DOM node\n\t\t\t\t\t// (last-checked timestamp, latest version badge, release-notes\n\t\t\t\t\t// row, apply button) consistent with a single code path.\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t// Passive refresh after /check: a /status failure must\n\t\t\t\t\t// not bring back the inline status row this PR retires.\n\t\t\t\t\tfetchAndPopulateUpdateStatus({silent: true});\n\t\t\t\t\t// Notify other page components (sidebar pill/dot) that the\n\t\t\t\t\t// cached updater status has changed so they can re-read it.\n\t\t\t\t\tdocument.dispatchEvent(new CustomEvent('sw:update-status-changed'));\n\t\t\t\t\t// Surface the check result via the canonical toast so it\n\t\t\t\t\t// matches the pattern used elsewhere in Settings.\n\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\tvar i18nEl = document.getElementById('updates-i18n');\n\t\t\t\t\t\tvar upMsg = (i18nEl && i18nEl.dataset.upToDate) || 'Up to date';\n\t\t\t\t\t\tvar availMsg = (i18nEl && i18nEl.dataset.updateAvailable) || 'Update available';\n\t\t\t\t\t\tif (data && data.update_available) {\n\t\t\t\t\t\t\tshowSuccessToast(data.latest ? availMsg + ': ' + data.latest : availMsg);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tshowSuccessToast(upMsg);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to check for updates');\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.finally(function() {\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// applyUpdate calls the apply endpoint.\n\t\t\twindow.applyUpdate = function() {\n\t\t\t\tvar btn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (btn) btn.disabled = true;\n\t\t\t\tsetUpdaterStatus('applying', '');\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/apply', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {'Accept': 'application/json', 'X-CSRF-Token': getCSRFToken()}\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (resp.status === 422) return throwFromResponse(resp, 'not supported');\n\t\t\t\t\tif (resp.status === 409) return throwFromResponse(resp, 'already in progress');\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'apply failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\tsetUpdaterStatus('downloading', '');\n\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tsetUpdaterStatus('error', err.message);\n\t\t\t\t\tif (btn) btn.disabled = false;\n\t\t\t\t});\n\t\t\t};\n\n\t\t\t// updaterPollTimer is the single active poll interval. Only one poller\n\t\t\t// may run at a time; reopening the Updates tab during an apply would\n\t\t\t// otherwise stack multiple intervals, each racing to clear state.\n\t\t\tvar updaterPollTimer = null;\n\n\t\t\t// persistedUpdatesEnabled tracks the last server-confirmed value of\n\t\t\t// the updater kill switch. The Apply button must be gated on this\n\t\t\t// rather than the live #updates-enabled checkbox state, because POST\n\t\t\t// /api/v1/updates/apply is enforced from the persisted config: if\n\t\t\t// the user toggles the checkbox without clicking Save, the server\n\t\t\t// still 403s an Apply request, but a checkbox-driven gate would\n\t\t\t// happily re-enable the button on the next /status hydrate.\n\t\t\t//\n\t\t\t// Seeded at script load from the server-rendered checkbox state\n\t\t\t// (which IS the persisted value at render time), then updated only\n\t\t\t// when saveUpdaterConfig completes successfully. Defaults to true\n\t\t\t// when the checkbox is absent so the prior behaviour holds for\n\t\t\t// hydrate paths that fire before the form has fully rendered.\n\t\t\tvar persistedUpdatesEnabled = (function() {\n\t\t\t\tvar el = document.getElementById('updates-enabled');\n\t\t\t\treturn el ? el.checked : true;\n\t\t\t})();\n\n\t\t\t// updatesSaveSeq + updatesSaveAbort sequence overlapping auto-saves.\n\t\t\t// Auto-save fires on every channel/checkbox/interval change, so a\n\t\t\t// rapid toggle (stable -> prerelease -> nightly) issues overlapping\n\t\t\t// PUTs whose responses can land out of order. Without sequencing,\n\t\t\t// the older response can run its post-save UI updates after the\n\t\t\t// newer one, snapping the UI back to a stale value while the server\n\t\t\t// holds the latest. The AbortController cancels the previous in-\n\t\t\t// flight request on each new save; the saveSeq compare ensures any\n\t\t\t// late .then/.catch from a superseded request no-ops instead of\n\t\t\t// clobbering the current state.\n\t\t\tvar updatesSaveSeq = 0;\n\t\t\tvar updatesSaveAbort = null;\n\n\t\t\t// computeApplyDisabled is the single source of truth for the Apply\n\t\t\t// button's disabled state on every /status hydrate. It mirrors the\n\t\t\t// server-side rejection paths in POST /api/v1/updates/apply\n\t\t\t// (handlers_updater.go) so the UI never invites a click that can\n\t\t\t// only return 403 or 409. Keeping the predicate centralised here\n\t\t\t// (rather than inlined per render branch) prevents the recurring\n\t\t\t// pattern where a new server-side rejection condition gets added\n\t\t\t// or rediscovered and the per-branch checks fall out of sync.\n\t\t\t//\n\t\t\t// Server-side rejection map (must stay in lockstep):\n\t\t\t//   - IsDocker:           422  -> NOT checked here; the Apply button\n\t\t\t//                                 is not rendered at all in Docker\n\t\t\t//                                 mode (server-side branch in the\n\t\t\t//                                 updatesTab template), so applyBtn\n\t\t\t//                                 is null and every caller already\n\t\t\t//                                 guards on `if (applyBtn)`.\n\t\t\t//   - GetConfig errors:   500  -> transient server error; not\n\t\t\t//                                 reflected in /status payload, so\n\t\t\t//                                 not gateable client-side.\n\t\t\t//   - !cfg.Enabled:       403  -> persistedUpdatesEnabled.\n\t\t\t//   - ErrAlreadyRunning:  409  -> d.state && d.state !== 'idle'.\n\t\t\t//   - ErrRestartRequired: 409  -> d.restart_required.\n\t\t\t//\n\t\t\t// Plus two UX gates with no server analogue (the server would\n\t\t\t// happily 200 a no-op apply, but a clickable button advertising\n\t\t\t// \"apply nothing\" is just confusing):\n\t\t\t//   - !d.update_available: nothing newer than the running build.\n\t\t\t//   - !d.latest:           no successful check has populated a\n\t\t\t//                          target version yet.\n\t\t\tfunction computeApplyDisabled(d) {\n\t\t\t\t// Fail closed when the render-time read failed: every\n\t\t\t\t// updater control was seeded from in-code defaults rather\n\t\t\t\t// than the user's real config, so trusting them to enable\n\t\t\t\t// Apply would invite a click that the server rejects on a\n\t\t\t\t// stale-state mirror miss.\n\t\t\t\tif (updatesLoadFailed()) return true;\n\t\t\t\tif (!persistedUpdatesEnabled) return true;\n\t\t\t\tif (!d.update_available || !d.latest) return true;\n\t\t\t\tif (d.restart_required) return true;\n\t\t\t\tif (d.state && d.state !== 'idle') return true;\n\t\t\t\treturn false;\n\t\t\t}\n\n\t\t\tfunction stopUpdaterPoll() {\n\t\t\t\tif (updaterPollTimer !== null) {\n\t\t\t\t\tclearInterval(updaterPollTimer);\n\t\t\t\t\tupdaterPollTimer = null;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// pollUpdateStatus polls /api/v1/updates/status until idle or error.\n\t\t\t// Fails closed on HTTP or parse errors: a 5xx or malformed body stops\n\t\t\t// the poller and surfaces the failure, otherwise the spinner would\n\t\t\t// spin indefinitely.\n\t\t\tfunction pollUpdateStatus() {\n\t\t\t\tif (updaterPollTimer !== null) return;\n\t\t\t\tupdaterPollTimer = setInterval(function() {\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t\t.then(function(r) {\n\t\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\t\treturn r.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(d) {\n\t\t\t\t\t\tif (d.state === 'idle') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t\t\t// Distinguish post-Apply success from idle-no-op: when\n\t\t\t\t\t\t\t// the server reports restart_required=true, surface a\n\t\t\t\t\t\t\t// persistent \"restart to finish\" banner and stop here\n\t\t\t\t\t\t\t// rather than re-checking GitHub (which would re-show\n\t\t\t\t\t\t\t// the same \"Update available\" pill against the still-\n\t\t\t\t\t\t\t// running old version, masking the success). Issue #1169.\n\t\t\t\t\t\t\tif (d.restart_required) {\n\t\t\t\t\t\t\t\trenderRestartRequired(d.pending_version || '');\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\t// Trigger a fresh check to show the new version.\n\t\t\t\t\t\t\t\tcheckForUpdates();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (d.state === 'error') {\n\t\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tstopUpdaterPoll();\n\t\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t\t});\n\t\t\t\t}, 2000);\n\t\t\t}\n\n\t\t\t// renderRestartRequired flips the persistent restart-required banner\n\t\t\t// visible and hard-disables the Apply button. The banner is the same\n\t\t\t// DOM that the server may have already rendered visible (when the\n\t\t\t// page is loaded after a successful Apply); both code paths converge\n\t\t\t// on the same element so a JS-driven flip and an SSR-driven flip\n\t\t\t// look identical to the user.\n\t\t\tfunction renderRestartRequired(pendingVersion) {\n\t\t\t\tvar row = document.getElementById('updates-restart-required-row');\n\t\t\t\tif (row) row.classList.remove('hidden');\n\t\t\t\tvar pv = document.getElementById('updates-restart-pending-version');\n\t\t\t\tif (pv) {\n\t\t\t\t\tif (pendingVersion) {\n\t\t\t\t\t\tpv.textContent = pendingVersion;\n\t\t\t\t\t\tpv.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tpv.textContent = '';\n\t\t\t\t\t\tpv.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\tif (applyBtn) applyBtn.disabled = true;\n\t\t\t\t// Disable Check too so the user can't re-run /check against\n\t\t\t\t// the old in-memory version and re-surface the update pill.\n\t\t\t\t// checkForUpdates() also short-circuits via\n\t\t\t\t// restartRequiredActive(); this keeps the visual state in sync.\n\t\t\t\tvar checkBtn = document.getElementById('updates-check-btn');\n\t\t\t\tif (checkBtn) checkBtn.disabled = true;\n\t\t\t}\n\n\t\t\t// updatesLoadFailed reports whether the server-side render flagged\n\t\t\t// LoadFailed. When true, every persistence path is short-circuited:\n\t\t\t// the rendered controls show in-code defaults (not the user's\n\t\t\t// real config) and a PUT would overwrite real values with those\n\t\t\t// defaults. The DOM marker survives a user dismissing the\n\t\t\t// banner because dismissal is purely visual.\n\t\t\tfunction updatesLoadFailed() {\n\t\t\t\tvar row = document.getElementById('updates-load-failed-row');\n\t\t\t\treturn !!(row && row.dataset.loadFailed === 'true');\n\t\t\t}\n\n\t\t\t// revertUpdatesUIFromConfig refetches the persisted updater config\n\t\t\t// and snaps the channel segmented control, enabled toggle,\n\t\t\t// auto-check checkbox, and check-interval select back to server\n\t\t\t// state. Called after a failed PUT so the optimistic UI does not\n\t\t\t// drift from what was actually saved (auto-save makes the user's\n\t\t\t// last click feel persisted; a failed PUT silently leaves the\n\t\t\t// drifted UI without this revert).\n\t\t\tfunction revertUpdatesUIFromConfig() {\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return null;\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function(cfg) {\n\t\t\t\t\tif (!cfg) return;\n\t\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"][value=\"' + cfg.channel + '\"]');\n\t\t\t\t\tif (channelEl) channelEl.checked = true;\n\t\t\t\t\t// Re-paint segmented visuals if the component exposes a hook.\n\t\t\t\t\tvar seg = document.getElementById('updates-channel');\n\t\t\t\t\tif (seg && typeof seg.swSegmentedSync === 'function') {\n\t\t\t\t\t\tseg.swSegmentedSync();\n\t\t\t\t\t}\n\t\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\t\tif (enabledEl) enabledEl.checked = !!cfg.enabled;\n\t\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\t\tif (autoEl) autoEl.checked = !!cfg.auto_check;\n\t\t\t\t\tvar autoUpdateEl2 = document.getElementById('updates-auto-update');\n\t\t\t\t\tif (autoUpdateEl2 && cfg.auto_update !== undefined) {\n\t\t\t\t\t\tautoUpdateEl2.checked = !!cfg.auto_update;\n\t\t\t\t\t}\n\t\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\t\tif (intervalEl && cfg.check_interval_hours) {\n\t\t\t\t\t\tintervalEl.value = String(cfg.check_interval_hours);\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function() {\n\t\t\t\t\t// Best effort revert; if /config itself fails, leave the\n\t\t\t\t\t// last-known UI state. The error toast from the original\n\t\t\t\t\t// PUT failure is still visible.\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// saveUpdaterConfig persists channel + enabled + auto-check + interval.\n\t\t\t// Read the checked radio, not the first radio, or Save always sends \"stable\".\n\t\t\twindow.saveUpdaterConfig = function() {\n\t\t\t\tif (updatesLoadFailed()) {\n\t\t\t\t\t// Refuse to PUT when the render-time read failed: the\n\t\t\t\t\t// rendered values are defaults, not the user's real\n\t\t\t\t\t// config, and saving them would overwrite real settings.\n\t\t\t\t\tvar i18nEl = document.getElementById('updates-i18n');\n\t\t\t\t\tvar msg = (i18nEl && i18nEl.dataset.loadFailedSaveBlocked) || 'save blocked: configuration failed to load';\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast(msg);\n\t\t\t\t\t}\n\t\t\t\t\t// The change event already mutated the touched control in\n\t\t\t\t\t// the DOM. Snap every updater control back to the actually\n\t\t\t\t\t// persisted server state so the tab does not show a value\n\t\t\t\t\t// that cannot be saved. revertUpdatesUIFromConfig is a\n\t\t\t\t\t// best-effort fetch of /api/v1/updates/config; if /config\n\t\t\t\t\t// itself fails too, the caller-visible toast above is the\n\t\t\t\t\t// only signal, but the controls stay in their post-change\n\t\t\t\t\t// state (which is no worse than the prior behavior).\n\t\t\t\t\trevertUpdatesUIFromConfig();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar channelEl = document.querySelector('[name=\"updates_channel\"]:checked');\n\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tvar autoUpdateEl = document.getElementById('updates-auto-update');\n\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\tvar channel = channelEl ? channelEl.value : 'stable';\n\t\t\t\tvar enabled = enabledEl ? enabledEl.checked : true;\n\t\t\t\tvar autoCheck = autoEl ? autoEl.checked : false;\n\t\t\t\tvar autoUpdate = autoUpdateEl ? autoUpdateEl.checked : false;\n\t\t\t\tvar interval = intervalEl ? parseInt(intervalEl.value, 10) : 24;\n\t\t\t\tif (!interval || interval < 1) {\n\t\t\t\t\tinterval = 24;\n\t\t\t\t}\n\n\t\t\t\t// Cancel any prior in-flight save and bump the sequence so\n\t\t\t\t// stale .then/.catch handlers from the superseded request can\n\t\t\t\t// detect they are no longer the current save and no-op.\n\t\t\t\tif (updatesSaveAbort) {\n\t\t\t\t\tupdatesSaveAbort.abort();\n\t\t\t\t}\n\t\t\t\tupdatesSaveAbort = new AbortController();\n\t\t\t\tvar saveSeq = ++updatesSaveSeq;\n\n\t\t\t\tfetch(updBp + '/api/v1/updates/config', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\t\tchannel: channel,\n\t\t\t\t\t\tenabled: enabled,\n\t\t\t\t\t\tauto_check: autoCheck,\n\t\t\t\t\t\tauto_update: autoUpdate,\n\t\t\t\t\t\tcheck_interval_hours: interval\n\t\t\t\t\t}),\n\t\t\t\t\tsignal: updatesSaveAbort.signal\n\t\t\t\t})\n\t\t\t\t.then(function(resp) {\n\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'save failed');\n\t\t\t\t\treturn resp.json();\n\t\t\t\t})\n\t\t\t\t.then(function() {\n\t\t\t\t\t// Skip post-save UI updates if a newer save has superseded\n\t\t\t\t\t// this one. The newer save's handlers will run shortly with\n\t\t\t\t\t// up-to-date values; running these now would briefly paint\n\t\t\t\t\t// stale state.\n\t\t\t\t\tif (saveSeq !== updatesSaveSeq) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// Save succeeded: the value the user just submitted is now the\n\t\t\t\t\t// persisted state, so the Apply gate (consulted by the upcoming\n\t\t\t\t\t// fetchAndPopulateUpdateStatus call) reflects the correct\n\t\t\t\t\t// server-side authority on the next hydrate.\n\t\t\t\t\tpersistedUpdatesEnabled = enabled;\n\n\t\t\t\t\t// Channel changes can invalidate the cached latest/release_url\n\t\t\t\t\t// (new channel may have no matching release), so re-hydrate the\n\t\t\t\t\t// updater UI from /status immediately. fetchAndPopulateUpdateStatus\n\t\t\t\t\t// drives last-checked, latest, release-notes row, and the Apply\n\t\t\t\t\t// button through the single /status code path so nothing stays\n\t\t\t\t\t// stale in the DOM.\n\t\t\t\t\tvar savedI18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar savedMsg = (savedI18n && savedI18n.dataset.saved) || 'Settings saved';\n\t\t\t\t\tif (typeof window.showSuccessToast === 'function') {\n\t\t\t\t\t\tshowSuccessToast(savedMsg);\n\t\t\t\t\t}\n\t\t\t\t\t// Passive refresh after save: a /status failure must not\n\t\t\t\t\t// resurface the inline status row.\n\t\t\t\t\tfetchAndPopulateUpdateStatus({silent: true});\n\t\t\t\t\t// Notify the sidebar pill/dot: the server cleared its cached\n\t\t\t\t\t// release fields if the channel actually changed, so the\n\t\t\t\t\t// sidebar must re-read /status too.\n\t\t\t\t\tdocument.dispatchEvent(new CustomEvent('sw:update-status-changed'));\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\t// AbortError fires when a newer save cancelled this one; it\n\t\t\t\t\t// is not a real failure, the newer save will surface its own\n\t\t\t\t\t// outcome.\n\t\t\t\t\tif (err && err.name === 'AbortError') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// A superseded save's network failure is also irrelevant:\n\t\t\t\t\t// the newer save's outcome is what the user cares about.\n\t\t\t\t\tif (saveSeq !== updatesSaveSeq) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to save updater settings');\n\t\t\t\t\t}\n\t\t\t\t\t// Revert optimistic UI: with the Save button gone, an\n\t\t\t\t\t// auto-save event already painted the new control state.\n\t\t\t\t\t// On failure we re-read /config and snap controls back to\n\t\t\t\t\t// the persisted values so the rendered state matches what\n\t\t\t\t\t// is actually saved on the server.\n\t\t\t\t\trevertUpdatesUIFromConfig();\n\t\t\t\t});\n\t\t\t};\n\n\t\t\tfunction setUpdaterStatus(state, errMsg) {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tvar spinner = document.getElementById('updates-status-spinner');\n\t\t\t\tvar text = document.getElementById('updates-status-text');\n\t\t\t\tvar errRow = document.getElementById('updates-error-row');\n\t\t\t\tif (!row) return;\n\n\t\t\t\trow.classList.remove('hidden');\n\t\t\t\t// Record the active state so downstream timeouts can check\n\t\t\t\t// whether they still own the DOM before clearing it (prevents\n\t\t\t\t// a delayed \"saved\" cleanup from wiping a subsequent \"error\"\n\t\t\t\t// toast set by a concurrent /status fetch).\n\t\t\t\trow.dataset.updaterState = state;\n\t\t\t\tif (errMsg) {\n\t\t\t\t\terrRow.textContent = errMsg;\n\t\t\t\t\terrRow.classList.remove('hidden');\n\t\t\t\t} else {\n\t\t\t\t\terrRow.classList.add('hidden');\n\t\t\t\t\terrRow.textContent = '';\n\t\t\t\t}\n\n\t\t\t\t// Read translated labels from the data-* attributes on the i18n element.\n\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\tvar labels = i18n ? i18n.dataset : {};\n\t\t\t\tvar label = labels[state] || state;\n\t\t\t\ttext.textContent = label;\n\n\t\t\t\tvar inProgress = state === 'checking' || state === 'downloading' || state === 'applying';\n\t\t\t\tif (spinner) {\n\t\t\t\t\tif (inProgress) spinner.classList.remove('hidden');\n\t\t\t\t\telse spinner.classList.add('hidden');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction clearUpdaterStatus() {\n\t\t\t\tvar row = document.getElementById('updates-status-row');\n\t\t\t\tif (row) {\n\t\t\t\t\trow.classList.add('hidden');\n\t\t\t\t\tdelete row.dataset.updaterState;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction escHtml(s) {\n\t\t\t\treturn String(s)\n\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t.replace(/\"/g, '&quot;');\n\t\t\t}\n\n\t\t\tfunction getCSRFToken() {\n\t\t\t\tvar m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]*)/);\n\t\t\t\treturn m ? m[1] : '';\n\t\t\t}\n\n\t\t\t// Parse a non-ok fetch response's JSON body and throw a useful error,\n\t\t\t// tolerating non-JSON bodies (e.g. proxy HTML 502s) that would otherwise\n\t\t\t// crash resp.json() with a SyntaxError before any user-visible message.\n\t\t\tfunction throwFromResponse(resp, fallback) {\n\t\t\t\treturn resp.json().catch(function() { return {}; }).then(function(d) {\n\t\t\t\t\tthrow new Error(d.error || fallback || ('HTTP ' + resp.status));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Shared hydrator used on DOMContentLoaded and popstate so browser\n\t\t\t// back/forward navigation also refreshes the panel instead of leaving\n\t\t\t// stale DOM behind when the user returns to the tab.\n\t\t\tfunction hydrateIfUpdatesActive() {\n\t\t\t\tvar panel = document.querySelector('[data-tab-panel=\"updates\"]');\n\t\t\t\tif (panel && !panel.classList.contains('hidden')) {\n\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tvar tabLinks = document.querySelectorAll('[data-tab=\"updates\"]');\n\t\t\t\ttabLinks.forEach(function(link) {\n\t\t\t\t\tlink.addEventListener('click', function() {\n\t\t\t\t\t\tfetchAndPopulateUpdateStatus();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\thydrateIfUpdatesActive();\n\n\t\t\t\t// Auto-save wiring: every Updates-tab control persists on\n\t\t\t\t// change. The Segmented component dispatches a custom\n\t\t\t\t// 'segmented:changed' event with detail.name; we filter on\n\t\t\t\t// 'updates_channel' so adding another segmented control on\n\t\t\t\t// this page in the future does not accidentally trigger a\n\t\t\t\t// PUT. Native checkboxes and the interval <select> use the\n\t\t\t\t// standard 'change' event. saveUpdaterConfig itself short\n\t\t\t\t// circuits when LoadFailed is set, so dismissing the banner\n\t\t\t\t// cannot reach the destructive write path.\n\t\t\t\tdocument.addEventListener('segmented:changed', function(e) {\n\t\t\t\t\tif (e && e.detail && e.detail.name === 'updates_channel') {\n\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tvar enabledEl = document.getElementById('updates-enabled');\n\t\t\t\tif (enabledEl) {\n\t\t\t\t\tenabledEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\t\t\t\tvar autoEl = document.getElementById('updates-auto-check');\n\t\t\t\tif (autoEl) {\n\t\t\t\t\tautoEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\t\t\t\tvar intervalEl = document.getElementById('updates-check-interval');\n\t\t\t\tif (intervalEl) {\n\t\t\t\t\tintervalEl.addEventListener('change', function() { window.saveUpdaterConfig(); });\n\t\t\t\t}\n\n\t\t\t\t// AutoUpdate toggle: confirm on off->on transition. The\n\t\t\t\t// confirmed state is persisted in localStorage under\n\t\t\t\t// \"ui.confirm.autoUpdate\" so a page reload does not re-prompt\n\t\t\t\t// after the user has already acknowledged. Existing\n\t\t\t\t// AutoUpdate=true (e.g. a server-side default or a prior\n\t\t\t\t// session) also counts as confirmed so the modal does not\n\t\t\t\t// pop on every load. The \"Reset confirmation preferences\"\n\t\t\t\t// flow can clear this key to replay the modal.\n\t\t\t\tvar autoUpdateEl = document.getElementById('updates-auto-update');\n\t\t\t\tvar autoUpdateConfirmKey = 'ui.confirm.autoUpdate';\n\t\t\t\tvar readAutoUpdateConfirmed = function() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\treturn window.localStorage.getItem(autoUpdateConfirmKey) === 'true';\n\t\t\t\t\t} catch (_e) {\n\t\t\t\t\t\t// Some sandboxed contexts (private mode, restrictive\n\t\t\t\t\t\t// CSP) deny localStorage access; fall back to the\n\t\t\t\t\t\t// page-local boolean for the current session.\n\t\t\t\t\t\treturn false;\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t\tvar writeAutoUpdateConfirmed = function() {\n\t\t\t\t\ttry {\n\t\t\t\t\t\twindow.localStorage.setItem(autoUpdateConfirmKey, 'true');\n\t\t\t\t\t} catch (_e) {\n\t\t\t\t\t\t// Best-effort: a write failure just means the modal\n\t\t\t\t\t\t// will re-prompt on next load.\n\t\t\t\t\t}\n\t\t\t\t};\n\t\t\t\t// Treat an already-on toggle at page load as confirmed so we\n\t\t\t\t// do not re-prompt on every reload after the user accepted.\n\t\t\t\tvar autoUpdateConfirmed = readAutoUpdateConfirmed() || (autoUpdateEl ? autoUpdateEl.checked : false);\n\t\t\t\tif (autoUpdateConfirmed) {\n\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t}\n\t\t\t\tif (autoUpdateEl) {\n\t\t\t\t\tautoUpdateEl.addEventListener('change', function() {\n\t\t\t\t\t\t// Off -> on transition that has not been confirmed\n\t\t\t\t\t\t// previously: surface the modal and short-circuit\n\t\t\t\t\t\t// the save until the user accepts.\n\t\t\t\t\t\tif (autoUpdateEl.checked && !autoUpdateConfirmed) {\n\t\t\t\t\t\t\tvar modal = document.getElementById('updates-auto-update-confirm-modal');\n\t\t\t\t\t\t\tif (!modal) {\n\t\t\t\t\t\t\t\t// Defensive: if the modal is missing for any\n\t\t\t\t\t\t\t\t// reason, fall back to the old direct-save path\n\t\t\t\t\t\t\t\t// rather than wedging the toggle.\n\t\t\t\t\t\t\t\tautoUpdateConfirmed = true;\n\t\t\t\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tmodal.classList.remove('hidden');\n\t\t\t\t\t\t\tvar accept = document.getElementById('updates-auto-update-confirm-accept');\n\t\t\t\t\t\t\tvar cancel = document.getElementById('updates-auto-update-confirm-cancel');\n\t\t\t\t\t\t\t// Focus management: stash the element that had focus\n\t\t\t\t\t\t\t// before the modal opened (typically the checkbox\n\t\t\t\t\t\t\t// itself) so we can restore focus on every close path.\n\t\t\t\t\t\t\t// Without this, focus stays on the checkbox while the\n\t\t\t\t\t\t\t// modal is visible and a stray Space key re-toggles\n\t\t\t\t\t\t\t// the checkbox + re-fires saveUpdaterConfig().\n\t\t\t\t\t\t\tvar previouslyFocused = document.activeElement;\n\t\t\t\t\t\t\tvar onKeydown = function(ev) {\n\t\t\t\t\t\t\t\tif (ev.key === 'Escape' || ev.key === 'Esc') {\n\t\t\t\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\t\t\t\t// Treat Escape as cancel: same path as the\n\t\t\t\t\t\t\t\t\t// cancel button (revert the checkbox + close).\n\t\t\t\t\t\t\t\t\tif (cancel) cancel.onclick && cancel.onclick();\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tvar cleanup = function() {\n\t\t\t\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\t\t\t\tif (accept) accept.onclick = null;\n\t\t\t\t\t\t\t\tif (cancel) cancel.onclick = null;\n\t\t\t\t\t\t\t\tdocument.removeEventListener('keydown', onKeydown);\n\t\t\t\t\t\t\t\t// Restore focus to the originally focused element\n\t\t\t\t\t\t\t\t// (typically the checkbox) so keyboard users land\n\t\t\t\t\t\t\t\t// back where they started rather than at <body>.\n\t\t\t\t\t\t\t\tif (previouslyFocused && typeof previouslyFocused.focus === 'function') {\n\t\t\t\t\t\t\t\t\ttry { previouslyFocused.focus(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tif (accept) {\n\t\t\t\t\t\t\t\taccept.onclick = function() {\n\t\t\t\t\t\t\t\t\tautoUpdateConfirmed = true;\n\t\t\t\t\t\t\t\t\twriteAutoUpdateConfirmed();\n\t\t\t\t\t\t\t\t\tcleanup();\n\t\t\t\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tif (cancel) {\n\t\t\t\t\t\t\t\tcancel.onclick = function() {\n\t\t\t\t\t\t\t\t\tautoUpdateEl.checked = false;\n\t\t\t\t\t\t\t\t\tcleanup();\n\t\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdocument.addEventListener('keydown', onKeydown);\n\t\t\t\t\t\t\t// Move focus into the modal so Space/Enter act on the\n\t\t\t\t\t\t\t// accept button rather than the underlying checkbox.\n\t\t\t\t\t\t\tif (accept && typeof accept.focus === 'function') {\n\t\t\t\t\t\t\t\ttry { accept.focus(); } catch (e) { /* ignore */ }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// On -> off, or already-confirmed on -> on: persist directly.\n\t\t\t\t\t\twindow.saveUpdaterConfig();\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Skip-this-version button: POST the latest version tag to the\n\t\t\t\t// skip-list endpoint and reload the tab so the skipped-versions\n\t\t\t\t// list and skip button hide consistently.\n\t\t\t\twindow.skipThisVersion = function() {\n\t\t\t\t\tvar btn = document.getElementById('updates-skip-version-btn');\n\t\t\t\t\tif (!btn) return;\n\t\t\t\t\tvar version = btn.dataset.version;\n\t\t\t\t\tif (!version) return;\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tfetch(updBp + '/api/v1/updates/skips', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'Accept': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCSRFToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({ version: version })\n\t\t\t\t\t})\n\t\t\t\t\t.then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) return throwFromResponse(resp, 'skip failed');\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t})\n\t\t\t\t\t.then(function() {\n\t\t\t\t\t\t// Reload so the SSR'd skipped-list row picks up the\n\t\t\t\t\t\t// new entry without a separate hydrate path.\n\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t})\n\t\t\t\t\t.catch(function(err) {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast((err && err.message) || 'Failed to skip version');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t};\n\t\t\t});\n\n\t\t\t// popstate fires on browser back/forward. If that navigation leaves\n\t\t\t// the Updates tab active, rehydrate rather than showing whatever\n\t\t\t// stale values were in the DOM before the back/forward event.\n\t\t\twindow.addEventListener('popstate', hydrateIfUpdatesActive);\n\n\t\t\t// fetchAndPopulateUpdateStatus refreshes the updater DOM from /status.\n\t\t\t// Pass {silent: true} for passive follow-up calls (after Check or\n\t\t\t// Save) where a /status failure should NOT resurface the inline\n\t\t\t// status row. Without that, a transient /status hiccup brings back\n\t\t\t// the non-Apply use of the row that this PR is retiring.\n\t\t\tfunction fetchAndPopulateUpdateStatus(opts) {\n\t\t\t\tvar silent = !!(opts && opts.silent);\n\t\t\t\tfetch(updBp + '/api/v1/updates/status', {headers: {'Accept': 'application/json'}})\n\t\t\t\t.then(function(r) {\n\t\t\t\t\tif (!r.ok) return throwFromResponse(r, 'status failed');\n\t\t\t\t\treturn r.json();\n\t\t\t\t})\n\t\t\t\t.then(function(d) {\n\t\t\t\t\tvar lcRow = document.getElementById('updates-last-checked-row');\n\t\t\t\t\tvar lcEl = document.getElementById('updates-last-checked');\n\t\t\t\t\tif (lcEl) {\n\t\t\t\t\t\tif (d.last_checked) {\n\t\t\t\t\t\t\tlcEl.textContent = d.last_checked;\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Clear stale display when the server has no record, e.g. after a\n\t\t\t\t\t\t\t// channel switch to one that was never checked.\n\t\t\t\t\t\t\tlcEl.textContent = '';\n\t\t\t\t\t\t\tif (lcRow) lcRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the latest version and update-available badge from cached status.\n\t\t\t\t\tvar latestEl = document.getElementById('updates-latest-version');\n\t\t\t\t\tvar applyBtn = document.getElementById('updates-apply-btn');\n\t\t\t\t\tvar i18n = document.getElementById('updates-i18n');\n\t\t\t\t\tvar lblAvailable = i18n ? i18n.dataset.updateAvailable : 'Update available';\n\t\t\t\t\tvar lblUpToDate = i18n ? i18n.dataset.upToDate : 'Up to date';\n\t\t\t\t\tvar lblNotChecked = i18n ? i18n.dataset.notChecked : 'Not yet checked';\n\t\t\t\t\t// The latestEl branches below are display-only: they render\n\t\t\t\t\t// the version pill / \"up to date\" / \"not checked\" copy. The\n\t\t\t\t\t// Apply button's disabled state is computed from the full\n\t\t\t\t\t// server-rejection mirror in computeApplyDisabled(d) and\n\t\t\t\t\t// applied once after this block, so the per-branch render\n\t\t\t\t\t// no longer has to worry about getting the gate right.\n\t\t\t\t\tif (latestEl) {\n\t\t\t\t\t\tif (d.latest) {\n\t\t\t\t\t\t\tif (d.update_available) {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-green-600 dark:text-green-400 font-semibold\">' + escHtml(d.latest) + '</span>'\n\t\t\t\t\t\t\t\t\t+ ' <span class=\"ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300\">' + escHtml(lblAvailable) + '</span>';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlatestEl.innerHTML = escHtml(d.latest) + ' <span class=\"ml-2 text-gray-400 dark:text-gray-500\">' + escHtml(lblUpToDate) + '</span>';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else if (!d.last_checked) {\n\t\t\t\t\t\t\t// No check has ever succeeded: keep the server-rendered\n\t\t\t\t\t\t\t// \"Not checked\" placeholder so the first /status hydrate\n\t\t\t\t\t\t\t// does not blank it out.\n\t\t\t\t\t\t\tlatestEl.innerHTML = '<span class=\"text-gray-400 dark:text-gray-500 italic\">' + escHtml(lblNotChecked) + '</span>';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t// Checked, but the current channel has no matching release\n\t\t\t\t\t\t\t// (e.g. after switching to a channel with no builds yet).\n\t\t\t\t\t\t\t// Leave blank rather than \"Not checked\" since the check did happen.\n\t\t\t\t\t\t\tlatestEl.textContent = '';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Single canonical Apply gate. Mirrors POST /updates/apply's\n\t\t\t\t\t// rejection paths via computeApplyDisabled (declared above\n\t\t\t\t\t// with the server-side parity map). Setting this once after\n\t\t\t\t\t// the display branches means a future server-side rejection\n\t\t\t\t\t// condition only needs an update in computeApplyDisabled,\n\t\t\t\t\t// not in N branches here.\n\t\t\t\t\tif (applyBtn) applyBtn.disabled = computeApplyDisabled(d);\n\t\t\t\t\t// Hydrate the release-notes link from /status so it is visible\n\t\t\t\t\t// after a page reload or tab re-open without a manual check.\n\t\t\t\t\tvar relLinkRow = document.getElementById('updates-release-link-row');\n\t\t\t\t\tvar relLink = document.getElementById('updates-release-link');\n\t\t\t\t\tif (relLinkRow && relLink) {\n\t\t\t\t\t\tif (d.release_url) {\n\t\t\t\t\t\t\trelLink.href = d.release_url;\n\t\t\t\t\t\t\trelLinkRow.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trelLinkRow.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Hydrate the persistent restart-required banner. Because the\n\t\t\t\t\t// flag is sticky in-memory on the server, every /status hit\n\t\t\t\t\t// after a successful Apply re-confirms restart_required=true,\n\t\t\t\t\t// so a page refresh or back/forward navigation does not lose\n\t\t\t\t\t// the success indicator. Issue #1169.\n\t\t\t\t\tvar restartRow = document.getElementById('updates-restart-required-row');\n\t\t\t\t\tif (restartRow) {\n\t\t\t\t\t\tif (d.restart_required) {\n\t\t\t\t\t\t\trenderRestartRequired(d.pending_version || '');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\trestartRow.classList.add('hidden');\n\t\t\t\t\t\t\t// Mirror the inverse of renderRestartRequired() so a tab\n\t\t\t\t\t\t\t// kept open across a real restart re-enables Check (and\n\t\t\t\t\t\t\t// Apply, if the page-load handler doesn't reset it).\n\t\t\t\t\t\t\tvar checkBtn = document.getElementById('updates-check-btn');\n\t\t\t\t\t\t\tif (checkBtn) checkBtn.disabled = false;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// If an operation is in progress, show its state and start polling.\n\t\t\t\t\tif (d.state === 'error') {\n\t\t\t\t\t\tsetUpdaterStatus('error', d.error || 'update failed');\n\t\t\t\t\t} else if (d.state && d.state !== 'idle') {\n\t\t\t\t\t\tsetUpdaterStatus(d.state, '');\n\t\t\t\t\t\tpollUpdateStatus();\n\t\t\t\t\t} else {\n\t\t\t\t\t\tclearUpdaterStatus();\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t\t.catch(function(err) {\n\t\t\t\t\tif (silent) {\n\t\t\t\t\t\t// Passive refresh: surface a toast (if available) and\n\t\t\t\t\t\t// leave the inline status row alone.\n\t\t\t\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\t\t\t\tshowToast(err && err.message ? err.message : 'status refresh failed');\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tsetUpdaterStatus('error', err.message || 'status failed');\n\t\t\t\t});\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

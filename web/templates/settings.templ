@@ -5237,10 +5237,10 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.sends_heading") }</div>
 							<div class="space-y-2">
 								if c.Type != "lidarr" {
-									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"))
+									@connectionFeatureToggleTT(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport, t(ctx, "settings.connections.feature_library_import_tooltip"), "settings-connections-connections-feature-library-import")
 								}
-								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"))
-								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"))
+								@connectionFeatureToggleTT(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite, t(ctx, "settings.connections.feature_nfo_write_tooltip"), "settings-connections-connections-feature-nfo-write")
+								@connectionFeatureToggleTT(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite, t(ctx, "settings.connections.feature_image_write_tooltip"), "settings-connections-connections-feature-image-write")
 							</div>
 						</div>
 						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
@@ -5453,39 +5453,25 @@ script toggleConnectionFeatures(connID string) {
 	}
 }
 
-templ connectionFeatureToggle(connID string, feature string, label string, enabled bool) {
-	<div class="flex items-center justify-between">
-		<span class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
-		<button
-			type="button"
-			class={ ruleToggleBtnClasses(enabled) }
-			role="switch"
-			aria-checked={ boolAttr(enabled) }
-			aria-label={ "Toggle " + label }
-			data-conn-id={ connID }
-			data-feature={ feature }
-			onclick="toggleConnectionFeature(this)"
-		>
-			<span class={ ruleToggleKnobClasses(enabled) }></span>
-		</button>
-	</div>
-}
-
-// connectionFeatureToggleTT is the tooltip-equipped variant of
-// connectionFeatureToggle. Used by the redesigned per-connection settings
-// card so users can hover a label and see the precondition semantics
-// (e.g. "writes are still gated if the server has NFO saving on").
+// connectionFeatureToggleTT renders a labeled feature toggle for the
+// per-connection settings card with a visible "?" help icon adjacent to
+// the label. The help icon expands a popover with the precondition
+// semantics (e.g. "writes are still gated if the server has NFO saving
+// on") and a Read more link to the docs site when docAnchor is set.
 //
-// The template renders both a `title` attribute (mouse-hover affordance)
-// and a sibling sr-only <span> carrying the same tooltip text referenced
-// by aria-describedby. The sr-only node is the reliable screen-reader
-// description path since title is not consistently exposed by assistive
-// technology.
-templ connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string) {
+// An sr-only <span> carrying the same tooltip text remains as the
+// aria-describedby target on the toggle button itself; that gives screen
+// readers the description on toggle focus without forcing them to
+// navigate to the help icon separately.
+templ connectionFeatureToggleTT(connID string, feature string, label string, enabled bool, tooltip string, docAnchor string) {
 	{{ labelID := connID + "-" + feature + "-label" }}
 	{{ ttID := connID + "-" + feature + "-tt" }}
-	<div class="flex items-center justify-between" title={ tooltip }>
-		<span id={ labelID } class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+	{{ helpID := connID + "-" + feature + "-help" }}
+	<div class="flex items-center justify-between gap-2">
+		<span class="inline-flex items-center gap-1 min-w-0">
+			<span id={ labelID } class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+			@components.ContextHelp(helpID, label, tooltip, docAnchor)
+		</span>
 		<button
 			type="button"
 			class={ ruleToggleBtnClasses(enabled) }
