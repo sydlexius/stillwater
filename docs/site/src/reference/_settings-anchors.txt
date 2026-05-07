@@ -57,7 +57,6 @@ settings-connections-connections-feature-library-import-tooltip
 settings-connections-connections-feature-nfo-write
 settings-connections-connections-feature-nfo-write-tooltip
 settings-connections-connections-feature-toggles
-settings-connections-connections-manage-description
 settings-connections-connections-manage-title
 settings-connections-connections-not-configured
 settings-connections-connections-sends-heading
@@ -73,7 +72,6 @@ settings-general-image-cache-unlimited
 settings-general-platform-debug
 settings-general-platform-profile
 settings-general-symlinks
-settings-general-symlinks-unsupported-description
 settings-general-tls-status
 settings-general-tls-status-active-acme
 settings-general-tls-status-active-byo
@@ -131,8 +129,6 @@ settings-maintenance-db-maintenance
 settings-maintenance-db-maintenance-auto-schedule
 settings-maintenance-db-maintenance-schedule-note
 settings-maintenance-export-import
-settings-maintenance-export-import-description-line1
-settings-maintenance-export-import-description-line2
 settings-maintenance-export-import-encryption-note-line1
 settings-maintenance-export-import-encryption-note-line2
 settings-maintenance-export-import-export-passphrase

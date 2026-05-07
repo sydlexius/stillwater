@@ -560,6 +560,17 @@ var noiseTokens = []string{
 	// render as broken bullets if surfaced in the docs.
 	"_note_prefix",
 	"_note_suffix",
+	// Underscore-suffixed _description keys are runtime state/banner text
+	// (e.g. settings.symlinks.unsupported_description renders only when the
+	// filesystem doesn't support symlinks). Distinct from the dotted .description
+	// metadata suffix which IS a real control description and stays parsed.
+	// The substring match here catches `supported_description`,
+	// `unsupported_description`, `manage_description`, etc.
+	"_description",
+	// Multi-line banner prose split across keys: settings.X.description_line1,
+	// description_line2. These compose at render-time and aren't per-control
+	// content the docs reader can navigate to.
+	"description_line",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens

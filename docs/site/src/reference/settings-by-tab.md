@@ -27,17 +27,18 @@ Edit filenames for each image type. Changes are saved to the profile.
 
 ### Use symlinks for duplicates  {#settings-general-symlinks}
 
-- **Symlinks are not supported on this filesystem. The library path does not support symbolic links.**
-{: #settings-general-symlinks-unsupported-description }
-
 ### TLS Status  {#settings-general-tls-status}
 
 Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml; see the Direct TLS Setup how-to.
 
-- **Active (BYO certificate)** {#settings-general-tls-status-active-byo}
-- **Active (ACME)** {#settings-general-tls-status-active-acme}
-- **Inactive** {#settings-general-tls-status-inactive}
-- **Listening:** {#settings-general-tls-status-listening-label}
+- **Active (BYO certificate)**
+{: #settings-general-tls-status-active-byo }
+- **Active (ACME)**
+{: #settings-general-tls-status-active-acme }
+- **Inactive**
+{: #settings-general-tls-status-inactive }
+- **Listening:**
+{: #settings-general-tls-status-listening-label }
 
 ### Base Path  {#settings-general-base-path}
 
@@ -155,8 +156,6 @@ Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
 {: #settings-connections-connections-feature-image-write-tooltip }
 - **Let Stillwater manage artwork and NFO files on this server**
 {: #settings-connections-connections-manage-title }
-- **When on, Stillwater watches this server and turns off its artwork and NFO savers whenever they get re-enabled. Your previous settings are saved and restored if you turn this off or remove the connection.**
-{: #settings-connections-connections-manage-description }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
 
@@ -467,10 +466,6 @@ Create, download, and manage database backups.
 
 ### Settings Export / Import  {#settings-maintenance-export-import}
 
-- **Export all settings (provider keys, connections, profiles, webhooks) as an encrypted file.**
-{: #settings-maintenance-export-import-description-line1 }
-- **A passphrase you choose protects the file, so it can be imported on any Stillwater instance.**
-{: #settings-maintenance-export-import-description-line2 }
 - **Export passphrase**
 {: #settings-maintenance-export-import-export-passphrase }
 - **Import settings file**
