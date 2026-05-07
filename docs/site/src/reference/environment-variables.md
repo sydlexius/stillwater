@@ -13,6 +13,13 @@ The table below is generated from the configuration definition; do not edit it b
 <!-- BEGIN GENERATED: env-reference -->
 | Variable | Type | Default | Description |
 |---|---|---|---|
+| `SW_ACME_CA` | string | unset | ACME directory URL or shorthand. Recognized shorthands include letsencrypt, letsencrypt-staging, buypass, and zerossl. Falls back to Let's Encrypt when unset. |
+| `SW_ACME_CACHE_DIR` | string | unset | Directory where ACME account keys and issued certificates are cached. Defaults to acme-cache/ alongside the SQLite database when unset. |
+| `SW_ACME_DOMAIN` | string | unset | DNS name to obtain certificates for via ACME. Mutually exclusive with SW_TLS_CERT_FILE; the ACME path wins when both are set. |
+| `SW_ACME_EAB_KEY_ID` | string | unset | External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL). |
+| `SW_ACME_EAB_MAC_KEY` | string | unset | External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; persisted at rest only after AES-256-GCM encryption. |
+| `SW_ACME_EMAIL` | string | unset | Contact email registered with the ACME CA. Required by most public ACME endpoints. |
+| `SW_ACME_IP` | string | unset | Public IP address for IP-SAN certificate orders (ZeroSSL only). Must not be an RFC1918, loopback, or link-local address. |
 | `SW_BACKUP_ENABLED` | boolean | `true` | Set to true or 1 to enable automated backups. Any other value disables them. |
 | `SW_BACKUP_INTERVAL` | integer | `24` | Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. |
 | `SW_BACKUP_PATH` | path | (none) | Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory. |
@@ -20,12 +27,17 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_BASE_PATH` | path | `/` | URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only. |
 | `SW_DB_PATH` | path | `/config/stillwater.db` | Filesystem path to the SQLite database file. |
 | `SW_ENCRYPTION_KEY` | string | unset | Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory. |
+| `SW_HTTP3_ENABLED` | boolean | `false` | Enable the HTTP/3 (QUIC) listener on the same port as the HTTPS listener. Requires TLS to be configured. |
+| `SW_HTTP_REDIRECT_PORT` | integer | unset | Optional plain-HTTP port that 301-redirects to the HTTPS listener. Only honored when TLS is configured. Numeric values outside 1-65535 are rejected at startup. |
 | `SW_LOG_FORMAT` | string | `json` | Log output format. Use json for log aggregators or text for friendlier console output. |
 | `SW_LOG_LEVEL` | string | `info` | Log level at startup. One of trace, debug, info, warn, error. The runtime can also adjust the live level from the Logs settings tab. |
 | `SW_MUSIC_PATH` | path | `/music` | Default music library path used as a starting point when no library has been added through the UI. |
 | `SW_PORT` | integer | `1973` | TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup. |
 | `SW_SCANNER_EXCLUSIONS` | list (comma-separated) | `Various Artists, Various, VA, Soundtrack, OST` | Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed. |
 | `SW_SESSION_SECRET` | string | unset | Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory. |
+| `SW_TLS_CERT_FILE` | string | unset | Path to a PEM-encoded TLS certificate. When set together with SW_TLS_KEY_FILE Stillwater serves HTTPS directly instead of plain HTTP. |
+| `SW_TLS_KEY_FILE` | string | unset | Path to the PEM-encoded private key for SW_TLS_CERT_FILE. Both files must be readable by the Stillwater process. |
+| `SW_TLS_PORT` | integer | unset | Optional dedicated HTTPS port. When unset Stillwater serves HTTPS on SW_PORT (collapse semantics, single listener). Numeric values outside 1-65535 are rejected at startup. |
 <!-- END GENERATED: env-reference -->
 
 `SW_CONFIG_PATH` is also honored at startup but lives outside the configuration struct: set it to point at a TOML or YAML config file. When unset, Stillwater attempts to read `/config/config.toml`; if that file does not exist, it starts with defaults plus environment overrides only. YAML files are still accepted for existing installs; the loader picks the parser from the file extension (`.toml` -> TOML; `.yaml` or `.yml` -> YAML).

@@ -1,6 +1,11 @@
 ## Version 2026/02/20
 # Make sure that your stillwater container is named stillwater
 # Make sure that your DNS has a CNAME set for stillwater
+#
+# This sample assumes proxy-terminated TLS via SWAG.
+# If you enabled SW_TLS_CERT_FILE in Stillwater (direct TLS), do NOT
+# deploy this proxy config -- Stillwater is already serving HTTPS itself.
+# See: docs/how-to/direct-tls-setup
 
 server {
     listen 443 ssl;

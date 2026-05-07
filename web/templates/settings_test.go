@@ -206,6 +206,118 @@ func TestSettingsUpdatesTab_RestartRequiredDocker(t *testing.T) {
 	}
 }
 
+// TestSettingsPage_TLSStatusCard pins the read-only TLS Status card
+// rendered on the Settings General tab. The card is the only place an
+// operator can confirm without log-tailing whether direct TLS took effect,
+// so the rendered branches must stay covered by tests as the M47 work
+// adds ACME and HTTP/3 wiring downstream.
+func TestSettingsPage_TLSStatusCard(t *testing.T) {
+	cases := []struct {
+		name     string
+		tls      TLSStatusData
+		wantText []string
+		denyText []string
+		wantMode string
+	}{
+		{
+			name: "off shows plain HTTP listener",
+			tls: TLSStatusData{
+				Mode:     "off",
+				HTTPPort: 1973,
+			},
+			wantText: []string{"Inactive", "HTTP on :1973"},
+			denyText: []string{"Active (BYO certificate)", "HTTPS on :"},
+			wantMode: "off",
+		},
+		{
+			name: "byo shows HTTPS listener on TLS port",
+			tls: TLSStatusData{
+				Mode:      "byo",
+				HTTPSPort: 443,
+			},
+			wantText: []string{"Active (BYO certificate)", "HTTPS on :443"},
+			denyText: []string{"HTTP on :", "HTTP redirect on :", "ACME"},
+			wantMode: "byo",
+		},
+		{
+			name: "byo collapse mode shows Server.Port as HTTPS",
+			tls: TLSStatusData{
+				Mode:      "byo",
+				HTTPSPort: 1973,
+			},
+			wantText: []string{"Active (BYO certificate)", "HTTPS on :1973"},
+			denyText: []string{"HTTP on :", "HTTP redirect on :"},
+			wantMode: "byo",
+		},
+		{
+			name: "redirect row absent when HTTPRedirectPort is zero",
+			tls: TLSStatusData{
+				Mode:             "byo",
+				HTTPSPort:        443,
+				HTTPRedirectPort: 0,
+			},
+			wantText: []string{"Active (BYO certificate)", "HTTPS on :443"},
+			denyText: []string{"HTTP redirect on :", `data-tls-listener="redirect"`},
+			wantMode: "byo",
+		},
+		{
+			name: "acme with domain shows the issued name",
+			tls: TLSStatusData{
+				Mode:       "acme",
+				AcmeDomain: "stillwater.example.com",
+				HTTPSPort:  443,
+			},
+			wantText: []string{"Active (ACME, stillwater.example.com)", "HTTPS on :443"},
+			denyText: []string{"BYO certificate", "Inactive"},
+			wantMode: "acme",
+		},
+		{
+			name: "redirect listener row renders only when configured",
+			tls: TLSStatusData{
+				Mode:             "byo",
+				HTTPSPort:        443,
+				HTTPRedirectPort: 80,
+			},
+			wantText: []string{"Active (BYO certificate)", "HTTPS on :443", "HTTP redirect on :80"},
+			wantMode: "byo",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := SettingsData{
+				ActiveTab: "general",
+				TLS:       tc.tls,
+				// Defaults that the rest of the General tab depends on so
+				// the render path does not panic on nil data.
+				BasePath: "/",
+			}
+			var buf bytes.Buffer
+			if err := SettingsPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			html := buf.String()
+
+			if !strings.Contains(html, `id="tls-status-card"`) {
+				t.Fatal("rendered HTML missing tls-status-card element")
+			}
+			if !strings.Contains(html, `data-tls-mode="`+tc.wantMode+`"`) {
+				t.Errorf("missing data-tls-mode=%q marker", tc.wantMode)
+			}
+			for _, want := range tc.wantText {
+				if !strings.Contains(html, want) {
+					t.Errorf("rendered HTML missing %q", want)
+				}
+			}
+			for _, deny := range tc.denyText {
+				if strings.Contains(html, deny) {
+					t.Errorf("rendered HTML unexpectedly contains %q", deny)
+				}
+			}
+		})
+	}
+}
+
 // findOpeningTagByID returns the rendered opening tag (everything between
 // `<` and `>` inclusive) of the element whose `id` attribute matches `id`.
 // Used by banner visibility tests to verify class attributes without coupling

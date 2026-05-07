@@ -391,6 +391,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		ShowPlatformDebug:       r.getBoolSetting(req.Context(), "show_platform_debug", false),
 		BasePath:                r.basePath,
 		BasePathEnvOverride:     r.basePathFromEnv,
+		TLS:                     r.tlsStatus,
 		Host:                    webhookHost(baseURL, req.Host),
 		Scheme:                  webhookScheme(baseURL, req),
 		SymlinkSupported:        symlinkSupported,

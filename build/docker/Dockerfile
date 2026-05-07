@@ -57,8 +57,12 @@ WORKDIR /app
 
 EXPOSE 1973
 
+# Healthcheck. The shell-expanded URL lets the entrypoint override
+# SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on
+# the right port. -k is intentional: a localhost healthcheck against a
+# self-signed cert is acceptable.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'curl -f "http://localhost:1973${SW_BASE_PATH:-}/api/v1/health" || exit 1'
+  CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:1973${SW_BASE_PATH:-}/api/v1/health}" || exit 1'
 
 VOLUME ["/config", "/music"]
 

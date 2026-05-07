@@ -7,6 +7,9 @@ services:
     container_name: stillwater
     ports:
       - "1973:1973"
+      # Direct TLS (BYO certificate). Uncomment when SW_TLS_CERT_FILE/KEY_FILE
+      # are set below; pick whichever host port matches your deployment.
+      # - "443:1973"
     environment:
       - PUID=99
       - PGID=100
@@ -14,6 +17,10 @@ services:
       - SW_LOG_FORMAT=json
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
       # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
+      # Direct TLS (see docs/how-to/direct-tls-setup):
+      # - SW_TLS_CERT_FILE=/config/tls/fullchain.pem
+      # - SW_TLS_KEY_FILE=/config/tls/privkey.pem
+      # - SW_TLS_PORT=1973  # 0 or unset reuses SW_PORT (collapse mode)
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw

@@ -75,6 +75,7 @@ type RouterDeps struct {
 	Logger             *slog.Logger
 	BasePath           string
 	BasePathFromEnv    bool
+	TLSStatus          templates.TLSStatusData
 	StaticFS           fs.FS
 	ImageCacheDir      string
 	Publisher          *publish.Publisher
@@ -120,6 +121,7 @@ type Router struct {
 	logger             *slog.Logger
 	basePath           string
 	basePathFromEnv    bool
+	tlsStatus          templates.TLSStatusData
 	imageCacheDir      string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
@@ -206,6 +208,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
 		basePathFromEnv:    deps.BasePathFromEnv,
+		tlsStatus:          deps.TLSStatus,
 		imageCacheDir:      deps.ImageCacheDir,
 		publisher:          deps.Publisher,
 		sseHub:             deps.SSEHub,

@@ -4,6 +4,20 @@ set -e
 PUID="${PUID:-99}"
 PGID="${PGID:-100}"
 
+# Derive SW_HEALTH_URL when direct TLS is configured so the Dockerfile
+# HEALTHCHECK probes HTTPS on the right port. SW_TLS_PORT wins when set to
+# a real port; the literal value 0 is the documented "reuse SW_PORT" sentinel
+# (the Go config treats it the same as unset), so the shell must too.
+if [ -n "${SW_TLS_CERT_FILE:-}" ] && [ -z "${SW_HEALTH_URL:-}" ]; then
+    if [ -n "${SW_TLS_PORT:-}" ] && [ "${SW_TLS_PORT}" != "0" ]; then
+        SW_HEALTH_PORT="${SW_TLS_PORT}"
+    else
+        SW_HEALTH_PORT="${SW_PORT:-1973}"
+    fi
+    SW_HEALTH_URL="https://localhost:${SW_HEALTH_PORT}${SW_BASE_PATH:-}/api/v1/health"
+    export SW_HEALTH_URL
+fi
+
 # Remap the stillwater user/group to the requested UID/GID, then drop
 # privileges via su-exec so the application never runs as root.
 if [ "$(id -u)" = "0" ]; then

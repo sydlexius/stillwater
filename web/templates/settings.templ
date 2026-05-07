@@ -58,14 +58,44 @@ type SettingsData struct {
 	SymlinkSupported        bool
 	CacheMaxSizeMB          string
 	NameSimilarityThreshold int
-	MetadataLanguages       []string // Ordered BCP 47 tags for metadata language preference.
-	BasePath                string   // Current SW_BASE_PATH value (read-only display).
-	BasePathEnvOverride     bool     // True when the SW_BASE_PATH env var is set.
-	Host                    string   // Detected host (from base_url setting or Host header), used to pre-populate webhook URLs.
-	Scheme                  string   // Detected scheme ("http" or "https") for webhook URL generation.
+	MetadataLanguages       []string      // Ordered BCP 47 tags for metadata language preference.
+	BasePath                string        // Current SW_BASE_PATH value (read-only display).
+	BasePathEnvOverride     bool          // True when the SW_BASE_PATH env var is set.
+	TLS                     TLSStatusData // Read-only summary of the running TLS listener configuration.
+	Host                    string        // Detected host (from base_url setting or Host header), used to pre-populate webhook URLs.
+	Scheme                  string        // Detected scheme ("http" or "https") for webhook URL generation.
 	Users                   UsersTabData
 	AuthProviders           AuthProvidersData
 	Updates                 UpdatesTabData
+}
+
+// TLSStatusData feeds the read-only TLS Status card in the Settings General
+// tab. The card surfaces what listeners are actually bound (HTTPS vs HTTP)
+// so a deployment that flips SW_TLS_CERT_FILE can confirm the change took
+// effect without parsing logs. It carries no editable fields and no
+// secrets; cert/key paths are not displayed because the operator already
+// knows where they live and exposing them would only widen the attack
+// surface in a screenshot.
+type TLSStatusData struct {
+	// Mode is one of "off", "byo", or "acme". Maps directly to a single
+	// label in the rendered card. "acme" is reserved for #930+; the
+	// template handles all three branches today so future PRs only update
+	// the handler.
+	Mode string
+	// AcmeDomain is the DNS name issued by ACME, surfaced in the "Active
+	// (ACME, <domain>)" label when Mode == "acme". Empty otherwise.
+	AcmeDomain string
+	// HTTPSPort is the bound HTTPS listener port (used when Mode != "off").
+	// In collapse mode it equals Server.Port; otherwise it equals
+	// Server.TLS.Port.
+	HTTPSPort int
+	// HTTPPort is the bound plain-HTTP listener port. Used when Mode ==
+	// "off" so the card reads "HTTP on :1973".
+	HTTPPort int
+	// HTTPRedirectPort is the optional 301-redirect listener port. Set to
+	// 0 when no redirect listener is configured. Wired in #929; the
+	// conditional render is in place today.
+	HTTPRedirectPort int
 }
 
 // UpdatesTabData holds the data for the Updates settings tab.
@@ -684,6 +714,51 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				}
+				<!-- TLS Status. Read-only summary of the running listener
+				     configuration so an operator can confirm a TLS deploy
+				     took effect without parsing logs. Values come from the
+				     same Config that the listener layer reads, so what the
+				     card shows is what is actually bound. -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="tls-status-card">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">TLS Status</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml; see the Direct TLS Setup how-to.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-2 text-sm">
+						<div>
+							<span class="font-medium text-gray-500 dark:text-gray-400">Status:</span>
+							switch data.TLS.Mode {
+								case "byo":
+									<span class="ml-2 text-green-600 dark:text-green-400" data-tls-mode="byo">Active (BYO certificate)</span>
+								case "acme":
+									<span class="ml-2 text-green-600 dark:text-green-400" data-tls-mode="acme">
+										if data.TLS.AcmeDomain != "" {
+											{ "Active (ACME, " + data.TLS.AcmeDomain + ")" }
+										} else {
+											Active (ACME)
+										}
+									</span>
+								default:
+									<span class="ml-2 text-gray-500 dark:text-gray-400" data-tls-mode="off">Inactive</span>
+							}
+						</div>
+						<div>
+							<span class="font-medium text-gray-500 dark:text-gray-400">Listening:</span>
+							<ul class="ml-2 inline-flex flex-wrap gap-x-4">
+								if data.TLS.Mode == "off" {
+									<li data-tls-listener="http">{ "HTTP on :" + strconv.Itoa(data.TLS.HTTPPort) }</li>
+								} else {
+									<li data-tls-listener="https">{ "HTTPS on :" + strconv.Itoa(data.TLS.HTTPSPort) }</li>
+								}
+								if data.TLS.HTTPRedirectPort != 0 {
+									<li data-tls-listener="redirect">{ "HTTP redirect on :" + strconv.Itoa(data.TLS.HTTPRedirectPort) }</li>
+								}
+							</ul>
+						</div>
+					</div>
+				</div>
 				<!-- Base Path. Editable when SW_BASE_PATH env var is unset (the
 				     env value wins to keep operator-managed deployments stable);
 				     read-only with an amber caption otherwise. Saves go through
