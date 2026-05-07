@@ -185,10 +185,13 @@ settings-rules-schedule-every-6h
 settings-rules-schedule-every-hour
 settings-updates-updates
 settings-updates-updates-auto-check
+settings-updates-updates-auto-update
 settings-updates-updates-channel
 settings-updates-updates-check-interval
 settings-updates-updates-config
 settings-updates-updates-enabled
+settings-updates-updates-last-auto-applied
+settings-updates-updates-skip-version-list-label
 settings-users-users
 settings-users-users-24-hours
 settings-users-users-3-days

@@ -1546,9 +1546,8 @@ components:
       # Only `channel` and `auto_check` are required so the schema stays
       # backward-compatible with the original W2/M36 clients that predate the
       # enabled / check_interval_hours fields. The handler and service both
-      # default missing fields (enabled=true, check_interval_hours=24) when
-      # they are absent from a PUT body. AutoUpdate is intentionally not in
-      # the schema; see issue #1284 for the auto-Apply work split-out.
+      # default missing fields (enabled=true, check_interval_hours=24,
+      # auto_update=false) when they are absent from a PUT body.
       required: [channel, auto_check]
       properties:
         channel:
@@ -1570,6 +1569,16 @@ components:
             When true (and `enabled` is also true), the updater periodically
             checks for new releases in the background at `check_interval_hours`.
             Default: false.
+        auto_update:
+          type: boolean
+          description: >-
+            When true (and `enabled`, `auto_check` are also true), the
+            scheduler calls Apply automatically after a successful check
+            finds a newer release. Docker hosts ignore this flag (the
+            scheduler no-ops on Docker; orchestration handles container
+            image refresh). The skip-this-version list (see
+            `/updates/skips`) gates which candidate tags are eligible.
+            Default: false.
         check_interval_hours:
           type: integer
           minimum: 0
@@ -1580,6 +1589,30 @@ components:
             negative values; the coercion runs inside Service.SetConfig so
             older clients that omit the field still validate). Negative
             values are rejected on PUT with a 400.
+        last_auto_applied:
+          type: string
+          format: date-time
+          readOnly: true
+          description: >-
+            RFC3339 timestamp of the last successful auto-apply. Read-only
+            output: written by the scheduler after a successful Apply, not
+            by user PUT.
+        last_auto_applied_version:
+          type: string
+          readOnly: true
+          description: >-
+            Tag of the release installed in the last auto-apply. Empty when
+            `last_auto_applied` is unset.
+        skipped_versions:
+          type: array
+          readOnly: true
+          items:
+            type: string
+          description: >-
+            Read-only mirror of the persisted skip list, always present
+            (empty array when no versions are skipped). Mutate via the
+            `/updates/skips` POST/DELETE endpoints (PUT here ignores the
+            field).
 
     ForeignFileEntry:
       type: object
@@ -8703,7 +8736,10 @@ paths:
       summary: Get update configuration
       description: >-
         Returns the current updater configuration: channel, enabled,
-        auto_check, and check_interval_hours.
+        auto_check, auto_update, and check_interval_hours. The
+        `auto_update` field defaults to false and is ignored on Docker
+        hosts (the scheduler no-ops on Docker; orchestration handles
+        container image refresh).
       operationId: getUpdateConfig
       responses:
         "200":
@@ -8736,8 +8772,27 @@ paths:
       description: |
         Persists the updater configuration: channel (`stable`, `prerelease`, or
         `nightly`), the top-level `enabled` switch, the `auto_check` toggle,
-        and the `check_interval_hours` cadence used by the background
-        auto-check loop. Config is stored in the settings key-value table.
+        the `auto_update` toggle, and the `check_interval_hours` cadence used
+        by the background auto-check loop. Config is stored in the settings
+        key-value table.
+
+        `auto_update` defaults to false and is ignored on Docker hosts (the
+        scheduler no-ops on Docker; orchestration handles container image
+        refresh). When true alongside `enabled` and `auto_check`, the
+        scheduler calls Apply automatically after a successful check finds a
+        newer release that is not on the skip list.
+
+        Example PUT body:
+
+        ```json
+        {
+          "channel": "stable",
+          "enabled": true,
+          "auto_check": true,
+          "auto_update": false,
+          "check_interval_hours": 24
+        }
+        ```
       operationId: setUpdateConfig
       requestBody:
         required: true
@@ -8766,6 +8821,144 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Internal server error while saving or reading updater config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /updates/skips:
+    get:
+      tags: [Updates]
+      summary: List skipped release tags
+      description: >-
+        Returns the persisted skip list. The scheduler reads this list on
+        every tick and short-circuits AutoUpdate when the candidate tag is
+        present.
+      operationId: listUpdateSkips
+      responses:
+        "200":
+          description: Current skip list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skipped_versions]
+                properties:
+                  skipped_versions:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Updates]
+      summary: Append a release tag to the skip list
+      description: >-
+        Idempotent: a tag already present is a no-op. The scheduler honors
+        the post-write list on the next tick.
+      operationId: addUpdateSkip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version:
+                  type: string
+                  minLength: 1
+                  description: Release tag to skip (e.g. "v1.2.3" or "nightly-20260101").
+      responses:
+        "200":
+          description: Skip list after append.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skipped_versions]
+                properties:
+                  skipped_versions:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: Missing or empty version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Updater service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /updates/skips/{version}:
+    delete:
+      tags: [Updates]
+      summary: Remove a release tag from the skip list
+      description: >-
+        Idempotent: removing a tag that is not present is a no-op.
+      operationId: removeUpdateSkip
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Skip removed (or was not present).
+        "400":
+          description: Missing version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error.
           content:
             application/json:
               schema:

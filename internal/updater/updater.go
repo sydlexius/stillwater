@@ -17,9 +17,11 @@
 //   - updater.auto_check:           "true" | "false"                     (default: "false")
 //   - updater.check_interval_hours: integer string, minimum 1            (default: "24")
 //
-// Auto-Apply (automatic install on the non-Docker path) is intentionally
-// omitted: it requires a confirmation flow, last-applied status display, and
-// a skip-this-version affordance to be responsible to ship. Tracked as #1284.
+// Auto-Apply on the non-Docker path is wired through Config.AutoUpdate. The
+// scheduler calls Apply() automatically when AutoUpdate is enabled, the
+// release is newer than version.Version, the host is not Docker, and the
+// candidate tag is not present in Config.SkippedVersions. Docker hosts are a
+// no-op (orchestration handles updates).
 package updater
 
 import (
@@ -56,8 +58,21 @@ const (
 	SettingChannel            = "updater.channel"
 	SettingEnabled            = "updater.enabled"
 	SettingAutoCheck          = "updater.auto_check"
+	SettingAutoUpdate         = "updater.auto_update"
 	SettingCheckIntervalHours = "updater.check_interval_hours"
+	SettingLastAutoApplied    = "updater.last_auto_applied"         // RFC3339 timestamp
+	SettingLastAutoAppliedVer = "updater.last_auto_applied_version" // tag string
+	SettingSkippedVersions    = "updater.skipped_versions"          // JSON-encoded []string
 )
+
+// schedulerHourUnit is the multiplier applied to Config.CheckIntervalHours
+// when computing the scheduler's tick interval. Production code leaves this
+// at time.Hour. Tests swap it to a small unit (e.g. time.Millisecond) so
+// scheduler reactivity can be exercised without sleeping for an hour.
+//
+// Package-private and intentionally a var, not a const: tests in this same
+// package set it inside t.Cleanup. External callers cannot reach it.
+var schedulerHourUnit = time.Hour
 
 // MinCheckIntervalHours is the floor for the background auto-check cadence.
 // A 1h floor prevents users from accidentally hammering the GitHub Releases
@@ -122,14 +137,45 @@ const (
 //   - AutoCheck: when true and Enabled is also true, the background loop
 //     polls GitHub at CheckIntervalHours.
 //
-// AutoUpdate (automatic Apply on the non-Docker path) is tracked separately
-// in #1284 alongside the safety surface it requires (confirmation flow,
-// last-applied status display, skip-this-version affordance).
+// AutoUpdate, when true together with Enabled and AutoCheck, makes the
+// scheduler call Apply() automatically after a successful Check finds a
+// newer release. Docker hosts are a no-op even when AutoUpdate is true
+// (binary in-place swap is unsupported in containers; orchestration is
+// expected to handle image refresh). The safety surface for AutoUpdate
+// (first-toggle confirmation modal, last-auto-applied status display,
+// skip-this-version affordance) lives in the Settings UI.
 type Config struct {
 	Channel            Channel `json:"channel"`
 	Enabled            bool    `json:"enabled"`
 	AutoCheck          bool    `json:"auto_check"`
+	AutoUpdate         bool    `json:"auto_update"`
 	CheckIntervalHours int     `json:"check_interval_hours"`
+
+	// LastAutoApplied is the time the scheduler last successfully called
+	// Apply() automatically. Zero value means no auto-apply has occurred.
+	// Read-only from a client's perspective: written by markAutoApplied
+	// after a successful runApply triggered by the scheduler. Surfaced in
+	// the Updates tab as a "last auto-applied: vX.Y.Z, 2h ago" line.
+	LastAutoApplied time.Time `json:"last_auto_applied,omitempty"`
+
+	// LastAutoAppliedVersion is the tag of the release that was installed
+	// in the last auto-apply. Empty when LastAutoApplied is zero.
+	LastAutoAppliedVersion string `json:"last_auto_applied_version,omitempty"`
+
+	// SkippedVersionsJSON tag note: the field intentionally omits
+	// ,omitempty so the key is always present in the response. The empty
+	// shape is guaranteed by initializing the slice to []string{} (not
+	// nil) wherever Config is constructed -- a nil slice marshals to
+	// "null", not "[]". This matches the dedicated /updates/skips
+	// endpoint and lets the UI's compositional auto-save flow round-trip
+	// the field without defensive nil checks.
+	//
+	// SkippedVersions is the persisted list of release tags that the
+	// scheduler must NOT auto-apply. The skip-this-version button
+	// appends to this list; the scheduler honors it on every tick by
+	// short-circuiting auto-apply when the candidate tag is present.
+	// Stored as a JSON array of strings under SettingSkippedVersions.
+	SkippedVersions []string `json:"skipped_versions"`
 }
 
 // CheckResult is returned by Check.
@@ -227,6 +273,23 @@ type Service struct {
 	// single indivisible operation (CompareAndSwap), eliminating the TOCTOU race
 	// where two callers could both pass the idle check before either launches.
 	applyRunning atomic.Int32
+
+	// skippedVersionsMu serializes the read-modify-write sequence in
+	// AddSkippedVersion / RemoveSkippedVersion so two concurrent admin
+	// requests cannot lose an update by both reading the same snapshot
+	// and clobbering each other on writeSkippedVersions. Held across the
+	// entire GetConfig -> mutate -> persist window.
+	skippedVersionsMu sync.Mutex
+
+	// configChange is a buffered (capacity 1) signal channel that SetConfig
+	// pulses non-blockingly after a successful persist. The scheduler
+	// loop selects on it alongside the timer, so a config change wakes
+	// the scheduler immediately instead of waiting out the previous
+	// (possibly 24h) interval. Capacity 1 with a non-blocking send means
+	// rapid back-to-back changes coalesce into a single wakeup, which is
+	// the correct behavior: the scheduler always re-reads the freshest
+	// config from the DB on wake.
+	configChange chan struct{}
 }
 
 // NewService creates a new updater Service.
@@ -237,8 +300,9 @@ func NewService(db *sql.DB, logger *slog.Logger) *Service {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		state:    StateIdle,
-		isDocker: detectDocker(),
+		state:        StateIdle,
+		isDocker:     detectDocker(),
+		configChange: make(chan struct{}, 1),
 	}
 }
 
@@ -270,6 +334,15 @@ func (s *Service) SetDockerForTest(isDocker bool) {
 // this; runApply alone calls markRestartRequired after a verified swap.
 func (s *Service) MarkRestartRequiredForTest(version string) {
 	s.markRestartRequired(version)
+}
+
+// MarkAutoAppliedForTest exposes the internal markAutoApplied write so
+// cross-package tests (e.g. internal/api) can seed a "last auto-applied"
+// settings row without driving the full Apply pipeline. Production code
+// does NOT use this; the scheduler's applyAuto branch is the only caller
+// of markAutoApplied in the running service.
+func (s *Service) MarkAutoAppliedForTest(ctx context.Context, version string) error {
+	return s.markAutoApplied(ctx, version)
 }
 
 // detectDocker returns true when the process appears to be running inside a
@@ -352,12 +425,17 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 		Channel:            ChannelStable,
 		Enabled:            true,
 		AutoCheck:          false,
+		AutoUpdate:         false,
 		CheckIntervalHours: DefaultCheckIntervalHours,
+		// Initialize to empty slice (not nil) so JSON output is "[]"
+		// rather than "null" when no skipped_versions row exists.
+		SkippedVersions: []string{},
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)`,
-		SettingChannel, SettingEnabled, SettingAutoCheck, SettingCheckIntervalHours)
+		`SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)`,
+		SettingChannel, SettingEnabled, SettingAutoCheck, SettingAutoUpdate, SettingCheckIntervalHours,
+		SettingLastAutoApplied, SettingLastAutoAppliedVer, SettingSkippedVersions)
 	if err != nil {
 		return cfg, fmt.Errorf("querying updater config: %w", err)
 	}
@@ -403,6 +481,38 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 			} else {
 				s.logger.Warn("invalid updater.auto_check value in settings; keeping default",
 					"stored_value", v)
+			}
+		case SettingAutoUpdate:
+			if b, err := strconv.ParseBool(v); err == nil {
+				cfg.AutoUpdate = b
+			} else {
+				s.logger.Warn("invalid updater.auto_update value in settings; keeping default",
+					"stored_value", v)
+			}
+		case SettingLastAutoApplied:
+			// RFC3339; absence (zero time) is the documented default.
+			// A malformed value falls back to zero rather than failing the
+			// whole config read so the rest of the page can still render.
+			if t, err := time.Parse(time.RFC3339, v); err == nil {
+				cfg.LastAutoApplied = t
+			} else {
+				s.logger.Warn("invalid updater.last_auto_applied value in settings; keeping zero",
+					"stored_value", v, "error", err)
+			}
+		case SettingLastAutoAppliedVer:
+			cfg.LastAutoAppliedVersion = v
+		case SettingSkippedVersions:
+			// JSON array of strings. An unparsable value yields an empty
+			// list (no skips) rather than a config-read failure, matching
+			// the fail-open philosophy of the rest of GetConfig.
+			if v != "" {
+				var skipped []string
+				if err := json.Unmarshal([]byte(v), &skipped); err == nil {
+					cfg.SkippedVersions = skipped
+				} else {
+					s.logger.Warn("invalid updater.skipped_versions value in settings; treating as empty",
+						"stored_value", v, "error", err)
+				}
 			}
 		case SettingCheckIntervalHours:
 			n, err := strconv.Atoi(v)
@@ -462,6 +572,10 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 	if cfg.AutoCheck {
 		autoCheck = "true"
 	}
+	autoUpdate := "false"
+	if cfg.AutoUpdate {
+		autoUpdate = "true"
+	}
 
 	// Read the previous channel so we only invalidate the cache when the
 	// channel truly changed. Saving config with the same channel (e.g.
@@ -482,6 +596,7 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 		{SettingChannel, string(cfg.Channel)},
 		{SettingEnabled, enabled},
 		{SettingAutoCheck, autoCheck},
+		{SettingAutoUpdate, autoUpdate},
 		{SettingCheckIntervalHours, strconv.Itoa(cfg.CheckIntervalHours)},
 	} {
 		if _, err := tx.ExecContext(ctx,
@@ -506,6 +621,20 @@ func (s *Service) SetConfig(ctx context.Context, cfg Config) error {
 		s.releaseURL = ""
 		s.configGen++
 		s.mu.Unlock()
+	}
+
+	// Wake the scheduler so cadence / Enabled / AutoCheck / AutoUpdate
+	// changes take effect immediately rather than waiting out the
+	// previous (possibly 24h) interval. Non-blocking: capacity is 1
+	// and the scheduler always re-reads the freshest config on wake,
+	// so coalescing rapid back-to-back changes is correct. If the
+	// channel is nil (legacy callers building a Service without
+	// NewService), skip silently rather than panic.
+	if s.configChange != nil {
+		select {
+		case s.configChange <- struct{}{}:
+		default:
+		}
 	}
 	return nil
 }
@@ -684,12 +813,20 @@ func (s *Service) Apply(ctx context.Context) error {
 	// HTTP request. The handler already detaches via context.WithoutCancel, but
 	// using context.Background() here makes the intent explicit at the service
 	// layer and avoids any inherited deadline or cancellation from the caller.
-	go s.runApply(context.Background()) //nolint:gosec // G118: intentional -- goroutine must outlive request context
+	go s.runApply(context.Background(), "") //nolint:gosec // G118: intentional -- goroutine must outlive request context
 	return nil
 }
 
 // runApply is the internal goroutine body for Apply.
-func (s *Service) runApply(ctx context.Context) {
+//
+// pinnedVersion, when non-empty, requires the live-fetched latest
+// release to match this exact tag. Used by the auto-apply path so a
+// release that drifts between maybeAutoApply's gating decision and the
+// goroutine's fetch (e.g. channel switch, newer tag published) is
+// rejected with a logged skip rather than silently installed. The
+// manual Apply path passes "" (no pin) since the user just clicked
+// Apply on whatever the UI currently surfaces as the latest.
+func (s *Service) runApply(ctx context.Context, pinnedVersion string) {
 	// Always clear the running flag when we exit, so Apply can be called again.
 	defer s.applyRunning.Store(0)
 
@@ -709,6 +846,18 @@ func (s *Service) runApply(ctx context.Context) {
 
 	latest := pickLatest(releases, cfg.Channel)
 	if latest == nil || !s.newerThan(latest.TagName, version.Version) {
+		s.setState(StateIdle, 100, "")
+		return
+	}
+
+	// Auto-apply: require the live-fetched candidate to match the tag
+	// the scheduler vetted (channel + skip-list) at the gating moment.
+	// A mismatch means the channel changed or a newer tag was published
+	// in the gap between gating and goroutine execution; bail rather
+	// than install a release that did not pass the gate.
+	if pinnedVersion != "" && latest.TagName != pinnedVersion {
+		s.logger.Info("updater: auto-apply candidate drifted, skipping",
+			"vetted", pinnedVersion, "live", latest.TagName)
 		s.setState(StateIdle, 100, "")
 		return
 	}
@@ -1129,26 +1278,27 @@ func atomicReplaceFile(target string, newContent []byte) error {
 // Behavior on each tick:
 //
 //   - Reload the live Config from settings so admins can change cadence /
-//     toggle Enabled / toggle AutoCheck.
+//     toggle Enabled / AutoCheck / AutoUpdate.
 //   - When Enabled and AutoCheck are both true, run Check(). The result
 //     populates the in-memory cache that drives the sidebar "update
-//     available" pill; manual Apply remains the operator-driven path.
+//     available" pill.
+//   - When AutoUpdate is also true, the host is not Docker, the latest
+//     release is newer than version.Version, and the candidate tag is
+//     not in SkippedVersions, call Apply() automatically and persist the
+//     last-auto-applied marker on success.
 //
-// Cadence-change limitation: the loop recomputes CheckIntervalHours only
-// after the current timer fires. Lowering the interval from 24h to 1h via
-// SetConfig still waits out the old 24h timer before the new cadence takes
-// effect. Same for toggling Enabled false then true mid-tick. For immediate
-// effect on a long initial interval, restart the process. A proper
-// wake-on-config-change implementation (configChange channel + select +
-// timer.Stop/Drain/Reset) is tracked in #1285.
+// Reactivity: SetConfig pulses s.configChange after persisting; the loop
+// selects on it alongside the timer, so a cadence change (24h to 1h) or
+// Enabled/AutoCheck/AutoUpdate toggle takes effect on the very next
+// scheduler iteration rather than waiting out the previous interval.
 func (s *Service) StartScheduler(ctx context.Context) {
 	// Initial read picks up the persisted interval. Fall back to the
 	// default on read error so a transient DB hiccup at startup does
 	// not silently disable the loop.
 	cfg, err := s.GetConfig(ctx)
-	interval := time.Duration(DefaultCheckIntervalHours) * time.Hour
+	interval := time.Duration(DefaultCheckIntervalHours) * schedulerHourUnit
 	if err == nil && cfg.CheckIntervalHours >= MinCheckIntervalHours {
-		interval = time.Duration(cfg.CheckIntervalHours) * time.Hour
+		interval = time.Duration(cfg.CheckIntervalHours) * schedulerHourUnit
 	}
 
 	timer := time.NewTimer(interval)
@@ -1157,39 +1307,285 @@ func (s *Service) StartScheduler(ctx context.Context) {
 	s.logger.Info("updater scheduler started",
 		"initial_interval", interval.String())
 
+	// resetTimer stops, drains, and resets the timer to a fresh interval
+	// computed from the current config. Centralized here so both the
+	// timer-fired branch and the configChange-fired branch share the
+	// exact same drain pattern (Go's time.Timer requires the receive on
+	// .C to be guarded by the bool returned from Stop()).
+	resetTimer := func(next time.Duration) {
+		if !timer.Stop() {
+			// Stop returns false when the timer has already fired or
+			// been stopped previously. Drain only when a value is
+			// actually pending; a non-blocking select prevents the
+			// drain from deadlocking when the channel is empty (which
+			// is the normal case after timer.C just fired in the outer
+			// select).
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(next)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("updater scheduler stopped")
 			return
+
+		case <-s.configChange:
+			// Config-change wakeup: re-read config and reset the timer
+			// to the new interval. Do NOT run a Check on the wakeup
+			// itself (the user may have just toggled AutoCheck off);
+			// the next regular tick handles the work.
+			cfg, err := s.GetConfig(ctx)
+			next := time.Duration(DefaultCheckIntervalHours) * schedulerHourUnit
+			if err == nil && cfg.CheckIntervalHours >= MinCheckIntervalHours {
+				next = time.Duration(cfg.CheckIntervalHours) * schedulerHourUnit
+			}
+			interval = next
+			resetTimer(interval)
+			s.logger.Debug("updater scheduler: config changed; timer reset",
+				"new_interval", interval.String())
+
 		case <-timer.C:
 			cfg, err := s.GetConfig(ctx)
 			if err != nil {
 				s.logger.Warn("updater scheduler: reading config failed; skipping tick",
 					"error", err)
-				timer.Reset(interval)
+				resetTimer(interval)
 				continue
 			}
 
 			if cfg.Enabled && cfg.AutoCheck {
-				if _, err := s.Check(ctx); err != nil {
+				result, err := s.Check(ctx)
+				if err != nil {
 					// Check already records the error in StatusResult.
 					// A debug-level log here is enough to leave a
 					// breadcrumb without spamming the default-info logs
 					// when GitHub is briefly down.
 					s.logger.Debug("updater scheduler: background check failed",
 						"error", err)
+				} else {
+					// Re-read config after the (potentially slow) network
+					// Check so an admin toggle of AutoUpdate or an addition
+					// to SkippedVersions during the in-flight check is
+					// honored before we launch an apply.
+					liveCfg, cfgErr := s.GetConfig(ctx)
+					if cfgErr != nil {
+						s.logger.Warn("updater scheduler: re-reading config before auto-apply failed",
+							"error", cfgErr)
+					} else {
+						s.maybeAutoApply(ctx, liveCfg, result)
+					}
 				}
 			}
 
 			// Recompute the next interval from the freshly-read config so
 			// admin changes take effect on the very next cycle.
-			next := time.Duration(DefaultCheckIntervalHours) * time.Hour
+			next := time.Duration(DefaultCheckIntervalHours) * schedulerHourUnit
 			if cfg.CheckIntervalHours >= MinCheckIntervalHours {
-				next = time.Duration(cfg.CheckIntervalHours) * time.Hour
+				next = time.Duration(cfg.CheckIntervalHours) * schedulerHourUnit
 			}
 			interval = next
-			timer.Reset(interval)
+			resetTimer(interval)
 		}
 	}
+}
+
+// maybeAutoApply triggers Apply() automatically when AutoUpdate is
+// enabled and the just-completed Check found a newer release. It is a
+// no-op on Docker hosts (orchestration handles updates) and short-
+// circuits when the candidate tag is in cfg.SkippedVersions. After a
+// successful Apply, the last-auto-applied marker is persisted so the
+// Updates tab can surface "last auto-applied: vX.Y.Z" without polling.
+//
+// Failures are logged but not fatal: the scheduler keeps running and
+// will retry on the next Check tick.
+func (s *Service) maybeAutoApply(_ context.Context, cfg Config, result CheckResult) {
+	// Re-check the full enable chain. The scheduler reloads cfg right
+	// before calling us, but an admin may toggle Enabled or AutoCheck
+	// off while the network Check is in flight. Bailing on any of the
+	// three closes the disable-mid-flight race.
+	if !cfg.Enabled || !cfg.AutoCheck || !cfg.AutoUpdate {
+		return
+	}
+	if !result.UpdateAvailable || result.Latest == "" {
+		return
+	}
+	if s.isDocker {
+		// Docker path: orchestration handles updates. Log once per
+		// auto-apply skip so operators can confirm AutoUpdate is being
+		// honored as a no-op rather than silently misbehaving.
+		s.logger.Info("updater scheduler: AutoUpdate skipped on Docker host",
+			"candidate", result.Latest)
+		return
+	}
+	for _, skip := range cfg.SkippedVersions {
+		if skip == result.Latest {
+			s.logger.Info("updater scheduler: AutoUpdate skipped (version on skip list)",
+				"candidate", result.Latest)
+			return
+		}
+	}
+	// Use applyAuto so the success path in runApply persists the
+	// last-auto-applied marker only on the swap-confirmed branch.
+	// Apply is async; writing the marker here at kickoff time would
+	// record an "applied" event for downloads that ultimately failed
+	// checksum or extraction.
+	if err := s.applyAuto(result.Latest); err != nil {
+		// ErrAlreadyRunning / ErrRestartRequired are expected when the
+		// admin already triggered a manual Apply. Anything else is a
+		// real failure but still non-fatal for the scheduler.
+		s.logger.Warn("updater scheduler: AutoUpdate Apply failed",
+			"candidate", result.Latest, "error", err)
+		return
+	}
+}
+
+// applyAuto kicks off Apply with the auto-apply marker set on the
+// goroutine context, so runApply's success path persists the
+// last-auto-applied row. Mirrors Apply's preconditions (Docker block,
+// CompareAndSwap, restart-required guard) so a manual Apply already in
+// flight does not get clobbered.
+//
+// Takes no ctx because runApply uses context.Background() (the goroutine
+// must outlive the originating tick); the marker write also uses a
+// fresh background context for the same reason. Keeping the signature
+// ctx-free makes that intent explicit and avoids the gosec G118
+// false-positive on a deliberately detached goroutine.
+func (s *Service) applyAuto(candidateVersion string) error {
+	if s.isDocker {
+		return fmt.Errorf("binary update is not supported in Docker environments")
+	}
+	s.mu.RLock()
+	restartRequired := s.restartRequired
+	s.mu.RUnlock()
+	if restartRequired {
+		return ErrRestartRequired
+	}
+	if !s.applyRunning.CompareAndSwap(0, 1) {
+		return ErrAlreadyRunning
+	}
+	go func() {
+		s.runApply(context.Background(), candidateVersion) //nolint:gosec // G118: detached on purpose; the apply must outlive the originating scheduler tick
+		// runApply has already toggled state. Check status to confirm
+		// the swap actually succeeded (markRestartRequired was called)
+		// and only then persist the auto-apply marker.
+		s.mu.RLock()
+		restarted := s.restartRequired
+		pending := s.pendingVersion
+		s.mu.RUnlock()
+		if restarted && pending == candidateVersion {
+			// The marker write uses a fresh background context so it
+			// outlives the originating tick; persistence failure is
+			// logged but not surfaced to the scheduler caller (which
+			// has already returned).
+			if err := s.markAutoApplied(context.Background(), candidateVersion); err != nil {
+				s.logger.Warn("updater scheduler: persisting last-auto-applied failed",
+					"candidate", candidateVersion, "error", err)
+			}
+		}
+	}()
+	return nil
+}
+
+// markAutoApplied persists the last-auto-applied timestamp and version.
+// Written outside SetConfig because these fields are scheduler-owned
+// (not user-editable) and SetConfig's transaction semantics already
+// cover the user-facing knobs only.
+func (s *Service) markAutoApplied(ctx context.Context, version string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning markAutoApplied tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, kv := range []struct{ k, v string }{
+		{SettingLastAutoApplied, now},
+		{SettingLastAutoAppliedVer, version},
+	} {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			kv.k, kv.v, now); err != nil {
+			return fmt.Errorf("persisting %q: %w", kv.k, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// AddSkippedVersion appends a version tag to the persisted skip list.
+// Idempotent: a tag already present is a no-op. The scheduler reads
+// SkippedVersions on every tick, so the next auto-apply candidate is
+// gated on the post-write list without restarting the scheduler.
+func (s *Service) AddSkippedVersion(ctx context.Context, version string) error {
+	if version == "" {
+		return fmt.Errorf("version tag must be non-empty")
+	}
+	s.skippedVersionsMu.Lock()
+	defer s.skippedVersionsMu.Unlock()
+	cfg, err := s.GetConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+	for _, v := range cfg.SkippedVersions {
+		if v == version {
+			return nil
+		}
+	}
+	cfg.SkippedVersions = append(cfg.SkippedVersions, version)
+	return s.writeSkippedVersions(ctx, cfg.SkippedVersions)
+}
+
+// RemoveSkippedVersion removes a tag from the skip list. Idempotent:
+// removing a tag that is not present is a no-op.
+func (s *Service) RemoveSkippedVersion(ctx context.Context, version string) error {
+	s.skippedVersionsMu.Lock()
+	defer s.skippedVersionsMu.Unlock()
+	cfg, err := s.GetConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+	out := make([]string, 0, len(cfg.SkippedVersions))
+	for _, v := range cfg.SkippedVersions {
+		if v != version {
+			out = append(out, v)
+		}
+	}
+	return s.writeSkippedVersions(ctx, out)
+}
+
+// ListSkippedVersions returns the current skip list. Convenience
+// wrapper around GetConfig for handlers that need only this slice.
+func (s *Service) ListSkippedVersions(ctx context.Context) ([]string, error) {
+	cfg, err := s.GetConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.SkippedVersions, nil
+}
+
+// writeSkippedVersions persists the skip list. An empty list is stored
+// as the empty string ("" round-trips through GetConfig as no skips)
+// rather than the JSON literal "[]" to keep the settings row absent of
+// noise when the user clears every entry.
+func (s *Service) writeSkippedVersions(ctx context.Context, list []string) error {
+	value := ""
+	if len(list) > 0 {
+		b, err := json.Marshal(list)
+		if err != nil {
+			return fmt.Errorf("marshaling skipped versions: %w", err)
+		}
+		value = string(b)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		SettingSkippedVersions, value, now); err != nil {
+		return fmt.Errorf("persisting skipped versions: %w", err)
+	}
+	return nil
 }

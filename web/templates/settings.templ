@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -73,12 +74,23 @@ type UpdatesTabData struct {
 	Channel            string // "stable" | "prerelease" | "nightly"
 	Enabled            bool   // Top-level updater kill switch
 	AutoCheck          bool
+	AutoUpdate         bool   // When true (and !IsDocker), scheduler calls Apply automatically
 	CheckIntervalHours int    // Background auto-check cadence; minimum 1
 	IsDocker           bool   // When true, hide binary apply controls
 	LastChecked        string // RFC 3339 or empty
 	LatestVersion      string // Latest version from last check (may be empty if not yet checked)
 	UpdateAvailable    bool
 	ReleaseURL         string
+	// LastAutoApplied is the RFC3339 timestamp of the last successful
+	// auto-apply (empty when no auto-apply has occurred). Surfaced as a
+	// "last auto-applied: vX.Y.Z" line below the AutoUpdate toggle so
+	// users can confirm the scheduler is doing what they asked for.
+	LastAutoApplied        string
+	LastAutoAppliedVersion string
+	// SkippedVersions is the persisted list of release tags that the
+	// scheduler must NOT auto-apply. The skip-this-version button in
+	// the Updates tab POSTs to /updates/skips to append.
+	SkippedVersions []string
 	// RestartRequired is true after a successful Apply replaced the on-disk
 	// binary in this process's lifetime. When true, the Updates tab renders a
 	// persistent "Update installed -- restart to finish" banner instead of
@@ -2166,15 +2178,21 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 templ resetConfirmPrefsScript() {
 	<script>
 		function resetConfirmPrefs() {
-			var keys = [];
-			for (var i = 0; i < localStorage.length; i++) {
-				var key = localStorage.key(i);
-				if (key && key.indexOf('ui.confirm.') === 0) {
-					keys.push(key);
+			try {
+				var keys = [];
+				for (var i = 0; i < localStorage.length; i++) {
+					var key = localStorage.key(i);
+					if (key && key.indexOf('ui.confirm.') === 0) {
+						keys.push(key);
+					}
 				}
-			}
-			for (var j = 0; j < keys.length; j++) {
-				localStorage.removeItem(keys[j]);
+				for (var j = 0; j < keys.length; j++) {
+					localStorage.removeItem(keys[j]);
+				}
+			} catch (_e) {
+				// Sandboxed contexts (private mode, restrictive CSP) may
+				// throw on localStorage access; treat as a no-op so the
+				// status flash still confirms the click was handled.
 			}
 			var status = document.getElementById('confirm-reset-status');
 			if (status) {
@@ -6405,6 +6423,100 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					t(ctx, "settings.updates.auto_check.description"),
 				)
 			</div>
+			<!-- Auto-update toggle. Hidden in Docker because the scheduler
+			     no-ops on Docker hosts (orchestration handles container
+			     image refresh); offering the toggle would advertise a
+			     capability that does nothing. -->
+			if !data.IsDocker {
+				<div>
+					<div class="flex items-center justify-between gap-4">
+						@components.Toggle(
+							"updates-auto-update",
+							"updates_auto_update",
+							data.AutoUpdate,
+							t(ctx, "settings.updates.auto_update.label"),
+							t(ctx, "settings.updates.auto_update.description"),
+						)
+					</div>
+					if data.AutoUpdate && data.LastAutoApplied != "" {
+						<div class="mt-2 text-xs text-gray-500 dark:text-gray-400" id="updates-last-auto-applied-row">
+							{ t(ctx, "settings.updates.last_auto_applied.label") }:
+							if data.LastAutoAppliedVersion != "" {
+								<span class="font-mono">{ data.LastAutoAppliedVersion }</span>,
+							}
+							<span class="font-mono">{ data.LastAutoApplied }</span>
+						</div>
+					}
+					<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+						{ t(ctx, "settings.updates.auto_update.rollback_hint") }
+						<a href="https://github.com/sydlexius/stillwater/releases" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">
+							{ t(ctx, "settings.updates.auto_update.rollback_link") }
+						</a>
+					</div>
+					if data.UpdateAvailable && data.LatestVersion != "" && !slices.Contains(data.SkippedVersions, data.LatestVersion) {
+						<div class="mt-2">
+							<button
+								type="button"
+								id="updates-skip-version-btn"
+								data-version={ data.LatestVersion }
+								onclick="skipThisVersion()"
+								class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+							>
+								{ tf(ctx, "settings.updates.skip_version.label", data.LatestVersion) }
+							</button>
+						</div>
+					}
+					if len(data.SkippedVersions) > 0 {
+						<div class="mt-2 text-xs text-gray-500 dark:text-gray-400" id="updates-skipped-versions-row">
+							{ t(ctx, "settings.updates.skip_version.list_label") }:
+							for i, v := range data.SkippedVersions {
+								if i > 0 {
+									{ ", " }
+								}
+								<span class="font-mono">{ v }</span>
+							}
+						</div>
+					}
+				</div>
+				<!-- First-toggle confirmation modal: shown only when the user
+				     turns AutoUpdate on (off -> on). The modal is rendered
+				     hidden by default; the auto-save handler intercepts the
+				     change event, surfaces the modal, and only persists the
+				     toggle when the user confirms. Cancel reverts the
+				     checkbox to its previous state. -->
+				<div
+					id="updates-auto-update-confirm-modal"
+					class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-4"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="updates-auto-update-confirm-title"
+				>
+					<div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
+						<h3 id="updates-auto-update-confirm-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+							{ t(ctx, "settings.updates.auto_update.confirm_title") }
+						</h3>
+						<p class="text-sm text-gray-700 dark:text-gray-300">
+							{ t(ctx, "settings.updates.auto_update.confirm_body") }
+						</p>
+						<div class="flex justify-end gap-2">
+							<button
+								type="button"
+								id="updates-auto-update-confirm-cancel"
+								class="px-3 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							>
+								{ t(ctx, "common.cancel") }
+							</button>
+							<button
+								type="button"
+								id="updates-auto-update-confirm-accept"
+								class="px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+							>
+								{ t(ctx, "settings.updates.auto_update.confirm_accept") }
+							</button>
+						</div>
+					</div>
+				</div>
+			}
 			<!-- Check interval selector. The select is a fixed enum to keep
 			     the UI simple and keep the request payload small; the API
 			     accepts any integer >= 1, so power users can hit the
@@ -6756,6 +6868,10 @@ templ updatesTabScript() {
 					if (enabledEl) enabledEl.checked = !!cfg.enabled;
 					var autoEl = document.getElementById('updates-auto-check');
 					if (autoEl) autoEl.checked = !!cfg.auto_check;
+					var autoUpdateEl2 = document.getElementById('updates-auto-update');
+					if (autoUpdateEl2 && cfg.auto_update !== undefined) {
+						autoUpdateEl2.checked = !!cfg.auto_update;
+					}
 					var intervalEl = document.getElementById('updates-check-interval');
 					if (intervalEl && cfg.check_interval_hours) {
 						intervalEl.value = String(cfg.check_interval_hours);
@@ -6794,10 +6910,12 @@ templ updatesTabScript() {
 				var channelEl = document.querySelector('[name="updates_channel"]:checked');
 				var enabledEl = document.getElementById('updates-enabled');
 				var autoEl = document.getElementById('updates-auto-check');
+				var autoUpdateEl = document.getElementById('updates-auto-update');
 				var intervalEl = document.getElementById('updates-check-interval');
 				var channel = channelEl ? channelEl.value : 'stable';
 				var enabled = enabledEl ? enabledEl.checked : true;
 				var autoCheck = autoEl ? autoEl.checked : false;
+				var autoUpdate = autoUpdateEl ? autoUpdateEl.checked : false;
 				var interval = intervalEl ? parseInt(intervalEl.value, 10) : 24;
 				if (!interval || interval < 1) {
 					interval = 24;
@@ -6822,6 +6940,7 @@ templ updatesTabScript() {
 						channel: channel,
 						enabled: enabled,
 						auto_check: autoCheck,
+						auto_update: autoUpdate,
 						check_interval_hours: interval
 					}),
 					signal: updatesSaveAbort.signal
@@ -6996,6 +7115,148 @@ templ updatesTabScript() {
 				if (intervalEl) {
 					intervalEl.addEventListener('change', function() { window.saveUpdaterConfig(); });
 				}
+
+				// AutoUpdate toggle: confirm on off->on transition. The
+				// confirmed state is persisted in localStorage under
+				// "ui.confirm.autoUpdate" so a page reload does not re-prompt
+				// after the user has already acknowledged. Existing
+				// AutoUpdate=true (e.g. a server-side default or a prior
+				// session) also counts as confirmed so the modal does not
+				// pop on every load. The "Reset confirmation preferences"
+				// flow can clear this key to replay the modal.
+				var autoUpdateEl = document.getElementById('updates-auto-update');
+				var autoUpdateConfirmKey = 'ui.confirm.autoUpdate';
+				var readAutoUpdateConfirmed = function() {
+					try {
+						return window.localStorage.getItem(autoUpdateConfirmKey) === 'true';
+					} catch (_e) {
+						// Some sandboxed contexts (private mode, restrictive
+						// CSP) deny localStorage access; fall back to the
+						// page-local boolean for the current session.
+						return false;
+					}
+				};
+				var writeAutoUpdateConfirmed = function() {
+					try {
+						window.localStorage.setItem(autoUpdateConfirmKey, 'true');
+					} catch (_e) {
+						// Best-effort: a write failure just means the modal
+						// will re-prompt on next load.
+					}
+				};
+				// Treat an already-on toggle at page load as confirmed so we
+				// do not re-prompt on every reload after the user accepted.
+				var autoUpdateConfirmed = readAutoUpdateConfirmed() || (autoUpdateEl ? autoUpdateEl.checked : false);
+				if (autoUpdateConfirmed) {
+					writeAutoUpdateConfirmed();
+				}
+				if (autoUpdateEl) {
+					autoUpdateEl.addEventListener('change', function() {
+						// Off -> on transition that has not been confirmed
+						// previously: surface the modal and short-circuit
+						// the save until the user accepts.
+						if (autoUpdateEl.checked && !autoUpdateConfirmed) {
+							var modal = document.getElementById('updates-auto-update-confirm-modal');
+							if (!modal) {
+								// Defensive: if the modal is missing for any
+								// reason, fall back to the old direct-save path
+								// rather than wedging the toggle.
+								autoUpdateConfirmed = true;
+								writeAutoUpdateConfirmed();
+								window.saveUpdaterConfig();
+								return;
+							}
+							modal.classList.remove('hidden');
+							var accept = document.getElementById('updates-auto-update-confirm-accept');
+							var cancel = document.getElementById('updates-auto-update-confirm-cancel');
+							// Focus management: stash the element that had focus
+							// before the modal opened (typically the checkbox
+							// itself) so we can restore focus on every close path.
+							// Without this, focus stays on the checkbox while the
+							// modal is visible and a stray Space key re-toggles
+							// the checkbox + re-fires saveUpdaterConfig().
+							var previouslyFocused = document.activeElement;
+							var onKeydown = function(ev) {
+								if (ev.key === 'Escape' || ev.key === 'Esc') {
+									ev.preventDefault();
+									// Treat Escape as cancel: same path as the
+									// cancel button (revert the checkbox + close).
+									if (cancel) cancel.onclick && cancel.onclick();
+								}
+							};
+							var cleanup = function() {
+								modal.classList.add('hidden');
+								if (accept) accept.onclick = null;
+								if (cancel) cancel.onclick = null;
+								document.removeEventListener('keydown', onKeydown);
+								// Restore focus to the originally focused element
+								// (typically the checkbox) so keyboard users land
+								// back where they started rather than at <body>.
+								if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+									try { previouslyFocused.focus(); } catch (e) { /* ignore */ }
+								}
+							};
+							if (accept) {
+								accept.onclick = function() {
+									autoUpdateConfirmed = true;
+									writeAutoUpdateConfirmed();
+									cleanup();
+									window.saveUpdaterConfig();
+								};
+							}
+							if (cancel) {
+								cancel.onclick = function() {
+									autoUpdateEl.checked = false;
+									cleanup();
+								};
+							}
+							document.addEventListener('keydown', onKeydown);
+							// Move focus into the modal so Space/Enter act on the
+							// accept button rather than the underlying checkbox.
+							if (accept && typeof accept.focus === 'function') {
+								try { accept.focus(); } catch (e) { /* ignore */ }
+							}
+							return;
+						}
+						// On -> off, or already-confirmed on -> on: persist directly.
+						window.saveUpdaterConfig();
+					});
+				}
+
+				// Skip-this-version button: POST the latest version tag to the
+				// skip-list endpoint and reload the tab so the skipped-versions
+				// list and skip button hide consistently.
+				window.skipThisVersion = function() {
+					var btn = document.getElementById('updates-skip-version-btn');
+					if (!btn) return;
+					var version = btn.dataset.version;
+					if (!version) return;
+					btn.disabled = true;
+					fetch(updBp + '/api/v1/updates/skips', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'Accept': 'application/json',
+							'X-CSRF-Token': getCSRFToken()
+						},
+						body: JSON.stringify({ version: version })
+					})
+					.then(function(resp) {
+						if (!resp.ok) return throwFromResponse(resp, 'skip failed');
+						return resp.json();
+					})
+					.then(function() {
+						// Reload so the SSR'd skipped-list row picks up the
+						// new entry without a separate hydrate path.
+						window.location.reload();
+					})
+					.catch(function(err) {
+						btn.disabled = false;
+						if (typeof window.showToast === 'function') {
+							showToast((err && err.message) || 'Failed to skip version');
+						}
+					});
+				};
 			});
 
 			// popstate fires on browser back/forward. If that navigation leaves

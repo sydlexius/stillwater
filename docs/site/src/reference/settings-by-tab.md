@@ -358,5 +358,8 @@ Check for new Stillwater releases and apply binary updates.
 - **Updater enabled** {#settings-updates-updates-enabled} -- Top-level kill switch. When off, both the background loop and the Apply button are disabled.
 - **Release channel** {#settings-updates-updates-channel} -- Stable tracks only non-prerelease versions. Prerelease includes release candidates. Nightly tracks date-stamped builds from the default branch.
 - **Automatic update checks** {#settings-updates-updates-auto-check} -- Periodically check for new releases in the background at the configured interval.
+- **Automatically install updates** {#settings-updates-updates-auto-update} -- When enabled, the scheduler installs new releases automatically on non-Docker hosts. Docker installs ignore this toggle and rely on container orchestration.
+- **Last auto-applied** {#settings-updates-updates-last-auto-applied}
+- **Skipped versions** {#settings-updates-updates-skip-version-list-label}
 - **Check interval** {#settings-updates-updates-check-interval} -- How often the background loop polls GitHub for new releases. Minimum is 1 hour.
 <!-- END GENERATED: settings-reference -->

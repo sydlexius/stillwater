@@ -476,7 +476,13 @@ func (r *Router) buildUpdatesTabData(ctx context.Context) templates.UpdatesTabDa
 		data.Channel = string(cfg.Channel)
 		data.Enabled = cfg.Enabled
 		data.AutoCheck = cfg.AutoCheck
+		data.AutoUpdate = cfg.AutoUpdate
 		data.CheckIntervalHours = cfg.CheckIntervalHours
+		if !cfg.LastAutoApplied.IsZero() {
+			data.LastAutoApplied = cfg.LastAutoApplied.UTC().Format(time.RFC3339)
+		}
+		data.LastAutoAppliedVersion = cfg.LastAutoAppliedVersion
+		data.SkippedVersions = cfg.SkippedVersions
 	}
 
 	status := r.updaterService.Status()
