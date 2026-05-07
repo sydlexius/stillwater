@@ -1925,8 +1925,10 @@ func TestMaybeAutoApplyDockerNoOp(t *testing.T) {
 	ctx := context.Background()
 
 	// Fake: pretend Apply would be invoked. We assert by checking that
-	// applyRunning stays at 0 (CompareAndSwap never fired).
-	cfg := Config{AutoUpdate: true}
+	// applyRunning stays at 0 (CompareAndSwap never fired). Set the full
+	// enable chain so the triple-gate at the top of maybeAutoApply does
+	// not short-circuit before the Docker check is reached.
+	cfg := Config{Enabled: true, AutoCheck: true, AutoUpdate: true}
 	result := CheckResult{UpdateAvailable: true, Latest: "v9.9.9"}
 	svc.maybeAutoApply(ctx, cfg, result)
 
@@ -1943,7 +1945,12 @@ func TestMaybeAutoApplyHonorsSkipList(t *testing.T) {
 	svc.SetDockerForTest(false) // Non-Docker so the Docker no-op branch does not mask the skip-list branch.
 	ctx := context.Background()
 
+	// Set the full enable chain so the triple-gate at the top of
+	// maybeAutoApply does not short-circuit before the skip-list loop is
+	// reached.
 	cfg := Config{
+		Enabled:         true,
+		AutoCheck:       true,
 		AutoUpdate:      true,
 		SkippedVersions: []string{"v9.9.9"},
 	}
