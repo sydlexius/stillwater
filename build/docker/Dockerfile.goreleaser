@@ -12,7 +12,11 @@ RUN mkdir -p /config /music && chown stillwater:stillwater /config /music
 
 WORKDIR /app
 
-COPY stillwater /usr/local/bin/stillwater
+# dockers_v2 runs a single buildx that fans out across platforms and stages
+# each platform's binary under $TARGETPLATFORM/ in the build context.
+# extra_files (entrypoint.sh) keep their original relative path.
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
