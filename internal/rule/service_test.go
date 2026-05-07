@@ -1435,6 +1435,11 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 	for _, lib := range []struct{ id, name string }{
 		{"lib-old", "Oldest Library"},
 		{"lib-new", "Newer Library"},
+		// lib-aaa-tie: smaller library_id than lib-new, used to pin the
+		// secondary ORDER BY tie-breaker (lowest library_id wins when
+		// datetime(added_at) values are equal). Documented in the OpenAPI
+		// prose for Artist.library_id ("ties resolved by lowest library_id").
+		{"lib-aaa-tie", "Tie Library"},
 	} {
 		if _, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
 			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name); err != nil {
@@ -1447,24 +1452,29 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 		t.Fatalf("inserting artist: %v", err)
 	}
 
-	// Both rows are timestamped on the same calendar date so that month/day
-	// differences do not mask the bug. lib-old uses legacy format with a space
-	// separator at 23:00 (chronologically LATER on that day); lib-new uses
-	// RFC3339 with a 'T' separator at 00:30 (chronologically EARLIER).
+	// Three memberships exercising both ORDER BY axes:
+	//   lib-old      "2024-01-15 23:00:00" (legacy SQLite, LATER on day)
+	//   lib-new      "2024-01-15T00:30:00Z" (RFC3339, EARLIER on day)
+	//   lib-aaa-tie  "2024-01-15 00:30:00"  (legacy SQLite, normalizes to the
+	//                                       SAME datetime as lib-new but with
+	//                                       a smaller library_id)
+	//
 	// Under raw TEXT comparison, " " (0x20) sorts before "T" (0x54), so
 	// lib-old's "2024-01-15 23:00:00" lexicographically PRECEDES lib-new's
 	// "2024-01-15T00:30:00Z" -- an unwrapped ORDER BY added_at would pick
-	// lib-old as primary, which is wrong. Only datetime() normalization
-	// recovers the true chronological order and picks lib-new.
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
-		"artist-mixed", "lib-old", "2024-01-15 23:00:00"); err != nil {
-		t.Fatalf("insert lib-old membership: %v", err)
-	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
-		"artist-mixed", "lib-new", "2024-01-15T00:30:00Z"); err != nil {
-		t.Fatalf("insert lib-new membership: %v", err)
+	// lib-old as primary, which is wrong. With datetime() normalization,
+	// lib-new and lib-aaa-tie tie at 2024-01-15T00:30:00, and the secondary
+	// `library_id` clause picks lib-aaa-tie (lexicographically smaller).
+	for _, m := range []struct{ libID, addedAt string }{
+		{"lib-old", "2024-01-15 23:00:00"},
+		{"lib-new", "2024-01-15T00:30:00Z"},
+		{"lib-aaa-tie", "2024-01-15 00:30:00"},
+	} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source, added_at) VALUES (?, ?, 'filesystem', ?)`,
+			"artist-mixed", m.libID, m.addedAt); err != nil {
+			t.Fatalf("insert %s membership: %v", m.libID, err)
+		}
 	}
 
 	v := &RuleViolation{
@@ -1475,6 +1485,12 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 		t.Fatalf("UpsertViolation: %v", err)
 	}
 
+	// All three subquery copies must agree on the primary library: the
+	// chronologically earliest membership, and on tie the row with the
+	// lowest library_id. lib-aaa-tie ties with lib-new at 2024-01-15T00:30:00
+	// and wins the secondary tie-breaker because "lib-aaa-tie" < "lib-new".
+	const wantPrimary = "Tie Library"
+
 	got, err := svc.ListViolations(ctx, "active")
 	if err != nil {
 		t.Fatalf("ListViolations: %v", err)
@@ -1482,11 +1498,9 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d violations, want 1", len(got))
 	}
-	// lib-new joined chronologically first (Jan vs Jun), so it is the oldest
-	// membership and must be the primary library_name.
-	if got[0].LibraryName != "Newer Library" {
-		t.Errorf("LibraryName = %q, want %q (datetime() normalization should pick the chronologically earliest membership)",
-			got[0].LibraryName, "Newer Library")
+	if got[0].LibraryName != wantPrimary {
+		t.Errorf("ListViolations LibraryName = %q, want %q (datetime() normalization + lowest library_id tie-breaker)",
+			got[0].LibraryName, wantPrimary)
 	}
 
 	// GetViolationByID exercises the third copy of the subquery.
@@ -1494,8 +1508,8 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetViolationByID: %v", err)
 	}
-	if byID.LibraryName != "Newer Library" {
-		t.Errorf("GetViolationByID LibraryName = %q, want %q", byID.LibraryName, "Newer Library")
+	if byID.LibraryName != wantPrimary {
+		t.Errorf("GetViolationByID LibraryName = %q, want %q", byID.LibraryName, wantPrimary)
 	}
 
 	// ListViolationsFiltered exercises the second copy.
@@ -1506,9 +1520,9 @@ func TestListViolations_PrimaryLibraryMixedTimestamps(t *testing.T) {
 	if len(filtered) != 1 {
 		t.Fatalf("ListViolationsFiltered got %d, want 1", len(filtered))
 	}
-	if filtered[0].LibraryName != "Newer Library" {
+	if filtered[0].LibraryName != wantPrimary {
 		t.Errorf("ListViolationsFiltered LibraryName = %q, want %q",
-			filtered[0].LibraryName, "Newer Library")
+			filtered[0].LibraryName, wantPrimary)
 	}
 }
 

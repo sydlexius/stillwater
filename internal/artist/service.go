@@ -1454,6 +1454,11 @@ type dbProvider interface {
 // continue to see a value derived from the M:N table. A repository that
 // does not expose a *sql.DB is a silent no-op so tests using fake repos
 // without a real DB are unaffected.
+//
+// Per the OpenAPI contract on Artist.library_id, the field is empty when
+// the artist has no library memberships. We therefore CLEAR LibraryID for
+// orphaned artists so callers do not see stale values left over from a
+// previous hydration or a bare struct literal.
 func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
 	if a == nil || a.ID == "" {
 		return nil
@@ -1476,6 +1481,10 @@ func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
 		`SELECT library_id FROM artist_libraries WHERE artist_id = ? ORDER BY datetime(added_at), library_id LIMIT 1`,
 		a.ID).Scan(&libID)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Zero memberships: clear LibraryID per the OpenAPI contract so
+		// readers do not observe a stale caller-set value for an orphaned
+		// artist.
+		a.LibraryID = ""
 		return nil
 	}
 	if err != nil {
@@ -1488,7 +1497,9 @@ func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
 // hydratePrimaryLibrariesBatch populates LibraryID on a slice of artists
 // in a single query so List does not fan out to N round-trips. The same
 // "earliest added_at" rule applies per artist. Artists without any
-// membership row keep their zero-valued LibraryID.
+// membership row have LibraryID CLEARED to "" per the OpenAPI contract;
+// any caller-set value on an orphaned artist would otherwise leak into
+// API responses.
 func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Artist) error {
 	if len(artists) == 0 {
 		return nil
@@ -1542,6 +1553,11 @@ func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Ar
 	for i := range artists {
 		if lid, ok := libByArtist[artists[i].ID]; ok {
 			artists[i].LibraryID = lid
+		} else {
+			// Zero memberships: clear LibraryID per the OpenAPI contract.
+			// Without this, a caller-set value on an orphaned artist would
+			// survive batch hydration and leak into List responses.
+			artists[i].LibraryID = ""
 		}
 	}
 	return nil

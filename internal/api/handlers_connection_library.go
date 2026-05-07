@@ -1179,12 +1179,18 @@ func (r *Router) findArtistInLibrary(ctx context.Context, mbid, name, libraryID 
 // back; this function never silently swallows a DB error as "not found".
 func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID string) (*artist.Artist, error) {
 	var artistID string
+	// ORDER BY datetime(created_at), a.id makes the LIMIT 1 deterministic when
+	// multiple artists share the same library + MBID. datetime() normalizes
+	// mixed timestamp formats (legacy SQLite "YYYY-MM-DD HH:MM:SS" vs RFC3339
+	// "T"-separator) so chronological order survives the mixed-format reality
+	// of production data; a.id is the deterministic tie-breaker.
 	err := r.db.QueryRowContext(ctx, `
 		SELECT a.id FROM artists a
 		JOIN artist_libraries al ON al.artist_id = a.id
 		JOIN artist_provider_ids p ON p.artist_id = a.id
 		WHERE al.library_id = ?
 		  AND p.provider = 'musicbrainz' AND p.provider_id = ?
+		ORDER BY datetime(a.created_at), a.id
 		LIMIT 1
 	`, libraryID, mbid).Scan(&artistID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1205,10 +1211,14 @@ func (r *Router) lookupByMBIDInLibrary(ctx context.Context, mbid, libraryID stri
 // to (nil, nil).
 func (r *Router) lookupByNameInLibrary(ctx context.Context, name, libraryID string) (*artist.Artist, error) {
 	var artistID string
+	// Same determinism rationale as lookupByMBIDInLibrary: order by the
+	// chronologically normalized created_at, then a.id, so duplicate-name
+	// rows in the same library always resolve to the same artist.
 	err := r.db.QueryRowContext(ctx, `
 		SELECT a.id FROM artists a
 		JOIN artist_libraries al ON al.artist_id = a.id
 		WHERE al.library_id = ? AND LOWER(a.name) = LOWER(?)
+		ORDER BY datetime(a.created_at), a.id
 		LIMIT 1
 	`, libraryID, name).Scan(&artistID)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -2774,6 +2774,181 @@ func TestFindArtistInLibrary_NoMatchReturnsNil(t *testing.T) {
 	}
 }
 
+// TestFindArtistInLibrary_CrossLibraryMissReturnsNil pins the M:N scoping
+// guarantee: an artist that exists with the requested MBID/name BUT only in
+// a different library must NOT match the lookup. Without the al.library_id
+// filter on artist_libraries, the JOIN would surface the wrong artist and
+// the per-library scoping behavior would silently regress.
+func TestFindArtistInLibrary_CrossLibraryMissReturnsNil(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Two libraries on two different connections; the search target is
+	// embyLib but every artist we plant lives in otherLib only.
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	addTestConnection(t, router, "conn-emby-2", "Other Emby", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+	otherLib := &library.Library{
+		Name:         "Other Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-2",
+		ExternalID:   "emby-lib-2",
+	}
+	if err := router.libraryService.Create(ctx, otherLib); err != nil {
+		t.Fatalf("creating other library: %v", err)
+	}
+
+	// Artist 1: matches by MBID, but only in otherLib.
+	mbidArtist := &artist.Artist{
+		Name:      "MBID Only",
+		SortName:  "MBID Only",
+		LibraryID: otherLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, mbidArtist); err != nil {
+		t.Fatalf("creating mbid artist: %v", err)
+	}
+	if _, err := router.db.ExecContext(ctx, `
+		INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+		VALUES (?, 'musicbrainz', ?)
+	`, mbidArtist.ID, "22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("inserting provider id: %v", err)
+	}
+
+	// Artist 2: matches by name, but only in otherLib.
+	nameArtist := &artist.Artist{
+		Name:      "Name Only",
+		SortName:  "Name Only",
+		LibraryID: otherLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, nameArtist); err != nil {
+		t.Fatalf("creating name artist: %v", err)
+	}
+
+	// MBID lookup scoped to embyLib must miss even though the MBID exists
+	// in otherLib. Without the library_id filter on artist_libraries, the
+	// JOIN would return the otherLib artist and silently violate scoping.
+	got, err := router.findArtistInLibrary(ctx,
+		"22222222-2222-2222-2222-222222222222", "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by mbid: %v", err)
+	}
+	if got != nil {
+		t.Errorf("MBID cross-library lookup returned %+v, want nil", got)
+	}
+
+	// Name lookup scoped to embyLib must also miss.
+	got, err = router.findArtistInLibrary(ctx, "", "Name Only", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by name: %v", err)
+	}
+	if got != nil {
+		t.Errorf("name cross-library lookup returned %+v, want nil", got)
+	}
+}
+
+// TestFindArtistInLibrary_DeterministicOrdering pins the
+// ORDER BY datetime(a.created_at), a.id determinism for both lookup paths.
+// Two artists in the same library share the same MBID (and the same name)
+// but were inserted with mixed-format created_at timestamps. The lookup
+// must always return the chronologically older row, even though the legacy
+// "YYYY-MM-DD HH:MM:SS" form sorts AFTER an "T"-separated RFC3339 form
+// under raw TEXT comparison.
+func TestFindArtistInLibrary_DeterministicOrdering(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// olderArtist: RFC3339 timestamp at 00:30Z (earlier).
+	// newerArtist: legacy SQLite timestamp at 23:00 (later).
+	// Raw TEXT comparison would order "2024-01-15 23:00:00" BEFORE
+	// "2024-01-15T00:30:00Z" because ' ' (0x20) < 'T' (0x54), so without
+	// datetime() normalization the wrong row would win.
+	olderID := "older-artist"
+	newerID := "newer-artist"
+	mbid := "33333333-3333-3333-3333-333333333333"
+	dupName := "Duplicate Band"
+
+	for _, row := range []struct {
+		id, createdAt string
+	}{
+		{olderID, "2024-01-15T00:30:00Z"}, // RFC3339, chronologically EARLIER
+		{newerID, "2024-01-15 23:00:00"},  // legacy SQLite, chronologically LATER
+	} {
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			row.id, dupName, dupName, t.TempDir(), row.createdAt, row.createdAt); err != nil {
+			t.Fatalf("inserting %s: %v", row.id, err)
+		}
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+			 VALUES (?, ?, 'manual', ?)`,
+			row.id, embyLib.ID, row.createdAt); err != nil {
+			t.Fatalf("seeding membership for %s: %v", row.id, err)
+		}
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+			 VALUES (?, 'musicbrainz', ?)`,
+			row.id, mbid); err != nil {
+			t.Fatalf("inserting provider id for %s: %v", row.id, err)
+		}
+	}
+
+	// MBID lookup: must return the chronologically older RFC3339 row.
+	got, err := router.findArtistInLibrary(ctx, mbid, "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by mbid: %v", err)
+	}
+	if got == nil || got.ID != olderID {
+		var gotID string
+		if got != nil {
+			gotID = got.ID
+		}
+		t.Errorf("MBID lookup ID = %q, want %q (datetime() must normalize mixed formats)",
+			gotID, olderID)
+	}
+
+	// Name lookup: same determinism guarantee.
+	got, err = router.findArtistInLibrary(ctx, "", dupName, embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by name: %v", err)
+	}
+	if got == nil || got.ID != olderID {
+		var gotID string
+		if got != nil {
+			gotID = got.ID
+		}
+		t.Errorf("name lookup ID = %q, want %q (datetime() must normalize mixed formats)",
+			gotID, olderID)
+	}
+}
+
 func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
 	t.Parallel()
 	router := testRouterForLibraryOps(t)

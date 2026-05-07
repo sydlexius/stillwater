@@ -59,10 +59,14 @@ func seedLibraries(t *testing.T, db *sql.DB, ids ...string) {
 		if id == "" {
 			continue
 		}
+		// Include `path` to match the canonical insert shape used elsewhere
+		// in this file (e.g. line 152 and the other call sites). The column
+		// is non-NULL in some schema versions and the placeholder helps
+		// identify seeded libraries in debug dumps.
 		if _, err := db.ExecContext(context.Background(),
-			`INSERT OR IGNORE INTO libraries (id, name, type, source, created_at, updated_at)
-				VALUES (?, ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
-			id, id); err != nil {
+			`INSERT OR IGNORE INTO libraries (id, name, path, type, source, created_at, updated_at)
+				VALUES (?, ?, ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+			id, id, "/test/library/"+id); err != nil {
 			t.Fatalf("seeding library %s: %v", id, err)
 		}
 	}

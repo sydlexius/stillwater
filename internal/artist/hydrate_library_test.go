@@ -7,9 +7,11 @@ import (
 )
 
 // TestHydratePrimaryLibrary_NoMembership covers the artist-with-zero-rows
-// branch: the artist exists but has no artist_libraries entry. The helper
-// must leave LibraryID untouched and return no error so callers like
-// GetByID don't fail for orphaned rows.
+// branch: the artist exists but has no artist_libraries entry. Per the
+// OpenAPI contract on Artist.library_id ("empty when the artist has no
+// library memberships"), the helper must CLEAR LibraryID rather than
+// preserve any caller-set value, so orphaned rows never leak a stale
+// library reference into API responses.
 func TestHydratePrimaryLibrary_NoMembership(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -25,13 +27,13 @@ func TestHydratePrimaryLibrary_NoMembership(t *testing.T) {
 		t.Fatalf("seeding orphan artist: %v", err)
 	}
 
-	a := &Artist{ID: "orphan-1", LibraryID: "should-not-change"}
+	a := &Artist{ID: "orphan-1", LibraryID: "stale-caller-value"}
 	if err := svc.hydratePrimaryLibrary(ctx, a); err != nil {
 		t.Fatalf("hydratePrimaryLibrary: %v", err)
 	}
-	if a.LibraryID != "should-not-change" {
-		t.Errorf("LibraryID = %q, want %q (no membership must leave field untouched)",
-			a.LibraryID, "should-not-change")
+	if a.LibraryID != "" {
+		t.Errorf("LibraryID = %q, want \"\" (zero memberships must clear LibraryID per OpenAPI contract)",
+			a.LibraryID)
 	}
 }
 
@@ -124,7 +126,7 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 	artists := []Artist{
 		{ID: "a-1"},
 		{ID: "a-2"},
-		{ID: "a-3", LibraryID: "preserved"},
+		{ID: "a-3", LibraryID: "stale-caller-value"},
 	}
 	if err := svc.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
 		t.Fatalf("hydratePrimaryLibrariesBatch: %v", err)
@@ -135,9 +137,11 @@ func TestHydratePrimaryLibrariesBatch(t *testing.T) {
 	if artists[1].LibraryID != "lib-b" {
 		t.Errorf("a-2 LibraryID = %q, want lib-b (oldest by datetime() across formats)", artists[1].LibraryID)
 	}
-	if artists[2].LibraryID != "preserved" {
-		t.Errorf("a-3 LibraryID = %q, want %q (no membership must leave field untouched)",
-			artists[2].LibraryID, "preserved")
+	// a-3 has no memberships: the batch path must CLEAR LibraryID per the
+	// OpenAPI contract, matching the single-artist hydration behavior.
+	if artists[2].LibraryID != "" {
+		t.Errorf("a-3 LibraryID = %q, want \"\" (zero memberships must clear LibraryID per OpenAPI contract)",
+			artists[2].LibraryID)
 	}
 }
 

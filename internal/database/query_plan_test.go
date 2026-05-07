@@ -72,6 +72,19 @@ func TestQueryPlans(t *testing.T) {
 			query: "SELECT id FROM artists WHERE LOWER(name) = LOWER(?)",
 			args:  []any{"Beatles"},
 		},
+		// Library-scoped LOWER(name) lookup used by lookupByNameInLibrary
+		// in handlers_connection_library.go. The JOIN form filters by
+		// artist_libraries.library_id first then matches the case-insensitive
+		// name; pinning its plan here catches future regressions where the
+		// planner stops using the membership index.
+		"artist_by_lower_name_library": {
+			query: `SELECT a.id FROM artists a
+				JOIN artist_libraries al ON al.artist_id = a.id
+				WHERE al.library_id = ? AND LOWER(a.name) = LOWER(?)
+				ORDER BY datetime(a.created_at), a.id
+				LIMIT 1`,
+			args: []any{"lib-1", "Beatles"},
+		},
 		"history_range_rfc3339": {
 			query: `SELECT id FROM metadata_changes
 				WHERE artist_id = ? AND created_at >= ? AND created_at <= ?
