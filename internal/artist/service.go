@@ -331,6 +331,9 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -344,6 +347,9 @@ func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -363,36 +369,7 @@ func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Ar
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, nil
-}
-
-// GetByNameAndLibrary retrieves an artist by name within a specific library.
-// Returns nil, nil when no match is found.
-func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error) {
-	a, err := s.artists.GetByNameAndLibrary(ctx, name, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	return a, nil
-}
-
-// GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
-// Returns nil, nil when no match is found.
-func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
-	a, err := s.artists.GetByMBIDAndLibrary(ctx, mbid, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -412,6 +389,9 @@ func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
 	if err := s.hydrateImages(ctx, a); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -428,6 +408,9 @@ func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name strin
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -470,26 +453,6 @@ func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) 
 	return s.memberships.CountForArtist(ctx, artistID)
 }
 
-// FindByMBIDOrName finds an artist by MBID first, then falls back to
-// case-insensitive name match, both scoped to the given library.
-// Returns nil, nil when no match is found.
-//
-// Deprecated: use FindByMBIDOrNameUnscoped. Removed alongside the
-// artists.library_id column when the legacy scoped repo surface goes.
-func (s *Service) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
-	a, err := s.artists.FindByMBIDOrName(ctx, mbid, name, libraryID)
-	if err != nil || a == nil {
-		return a, err
-	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	return a, nil
-}
-
 // GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	a, err := s.artists.GetByPath(ctx, path)
@@ -500,6 +463,9 @@ func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 		return nil, err
 	}
 	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -516,6 +482,9 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 		return nil, 0, err
 	}
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
+		return nil, 0, err
+	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
 		return nil, 0, err
 	}
 	return artists, total, nil
@@ -1188,6 +1157,9 @@ func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
+		return nil, err
+	}
 	return artists, nil
 }
 
@@ -1350,6 +1322,9 @@ func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist
 	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
+	if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
+		return nil, err
+	}
 	return artists, nil
 }
 
@@ -1458,6 +1433,133 @@ func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {
 		return fmt.Errorf("hydrating provider IDs: %w", err)
 	}
 	applyProviderIDs(a, ids)
+	return nil
+}
+
+// dbProvider is the minimal interface hydratePrimaryLibrary needs from the
+// repository: a handle to the underlying *sql.DB so it can issue the
+// membership lookup. Decorated/wrapped repositories (NewServiceWithRepos)
+// satisfy this contract by either embedding *sqliteArtistRepo or
+// re-exposing DB(); fake repos used in unit tests omit it and the
+// hydration becomes a silent no-op.
+type dbProvider interface {
+	DB() *sql.DB
+}
+
+// hydratePrimaryLibrary populates a.LibraryID from artist_libraries by
+// picking the earliest membership row (oldest added_at). The legacy
+// artists.library_id column was dropped in migration 004; readers that
+// still rely on Artist.LibraryID (rule engine shared-fs detection,
+// compliance CSV export, library-name display in artist detail pages)
+// continue to see a value derived from the M:N table. A repository that
+// does not expose a *sql.DB is a silent no-op so tests using fake repos
+// without a real DB are unaffected.
+//
+// Per the OpenAPI contract on Artist.library_id, the field is empty when
+// the artist has no library memberships. We therefore CLEAR LibraryID for
+// orphaned artists so callers do not see stale values left over from a
+// previous hydration or a bare struct literal.
+func (s *Service) hydratePrimaryLibrary(ctx context.Context, a *Artist) error {
+	if a == nil || a.ID == "" {
+		return nil
+	}
+	// Use the underlying *sql.DB through the dbProvider interface so wrapped
+	// repos (decorators that embed *sqliteArtistRepo) still hydrate correctly.
+	provider, ok := s.artists.(dbProvider)
+	if !ok {
+		return nil
+	}
+	db := provider.DB()
+	if db == nil {
+		return nil
+	}
+	// added_at can hold mixed SQLite ("YYYY-MM-DD HH:MM:SS") and RFC3339
+	// timestamps from different writers, so wrap with datetime() to compare
+	// chronologically rather than lexicographically.
+	var libID string
+	err := db.QueryRowContext(ctx,
+		`SELECT library_id FROM artist_libraries WHERE artist_id = ? ORDER BY datetime(added_at), library_id LIMIT 1`,
+		a.ID).Scan(&libID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Zero memberships: clear LibraryID per the OpenAPI contract so
+		// readers do not observe a stale caller-set value for an orphaned
+		// artist.
+		a.LibraryID = ""
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("hydrating primary library for artist %s: %w", a.ID, err)
+	}
+	a.LibraryID = libID
+	return nil
+}
+
+// hydratePrimaryLibrariesBatch populates LibraryID on a slice of artists
+// in a single query so List does not fan out to N round-trips. The same
+// "earliest added_at" rule applies per artist. Artists without any
+// membership row have LibraryID CLEARED to "" per the OpenAPI contract;
+// any caller-set value on an orphaned artist would otherwise leak into
+// API responses.
+func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Artist) error {
+	if len(artists) == 0 {
+		return nil
+	}
+	provider, ok := s.artists.(dbProvider)
+	if !ok {
+		return nil
+	}
+	db := provider.DB()
+	if db == nil {
+		return nil
+	}
+	placeholders := make([]string, len(artists))
+	args := make([]any, len(artists))
+	for i := range artists {
+		placeholders[i] = "?"
+		args[i] = artists[i].ID
+	}
+	// Window-style "first per group" via NOT EXISTS so we get exactly one
+	// row per artist_id (the one with the smallest added_at, ties broken
+	// by library_id). Wrap added_at with datetime() to normalize the mixed
+	// "YYYY-MM-DD HH:MM:SS" + RFC3339 formats present in production data;
+	// raw TEXT comparison would order RFC3339 (T separator) after SQLite
+	// (space separator) and pick the wrong "earliest" membership.
+	//nolint:gosec // G202: placeholders is a literal "?,?,..." string built by joining "?" literals; no user input.
+	query := `SELECT al.artist_id, al.library_id FROM artist_libraries al
+		WHERE al.artist_id IN (` + strings.Join(placeholders, ",") + `)
+		AND NOT EXISTS (
+			SELECT 1 FROM artist_libraries al2
+			WHERE al2.artist_id = al.artist_id
+			AND (datetime(al2.added_at) < datetime(al.added_at)
+				OR (datetime(al2.added_at) = datetime(al.added_at) AND al2.library_id < al.library_id))
+		)`
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("batch hydrating primary library: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	libByArtist := make(map[string]string, len(artists))
+	for rows.Next() {
+		var aid, lid string
+		if err := rows.Scan(&aid, &lid); err != nil {
+			return fmt.Errorf("scanning primary library row: %w", err)
+		}
+		libByArtist[aid] = lid
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating primary library rows: %w", err)
+	}
+	for i := range artists {
+		if lid, ok := libByArtist[artists[i].ID]; ok {
+			artists[i].LibraryID = lid
+		} else {
+			// Zero memberships: clear LibraryID per the OpenAPI contract.
+			// Without this, a caller-set value on an orphaned artist would
+			// survive batch hydration and leak into List responses.
+			artists[i].LibraryID = ""
+		}
+	}
 	return nil
 }
 

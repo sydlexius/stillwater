@@ -97,7 +97,18 @@ func TestScan_PathlessLibrarySkipped(t *testing.T) {
 	t.Parallel()
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Visible Artist")
-	svc, artistSvc := setupScanner(t, libDir)
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+
+	// Seed the libraries the lister will surface so artist_libraries
+	// memberships (and the LibraryID hydration that follows) actually
+	// land on created artists.
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+			VALUES ('lib-1', 'Main', ?, 'regular', 'manual', datetime('now'), datetime('now')),
+			       ('lib-2', 'API Only', '', 'regular', 'manual', datetime('now'), datetime('now'))`,
+		libDir); err != nil {
+		t.Fatalf("seeding libraries: %v", err)
+	}
 
 	// Set up a library lister that returns one healthy library and one pathless (empty path).
 	svc.SetLibraryLister(&stubLibraryLister{

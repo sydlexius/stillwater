@@ -1230,7 +1230,10 @@ components:
           description: Filesystem path to the artist directory. Empty for pathless (platform-only) artists.
         library_id:
           type: string
-          description: ID of the library this artist belongs to.
+          description: ID of the artist's primary library, derived from the
+            artist_libraries membership table (oldest membership wins;
+            ties are resolved by lowest library_id).
+            Empty when the artist has no library memberships.
         nfo_exists:
           type: boolean
           description: Whether an NFO file exists on disk for this artist.

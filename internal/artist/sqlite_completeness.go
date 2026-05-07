@@ -62,14 +62,11 @@ WHERE a.is_excluded = 0`
 	var args []any
 
 	if libraryID != "" {
-		query = baseQuery + ` AND (
-			EXISTS (
-				SELECT 1 FROM artist_libraries al
-				WHERE al.artist_id = a.id AND al.library_id = ?
-			)
-			OR a.library_id = ?
+		query = baseQuery + ` AND EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = a.id AND al.library_id = ?
 		)`
-		args = []any{libraryID, libraryID}
+		args = []any{libraryID}
 	} else {
 		query = baseQuery
 	}
@@ -131,14 +128,11 @@ WHERE a.is_excluded = 0`
 	var args []any
 
 	if libraryID != "" {
-		query = baseQuery + ` AND (
-			EXISTS (
-				SELECT 1 FROM artist_libraries al
-				WHERE al.artist_id = a.id AND al.library_id = ?
-			)
-			OR a.library_id = ?
+		query = baseQuery + ` AND EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = a.id AND al.library_id = ?
 		) ORDER BY a.health_score ASC LIMIT ?`
-		args = []any{libraryID, libraryID, limit}
+		args = []any{libraryID, limit}
 	} else {
 		query = baseQuery + " ORDER BY a.health_score ASC LIMIT ?"
 		args = []any{limit}

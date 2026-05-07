@@ -48,6 +48,30 @@ func setupTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+// seedLibraries inserts placeholder libraries rows so that Service.Create's
+// recordInitialMembership / AddDerivingSource path can land an
+// artist_libraries membership row. Idempotent via INSERT OR IGNORE.
+// Helper for tests that previously relied on the legacy artists.library_id
+// column without separately materializing the libraries row.
+func seedLibraries(t *testing.T, db *sql.DB, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		// Include `path` to match the canonical insert shape used elsewhere
+		// in this file (e.g. line 152 and the other call sites). The column
+		// is non-NULL in some schema versions and the placeholder helps
+		// identify seeded libraries in debug dumps.
+		if _, err := db.ExecContext(context.Background(),
+			`INSERT OR IGNORE INTO libraries (id, name, path, type, source, created_at, updated_at)
+				VALUES (?, ?, ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+			id, id, "/test/library/"+id); err != nil {
+			t.Fatalf("seeding library %s: %v", id, err)
+		}
+	}
+}
+
 func testArtist(name, path string) *Artist {
 	return &Artist{
 		Name:           name,
@@ -512,6 +536,103 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// TestSearch_HydratesPrimaryLibrary asserts that Search populates LibraryID
+// from the artist_libraries membership table. Regression coverage for the
+// gap where Search/SearchWithAliases skipped hydratePrimaryLibrariesBatch
+// after the artists.library_id column was removed.
+func TestSearch_HydratesPrimaryLibrary(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-search-a", "lib-search-b")
+
+	a1 := testArtist("Searchable One", "/music/Searchable One")
+	a1.LibraryID = "lib-search-a"
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+
+	a2 := testArtist("Searchable Two", "/music/Searchable Two")
+	a2.LibraryID = "lib-search-b"
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	results, err := svc.Search(ctx, "Searchable")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("search results = %d, want 2", len(results))
+	}
+	want := map[string]string{
+		a1.ID: "lib-search-a",
+		a2.ID: "lib-search-b",
+	}
+	for _, r := range results {
+		if got, ok := want[r.ID]; !ok {
+			t.Errorf("unexpected artist ID in results: %s", r.ID)
+		} else if r.LibraryID != got {
+			t.Errorf("Search result %q LibraryID = %q, want %q", r.Name, r.LibraryID, got)
+		}
+	}
+}
+
+// TestSearchWithAliases_HydratesPrimaryLibrary mirrors TestSearch_HydratesPrimaryLibrary
+// for the alias-aware search path. The query token MUST be unique to the
+// alias row (not present in any artists.name) so the test exercises the
+// alias-resolution code path, not the plain name-search fallback. Using
+// a name-matching query like "Aliased" would still pass even if
+// SearchWithAliases regressed to a plain name search.
+func TestSearchWithAliases_HydratesPrimaryLibrary(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedLibraries(t, db, "lib-alias-a", "lib-alias-b")
+
+	a1 := testArtist("Radiohead", "/music/Radiohead")
+	a1.LibraryID = "lib-alias-a"
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+
+	a2 := testArtist("The Sugarcubes", "/music/The Sugarcubes")
+	a2.LibraryID = "lib-alias-b"
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	// Attach a unique alias token that does NOT appear in either
+	// artists.name row. Searching for this token forces the alias join
+	// path; a regression to plain name search would return zero rows.
+	const aliasToken = "OnlyAliasToken_xyz"
+	if _, err := svc.AddAlias(ctx, a1.ID, aliasToken, "manual"); err != nil {
+		t.Fatalf("AddAlias: %v", err)
+	}
+
+	results, err := svc.SearchWithAliases(ctx, aliasToken)
+	if err != nil {
+		t.Fatalf("SearchWithAliases: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("search results = %d, want 1 (alias-only token must resolve to exactly one artist)", len(results))
+	}
+	if results[0].ID != a1.ID {
+		t.Errorf("result ID = %q, want %q (alias must resolve to its owning artist)", results[0].ID, a1.ID)
+	}
+	// Pin the primary-library hydration on the alias-resolved row: this
+	// is the original assertion the test was added to cover, and it must
+	// still hold once the search reaches the artist via the alias join.
+	if results[0].LibraryID != "lib-alias-a" {
+		t.Errorf("SearchWithAliases result %q LibraryID = %q, want lib-alias-a (alias path must hydrate primary library)",
+			results[0].Name, results[0].LibraryID)
+	}
+}
+
 func TestBandMembers_CRUD(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -784,20 +905,15 @@ func TestLibraryID_NullOnEmpty(t *testing.T) {
 	}
 }
 
-func TestGetByNameAndLibrary(t *testing.T) {
+func TestGetByName_HydratesPrimaryLibrary(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Create two libraries
-	for _, q := range []string{
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-x', 'Library X', '/music/x', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-y', 'Library Y', '/music/y', 'regular', datetime('now'), datetime('now'))`,
-	} {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			t.Fatalf("creating library: %v", err)
-		}
+	if _, err := db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-x', 'Library X', '/music/x', 'regular', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("creating library: %v", err)
 	}
 
 	a := testArtist("Deftones", "/music/Deftones")
@@ -806,48 +922,36 @@ func TestGetByNameAndLibrary(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Found in correct library
-	got, err := svc.GetByNameAndLibrary(ctx, "Deftones", "lib-x")
+	got, err := svc.GetByName(ctx, "Deftones")
 	if err != nil {
-		t.Fatalf("GetByNameAndLibrary: %v", err)
+		t.Fatalf("GetByName: %v", err)
 	}
 	if got == nil || got.Name != "Deftones" {
 		t.Errorf("expected Deftones, got %v", got)
 	}
-
-	// Not found in different library
-	got, err = svc.GetByNameAndLibrary(ctx, "Deftones", "lib-y")
-	if err != nil {
-		t.Fatalf("GetByNameAndLibrary different lib: %v", err)
-	}
-	if got != nil {
-		t.Errorf("expected nil for different library, got %+v", got)
+	if got != nil && got.LibraryID != "lib-x" {
+		t.Errorf("LibraryID hydration = %q, want lib-x", got.LibraryID)
 	}
 
 	// Not found (wrong name)
-	got, err = svc.GetByNameAndLibrary(ctx, "Nonexistent", "lib-x")
+	got, err = svc.GetByName(ctx, "Nonexistent")
 	if err != nil {
-		t.Fatalf("GetByNameAndLibrary not found: %v", err)
+		t.Fatalf("GetByName not found: %v", err)
 	}
 	if got != nil {
 		t.Errorf("expected nil for nonexistent name, got %+v", got)
 	}
 }
 
-func TestGetByMBIDAndLibrary(t *testing.T) {
+func TestGetByMBID_HydratesPrimaryLibrary(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Create two libraries
-	for _, q := range []string{
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-m', 'Library M', '/music/m', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-n', 'Library N', '/music/n', 'regular', datetime('now'), datetime('now'))`,
-	} {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			t.Fatalf("creating library: %v", err)
-		}
+	if _, err := db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-m', 'Library M', '/music/m', 'regular', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatalf("creating library: %v", err)
 	}
 
 	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
@@ -858,28 +962,21 @@ func TestGetByMBIDAndLibrary(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Found in correct library
-	got, err := svc.GetByMBIDAndLibrary(ctx, mbid, "lib-m")
+	got, err := svc.GetByMBID(ctx, mbid)
 	if err != nil {
-		t.Fatalf("GetByMBIDAndLibrary: %v", err)
+		t.Fatalf("GetByMBID: %v", err)
 	}
 	if got == nil || got.Name != "Radiohead" {
 		t.Errorf("expected Radiohead, got %v", got)
 	}
-
-	// Not found in different library
-	got, err = svc.GetByMBIDAndLibrary(ctx, mbid, "lib-n")
-	if err != nil {
-		t.Fatalf("GetByMBIDAndLibrary different lib: %v", err)
-	}
-	if got != nil {
-		t.Errorf("expected nil for different library, got %+v", got)
+	if got != nil && got.LibraryID != "lib-m" {
+		t.Errorf("LibraryID hydration = %q, want lib-m", got.LibraryID)
 	}
 
 	// Not found (wrong MBID)
-	got, err = svc.GetByMBIDAndLibrary(ctx, "nonexistent-mbid", "lib-m")
+	got, err = svc.GetByMBID(ctx, "nonexistent-mbid")
 	if err != nil {
-		t.Fatalf("GetByMBIDAndLibrary not found: %v", err)
+		t.Fatalf("GetByMBID not found: %v", err)
 	}
 	if got != nil {
 		t.Errorf("expected nil for nonexistent MBID, got %+v", got)
@@ -1125,168 +1222,6 @@ func TestList_LibraryIDFilter(t *testing.T) {
 	}
 }
 
-func TestFindByMBIDOrName_ByMBID(t *testing.T) {
-	t.Parallel()
-	db := setupTestDB(t)
-	svc := NewService(db)
-	ctx := context.Background()
-
-	if _, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-	); err != nil {
-		t.Fatalf("creating library: %v", err)
-	}
-
-	mbid := "5b11f4ce-a62d-471e-81fc-a69a8278c7da"
-	a := testArtist("Nirvana", "/music/Nirvana")
-	a.MusicBrainzID = mbid
-	a.LibraryID = "lib-manual"
-	if err := svc.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	got, err := svc.FindByMBIDOrName(ctx, mbid, "Nirvana", "lib-manual")
-	if err != nil {
-		t.Fatalf("FindByMBIDOrName: %v", err)
-	}
-	if got == nil {
-		t.Fatal("expected artist, got nil")
-	}
-	if got.Name != "Nirvana" {
-		t.Errorf("Name = %q, want Nirvana", got.Name)
-	}
-	if got.MusicBrainzID != mbid {
-		t.Errorf("MusicBrainzID = %q, want %q", got.MusicBrainzID, mbid)
-	}
-}
-
-func TestFindByMBIDOrName_ByNameCaseInsensitive(t *testing.T) {
-	t.Parallel()
-	db := setupTestDB(t)
-	svc := NewService(db)
-	ctx := context.Background()
-
-	if _, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-	); err != nil {
-		t.Fatalf("creating library: %v", err)
-	}
-
-	a := testArtist("Veridia", "/music/Veridia")
-	a.LibraryID = "lib-manual"
-	if err := svc.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	// Search with a different case; no MBID provided.
-	got, err := svc.FindByMBIDOrName(ctx, "", "VERIDIA", "lib-manual")
-	if err != nil {
-		t.Fatalf("FindByMBIDOrName: %v", err)
-	}
-	if got == nil {
-		t.Fatal("expected artist, got nil")
-	}
-	if got.Name != "Veridia" {
-		t.Errorf("Name = %q, want Veridia", got.Name)
-	}
-}
-
-func TestFindByMBIDOrName_MBIDPreferredOverName(t *testing.T) {
-	t.Parallel()
-	db := setupTestDB(t)
-	svc := NewService(db)
-	ctx := context.Background()
-
-	if _, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-	); err != nil {
-		t.Fatalf("creating library: %v", err)
-	}
-
-	mbid1 := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	mbid2 := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-
-	a1 := testArtist("Coldplay", "/music/Coldplay-1")
-	a1.MusicBrainzID = mbid1
-	a1.LibraryID = "lib-manual"
-	if err := svc.Create(ctx, a1); err != nil {
-		t.Fatalf("Create a1: %v", err)
-	}
-
-	a2 := testArtist("Coldplay", "/music/Coldplay-2")
-	a2.MusicBrainzID = mbid2
-	a2.LibraryID = "lib-manual"
-	if err := svc.Create(ctx, a2); err != nil {
-		t.Fatalf("Create a2: %v", err)
-	}
-
-	// Searching by mbid2 should return a2, not a1, even though both share the name.
-	got, err := svc.FindByMBIDOrName(ctx, mbid2, "Coldplay", "lib-manual")
-	if err != nil {
-		t.Fatalf("FindByMBIDOrName: %v", err)
-	}
-	if got == nil {
-		t.Fatal("expected artist, got nil")
-	}
-	if got.ID != a2.ID {
-		t.Errorf("ID = %q, want %q (a2)", got.ID, a2.ID)
-	}
-}
-
-func TestFindByMBIDOrName_NotFound(t *testing.T) {
-	t.Parallel()
-	db := setupTestDB(t)
-	svc := NewService(db)
-	ctx := context.Background()
-
-	if _, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-	); err != nil {
-		t.Fatalf("creating library: %v", err)
-	}
-
-	got, err := svc.FindByMBIDOrName(ctx, "nonexistent-mbid", "Nonexistent Artist", "lib-manual")
-	if err != nil {
-		t.Fatalf("FindByMBIDOrName: %v", err)
-	}
-	if got != nil {
-		t.Errorf("expected nil, got %+v", got)
-	}
-}
-
-func TestFindByMBIDOrName_RespectsLibraryScope(t *testing.T) {
-	t.Parallel()
-	db := setupTestDB(t)
-	svc := NewService(db)
-	ctx := context.Background()
-
-	for _, q := range []string{
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
-		`INSERT OR IGNORE INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-emby', 'Emby', '/music/emby', 'regular', datetime('now'), datetime('now'))`,
-	} {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			t.Fatalf("creating library: %v", err)
-		}
-	}
-
-	mbid := "cccccccc-cccc-cccc-cccc-cccccccccccc"
-	a := testArtist("Muse", "/music/Muse")
-	a.MusicBrainzID = mbid
-	a.LibraryID = "lib-emby"
-	if err := svc.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	// Artist is in the emby library; searching the manual library should return nil.
-	got, err := svc.FindByMBIDOrName(ctx, mbid, "Muse", "lib-manual")
-	if err != nil {
-		t.Fatalf("FindByMBIDOrName: %v", err)
-	}
-	if got != nil {
-		t.Errorf("expected nil for wrong library scope, got %+v", got)
-	}
-}
-
 func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -1366,12 +1301,14 @@ func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 		plat.created_at, plat.updated_at
 	FROM artist_platform_ids plat
 	JOIN artists conn_artist ON conn_artist.id = plat.artist_id
-	JOIN libraries conn_lib ON conn_lib.id = conn_artist.library_id AND conn_lib.source != 'manual'
+	JOIN artist_libraries conn_al ON conn_al.artist_id = conn_artist.id
+	JOIN libraries conn_lib ON conn_lib.id = conn_al.library_id AND conn_lib.source != 'manual'
 	JOIN artist_provider_ids conn_mbid ON conn_mbid.artist_id = conn_artist.id AND conn_mbid.provider = 'musicbrainz'
 	JOIN artist_provider_ids fs_mbid ON fs_mbid.provider = 'musicbrainz'
 		AND fs_mbid.provider_id = conn_mbid.provider_id AND fs_mbid.artist_id != conn_artist.id
 	JOIN artists fs_artist ON fs_artist.id = fs_mbid.artist_id
-	JOIN libraries fs_lib ON fs_lib.id = fs_artist.library_id AND fs_lib.source = 'manual'`)
+	JOIN artist_libraries fs_al ON fs_al.artist_id = fs_artist.id
+	JOIN libraries fs_lib ON fs_lib.id = fs_al.library_id AND fs_lib.source = 'manual'`)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}

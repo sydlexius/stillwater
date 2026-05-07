@@ -69,6 +69,13 @@ func newSQLiteArtistRepo(db *sql.DB) *sqliteArtistRepo {
 	return &sqliteArtistRepo{db: db}
 }
 
+// DB satisfies the dbProvider interface used by Service.hydratePrimaryLibrary
+// (and its batch sibling) so wrapped repositories that embed *sqliteArtistRepo
+// continue to expose the underlying handle without a concrete type assertion.
+func (r *sqliteArtistRepo) DB() *sql.DB {
+	return r.db
+}
+
 func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 	if a.ID == "" {
 		a.ID = uuid.New().String()
@@ -82,17 +89,17 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 			id, name, sort_name, type, gender, origin, disambiguation,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
-			path, library_id, nfo_exists,
+			path, nfo_exists,
 			health_score, is_excluded, exclusion_reason, is_classical,
 			locked, lock_source, locked_at, locked_fields,
 			metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Origin, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
+		a.Path, dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
 		MarshalStringSlice(a.LockedFields),
@@ -165,64 +172,6 @@ func (r *sqliteArtistRepo) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, n
 		return nil, nil
 	}
 	return r.GetByName(ctx, name)
-}
-
-func (r *sqliteArtistRepo) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT `+artistColumns+` FROM artists
-		WHERE id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
-		AND library_id = ?`, mbid, libraryID)
-	a, err := scanArtist(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("getting artist by mbid+library: %w", err)
-	}
-	return a, nil
-}
-
-func (r *sqliteArtistRepo) GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT `+artistColumns+` FROM artists WHERE name = ? AND library_id = ?`, name, libraryID)
-	a, err := scanArtist(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("getting artist by name+library: %w", err)
-	}
-	return a, nil
-}
-
-func (r *sqliteArtistRepo) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
-	// Try MBID match first (most reliable).
-	if mbid != "" {
-		row := r.db.QueryRowContext(ctx,
-			`SELECT `+artistColumns+` FROM artists
-			WHERE id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
-			AND library_id = ?`, mbid, libraryID)
-		a, err := scanArtist(row)
-		if err == nil {
-			return a, nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("finding artist by mbid+library: %w", err)
-		}
-		// No MBID match -- fall through to name match.
-	}
-
-	// Fall back to case-insensitive name match.
-	row := r.db.QueryRowContext(ctx,
-		`SELECT `+artistColumns+` FROM artists WHERE LOWER(name) = LOWER(?) AND library_id = ?`, name, libraryID)
-	a, err := scanArtist(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("finding artist by name+library: %w", err)
-	}
-	return a, nil
 }
 
 func (r *sqliteArtistRepo) GetByPath(ctx context.Context, path string) (*Artist, error) {
@@ -304,7 +253,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 			name = ?, sort_name = ?, type = ?, gender = ?, origin = ?, disambiguation = ?,
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
-			path = ?, library_id = ?, nfo_exists = ?,
+			path = ?, nfo_exists = ?,
 			health_score = ?, health_evaluated_at = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			locked = ?, lock_source = ?, locked_at = ?, locked_fields = ?,
 			metadata_sources = ?,
@@ -314,7 +263,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 		a.Name, a.SortName, a.Type, a.Gender, a.Origin, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
+		a.Path, dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.FormatNullableTime(a.HealthEvaluatedAt), dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
 		MarshalStringSlice(a.LockedFields),
@@ -388,10 +337,14 @@ func (r *sqliteArtistRepo) Delete(ctx context.Context, id string) error {
 // ListPathsByLibrary returns a map of artist ID to filesystem path for all
 // artists in the given library that have a non-empty path. Uses artist ID
 // as the key (not name) to avoid collisions when multiple artists share
-// the same name.
+// the same name. Membership is resolved through artist_libraries (the
+// authoritative M:N table) since the legacy artists.library_id column
+// was dropped in migration 004.
 func (r *sqliteArtistRepo) ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, path FROM artists WHERE library_id = ? AND path != ''`,
+		`SELECT a.id, a.path FROM artists a
+		JOIN artist_libraries al ON al.artist_id = a.id
+		WHERE al.library_id = ? AND a.path != ''`,
 		libraryID)
 	if err != nil {
 		return nil, fmt.Errorf("listing artist paths for library %s: %w", libraryID, err)

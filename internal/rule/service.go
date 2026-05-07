@@ -919,7 +919,7 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 // ListViolations returns rule violations filtered by status.
 // If status is empty, returns all violations.
 func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViolation, error) {
-	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1)`
 	args := []any{}
 	if status == "active" {
 		// active = open + pending_choice (violations that need attention)
@@ -1005,9 +1005,10 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 		args = append(args, like, like, like)
 	}
 
-	// Library filter via artist join (artists table is already joined)
+	// Library filter via artist_libraries membership (the artists table
+	// is already joined for the library_name display column).
 	if p.LibraryID != "" {
-		whereClauses = append(whereClauses, "a.library_id = ?")
+		whereClauses = append(whereClauses, "EXISTS (SELECT 1 FROM artist_libraries al WHERE al.artist_id = a.id AND al.library_id = ?)")
 		args = append(args, p.LibraryID)
 	}
 
@@ -1024,7 +1025,7 @@ func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []
 
 // buildViolationFromClause returns the FROM/JOIN portion of a violation query.
 func buildViolationFromClause(needJoin bool) string {
-	q := ` FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
+	q := ` FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1)`
 	if needJoin {
 		q += ` JOIN rules r ON r.id = rv.rule_id`
 	}
@@ -1215,7 +1216,7 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolation, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at
-		FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id WHERE rv.id = ?
+		FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = (SELECT al.library_id FROM artist_libraries al WHERE al.artist_id = a.id ORDER BY datetime(al.added_at), al.library_id LIMIT 1) WHERE rv.id = ?
 	`, id)
 	v, err := scanViolation(row)
 	if err != nil {
@@ -1333,7 +1334,15 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context, p Violati
 	from := ` FROM rule_violations rv`
 	if needJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
-	} else if strings.Contains(where, "a.library_id") {
+	} else if strings.Contains(where, "FROM artist_libraries") {
+		// buildViolationFilter (in this same file) emits an EXISTS
+		// (SELECT 1 FROM artist_libraries ... WHERE al.artist_id = a.id ...)
+		// clause whenever ViolationListParams.LibraryID is set. That
+		// subquery references the `a` alias, so we must materialize the
+		// join even when the facet-count filter does not otherwise need
+		// it. The string check is coupled to that emitted SQL pattern;
+		// any change to buildViolationFilter's library-scoping clause
+		// must update this guard too.
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT rv.severity, COUNT(*)` + from + where + ` GROUP BY rv.severity` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
@@ -1411,7 +1420,7 @@ func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationLi
 	// needJoin signals the category filter needs `r` (already joined above).
 	// The library filter independently requires the artists-table join because
 	// a.library_id is in the WHERE clause.
-	if needJoin || strings.Contains(where, "a.library_id") {
+	if needJoin || strings.Contains(where, "FROM artist_libraries") {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT rv.rule_id, r.name, COUNT(*) AS cnt` + from + where + ` GROUP BY rv.rule_id ORDER BY cnt DESC, rv.rule_id ASC` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
@@ -1438,18 +1447,16 @@ func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationLi
 // all filter dimensions in p EXCEPT library are applied.
 func (s *Service) CountActiveViolationsByLibrary(ctx context.Context, p ViolationListParams) (map[string]int, error) {
 	where, args, needJoin := countActiveWithFilter(p, "library")
-	// Library counts always need the artist join for a.library_id.
-	from := ` FROM rule_violations rv JOIN artists a ON a.id = rv.artist_id`
+	// Library counts join artist_libraries (the M:N membership table)
+	// directly so per-library facets reflect the authoritative
+	// membership record. An artist that is a member of multiple
+	// libraries contributes to each library's count.
+	from := ` FROM rule_violations rv JOIN artist_libraries al ON al.artist_id = rv.artist_id JOIN artists a ON a.id = rv.artist_id`
 	if needJoin {
 		// needJoin signals a rules-table join for category filter.
 		from += ` JOIN rules r ON r.id = rv.rule_id`
 	}
-	// Constrain non-NULL library even without other filters so the grouping key stays usable.
-	nonNull := " WHERE a.library_id IS NOT NULL"
-	if where != "" {
-		nonNull = where + " AND a.library_id IS NOT NULL"
-	}
-	query := `SELECT a.library_id, COUNT(*) AS cnt` + from + nonNull + ` GROUP BY a.library_id` //nolint:gosec // G202: from/nonNull are built from whitelisted clauses with parameterized placeholders
+	query := `SELECT al.library_id, COUNT(*) AS cnt` + from + where + ` GROUP BY al.library_id` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1477,7 +1484,7 @@ func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p Violatio
 	from := ` FROM rule_violations rv`
 	if needJoin {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id JOIN rules r ON r.id = rv.rule_id`
-	} else if strings.Contains(where, "a.library_id") {
+	} else if strings.Contains(where, "FROM artist_libraries") {
 		// The library filter requires the artist join even when category is not set.
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
@@ -1503,18 +1510,32 @@ func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p Violatio
 	return fixable, notFixable, rows.Err()
 }
 
-// DismissViolationsForLibrary dismisses all active violations for artists that
-// belong to the given library. This should be called before deleting a library
-// with deleteArtists=false, because the delete NULLs artists.library_id and the
-// association is lost. Returns the number of violations dismissed.
+// DismissViolationsForLibrary dismisses all active violations for artists
+// that belong to the given library. This should be called before deleting
+// a library with deleteArtists=false, because the cascade removes the
+// artist_libraries membership row and the association is lost. Returns
+// the number of violations dismissed.
 func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID string) (int, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	// In the M:N model, only dismiss violations for artists whose ONLY library
+	// membership is the one being deleted. Artists that still belong to another
+	// library after this deletion should keep their active violations.
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations
 		SET status = ?, dismissed_at = ?, updated_at = ?
 		WHERE status IN (?, ?)
-		AND artist_id IN (SELECT id FROM artists WHERE library_id = ?)
-	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice, libraryID)
+		AND artist_id IN (
+			SELECT al.artist_id
+			FROM artist_libraries al
+			WHERE al.library_id = ?
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM artist_libraries other
+				WHERE other.artist_id = al.artist_id
+				  AND other.library_id <> ?
+			  )
+		)
+	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice, libraryID, libraryID)
 	if err != nil {
 		return 0, fmt.Errorf("dismissing violations for library %s: %w", libraryID, err)
 	}
@@ -1530,7 +1551,7 @@ func (s *Service) CountActiveViolationsByCategory(ctx context.Context, p Violati
 	where, args, _ := countActiveWithFilter(p, "category")
 	// Category counts always need the rules join (GROUP BY r.category).
 	from := ` FROM rule_violations rv JOIN rules r ON r.id = rv.rule_id`
-	if strings.Contains(where, "a.library_id") {
+	if strings.Contains(where, "FROM artist_libraries") {
 		from += ` LEFT JOIN artists a ON a.id = rv.artist_id`
 	}
 	query := `SELECT r.category, COUNT(*)` + from + where + ` GROUP BY r.category` //nolint:gosec // G202: from/where are built from whitelisted clauses with parameterized placeholders
@@ -1559,9 +1580,9 @@ func (s *Service) CountActiveViolationsByCategory(ctx context.Context, p Violati
 }
 
 // DismissOrphanedViolations dismisses all active violations whose artist_id
-// no longer exists in the artists table OR whose artist has no library
-// (library_id IS NULL, meaning the library was removed but the artist was
-// kept). Returns the number dismissed.
+// no longer exists in the artists table OR whose artist holds no library
+// membership (the artist was retained but every library it belonged to was
+// removed). Returns the number dismissed.
 func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `
@@ -1570,7 +1591,7 @@ func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
 		WHERE status IN (?, ?)
 		AND (
 			artist_id NOT IN (SELECT id FROM artists)
-			OR artist_id IN (SELECT id FROM artists WHERE library_id IS NULL)
+			OR artist_id NOT IN (SELECT artist_id FROM artist_libraries)
 		)
 	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice)
 	if err != nil {

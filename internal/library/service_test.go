@@ -223,16 +223,27 @@ func TestDelete_WithArtists(t *testing.T) {
 		t.Fatalf("Create library: %v", err)
 	}
 
-	// Insert an artist referencing this library
+	// Enable FKs so the artist_libraries -> libraries cascade actually
+	// fires when the library row is deleted.
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+
+	// Insert an artist referencing this library via artist_libraries.
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
-		VALUES ('art-1', 'Test Artist', 'Test Artist', '/music/test', ?, datetime('now'), datetime('now'))
-	`, lib.ID)
+		INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		VALUES ('art-1', 'Test Artist', 'Test Artist', '/music/test', datetime('now'), datetime('now'))
+	`)
 	if err != nil {
 		t.Fatalf("inserting artist: %v", err)
 	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES ('art-1', ?, 'filesystem')`,
+		lib.ID); err != nil {
+		t.Fatalf("inserting artist_libraries: %v", err)
+	}
 
-	// Delete should succeed and dereference the artist.
+	// Delete should succeed; CASCADE removes the membership row.
 	if err := svc.Delete(ctx, lib.ID); err != nil {
 		t.Fatalf("Delete returned error: %v", err)
 	}
@@ -242,15 +253,20 @@ func TestDelete_WithArtists(t *testing.T) {
 		t.Error("library should not exist after delete")
 	}
 
-	// Artist should still exist but with a cleared library_id.
-	var libID *string
+	// Artist should still exist; membership row removed by FK CASCADE.
+	var name string
 	err = db.QueryRowContext(ctx,
-		`SELECT library_id FROM artists WHERE id = 'art-1'`).Scan(&libID)
+		`SELECT name FROM artists WHERE id = 'art-1'`).Scan(&name)
 	if err != nil {
 		t.Fatalf("querying artist: %v", err)
 	}
-	if libID != nil {
-		t.Errorf("artist library_id = %q, want NULL", *libID)
+	var memberCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-1'`).Scan(&memberCount); err != nil {
+		t.Fatalf("counting memberships: %v", err)
+	}
+	if memberCount != 0 {
+		t.Errorf("memberships after library delete = %d, want 0 (cascade)", memberCount)
 	}
 }
 
@@ -285,13 +301,18 @@ func TestCountArtists(t *testing.T) {
 		t.Errorf("count = %d, want 0", count)
 	}
 
-	// Add an artist
+	// Add an artist with a membership.
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
-		VALUES ('art-2', 'Artist 2', 'Artist 2', '/music/art2', ?, datetime('now'), datetime('now'))
-	`, lib.ID)
+		INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		VALUES ('art-2', 'Artist 2', 'Artist 2', '/music/art2', datetime('now'), datetime('now'))
+	`)
 	if err != nil {
 		t.Fatalf("inserting artist: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES ('art-2', ?, 'filesystem')`,
+		lib.ID); err != nil {
+		t.Fatalf("inserting artist_libraries: %v", err)
 	}
 
 	count, err = svc.CountArtists(ctx, lib.ID)
@@ -898,21 +919,26 @@ func seedConnection(t *testing.T, db *sql.DB, id, connType string) {
 	}
 }
 
-// seedArtist inserts an artist row with the given library_id (may be empty).
+// seedArtist inserts an artist row and (when libraryID is non-empty) its
+// matching artist_libraries membership. Replaces the legacy library_id
+// column setup.
 func seedArtist(t *testing.T, db *sql.DB, id, name, libraryID string) {
 	t.Helper()
-	var libArg any
-	if libraryID == "" {
-		libArg = nil
-	} else {
-		libArg = libraryID
-	}
 	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-	`, id, name, name, "/music/"+name, libArg)
+		INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+	`, id, name, name, "/music/"+name)
 	if err != nil {
 		t.Fatalf("seeding artist %s: %v", id, err)
+	}
+	if libraryID == "" {
+		return
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		VALUES (?, ?, 'filesystem', datetime('now'))`,
+		id, libraryID); err != nil {
+		t.Fatalf("seeding artist_libraries for %s: %v", id, err)
 	}
 }
 
@@ -1173,14 +1199,14 @@ func TestDeleteWithArtists_PreservesArtistInOtherLibraries(t *testing.T) {
 		t.Fatalf("Create emby library: %v", err)
 	}
 
-	// Artist in BOTH libraries via membership rows.
+	// Artist in BOTH libraries via membership rows. seedArtist creates the
+	// fs membership; the second INSERT adds the emby one explicitly.
 	seedArtist(t, db, "art-multi", "Radiohead", fsLib.ID)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
-		VALUES ('art-multi', ?, 'filesystem', datetime('now')),
-		       ('art-multi', ?, 'emby', datetime('now'))
-	`, fsLib.ID, embyLib.ID); err != nil {
-		t.Fatalf("seed memberships: %v", err)
+		VALUES ('art-multi', ?, 'emby', datetime('now'))
+	`, embyLib.ID); err != nil {
+		t.Fatalf("seed emby membership: %v", err)
 	}
 	seedPlatformID(t, db, "art-multi", "conn-emby", "emby-radiohead-1")
 
@@ -1497,5 +1523,121 @@ func TestFindForArtistPath(t *testing.T) {
 				t.Errorf("FindForArtistPath(%q) = %q, want %q", tc.artistPath, got.ID, tc.want)
 			}
 		})
+	}
+}
+
+// TestListByConnectionID_AndCountArtists verifies the per-connection helpers
+// after the M:N storage cleanup. CountArtistsByConnectionID joins through
+// artist_libraries, so an artist that belongs to TWO libraries on the same
+// connection must only be counted once (DISTINCT).
+func TestListByConnectionID_AndCountArtists(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Two connections; one of them has two libraries.
+	for _, conn := range []struct{ id, name string }{
+		{"conn-emby", "Emby"},
+		{"conn-jelly", "Jellyfin"},
+	} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES (?, ?, 'emby', 'http://x:8096', 'enc', 1, 'ok', datetime('now'), datetime('now'))
+		`, conn.id, conn.name); err != nil {
+			t.Fatalf("inserting connection %s: %v", conn.id, err)
+		}
+	}
+
+	libs := []*Library{
+		{Name: "Emby Main", Type: TypeRegular, Source: SourceEmby, ConnectionID: "conn-emby", ExternalID: "ext-1"},
+		{Name: "Emby Side", Type: TypeRegular, Source: SourceEmby, ConnectionID: "conn-emby", ExternalID: "ext-2"},
+		{Name: "Jelly Main", Type: TypeRegular, Source: SourceJellyfin, ConnectionID: "conn-jelly", ExternalID: "ext-3"},
+	}
+	for _, lib := range libs {
+		if err := svc.Create(ctx, lib); err != nil {
+			t.Fatalf("Create %s: %v", lib.Name, err)
+		}
+	}
+
+	// ListByConnectionID returns libraries belonging to a connection, sorted by name.
+	embyLibs, err := svc.ListByConnectionID(ctx, "conn-emby")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(conn-emby): %v", err)
+	}
+	if len(embyLibs) != 2 {
+		t.Fatalf("len(embyLibs) = %d, want 2", len(embyLibs))
+	}
+	if embyLibs[0].Name != "Emby Main" || embyLibs[1].Name != "Emby Side" {
+		t.Errorf("embyLibs names = [%q, %q], want [Emby Main, Emby Side]",
+			embyLibs[0].Name, embyLibs[1].Name)
+	}
+
+	jellyLibs, err := svc.ListByConnectionID(ctx, "conn-jelly")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(conn-jelly): %v", err)
+	}
+	if len(jellyLibs) != 1 {
+		t.Fatalf("len(jellyLibs) = %d, want 1", len(jellyLibs))
+	}
+
+	// Empty result for an unknown connection.
+	none, err := svc.ListByConnectionID(ctx, "nope")
+	if err != nil {
+		t.Fatalf("ListByConnectionID(nope): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("len(none) = %d, want 0", len(none))
+	}
+
+	// Insert artists with memberships:
+	//   art-shared belongs to BOTH Emby libraries (must count as 1).
+	//   art-side belongs only to Emby Side.
+	//   art-jelly belongs only to Jelly Main.
+	for _, a := range []struct{ id string }{{"art-shared"}, {"art-side"}, {"art-jelly"}} {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+			VALUES (?, ?, ?, '/music/'||?, datetime('now'), datetime('now'))
+		`, a.id, a.id, a.id, a.id); err != nil {
+			t.Fatalf("inserting artist %s: %v", a.id, err)
+		}
+	}
+	for _, link := range []struct{ artistID, libID string }{
+		{"art-shared", embyLibs[0].ID},
+		{"art-shared", embyLibs[1].ID},
+		{"art-side", embyLibs[1].ID},
+		{"art-jelly", jellyLibs[0].ID},
+	} {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source) VALUES (?, ?, 'filesystem')`,
+			link.artistID, link.libID); err != nil {
+			t.Fatalf("inserting artist_libraries (%s, %s): %v", link.artistID, link.libID, err)
+		}
+	}
+
+	embyCount, err := svc.CountArtistsByConnectionID(ctx, "conn-emby")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(conn-emby): %v", err)
+	}
+	// art-shared (1) + art-side (1) = 2 distinct, even though art-shared has
+	// two membership rows on conn-emby's libraries.
+	if embyCount != 2 {
+		t.Errorf("embyCount = %d, want 2 (DISTINCT artists across both Emby libraries)", embyCount)
+	}
+
+	jellyCount, err := svc.CountArtistsByConnectionID(ctx, "conn-jelly")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(conn-jelly): %v", err)
+	}
+	if jellyCount != 1 {
+		t.Errorf("jellyCount = %d, want 1", jellyCount)
+	}
+
+	zeroCount, err := svc.CountArtistsByConnectionID(ctx, "nope")
+	if err != nil {
+		t.Fatalf("CountArtistsByConnectionID(nope): %v", err)
+	}
+	if zeroCount != 0 {
+		t.Errorf("zeroCount = %d, want 0", zeroCount)
 	}
 }

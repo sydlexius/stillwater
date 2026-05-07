@@ -348,16 +348,13 @@ func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
 	}
 }
 
-// TestHistoryService_ListGlobalOrderMixedTimestampFormats verifies that
-// ListGlobal returns rows in true chronological order even when created_at
-// values are stored in different formats. SQLite's metadata_changes column
-// holds RFC 3339 strings for new rows ("2024-01-15T10:00:00Z") but legacy
-// rows wrote the SQLite default ("2024-01-15 11:00:00"). Lexicographic sort
-// puts the space-separated form after any RFC 3339 form ('T' < ' ' is false:
-// ' ' = 0x20, 'T' = 0x54), so a raw ORDER BY mc.created_at would invert
-// real-world ordering. The query wraps both the WHERE bounds and the
-// ORDER BY in datetime() to normalise both representations.
-func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
+// TestHistoryService_ListGlobalOrderRFC3339 verifies that ListGlobal
+// returns rows in true chronological order. Migration 004 normalised any
+// pre-existing space-separator legacy rows to RFC3339, so the production
+// table holds a single uniform format and a plain TEXT ORDER BY is
+// monotonic without datetime() normalization. This test guards the order
+// against an accidental sort regression.
+func TestHistoryService_ListGlobalOrderRFC3339(t *testing.T) {
 	t.Parallel()
 	svc := setupHistoryTestDB(t)
 	ctx := context.Background()
@@ -370,14 +367,14 @@ func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
 		t.Fatalf("inserting artist: %v", err)
 	}
 
-	// Insert three rows directly so we can control the created_at format.
-	// Expected DESC order (newest first): newer-rfc, middle-sqlite, oldest-rfc.
+	// Three RFC3339 rows; expected DESC order (newest first):
+	// newer, middle, oldest.
 	rows := []struct {
 		id, createdAt string
 	}{
-		{"oldest-rfc", "2024-01-15T08:00:00Z"},
-		{"middle-sqlite", "2024-01-15 09:00:00"}, // legacy SQLite format
-		{"newer-rfc", "2024-01-15T10:00:00Z"},
+		{"oldest", "2024-01-15T08:00:00Z"},
+		{"middle", "2024-01-15T09:00:00Z"},
+		{"newer", "2024-01-15T10:00:00Z"},
 	}
 	for _, r := range rows {
 		if _, err := db.ExecContext(ctx,
@@ -400,7 +397,7 @@ func TestHistoryService_ListGlobalOrderMixedTimestampFormats(t *testing.T) {
 		t.Fatalf("len(changes) = %d, want 3", len(changes))
 	}
 
-	want := []string{"newer-rfc", "middle-sqlite", "oldest-rfc"}
+	want := []string{"newer", "middle", "oldest"}
 	got := []string{changes[0].ID, changes[1].ID, changes[2].ID}
 	for i := range want {
 		if got[i] != want[i] {

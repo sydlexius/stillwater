@@ -341,7 +341,7 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 	}
 
 	// Retrieve the artist and verify metadata was mapped.
-	a, err := r.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := r.artistService.GetByName(ctx, "Radiohead")
 	if err != nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -369,6 +369,12 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 	if a.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
 		t.Errorf("MusicBrainzID = %q, want expected MBID", a.MusicBrainzID)
 	}
+	// M:N membership: populate switched from a library-scoped lookup to
+	// an unscoped GetByName, so this assertion is what now guarantees the
+	// artist_libraries join row was actually inserted alongside the
+	// artists row. A regression that creates only the artist would still
+	// satisfy GetByName above.
+	assertArtistInLibrary(t, r, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
@@ -419,7 +425,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := r.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := r.artistService.GetByName(ctx, "Bjork")
 	if err != nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -438,6 +444,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 	if a.Formed != "1965-11-21T00:00:00.0000000Z" {
 		t.Errorf("Formed = %q, want 1965 date", a.Formed)
 	}
+	assertArtistInLibrary(t, r, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
@@ -508,6 +515,28 @@ func createTestJPEGForHandler(t *testing.T) []byte {
 		t.Fatalf("encoding test jpeg: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// assertArtistInLibrary fails the test unless the artist holds an
+// artist_libraries membership row for the given library. Populate/scan
+// happy-path tests now look up the artist via the unscoped GetByName /
+// GetByMBID path, so this helper is what guarantees the M:N membership
+// was actually inserted -- not just the artists row. A regression that
+// drops the membership insert would still satisfy the unscoped lookup
+// but fail here.
+func assertArtistInLibrary(t *testing.T, r *Router, ctx context.Context, artistID, libraryID string) {
+	t.Helper()
+	memberships, err := r.artistService.LibrariesForArtist(ctx, artistID)
+	if err != nil {
+		t.Fatalf("LibrariesForArtist(%s): %v", artistID, err)
+	}
+	for _, m := range memberships {
+		if m.LibraryID == libraryID {
+			return
+		}
+	}
+	t.Errorf("artist %s missing artist_libraries membership for library %s; got %+v",
+		artistID, libraryID, memberships)
 }
 
 func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
@@ -599,7 +628,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	}
 
 	// Verify artist record has path and thumb flag set.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -609,6 +638,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
@@ -749,7 +779,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	}
 
 	// Verify the image was saved to the cache directory, not an artist path.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "NoPath Artist", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "NoPath Artist")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -771,6 +801,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	if !found {
 		t.Errorf("expected image in cache dir %s, got: %v", cacheDir, entries)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
@@ -862,7 +893,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 		t.Errorf("expected image file in %s, got: %v", artistDir, entries)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Bjork")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
@@ -872,6 +903,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
@@ -977,13 +1009,17 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	}
 
 	// Verify the flag was set.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
 	}
+	// Pre-existing artist was created with this library; membership must
+	// still be present after populate's skip path. A regression that
+	// dropped membership on the skip code-path would fail here.
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestValidatedArtistPath(t *testing.T) {
@@ -1083,13 +1119,14 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.Path != "" {
 		t.Errorf("artist path = %q, want empty (pathless library should not store platform path)", a.Path)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
@@ -1146,13 +1183,14 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.Path != artistDir {
 		t.Errorf("artist path = %q, want %q", a.Path, artistDir)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.T) {
@@ -1202,13 +1240,14 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.Path != "" {
 		t.Errorf("artist path = %q, want empty (path outside library root should be rejected)", a.Path)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
@@ -1277,13 +1316,16 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 	}
 
 	// Verify MBID was backfilled.
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
 		t.Errorf("MusicBrainzID = %q, want backfilled MBID", a.MusicBrainzID)
 	}
+	// MBID-backfill code path is an UPDATE, not a CREATE; the membership
+	// recorded at pre-create time must still be present afterwards.
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
@@ -1530,13 +1572,14 @@ func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
 		t.Errorf("expected fanart1.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Radiohead")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
@@ -1703,13 +1746,14 @@ func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
 		t.Errorf("expected fanart1.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Bjork")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestPopulateFromEmby_NoBackdropsWhenTagsEmpty(t *testing.T) {
@@ -1934,7 +1978,7 @@ func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
 		t.Errorf("updated = %d, want 1", updated)
 	}
 
-	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-001", lib.ID)
+	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-001")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
@@ -2010,7 +2054,7 @@ func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
 		t.Errorf("updated = %d, want 1", updated)
 	}
 
-	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-002", lib.ID)
+	got, err := router.artistService.GetByMBID(ctx, "mbid-scan-002")
 	if err != nil || got == nil {
 		t.Fatalf("looking up artist after scan: %v", err)
 	}
@@ -2107,13 +2151,14 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 		t.Errorf("expected backdrop2.jpg to exist: %v", err)
 	}
 
-	a, err := router.artistService.GetByNameAndLibrary(ctx, "Sigur Ros", lib.ID)
+	a, err := router.artistService.GetByName(ctx, "Sigur Ros")
 	if err != nil || a == nil {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
+	assertArtistInLibrary(t, router, ctx, a.ID, lib.ID)
 }
 
 func TestImportLibraries_AutoPopulate(t *testing.T) {
@@ -2531,14 +2576,9 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 	if fsPlatformID != "" {
 		t.Errorf("filesystem artist platform ID = %q, want empty (UNIQUE index forbids duplicate mapping)", fsPlatformID)
 	}
-	embyArtistRow, err := router.artistService.GetByNameAndLibrary(ctx, "VERIDIA", embyLib.ID)
-	if err != nil {
-		t.Fatalf("GetByNameAndLibrary (emby): %v", err)
-	}
-	if embyArtistRow == nil {
-		t.Fatal("scanFromEmby should have created the Emby-library artist row")
-	}
-	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtistRow.ID, "conn-emby-1")
+	// The scan resolves the Emby-library artist via membership; assert
+	// that the platform mapping landed on that row directly.
+	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
 	if err != nil {
 		t.Fatalf("GetPlatformID (emby): %v", err)
 	}
@@ -2570,6 +2610,387 @@ func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
 		"conn-emby-1", "emby-999", embyLib, nil)
 	if a != nil {
 		t.Errorf("expected nil, got %+v", a)
+	}
+}
+
+// TestResolveAndBackfillPlatformID_StopsOnScopedLookupError verifies that a
+// real DB/load failure inside the library-scoped lookup short-circuits the
+// resolver: the unscoped fallback must NOT run, no platform-id mapping is
+// stored, and the function returns nil. This guards the safety contract that
+// callers rely on during the M:N transitional state -- a transient scoped
+// query error must never silently fall back to an unscoped match that could
+// attach the platform id to a sibling-library artist.
+//
+// The test forces the scoped query to fail by dropping the artist_libraries
+// table after seeding everything else. The unscoped path (GetByMBID against
+// the artists + artist_provider_ids tables) remains functional, so if the
+// short-circuit ever regresses, the unscoped match would resolve and
+// SetPlatformID would land a mapping -- the assertion below would catch it.
+func TestResolveAndBackfillPlatformID_StopsOnScopedLookupError(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// Seed an artist + MBID mapping that the UNSCOPED lookup would resolve.
+	// If short-circuit breaks, this artist gets a platform mapping and the
+	// final assertion fails.
+	const mbid = "11111111-1111-1111-1111-111111111111"
+	unscopedArtist := &artist.Artist{
+		Name:          "Backstop Artist",
+		SortName:      "Backstop Artist",
+		MusicBrainzID: mbid,
+		Path:          "/music/backstop",
+	}
+	if err := router.artistService.Create(ctx, unscopedArtist); err != nil {
+		t.Fatalf("creating unscoped artist: %v", err)
+	}
+
+	// Force the scoped query to fail without breaking the unscoped path.
+	// lookupByMBIDInLibrary joins artist_libraries; dropping it makes that
+	// query error. GetByMBID (used by the unscoped fallback) hits artists +
+	// artist_provider_ids only and is unaffected.
+	if _, err := router.db.ExecContext(ctx, `DROP TABLE artist_libraries`); err != nil {
+		t.Fatalf("dropping artist_libraries: %v", err)
+	}
+
+	a := router.resolveAndBackfillPlatformID(ctx,
+		mbid, "Backstop Artist",
+		"conn-emby-1", "emby-backstop-001", embyLib, nil)
+	if a != nil {
+		t.Errorf("expected nil, got %+v", a)
+	}
+
+	// If the unscoped fallback ran, SetPlatformID would have stored a row
+	// mapping unscopedArtist.ID -> emby-backstop-001 for conn-emby-1. Read
+	// the mapping directly via the DB so we do not depend on service-layer
+	// queries that also touch artist_libraries (which we just dropped).
+	var count int
+	if err := router.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = ? AND connection_id = ?`,
+		unscopedArtist.ID, "conn-emby-1").Scan(&count); err != nil {
+		t.Fatalf("counting platform ids: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 platform-id rows after short-circuit, got %d", count)
+	}
+}
+
+// TestFindArtistInLibrary_HitByMBID covers the success path of
+// lookupByMBIDInLibrary: an artist with an MBID provider row AND a membership
+// in the target library is returned. Pins the M:N membership-join behavior
+// after the legacy artists.library_id column was dropped.
+func TestFindArtistInLibrary_HitByMBID(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Veridia",
+		SortName:  "Veridia",
+		LibraryID: embyLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Attach an MBID provider row so the MBID lookup matches.
+	if _, err := router.db.ExecContext(ctx, `
+		INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+		VALUES (?, 'musicbrainz', ?)
+	`, a.ID, "11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("inserting provider id: %v", err)
+	}
+
+	got, err := router.findArtistInLibrary(ctx, "11111111-1111-1111-1111-111111111111", "Veridia", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected hit, got nil")
+	}
+	if got.ID != a.ID {
+		t.Errorf("got.ID = %q, want %q", got.ID, a.ID)
+	}
+}
+
+// TestFindArtistInLibrary_HitByName covers the case-insensitive fallback path
+// (lookupByNameInLibrary) when no MBID is provided.
+func TestFindArtistInLibrary_HitByName(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Mixed Case Band",
+		SortName:  "Mixed Case Band",
+		LibraryID: embyLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Lookup with a different case should still match (LOWER on both sides).
+	got, err := router.findArtistInLibrary(ctx, "", "MIXED CASE BAND", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected hit, got nil")
+	}
+	if got.ID != a.ID {
+		t.Errorf("got.ID = %q, want %q", got.ID, a.ID)
+	}
+}
+
+// TestFindArtistInLibrary_NoMatchReturnsNil verifies the (nil, nil) "genuine
+// no match" contract that callers depend on to fall back to unscoped lookup.
+func TestFindArtistInLibrary_NoMatchReturnsNil(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	got, err := router.findArtistInLibrary(ctx, "00000000-0000-0000-0000-000000000000", "Nobody", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+
+	// MBID empty + no name => early return (nil, nil) without query.
+	got, err = router.findArtistInLibrary(ctx, "", "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary empty: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for empty inputs, got %+v", got)
+	}
+}
+
+// TestFindArtistInLibrary_CrossLibraryMissReturnsNil pins the M:N scoping
+// guarantee: an artist that exists with the requested MBID/name BUT only in
+// a different library must NOT match the lookup. Without the al.library_id
+// filter on artist_libraries, the JOIN would surface the wrong artist and
+// the per-library scoping behavior would silently regress.
+func TestFindArtistInLibrary_CrossLibraryMissReturnsNil(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Two libraries on two different connections; the search target is
+	// embyLib but every artist we plant lives in otherLib only.
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	addTestConnection(t, router, "conn-emby-2", "Other Emby", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+	otherLib := &library.Library{
+		Name:         "Other Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-2",
+		ExternalID:   "emby-lib-2",
+	}
+	if err := router.libraryService.Create(ctx, otherLib); err != nil {
+		t.Fatalf("creating other library: %v", err)
+	}
+
+	// Artist 1: matches by MBID, but only in otherLib.
+	mbidArtist := &artist.Artist{
+		Name:      "MBID Only",
+		SortName:  "MBID Only",
+		LibraryID: otherLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, mbidArtist); err != nil {
+		t.Fatalf("creating mbid artist: %v", err)
+	}
+	if _, err := router.db.ExecContext(ctx, `
+		INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+		VALUES (?, 'musicbrainz', ?)
+	`, mbidArtist.ID, "22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("inserting provider id: %v", err)
+	}
+
+	// Artist 2: matches by name, but only in otherLib.
+	nameArtist := &artist.Artist{
+		Name:      "Name Only",
+		SortName:  "Name Only",
+		LibraryID: otherLib.ID,
+		Path:      t.TempDir(),
+	}
+	if err := router.artistService.Create(ctx, nameArtist); err != nil {
+		t.Fatalf("creating name artist: %v", err)
+	}
+
+	// MBID lookup scoped to embyLib must miss even though the MBID exists
+	// in otherLib. Without the library_id filter on artist_libraries, the
+	// JOIN would return the otherLib artist and silently violate scoping.
+	got, err := router.findArtistInLibrary(ctx,
+		"22222222-2222-2222-2222-222222222222", "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by mbid: %v", err)
+	}
+	if got != nil {
+		t.Errorf("MBID cross-library lookup returned %+v, want nil", got)
+	}
+
+	// Name lookup scoped to embyLib must also miss.
+	got, err = router.findArtistInLibrary(ctx, "", "Name Only", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by name: %v", err)
+	}
+	if got != nil {
+		t.Errorf("name cross-library lookup returned %+v, want nil", got)
+	}
+}
+
+// TestFindArtistInLibrary_DeterministicOrdering pins the
+// ORDER BY datetime(a.created_at), a.id determinism for both lookup paths.
+// Two artists in the same library share the same MBID (and the same name)
+// but were inserted with mixed-format created_at timestamps. The lookup
+// must always return the chronologically older row, even though the legacy
+// "YYYY-MM-DD HH:MM:SS" form sorts AFTER an "T"-separated RFC3339 form
+// under raw TEXT comparison.
+func TestFindArtistInLibrary_DeterministicOrdering(t *testing.T) {
+	t.Parallel()
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// olderArtist: RFC3339 timestamp at 00:30Z (earlier).
+	// newerArtist: legacy SQLite timestamp at 23:00 (later).
+	// Raw TEXT comparison would order "2024-01-15 23:00:00" BEFORE
+	// "2024-01-15T00:30:00Z" because ' ' (0x20) < 'T' (0x54), so without
+	// datetime() normalization the wrong row would win.
+	olderID := "older-artist"
+	newerID := "newer-artist"
+	mbid := "33333333-3333-3333-3333-333333333333"
+	dupName := "Duplicate Band"
+
+	for _, row := range []struct {
+		id, createdAt string
+	}{
+		{olderID, "2024-01-15T00:30:00Z"}, // RFC3339, chronologically EARLIER
+		{newerID, "2024-01-15 23:00:00"},  // legacy SQLite, chronologically LATER
+	} {
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artists (id, name, sort_name, path, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			row.id, dupName, dupName, t.TempDir(), row.createdAt, row.createdAt); err != nil {
+			t.Fatalf("inserting %s: %v", row.id, err)
+		}
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+			 VALUES (?, ?, 'manual', ?)`,
+			row.id, embyLib.ID, row.createdAt); err != nil {
+			t.Fatalf("seeding membership for %s: %v", row.id, err)
+		}
+		if _, err := router.db.ExecContext(ctx,
+			`INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+			 VALUES (?, 'musicbrainz', ?)`,
+			row.id, mbid); err != nil {
+			t.Fatalf("inserting provider id for %s: %v", row.id, err)
+		}
+	}
+
+	// MBID lookup: must return the chronologically older RFC3339 row.
+	got, err := router.findArtistInLibrary(ctx, mbid, "", embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by mbid: %v", err)
+	}
+	if got == nil || got.ID != olderID {
+		var gotID string
+		if got != nil {
+			gotID = got.ID
+		}
+		t.Errorf("MBID lookup ID = %q, want %q (datetime() must normalize mixed formats)",
+			gotID, olderID)
+	}
+
+	// Name lookup: same determinism guarantee.
+	got, err = router.findArtistInLibrary(ctx, "", dupName, embyLib.ID)
+	if err != nil {
+		t.Fatalf("findArtistInLibrary by name: %v", err)
+	}
+	if got == nil || got.ID != olderID {
+		var gotID string
+		if got != nil {
+			gotID = got.ID
+		}
+		t.Errorf("name lookup ID = %q, want %q (datetime() must normalize mixed formats)",
+			gotID, olderID)
 	}
 }
 

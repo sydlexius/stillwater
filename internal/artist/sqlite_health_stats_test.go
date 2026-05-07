@@ -136,6 +136,8 @@ func TestHealthStats_LibraryFilter(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	seedLibraries(t, db, "lib-1", "lib-2")
+
 	lib1 := &Artist{
 		Name:        "Library1 Artist",
 		SortName:    "Library1 Artist",

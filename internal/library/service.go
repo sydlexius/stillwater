@@ -207,28 +207,11 @@ func (s *Service) ClearConnectionID(ctx context.Context, connectionID string) er
 }
 
 // Delete removes a library by ID. Artists are preserved; their membership
-// rows in artist_libraries cascade-delete via the FK. this is
+// rows in artist_libraries cascade-delete via the FK. This is
 // the "unlink only" path, where the user wants to disconnect the library
 // but keep the artists (which may still be observed by other libraries).
-//
-// The legacy artists.library_id column is also cleared for any artist that
-// pointed at the deleted library, so older code paths that still read the
-// orphan column do not see a dangling FK. The column will be removed in
-// the final phase.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("starting transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	// Soft-deprecation cleanup for the orphan artists.library_id column.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE artists SET library_id = NULL WHERE library_id = ?`, id); err != nil {
-		return fmt.Errorf("clearing artist references: %w", err)
-	}
-
-	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("deleting library: %w", err)
 	}
@@ -236,28 +219,30 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if rows == 0 {
 		return fmt.Errorf("library not found: %s", id)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing delete: %w", err)
-	}
 	return nil
 }
 
-// CountArtists returns the number of artists assigned to a library.
+// CountArtists returns the number of distinct artists assigned to a
+// library. The PRIMARY KEY (artist_id, library_id) on artist_libraries
+// already guarantees one-row-per-artist for a given library, so
+// COUNT(DISTINCT artist_id) is mathematically equivalent to COUNT(*) on
+// today's schema. The DISTINCT spelling is kept because it expresses
+// the intent of the function literally and stays correct under any
+// future schema change that loosens the PK (for example, splitting the
+// PK into (artist_id, library_id, source)).
 func (s *Service) CountArtists(ctx context.Context, libraryID string) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM artists WHERE library_id = ?`, libraryID).Scan(&count)
+		`SELECT COUNT(DISTINCT artist_id) FROM artist_libraries WHERE library_id = ?`, libraryID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting artists for library: %w", err)
 	}
 	return count, nil
 }
 
-// collectUnlinkCandidates returns the union of artist IDs that hold a
-// membership row in the about-to-be-deleted library and artist IDs whose
-// legacy artists.library_id column points at it. Split out so the rows
-// scopes can use defer (sqlclosecheck-friendly).
+// collectUnlinkCandidates returns the artist IDs that currently hold a
+// membership row in the about-to-be-deleted library. Split out so the
+// rows scope can use defer (sqlclosecheck-friendly).
 func collectUnlinkCandidates(ctx context.Context, tx *sql.Tx, libraryID string) ([]string, error) {
 	candidates := []string{}
 	seen := make(map[string]bool)
@@ -281,45 +266,22 @@ func collectUnlinkCandidates(ctx context.Context, tx *sql.Tx, libraryID string) 
 	if err := memberRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating memberships: %w", err)
 	}
-
-	legacyRows, err := tx.QueryContext(ctx,
-		`SELECT id FROM artists WHERE library_id = ?`, libraryID)
-	if err != nil {
-		return nil, fmt.Errorf("listing legacy library_id artists: %w", err)
-	}
-	defer legacyRows.Close() //nolint:errcheck
-	for legacyRows.Next() {
-		var aid string
-		if err := legacyRows.Scan(&aid); err != nil {
-			return nil, fmt.Errorf("scanning legacy artist row: %w", err)
-		}
-		if !seen[aid] {
-			candidates = append(candidates, aid)
-			seen[aid] = true
-		}
-	}
-	if err := legacyRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating legacy artist rows: %w", err)
-	}
 	return candidates, nil
 }
 
 // DeleteWithArtists removes a library and prunes artists that have no
-// other home. Membership-based for the M:N model, with a fallback prune
-// for legacy connection-orphan rows that predate artist_libraries:
+// other home.
 //
 // - Membership prune: for each artist with a membership
 // in the deleted library, if zero memberships remain after the
 // cascade AND zero platform mappings exist, drop the artist row.
 // Artists with sibling-library memberships or live platform mappings
 // elsewhere survive.
-// - Connection-orphan prune (carryover): when the deleted
-// library was the last library on its connection, also drop artists
-// whose only platform mapping is on that connection and who had no
-// library_id assignment. These are legacy data shapes that the
-// migration backfill could not see (no library_id to copy from).
-// The "last library on connection" guard avoids deleting data that a
-// sibling library still legitimately references.
+// - Connection-orphan prune: when the deleted library was the last
+// library on its connection, also drop artists whose only platform
+// mapping is on that connection. The "last library on connection"
+// guard avoids deleting data that a sibling library still legitimately
+// references.
 //
 // Order matters: the membership snapshot is taken BEFORE the library
 // delete fires the cascade.
@@ -344,14 +306,6 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Soft-deprecation cleanup: the orphan artists.library_id FK still
-	// blocks the library delete on legacy / test rows that point at it.
-	// Clear it before the delete; final phase removes the column.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE artists SET library_id = NULL WHERE library_id = ?`, id); err != nil {
-		return fmt.Errorf("clearing legacy library_id refs: %w", err)
-	}
-
 	// Drop the library. CASCADE removes its artist_libraries rows.
 	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
@@ -374,8 +328,8 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	}
 
 	// Candidate prune: an artist is a candidate iff it had explicit
-	// presence in the deleted library (membership row OR legacy library_id
-	// pointer). Keep it if it has any other home: a remaining membership
+	// presence in the deleted library (membership row). Keep it if it
+	// has any other home: a remaining membership
 	// in some other library, OR a platform mapping on a connection other
 	// than the deleted library's connection. Mappings on the SAME
 	// connection do not count as "other home" because the user has just
@@ -413,25 +367,14 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	}
 
 	// Connection-orphan sweep for artists never in candidateIDs (no
-	// membership row, no library_id pointer, but a mapping on the
-	// just-unlinked connection). Legacy case.
-	//
-	// The COALESCE(a.library_id, '') = '' guard is required during partial
-	// migration: the lines above only cleared library_id pointing at the
-	// library being deleted, so an artist can still legitimately reference
-	// some other surviving library through the legacy column. Without
-	// this guard, a connection-library unlink would silently delete those
-	// artists when their only artist_libraries row had not yet been
-	// backfilled.
+	// membership row, but a mapping on the just-unlinked connection).
 	if connOrphanPruneAllowed {
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM artists
 			WHERE id IN (
 				SELECT ap.artist_id
 				FROM artist_platform_ids ap
-				JOIN artists a ON a.id = ap.artist_id
 				WHERE ap.connection_id = ?
-				 AND COALESCE(a.library_id, '') = ''
 				 AND ap.artist_id NOT IN (
 					SELECT artist_id FROM artist_libraries
 				 )
@@ -503,12 +446,16 @@ func (s *Service) ListByConnectionID(ctx context.Context, connectionID string) (
 	return libs, rows.Err()
 }
 
-// CountArtistsByConnectionID returns the total number of artists across all
-// libraries belonging to a connection.
+// CountArtistsByConnectionID returns the total number of distinct artists
+// across all libraries belonging to a connection. Membership of record
+// lives in artist_libraries.
 func (s *Service) CountArtistsByConnectionID(ctx context.Context, connectionID string) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM artists WHERE library_id IN (SELECT id FROM libraries WHERE connection_id = ?)`,
+		`SELECT COUNT(DISTINCT al.artist_id)
+		FROM artist_libraries al
+		JOIN libraries l ON l.id = al.library_id
+		WHERE l.connection_id = ?`,
 		connectionID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("counting artists for connection: %w", err)

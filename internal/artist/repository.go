@@ -18,17 +18,9 @@ type Repository interface {
 	GetByName(ctx context.Context, name string) (*Artist, error)
 
 	// FindByMBIDOrNameUnscoped performs unscoped MBID-then-name lookup,
-	// matching the dedupe priority used by connection populates. Replaces
-	// the library-scoped FindByMBIDOrName.
+	// matching the dedupe priority used by connection populates.
 	FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error)
 
-	// Deprecated: use GetByMBID. The library-scoped variant remains while
-	// legacy populate paths are migrated; remove with the M:N cleanup.
-	GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error)
-	// Deprecated: use GetByName. See GetByMBIDAndLibrary above.
-	GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error)
-	// Deprecated: use FindByMBIDOrNameUnscoped. See GetByMBIDAndLibrary above.
-	FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error)
 	GetByPath(ctx context.Context, path string) (*Artist, error)
 	List(ctx context.Context, params ListParams) ([]Artist, int, error)
 	// Count returns the total number of artists matching the given filters

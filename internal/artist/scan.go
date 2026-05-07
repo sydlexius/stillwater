@@ -9,10 +9,13 @@ import (
 
 // artistColumns is the ordered list of columns for SELECT queries.
 // Provider IDs are stored in artist_provider_ids, image metadata in artist_images.
+// Library membership lives in artist_libraries; Artist.LibraryID is hydrated
+// post-scan via Service.hydratePrimaryLibrary so call sites that read the
+// runtime-only field still see a value derived from the M:N table.
 const artistColumns = `id, name, sort_name, type, gender, origin, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
-	path, library_id, nfo_exists,
+	path, nfo_exists,
 	health_score, health_evaluated_at, dirty_since, rules_evaluated_at, is_excluded, exclusion_reason, is_classical,
 	locked, lock_source, locked_at, locked_fields,
 	metadata_sources,
@@ -34,7 +37,6 @@ type scannedArtist struct {
 	genres            string
 	styles            string
 	moods             string
-	libraryID         sql.NullString
 	metadataSources   string
 	healthEvaluatedAt sql.NullString
 	dirtySince        sql.NullString
@@ -56,7 +58,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Origin, &s.a.Disambiguation,
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
-		&s.a.Path, &s.libraryID, &s.nfo,
+		&s.a.Path, &s.nfo,
 		&s.a.HealthScore, &s.healthEvaluatedAt, &s.dirtySince, &s.rulesEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
 		&s.locked, &s.a.LockSource, &s.lockedAt, &s.lockedFields,
 		&s.metadataSources,
@@ -67,9 +69,6 @@ func (s *scannedArtist) scanPtrs() []any {
 
 // apply converts intermediate scan values into the Artist struct fields.
 func (s *scannedArtist) apply() {
-	if s.libraryID.Valid {
-		s.a.LibraryID = s.libraryID.String
-	}
 	s.a.Genres = UnmarshalStringSlice(s.genres)
 	s.a.Styles = UnmarshalStringSlice(s.styles)
 	s.a.Moods = UnmarshalStringSlice(s.moods)
@@ -216,18 +215,14 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 
 	if params.LibraryID != "" {
-		// Match either via the M:N membership table or the legacy
-		// library_id column, so artists created before the membership
-		// rollout still appear in per-library queries until phase 7
-		// drops the column.
-		conditions = append(conditions, `(
-			EXISTS (
-				SELECT 1 FROM artist_libraries al
-				WHERE al.artist_id = artists.id AND al.library_id = ?
-			)
-			OR artists.library_id = ?
+		// Match via the M:N membership table. The legacy artists.library_id
+		// column was dropped in migration 004; artist_libraries is the
+		// authoritative membership record.
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = artists.id AND al.library_id = ?
 		)`)
-		args = append(args, params.LibraryID, params.LibraryID)
+		args = append(args, params.LibraryID)
 	}
 
 	switch params.Filter {
@@ -360,37 +355,25 @@ func buildWhereClause(params ListParams) (string, []any) {
 	}
 	if len(libIncludes) > 0 {
 		ph := strings.Repeat("?,", len(libIncludes))
-		// Union semantics: match if the artist has membership in ANY of
-		// the included libraries OR the legacy column points at one.
-		// Drop the legacy branch in the column-removal phase.
-		conditions = append(conditions, `(
-			EXISTS (
-				SELECT 1 FROM artist_libraries al
-				WHERE al.artist_id = artists.id
-				  AND al.library_id IN (`+ph[:len(ph)-1]+`)
-			)
-			OR artists.library_id IN (`+ph[:len(ph)-1]+`)
+		// Match artists with membership in ANY of the included libraries.
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = artists.id
+			  AND al.library_id IN (`+ph[:len(ph)-1]+`)
 		)`)
-		for _, id := range libIncludes {
-			args = append(args, id)
-		}
 		for _, id := range libIncludes {
 			args = append(args, id)
 		}
 	}
 	if len(libExcludes) > 0 {
 		ph := strings.Repeat("?,", len(libExcludes))
-		// Drop artists with membership OR legacy pointer in any excluded
-		// library. Artists with neither pass through (nothing to exclude),
-		// matching the prior "IS NULL OR NOT IN" semantic.
+		// Drop artists with membership in any excluded library. Artists
+		// with no membership in the excluded set pass through.
 		conditions = append(conditions, `NOT EXISTS (
 			SELECT 1 FROM artist_libraries al
 			WHERE al.artist_id = artists.id
 			  AND al.library_id IN (`+ph[:len(ph)-1]+`)
-		) AND (artists.library_id IS NULL OR artists.library_id NOT IN (`+ph[:len(ph)-1]+`))`)
-		for _, id := range libExcludes {
-			args = append(args, id)
-		}
+		)`)
 		for _, id := range libExcludes {
 			args = append(args, id)
 		}

@@ -959,9 +959,15 @@ func readPasswordNoEcho() (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
-// backfillDefaultLibrary ensures at least one library exists and all artists
-// have a library_id set. Returns the default library ID for the scanner.
+// backfillDefaultLibrary ensures at least one library exists. Returns the
+// default library ID for the scanner. Assignment of "orphaned" artists
+// (artists without a membership row) is no longer performed here: the
+// legacy artists.library_id column was dropped in migration 004 and
+// artist_libraries is the authoritative membership record. Newly
+// scanned artists pick up a membership via Service.Create's
+// AddDerivingSource path.
 func backfillDefaultLibrary(ctx context.Context, libService *library.Service, musicPath string, db *sql.DB, logger *slog.Logger) string {
+	_ = db // legacy parameter retained for call-site stability
 	libs, err := libService.List(ctx)
 	if err != nil {
 		logger.Error("listing libraries for backfill", "error", err)
@@ -1007,27 +1013,7 @@ func backfillDefaultLibrary(ctx context.Context, libService *library.Service, mu
 		defaultID = lib.ID
 	}
 
-	// Assign orphaned artists (library_id IS NULL) to the default library
-	count := assignOrphanedArtists(ctx, db, defaultID, logger)
-	if count > 0 {
-		logger.Info("assigned orphaned artists to library",
-			slog.String("library_id", defaultID),
-			slog.Int64("count", count))
-	}
-
 	return defaultID
-}
-
-// assignOrphanedArtists sets library_id on all artists where it is currently NULL.
-func assignOrphanedArtists(ctx context.Context, db *sql.DB, libraryID string, logger *slog.Logger) int64 {
-	result, err := db.ExecContext(ctx,
-		`UPDATE artists SET library_id = ? WHERE library_id IS NULL`, libraryID)
-	if err != nil {
-		logger.Error("assigning orphaned artists", "error", err)
-		return 0
-	}
-	n, _ := result.RowsAffected()
-	return n
 }
 
 // loadDBLoggingConfig reads logging settings from the DB and reconfigures the

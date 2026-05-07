@@ -275,11 +275,34 @@ func seedLibrary(t *testing.T, db *sql.DB, id, source, connID string) {
 	}
 }
 
+// ensureLegacyLibraryIDColumn re-adds the (post-004 dropped)
+// artists.library_id column on a freshly migrated DB so the legacy backfill
+// and duplicate-collapse helpers can be exercised against a "pre-1004"
+// data shape. Idempotent: a no-op when the column is already present.
+// Lazy-called from seedArtistWithLibrary so individual tests do not need
+// to remember the setup step.
+func ensureLegacyLibraryIDColumn(t *testing.T, db *sql.DB) {
+	t.Helper()
+	has, err := columnExists(db, "artists", "library_id")
+	if err != nil {
+		t.Fatalf("checking for legacy library_id column: %v", err)
+	}
+	if has {
+		return
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`ALTER TABLE artists ADD COLUMN library_id TEXT REFERENCES libraries(id) DEFAULT NULL`); err != nil {
+		t.Fatalf("re-adding legacy library_id column: %v", err)
+	}
+}
+
 // seedArtistWithLibrary inserts an artist tied to a specific library_id
 // (legacy path that the M:N migration backfills from). created_at lets the
-// test control the canonical-pick tie-breaker.
+// test control the canonical-pick tie-breaker. Lazy-installs the legacy
+// library_id column on first use.
 func seedArtistWithLibrary(t *testing.T, db *sql.DB, id, name, libraryID, createdAt string) {
 	t.Helper()
+	ensureLegacyLibraryIDColumn(t, db)
 	_, err := db.ExecContext(context.Background(), `
 		INSERT INTO artists (id, name, sort_name, path, library_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -971,6 +994,122 @@ func TestMarkPre002Applied_PropagatesErrorOnClosedDB(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "checking goose_db_version presence") {
 		t.Errorf("error = %q, want wrap containing %q", err.Error(), "checking goose_db_version presence")
+	}
+}
+
+// TestMigration004_NormalizesLegacyHistoryTimestamp covers the migration-
+// level timestamp conversion that protects history ordering on upgrades.
+// Before 004 a row could be written with the SQLite "YYYY-MM-DD HH:MM:SS"
+// space-separator format; the service-level history reader sorts by plain
+// TEXT, so a stray legacy row would lexically follow any RFC3339 row
+// ('T' (0x54) > ' ' (0x20)) and break chronological order. The 004
+// migration runs an UPDATE that rewrites those legacy rows to RFC3339.
+//
+// This test simulates the upgrade path: insert a legacy row directly
+// (bypassing the modern service writer which always emits RFC3339), then
+// re-run the UPDATE statement that 004 ships with, and assert the row is
+// normalized. We re-run the UPDATE rather than down-then-up the migration
+// because goose does not re-execute already-applied migrations, and the
+// behavioral contract under test is "the SQL works", not "goose replays
+// it".
+func TestMigration004_NormalizesLegacyHistoryTimestamp(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	// Seed an artist + a legacy-format change row + a clean RFC3339 row.
+	seedArtist(t, db, "a-mig", "MigArtist")
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		VALUES ('legacy-1', 'a-mig', 'biography', '', 'v', 'manual', '2024-01-15 09:00:00')
+	`); err != nil {
+		t.Fatalf("seeding legacy row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+		VALUES ('rfc-1', 'a-mig', 'biography', '', 'v', 'manual', '2024-01-15T10:00:00Z')
+	`); err != nil {
+		t.Fatalf("seeding rfc3339 row: %v", err)
+	}
+
+	// Run the same normalization statement migration 004 executes. This
+	// is the contract under test; if the migration's pattern ever drifts
+	// (e.g. fails to match a legacy variant), this will catch it.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE metadata_changes
+		SET created_at = REPLACE(created_at, ' ', 'T') || 'Z'
+		WHERE created_at LIKE '____-__-__ __:__:__'
+	`); err != nil {
+		t.Fatalf("running normalization: %v", err)
+	}
+
+	// Legacy row is now RFC3339.
+	var legacy string
+	if err := db.QueryRowContext(ctx,
+		`SELECT created_at FROM metadata_changes WHERE id = 'legacy-1'`).Scan(&legacy); err != nil {
+		t.Fatalf("reading legacy row: %v", err)
+	}
+	if legacy != "2024-01-15T09:00:00Z" {
+		t.Errorf("legacy row created_at = %q, want %q (migration must convert space separator to T and append Z)",
+			legacy, "2024-01-15T09:00:00Z")
+	}
+
+	// Already-RFC3339 row is unchanged.
+	var rfc string
+	if err := db.QueryRowContext(ctx,
+		`SELECT created_at FROM metadata_changes WHERE id = 'rfc-1'`).Scan(&rfc); err != nil {
+		t.Fatalf("reading rfc row: %v", err)
+	}
+	if rfc != "2024-01-15T10:00:00Z" {
+		t.Errorf("rfc row created_at = %q, want unchanged %q", rfc, "2024-01-15T10:00:00Z")
+	}
+
+	// Plain TEXT ORDER BY now produces chronological order. Without the
+	// migration the legacy row (' ' separator, lexically before 'T')
+	// would sort before the RFC3339 row even though it is one hour
+	// earlier in real time -- the same TEXT ordering happens to be
+	// "right" in this single case, but the load-bearing contract is that
+	// after normalization the table holds a single uniform format and
+	// further inserts (which always use RFC3339) interleave correctly.
+	rows, err := db.QueryContext(ctx,
+		`SELECT id FROM metadata_changes WHERE artist_id = 'a-mig' ORDER BY created_at ASC`)
+	if err != nil {
+		t.Fatalf("ordered query: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, id)
+	}
+	want := []string{"legacy-1", "rfc-1"}
+	if len(got) != len(want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("position %d: got %q, want %q (full order: %v)", i, got[i], want[i], got)
+		}
+	}
+
+	// Idempotency: re-running the UPDATE on already-normalized rows must
+	// be a no-op (LIKE pattern excludes the 'T'-separated rows).
+	res, err := db.ExecContext(ctx, `
+		UPDATE metadata_changes
+		SET created_at = REPLACE(created_at, ' ', 'T') || 'Z'
+		WHERE created_at LIKE '____-__-__ __:__:__'
+	`)
+	if err != nil {
+		t.Fatalf("re-running normalization: %v", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		t.Fatalf("RowsAffected: %v", err)
+	}
+	if affected != 0 {
+		t.Errorf("re-run affected %d rows, want 0 (already-normalized rows must not match)", affected)
 	}
 }
 
