@@ -1026,6 +1026,26 @@ func TestResetPriorities(t *testing.T) {
 	if afterCount != 0 {
 		t.Errorf("expected 0 provider.priority.* rows after reset, got %d", afterCount)
 	}
+
+	// Service contract: after reset, GetPriorities must equal DefaultPriorities
+	// (same length, same Field per index, and an empty Disabled set since the
+	// reset clears all overrides).
+	got, err := svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities after reset: %v", err)
+	}
+	defaults := DefaultPriorities()
+	if len(got) != len(defaults) {
+		t.Fatalf("expected %d priority entries after reset, got %d", len(defaults), len(got))
+	}
+	for i, d := range defaults {
+		if got[i].Field != d.Field {
+			t.Errorf("priority[%d]: expected Field %q, got %q", i, d.Field, got[i].Field)
+		}
+		if len(got[i].Disabled) != 0 {
+			t.Errorf("priority[%d] (%s): expected empty Disabled, got %v", i, d.Field, got[i].Disabled)
+		}
+	}
 }
 
 // TestResetPrioritiesDBError covers the wrapped-error path by closing the
@@ -1087,10 +1107,12 @@ func TestResetPrioritiesPreservesEnabledWebSearch(t *testing.T) {
 		t.Fatalf("GetPriorities: %v", err)
 	}
 	imageFields := map[string]bool{"thumb": true, "fanart": true, "logo": true, "banner": true}
+	seen := map[string]bool{}
 	for _, p := range priorities {
 		if !imageFields[p.Field] {
 			continue
 		}
+		seen[p.Field] = true
 		found := false
 		for _, name := range p.Providers {
 			if name == wsName {
@@ -1100,6 +1122,14 @@ func TestResetPrioritiesPreservesEnabledWebSearch(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("image field %s missing enabled web search provider %s after reset; got %v", p.Field, wsName, p.Providers)
+		}
+	}
+	// If an expected image field is absent from GetPriorities entirely, the
+	// loop above silently passes; assert each one was observed so missing
+	// fields fail the test.
+	for field := range imageFields {
+		if !seen[field] {
+			t.Errorf("expected image field %s in GetPriorities after reset, but it was missing", field)
 		}
 	}
 
