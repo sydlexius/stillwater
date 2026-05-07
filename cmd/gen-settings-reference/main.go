@@ -571,6 +571,14 @@ var noiseTokens = []string{
 	// description_line2. These compose at render-time and aren't per-control
 	// content the docs reader can navigate to.
 	"description_line",
+	// Sub-section ContextHelp popover prose attached to a parent section by
+	// the in-app help-icon convention (e.g. settings.rules.help_nfo backs the
+	// NFO category header's popover). Distinct from section-level .help which
+	// is handled by buildSections. Substring match catches help_nfo, help_image,
+	// help_metadata, and any future per-sub-section help_X variants without
+	// false-matching real settings keys (no settings name happens to contain
+	// the literal "help_" today).
+	"help_",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens

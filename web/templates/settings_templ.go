@@ -3791,19 +3791,19 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 						}
 					}
 					if cat == "nfo" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).", "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-nfo", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_nfo"), "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 					if cat == "image" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.", "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-image", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_image"), "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 					if cat == "metadata" {
-						templ_7745c5c3_Err = components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.", "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.ContextHelp("help-rules-metadata", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_metadata"), "settings-rules-rules").Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -3860,7 +3860,7 @@ func SettingsPage(assets AssetPaths, data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.", "settings-rules-rule-schedule").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-rule-schedule", t(ctx, "settings.rule_schedule.title"), t(ctx, "settings.rule_schedule.help"), "settings-rules-rule-schedule").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
