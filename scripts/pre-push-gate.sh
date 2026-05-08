@@ -19,6 +19,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "=== Conflict markers (tracked files) ==="
+# Catch unresolved merge markers across every tracked file regardless of
+# extension. Mkdocs.yml conflict in PR #1357 round 1 slipped through because
+# the local sweep filter only included *.go/*.json/*.templ/*.md. This check
+# runs in milliseconds and fail-fasts before the test suite eats 2-3 minutes.
+# Markers checked: <<<<<<< (start), ======= (separator), >>>>>>> (end), each
+# requiring a trailing space or EOL to avoid matching legitimate content like
+# a markdown ASCII rule of exactly seven equals.
+markers=$(git ls-files -z \
+    | xargs -0 grep -nE '^(<{7}|={7}|>{7})( |$)' 2>/dev/null \
+    | head -50 || true)
+if [ -n "$markers" ]; then
+    echo "FAIL: unresolved merge conflict markers in tracked files:"
+    echo "$markers" | sed 's/^/  /'
+    echo ""
+    echo "Resolve the conflicts (search for '<<<<<<<') and re-run the gate."
+    exit 1
+fi
+echo "OK"
+
+echo ""
 echo "=== Tests ==="
 go test -race -count=1 -covermode=atomic -coverprofile="$COVER_OUT" ./...
 
@@ -29,6 +50,31 @@ go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 echo ""
 echo "=== Generated files ==="
 bash "$SCRIPT_DIR/check-generated.sh"
+
+echo ""
+echo "=== Mkdocs config YAML ==="
+# Catch syntax errors (incl. residual conflict markers, indentation slips,
+# duplicate keys) in the mkdocs config before CI's "Build site" job does.
+# Stdlib PyYAML only -- no need for mkdocs itself locally. If python3 is
+# missing or PyYAML is unavailable, skip with a one-line warning rather than
+# fail the gate (a dev without a Python toolchain shouldn't be blocked).
+if [ -f docs/site/mkdocs.yml ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 -c 'import yaml' 2>/dev/null; then
+            if ! python3 -c 'import sys, yaml; yaml.safe_load(open("docs/site/mkdocs.yml"))' 2>&1; then
+                echo "FAIL: docs/site/mkdocs.yml is not valid YAML (see error above)."
+                exit 1
+            fi
+            echo "OK"
+        else
+            echo "SKIP: PyYAML not installed (pip install pyyaml -- runs only on demand)"
+        fi
+    else
+        echo "SKIP: python3 not in PATH"
+    fi
+else
+    echo "SKIP: docs/site/mkdocs.yml not present"
+fi
 
 echo ""
 echo "=== Raw error leak check ==="

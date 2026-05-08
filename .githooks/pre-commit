@@ -42,6 +42,30 @@ warn() {
 }
 
 # --------------------------------------------------------------------------
+# 0. conflict markers -- catch unresolved merge markers in staged files
+# --------------------------------------------------------------------------
+# Cheap, fast-failing, runs before any other check. Staged files only --
+# unrelated unstaged conflicts in the working tree do not block this commit.
+# Marker forms checked: <<<<<<< (start), ======= (separator), >>>>>>> (end).
+# The trailing space/EOL guard avoids matching legitimate content like a string
+# of seven equals in a markdown ASCII rule.
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM -- || true)
+if [ -n "$STAGED_FILES" ]; then
+    MARKERS=$(echo "$STAGED_FILES" | xargs -I {} git diff --cached -U0 -- {} 2>/dev/null \
+        | grep -nE '^\+(<{7}|={7}|>{7})( |$)' || true)
+    if [ -n "$MARKERS" ]; then
+        echo -e "${RED}${BOLD}FAIL${RESET} conflict-markers: unresolved merge conflict markers in staged content:"
+        echo "$MARKERS" | head -20 | sed 's/^/  /'
+        echo ""
+        echo "Resolve the conflicts (search for '<<<<<<<') and re-stage."
+        exit 1
+    fi
+    pass "conflict-markers"
+else
+    warn "conflict-markers (no staged files)"
+fi
+
+# --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
 if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
