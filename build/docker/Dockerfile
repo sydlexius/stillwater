@@ -60,6 +60,11 @@ WORKDIR /app
 ARG SW_TLS_PORT=1974
 EXPOSE 1973
 EXPOSE ${SW_TLS_PORT}
+# HTTP/3 (QUIC) listens on UDP. Mirrors the TCP HTTPS port; advertised so
+# `docker run -P` and orchestrators that scrape image metadata bind UDP too
+# when SW_HTTP3_ENABLED=true. The actual UDP bind happens at run time.
+EXPOSE 1973/udp
+EXPOSE ${SW_TLS_PORT}/udp
 
 # Healthcheck. The shell-expanded URL lets the entrypoint override
 # SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on

@@ -68,10 +68,13 @@ type HTTPRedirectConfig struct {
 	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Optional plain-HTTP listener port that 301-redirects to the HTTPS listener. Requires TLS to be configured (SW_TLS_CERT_FILE + SW_TLS_KEY_FILE). Typical value 80; must differ from SW_TLS_PORT (or SW_PORT in collapse mode). Numeric values outside 1-65535 are rejected at startup."`
 }
 
-// HTTP3Config toggles the QUIC/HTTP3 listener. Stubbed today; the QUIC
-// listener wiring follows in a later milestone PR.
+// HTTP3Config toggles the QUIC/HTTP3 listener. When Enabled is true and TLS
+// is configured, Stillwater binds an HTTP/3 listener on the same port as the
+// HTTPS listener (UDP) using the same TLS material. Clients are advertised
+// HTTP/3 via the Alt-Svc response header. HTTP/3 requires TLS 1.3.
 type HTTP3Config struct {
-	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Reserved for future use; not yet active. HTTP/3 (QUIC) listener wiring lands in a follow-up PR."`
+	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Set to true or 1 to enable an HTTP/3 (QUIC) listener over UDP. Requires direct TLS to be configured (SW_TLS_CERT_FILE and SW_TLS_KEY_FILE). The Alt-Svc header is added to HTTPS responses so HTTP/3-capable clients upgrade automatically; clients with UDP blocked fall back to HTTP/1.1+HTTP/2 over TCP."`
+	Port    int  `yaml:"port" toml:"port" env:"SW_HTTP3_PORT" default:"unset" desc:"Optional dedicated UDP port for HTTP/3. When unset HTTP/3 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT). Numeric values outside 1-65535 are rejected at startup."`
 }
 
 // ACMEConfig holds Automatic Certificate Management Environment settings.
@@ -193,10 +196,14 @@ const scaffoldTOML = `# Stillwater configuration
 # [server.http_redirect]
 # port = 80
 
-# HTTP/3 (QUIC) listener. Reserved for future use; not yet active. Wiring
-# lands in a follow-up PR.
+# HTTP/3 (QUIC) listener. Requires direct TLS to be configured (HTTP/3
+# mandates TLS 1.3). Stillwater advertises HTTP/3 via the Alt-Svc response
+# header so capable clients upgrade automatically; clients with UDP blocked
+# fall back to HTTP/1.1+HTTP/2 over TCP.
+# See: https://sydlexius.github.io/stillwater/how-to/direct-tls-setup/#http3-quic-firewall
 # [server.http3]
 # enabled = false
+# port = 0  # 0 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT).
 
 # Automatic Certificate Management Environment (ACME). Reserved for future
 # use; not yet active. Until the ACME path lands, configure direct TLS via
@@ -467,6 +474,13 @@ func (c *Config) loadFromEnv() error {
 	if v := os.Getenv("SW_HTTP3_ENABLED"); v != "" {
 		c.Server.HTTP3.Enabled = v == "true" || v == "1"
 	}
+	if v := os.Getenv("SW_HTTP3_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_HTTP3_PORT %q: %w", v, err)
+		}
+		c.Server.HTTP3.Port = port
+	}
 	// ACME stubs: populated for completeness (and so the env-reference codegen
 	// emits stable rows), but no consumer reads them yet.
 	if v := os.Getenv("SW_ACME_DOMAIN"); v != "" {
@@ -552,6 +566,15 @@ func (c *Config) validate() error {
 	// was redirecting silently keep serving plain HTTP only on Server.Port).
 	if redirectPort != 0 && !tlsCertSet {
 		return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
+	}
+
+	// HTTP/3 prerequisites: requires TLS (HTTP/3 mandates TLS 1.3) and a
+	// valid optional port.
+	if c.Server.HTTP3.Enabled && !tlsCertSet {
+		return fmt.Errorf("HTTP/3 requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
+	}
+	if c.Server.HTTP3.Port != 0 && (c.Server.HTTP3.Port < 1 || c.Server.HTTP3.Port > 65535) {
+		return fmt.Errorf("invalid HTTP/3 port: %d", c.Server.HTTP3.Port)
 	}
 
 	return nil

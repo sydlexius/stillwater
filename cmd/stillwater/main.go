@@ -570,6 +570,7 @@ func run() error {
 		BasePath:           cfg.Server.BasePath,
 		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
 		TLSStatus:          buildTLSStatus(cfg),
+		HTTP3Port:          server.EffectiveHTTP3Port(cfg),
 		StaticFS:           static.FS,
 		ImageCacheDir:      imageCacheDir,
 		Publisher:          publisher,
@@ -1171,11 +1172,13 @@ func buildTLSStatus(cfg *config.Config) templates.TLSStatusData {
 			Mode:             "byo",
 			HTTPSPort:        port,
 			HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+			HTTP3Port:        server.EffectiveHTTP3Port(cfg),
 		}
 	}
 	return templates.TLSStatusData{
 		Mode:             "off",
 		HTTPPort:         cfg.Server.Port,
 		HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+		// HTTP/3 requires TLS; off-mode never advertises a UDP listener.
 	}
 }

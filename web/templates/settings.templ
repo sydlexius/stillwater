@@ -94,6 +94,11 @@ type TLSStatusData struct {
 	// 0 when no redirect listener is configured. Wired in #929; the
 	// conditional render is in place today.
 	HTTPRedirectPort int
+	// HTTP3Port is the UDP port the HTTP/3 (QUIC) listener is bound to. Set
+	// to 0 when HTTP/3 is disabled. When non-zero the card adds a
+	// "HTTP/3 on :<port>/udp" listener row so operators can confirm the
+	// QUIC listener took effect.
+	HTTP3Port int
 }
 
 // UpdatesTabData holds the data for the Updates settings tab.
@@ -756,6 +761,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								}
 								if data.TLS.HTTPRedirectPort != 0 {
 									<li data-tls-listener="redirect">{ tf(ctx, "settings.tls_status.listener_redirect", data.TLS.HTTPRedirectPort) }</li>
+								}
+								if data.TLS.HTTP3Port != 0 {
+									<li data-tls-listener="http3">{ tf(ctx, "settings.tls_status.listener_http3", data.TLS.HTTP3Port) }</li>
 								}
 							</ul>
 						</div>

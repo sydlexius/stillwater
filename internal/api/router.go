@@ -76,11 +76,15 @@ type RouterDeps struct {
 	BasePath           string
 	BasePathFromEnv    bool
 	TLSStatus          templates.TLSStatusData
-	StaticFS           fs.FS
-	ImageCacheDir      string
-	Publisher          *publish.Publisher
-	SSEHub             *SSEHub
-	I18nBundle         *i18n.Bundle
+	// HTTP3Port is the UDP port advertised in the Alt-Svc response header.
+	// Zero disables the header (HTTP/3 not enabled). Set to the effective
+	// HTTP/3 listener port when SW_HTTP3_ENABLED is true.
+	HTTP3Port     int
+	StaticFS      fs.FS
+	ImageCacheDir string
+	Publisher     *publish.Publisher
+	SSEHub        *SSEHub
+	I18nBundle    *i18n.Bundle
 }
 
 // Router sets up all HTTP routes for the application.
@@ -122,6 +126,7 @@ type Router struct {
 	basePath           string
 	basePathFromEnv    bool
 	tlsStatus          templates.TLSStatusData
+	http3Port          int
 	imageCacheDir      string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
@@ -209,6 +214,7 @@ func NewRouter(deps RouterDeps) *Router {
 		basePath:           deps.BasePath,
 		basePathFromEnv:    deps.BasePathFromEnv,
 		tlsStatus:          deps.TLSStatus,
+		http3Port:          deps.HTTP3Port,
 		imageCacheDir:      deps.ImageCacheDir,
 		publisher:          deps.Publisher,
 		sseHub:             deps.SSEHub,
@@ -680,6 +686,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		handler = i18n.Middleware(r.i18nBundle)(handler)
 	}
 	handler = middleware.SecurityHeaders(handler)
+	// Alt-Svc advertises HTTP/3 (QUIC) on the configured UDP port. When
+	// HTTP/3 is disabled (http3Port == 0) AltSvc is a pass-through, so
+	// composing it unconditionally keeps the middleware chain stable.
+	handler = middleware.AltSvc(r.http3Port)(handler)
 	return handler
 }
 

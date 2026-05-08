@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sydlexius/stillwater/internal/config"
@@ -152,7 +153,91 @@ func buildEntries(cfg *config.Config, handler http.Handler, logger *slog.Logger)
 	if cfg.Server.HTTPRedirect.Port > 0 && cfg.Server.TLS.Enabled() {
 		entries = append(entries, buildRedirectListener(cfg, logger))
 	}
+	if entry, ok := buildHTTP3Listener(cfg, handler, logger); ok {
+		entries = append(entries, entry)
+	}
 	return entries
+}
+
+// EffectiveHTTP3Port returns the UDP port the HTTP/3 listener will bind when
+// enabled, or 0 when HTTP/3 is disabled or TLS is not configured. Callers use
+// this to populate the Alt-Svc middleware and the read-only TLS status card
+// from the same source of truth as the listener layer.
+func EffectiveHTTP3Port(cfg *config.Config) int {
+	if cfg == nil || !cfg.Server.HTTP3.Enabled || !cfg.Server.TLS.Enabled() {
+		return 0
+	}
+	if cfg.Server.HTTP3.Port != 0 {
+		return cfg.Server.HTTP3.Port
+	}
+	if cfg.Server.TLS.Port != 0 {
+		return cfg.Server.TLS.Port
+	}
+	return cfg.Server.Port
+}
+
+// buildHTTP3Listener returns an entry for an HTTP/3 (QUIC) UDP listener when
+// SW_HTTP3_ENABLED is true and TLS is configured. The HTTP/3 server reuses
+// the supplied http.Handler (so request-handling code is identical to the
+// TCP HTTPS path) and serves on the same effective port over UDP. When
+// HTTP/3 is disabled or TLS is missing the second return value is false and
+// no listener is registered.
+//
+// quic-go's http3.Server.Close aborts in-flight requests rather than
+// gracefully draining: it is the only shutdown primitive the library
+// exposes, so we wrap it in the listenerEntry.shutdown signature.
+func buildHTTP3Listener(cfg *config.Config, handler http.Handler, logger *slog.Logger) (listenerEntry, bool) {
+	port := EffectiveHTTP3Port(cfg)
+	if port == 0 {
+		return listenerEntry{}, false
+	}
+	addr := fmt.Sprintf(":%d", port)
+
+	// Reuse the HTTPS listener's TLS material (cert/key files). HTTP/3
+	// mandates TLS 1.3, but quic-go enforces that internally; we only need
+	// to provide the certificate. Setting NextProtos h3 is required so the
+	// QUIC handshake advertises the right ALPN value.
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		NextProtos: []string{"h3"},
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile)
+	if err != nil {
+		// Defer the error to serve(): keeping the failure on the goroutine
+		// path means the errgroup propagates it the same way it would for a
+		// bind failure, instead of buildEntries returning early.
+		return listenerEntry{
+			name: "http3",
+			addr: addr,
+			serve: func() error {
+				return fmt.Errorf("load TLS keypair for HTTP/3: %w", err)
+			},
+			shutdown: func(_ context.Context) error { return nil },
+		}, true
+	}
+	tlsCfg.Certificates = []tls.Certificate{cert}
+
+	srv := &http3.Server{
+		Addr:      addr,
+		Handler:   handler,
+		TLSConfig: tlsCfg,
+		Port:      port,
+	}
+	logger.Debug("HTTP/3 listener configured",
+		slog.String("addr", addr),
+		slog.String("cert_file", cfg.Server.TLS.CertFile),
+	)
+	return listenerEntry{
+		name: "http3",
+		addr: addr,
+		// http3.Server has no ListenAndServeTLS-like distinction; the
+		// TLSConfig.Certificates set above is sufficient.
+		serve: srv.ListenAndServe,
+		// http3.Server.Close ignores its context (no graceful drain
+		// available); wrap the signature so the errgroup harness can
+		// invoke it like every other entry.
+		shutdown: func(_ context.Context) error { return srv.Close() },
+	}, true
 }
 
 // buildPrimaryListener returns the entry for the main HTTP/HTTPS server.
