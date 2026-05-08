@@ -485,6 +485,75 @@ func TestRunCheckMode(t *testing.T) {
 	}
 }
 
+// TestBuildSections_FoldsSiblingMetadata exercises the buildSections pass
+// that pulls settings.X.Y.description / .help / .visibility keys out of
+// allKeys and attaches them to the matching control even when they aren't
+// referenced in the templ panel scan. The previous behavior dropped these
+// docs-only keys silently because the scan only saw keys with an actual
+// t(ctx, "...") call site; contributors writing prose in en.json would see
+// their keys vanish from the rendered reference.
+func TestBuildSections_FoldsSiblingMetadata(t *testing.T) {
+	panelKeys := []string{"settings.image_cache.max_size"}
+	allKeys := map[string]string{
+		"settings.image_cache.title":                "Image Cache",
+		"settings.image_cache.description":          "Cached images",
+		"settings.image_cache.max_size":             "Maximum size",
+		"settings.image_cache.max_size.description": "Cap the disk space the cache may use.",
+		"settings.image_cache.max_size.help":        "Hover help.",
+		"settings.image_cache.max_size.visibility":  "Editable when caching is on.",
+	}
+	sections, err := buildSections(panelKeys, allKeys)
+	if err != nil {
+		t.Fatalf("buildSections: %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("got %d sections, want 1", len(sections))
+	}
+	if len(sections[0].Controls) != 1 {
+		t.Fatalf("got %d controls, want 1", len(sections[0].Controls))
+	}
+	ctrl := sections[0].Controls[0]
+	if ctrl.Description != "Cap the disk space the cache may use." {
+		t.Errorf("Description not folded: %q", ctrl.Description)
+	}
+	if ctrl.Help != "Hover help." {
+		t.Errorf("Help not folded: %q", ctrl.Help)
+	}
+	if ctrl.Visibility != "Editable when caching is on." {
+		t.Errorf("Visibility not folded: %q", ctrl.Visibility)
+	}
+}
+
+// TestBuildSections_SkipsSectionLevelHelp asserts that a section-level
+// settings.X.help key (e.g. backing the in-app ContextHelp popover next to
+// a section heading) is dropped from the rendered docs rather than treated
+// as a free-floating ".help" control with no parent label. Without this
+// guard, buildSections would fail with an "orphaned metadata" error every
+// time we add a new section-help i18n key.
+func TestBuildSections_SkipsSectionLevelHelp(t *testing.T) {
+	panelKeys := []string{
+		"settings.platform_profile.title",
+		"settings.platform_profile.help",
+	}
+	allKeys := map[string]string{
+		"settings.platform_profile.title":       "Platform Profile",
+		"settings.platform_profile.description": "Pick a profile.",
+		"settings.platform_profile.help":        "Popover-only prose, must not render in docs.",
+	}
+	sections, err := buildSections(panelKeys, allKeys)
+	if err != nil {
+		t.Fatalf("buildSections: %v", err)
+	}
+	if len(sections) != 1 || sections[0].Title != "Platform Profile" {
+		t.Fatalf("section shape: %+v", sections)
+	}
+	for _, c := range sections[0].Controls {
+		if c.ID == "help" {
+			t.Errorf("section-level .help leaked as a control: %+v", c)
+		}
+	}
+}
+
 // TestWriteAnchorMirrors covers the multi-path anchor writer that fans the
 // codegen output to both docs/site/src/reference/_settings-anchors.txt and
 // the in-package web/components/_settings-anchors.txt mirror consumed by the
