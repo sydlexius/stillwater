@@ -13,12 +13,12 @@ The table below is generated from the configuration definition; do not edit it b
 <!-- BEGIN GENERATED: env-reference -->
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `SW_ACME_CA` | string | unset | Reserved for future use; not yet active. Will accept an ACME directory URL or shorthand (letsencrypt, letsencrypt-staging, buypass, zerossl) when the ACME path lands. |
-| `SW_ACME_CACHE_DIR` | string | unset | Reserved for future use; not yet active. Directory where ACME account keys and issued certificates will be cached when the ACME path lands. |
-| `SW_ACME_DOMAIN` | string | unset | Reserved for future use; not yet active. DNS name that the future ACME path will request certificates for. |
+| `SW_ACME_CA` | string | unset | ACME directory URL. Defaults to Let's Encrypt production. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota. |
+| `SW_ACME_CACHE_DIR` | string | unset | Directory where ACME account keys and issued certificates are cached. Defaults to the directory containing SW_DB_PATH plus /acme-cache. Persist this across restarts to avoid hitting CA rate limits. |
+| `SW_ACME_DOMAIN` | string | unset | DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet. |
 | `SW_ACME_EAB_KEY_ID` | string | unset | Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL). |
 | `SW_ACME_EAB_MAC_KEY` | string | unset | Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands. |
-| `SW_ACME_EMAIL` | string | unset | Reserved for future use; not yet active. Contact email that will be registered with the ACME CA when the ACME path lands. |
+| `SW_ACME_EMAIL` | string | unset | Contact email registered with the ACME CA. Used for expiry notifications and account recovery; recommended but not required. |
 | `SW_ACME_IP` | string | unset | Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address. |
 | `SW_BACKUP_ENABLED` | boolean | `true` | Set to true or 1 to enable automated backups. Any other value disables them. |
 | `SW_BACKUP_INTERVAL` | integer | `24` | Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. |

@@ -106,6 +106,7 @@ nav:
       - Reverse proxy: how-to/reverse-proxy.md
       - Direct TLS setup: how-to/direct-tls-setup.md
       - HTTP-to-HTTPS redirect: how-to/http-redirect.md
+      - ACME (Let's Encrypt / Buypass): how-to/acme-letsencrypt.md
   - Reference:
       - reference/index.md
       - Settings, by tab: reference/settings-by-tab.md
