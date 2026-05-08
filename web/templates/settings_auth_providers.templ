@@ -49,7 +49,10 @@ func guardRailLabel(v string) string {
 templ settingsAuthProvidersTab(data AuthProvidersData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
+				@components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-providers-auth")
+			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.auth.description") }
 			</p>

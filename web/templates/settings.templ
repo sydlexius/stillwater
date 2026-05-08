@@ -1640,7 +1640,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.confirm_dialogs.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.confirm_dialogs.title") }</h2>
+							@components.ContextHelp("help-confirm-dialogs", t(ctx, "settings.confirm_dialogs.title"), t(ctx, "settings.confirm_dialogs.help"), "settings-maintenance-confirm-dialogs")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.confirm_dialogs.description") }
 						</p>
@@ -1665,7 +1668,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">{ t(ctx, "settings.db_maintenance.title") }</h2>
-							@components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.", "settings-maintenance-db-maintenance")
+							@components.ContextHelp("help-db-maintenance", t(ctx, "settings.db_maintenance.title"), t(ctx, "settings.db_maintenance.help"), "settings-maintenance-db-maintenance")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.db_maintenance.description") }
@@ -1727,7 +1730,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.backup.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.backup.title") }</h2>
+							@components.ContextHelp("help-backup", t(ctx, "settings.backup.title"), t(ctx, "settings.backup.help"), "settings-maintenance-backup")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.backup.description") }
 						</p>
@@ -1798,7 +1804,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Settings Export / Import -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.export_import.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.export_import.title") }</h2>
+							@components.ContextHelp("help-export-import", t(ctx, "settings.export_import.title"), t(ctx, "settings.export_import.help"), "settings-maintenance-export-import")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.export_import.description_line1") }
 							{ t(ctx, "settings.export_import.description_line2") }
@@ -1898,7 +1907,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Log Settings -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_settings.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_settings.title") }</h2>
+							@components.ContextHelp("help-log-settings", t(ctx, "settings.log_settings.title"), t(ctx, "settings.log_settings.help"), "settings-logs-log-settings")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.log_settings.description") }
 						</p>
@@ -2028,7 +2040,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Log Viewer -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_viewer.title") }</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_viewer.title") }</h2>
+							@components.ContextHelp("help-log-viewer", t(ctx, "settings.log_viewer.title"), t(ctx, "settings.log_viewer.help"), "settings-logs-log-viewer")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							{ t(ctx, "settings.log_viewer.description") }
 						</p>
@@ -6201,7 +6216,10 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	></div>
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.title") }</h2>
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.title") }</h2>
+				@components.ContextHelp("help-updates", t(ctx, "settings.updates.title"), t(ctx, "settings.updates.help"), "settings-updates-updates")
+			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.description") }</p>
 		</div>
 		<div class="px-6 py-4 space-y-5">
@@ -6338,7 +6356,10 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 	<!-- Channel, scheduler, and apply-mode settings -->
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config.label") }</h2>
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.config.label") }</h2>
+				@components.ContextHelp("help-updates-config", t(ctx, "settings.updates.config.label"), t(ctx, "settings.updates.config.help"), "settings-updates-updates-config")
+			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.config.description") }</p>
 		</div>
 		<div class="px-6 py-4 space-y-5">
