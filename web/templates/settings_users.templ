@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // roleBadgeClasses returns CSS classes for a user role badge.
@@ -135,7 +136,10 @@ templ settingsUsersTab(data UsersTabData) {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
 				<div>
-					<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.title") }</h2>
+					<div class="flex items-center gap-2">
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.title") }</h2>
+						@components.ContextHelp("help-users", t(ctx, "settings.users.title"), t(ctx, "settings.users.help"), "settings-users-users")
+					</div>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 						{ t(ctx, "settings.users.description") }
 					</p>
@@ -261,7 +265,10 @@ templ settingsUsersTab(data UsersTabData) {
 		<!-- Pending invites -->
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-				<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.pending_invites.label") }</h2>
+				<div class="flex items-center gap-2">
+					<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.pending_invites.label") }</h2>
+					@components.ContextHelp("help-pending-invites", t(ctx, "settings.users.pending_invites.label"), t(ctx, "settings.users.pending_invites.help"), "settings-users-users-pending-invites")
+				</div>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 					{ t(ctx, "settings.users.pending_invites.description") }
 				</p>

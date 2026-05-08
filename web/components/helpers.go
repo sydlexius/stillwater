@@ -1,6 +1,11 @@
 package components
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/sydlexius/stillwater/internal/i18n"
+)
 
 // hxValsJSON builds a JSON object string from key-value pairs for use in
 // hx-vals attributes. Using json.Marshal for the entire object avoids
@@ -11,4 +16,11 @@ func hxValsJSON(pairs map[string]string) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// t returns the translated string for the given key from the request context.
+// Mirrors web/templates/i18n_helpers.go so component templates can localize
+// without an extra cross-package call.
+func t(ctx context.Context, key string) string {
+	return i18n.TFromCtx(ctx).T(key)
 }

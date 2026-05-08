@@ -49,7 +49,10 @@ func guardRailLabel(v string) string {
 templ settingsAuthProvidersTab(data AuthProvidersData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-			<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
+			<div class="flex items-center gap-2">
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.auth.title") }</h2>
+				@components.ContextHelp("help-auth", t(ctx, "settings.auth.title"), t(ctx, "settings.auth.help"), "settings-auth-providers-auth")
+			</div>
 			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.auth.description") }
 			</p>
@@ -69,7 +72,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
 								{ t(ctx, "common.enabled") }
 							</span>
-							@components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local_always_on"))
+							@components.ContextHelp("help-local-always-on", t(ctx, "settings.auth.local.label"), t(ctx, "settings.auth.local.help"), "settings-auth-providers-auth-local")
 						</div>
 					</div>
 					// Local auth is always on: the toggle is rendered but permanently
@@ -81,7 +84,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						class="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent bg-blue-600 opacity-50 focus:outline-none"
 						role="switch"
 						aria-checked="true"
-						aria-label={ t(ctx, "settings.auth.local_always_on") }
+						aria-label={ t(ctx, "settings.auth.local.help") }
 						aria-disabled="true"
 					>
 						<span class="pointer-events-none inline-block h-5 w-5 translate-x-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
@@ -385,7 +388,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.issuer_url") }</label>
-									@components.ContextHelp("help-oidc-issuer", "OIDC Issuer URL", "The base URL of your OIDC provider (Authentik, Keycloak, Authelia, etc.). Stillwater uses this to discover endpoints via the .well-known/openid-configuration document.")
+									@components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-providers-auth-oidc")
 								</div>
 								<input
 									id="oidc-issuer-url"
@@ -400,7 +403,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_id") }</label>
-									@components.ContextHelp("help-oidc-client-id", "OIDC Client ID", "The public identifier for Stillwater registered in your identity provider. Used with the issuer URL to start the authorization flow.")
+									@components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-providers-auth-client-id")
 								</div>
 								<input
 									id="oidc-client-id"
@@ -415,7 +418,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.client_secret") }</label>
-									@components.ContextHelp("help-oidc-client-secret", "OIDC Client Secret", "Confidential credential from your identity provider. Leave blank when editing to keep the currently stored secret unchanged.")
+									@components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-providers-auth-client-secret")
 								</div>
 								<input
 									id="oidc-client-secret"
@@ -442,7 +445,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.admin_groups") }</label>
-									@components.ContextHelp("help-oidc-admin-groups", "OIDC Admin Groups", "Comma-separated list of OIDC group claim values. Users in any of these groups are granted the Administrator role. The claim is read from the 'groups' field in the ID token.")
+									@components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-providers-auth-admin-groups")
 								</div>
 								<input
 									id="oidc-admin-groups"
@@ -458,7 +461,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.auth.allowed_groups") }</label>
-									@components.ContextHelp("help-oidc-user-groups", "OIDC Allowed Groups", "Comma-separated list of groups allowed to log in. Leave empty to allow all authenticated users from this provider. Users not in any listed group will be denied access.")
+									@components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-providers-auth-allowed-groups")
 								</div>
 								<input
 									id="oidc-user-groups"
@@ -523,7 +526,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									></span>
 								</button>
 								<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_oidc.description") }</span>
-								@components.ContextHelp("help-oidc-autoprovision", "OIDC Auto-Provision", "When enabled, a Stillwater account is automatically created the first time an OIDC user logs in. When disabled, an administrator must create the account manually before the user can log in.")
+								@components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-providers-auth-auto-provision-oidc")
 							</div>
 							<div class="flex gap-2">
 								<button

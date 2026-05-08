@@ -55,6 +55,24 @@ func TestIsNoiseKey(t *testing.T) {
 		{"settings.auth.oidc_display_name_hint", true}, // suffix `_hint` IS noise
 		{"settings.api_tokens.confirm_delete", true},   // suffix `confirm_` IS noise
 		{"settings.api_tokens.confirm_revoke", true},   // suffix `confirm_` IS noise
+		// New tokens added in #1132 for runtime UI text that surfaces as
+		// long-prose-as-label bullets if not filtered. Each is paired with
+		// a non-matching real settings key to confirm anchoring.
+		{"settings.connections.feature_image_write_tooltip", true}, // `_tooltip` IS noise
+		{"settings.rules.requires_local_tooltip", true},            // `_tooltip` IS noise
+		{"settings.rule_schedule.note", true},                      // `note` IS noise
+		{"settings.db_maintenance.schedule_note", true},            // `note` IS noise (substring)
+		{"settings.provider_config.custom_help", true},             // `_help` IS noise
+		{"settings.users.revoke_confirm", true},                    // `_confirm` IS noise
+		{"settings.users.invite_revoked", true},                    // `_revoked` IS noise
+		{"settings.rules.help_nfo", true},                          // `help_` IS noise
+		{"settings.rules.help_image", true},                        // `help_` IS noise
+		{"settings.rules.help_metadata", true},                     // `help_` IS noise
+		// Real settings the new tokens must NOT catch:
+		{"settings.image_cache.max_size.description", false},     // `.description` is metadata, not `_description`
+		{"settings.image_cache.unlimited.description", false},    // ditto
+		{"settings.libraries.lock_nfo_label.description", false}, // ditto
+		{"settings.api_tokens.scope_admin.description", false},   // ditto
 	}
 	for _, tc := range cases {
 		got := isNoiseKey(tc.key)
@@ -167,7 +185,10 @@ func TestScanPanels_SubTemplateAttribution(t *testing.T) {
 }
 
 // TestRenderDocument_BulletShape spot-checks the rendered Markdown structure:
-// tabs are H2, sections are H3, controls are bullet items with inline anchors.
+// tabs are H2, sections are H3, controls are bullet items whose <li> id is
+// attached via an attr_list block-form line ({: #anchor }) on the line below
+// the bullet. The block form is required because the inline form (- **x**
+// {#a}) leaks raw text on bullet items rather than producing <li id="a">.
 func TestRenderDocument_BulletShape(t *testing.T) {
 	doc := document{Tabs: []docTab{{
 		ID:    "general",
@@ -188,8 +209,8 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 		"## General  {#tab-general}",
 		"### Platform profile  {#settings-general-platform-profile}",
 		"Pick the active platform profile.",
-		"- **Preset** {#settings-general-platform-profile-preset} -- Built-in presets.",
-		"- **Custom filenames** {#settings-general-platform-profile-custom-filenames}",
+		"- **Preset** -- Built-in presets.\n{: #settings-general-platform-profile-preset }",
+		"- **Custom filenames**\n{: #settings-general-platform-profile-custom-filenames }",
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
@@ -198,8 +219,11 @@ func TestRenderDocument_BulletShape(t *testing.T) {
 	}
 }
 
-// TestRenderControl_VisibilityAndHelp verifies that visibility and help text
-// fold into the bullet's prose with the documented marker syntax.
+// TestRenderControl_VisibilityAndHelp verifies that visibility folds into
+// the bullet's prose with its documented marker, and that .help i18n keys
+// are intentionally dropped from the rendered docs because they back the
+// in-app ContextHelp popover (terse) and pair with the longer-form
+// .description that is the docs surface.
 func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	var b strings.Builder
 	renderControl(&b, "general", "base_path", docControl{
@@ -213,8 +237,11 @@ func TestRenderControl_VisibilityAndHelp(t *testing.T) {
 	if !strings.Contains(out, "*Visibility:*") {
 		t.Errorf("expected *Visibility:* marker in output: %q", out)
 	}
-	if !strings.Contains(out, "**Help:**") {
-		t.Errorf("expected **Help:** marker in output: %q", out)
+	if strings.Contains(out, "**Help:**") {
+		t.Errorf("**Help:** should not render in docs (popover-only); got: %q", out)
+	}
+	if strings.Contains(out, "Restart required for changes to take effect.") {
+		t.Errorf("help body should not leak into docs prose: %q", out)
 	}
 	if !strings.Contains(out, "URL prefix served by Stillwater.") {
 		t.Errorf("expected description text in output: %q", out)
@@ -473,6 +500,112 @@ func TestRunCheckMode(t *testing.T) {
 	}
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, true); err == nil {
 		t.Error("writeOrCheck(check) should fail on perturbed file")
+	}
+}
+
+// TestBuildSections_FoldsSiblingMetadata exercises the buildSections pass
+// that pulls settings.X.Y.description / .help / .visibility keys out of
+// allKeys and attaches them to the matching control even when they aren't
+// referenced in the templ panel scan. The previous behavior dropped these
+// docs-only keys silently because the scan only saw keys with an actual
+// t(ctx, "...") call site; contributors writing prose in en.json would see
+// their keys vanish from the rendered reference.
+func TestBuildSections_FoldsSiblingMetadata(t *testing.T) {
+	panelKeys := []string{"settings.image_cache.max_size"}
+	allKeys := map[string]string{
+		"settings.image_cache.title":                "Image Cache",
+		"settings.image_cache.description":          "Cached images",
+		"settings.image_cache.max_size":             "Maximum size",
+		"settings.image_cache.max_size.description": "Cap the disk space the cache may use.",
+		"settings.image_cache.max_size.help":        "Hover help.",
+		"settings.image_cache.max_size.visibility":  "Editable when caching is on.",
+	}
+	sections, err := buildSections(panelKeys, allKeys)
+	if err != nil {
+		t.Fatalf("buildSections: %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("got %d sections, want 1", len(sections))
+	}
+	if len(sections[0].Controls) != 1 {
+		t.Fatalf("got %d controls, want 1", len(sections[0].Controls))
+	}
+	ctrl := sections[0].Controls[0]
+	if ctrl.Description != "Cap the disk space the cache may use." {
+		t.Errorf("Description not folded: %q", ctrl.Description)
+	}
+	if ctrl.Help != "Hover help." {
+		t.Errorf("Help not folded: %q", ctrl.Help)
+	}
+	if ctrl.Visibility != "Editable when caching is on." {
+		t.Errorf("Visibility not folded: %q", ctrl.Visibility)
+	}
+}
+
+// TestBuildSections_SkipsSectionLevelHelp asserts that a section-level
+// settings.X.help key (e.g. backing the in-app ContextHelp popover next to
+// a section heading) is dropped from the rendered docs rather than treated
+// as a free-floating ".help" control with no parent label. Without this
+// guard, buildSections would fail with an "orphaned metadata" error every
+// time we add a new section-help i18n key.
+func TestBuildSections_SkipsSectionLevelHelp(t *testing.T) {
+	panelKeys := []string{
+		"settings.platform_profile.title",
+		"settings.platform_profile.help",
+	}
+	allKeys := map[string]string{
+		"settings.platform_profile.title":       "Platform Profile",
+		"settings.platform_profile.description": "Pick a profile.",
+		"settings.platform_profile.help":        "Popover-only prose, must not render in docs.",
+	}
+	sections, err := buildSections(panelKeys, allKeys)
+	if err != nil {
+		t.Fatalf("buildSections: %v", err)
+	}
+	if len(sections) != 1 || sections[0].Title != "Platform Profile" {
+		t.Fatalf("section shape: %+v", sections)
+	}
+	for _, c := range sections[0].Controls {
+		if c.ID == "help" {
+			t.Errorf("section-level .help leaked as a control: %+v", c)
+		}
+	}
+}
+
+// TestWriteAnchorMirrors covers the multi-path anchor writer that fans the
+// codegen output to both docs/site/src/reference/_settings-anchors.txt and
+// the in-package web/components/_settings-anchors.txt mirror consumed by the
+// HelpHint component (#1132).
+func TestWriteAnchorMirrors(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.txt")
+	pathB := filepath.Join(dir, "b.txt")
+	anchors := []string{"settings-foo-bar", "settings-foo-baz"}
+
+	// Write to both paths; check mode then succeeds.
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, false); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, p := range []string{pathA, pathB} {
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		want := "settings-foo-bar\nsettings-foo-baz\n"
+		if string(got) != want {
+			t.Errorf("%s = %q, want %q", p, got, want)
+		}
+	}
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, true); err != nil {
+		t.Errorf("check on fresh files: %v", err)
+	}
+
+	// Perturb the second mirror; check mode should fail at that path.
+	if err := os.WriteFile(pathB, []byte("settings-foo-bar\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAnchorMirrors([]string{pathA, pathB}, anchors, true); err == nil {
+		t.Error("check should fail when one mirror drifts")
 	}
 }
 

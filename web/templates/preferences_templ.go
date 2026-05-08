@@ -198,7 +198,7 @@ func settingsAppearanceTab(prefs PreferencesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme.label"), t(ctx, "settings.appearance.theme.help")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme.label"), t(ctx, "settings.appearance.theme.help"), "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -247,7 +247,7 @@ func settingsAppearanceTab(prefs PreferencesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity.label"), t(ctx, "settings.appearance.bg_opacity.help")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-bg-opacity", t(ctx, "settings.appearance.bg_opacity.label"), t(ctx, "settings.appearance.bg_opacity.help"), "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -600,7 +600,7 @@ func settingsAppearanceTab(prefs PreferencesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing.label"), t(ctx, "settings.appearance.letter_spacing.help")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing.label"), t(ctx, "settings.appearance.letter_spacing.help"), "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -716,7 +716,7 @@ func settingsAppearanceTab(prefs PreferencesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion.label"), t(ctx, "settings.appearance.reduced_motion.help"), "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -765,7 +765,7 @@ func settingsAppearanceTab(prefs PreferencesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode.label"), t(ctx, "settings.appearance.lite_mode.help")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode.label"), t(ctx, "settings.appearance.lite_mode.help"), "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -42,6 +42,12 @@ const (
 	defaultOutputPath  = "docs/site/src/reference/settings-by-tab.md"
 	defaultAnchorsPath = "docs/site/src/reference/_settings-anchors.txt"
 	defaultI18nPath    = "internal/i18n/locales/en.json"
+	// componentsAnchorsMirror keeps an in-package copy of the anchors file
+	// adjacent to the ContextHelp component so its tests can validate
+	// docAnchor arguments via go:embed without escaping the package
+	// directory. The codegen writes both paths atomically; check-generated
+	// asserts both are in sync via the same -check pass.
+	componentsAnchorsMirror = "web/components/_settings-anchors.txt"
 )
 
 // templTrunkPath is the page-rendering templ file: it owns the
@@ -151,7 +157,32 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, checkOnly); err != nil {
 		return err
 	}
-	return writeAnchorsOrCheck(anchorsPath, anchors, checkOnly)
+	// The components mirror is hard-coded to a repo-relative path. Only
+	// fan out to it when the caller is writing to the canonical anchors
+	// location; if -anchors redirected to a fixture or alternate path,
+	// respect that and skip the mirror so the run stays self-contained.
+	paths := []string{anchorsPath}
+	if filepath.Clean(anchorsPath) == filepath.Clean(defaultAnchorsPath) {
+		paths = append(paths, componentsAnchorsMirror)
+	}
+	return writeAnchorMirrors(paths, anchors, checkOnly)
+}
+
+// writeAnchorMirrors writes the anchors body to every path in paths,
+// stopping at the first error. The settings reference codegen needs the
+// same anchor set in two places: docs/site/src/reference/ for the
+// rendered settings docs and web/components/ as the contract source for
+// the in-app HelpHint component (#1132). Pulling the loop out of run()
+// keeps the multi-path semantics independently testable -- run() itself
+// is hard to unit-test because of its working-directory dependency on
+// discoverTemplSources().
+func writeAnchorMirrors(paths []string, anchors []string, checkOnly bool) error {
+	for _, p := range paths {
+		if err := writeAnchorsOrCheck(p, anchors, checkOnly); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeOrCheck applies rendered output to outPath between begin/end markers.
@@ -537,6 +568,55 @@ var noiseTokens = []string{
 	// render as broken bullets if surfaced in the docs.
 	"_note_prefix",
 	"_note_suffix",
+	// Underscore-suffixed _description keys are runtime state/banner text
+	// (e.g. settings.symlinks.unsupported_description renders only when the
+	// filesystem doesn't support symlinks). Distinct from the dotted .description
+	// metadata suffix which IS a real control description and stays parsed.
+	// The substring match here catches `supported_description`,
+	// `unsupported_description`, `manage_description`, etc.
+	"_description",
+	// Multi-line banner prose split across keys: settings.X.description_line1,
+	// description_line2. These compose at render-time and aren't per-control
+	// content the docs reader can navigate to.
+	"description_line",
+	// Sub-section ContextHelp popover prose attached to a parent section by
+	// the in-app help-icon convention (e.g. settings.rules.help_nfo backs the
+	// NFO category header's popover). Distinct from section-level .help which
+	// is handled by buildSections. Substring match catches help_nfo, help_image,
+	// help_metadata, and any future per-sub-section help_X variants without
+	// false-matching real settings keys (no settings name happens to contain
+	// the literal "help_" today).
+	"help_",
+	// Mouse-hover tooltip strings rendered via title= attributes or sr-only
+	// spans on small affordances (status pills, conflict-gated chips,
+	// disabled-rule reasons). They are runtime hover affordances, not
+	// configurable controls, and surface as bare prose-as-label bullets if
+	// not filtered (e.g. settings.connections.feature_image_write_tooltip,
+	// settings.rules.requires_local_tooltip / _tooltip_short,
+	// settings.rules.cannot_enable_tooltip).
+	"_tooltip",
+	// Inline note prose composed alongside a primary control (rule_schedule.note,
+	// db_maintenance.schedule_note, backup.retention_note, etc.). Renders as
+	// "Tip: ..." or footnote text in the panel, never as a navigable control.
+	// Without filtering, the prose surfaces as a long-prose-as-label bullet on
+	// the docs reference page.
+	"note",
+	// Inline form-help paragraphs (settings.provider_config.custom_help and
+	// any future *_help variant). Distinct from the dotted .help metadata
+	// suffix which is handled by composeControlProse; the underscore form
+	// renders as a bare prose-as-label bullet on the docs page if not filtered.
+	"_help",
+	// Modal/hx-confirm dialog text (settings.users.revoke_confirm,
+	// settings.priorities.confirm_restore is already prefix-matched). Suffix
+	// form catches X_confirm pairs without false-matching the
+	// confirm_dialogs.* section namespace which the existing confirm_ token
+	// already handles.
+	"_confirm",
+	// Toast / status banner text shown after a state change (e.g.
+	// settings.users.invite_revoked, *_revoked). Existing toast/saved/failed
+	// tokens cover most banner copy; _revoked picks up the action-pasttense
+	// variant the others miss.
+	"_revoked",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens
@@ -676,6 +756,13 @@ func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection,
 		case "description":
 			acc.descKey = k
 			continue
+		case "help":
+			// Section-level .help i18n keys back the in-app ContextHelp
+			// popover next to the section heading and are deliberately
+			// not rendered in the docs reference (the matching .description
+			// is the docs surface). Skip the key here so it isn't treated
+			// as an orphaned metadata bag with no parent control.
+			continue
 		}
 
 		ctrlID := controlIDFor(parts[2:])
@@ -683,6 +770,33 @@ func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection,
 			acc.controlIDs = append(acc.controlIDs, ctrlID)
 		}
 		acc.controlKeys[ctrlID] = append(acc.controlKeys[ctrlID], k)
+	}
+
+	// Fold sibling metadata keys from allKeys into discovered controls. The
+	// panel scan only sees keys actually referenced by t(ctx, "...") in the
+	// templ; for docs-only metadata such as settings.X.Y.description that
+	// nothing renders inline, the corresponding key never enters panelKeys.
+	// Without this pass, contributors writing prose in en.json would see
+	// the key dropped silently from the rendered reference.
+	for _, acc := range accums {
+		for _, ctrlID := range acc.controlIDs {
+			for _, suffix := range metadataSuffixes {
+				metaKey := "settings." + acc.id + "." + ctrlID + suffix
+				if _, ok := allKeys[metaKey]; !ok {
+					continue
+				}
+				present := false
+				for _, existing := range acc.controlKeys[ctrlID] {
+					if existing == metaKey {
+						present = true
+						break
+					}
+				}
+				if !present {
+					acc.controlKeys[ctrlID] = append(acc.controlKeys[ctrlID], metaKey)
+				}
+			}
+		}
 	}
 
 	out := make([]docSection, 0, len(sectionOrder))
@@ -868,13 +982,22 @@ func renderSection(b *strings.Builder, tabID string, sec docSection) {
 	b.WriteString("\n")
 }
 
-// renderControl emits a single bullet-list line for a control. The MkDocs
-// Material attr_list extension binds the {#anchor} suffix to the bullet so
-// `#anchor` URL fragments scroll to it. Description, visibility, and help
-// fold into the bullet's prose with simple inline markers; if the control has
-// none of those, only the label and anchor render.
+// renderControl emits a bullet-list entry for a control plus the canonical
+// attr_list block-form line ({: #anchor }) that attaches an HTML id to the
+// rendered <li>. Description, visibility, and help fold into the bullet's
+// prose with simple inline markers; if the control has none of those, only
+// the label and anchor render.
+//
+// We use the block form ({: #anchor } on its own line) rather than the
+// inline form (- **Label** {#anchor}) because Python-Markdown's attr_list
+// extension only attaches inline {#...} to the immediately preceding inline
+// element (the <strong>), not to the <li>; and on bullet items without an
+// adjacent inline element it leaks as raw text into the rendered prose.
+// The block form is the documented way to attach attributes to list items
+// and produces <li id="anchor"> as required by the HelpHint deep-link
+// contract for #1132.
 func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
-	fmt.Fprintf(b, "- **%s** {#%s}", markdownEscape(ctrl.Label), controlAnchor(tabID, secID, ctrl.ID))
+	fmt.Fprintf(b, "- **%s**", markdownEscape(ctrl.Label))
 
 	prose := composeControlProse(ctrl)
 	if prose != "" {
@@ -882,12 +1005,18 @@ func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 		b.WriteString(prose)
 	}
 	b.WriteString("\n")
+	fmt.Fprintf(b, "{: #%s }\n", controlAnchor(tabID, secID, ctrl.ID))
 }
 
 // composeControlProse returns the inline prose that follows the bullet's
-// label. Description leads; visibility and help append in italic / bold tags
-// when present. Empty when the control carries no prose at all (label-only
-// bullet, anchor still emitted for HelpHint deep links).
+// label. Description leads, visibility appends in italic when present.
+// Empty when the control carries no prose at all (label-only bullet,
+// anchor still emitted for HelpHint deep links).
+//
+// .help i18n keys are deliberately NOT rendered: they back the in-app
+// ContextHelp popover (terse, one-sentence) and are paired with a
+// longer-form .description that is the docs surface. Surfacing both
+// produces visible duplication on the rendered reference page.
 func composeControlProse(ctrl docControl) string {
 	parts := []string{}
 	if ctrl.Description != "" {
@@ -895,9 +1024,6 @@ func composeControlProse(ctrl docControl) string {
 	}
 	if ctrl.Visibility != "" {
 		parts = append(parts, "*Visibility:* "+markdownEscape(ctrl.Visibility))
-	}
-	if ctrl.Help != "" {
-		parts = append(parts, "**Help:** "+markdownEscape(ctrl.Help))
 	}
 	return strings.Join(parts, " ")
 }
