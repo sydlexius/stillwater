@@ -29,7 +29,7 @@ A platform profile bundles the NFO format and image filename conventions for one
 
 ### TLS Status  {#settings-general-tls-status}
 
-Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml; see the Direct TLS Setup how-to.
+Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml.
 
 - **Active (BYO certificate)**
 {: #settings-general-tls-status-active-byo }
@@ -50,7 +50,7 @@ These switches set the defaults Stillwater applies during metadata workflows: wh
 
 ### Show platform debug info on artist pages  {#settings-general-platform-debug}
 
-Each artist that came in from a connected media server has a raw payload Stillwater received from the platform's API (the source of truth for IDs, image URLs, and library paths). Turning this on adds a Debug tab to the artist detail page that displays that payload, which is useful when tracing why a field looks wrong.
+Each artist who came in from a connected media server has a raw payload Stillwater received from the platform's API (the source of truth for IDs, image URLs, and library paths). Turning this on adds a Debug tab to the artist detail page that displays that payload, which is useful when tracing why a field looks wrong.
 
 ### Image Cache  {#settings-general-image-cache}
 

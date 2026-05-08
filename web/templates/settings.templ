@@ -1545,8 +1545,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							}
 						>
 							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+								{{ categoryHeading := tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }}
 								<div class="flex items-center gap-2">
-									<h2 class="text-lg font-semibold">{ tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }</h2>
+									<h2 class="text-lg font-semibold">{ categoryHeading }</h2>
 									if cat == "image" {
 										<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_image_tooltip") }>
 											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
@@ -1558,13 +1559,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										</span>
 									}
 									if cat == "nfo" {
-										@components.ContextHelp("help-rules-nfo", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_nfo"), "settings-rules-rules")
+										@components.ContextHelp("help-rules-nfo", categoryHeading, t(ctx, "settings.rules.help_nfo"), "settings-rules-rules")
 									}
 									if cat == "image" {
-										@components.ContextHelp("help-rules-image", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_image"), "settings-rules-rules")
+										@components.ContextHelp("help-rules-image", categoryHeading, t(ctx, "settings.rules.help_image"), "settings-rules-rules")
 									}
 									if cat == "metadata" {
-										@components.ContextHelp("help-rules-metadata", categoryLabel(cat)+" Rules", t(ctx, "settings.rules.help_metadata"), "settings-rules-rules")
+										@components.ContextHelp("help-rules-metadata", categoryHeading, t(ctx, "settings.rules.help_metadata"), "settings-rules-rules")
 									}
 								</div>
 							</div>
@@ -3366,16 +3367,18 @@ templ settingsLibraryRow(lib library.Library) {
 					</select>
 				}
 				<span class="inline-flex items-center gap-1">
+					{{ lockNfoDescID := "lock-nfo-desc-" + lib.ID }}
 					<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
 						<input
 							type="checkbox"
 							class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"
 							checked?={ lib.NFOLockData }
 							onchange={ settingsUpdateLockNFO(lib.ID) }
-							aria-describedby={ "lock-nfo-help-" + lib.ID + "-popover" }
+							aria-describedby={ lockNfoDescID }
 						/>
 						<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
 					</label>
+					<span id={ lockNfoDescID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_label.description") }</span>
 					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.description"), "settings-libraries-libraries-lock-nfo-label")
 				</span>
 			}
@@ -3560,16 +3563,22 @@ templ settingsLibraryScript() {
 					var lockNfo = '';
 					if (lib.path) {
 						var helpId = 'lock-nfo-help-' + lib.id;
+						var descId = 'lock-nfo-desc-' + lib.id;
 						var checked = lib.nfo_lock_data ? ' checked' : '';
 						// Mirror the templ ContextHelp render for the static row at
 						// settings.templ:3383. The JS path is exercised only for
 						// libraries added without a page refresh; on refresh the
 						// templ render takes over and these strings disappear.
+						// The sr-only span at descId is the always-present
+						// description target for the checkbox -- the popover
+						// owned by the help button is collapsed until clicked,
+						// so the checkbox needs its own stable description.
 						lockNfo = '<span class="inline-flex items-center gap-1">'
 							+ '<label class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">'
-							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + helpId + '-popover" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this, this.checked)"/>'
+							+ '<input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-blue-500"' + checked + ' aria-describedby="' + descId + '" onchange="updateLibraryLockNFO(&apos;' + lib.id + '&apos;, this, this.checked)"/>'
 							+ '<span>' + safeLockNfoLabel + '</span>'
 							+ '</label>'
+							+ '<span id="' + descId + '" class="sr-only">' + safeLockNfoTitle + '</span>'
 							+ '<span class="sw-context-help" id="' + helpId + '">'
 							+ '<button type="button" class="sw-context-help-btn" aria-label="' + safeLockNfoLabel + '" aria-expanded="false" aria-controls="' + helpId + '-popover" onclick="swContextHelpToggle(this)" onkeydown="if(event.key===&apos;Escape&apos;)swContextHelpClose(this)">?</button>'
 							+ '<span id="' + helpId + '-popover" role="tooltip" class="sw-context-help-popover" aria-hidden="true">' + safeLockNfoTitle
