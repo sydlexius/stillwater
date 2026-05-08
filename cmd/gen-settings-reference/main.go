@@ -593,6 +593,22 @@ var noiseTokens = []string{
 	// Without filtering, the prose surfaces as a long-prose-as-label bullet on
 	// the docs reference page.
 	"note",
+	// Inline form-help paragraphs (settings.provider_config.custom_help and
+	// any future *_help variant). Distinct from the dotted .help metadata
+	// suffix which is handled by composeControlProse; the underscore form
+	// renders as a bare prose-as-label bullet on the docs page if not filtered.
+	"_help",
+	// Modal/hx-confirm dialog text (settings.users.revoke_confirm,
+	// settings.priorities.confirm_restore is already prefix-matched). Suffix
+	// form catches X_confirm pairs without false-matching the
+	// confirm_dialogs.* section namespace which the existing confirm_ token
+	// already handles.
+	"_confirm",
+	// Toast / status banner text shown after a state change (e.g.
+	// settings.users.invite_revoked, *_revoked). Existing toast/saved/failed
+	// tokens cover most banner copy; _revoked picks up the action-pasttense
+	// variant the others miss.
+	"_revoked",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens

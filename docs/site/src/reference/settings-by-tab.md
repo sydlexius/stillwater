@@ -69,15 +69,15 @@ Manage cached images for artists without filesystem paths.
 
 Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
 
-- **No API key required**
+- **No API key required** -- Shown next to a provider that works without any API key. Nothing to configure here.
 {: #settings-providers-provider-keys-no-key-required }
-- **Premium key configured**
+- **Premium key configured** -- Shown next to a provider with optional premium tier when a premium key has been saved. The provider is queried using the upgraded access.
 {: #settings-providers-provider-keys-premium-configured }
-- **Free tier (optional premium upgrade)**
+- **Free tier (optional premium upgrade)** -- Shown next to a provider that works without a key but offers an optional premium key for higher rate limits or extra features. Add a key here to upgrade.
 {: #settings-providers-provider-keys-free-tier }
-- **Key configured**
+- **Key configured** -- Shown next to a provider that requires an API key once a valid key has been saved. Stillwater will include this provider in metadata lookups.
 {: #settings-providers-provider-keys-key-configured }
-- **API key required**
+- **API key required** -- Shown next to a provider that needs an API key but does not have one saved yet. Stillwater skips this provider during lookups until a key is added.
 {: #settings-providers-provider-keys-key-required }
 
 ### Web Image Search  {#settings-providers-web-search}
@@ -113,9 +113,9 @@ Minimum similarity score (0-100) required when matching artist names from search
 
 ### Provider config  {#settings-providers-provider-config}
 
-- **Client ID**
+- **Client ID** -- The OAuth application identifier issued by the provider when you registered an app. Paste it here so Stillwater can authenticate against the provider's API.
 {: #settings-providers-provider-config-client-id }
-- **Client Secret**
+- **Client Secret** -- The OAuth application secret issued alongside the Client ID. Stored encrypted at rest. Treat it like a password and do not share it.
 {: #settings-providers-provider-config-client-secret }
 - **Server** -- Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.
 {: #settings-providers-provider-config-server }
@@ -125,9 +125,7 @@ Minimum similarity score (0-100) required when matching artist names from search
 {: #settings-providers-provider-config-beta }
 - **Custom mirror** -- Point Stillwater at a self-hosted MusicBrainz mirror. Requests bypass the public rate limit so you can raise throughput, subject to whatever your mirror can sustain.
 {: #settings-providers-provider-config-custom-mirror }
-- **Self-hosted mirrors can often handle higher rates. Default: 10 req/s.**
-{: #settings-providers-provider-config-custom-help }
-- **OAuth Credentials**
+- **OAuth Credentials** -- Sub-section for OAuth application credentials used when a provider requires authenticated access. Fill in the Client ID and Client Secret issued by the provider.
 {: #settings-providers-provider-config-oauth-credentials }
 
 ## Connections  {#tab-connections}
@@ -223,9 +221,9 @@ Generate tokens for external applications to access the Stillwater API.
 
 ### Rules  {#settings-rules-rules}
 
-- **paused: conflict gating**
+- **paused: conflict gating** -- Shown on the NFO or Image rule category header when a write-back or round-trip conflict is active in the top banner. Auto-fix is paused for that category until you resolve the conflict.
 {: #settings-rules-rules-conflict-gated-chip }
-- **Requires local library**
+- **Requires local library** -- Shown next to a rule that needs a library with a filesystem path Stillwater can read. The rule is disabled until you add at least one local library on the Libraries tab.
 {: #settings-rules-rules-requires-local }
 - **Auto-fix** -- When the rule finds a violation, Stillwater corrects it automatically during scans without prompting.
 {: #settings-rules-rules-auto-fix }
@@ -265,13 +263,13 @@ Manage who has access to this instance.
 {: #settings-users-users-enable-multi-user }
 - **Create Invite**
 {: #settings-users-users-create-invite }
-- **Role**
+- **Role** -- The permission level granted to the new account when this invite is redeemed. Admins manage settings; standard users browse and tag their own library.
 {: #settings-users-users-role }
-- **Role for invited user**
+- **Role for invited user** -- Accessible label for the role selector when creating an invite. Mirrors the visible Role control.
 {: #settings-users-users-role-for-invite }
-- **Expires In**
+- **Expires In** -- How long the new invite link remains usable. After this period the link expires and can no longer redeem an account.
 {: #settings-users-users-expires-in }
-- **Invite expiry duration**
+- **Invite expiry duration** -- Accessible label for the expiry-duration selector when creating an invite. Mirrors the visible Expires In control.
 {: #settings-users-users-invite-expiry }
 - **24 hours**
 {: #settings-users-users-24-hours }
@@ -285,7 +283,7 @@ Manage who has access to this instance.
 {: #settings-users-users-copy-invite }
 - **This link can only be used once.**
 {: #settings-users-users-link-single-use }
-- **User accounts**
+- **User accounts** -- Table of every account that exists on this instance. Use the row controls to change a user's role or deactivate them.
 {: #settings-users-users-user-accounts }
 - **User**
 {: #settings-users-users-user }
@@ -295,14 +293,10 @@ Manage who has access to this instance.
 {: #settings-users-users-actions }
 - **Pending Invites** -- Invite links that have not been redeemed yet.
 {: #settings-users-users-pending-invites }
-- **Role:**
+- **Role:** -- Marks the role badge shown next to a pending invite in the list below. The redeemed account will be created with this role.
 {: #settings-users-users-role-label }
-- **Expires:**
+- **Expires:** -- Marks the expiry timestamp shown next to a pending invite in the list below. The invite stops working after this time.
 {: #settings-users-users-expires-label }
-- **Revoke this invite? It will no longer be usable.**
-{: #settings-users-users-revoke-confirm }
-- **Invite revoked**
-{: #settings-users-users-invite-revoked }
 - **Revoke**
 {: #settings-users-users-revoke }
 

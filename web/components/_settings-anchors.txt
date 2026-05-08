@@ -136,7 +136,6 @@ settings-providers-provider-config
 settings-providers-provider-config-beta
 settings-providers-provider-config-client-id
 settings-providers-provider-config-client-secret
-settings-providers-provider-config-custom-help
 settings-providers-provider-config-custom-mirror
 settings-providers-provider-config-oauth-credentials
 settings-providers-provider-config-official
@@ -184,12 +183,10 @@ settings-users-users-enable-multi-user
 settings-users-users-expires-in
 settings-users-users-expires-label
 settings-users-users-invite-expiry
-settings-users-users-invite-revoked
 settings-users-users-link-single-use
 settings-users-users-multi-user-mode
 settings-users-users-pending-invites
 settings-users-users-revoke
-settings-users-users-revoke-confirm
 settings-users-users-role
 settings-users-users-role-for-invite
 settings-users-users-role-label
