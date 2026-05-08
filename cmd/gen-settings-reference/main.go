@@ -579,6 +579,20 @@ var noiseTokens = []string{
 	// false-matching real settings keys (no settings name happens to contain
 	// the literal "help_" today).
 	"help_",
+	// Mouse-hover tooltip strings rendered via title= attributes or sr-only
+	// spans on small affordances (status pills, conflict-gated chips,
+	// disabled-rule reasons). They are runtime hover affordances, not
+	// configurable controls, and surface as bare prose-as-label bullets if
+	// not filtered (e.g. settings.connections.feature_image_write_tooltip,
+	// settings.rules.requires_local_tooltip / _tooltip_short,
+	// settings.rules.cannot_enable_tooltip).
+	"_tooltip",
+	// Inline note prose composed alongside a primary control (rule_schedule.note,
+	// db_maintenance.schedule_note, backup.retention_note, etc.). Renders as
+	// "Tip: ..." or footnote text in the panel, never as a navigable control.
+	// Without filtering, the prose surfaces as a long-prose-as-label bullet on
+	// the docs reference page.
+	"note",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens

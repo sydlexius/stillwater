@@ -117,20 +117,18 @@ Minimum similarity score (0-100) required when matching artist names from search
 {: #settings-providers-provider-config-client-id }
 - **Client Secret**
 {: #settings-providers-provider-config-client-secret }
-- **Server**
+- **Server** -- Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.
 {: #settings-providers-provider-config-server }
-- **Official**
+- **Official** -- Send requests to musicbrainz.org. The public service is rate limited to roughly one request per second.
 {: #settings-providers-provider-config-official }
-- **Beta**
+- **Beta** -- Send requests to the MusicBrainz beta server. The data set matches the official server, but the deployment runs preview code. Subject to the same one-request-per-second public rate limit.
 {: #settings-providers-provider-config-beta }
-- **Custom mirror**
+- **Custom mirror** -- Point Stillwater at a self-hosted MusicBrainz mirror. Requests bypass the public rate limit so you can raise throughput, subject to whatever your mirror can sustain.
 {: #settings-providers-provider-config-custom-mirror }
 - **Self-hosted mirrors can often handle higher rates. Default: 10 req/s.**
 {: #settings-providers-provider-config-custom-help }
 - **OAuth Credentials**
 {: #settings-providers-provider-config-oauth-credentials }
-- **Required for submitting edits to MusicBrainz.**
-{: #settings-providers-provider-config-oauth-note }
 
 ## Connections  {#tab-connections}
 
@@ -142,18 +140,12 @@ Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
 {: #settings-connections-connections-feature-toggles }
 - **What Stillwater sends to this connection**
 {: #settings-connections-connections-sends-heading }
-- **Library import**
+- **Library import** -- When on, Stillwater imports library and artist metadata from this server during scans.
 {: #settings-connections-connections-feature-library-import }
-- **When on, Stillwater imports library metadata from this server.**
-{: #settings-connections-connections-feature-library-import-tooltip }
-- **NFO write**
+- **NFO write** -- When on, Stillwater writes artist.nfo files into folders this server's libraries cover. Writes can still be paused while a conflict gate is active.
 {: #settings-connections-connections-feature-nfo-write }
-- **When on, Stillwater writes artist.nfo files for artists in this server's libraries. Writes can still be gated while conflict gating is active (write-back or round-trip overlap) -- see the top banner for details.**
-{: #settings-connections-connections-feature-nfo-write-tooltip }
-- **Image download/write**
+- **Image download/write** -- When on, Stillwater downloads images from providers and writes them to artist folders that this server's libraries cover. Writes can still be paused while a conflict gate is active.
 {: #settings-connections-connections-feature-image-write }
-- **When on, Stillwater writes image files for artists in this server's libraries. Writes can still be gated while conflict gating is active (write-back or round-trip overlap) -- see the top banner for details.**
-{: #settings-connections-connections-feature-image-write-tooltip }
 - **Let Stillwater manage artwork and NFO files on this server**
 {: #settings-connections-connections-manage-title }
 - **Not configured**
@@ -167,25 +159,23 @@ Manage your music library paths. Each library maps to a directory containing art
 
 - **Connection**
 {: #settings-libraries-libraries-connection-badge }
-- **Lock NFOs**
+- **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
 {: #settings-libraries-libraries-lock-nfo-label }
-- **When on, Stillwater stamps &lt;lockdata&gt;true&lt;/lockdata&gt; into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists, preserving Stillwater's curated values from being overwritten by the platform's own scrapers. Off by default. Tip: artists whose NFO already contains &lt;lockdata&gt;true&lt;/lockdata&gt; (set by Stillwater or another tool) are automatically marked as locked at the artist level.**
-{: #settings-libraries-libraries-lock-nfo-title }
 - **Add Library**
 {: #settings-libraries-libraries-add }
-- **Regular**
+- **Regular** -- Standard music library where the artist folder maps to the performing artist.
 {: #settings-libraries-libraries-type-regular }
-- **Classical**
+- **Classical** -- Treat the library as a classical collection. Stillwater applies composer-aware naming and folder conventions during scans and writes.
 {: #settings-libraries-libraries-type-classical }
-- **Filesystem monitoring mode**
+- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
 {: #settings-libraries-libraries-fs-mode-title }
-- **Off**
+- **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
 {: #settings-libraries-libraries-fs-off }
-- **Watch**
+- **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.
 {: #settings-libraries-libraries-fs-watch }
-- **Poll**
+- **Poll** -- Periodically re-scan the library for changes. Works on every filesystem but adds some delay between a change and Stillwater noticing it.
 {: #settings-libraries-libraries-fs-poll }
-- **Watch + Poll**
+- **Watch + Poll** -- Combine native filesystem events with periodic polling. Useful when watching alone misses some changes (for example, on certain network shares).
 {: #settings-libraries-libraries-fs-both }
 - **Re-sync Artists**
 {: #settings-libraries-libraries-resync }
@@ -202,16 +192,16 @@ Send notifications to external services when events occur.
 {: #settings-automation-webhooks-add }
 - **Select type...**
 {: #settings-automation-webhooks-select-type }
-- **Generic (JSON)**
+- **Generic (JSON)** -- Send a generic JSON payload describing the event. Use this for in-house tooling or services without a dedicated formatter.
 {: #settings-automation-webhooks-type-generic }
 
 ### Notification Badges  {#settings-automation-notif-badges}
 
 Show a counter badge on the Open Violations link in the sidebar indicating active violations.
 
-- **Enable badge**
+- **Enable badge** -- Show a counter next to the Reports link in the sidebar with the number of active violations.
 {: #settings-automation-notif-badges-enable-badge }
-- **Count violations by severity**
+- **Count violations by severity** -- Choose which severity levels contribute to the sidebar badge count. Disable a severity to ignore those violations in the badge while still surfacing them on the Reports page.
 {: #settings-automation-notif-badges-count-by-severity }
 
 ### API Tokens  {#settings-automation-api-tokens}
@@ -220,44 +210,31 @@ Generate tokens for external applications to access the Stillwater API.
 
 - **Revoked**
 {: #settings-automation-api-tokens-revoked }
-- **Read**
+- **Read** -- Read-only access to artists, libraries, rules, and settings. Safe for dashboards and one-way integrations that only fetch data.
 {: #settings-automation-api-tokens-scope-read }
-- **Write**
+- **Write** -- Create and modify artists, run rules, and queue background work. Use this for automation scripts that need to make changes but should not touch user accounts.
 {: #settings-automation-api-tokens-scope-write }
-- **Webhook**
+- **Webhook** -- Lets the token receive inbound webhook deliveries from external systems. Pair with a single integration so an exposed token does not also grant read or write access.
 {: #settings-automation-api-tokens-scope-webhook }
-- **Admin**
+- **Admin** -- Full administrative access. Treat tokens with this scope like a root password: they can change settings, manage users, and revoke other tokens.
 {: #settings-automation-api-tokens-scope-admin }
 
 ## Rules  {#tab-rules}
 
 ### Rules  {#settings-rules-rules}
 
-- **Image-category rules are paused while conflict gating is active. Resolve the active write-back or round-trip conflict in the top banner to resume auto-fix.**
-{: #settings-rules-rules-conflict-gated-image-tooltip }
 - **paused: conflict gating**
 {: #settings-rules-rules-conflict-gated-chip }
-- **NFO-category rules are paused while conflict gating is active. Resolve the active write-back or round-trip conflict in the top banner to resume auto-fix.**
-{: #settings-rules-rules-conflict-gated-nfo-tooltip }
-- **This rule requires a local library with a filesystem path. Add a library with a path to enable it.**
-{: #settings-rules-rules-requires-local-tooltip }
-- **Requires a local library with a filesystem path**
-{: #settings-rules-rules-requires-local-tooltip-short }
 - **Requires local library**
 {: #settings-rules-rules-requires-local }
-- **Auto-fix**
+- **Auto-fix** -- When the rule finds a violation, Stillwater corrects it automatically during scans without prompting.
 {: #settings-rules-rules-auto-fix }
-- **Manual (notify only)**
+- **Manual (notify only)** -- Stillwater records violations and surfaces them on the Reports page, but does not modify any files. You apply each fix manually.
 {: #settings-rules-rules-manual }
-- **Cannot enable: no local library configured**
-{: #settings-rules-rules-cannot-enable-tooltip }
 
 ### Scheduled Evaluation  {#settings-rules-rule-schedule}
 
 Run all enabled rules on a recurring schedule. Requires a container restart after changing.
-
-- **Evaluates all enabled rules against every artist on the selected interval. Changes take effect after container restart.**
-{: #settings-rules-rule-schedule-note }
 
 ### Schedule  {#settings-rules-schedule}
 
@@ -337,8 +314,6 @@ Configure how users can authenticate with this instance.
 
 - **Local** -- Username and password authentication managed by Stillwater.
 {: #settings-auth-providers-auth-local }
-- **Local authentication cannot be disabled. It provides break-glass access if all other providers are misconfigured.**
-{: #settings-auth-providers-auth-local-always-on }
 - **Emby** -- Authenticate using an Emby server account. Uses the existing Emby connection.
 {: #settings-auth-providers-auth-emby }
 - **Enable Emby authentication**
@@ -355,9 +330,9 @@ Configure how users can authenticate with this instance.
 {: #settings-auth-providers-auth-guard-rail }
 - **Emby guard rail setting**
 {: #settings-auth-providers-auth-emby-guard-rail }
-- **Admins only**
+- **Admins only** -- Only users who already have an admin account in the upstream provider are allowed to auto-provision. Other users can still sign in but will not have a Stillwater account created for them.
 {: #settings-auth-providers-auth-admins-only }
-- **Any user**
+- **Any user** -- Every user the upstream provider authenticates is auto-provisioned a Stillwater account at the configured default role.
 {: #settings-auth-providers-auth-any-user }
 - **Default Role** -- Role assigned to auto-provisioned users
 {: #settings-auth-providers-auth-default-role }
@@ -381,21 +356,21 @@ Configure how users can authenticate with this instance.
 {: #settings-auth-providers-auth-oidc }
 - **Enable OpenID Connect authentication**
 {: #settings-auth-providers-auth-enable-oidc }
-- **Issuer URL**
+- **Issuer URL** -- Base URL of your OIDC provider. Stillwater discovers the rest of the endpoints automatically through the provider's well-known configuration document.
 {: #settings-auth-providers-auth-issuer-url }
-- **Client ID**
+- **Client ID** -- Public identifier registered for Stillwater in your OIDC provider.
 {: #settings-auth-providers-auth-client-id }
-- **Client Secret**
+- **Client Secret** -- Confidential credential issued by your OIDC provider. Leave blank when editing other fields to keep the existing secret.
 {: #settings-auth-providers-auth-client-secret }
 - **Default role for OIDC users not in an admin group**
 {: #settings-auth-providers-auth-default-role-oidc }
-- **Administrator Groups**
+- **Administrator Groups** -- Comma-separated list of OIDC groups whose members are granted the Administrator role. Stillwater reads the values from the groups claim on the ID token.
 {: #settings-auth-providers-auth-admin-groups }
-- **Allowed Groups**
+- **Allowed Groups** -- Comma-separated list of OIDC groups allowed to log in. Leave empty to allow every authenticated user from this provider.
 {: #settings-auth-providers-auth-allowed-groups }
-- **Display Name**
+- **Display Name** -- Provider name shown on the sign-in button. Falls back to a generic OIDC label when blank.
 {: #settings-auth-providers-auth-oidc-display-name }
-- **Logo URL**
+- **Logo URL** -- Optional image shown next to the OIDC sign-in button. A key icon is used when blank.
 {: #settings-auth-providers-auth-oidc-logo-url }
 - **Auto-Provision** -- Create accounts for authenticated OIDC users
 {: #settings-auth-providers-auth-auto-provision-oidc }
@@ -412,10 +387,8 @@ Manage "Don't ask again" preferences for confirmation dialogs throughout the app
 
 Optimize database performance and reclaim disk space.
 
-- **Auto-optimize schedule**
+- **Auto-optimize schedule** -- How often Stillwater runs the optimize task in the background. The schedule applies after a restart.
 {: #settings-maintenance-db-maintenance-auto-schedule }
-- **Runs PRAGMA optimize and WAL checkpoint on the selected interval. Requires restart to apply schedule changes.**
-{: #settings-maintenance-db-maintenance-schedule-note }
 
 ### Schedule  {#settings-maintenance-schedule}
 
@@ -432,13 +405,13 @@ Optimize database performance and reclaim disk space.
 
 Create, download, and manage database backups.
 
-- **Retention**
+- **Retention** -- Controls how long Stillwater keeps automatic backups before pruning them.
 {: #settings-maintenance-backup-retention }
-- **Keep**
+- **Keep** -- Maximum number of backups to retain. Older backups are pruned after each automatic backup once this count is exceeded.
 {: #settings-maintenance-backup-keep }
 - **backups**
 {: #settings-maintenance-backup-backups-unit }
-- **Max age**
+- **Max age** -- Discard automatic backups older than the selected age. Set to Never to keep backups indefinitely; the count limit still applies.
 {: #settings-maintenance-backup-max-age }
 - **7 days**
 {: #settings-maintenance-backup-days-7 }
@@ -450,21 +423,15 @@ Create, download, and manage database backups.
 {: #settings-maintenance-backup-days-60 }
 - **90 days**
 {: #settings-maintenance-backup-days-90 }
-- **Oldest backups are pruned after each automatic backup when they exceed the configured retention count or maximum age.**
-{: #settings-maintenance-backup-retention-note }
 
 ### Settings Export / Import  {#settings-maintenance-export-import}
 
-- **Export passphrase**
+- **Export passphrase** -- Pick a passphrase used to encrypt the exported file. You will need the same passphrase to import the file later.
 {: #settings-maintenance-export-import-export-passphrase }
-- **Import settings file**
+- **Import settings file** -- Pick the encrypted .json file produced by a previous export.
 {: #settings-maintenance-export-import-import-file-label }
-- **Import passphrase**
+- **Import passphrase** -- Enter the same passphrase used when the file was exported.
 {: #settings-maintenance-export-import-import-passphrase }
-- **The export file is encrypted with your passphrase using PBKDF2 + AES-256-GCM.**
-{: #settings-maintenance-export-import-encryption-note-line1 }
-- **You will need the same passphrase to import the file on any instance.**
-{: #settings-maintenance-export-import-encryption-note-line2 }
 
 ## Logs  {#tab-logs}
 
@@ -472,19 +439,19 @@ Create, download, and manage database backups.
 
 Configure log level, format, and file output with rotation. Changes take effect immediately.
 
-- **Level**
+- **Level** -- Minimum severity to record. Trace and Debug are verbose and intended for troubleshooting; Info is a good default for normal operation.
 {: #settings-logs-log-settings-level }
 - **Trace**
 {: #settings-logs-log-settings-level-trace }
 - **Debug**
 {: #settings-logs-log-settings-level-debug }
-- **Format**
+- **Format** -- JSON is easier to ingest into log shippers and search tools. Text is more readable when you are reading the file directly.
 {: #settings-logs-log-settings-format }
 - **JSON**
 {: #settings-logs-log-settings-format-json }
 - **Text**
 {: #settings-logs-log-settings-format-text }
-- **Revert log level on restart**
+- **Revert log level on restart** -- Apply the new log level only for the current process. The persisted level is restored when Stillwater restarts. Useful for temporary debug sessions.
 {: #settings-logs-log-settings-revert-on-restart }
 - **Revert to**
 {: #settings-logs-log-settings-revert-to }
@@ -492,15 +459,13 @@ Configure log level, format, and file output with rotation. Changes take effect 
 {: #settings-logs-log-settings-on-restart }
 - **Log to file** -- Write logs to a rotating file in addition to stdout.
 {: #settings-logs-log-settings-log-to-file }
-- **Log file path**
+- **Log file path** -- Where Stillwater writes the rotating log file. Use a path inside your config directory so the log persists across container restarts.
 {: #settings-logs-log-settings-file-path }
-- **Logs are always written to stdout. This enables an additional rotating file.**
-{: #settings-logs-log-settings-file-path-note }
-- **Max size (MB)**
+- **Max size (MB)** -- Rotate the log file once it grows past this size. The active file becomes a numbered archive and a new active file is started.
 {: #settings-logs-log-settings-max-size }
-- **Files to keep**
+- **Files to keep** -- Number of rotated log files to retain alongside the active one. Older files are removed during rotation.
 {: #settings-logs-log-settings-files-to-keep }
-- **Max age (days)**
+- **Max age (days)** -- Discard rotated log files older than this many days, regardless of how many files exist.
 {: #settings-logs-log-settings-max-age }
 
 ### Log Viewer  {#settings-logs-log-viewer}
@@ -515,8 +480,6 @@ View application logs in real time with level filtering and search.
 {: #settings-logs-log-viewer-select-file }
 - **Live (current)**
 {: #settings-logs-log-viewer-live-current }
-- **Showing up to 200 most recent entries. Live view polls in real time; historical files are loaded on demand.**
-{: #settings-logs-log-viewer-footer-note }
 
 ## Updates  {#tab-updates}
 

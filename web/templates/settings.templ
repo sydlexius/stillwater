@@ -1190,7 +1190,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							data-connection-label={ t(ctx, "settings.libraries.connection_badge") }
 							data-empty={ t(ctx, "settings.libraries.empty") }
 							data-lock-nfo-label={ t(ctx, "settings.libraries.lock_nfo_label") }
-							data-lock-nfo-title={ t(ctx, "settings.libraries.lock_nfo_title") }
+							data-lock-nfo-title={ t(ctx, "settings.libraries.lock_nfo_label.description") }
 							data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
 							data-lock-nfo-disabled={ t(ctx, "settings.libraries.lock_nfo_disabled_toast") }
 							data-lock-nfo-failed={ t(ctx, "settings.libraries.lock_nfo_failed_toast") }
@@ -3356,7 +3356,7 @@ templ settingsLibraryRow(lib library.Library) {
 						/>
 						<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
 					</label>
-					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_title"), "settings-libraries-libraries-lock-nfo-label")
+					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.description"), "settings-libraries-libraries-lock-nfo-label")
 				</span>
 			}
 			if lib.ConnectionID != "" {
