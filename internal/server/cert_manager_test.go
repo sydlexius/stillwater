@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/config"
@@ -176,9 +177,13 @@ func TestAutocertManager_HTTPHandler_FallbackPassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAutocertManager: %v", err)
 	}
-	called := false
+	// atomic.Bool because the handler runs in the httptest server's
+	// goroutine and we read the flag from the test goroutine. The HTTP
+	// response gives a happens-before in practice, but -race reports the
+	// access as a race anyway; explicit synchronization is correct.
+	var called atomic.Bool
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
+		called.Store(true)
 		w.WriteHeader(http.StatusTeapot)
 	})
 	h := mgr.HTTPHandler(fallback)
@@ -189,7 +194,7 @@ func TestAutocertManager_HTTPHandler_FallbackPassesThrough(t *testing.T) {
 		t.Fatalf("GET: %v", err)
 	}
 	resp.Body.Close()
-	if !called {
+	if !called.Load() {
 		t.Error("fallback was not invoked for non-challenge request")
 	}
 	if resp.StatusCode != http.StatusTeapot {
