@@ -97,7 +97,10 @@ templ settingsUsersTab(data UsersTabData) {
 		<div class="px-6 py-4">
 			<div class="flex items-center justify-between">
 				<div>
-					<div class="font-medium text-sm">{ t(ctx, "settings.users.multi_user_mode.label") }</div>
+					<div class="flex items-center gap-1">
+						<div class="font-medium text-sm">{ t(ctx, "settings.users.multi_user_mode.label") }</div>
+						@components.ContextHelp("help-multi-user-toggle", t(ctx, "settings.users.enable_multi_user.label"), t(ctx, "settings.users.enable_multi_user.help"), "settings-users-users-enable-multi-user")
+					</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 						{ t(ctx, "settings.users.multi_user_mode.description") }
 					</div>
@@ -163,7 +166,10 @@ templ settingsUsersTab(data UsersTabData) {
 				>
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 						<div>
-							<label for="invite-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.users.role") }</label>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="invite-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.users.role") }</label>
+								@components.ContextHelp("help-invite-role", t(ctx, "settings.users.role_for_invite.label"), t(ctx, "settings.users.role_for_invite.help"), "settings-users-users-role-for-invite")
+							</div>
 							<select
 								id="invite-role"
 								name="role"
@@ -176,7 +182,10 @@ templ settingsUsersTab(data UsersTabData) {
 							</select>
 						</div>
 						<div>
-							<label for="invite-expires" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.users.expires_in") }</label>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="invite-expires" class="block text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.users.expires_in") }</label>
+								@components.ContextHelp("help-invite-expires", t(ctx, "settings.users.expires_in.label"), t(ctx, "settings.users.expires_in.help"), "settings-users-users-expires-in")
+							</div>
 							<select
 								id="invite-expires"
 								name="expires_in"
