@@ -27,6 +27,11 @@ RUN chmod +x /entrypoint.sh
 ARG SW_TLS_PORT=1974
 EXPOSE 1973
 EXPOSE ${SW_TLS_PORT}
+# HTTP/3 (QUIC) listens on UDP. Mirrors the TCP HTTPS port; advertised so
+# `docker run -P` and orchestrators that scrape image metadata bind UDP too
+# when SW_HTTP3_ENABLED=true. The actual UDP bind happens at run time.
+EXPOSE 1973/udp
+EXPOSE ${SW_TLS_PORT}/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1'

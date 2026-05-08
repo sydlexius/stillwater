@@ -40,7 +40,7 @@ func clearSWEnv(t *testing.T) {
 		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
 		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
 		"SW_TLS_CERT_FILE", "SW_TLS_KEY_FILE", "SW_TLS_PORT",
-		"SW_HTTP_REDIRECT_PORT", "SW_HTTP3_ENABLED",
+		"SW_HTTP_REDIRECT_PORT", "SW_HTTP3_ENABLED", "SW_HTTP3_PORT",
 		"SW_ACME_DOMAIN", "SW_ACME_EMAIL", "SW_ACME_CA",
 		"SW_ACME_EAB_KEY_ID", "SW_ACME_EAB_MAC_KEY",
 		"SW_ACME_IP", "SW_ACME_CACHE_DIR",
@@ -894,6 +894,61 @@ func TestValidate_TLSConfiguredWithoutPortCollapsesToServerPort(t *testing.T) {
 	}
 	if cfg.Server.Port != 1973 {
 		t.Errorf("Server.Port = %d; want 1973", cfg.Server.Port)
+	}
+}
+
+// TestValidate_HTTP3RequiresTLS rejects SW_HTTP3_ENABLED=true without a
+// configured cert/key pair. HTTP/3 mandates TLS 1.3, so the listener layer
+// has nothing to bind without TLS material.
+func TestValidate_HTTP3RequiresTLS(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_HTTP3_ENABLED", "true")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: HTTP/3 enabled without TLS")
+	}
+}
+
+// TestValidate_HTTP3WithTLSAccepted is the happy path: HTTP/3 enabled and
+// TLS configured -- Load succeeds.
+func TestValidate_HTTP3WithTLSAccepted(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	t.Setenv("SW_HTTP3_ENABLED", "true")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Server.HTTP3.Enabled {
+		t.Error("HTTP3.Enabled = false; want true")
+	}
+}
+
+// TestValidate_InvalidHTTP3Port rejects an out-of-range explicit HTTP/3 port.
+func TestValidate_InvalidHTTP3Port(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	t.Setenv("SW_HTTP3_ENABLED", "true")
+	t.Setenv("SW_HTTP3_PORT", "70000")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: HTTP/3 port out of range")
+	}
+}
+
+// TestLoadEnv_HTTP3Port populates the explicit override.
+func TestLoadEnv_HTTP3Port(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	t.Setenv("SW_HTTP3_ENABLED", "true")
+	t.Setenv("SW_HTTP3_PORT", "8443")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.HTTP3.Port != 8443 {
+		t.Errorf("HTTP3.Port = %d; want 8443", cfg.Server.HTTP3.Port)
 	}
 }
 

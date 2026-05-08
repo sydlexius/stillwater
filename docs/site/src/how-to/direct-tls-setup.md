@@ -69,7 +69,7 @@ Open Settings, scroll to the General tab. The TLS Status card shows one of three
 - **Active (BYO certificate)** -- direct TLS using the cert and key supplied via env vars or config file.
 - **Active (ACME, &lt;domain&gt;)** -- ACME-managed cert (arrives in v1.1).
 
-The card also lists the bound port so you can confirm whether you're in collapse mode (HTTPS on the original `SW_PORT`) or split-port mode (HTTPS on `SW_TLS_PORT`). The card is read-only; configure TLS via env vars or the config file.
+The card also lists the bound port so you can confirm whether you're in collapse mode (HTTPS on the original `SW_PORT`) or split-port mode (HTTPS on `SW_TLS_PORT`). When HTTP/3 is enabled, an additional `HTTP/3 on :<port>/UDP` row appears. The card is read-only; configure TLS via env vars or the config file.
 
 ## HSTS
 
@@ -91,10 +91,56 @@ Added in v1.1.0; see issue [#930](https://github.com/sydlexius/stillwater/issues
 
 Added in v1.1.0; see issue [#931](https://github.com/sydlexius/stillwater/issues/931). Lets you obtain certificates for a public IP address rather than a DNS name.
 
-### HTTP/3
-
-Added in v1.1.0; see issue [#932](https://github.com/sydlexius/stillwater/issues/932). Toggle via `SW_HTTP3_ENABLED=true`. Requires direct TLS to be configured. Note that HTTP/3 runs over UDP, so any firewall or NAT in front of Stillwater must forward the configured port for both TCP and UDP.
-
 ### HTTP-to-HTTPS redirect listener
 
 Added in v1.1.0. Setting `SW_HTTP_REDIRECT_PORT=80` makes Stillwater bind a second plain-HTTP listener that 301-redirects every request to the HTTPS port. See the [HTTP-to-HTTPS redirect](http-redirect.md) how-to for setup details and reverse-proxy interactions.
+
+## HTTP/3 (QUIC) { #http3-quic-firewall }
+
+HTTP/3 is the next-generation HTTP protocol. It runs over QUIC (a UDP-based transport) instead of TCP, which lets modern browsers establish connections faster and handle packet loss more gracefully on flaky networks. Stillwater can advertise HTTP/3 alongside the existing TCP HTTPS listener so capable clients upgrade automatically.
+
+### Enable
+
+Set the env var:
+
+```bash
+SW_HTTP3_ENABLED=true
+```
+
+Or in `config.toml`:
+
+```toml
+[server.http3]
+enabled = true
+# port = 0  # 0 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT).
+```
+
+HTTP/3 requires direct TLS to be configured (it mandates TLS 1.3). Stillwater refuses to start if `SW_HTTP3_ENABLED=true` is set without a cert and key.
+
+When enabled, every response carries an `Alt-Svc` header advertising HTTP/3 on the configured UDP port. Browsers cache this advertisement and try HTTP/3 on subsequent requests. There is no separate URL for HTTP/3; it is a transport-layer upgrade.
+
+### Firewall and NAT
+
+QUIC runs over UDP. Any firewall or NAT between your clients and Stillwater must forward the configured port for **both TCP and UDP**. The TCP rule is what the existing HTTPS listener already uses; HTTP/3 needs an additional UDP rule on the same port number.
+
+If UDP is blocked anywhere in the path, HTTP/3 simply fails to connect and the client transparently falls back to HTTP/1.1 or HTTP/2 over TCP. No user-visible error appears; the upgrade is opportunistic. This makes HTTP/3 a graceful enhancement: leaving it enabled in environments with partial UDP support never breaks the site.
+
+### Docker
+
+The container image already declares `EXPOSE 1973/udp` so `docker run -P` and orchestrators that scrape image metadata pick up the UDP port automatically. With explicit port mappings, add the UDP variant alongside the TCP one in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "1973:1973"
+  - "1973:1973/udp"
+```
+
+### Confirm
+
+The TLS Status card in the Settings General tab adds a `HTTP/3 on :<port>/UDP` listener row when HTTP/3 is enabled. From a client, a quick check is:
+
+```bash
+curl -k --http3-only https://your-host/api/v1/health
+```
+
+A successful response confirms the QUIC handshake works end-to-end. In Chrome devtools, the Network tab's Protocol column shows `h3` for requests served over HTTP/3.

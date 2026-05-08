@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go/http3"
+
 	"github.com/sydlexius/stillwater/internal/config"
 )
 
@@ -330,6 +332,177 @@ func TestRunListeners_TLSSplitPort(t *testing.T) {
 	if err == nil {
 		conn.Close()
 		t.Errorf("Server.Port :%d unexpectedly accepted a connection; split-port mode should bind only TLS.Port", serverPort)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("RunListeners returned %v; want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunListeners did not exit within 5s of cancel")
+	}
+}
+
+// freeUDPPort returns an OS-allocated UDP port. The caller binds it
+// immediately; for the HTTP/3 listener test we use the same port number on
+// both protocols (TCP for HTTPS, UDP for QUIC).
+func freeUDPPort(t *testing.T) int {
+	t.Helper()
+	c, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket(udp): %v", err)
+	}
+	defer c.Close()
+	return c.LocalAddr().(*net.UDPAddr).Port
+}
+
+// TestEffectiveHTTP3Port covers the resolver that picks the UDP port for the
+// HTTP/3 listener. Order: HTTP3.Port > TLS.Port > Server.Port. Disabled and
+// TLS-not-configured both resolve to 0.
+func TestEffectiveHTTP3Port(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want int
+	}{
+		{
+			name: "nil config",
+			cfg:  nil,
+			want: 0,
+		},
+		{
+			name: "disabled",
+			cfg: &config.Config{
+				Server: config.ServerConfig{Port: 1973, TLS: config.TLSConfig{CertFile: "c", KeyFile: "k"}},
+			},
+			want: 0,
+		},
+		{
+			name: "enabled but no TLS",
+			cfg: &config.Config{
+				Server: config.ServerConfig{Port: 1973, HTTP3: config.HTTP3Config{Enabled: true}},
+			},
+			want: 0,
+		},
+		{
+			name: "explicit HTTP3 port wins",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port:  1973,
+					TLS:   config.TLSConfig{CertFile: "c", KeyFile: "k", Port: 443},
+					HTTP3: config.HTTP3Config{Enabled: true, Port: 8443},
+				},
+			},
+			want: 8443,
+		},
+		{
+			name: "fall back to TLS port",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port:  1973,
+					TLS:   config.TLSConfig{CertFile: "c", KeyFile: "k", Port: 443},
+					HTTP3: config.HTTP3Config{Enabled: true},
+				},
+			},
+			want: 443,
+		},
+		{
+			name: "fall back to Server.Port (collapse)",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port:  1973,
+					TLS:   config.TLSConfig{CertFile: "c", KeyFile: "k"},
+					HTTP3: config.HTTP3Config{Enabled: true},
+				},
+			},
+			want: 1973,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EffectiveHTTP3Port(tt.cfg); got != tt.want {
+				t.Errorf("EffectiveHTTP3Port = %d; want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunListeners_HTTP3RoundTrip starts the listener helper with HTTP/3
+// enabled, dials with a quic-go HTTP/3 client, and verifies a successful
+// response. Sharing one port across TCP (HTTPS) and UDP (QUIC) mirrors the
+// production "advertise via Alt-Svc" topology.
+func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
+	// Not t.Parallel: the freePort/freeUDPPort dance closes its sockets
+	// before RunListeners rebinds, so we serialize real-socket tests.
+	dir := t.TempDir()
+	certPath, keyPath := generateSelfSignedCert(t, dir)
+	port := freeUDPPort(t)
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port: port,
+			TLS: config.TLSConfig{
+				CertFile: certPath,
+				KeyFile:  keyPath,
+			},
+			HTTP3: config.HTTP3Config{Enabled: true},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("h3-ok"))
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+
+	// QUIC has no TCP-style accept-on-ready signal. Give the UDP listener a
+	// brief grace period to enter its accept loop, then issue the request
+	// (which has its own timeout/retry).
+	time.Sleep(100 * time.Millisecond)
+
+	tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // test cert is self-signed
+			NextProtos:         []string{"h3"},
+		},
+	}
+	defer tr.Close()
+	client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	// Retry briefly: the http3.Server.ListenAndServe goroutine may not yet
+	// have its UDP socket bound the first time we dial.
+	var resp *http.Response
+	var lastErr error
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		r, err := client.Get("https://" + addr + "/")
+		if err == nil {
+			resp = r
+			break
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	if resp == nil {
+		cancel()
+		<-done
+		t.Fatalf("HTTP/3 GET never succeeded: %v", lastErr)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d; want 200", resp.StatusCode)
+	}
+	if resp.ProtoMajor != 3 {
+		t.Errorf("response proto = %s (major=%d); want HTTP/3", resp.Proto, resp.ProtoMajor)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "h3-ok" {
+		t.Errorf("body = %q; want h3-ok", string(body))
 	}
 
 	cancel()
