@@ -128,6 +128,35 @@ func nameToAnchor(name string) string {
 	return b.String()
 }
 
+// renderWhenFires returns a "When this fires:" bullet list for a rule entry.
+// Returns empty string when the entry has no Examples.
+func renderWhenFires(entry rule.RuleCatalogueEntry) string {
+	if len(entry.Examples) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("**When this fires:**\n\n")
+	for _, ex := range entry.Examples {
+		sb.WriteString("- ")
+		sb.WriteString(ex)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// renderFixExample returns a fenced before/after block for a rule entry.
+// Returns empty string when FixExample is empty.
+func renderFixExample(entry rule.RuleCatalogueEntry) string {
+	if entry.FixExample == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("```\n")
+	sb.WriteString(entry.FixExample)
+	sb.WriteString("\n```\n")
+	return sb.String()
+}
+
 // renderConfigurable returns the "Configurable:" block for a rule. When only
 // severity is configurable it emits a compact inline form; otherwise it emits
 // a bullet list.
@@ -250,14 +279,31 @@ func renderCatalogue(rules []rule.Rule) string {
 			b.WriteString(r.Description)
 			b.WriteString("\n\n")
 
-			// Fix block
-			b.WriteString("**Fix:** ")
-			if entry.FixBehavior != "" {
-				b.WriteString(entry.FixBehavior)
-			} else {
-				b.WriteString("No automated fix.")
+			// Guards paragraph (2-4 sentences expanding on the description)
+			if entry.Guards != "" {
+				b.WriteString(entry.Guards)
+				b.WriteString("\n\n")
 			}
-			b.WriteString("\n\n")
+
+			// When this fires examples
+			if wf := renderWhenFires(entry); wf != "" {
+				b.WriteString(wf)
+				b.WriteString("\n")
+			}
+
+			// Fix block
+			if entry.FixBehavior != "" {
+				b.WriteString("**What the fix does:** ")
+				b.WriteString(entry.FixBehavior)
+				b.WriteString("\n\n")
+				// FixExample before/after block
+				if fe := renderFixExample(entry); fe != "" {
+					b.WriteString(fe)
+					b.WriteString("\n")
+				}
+			} else {
+				b.WriteString("**Fix:** No automated fix.\n\n")
+			}
 
 			// Configurable block
 			b.WriteString(renderConfigurable(r.Config))
