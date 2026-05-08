@@ -575,25 +575,17 @@ func TestEnsureScaffold_SkipsYAMLPath(t *testing.T) {
 	}
 }
 
-// TestLoadFromEnv_TLSAndACMEStubs covers the new env-var branches added in
-// #928. Only the SW_TLS_* triple has runtime behavior in this milestone; the
-// remaining ACME and HTTP/3 vars are stubs whose only contract is to land in
-// the Config struct so #929/#930/#932 can wire behavior without re-touching
-// the loader.
-func TestLoadFromEnv_TLSAndACMEStubs(t *testing.T) {
+// TestLoadFromEnv_TLSEnvBranches covers the SW_TLS_* + SW_HTTP_REDIRECT_*
+// + SW_HTTP3_* env-var branches. ACME knobs are exercised separately
+// because SW_ACME_DOMAIN is mutually exclusive with the BYO cert pair (see
+// TestLoadFromEnv_ACMEStubs).
+func TestLoadFromEnv_TLSEnvBranches(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_TLS_CERT_FILE", "/tmp/cert.pem")
 	t.Setenv("SW_TLS_KEY_FILE", "/tmp/key.pem")
 	t.Setenv("SW_TLS_PORT", "443")
 	t.Setenv("SW_HTTP_REDIRECT_PORT", "80")
 	t.Setenv("SW_HTTP3_ENABLED", "true")
-	t.Setenv("SW_ACME_DOMAIN", "stillwater.example.com")
-	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
-	t.Setenv("SW_ACME_CA", "letsencrypt")
-	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
-	t.Setenv("SW_ACME_EAB_MAC_KEY", "mac-key")
-	t.Setenv("SW_ACME_IP", "203.0.113.5")
-	t.Setenv("SW_ACME_CACHE_DIR", "/var/lib/acme")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -615,13 +607,34 @@ func TestLoadFromEnv_TLSAndACMEStubs(t *testing.T) {
 	if !cfg.Server.HTTP3.Enabled {
 		t.Error("HTTP3.Enabled = false; want true")
 	}
+}
+
+// TestLoadFromEnv_ACMEStubs covers the SW_ACME_* env-var branches in
+// isolation from BYO TLS, since SW_ACME_DOMAIN is mutually exclusive with
+// SW_TLS_CERT_FILE/SW_TLS_KEY_FILE. EAB and IP fields stay populated for
+// #931 stability even though they have no behavior today.
+func TestLoadFromEnv_ACMEStubs(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "stillwater.example.com")
+	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
+	t.Setenv("SW_ACME_CA", "https://acme-staging-v02.api.letsencrypt.org/directory")
+	t.Setenv("SW_ACME_EAB_KEY_ID", "key-id")
+	t.Setenv("SW_ACME_EAB_MAC_KEY", "mac-key")
+	t.Setenv("SW_ACME_IP", "203.0.113.5")
+	t.Setenv("SW_ACME_CACHE_DIR", "/var/lib/acme")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
 	if cfg.ACME.Domain != "stillwater.example.com" {
 		t.Errorf("ACME.Domain = %q", cfg.ACME.Domain)
 	}
 	if cfg.ACME.Email != "admin@example.com" {
 		t.Errorf("ACME.Email = %q", cfg.ACME.Email)
 	}
-	if cfg.ACME.CA != "letsencrypt" {
+	if cfg.ACME.CA != "https://acme-staging-v02.api.letsencrypt.org/directory" {
 		t.Errorf("ACME.CA = %q", cfg.ACME.CA)
 	}
 	if cfg.ACME.EabKeyID != "key-id" {
@@ -661,12 +674,6 @@ enabled = true
 
 [database]
 path = "/tmp/test.db"
-
-[acme]
-domain = "example.com"
-email = "ops@example.com"
-ca = "letsencrypt-staging"
-cache_dir = "/var/lib/acme"
 `), 0o644); err != nil {
 		t.Fatalf("write toml: %v", err)
 	}
@@ -687,11 +694,39 @@ cache_dir = "/var/lib/acme"
 	if !cfg.Server.HTTP3.Enabled {
 		t.Error("HTTP3.Enabled = false; want true")
 	}
+}
+
+// TestLoad_ACMEFromTOML asserts the [acme] section parses cleanly from
+// TOML. ACME and BYO TLS are mutually exclusive so the load is exercised
+// in isolation.
+func TestLoad_ACMEFromTOML(t *testing.T) {
+	clearSWEnv(t)
+	dir := t.TempDir()
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(`
+[database]
+path = "/tmp/test.db"
+
+[acme]
+domain = "example.com"
+email = "ops@example.com"
+ca = "https://acme-staging-v02.api.letsencrypt.org/directory"
+cache_dir = "/var/lib/acme"
+`), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	cfg, err := Load(tomlPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if cfg.ACME.Domain != "example.com" {
 		t.Errorf("ACME.Domain = %q", cfg.ACME.Domain)
 	}
-	if cfg.ACME.CA != "letsencrypt-staging" {
+	if cfg.ACME.CA != "https://acme-staging-v02.api.letsencrypt.org/directory" {
 		t.Errorf("ACME.CA = %q", cfg.ACME.CA)
+	}
+	if cfg.ACME.CacheDir != "/var/lib/acme" {
+		t.Errorf("ACME.CacheDir = %q", cfg.ACME.CacheDir)
 	}
 }
 
@@ -714,11 +749,6 @@ server:
     enabled: true
 database:
   path: /tmp/test.db
-acme:
-  domain: example.com
-  email: ops@example.com
-  ca: letsencrypt-staging
-  cache_dir: /var/lib/acme
 `), 0o644); err != nil {
 		t.Fatalf("write yaml: %v", err)
 	}
@@ -738,9 +768,6 @@ acme:
 	}
 	if !cfg.Server.HTTP3.Enabled {
 		t.Error("HTTP3.Enabled = false; want true")
-	}
-	if cfg.ACME.Domain != "example.com" {
-		t.Errorf("ACME.Domain = %q", cfg.ACME.Domain)
 	}
 }
 
@@ -962,6 +989,38 @@ func TestLoadEnv_HTTP3Port(t *testing.T) {
 	}
 	if cfg.Server.HTTP3.Port != 8443 {
 		t.Errorf("HTTP3.Port = %d; want 8443", cfg.Server.HTTP3.Port)
+	}
+}
+
+// TestValidate_ACMEDomainMutuallyExclusiveWithBYOCert rejects setting
+// SW_ACME_DOMAIN alongside a BYO cert/key. The listener layer would have
+// to silently pick one source; rejecting the combination at config time
+// surfaces the ambiguity loudly.
+func TestValidate_ACMEDomainMutuallyExclusiveWithBYOCert(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: SW_ACME_DOMAIN cannot coexist with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE")
+	}
+}
+
+// TestValidate_ACMEDomainAloneAccepted asserts the happy path: ACME on,
+// no BYO cert. Loader accepts it; the listener layer wires autocert.
+func TestValidate_ACMEDomainAloneAccepted(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	t.Setenv("SW_ACME_EMAIL", "admin@example.com")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ACME.Domain != "host.example.com" {
+		t.Errorf("ACME.Domain = %q; want %q", cfg.ACME.Domain, "host.example.com")
+	}
+	if cfg.ACME.Email != "admin@example.com" {
+		t.Errorf("ACME.Email = %q; want %q", cfg.ACME.Email, "admin@example.com")
 	}
 }
 

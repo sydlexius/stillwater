@@ -1149,20 +1149,31 @@ func getDBIntSetting(db *sql.DB, key string, fallback int) int {
 }
 
 // buildTLSStatus condenses the runtime TLS configuration into the read-only
-// shape the Settings General tab renders. Two branches:
-//   - off: no cert configured -- plain HTTP on Server.Port.
-//   - byo: cert and key set   -- HTTPS on TLS.Port, or on Server.Port in
-//     collapse mode.
-//
-// The "acme" mode the template understands is intentionally not produced
-// here yet: the listener layer ignores ACME config until autocert is wired,
-// so reporting an active ACME-managed listener would lie to operators who
-// set SW_ACME_DOMAIN ahead of that PR. The template branch stays for when
-// ACME does land.
+// shape the Settings General tab renders. Three branches:
+//   - off:  no cert configured        -- plain HTTP on Server.Port.
+//   - byo:  cert and key set          -- HTTPS on TLS.Port, or on Server.Port
+//     in collapse mode.
+//   - acme: SW_ACME_DOMAIN set        -- HTTPS via autocert (Let's Encrypt /
+//     Buypass). Surfaces the domain so the operator can confirm the
+//     binding without parsing logs. Config validation guarantees that
+//     ACME and BYO are mutually exclusive, so the order of branches
+//     here is also their order of precedence.
 //
 // HTTPRedirectPort is forwarded as-is; the template renders the redirect
 // listener row only when it is non-zero.
 func buildTLSStatus(cfg *config.Config) templates.TLSStatusData {
+	if cfg.ACME.Domain != "" {
+		port := cfg.Server.TLS.Port
+		if port == 0 {
+			port = cfg.Server.Port
+		}
+		return templates.TLSStatusData{
+			Mode:             "acme",
+			AcmeDomain:       cfg.ACME.Domain,
+			HTTPSPort:        port,
+			HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+		}
+	}
 	if cfg.Server.TLS.Enabled() {
 		port := cfg.Server.TLS.Port
 		if port == 0 {

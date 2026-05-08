@@ -78,18 +78,19 @@ type HTTP3Config struct {
 }
 
 // ACMEConfig holds Automatic Certificate Management Environment settings.
-// All fields are stubs today; the autocert (Let's Encrypt / Buypass via
-// golang.org/x/crypto/acme/autocert) and ZeroSSL IP-SAN (via go-acme/lego)
-// wirings ship in later milestone PRs. Leaving the struct populated but unread
-// keeps the env-var loader and reference docs stable across the milestone.
+// Domain/Email/CA/CacheDir drive the autocert (Let's Encrypt / Buypass via
+// golang.org/x/crypto/acme/autocert) path today. EabKeyID/EabMacKey/IP are
+// reserved for the ZeroSSL IP-SAN wiring (#931, lego); leaving them
+// populated but unread keeps the env-var loader and reference docs stable
+// across the milestone.
 type ACMEConfig struct {
-	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"Reserved for future use; not yet active. DNS name that the future ACME path will request certificates for."`
-	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Reserved for future use; not yet active. Contact email that will be registered with the ACME CA when the ACME path lands."`
-	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"Reserved for future use; not yet active. Will accept an ACME directory URL or shorthand (letsencrypt, letsencrypt-staging, buypass, zerossl) when the ACME path lands."`
+	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"DNS name to request certificates for via ACME (Let's Encrypt by default). Setting this turns on autocert; the domain MUST resolve to this server and port 80 MUST be reachable from the public internet."`
+	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Contact email registered with the ACME CA. Used for expiry notifications and account recovery; recommended but not required."`
+	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"ACME directory URL. Defaults to Let's Encrypt production. Set to https://acme-staging-v02.api.letsencrypt.org/directory for testing without burning rate-limit quota."`
 	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL)."`
 	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands."`
 	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address."`
-	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Reserved for future use; not yet active. Directory where ACME account keys and issued certificates will be cached when the ACME path lands."`
+	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Directory where ACME account keys and issued certificates are cached. Defaults to the directory containing SW_DB_PATH plus /acme-cache. Persist this across restarts to avoid hitting CA rate limits."`
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -560,12 +561,22 @@ func (c *Config) validate() error {
 		return fmt.Errorf("TLS port and HTTP redirect port must differ (both=%d)", effectiveTLSPort)
 	}
 
+	// ACME (autocert) is mutually exclusive with BYO TLS cert/key. The
+	// listener layer would have to pick one source and silently ignore
+	// the other; rejecting the combination at config time surfaces the
+	// ambiguity loudly. Operators who want to migrate from BYO to ACME
+	// (or vice versa) flip one set of variables, not both.
+	if c.ACME.Domain != "" && (tlsCertSet || tlsKeySet) {
+		return fmt.Errorf("SW_ACME_DOMAIN is mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE; pick one TLS source")
+	}
+
 	// The redirect listener only makes sense when there is an HTTPS listener
 	// to redirect to. Refuse to start with the misconfiguration rather than
-	// quietly skipping the redirect (which would let a deploy that thought it
-	// was redirecting silently keep serving plain HTTP only on Server.Port).
-	if redirectPort != 0 && !tlsCertSet {
-		return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
+	// quietly skipping the redirect (which would let a deploy that thought
+	// it was redirecting silently keep serving plain HTTP only on
+	// Server.Port). Either BYO cert OR ACME counts as "TLS configured".
+	if redirectPort != 0 && !tlsCertSet && c.ACME.Domain == "" {
+		return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE, or SW_ACME_DOMAIN)")
 	}
 
 	// HTTP/3 prerequisites: requires TLS (HTTP/3 mandates TLS 1.3) and a

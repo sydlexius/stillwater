@@ -65,7 +65,10 @@ func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler,
 		return errors.New("server: nil logger")
 	}
 
-	entries := buildEntries(cfg, handler, logger)
+	entries, err := buildEntries(cfg, handler, logger)
+	if err != nil {
+		return err
+	}
 	if len(entries) == 0 {
 		return errors.New("server: no listeners configured")
 	}
@@ -138,25 +141,55 @@ func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler,
 }
 
 // buildEntries assembles the listener registration list from the runtime
-// configuration. Today this is a single HTTP-or-HTTPS server; future M47
-// PRs append additional entries (redirect, HTTP/3) here. Wrapping in a
-// helper keeps RunListeners' top-level flow short and gives the follow-up
-// PRs an obvious place to splice in their entries without rewriting the
+// configuration. Today this is a single HTTP-or-HTTPS server (optionally
+// paired with an ACME HTTP-01 challenge listener); future M47 PRs append
+// additional entries (HTTP-to-HTTPS redirect, HTTP/3) here. Wrapping in a
+// helper keeps RunListeners' top-level flow short and gives follow-up PRs
+// an obvious place to splice in their entries without rewriting the
 // shutdown harness.
-func buildEntries(cfg *config.Config, handler http.Handler, logger *slog.Logger) []listenerEntry {
-	entries := []listenerEntry{buildPrimaryListener(cfg, handler, logger)}
-	// The redirect listener is opt-in (HTTPRedirect.Port > 0) AND only meaningful
-	// when TLS is active -- there is nowhere to redirect to without an HTTPS
-	// listener. validate() rejects the misconfiguration up front; this guard is
-	// belt-and-suspenders so a future config path that bypasses validate() does
-	// not silently spin up a redirect-to-itself.
-	if cfg.Server.HTTPRedirect.Port > 0 && cfg.Server.TLS.Enabled() {
+//
+// Port-80 multiplex contract: the ACME challenge listener and the HTTP
+// redirect listener both want plain-HTTP on the same port (80 by default,
+// or HTTPRedirect.Port if overridden). When ACME is on, the challenge
+// listener does both jobs -- autocert.Manager.HTTPHandler(nil) serves
+// /.well-known/acme-challenge/ requests and 301-redirects everything else
+// to HTTPS. So we register the challenge listener and skip the dedicated
+// redirect listener; double-binding the port would race for the socket.
+// When ACME is off and HTTPRedirect.Port is set with BYO TLS active, the
+// dedicated redirect listener is the right (and only) choice.
+func buildEntries(cfg *config.Config, handler http.Handler, logger *slog.Logger) ([]listenerEntry, error) {
+	// Build the cert manager first so any misconfiguration (missing cache
+	// dir permissions, malformed directory URL) surfaces before we bind
+	// any sockets.
+	var certMgr CertManager
+	if cfg.ACME.Domain != "" {
+		mgr, err := NewAutocertManager(cfg, logger)
+		if err != nil {
+			return nil, fmt.Errorf("server: ACME setup: %w", err)
+		}
+		certMgr = mgr
+	}
+
+	primary := buildPrimaryListener(cfg, handler, logger, certMgr)
+	entries := []listenerEntry{primary}
+
+	switch {
+	case certMgr != nil:
+		// ACME path: the challenge listener owns port 80, multiplexing
+		// HTTP-01 challenges with a 301-to-HTTPS fallback. validate()
+		// already enforced ACME-vs-BYO mutual exclusion.
+		entries = append(entries, buildAcmeChallengeListener(cfg, certMgr, logger))
+	case cfg.Server.HTTPRedirect.Port > 0 && cfg.Server.TLS.Enabled():
+		// BYO-TLS path: dedicated redirect listener. The TLS-active guard
+		// is belt-and-suspenders -- validate() already rejects redirect
+		// without TLS, but a config path that bypasses validate() should
+		// not silently spin up a redirect-to-itself.
 		entries = append(entries, buildRedirectListener(cfg, logger))
 	}
 	if entry, ok := buildHTTP3Listener(cfg, handler, logger); ok {
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, nil
 }
 
 // EffectiveHTTP3Port returns the UDP port the HTTP/3 listener will bind when
@@ -241,14 +274,22 @@ func buildHTTP3Listener(cfg *config.Config, handler http.Handler, logger *slog.L
 }
 
 // buildPrimaryListener returns the entry for the main HTTP/HTTPS server.
-// When TLS is configured (cert and key set), the listener serves HTTPS with
-// a minimum of TLS 1.2 and ALPN advertising h2 + http/1.1. Otherwise it
-// serves plain HTTP.
-func buildPrimaryListener(cfg *config.Config, handler http.Handler, logger *slog.Logger) listenerEntry {
-	tlsConfigured := cfg.Server.TLS.Enabled()
+// When ACME is on (certMgr != nil) the listener serves HTTPS with a
+// tls.Config sourced from the autocert manager. When direct (BYO) TLS is
+// configured, the listener serves HTTPS using the cert/key files. In all
+// other cases the listener serves plain HTTP.
+//
+// All TLS branches enforce TLS 1.2+ and ALPN advertising h2 then http/1.1.
+func buildPrimaryListener(cfg *config.Config, handler http.Handler, logger *slog.Logger, certMgr CertManager) listenerEntry {
+	acmeOn := certMgr != nil
+	byoTLS := cfg.Server.TLS.Enabled()
+	tlsConfigured := acmeOn || byoTLS
 
 	// Effective bind port: when TLS is on but TLS.Port is unset, HTTPS
-	// reuses Server.Port (collapse semantics).
+	// reuses Server.Port (collapse semantics). ACME paths follow the same
+	// rule -- operators who set SW_ACME_DOMAIN without SW_TLS_PORT get
+	// HTTPS on Server.Port (typically 1973) and pair that with their
+	// real-internet port-80 forward for HTTP-01 challenges.
 	port := cfg.Server.Port
 	if tlsConfigured && cfg.Server.TLS.Port != 0 {
 		port = cfg.Server.TLS.Port
@@ -265,7 +306,32 @@ func buildPrimaryListener(cfg *config.Config, handler http.Handler, logger *slog
 		IdleTimeout:  60 * time.Second,
 	}
 
-	if tlsConfigured {
+	switch {
+	case acmeOn:
+		// Layer Stillwater's house TLS policy on top of the autocert
+		// GetCertificate callback. autocert's TLSConfig already includes
+		// ALPN entries for the tls-alpn-01 challenge type; preserve them
+		// so a future flip to tls-alpn-01 (no port-80 dependency) does
+		// not need a code change here.
+		base := certMgr.TLSConfig()
+		base.MinVersion = tls.VersionTLS12
+		// Prepend h2 + http/1.1 ahead of any ACME-specific protos so
+		// real client traffic still negotiates HTTP/2 first.
+		base.NextProtos = append([]string{"h2", "http/1.1"}, base.NextProtos...)
+		srv.TLSConfig = base
+		entry := listenerEntry{
+			name: "https-acme",
+			addr: addr,
+			// Empty cert/key file paths tell ListenAndServeTLS to use
+			// the GetCertificate callback baked into TLSConfig.
+			serve:    func() error { return srv.ListenAndServeTLS("", "") },
+			shutdown: srv.Shutdown,
+		}
+		logger.Debug("primary listener uses ACME (autocert)",
+			slog.String("domain", cfg.ACME.Domain),
+		)
+		return entry
+	case byoTLS:
 		// MinVersion 1.2 keeps Stillwater out of the deprecated TLS 1.0/1.1
 		// surface. NextProtos advertises HTTP/2 first, then HTTP/1.1, so
 		// modern clients negotiate h2 and legacy clients still work.
@@ -286,10 +352,60 @@ func buildPrimaryListener(cfg *config.Config, handler http.Handler, logger *slog
 			slog.String("key_file", cfg.Server.TLS.KeyFile),
 		)
 		return entry
+	default:
+		return listenerEntry{
+			name:     "http",
+			addr:     addr,
+			serve:    srv.ListenAndServe,
+			shutdown: srv.Shutdown,
+		}
 	}
+}
 
+// acmeChallengeDefaultPort is the standard plain-HTTP port that ACME CAs
+// fetch HTTP-01 challenge tokens from. Operators behind a NAT can map an
+// arbitrary public-facing port to whatever Stillwater binds, but the
+// default is 80 because that is what every documented LE / Buypass
+// example assumes.
+const acmeChallengeDefaultPort = 80
+
+// buildAcmeChallengeListener returns the plain-HTTP listener that serves
+// the ACME HTTP-01 challenge handler. The handler 301-redirects every
+// non-challenge request to HTTPS. When the operator has set
+// HTTPRedirect.Port (the #929 redirect listener port) we re-use that port
+// to avoid double-binding port 80; the autocert HTTPHandler's
+// challenge-or-redirect contract subsumes the redirect listener's
+// behavior, so #929's wiring should detect ACME and skip its own bind.
+func buildAcmeChallengeListener(cfg *config.Config, certMgr CertManager, logger *slog.Logger) listenerEntry {
+	port := cfg.Server.HTTPRedirect.Port
+	if port == 0 {
+		port = acmeChallengeDefaultPort
+	}
+	addr := fmt.Sprintf(":%d", port)
+
+	// nil fallback yields autocert's built-in 301-to-HTTPS for every
+	// non-challenge request. That keeps the port-80 listener useful even
+	// outside renewal windows -- an operator who hits http://host/ gets
+	// redirected rather than seeing a connection refused.
+	mux := certMgr.HTTPHandler(nil)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+		// Challenge requests are tiny and finish quickly; modest
+		// timeouts are safer than copying the primary listener's 180s
+		// WriteTimeout (which exists only to absorb the refresh OOB
+		// stream that does not flow through this listener).
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+	logger.Debug("ACME challenge listener configured",
+		slog.String("addr", addr),
+		slog.String("domain", cfg.ACME.Domain),
+	)
 	return listenerEntry{
-		name:     "http",
+		name:     "acme-challenge",
 		addr:     addr,
 		serve:    srv.ListenAndServe,
 		shutdown: srv.Shutdown,

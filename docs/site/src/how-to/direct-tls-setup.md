@@ -61,7 +61,7 @@ key_file  = "/config/tls/privkey.pem"
 port      = 0  # 0 reuses [server].port; set to 443 for split-port deploys.
 ```
 
-## TLS status { #settings-general-tls-status }
+## Confirm it took effect { #settings-general-tls-status }
 
 Open Settings, scroll to the General tab. The TLS Status card shows one of three states:
 

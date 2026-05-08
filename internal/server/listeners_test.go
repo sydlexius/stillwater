@@ -742,7 +742,10 @@ func TestRunListeners_RedirectSkippedWithoutTLS(t *testing.T) {
 		},
 	}
 	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
-	entries := buildEntries(cfg, handler, discardLogger())
+	entries, err := buildEntries(cfg, handler, discardLogger())
+	if err != nil {
+		t.Fatalf("buildEntries: %v", err)
+	}
 	if len(entries) != 1 {
 		t.Errorf("buildEntries returned %d entries; want 1 (redirect must be skipped without TLS)", len(entries))
 	}
@@ -750,6 +753,98 @@ func TestRunListeners_RedirectSkippedWithoutTLS(t *testing.T) {
 		if e.name == "http-redirect" {
 			t.Errorf("redirect listener registered without TLS configured")
 		}
+	}
+}
+
+// TestBuildEntries_NoACMEReturnsSinglePrimary asserts the default
+// (non-ACME) configuration registers one listener -- the primary HTTP or
+// HTTPS server. Pinning the count keeps the listener layer's contract with
+// future PRs (#929 redirect, #932 HTTP/3) explicit.
+func TestBuildEntries_NoACMEReturnsSinglePrimary(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{Server: config.ServerConfig{Port: 1973}}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entries, err := buildEntries(cfg, handler, discardLogger())
+	if err != nil {
+		t.Fatalf("buildEntries: %v", err)
+	}
+	if got, want := len(entries), 1; got != want {
+		t.Fatalf("len(entries) = %d; want %d", got, want)
+	}
+	if entries[0].name != "http" {
+		t.Errorf("primary listener name = %q; want %q", entries[0].name, "http")
+	}
+}
+
+// TestBuildEntries_ACMERegistersChallengeListener asserts that turning on
+// ACME registers TWO listeners: the HTTPS primary (https-acme) plus the
+// dedicated plain-HTTP HTTP-01 challenge listener (acme-challenge). Without
+// the second listener the certificate authority cannot fetch challenge
+// tokens and renewals silently fail.
+func TestBuildEntries_ACMERegistersChallengeListener(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 1973},
+		Database: config.DatabaseConfig{Path: filepath.Join(tmp, "stillwater.db")},
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entries, err := buildEntries(cfg, handler, discardLogger())
+	if err != nil {
+		t.Fatalf("buildEntries: %v", err)
+	}
+	if got, want := len(entries), 2; got != want {
+		t.Fatalf("len(entries) = %d; want %d", got, want)
+	}
+	hasPrimary := false
+	hasChallenge := false
+	for _, e := range entries {
+		if e.name == "https-acme" {
+			hasPrimary = true
+		}
+		if e.name == "acme-challenge" {
+			hasChallenge = true
+		}
+	}
+	if !hasPrimary {
+		t.Errorf("missing https-acme entry; got %+v", entries)
+	}
+	if !hasChallenge {
+		t.Errorf("missing acme-challenge entry; got %+v", entries)
+	}
+}
+
+// TestBuildEntries_ACMEChallengeReusesRedirectPort asserts the challenge
+// listener binds SW_HTTP_REDIRECT_PORT when the operator set it, rather
+// than double-binding the default port 80 alongside a future #929
+// redirect listener. The challenge handler's autocert.HTTPHandler(nil)
+// already 301s non-challenge requests to HTTPS, so the redirect listener's
+// behavior is subsumed when ACME is on.
+func TestBuildEntries_ACMEChallengeReusesRedirectPort(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         1973,
+			HTTPRedirect: config.HTTPRedirectConfig{Port: 8080},
+		},
+		Database: config.DatabaseConfig{Path: filepath.Join(tmp, "stillwater.db")},
+		ACME:     config.ACMEConfig{Domain: "host.example.com"},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+	entries, err := buildEntries(cfg, handler, discardLogger())
+	if err != nil {
+		t.Fatalf("buildEntries: %v", err)
+	}
+	var challengeAddr string
+	for _, e := range entries {
+		if e.name == "acme-challenge" {
+			challengeAddr = e.addr
+		}
+	}
+	if challengeAddr != ":8080" {
+		t.Errorf("challenge listener addr = %q; want %q (re-using HTTPRedirect.Port)", challengeAddr, ":8080")
 	}
 }
 

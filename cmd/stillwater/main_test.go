@@ -176,13 +176,27 @@ func TestBuildTLSStatus(t *testing.T) {
 			wantRedirectPort: 80,
 		},
 		{
-			name: "ACME.Domain alone reports off, not acme: autocert listener is not wired yet",
+			name: "ACME.Domain set reports acme mode and surfaces the domain (collapse to Server.Port)",
 			cfg: &config.Config{
 				Server: config.ServerConfig{Port: 1973},
 				ACME:   config.ACMEConfig{Domain: "example.com"},
 			},
-			wantMode:     "off",
-			wantHTTPPort: 1973,
+			wantMode:       "acme",
+			wantHTTPSPort:  1973,
+			wantAcmeDomain: "example.com",
+		},
+		{
+			name: "ACME.Domain set with TLS.Port honors split-port",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port: 1973,
+					TLS:  config.TLSConfig{Port: 443},
+				},
+				ACME: config.ACMEConfig{Domain: "example.com"},
+			},
+			wantMode:       "acme",
+			wantHTTPSPort:  443,
+			wantAcmeDomain: "example.com",
 		},
 	}
 	for _, tc := range cases {

@@ -29,7 +29,7 @@ A platform profile bundles the NFO format and image filename conventions for one
 
 ### TLS Status  {#settings-general-tls-status}
 
-Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml. Enable HTTP/3 (QUIC) with SW_HTTP3_ENABLED=true.
+Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE for a bring-your-own certificate, or SW_ACME_DOMAIN for an automatic ACME-managed certificate (Let's Encrypt by default). Enable HTTP/3 (QUIC) with SW_HTTP3_ENABLED=true.
 
 - **Active (BYO certificate)**
 {: #settings-general-tls-status-active-byo }
