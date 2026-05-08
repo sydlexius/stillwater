@@ -294,10 +294,13 @@ var templFuncRE = regexp.MustCompile(`(?m)^templ ([A-Za-z]+)\s*\(`)
 // templFuncRE and fold its keys back into the panel's key list.
 var panelHelperCallRE = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9]*)\s*\(`)
 
-// i18nCallRE matches t(ctx, "settings...") invocations in templ source. The
-// pattern accepts arbitrary whitespace between t and (, and between , and the
-// quoted key, since templ source can wrap calls across lines.
-var i18nCallRE = regexp.MustCompile(`\bt\s*\(\s*ctx\s*,\s*"(settings\.[A-Za-z0-9_.]+)"`)
+// i18nCallRE matches t(ctx, "settings...") and tf(ctx, "settings...") invocations
+// in templ source. tf is the format-string variant used when a key's value
+// contains a %s/%d placeholder; its keys belong in the docs reference just as
+// much as plain t() keys. The pattern accepts arbitrary whitespace between the
+// function name and (, and between , and the quoted key, since templ source can
+// wrap calls across lines.
+var i18nCallRE = regexp.MustCompile(`\btf?\s*\(\s*ctx\s*,\s*"(settings\.[A-Za-z0-9_.]+)"`)
 
 // scanPanels walks the trunk and sub-template files and returns one panel per
 // data-tab-panel="X" region in trunk-source order. Sub-template files are
@@ -617,6 +620,40 @@ var noiseTokens = []string{
 	// tokens cover most banner copy; _revoked picks up the action-pasttense
 	// variant the others miss.
 	"_revoked",
+	// The following tokens filter runtime keys exposed by the tf() (format-string)
+	// i18n variant. Because the regex now matches both t() and tf() calls, any
+	// tf()-sourced key that isn't a configurable setting must be filtered here.
+	//
+	// _format: format-string display variants used inline beside a control (e.g.
+	// settings.active_profile.nfo_enabled_format "Enabled (%s format)"). These
+	// render as part of the UI but are not controls the user configures.
+	"_format",
+	// _header: dynamic sub-section headings whose text is substituted at runtime
+	// (e.g. settings.rules.category_header "%s Rules"). Not navigable settings.
+	"_header",
+	// change_role_for, copy_invite_for: aria-label templates personalized with
+	// a subject name (e.g. "Change role for %s"). These are tf()-only keys;
+	// the plain "for" substring cannot be used as a token here because
+	// settings.users.role_for_invite (a real documented control) also contains
+	// it. The two specific patterns are listed instead.
+	"change_role_for",
+	"copy_invite_for",
+	// deactivate_: destructive action label templates that include a user name
+	// subject (e.g. settings.users.deactivate_user "Deactivate %s"). Prefix
+	// form targets only the parametrized variant; the plain "deactivate" key
+	// (button label, if it existed) would not match because it has no trailing
+	// underscore.
+	"deactivate_",
+	// _at: timestamp display strings (e.g. settings.api_tokens.created_at
+	// "Created %s"). Runtime state, not a configurable setting.
+	"_at",
+	// last_used: last-used timestamp string specific to API tokens display.
+	// Too short to anchor by suffix alone without false positives.
+	"last_used",
+	// revoke_invite: aria-label for the per-row invite revocation action
+	// ("Revoke invite %s"). Not covered by the existing _revoked suffix token
+	// since the key stem is the verb, not the past-tense form.
+	"revoke_invite",
 }
 
 // isNoiseKey returns true when the LAST segment of k contains a noiseTokens

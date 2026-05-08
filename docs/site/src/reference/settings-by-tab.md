@@ -33,12 +33,22 @@ Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW
 
 - **Active (BYO certificate)**
 {: #settings-general-tls-status-active-byo }
+- **Active (ACME, %s)** -- Status shown when ACME auto-cert is active and SW_ACME_DOMAIN is set. The domain name is substituted into the display label at runtime.
+{: #settings-general-tls-status-active-acme-with-domain }
 - **Active (ACME)**
 {: #settings-general-tls-status-active-acme }
 - **Inactive**
 {: #settings-general-tls-status-inactive }
 - **Listening:**
 {: #settings-general-tls-status-listening-label }
+- **HTTP on :%d** -- Plain-HTTP listener. The port number is substituted at runtime.
+{: #settings-general-tls-status-listener-http }
+- **HTTPS on :%d** -- HTTPS listener. The port number is substituted at runtime.
+{: #settings-general-tls-status-listener-https }
+- **HTTP redirect on :%d** -- HTTP redirect listener: every plain-HTTP request on this port receives a 301 redirect to the HTTPS port. *Visibility:* Only present when SW_HTTP_REDIRECT_PORT is configured.
+{: #settings-general-tls-status-listener-redirect }
+- **HTTP/3 on :%d/UDP** -- HTTP/3 (QUIC) listener over UDP. The port number is substituted at runtime. *Visibility:* Only present when SW_HTTP3_ENABLED=true.
+{: #settings-general-tls-status-listener-http3 }
 
 ### Base Path  {#settings-general-base-path}
 
@@ -497,6 +507,8 @@ Stillwater can update its own binary in place by downloading the latest release 
 {: #settings-updates-updates-auto-update }
 - **Last auto-applied**
 {: #settings-updates-updates-last-auto-applied }
+- **Skip %s**
+{: #settings-updates-updates-skip-version }
 - **Skipped versions**
 {: #settings-updates-updates-skip-version-list-label }
 - **Check interval** -- How often the background task polls the GitHub releases API to look for newer builds. Shorter intervals find releases sooner; longer intervals are gentler on GitHub's rate limit. The minimum is once per hour.
