@@ -966,6 +966,149 @@ func TestScanPanels_UnmappedSubTemplate(t *testing.T) {
 	}
 }
 
+// TestRenderSubsectionControl verifies the H4 promotion path:
+//   - Multi-User Mode and Pending Invites in the "users" section render as
+//     #### headings with the same anchor a bullet would have used.
+//   - Controls in other sections (e.g. "general") are not promoted.
+//   - Anchor identity is preserved: H4 anchor == bullet anchor.
+//   - Description renders as a prose paragraph; help is intentionally dropped.
+func TestRenderSubsectionControl(t *testing.T) {
+	// Promoted: multi_user_mode in the users section.
+	var b strings.Builder
+	renderControl(&b, "users", "users", docControl{
+		ID:          "multi_user_mode",
+		Label:       "Multi-User Mode",
+		Description: "Unlocks invites and per-user roles.",
+		Help:        "Popover-only prose.",
+	})
+	out := b.String()
+
+	// Must be an H4, not a bullet.
+	if strings.HasPrefix(strings.TrimLeft(out, "\n"), "- **") {
+		t.Errorf("multi_user_mode should render as H4, not a bullet; got: %q", out)
+	}
+	if !strings.Contains(out, "#### Multi-User Mode") {
+		t.Errorf("expected #### heading for multi_user_mode; got: %q", out)
+	}
+	// Anchor must match the controlAnchor scheme exactly.
+	wantAnchor := "{#settings-users-users-multi-user-mode}"
+	if !strings.Contains(out, wantAnchor) {
+		t.Errorf("expected anchor %q in H4 output; got: %q", wantAnchor, out)
+	}
+	// Description renders as paragraph.
+	if !strings.Contains(out, "Unlocks invites and per-user roles.") {
+		t.Errorf("expected description paragraph in H4 output; got: %q", out)
+	}
+	// Help must NOT render (same suppression policy as the bullet path).
+	if strings.Contains(out, "Popover-only prose.") {
+		t.Errorf("help text must not render in H4 output; got: %q", out)
+	}
+
+	// Not promoted: a control from a different section stays as a bullet.
+	b.Reset()
+	renderControl(&b, "users", "general", docControl{
+		ID:    "multi_user_mode",
+		Label: "Multi-User Mode",
+	})
+	notPromoted := b.String()
+	if !strings.HasPrefix(strings.TrimLeft(notPromoted, "\n"), "- **") {
+		t.Errorf("multi_user_mode in section 'general' should be a bullet; got: %q", notPromoted)
+	}
+
+	// Promoted-after-bullet: when an H4 follows a bullet's anchor line, the
+	// markdownlint MD022 workaround must insert a leading newline so the H4
+	// has the required blank line above it. This is the buffer state the
+	// HasSuffix("\n\n") guard exists to handle; a regression that flipped
+	// the condition would not be caught by the empty-buffer cases above.
+	b.Reset()
+	b.WriteString("- **Prior** -- text\n{: #settings-users-users-prior }\n")
+	renderControl(&b, "users", "users", docControl{
+		ID:    "pending_invites",
+		Label: "Pending Invites",
+	})
+	afterBullet := b.String()
+	if !strings.Contains(afterBullet, "\n\n#### Pending Invites") {
+		t.Errorf("H4 following a bullet must be preceded by a blank line; got: %q", afterBullet)
+	}
+}
+
+// TestRenderTabIntro verifies that a tab with a non-empty Intro field emits
+// the intro paragraph between the H2 heading and the first H3 section, and
+// that a tab without an intro emits no additional paragraph.
+func TestRenderTabIntro(t *testing.T) {
+	doc := document{Tabs: []docTab{
+		{
+			ID:    "logs",
+			Label: "Logs",
+			Intro: "Two sections live here: Settings and Viewer.",
+			Sections: []docSection{{
+				ID:    "log_settings",
+				Title: "Log Settings",
+			}},
+		},
+		{
+			ID:    "updates",
+			Label: "Updates",
+			// No intro: must not emit any extra paragraph.
+			Sections: []docSection{{
+				ID:    "updates",
+				Title: "Application Updates",
+			}},
+		},
+	}}
+	got := renderDocument(doc)
+
+	// Logs tab: intro must appear between H2 and H3.
+	h2Pos := strings.Index(got, "## Logs")
+	introPos := strings.Index(got, "Two sections live here")
+	h3Pos := strings.Index(got, "### Log Settings")
+	if h2Pos < 0 || introPos < 0 || h3Pos < 0 {
+		t.Fatalf("missing expected strings in output:\n%s", got)
+	}
+	if h2Pos >= introPos || introPos >= h3Pos {
+		t.Errorf("intro must be between H2 and H3; positions: H2=%d intro=%d H3=%d\noutput:\n%s",
+			h2Pos, introPos, h3Pos, got)
+	}
+
+	// Updates tab: no intro key -- no extra paragraph between H2 and H3.
+	updatesH2Pos := strings.Index(got, "## Updates")
+	updatesH3Pos := strings.Index(got, "### Application Updates")
+	region := got[updatesH2Pos:updatesH3Pos]
+	// The only content between the two headings should be whitespace.
+	if strings.TrimSpace(region) != "## Updates  {#tab-updates}" {
+		t.Errorf("Updates tab without intro should have no paragraph between H2 and H3; region: %q", region)
+	}
+}
+
+// TestBuildTab_LoadsIntro verifies that buildTab picks up settings.tab.{id}.intro
+// from the keys map and that tabs whose keys map has no intro key leave Intro empty.
+func TestBuildTab_LoadsIntro(t *testing.T) {
+	keys := map[string]string{
+		"settings.tab.logs":       "Logs",
+		"settings.tab.logs.intro": "Relationship prose here.",
+		"settings.tab.updates":    "Updates",
+		// No settings.tab.updates.intro key.
+	}
+
+	logsPanel := panel{ID: "logs", Keys: []string{}}
+	logsTab, err := buildTab(logsPanel, keys)
+	if err != nil {
+		t.Fatalf("buildTab(logs): %v", err)
+	}
+	if logsTab.Intro != "Relationship prose here." {
+		t.Errorf("logsTab.Intro = %q; want %q", logsTab.Intro, "Relationship prose here.")
+	}
+
+	updatesPanel := panel{ID: "updates", Keys: []string{}}
+	updatesTab, err := buildTab(updatesPanel, keys)
+	if err != nil {
+		t.Fatalf("buildTab(updates): %v", err)
+	}
+	if updatesTab.Intro != "" {
+		t.Errorf("updatesTab.Intro = %q; want empty string (no intro key)", updatesTab.Intro)
+	}
+}
+
 // contains is a small slice-membership helper used by several tests.
 func contains(haystack []string, needle string) bool {
 	for _, s := range haystack {

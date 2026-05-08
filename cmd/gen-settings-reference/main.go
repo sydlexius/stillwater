@@ -682,6 +682,7 @@ type document struct {
 type docTab struct {
 	ID       string // e.g. "general", used for tab-id slug
 	Label    string // resolved from settings.tab.{ID}; falls back to humanized ID
+	Intro    string // from settings.tab.{ID}.intro (optional relationship prose)
 	Sections []docSection
 }
 
@@ -731,6 +732,7 @@ func buildTab(p panel, keys map[string]string) (docTab, error) {
 	tab := docTab{
 		ID:    p.ID,
 		Label: lookupLabel(keys, "settings.tab."+p.ID, p.ID),
+		Intro: keys["settings.tab."+p.ID+".intro"],
 	}
 	sections, err := buildSections(p.Keys, keys)
 	if err != nil {
@@ -958,6 +960,16 @@ func humanize(id string) string {
 	return strings.Join(parts, " ")
 }
 
+// subsectionControls names controls that render as H4 sub-section headings
+// instead of bulleted list items within their parent section. The mapping
+// is keyed by section ID; each entry is the control ID to promote.
+var subsectionControls = map[string]map[string]struct{}{
+	"users": {
+		"multi_user_mode": {},
+		"pending_invites": {},
+	},
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -991,6 +1003,11 @@ func renderDocument(doc document) string {
 	b.WriteString("\n")
 	for _, tab := range doc.Tabs {
 		fmt.Fprintf(&b, "## %s  {#%s}\n\n", markdownEscape(tab.Label), tabAnchor(tab.ID))
+		// Optional intro paragraph (settings.tab.{id}.intro) between H2 and first H3.
+		if tab.Intro != "" {
+			b.WriteString(markdownEscape(tab.Intro))
+			b.WriteString("\n\n")
+		}
 		for _, sec := range tab.Sections {
 			renderSection(&b, tab.ID, sec)
 		}
@@ -1013,21 +1030,23 @@ func renderSection(b *strings.Builder, tabID string, sec docSection) {
 	b.WriteString("\n")
 }
 
-// renderControl emits a bullet-list entry for a control plus the canonical
-// attr_list block-form line ({: #anchor }) that attaches an HTML id to the
-// rendered <li>. Description, visibility, and help fold into the bullet's
-// prose with simple inline markers; if the control has none of those, only
-// the label and anchor render.
+// renderControl emits either a bullet-list entry or an H4 sub-section heading,
+// depending on whether the section+control pair appears in subsectionControls.
+// Promoted controls share the bullet path's anchor scheme so HelpHint deep links
+// continue to resolve.
 //
-// We use the block form ({: #anchor } on its own line) rather than the
-// inline form (- **Label** {#anchor}) because Python-Markdown's attr_list
-// extension only attaches inline {#...} to the immediately preceding inline
-// element (the <strong>), not to the <li>; and on bullet items without an
-// adjacent inline element it leaks as raw text into the rendered prose.
-// The block form is the documented way to attach attributes to list items
-// and produces <li id="anchor"> as required by the HelpHint deep-link
-// contract for #1132.
+// The bullet path uses the attr_list block form ({: #anchor } on its own line)
+// rather than the inline form because Python-Markdown's attr_list extension
+// only attaches inline {#...} to the immediately preceding inline element; the
+// block form produces <li id="anchor"> as required by the HelpHint contract.
 func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
+	if promoted, ok := subsectionControls[secID]; ok {
+		if _, isSubsection := promoted[ctrl.ID]; isSubsection {
+			renderSubsectionControl(b, tabID, secID, ctrl)
+			return
+		}
+	}
+
 	fmt.Fprintf(b, "- **%s**", markdownEscape(ctrl.Label))
 
 	prose := composeControlProse(ctrl)
@@ -1037,6 +1056,31 @@ func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 	}
 	b.WriteString("\n")
 	fmt.Fprintf(b, "{: #%s }\n", controlAnchor(tabID, secID, ctrl.ID))
+}
+
+// renderSubsectionControl emits an H4 heading for a promoted control. The anchor
+// uses the same scheme as the bullet path so HelpHint deep links are unaffected.
+// Description and visibility render as paragraphs below the heading; help is
+// intentionally omitted (same policy as the bullet path: it backs the in-app
+// ContextHelp popover, not the docs surface).
+func renderSubsectionControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
+	// Ensure a blank line above the H4 (markdownlint MD022 requires it). When
+	// the H4 follows a bullet item the buffer ends in a single newline; we need
+	// one more. When it follows a description paragraph the buffer already ends
+	// in \n\n so no extra newline is needed.
+	if !strings.HasSuffix(b.String(), "\n\n") {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(b, "#### %s  {#%s}\n\n", markdownEscape(ctrl.Label), controlAnchor(tabID, secID, ctrl.ID))
+	if ctrl.Description != "" {
+		b.WriteString(markdownEscape(ctrl.Description))
+		b.WriteString("\n\n")
+	}
+	if ctrl.Visibility != "" {
+		b.WriteString("*Visibility:* ")
+		b.WriteString(markdownEscape(ctrl.Visibility))
+		b.WriteString("\n\n")
+	}
 }
 
 // composeControlProse returns the inline prose that follows the bullet's
