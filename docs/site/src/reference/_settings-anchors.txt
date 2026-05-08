@@ -68,8 +68,13 @@ settings-general-platform-profile
 settings-general-symlinks
 settings-general-tls-status
 settings-general-tls-status-active-acme
+settings-general-tls-status-active-acme-with-domain
 settings-general-tls-status-active-byo
 settings-general-tls-status-inactive
+settings-general-tls-status-listener-http
+settings-general-tls-status-listener-http3
+settings-general-tls-status-listener-https
+settings-general-tls-status-listener-redirect
 settings-general-tls-status-listening-label
 settings-libraries-libraries
 settings-libraries-libraries-add
@@ -171,6 +176,7 @@ settings-updates-updates-check-interval
 settings-updates-updates-config
 settings-updates-updates-enabled
 settings-updates-updates-last-auto-applied
+settings-updates-updates-skip-version
 settings-updates-updates-skip-version-list-label
 settings-users-users
 settings-users-users-24-hours
