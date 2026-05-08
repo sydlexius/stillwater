@@ -267,8 +267,10 @@ A rule is a check that compares the actual state of an artist's NFO or images ag
 
 User accounts and pending invites both live here. An account is someone who can already sign in; an invite is a single-use link that creates an account when the recipient redeems it. Use this tab to issue invites, change roles, and revoke access.
 
-- **Multi-User Mode** -- Single-user mode is the default and assumes one administrator owns the whole instance; multi-user mode unlocks invites, per-user roles, and per-account preferences so several people can share the same Stillwater. Turn it on before you create the first invite for someone other than yourself.
-{: #settings-users-users-multi-user-mode }
+#### Multi-User Mode  {#settings-users-users-multi-user-mode}
+
+Single-user mode is the default and assumes one administrator owns the whole instance; multi-user mode unlocks invites, per-user roles, and per-account preferences so several people can share the same Stillwater. Turn it on before you create the first invite for someone other than yourself.
+
 - **Enable multi-user mode**
 {: #settings-users-users-enable-multi-user }
 - **Create Invite**
@@ -301,8 +303,11 @@ User accounts and pending invites both live here. An account is someone who can 
 {: #settings-users-users-auth-provider }
 - **Actions**
 {: #settings-users-users-actions }
-- **Pending Invites** -- An invite is a one-time link Stillwater issues to a prospective user; redeeming it creates an account at the role baked into the link. This list shows invites that have been issued but not yet redeemed, so you can revoke or copy each link before it expires.
-{: #settings-users-users-pending-invites }
+
+#### Pending Invites  {#settings-users-users-pending-invites}
+
+An invite is a one-time link Stillwater issues to a prospective user; redeeming it creates an account at the role baked into the link. This list shows invites that have been issued but not yet redeemed, so you can revoke or copy each link before it expires.
+
 - **Role:** -- Marks the role badge shown next to a pending invite in the list below. The redeemed account will be created with this role.
 {: #settings-users-users-role-label }
 - **Expires:** -- Marks the expiry timestamp shown next to a pending invite in the list below. The invite stops working after this time.
@@ -387,6 +392,8 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 
 ## Maintenance  {#tab-maintenance}
 
+The Maintenance tab groups five sections that keep the database and configuration healthy. Database Maintenance and Database Backup each have an auto-run option; the Schedule section supplies the shared interval choices (every 6 hours through weekly) that both use. Confirmation Dialogs lists every destructive-action prompt you have suppressed with Don't ask again, so you can re-enable any of them. Settings Export / Import lets you snapshot your full configuration as an encrypted file and restore it on the same or a different instance.
+
 ### Confirmation Dialogs  {#settings-maintenance-confirm-dialogs}
 
 Destructive actions in Stillwater (delete an artist, clear a cache, revoke a token) prompt you to confirm before going through. Each dialog has a Don't ask again checkbox; this section lists every dialog you have suppressed so you can re-enable the prompt if you change your mind.
@@ -442,6 +449,8 @@ A backup is a snapshot of Stillwater's SQLite database, which holds every artist
 {: #settings-maintenance-export-import-import-passphrase }
 
 ## Logs  {#tab-logs}
+
+The Logs tab is divided into two sections. Log Settings controls what Stillwater captures: the minimum severity level, the on-disk format, and the rotation policy that determines how many files are kept and for how long. Log Viewer reads back what Log Settings retained, streaming the in-memory ring buffer live and letting you page through older rotated files; it can only show entries that the retention limits above have not already pruned.
 
 ### Log Settings  {#settings-logs-log-settings}
 
