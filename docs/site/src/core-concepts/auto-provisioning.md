@@ -47,7 +47,7 @@ For group claims to work, the IdP must include a `groups` claim in its ID tokens
 When provisioning fires and the guard rail passes, Stillwater assigns the new account a role. The role comes from two sources in priority order:
 
 1. **Role mapping** -- if the provider signals admin status (Emby/Jellyfin: `IsAdministrator`; OIDC: `adminGroups` membership), the account is created as `administrator`.
-2. **Default role setting** -- otherwise, the configured default role for the connection is used. Both Emby and Jellyfin connections have a default role setting (see [`settings-auth-providers-auth-default-role-emby`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-emby)); the OIDC provider has its own (see [`settings-auth-providers-auth-default-role-oidc`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-oidc)).
+2. **Default role setting** -- otherwise, the configured default role for the connection is used. Both Emby and Jellyfin connections have a default role setting (see [`settings-auth-providers-auth-default-role-emby`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-emby) and [`settings-auth-providers-auth-default-role-jellyfin`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-jellyfin)); the OIDC provider has its own (see [`settings-auth-providers-auth-default-role-oidc`](../reference/settings-by-tab.md#settings-auth-providers-auth-default-role-oidc)).
 
 The default roles are `administrator` and `operator`. Operators have full access to library management but cannot change system settings.
 
