@@ -474,7 +474,28 @@ func TestRunListeners_RedirectIntegration(t *testing.T) {
 	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
 
 	redirectAddr := "127.0.0.1:" + strconv.Itoa(redirectPort)
+	tlsAddr := "127.0.0.1:" + strconv.Itoa(tlsPort)
 	pollUntilServing(t, redirectAddr)
+	pollUntilServing(t, tlsAddr)
+
+	// Verify the HTTPS sibling is actually serving. pollUntilServing only
+	// confirms the TCP socket is bound; without a real HTTPS round-trip a
+	// regression that stopped registering the TLS listener would still let
+	// the redirect-Location assertion pass (the URL is computed, not chased).
+	httpsClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+		},
+		Timeout: 2 * time.Second,
+	}
+	tlsResp, err := httpsClient.Get("https://" + tlsAddr + "/")
+	if err != nil {
+		t.Fatalf("HTTPS GET on TLS listener: %v", err)
+	}
+	tlsResp.Body.Close()
+	if tlsResp.StatusCode != http.StatusOK {
+		t.Fatalf("TLS listener status = %d; want 200", tlsResp.StatusCode)
+	}
 
 	// Use a client that does NOT follow redirects; we want to inspect the
 	// Location header directly, not chase it into the TLS listener.

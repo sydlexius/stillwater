@@ -386,9 +386,11 @@ func detectFormat(path string, data []byte) configFormat {
 // operator can override one knob via env without rewriting the whole file.
 func (c *Config) loadFromEnv() error {
 	if v := os.Getenv("SW_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_PORT %q: %w", v, err)
 		}
+		c.Server.Port = port
 	}
 	if v := os.Getenv("SW_BASE_PATH"); v != "" {
 		c.Server.BasePath = v
@@ -445,9 +447,11 @@ func (c *Config) loadFromEnv() error {
 		c.Server.TLS.KeyFile = v
 	}
 	if v := os.Getenv("SW_TLS_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.TLS.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_TLS_PORT %q: %w", v, err)
 		}
+		c.Server.TLS.Port = port
 	}
 	if v := os.Getenv("SW_HTTP_REDIRECT_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
