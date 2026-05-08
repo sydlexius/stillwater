@@ -546,19 +546,29 @@ func (c *Config) validate() error {
 	// Resolve the effective TLS port for collision checks: when TLS is
 	// configured but TLS.Port is unset, HTTPS reuses Server.Port (the
 	// "collapse" mode documented in the M47 plan).
+	// effectiveTLSPort collapses to Server.Port when TLS.Port is unset.
+	// This applies to both BYO TLS (cert+key) and ACME -- both modes can
+	// run in collapse mode. Without this, an ACME deploy with SW_PORT=80
+	// (or matching SW_HTTP_REDIRECT_PORT) would pass validation and then
+	// the https-acme + acme-challenge listeners would race for the socket.
 	effectiveTLSPort := c.Server.TLS.Port
-	if tlsCertSet && effectiveTLSPort == 0 {
+	if (tlsCertSet || c.ACME.Domain != "") && effectiveTLSPort == 0 {
 		effectiveTLSPort = c.Server.Port
 	}
 
-	// Cross-port collision: the HTTPS listener and the HTTP redirect
-	// listener cannot share a port. The plain Server.Port collision is
-	// implicit -- when TLS.Port is unset, the TLS listener replaces (does
-	// not coexist with) the plain HTTP server on Server.Port, so the
-	// redirect listener bound to the same Server.Port would conflict.
+	// Cross-port collision: the HTTPS listener and the HTTP redirect /
+	// ACME challenge listener cannot share a port. The plain Server.Port
+	// collision is implicit -- when TLS.Port is unset, the TLS listener
+	// replaces (does not coexist with) the plain HTTP server on
+	// Server.Port. When ACME is on, the challenge listener defaults to
+	// port 80 if HTTPRedirect.Port is unset, so we surface that default
+	// for the collision check too.
 	redirectPort := c.Server.HTTPRedirect.Port
+	if c.ACME.Domain != "" && redirectPort == 0 {
+		redirectPort = 80
+	}
 	if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
-		return fmt.Errorf("TLS port and HTTP redirect port must differ (both=%d)", effectiveTLSPort)
+		return fmt.Errorf("TLS port and HTTP redirect / ACME challenge port must differ (both=%d)", effectiveTLSPort)
 	}
 
 	// ACME (autocert) is mutually exclusive with BYO TLS cert/key. The

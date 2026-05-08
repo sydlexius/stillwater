@@ -219,9 +219,27 @@ func TestAutocertManager_TLSConfigALPN(t *testing.T) {
 		t.Fatalf("NewAutocertManager: %v", err)
 	}
 	base := mgr.TLSConfig()
+	if len(base.NextProtos) == 0 {
+		t.Fatal("base NextProtos missing autocert ALPN entries -- a refactor that drops them would silently break tls-alpn-01 challenge support")
+	}
 	merged := append([]string{"h2", "http/1.1"}, base.NextProtos...)
 	if merged[0] != "h2" || merged[1] != "http/1.1" {
 		t.Errorf("NextProtos prepend lost ordering: %v", merged)
+	}
+	if len(merged) <= 2 {
+		t.Fatalf("merged NextProtos lost autocert entries: %v", merged)
+	}
+	// Verify autocert's tls-alpn-01 entry survived. autocert advertises
+	// the literal "acme-tls/1" proto for the TLS-ALPN-01 challenge type.
+	foundACME := false
+	for _, p := range merged[2:] {
+		if p == "acme-tls/1" {
+			foundACME = true
+			break
+		}
+	}
+	if !foundACME {
+		t.Errorf("merged NextProtos missing acme-tls/1 ALPN: %v", merged)
 	}
 	// Sanity: the merged config compiles into a tls.Config field without
 	// panic. We do not handshake; we just want assurance the call site

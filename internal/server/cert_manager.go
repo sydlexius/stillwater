@@ -106,10 +106,12 @@ func NewAutocertManager(cfg *config.Config, logger *slog.Logger) (CertManager, e
 		mgr.Client = &acme.Client{DirectoryURL: directoryURL}
 	}
 
+	// Email is operator PII -- log only whether it was supplied, not the
+	// address itself. Per CLAUDE.md: scrub sensitive values from logs.
 	logger.Info("ACME (autocert) configured",
 		slog.String("domain", domain),
 		slog.String("cache_dir", cacheDir),
-		slog.String("email", cfg.ACME.Email),
+		slog.Bool("email_configured", cfg.ACME.Email != ""),
 		slog.String("directory_url", cfg.ACME.CA),
 	)
 

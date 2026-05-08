@@ -861,6 +861,34 @@ func TestValidate_TLSPortCollapseClashesWithRedirect(t *testing.T) {
 	}
 }
 
+// TestValidate_ACMECollapseClashesWithChallenge covers the ACME collapse
+// case CR flagged: SW_ACME_DOMAIN set with SW_PORT=80 (and SW_TLS_PORT
+// unset). The HTTPS-ACME listener collapses onto SW_PORT (80), and the
+// challenge listener defaults to 80 too -- they would race for the
+// socket. Validation must catch this before any bind happens.
+func TestValidate_ACMECollapseClashesWithChallenge(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_PORT", "80")
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: ACME collapsed TLS port == challenge port (both 80)")
+	}
+}
+
+// TestValidate_ACMECollapseExplicitRedirectClash covers the analogous
+// case where SW_HTTP_REDIRECT_PORT is set to the same value as the
+// collapsed TLS port (Server.Port). Without ACME-aware collapse the
+// validator missed this; now it should reject.
+func TestValidate_ACMECollapseExplicitRedirectClash(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_PORT", "1973")
+	t.Setenv("SW_ACME_DOMAIN", "host.example.com")
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "1973")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: ACME collapsed TLS port == redirect port (both 1973)")
+	}
+}
+
 // TestValidate_RedirectWithoutTLS rejects a configuration that asks for the
 // HTTP-to-HTTPS redirect listener but does not configure TLS. There would be
 // nothing to redirect to; quietly skipping the redirect would silently leave
