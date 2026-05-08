@@ -66,7 +66,7 @@ EXPOSE ${SW_TLS_PORT}
 # the right port. -k is intentional: a localhost healthcheck against a
 # self-signed cert is acceptable.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:1973${SW_BASE_PATH:-}/api/v1/health}" || exit 1'
+  CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:${SW_PORT:-1973}${SW_BASE_PATH:-}/api/v1/health}" || exit 1'
 
 VOLUME ["/config", "/music"]
 
