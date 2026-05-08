@@ -96,18 +96,22 @@ func isContextHelpCall(call *ast.CallExpr) bool {
 	return false
 }
 
-// nonLiteralAnchorAllowlist names the *.templ source paths whose
-// ContextHelp call passes its docAnchor through from its own parameter
-// list rather than as a string literal. Each such templ component is
-// itself called only from sites whose docAnchor IS a literal (and those
-// upstream call sites get validated by this test), so the helper itself
-// is safe to skip. Keep this list short; the static-validation contract
-// is the whole point of the test.
-var nonLiteralAnchorAllowlist = map[string]struct{}{
-	// connectionFeatureToggleTT(connID, feature, label, enabled, tooltip, docAnchor)
-	// forwards docAnchor to ContextHelp. Its three caller sites in
-	// settings.templ pass literal anchors that this test validates.
-	"web/templates/settings.templ": {},
+// nonLiteralAnchorAllowlist enumerates the (templ source path, enclosing
+// templ function name) pairs whose ContextHelp call passes its docAnchor
+// through from its own parameter list rather than as a string literal.
+// Each such helper is itself called only from sites whose docAnchor IS a
+// literal (and those upstream call sites get validated by this test), so
+// the helper itself is safe to skip. Scoping by symbol -- not by file --
+// means a future non-literal ContextHelp added elsewhere in the same
+// templ still fails fast.
+var nonLiteralAnchorAllowlist = map[string]map[string]struct{}{
+	"web/templates/settings.templ": {
+		// connectionFeatureToggleTT(connID, feature, label, enabled, tooltip,
+		// docAnchor) forwards docAnchor to ContextHelp. Its three caller
+		// sites in the same file pass literal anchors that this test
+		// validates upstream.
+		"connectionFeatureToggleTT": {},
+	},
 }
 
 // TestContextHelpAnchors asserts that every components.ContextHelp(...)
@@ -145,58 +149,70 @@ func TestContextHelpAnchors(t *testing.T) {
 			t.Errorf("%s: parse failed (regenerate templ?): %v", path, parseErr)
 			return nil
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || !isContextHelpCall(call) {
-				return true
+		// Resolve the source templ path once per file -- templ generates
+		// *_templ.go alongside its *.templ. The allowlist keys on the
+		// .templ path so a future contributor opens the source, not the
+		// generated mirror.
+		srcPath := strings.TrimSuffix(path, "_templ.go") + ".templ"
+		rel, relErr := filepath.Rel(root, srcPath)
+		if relErr != nil {
+			rel = srcPath
+		}
+		rel = filepath.ToSlash(rel)
+		// Walk top-level decls so we know which templ helper an inner
+		// ContextHelp call belongs to. Templ compiles each `templ Foo(...)`
+		// into a top-level `func Foo(...) templ.Component`, so the
+		// enclosing FuncDecl name is the symbol the allowlist scopes by.
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
 			}
-			// ContextHelp(id, label, text, docAnchor). Anything other than
-			// the 4-arg signature is a legacy caller the build hasn't yet
-			// surfaced, or a misuse the build will eventually catch -- but
-			// "eventually" is too late for the anchor contract this test
-			// owns, so fail here with the call site.
-			if len(call.Args) != 4 {
-				pos := fset.Position(call.Pos())
-				t.Errorf("%s: ContextHelp called with %d args, want 4", pos, len(call.Args))
-				return true
-			}
-			lit, ok := call.Args[3].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				// Resolve back to the source templ path. Templ
-				// generates *_templ.go alongside its *.templ; substituting
-				// the suffix gives the source file the allowlist keys on.
-				srcPath := strings.TrimSuffix(path, "_templ.go") + ".templ"
-				rel, relErr := filepath.Rel(root, srcPath)
-				if relErr != nil {
-					rel = srcPath
-				}
-				rel = filepath.ToSlash(rel)
-				if _, allowed := nonLiteralAnchorAllowlist[rel]; allowed {
+			symbolName := fn.Name.Name
+			ast.Inspect(fn, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || !isContextHelpCall(call) {
 					return true
 				}
-				pos := fset.Position(call.Args[3].Pos())
-				// Dynamic anchors bypass static validation entirely. Either
-				// pass a string literal or add the source templ path to
-				// nonLiteralAnchorAllowlist with a comment explaining why
-				// the upstream callers are themselves validated.
-				t.Errorf("%s: ContextHelp called with non-literal docAnchor; pass a string literal or allowlist the source templ", pos)
+				// ContextHelp(id, label, text, docAnchor). Anything other
+				// than the 4-arg signature is a legacy caller the build
+				// hasn't yet surfaced; fail here with the call site.
+				if len(call.Args) != 4 {
+					pos := fset.Position(call.Pos())
+					t.Errorf("%s: ContextHelp called with %d args, want 4", pos, len(call.Args))
+					return true
+				}
+				lit, ok := call.Args[3].(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					// Allowlist match requires BOTH the source templ path
+					// AND the enclosing helper symbol. File-scope alone
+					// would silently absorb a future non-literal call site
+					// added elsewhere in the same templ.
+					if symbols, ok := nonLiteralAnchorAllowlist[rel]; ok {
+						if _, ok := symbols[symbolName]; ok {
+							return true
+						}
+					}
+					pos := fset.Position(call.Args[3].Pos())
+					t.Errorf("%s: ContextHelp in %s called with non-literal docAnchor; pass a string literal or allowlist the (file, symbol) pair", pos, symbolName)
+					return true
+				}
+				anchor, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					pos := fset.Position(lit.Pos())
+					t.Errorf("%s: cannot unquote anchor literal %q: %v", pos, lit.Value, err)
+					return true
+				}
+				if anchor == "" {
+					return true
+				}
+				if _, ok := anchors[anchor]; !ok {
+					pos := fset.Position(lit.Pos())
+					unknown = append(unknown, pos.String()+": "+anchor)
+				}
 				return true
-			}
-			anchor, err := strconv.Unquote(lit.Value)
-			if err != nil {
-				pos := fset.Position(lit.Pos())
-				t.Errorf("%s: cannot unquote anchor literal %q: %v", pos, lit.Value, err)
-				return true
-			}
-			if anchor == "" {
-				return true
-			}
-			if _, ok := anchors[anchor]; !ok {
-				pos := fset.Position(lit.Pos())
-				unknown = append(unknown, pos.String()+": "+anchor)
-			}
-			return true
-		})
+			})
+		}
 		return nil
 	})
 	if walkErr != nil {

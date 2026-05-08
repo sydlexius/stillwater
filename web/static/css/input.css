@@ -731,7 +731,14 @@
 .sw-context-help-link:hover,
 .sw-context-help-link:focus-visible {
   color: var(--sw-accent-primary-hover, var(--sw-accent-primary));
-  outline: none;
+}
+
+/* Explicit focus ring so keyboard users can find the link inside the
+ * popover. The underline alone is a color-only cue and would not satisfy
+ * WCAG 2.4.7 in colorblind / high-contrast scenarios. */
+.sw-context-help-link:focus-visible {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
 }
 
 /* -- Segmented control ---------------------------------------------------- */

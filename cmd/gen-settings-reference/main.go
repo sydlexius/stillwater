@@ -157,7 +157,15 @@ func run(outPath, anchorsPath, i18nPath string, checkOnly bool) error {
 	if err := writeOrCheck(outPath, beginMarker, endMarker, rendered, checkOnly); err != nil {
 		return err
 	}
-	return writeAnchorMirrors([]string{anchorsPath, componentsAnchorsMirror}, anchors, checkOnly)
+	// The components mirror is hard-coded to a repo-relative path. Only
+	// fan out to it when the caller is writing to the canonical anchors
+	// location; if -anchors redirected to a fixture or alternate path,
+	// respect that and skip the mirror so the run stays self-contained.
+	paths := []string{anchorsPath}
+	if filepath.Clean(anchorsPath) == filepath.Clean(defaultAnchorsPath) {
+		paths = append(paths, componentsAnchorsMirror)
+	}
+	return writeAnchorMirrors(paths, anchors, checkOnly)
 }
 
 // writeAnchorMirrors writes the anchors body to every path in paths,
