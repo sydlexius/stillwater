@@ -67,7 +67,7 @@ The toggle also makes a standing promise: if someone re-enables a saver on the p
 
 ## Feature toggles on connections
 
-Each connection has three feature toggles that interact with the conflict gate:
+Each connection has several feature toggles; three of them interact with how Stillwater writes to the shared library:
 
 - **image_write** -- whether Stillwater writes image files for artists sourced from this connection. See [`settings-connections-connections-feature-image-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-image-write).
 - **nfo_write** -- whether Stillwater writes NFO files for artists sourced from this connection. See [`settings-connections-connections-feature-nfo-write`](../reference/settings-by-tab.md#settings-connections-connections-feature-nfo-write).
