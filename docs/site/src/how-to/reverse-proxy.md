@@ -6,7 +6,10 @@ description: Run Stillwater behind a reverse proxy. HTTPS termination, custom ho
 
 # Run Stillwater behind a reverse proxy
 
-A reverse proxy lets you reach Stillwater over HTTPS, on a friendly hostname, alongside the rest of your self-hosted stack. Stillwater itself only speaks plain HTTP on port `1973` and doesn't terminate TLS or join service-discovery meshes; if you want any of that, a reverse proxy in front of it is the canonical answer.
+!!! info "Terminating TLS in Stillwater itself?"
+    See [Direct TLS setup](direct-tls-setup.md). This page covers proxy-terminated TLS, where the proxy speaks HTTPS to clients and plain HTTP to Stillwater. Direct TLS skips the proxy entirely.
+
+A reverse proxy lets you reach Stillwater over HTTPS, on a friendly hostname, alongside the rest of your self-hosted stack. Stillwater can also terminate TLS itself if you prefer a single-process deployment; the rest of this page assumes a fronting proxy.
 
 This is an advanced topic. A localhost-only install doesn't need a reverse proxy at all.
 

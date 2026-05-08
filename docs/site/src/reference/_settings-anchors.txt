@@ -74,6 +74,11 @@ settings-general-platform-debug
 settings-general-platform-profile
 settings-general-symlinks
 settings-general-symlinks-unsupported-description
+settings-general-tls-status
+settings-general-tls-status-active-acme
+settings-general-tls-status-active-byo
+settings-general-tls-status-inactive
+settings-general-tls-status-listening-label
 settings-libraries-libraries
 settings-libraries-libraries-add
 settings-libraries-libraries-connection-badge

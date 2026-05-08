@@ -26,6 +26,7 @@ type Config struct {
 	Scanner    ScannerConfig    `yaml:"scanner" toml:"scanner"`
 	Backup     BackupConfig     `yaml:"backup" toml:"backup"`
 	Logging    LoggingConfig    `yaml:"logging" toml:"logging"`
+	ACME       ACMEConfig       `yaml:"acme" toml:"acme"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -36,9 +37,56 @@ type Config struct {
 //     sentence is acceptable when it captures a constraint or runtime caveat
 //   - default: rendered default; "unset" or "" when there is no default
 type ServerConfig struct {
-	Port            int    `yaml:"port" toml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
-	BasePath        string `yaml:"base_path" toml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
-	BasePathFromEnv bool   `yaml:"-" toml:"-"`
+	Port            int                `yaml:"port" toml:"port" env:"SW_PORT" default:"1973" desc:"TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup."`
+	BasePath        string             `yaml:"base_path" toml:"base_path" env:"SW_BASE_PATH" default:"/" desc:"URL prefix for subfolder reverse-proxy deployments (for example /stillwater). When set from the environment the Settings UI marks the field read-only."`
+	BasePathFromEnv bool               `yaml:"-" toml:"-"`
+	TLS             TLSConfig          `yaml:"tls" toml:"tls"`
+	HTTPRedirect    HTTPRedirectConfig `yaml:"http_redirect" toml:"http_redirect"`
+	HTTP3           HTTP3Config        `yaml:"http3" toml:"http3"`
+}
+
+// TLSConfig holds direct (BYO certificate) TLS settings. When CertFile and
+// KeyFile are both set, the HTTP server terminates TLS itself rather than
+// relying on a fronting reverse proxy. Port 0 means "reuse Server.Port" so
+// single-port deployments can flip to HTTPS without changing SW_PORT.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file" toml:"cert_file" env:"SW_TLS_CERT_FILE" default:"unset" desc:"Path to a PEM-encoded TLS certificate. When set together with SW_TLS_KEY_FILE Stillwater serves HTTPS directly instead of plain HTTP."`
+	KeyFile  string `yaml:"key_file" toml:"key_file" env:"SW_TLS_KEY_FILE" default:"unset" desc:"Path to the PEM-encoded private key for SW_TLS_CERT_FILE. Both files must be readable by the Stillwater process."`
+	Port     int    `yaml:"port" toml:"port" env:"SW_TLS_PORT" default:"unset" desc:"Optional dedicated HTTPS port. When unset Stillwater serves HTTPS on SW_PORT (collapse semantics, single listener). Numeric values outside 1-65535 are rejected at startup."`
+}
+
+// Enabled reports whether direct TLS termination is configured. Both CertFile
+// and KeyFile must be set; the validate step rejects half-configured pairs.
+func (c TLSConfig) Enabled() bool {
+	return c.CertFile != "" && c.KeyFile != ""
+}
+
+// HTTPRedirectConfig configures the optional plain-HTTP listener that 301s to
+// the HTTPS port. Stubbed today; the redirect listener wiring follows in a
+// later milestone PR.
+type HTTPRedirectConfig struct {
+	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Reserved for future use; not yet active. Plain-HTTP redirect listener wiring lands in a follow-up PR. Numeric values outside 1-65535 are rejected at startup."`
+}
+
+// HTTP3Config toggles the QUIC/HTTP3 listener. Stubbed today; the QUIC
+// listener wiring follows in a later milestone PR.
+type HTTP3Config struct {
+	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Reserved for future use; not yet active. HTTP/3 (QUIC) listener wiring lands in a follow-up PR."`
+}
+
+// ACMEConfig holds Automatic Certificate Management Environment settings.
+// All fields are stubs today; the autocert (Let's Encrypt / Buypass via
+// golang.org/x/crypto/acme/autocert) and ZeroSSL IP-SAN (via go-acme/lego)
+// wirings ship in later milestone PRs. Leaving the struct populated but unread
+// keeps the env-var loader and reference docs stable across the milestone.
+type ACMEConfig struct {
+	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"Reserved for future use; not yet active. DNS name that the future ACME path will request certificates for."`
+	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Reserved for future use; not yet active. Contact email that will be registered with the ACME CA when the ACME path lands."`
+	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"Reserved for future use; not yet active. Will accept an ACME directory URL or shorthand (letsencrypt, letsencrypt-staging, buypass, zerossl) when the ACME path lands."`
+	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL)."`
+	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands."`
+	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address."`
+	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Reserved for future use; not yet active. Directory where ACME account keys and issued certificates will be cached when the ACME path lands."`
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -128,6 +176,34 @@ const scaffoldTOML = `# Stillwater configuration
 [server]
 # port = 1973
 # base_path = "/"
+
+# Direct TLS (BYO certificate). When both files are set, Stillwater serves
+# HTTPS itself instead of plain HTTP. Leave unset to keep terminating TLS at
+# a fronting reverse proxy.
+# See: https://sydlexius.github.io/stillwater/how-to/direct-tls-setup/
+# [server.tls]
+# cert_file = "/config/tls/fullchain.pem"
+# key_file = "/config/tls/privkey.pem"
+# port = 0  # 0 reuses [server].port; set to e.g. 443 for split-port deploys.
+
+# Plain-HTTP redirect listener. Reserved for future use; not yet active.
+# Wiring lands in a follow-up PR.
+# [server.http_redirect]
+# port = 80
+
+# HTTP/3 (QUIC) listener. Reserved for future use; not yet active. Wiring
+# lands in a follow-up PR.
+# [server.http3]
+# enabled = false
+
+# Automatic Certificate Management Environment (ACME). Reserved for future
+# use; not yet active. Until the ACME path lands, configure direct TLS via
+# [server.tls] above (BYO certificate) or terminate at a fronting proxy.
+# [acme]
+# domain = "stillwater.example.com"
+# email = "admin@example.com"
+# ca = "letsencrypt"
+# cache_dir = "/config/acme-cache"
 
 [database]
 # path = "/config/stillwater.db"
@@ -354,6 +430,56 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
 	}
+	// TLS, HTTP redirect, and HTTP/3 settings. Only SW_TLS_CERT_FILE/KEY_FILE/
+	// PORT have behavior today; the remaining branches keep the env-var
+	// surface stable so the rest of the milestone only adds behavior, not new
+	// env knobs.
+	if v := os.Getenv("SW_TLS_CERT_FILE"); v != "" {
+		c.Server.TLS.CertFile = v
+	}
+	if v := os.Getenv("SW_TLS_KEY_FILE"); v != "" {
+		c.Server.TLS.KeyFile = v
+	}
+	if v := os.Getenv("SW_TLS_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Server.TLS.Port = port
+		}
+	}
+	if v := os.Getenv("SW_HTTP_REDIRECT_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.Server.HTTPRedirect.Port = port
+		}
+	}
+	// Treat empty SW_HTTP3_ENABLED as "do not override"; the rest of the
+	// loader follows that convention so a `t.Setenv(key, "")` test helper
+	// (or a deliberately-blanked deploy var) does not silently turn the
+	// feature off.
+	if v := os.Getenv("SW_HTTP3_ENABLED"); v != "" {
+		c.Server.HTTP3.Enabled = v == "true" || v == "1"
+	}
+	// ACME stubs: populated for completeness (and so the env-reference codegen
+	// emits stable rows), but no consumer reads them yet.
+	if v := os.Getenv("SW_ACME_DOMAIN"); v != "" {
+		c.ACME.Domain = v
+	}
+	if v := os.Getenv("SW_ACME_EMAIL"); v != "" {
+		c.ACME.Email = v
+	}
+	if v := os.Getenv("SW_ACME_CA"); v != "" {
+		c.ACME.CA = v
+	}
+	if v := os.Getenv("SW_ACME_EAB_KEY_ID"); v != "" {
+		c.ACME.EabKeyID = v
+	}
+	if v := os.Getenv("SW_ACME_EAB_MAC_KEY"); v != "" {
+		c.ACME.EabMacKey = v
+	}
+	if v := os.Getenv("SW_ACME_IP"); v != "" {
+		c.ACME.IP = v
+	}
+	if v := os.Getenv("SW_ACME_CACHE_DIR"); v != "" {
+		c.ACME.CacheDir = v
+	}
 }
 
 // validate enforces required fields and normalizes a few values that the
@@ -367,5 +493,47 @@ func (c *Config) validate() error {
 		return fmt.Errorf("database path is required")
 	}
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
+
+	// TLS cert/key must be set as a pair. A half-configured pair would let
+	// the binary boot with surprising semantics (e.g. cert path ignored
+	// because key is missing); reject loudly instead. Filesystem checks on
+	// the paths happen at listener-startup time so config loading stays
+	// pure -- a missing or malformed cert surfaces as a startup error
+	// when the listener actually tries to bind.
+	tlsCertSet := c.Server.TLS.CertFile != ""
+	tlsKeySet := c.Server.TLS.KeyFile != ""
+	if tlsCertSet != tlsKeySet {
+		return fmt.Errorf("TLS cert and key must both be set or both be empty (cert=%q, key=%q)",
+			c.Server.TLS.CertFile, c.Server.TLS.KeyFile)
+	}
+
+	// 0 is the "unset" sentinel for optional ports; any non-zero value must
+	// be a valid TCP port. Reject invalid values rather than silently
+	// clamping.
+	if c.Server.TLS.Port != 0 && (c.Server.TLS.Port < 1 || c.Server.TLS.Port > 65535) {
+		return fmt.Errorf("invalid TLS port: %d", c.Server.TLS.Port)
+	}
+	if c.Server.HTTPRedirect.Port != 0 && (c.Server.HTTPRedirect.Port < 1 || c.Server.HTTPRedirect.Port > 65535) {
+		return fmt.Errorf("invalid HTTP redirect port: %d", c.Server.HTTPRedirect.Port)
+	}
+
+	// Resolve the effective TLS port for collision checks: when TLS is
+	// configured but TLS.Port is unset, HTTPS reuses Server.Port (the
+	// "collapse" mode documented in the M47 plan).
+	effectiveTLSPort := c.Server.TLS.Port
+	if tlsCertSet && effectiveTLSPort == 0 {
+		effectiveTLSPort = c.Server.Port
+	}
+
+	// Cross-port collision: the HTTPS listener and the HTTP redirect
+	// listener cannot share a port. The plain Server.Port collision is
+	// implicit -- when TLS.Port is unset, the TLS listener replaces (does
+	// not coexist with) the plain HTTP server on Server.Port, so the
+	// redirect listener bound to the same Server.Port would conflict.
+	redirectPort := c.Server.HTTPRedirect.Port
+	if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
+		return fmt.Errorf("TLS port and HTTP redirect port must differ (both=%d)", effectiveTLSPort)
+	}
+
 	return nil
 }

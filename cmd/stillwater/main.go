@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -50,12 +49,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
+	"github.com/sydlexius/stillwater/internal/server"
 	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 	"github.com/sydlexius/stillwater/web/static"
+	"github.com/sydlexius/stillwater/web/templates"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
@@ -568,6 +569,7 @@ func run() error {
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
 		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
+		TLSStatus:          buildTLSStatus(cfg),
 		StaticFS:           static.FS,
 		ImageCacheDir:      imageCacheDir,
 		Publisher:          publisher,
@@ -598,24 +600,10 @@ func run() error {
 		}
 	}()
 
-	// Create HTTP server.
-	//
-	// WriteTimeout must accommodate the full refresh response, including OOB
-	// HTMX fragments. A metadata refresh for a group artist with language
-	// preferences can run 30-60+ seconds: MusicBrainz's 1 req/sec rate limit
-	// means each member's alias fetch is one real second, so a ~20-member
-	// Japanese band under [ja, en] preferences exceeds 30s. A too-tight
-	// timeout kills the OOB stream after the status line is written, leaving
-	// the HTMX UI stuck on "Fetching Metadata..." even though the DB was
-	// updated successfully.
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      router.Handler(ctx),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 180 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
+	// HTTP listener startup is delegated to internal/server so every
+	// configured listener (today the primary HTTP/HTTPS server; later the
+	// HTTP-to-HTTPS redirect, ACME, and HTTP/3 listeners) inherits the
+	// same timeouts and shutdown coordination.
 
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
@@ -696,26 +684,37 @@ func run() error {
 		go watcherService.Start(ctx)
 	}
 
-	go func() {
-		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
-			os.Exit(1)
-		}
-	}()
+	startAttrs := []any{
+		slog.Int("port", cfg.Server.Port),
+		slog.String("base_path", cfg.Server.BasePath),
+		slog.Bool("tls", cfg.Server.TLS.Enabled()),
+	}
+	// Surface tls_port only when split-port mode is active so the startup
+	// line is unambiguous about which port serves HTTPS. In collapse mode
+	// (TLS.Port == 0) the existing port field already names the bind.
+	if cfg.Server.TLS.Enabled() && cfg.Server.TLS.Port != 0 && cfg.Server.TLS.Port != cfg.Server.Port {
+		startAttrs = append(startAttrs, slog.Int("tls_port", cfg.Server.TLS.Port))
+	}
+	logger.Info("server starting", startAttrs...)
 
-	<-ctx.Done()
+	// RunListeners blocks until ctx is canceled or a listener fails. It
+	// drains in-flight requests under a 10s shared deadline before
+	// returning, so this is also the point at which we know it is safe to
+	// shut down the scanner -- no new Run() calls can arrive after
+	// listeners are down.
+	srvErr := server.RunListeners(ctx, cfg, router.Handler(ctx), logger)
+
 	logger.Info("shutting down")
 
-	// Shut down the HTTP server first to stop accepting new requests and
-	// drain in-flight ones. This prevents new scan requests from racing
-	// with the scanner's WaitGroup during shutdown.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Cancel the shared ctx now so background goroutines (watcher, scheduled
+	// jobs) stop before the scanner shuts down. On the SIGTERM path stop()
+	// has already fired; on the listener-failure path RunListeners returns
+	// without ctx being canceled, and any goroutine still using ctx could
+	// otherwise schedule a Run() into a draining scanner.
+	stop()
 
-	srvErr := srv.Shutdown(shutdownCtx)
-
-	// Now stop the scanner -- no new Run() calls can arrive.
+	// Now stop the scanner -- the listener layer has drained, so no new
+	// scan requests can race with the scanner's WaitGroup.
 	scannerService.Shutdown()
 
 	return srvErr
@@ -1146,4 +1145,37 @@ func getDBIntSetting(db *sql.DB, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// buildTLSStatus condenses the runtime TLS configuration into the read-only
+// shape the Settings General tab renders. Two branches:
+//   - off: no cert configured -- plain HTTP on Server.Port.
+//   - byo: cert and key set   -- HTTPS on TLS.Port, or on Server.Port in
+//     collapse mode.
+//
+// The "acme" mode the template understands is intentionally not produced
+// here yet: the listener layer ignores ACME config until autocert is wired,
+// so reporting an active ACME-managed listener would lie to operators who
+// set SW_ACME_DOMAIN ahead of that PR. The template branch stays for when
+// ACME does land.
+//
+// HTTPRedirectPort is forwarded as-is; the template renders the redirect
+// listener row only when it is non-zero.
+func buildTLSStatus(cfg *config.Config) templates.TLSStatusData {
+	if cfg.Server.TLS.Enabled() {
+		port := cfg.Server.TLS.Port
+		if port == 0 {
+			port = cfg.Server.Port
+		}
+		return templates.TLSStatusData{
+			Mode:             "byo",
+			HTTPSPort:        port,
+			HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+		}
+	}
+	return templates.TLSStatusData{
+		Mode:             "off",
+		HTTPPort:         cfg.Server.Port,
+		HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -118,4 +119,90 @@ func TestResetPasswordNonAdminUser(t *testing.T) {
 	}
 	assertPassword(t, ctx, db, "viewer", "newpass")
 	assertPasswordWrong(t, ctx, db, "viewer", "oldpass")
+}
+
+func TestBuildTLSStatus(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name             string
+		cfg              *config.Config
+		wantMode         string
+		wantHTTPPort     int
+		wantHTTPSPort    int
+		wantRedirectPort int
+		wantAcmeDomain   string
+	}{
+		{
+			name: "off when no TLS configured",
+			cfg: &config.Config{
+				Server: config.ServerConfig{Port: 1973},
+			},
+			wantMode:     "off",
+			wantHTTPPort: 1973,
+		},
+		{
+			name: "byo collapse: TLS.Port unset reuses Server.Port",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port: 1973,
+					TLS:  config.TLSConfig{CertFile: "/c", KeyFile: "/k"},
+				},
+			},
+			wantMode:      "byo",
+			wantHTTPSPort: 1973,
+		},
+		{
+			name: "byo split: TLS.Port wins over Server.Port",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port: 80,
+					TLS:  config.TLSConfig{CertFile: "/c", KeyFile: "/k", Port: 443},
+				},
+			},
+			wantMode:      "byo",
+			wantHTTPSPort: 443,
+		},
+		{
+			name: "byo with redirect port forwards through",
+			cfg: &config.Config{
+				Server: config.ServerConfig{
+					Port:         80,
+					TLS:          config.TLSConfig{CertFile: "/c", KeyFile: "/k", Port: 443},
+					HTTPRedirect: config.HTTPRedirectConfig{Port: 80},
+				},
+			},
+			wantMode:         "byo",
+			wantHTTPSPort:    443,
+			wantRedirectPort: 80,
+		},
+		{
+			name: "ACME.Domain alone reports off, not acme: autocert listener is not wired yet",
+			cfg: &config.Config{
+				Server: config.ServerConfig{Port: 1973},
+				ACME:   config.ACMEConfig{Domain: "example.com"},
+			},
+			wantMode:     "off",
+			wantHTTPPort: 1973,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildTLSStatus(tc.cfg)
+			if got.Mode != tc.wantMode {
+				t.Errorf("Mode = %q; want %q", got.Mode, tc.wantMode)
+			}
+			if got.HTTPPort != tc.wantHTTPPort {
+				t.Errorf("HTTPPort = %d; want %d", got.HTTPPort, tc.wantHTTPPort)
+			}
+			if got.HTTPSPort != tc.wantHTTPSPort {
+				t.Errorf("HTTPSPort = %d; want %d", got.HTTPSPort, tc.wantHTTPSPort)
+			}
+			if got.HTTPRedirectPort != tc.wantRedirectPort {
+				t.Errorf("HTTPRedirectPort = %d; want %d", got.HTTPRedirectPort, tc.wantRedirectPort)
+			}
+			if got.AcmeDomain != tc.wantAcmeDomain {
+				t.Errorf("AcmeDomain = %q; want %q", got.AcmeDomain, tc.wantAcmeDomain)
+			}
+		})
+	}
 }
