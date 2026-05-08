@@ -502,7 +502,18 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 	}
 	if resp == nil {
 		cancel()
-		<-done
+		// Bound the wait on shutdown: if RunListeners hangs on close (a real
+		// regression CR has flagged before), we want a fast-fail with both
+		// errors visible rather than blocking until the global go test
+		// timeout fires.
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("HTTP/3 GET never succeeded: %v (RunListeners error: %v)", lastErr, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("HTTP/3 GET never succeeded: %v; RunListeners did not exit within 5s of cancel", lastErr)
+		}
 		t.Fatalf("HTTP/3 GET never succeeded: %v", lastErr)
 	}
 	defer resp.Body.Close()

@@ -57,7 +57,11 @@ func TestAltSvc_PassThroughWhenDisabled(t *testing.T) {
 		})
 		h := AltSvc(port)(next)
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		// Use a TLS request so the disabled-path (port <= 0) is exercised on
+		// the HTTPS leg. Plain-HTTP suppression is covered separately by
+		// TestAltSvc_SuppressedOnPlainHTTP, so passing a non-TLS request here
+		// would let the assertion succeed for the wrong reason.
+		req := tlsReq(http.MethodGet, "/")
 		h.ServeHTTP(rec, req)
 		if got := rec.Header().Get("Alt-Svc"); got != "" {
 			t.Errorf("port=%d: expected no Alt-Svc header; got %q", port, got)

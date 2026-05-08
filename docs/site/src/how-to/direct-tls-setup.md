@@ -117,7 +117,7 @@ enabled = true
 
 HTTP/3 requires direct TLS to be configured (it mandates TLS 1.3). Stillwater refuses to start if `SW_HTTP3_ENABLED=true` is set without a cert and key.
 
-When enabled, every response carries an `Alt-Svc` header advertising HTTP/3 on the configured UDP port. Browsers cache this advertisement and try HTTP/3 on subsequent requests. There is no separate URL for HTTP/3; it is a transport-layer upgrade.
+When enabled, HTTPS responses carry an `Alt-Svc` header advertising HTTP/3 on the configured UDP port. Browsers cache this advertisement and try HTTP/3 on subsequent requests. There is no separate URL for HTTP/3; it is a transport-layer upgrade.
 
 ### Firewall and NAT
 

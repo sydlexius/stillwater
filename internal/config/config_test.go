@@ -878,6 +878,19 @@ func TestLoad_RedirectPortMalformedFailsLoud(t *testing.T) {
 	}
 }
 
+// TestLoad_HTTP3PortMalformedFailsLoud mirrors the redirect-port malformed
+// guard for SW_HTTP3_PORT: a non-numeric value must return an error from Load
+// rather than silently leaving HTTP/3 on the effective HTTPS port. Silent
+// fallback would mask a typo that an operator expected to bind a dedicated
+// QUIC port.
+func TestLoad_HTTP3PortMalformedFailsLoud(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_HTTP3_PORT", "443x")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: malformed SW_HTTP3_PORT must not be silently discarded")
+	}
+}
+
 // TestValidate_TLSConfiguredWithoutPortCollapsesToServerPort exercises the
 // happy path: cert and key set, TLS.Port unset. Loader accepts it; the
 // listener layer (RunListeners) treats Server.Port as the HTTPS port.

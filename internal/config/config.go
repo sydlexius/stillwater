@@ -475,9 +475,11 @@ func (c *Config) loadFromEnv() error {
 		c.Server.HTTP3.Enabled = v == "true" || v == "1"
 	}
 	if v := os.Getenv("SW_HTTP3_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.HTTP3.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_HTTP3_PORT %q: %w", v, err)
 		}
+		c.Server.HTTP3.Port = port
 	}
 	// ACME stubs: populated for completeness (and so the env-reference codegen
 	// emits stable rows), but no consumer reads them yet.
