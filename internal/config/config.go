@@ -73,7 +73,7 @@ type HTTPRedirectConfig struct {
 // HTTPS listener (UDP) using the same TLS material. Clients are advertised
 // HTTP/3 via the Alt-Svc response header. HTTP/3 requires TLS 1.3.
 type HTTP3Config struct {
-	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Set to true or 1 to enable an HTTP/3 (QUIC) listener over UDP. Requires direct TLS to be configured (SW_TLS_CERT_FILE and SW_TLS_KEY_FILE). The Alt-Svc header is added to all responses so HTTP/3-capable clients upgrade automatically; clients with UDP blocked fall back to HTTP/1.1+HTTP/2 over TCP."`
+	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Set to true or 1 to enable an HTTP/3 (QUIC) listener over UDP. Requires direct TLS to be configured (SW_TLS_CERT_FILE and SW_TLS_KEY_FILE). The Alt-Svc header is added to HTTPS responses so HTTP/3-capable clients upgrade automatically; clients with UDP blocked fall back to HTTP/1.1+HTTP/2 over TCP."`
 	Port    int  `yaml:"port" toml:"port" env:"SW_HTTP3_PORT" default:"unset" desc:"Optional dedicated UDP port for HTTP/3. When unset HTTP/3 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT). Numeric values outside 1-65535 are rejected at startup."`
 }
 
