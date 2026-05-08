@@ -62,10 +62,10 @@ func (c TLSConfig) Enabled() bool {
 }
 
 // HTTPRedirectConfig configures the optional plain-HTTP listener that 301s to
-// the HTTPS port. Stubbed today; the redirect listener wiring follows in a
-// later milestone PR.
+// the HTTPS port. Active only when TLS is also configured (cert+key set);
+// otherwise validate() rejects the misconfiguration at startup.
 type HTTPRedirectConfig struct {
-	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Reserved for future use; not yet active. Plain-HTTP redirect listener wiring lands in a follow-up PR. Numeric values outside 1-65535 are rejected at startup."`
+	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Optional plain-HTTP listener port that 301-redirects to the HTTPS listener. Requires TLS to be configured (SW_TLS_CERT_FILE + SW_TLS_KEY_FILE). Typical value 80; must differ from SW_TLS_PORT (or SW_PORT in collapse mode). Numeric values outside 1-65535 are rejected at startup."`
 }
 
 // HTTP3Config toggles the QUIC/HTTP3 listener. Stubbed today; the QUIC
@@ -186,8 +186,10 @@ const scaffoldTOML = `# Stillwater configuration
 # key_file = "/config/tls/privkey.pem"
 # port = 0  # 0 reuses [server].port; set to e.g. 443 for split-port deploys.
 
-# Plain-HTTP redirect listener. Reserved for future use; not yet active.
-# Wiring lands in a follow-up PR.
+# Plain-HTTP redirect listener. When set together with [server.tls], Stillwater
+# binds a second listener on this port that 301-redirects every request to the
+# HTTPS listener. Requires TLS to be configured; otherwise startup fails.
+# See: https://sydlexius.github.io/stillwater/how-to/http-redirect/
 # [server.http_redirect]
 # port = 80
 
@@ -291,7 +293,9 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	cfg.loadFromEnv()
+	if err := cfg.loadFromEnv(); err != nil {
+		return nil, fmt.Errorf("loading env: %w", err)
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -380,11 +384,13 @@ func detectFormat(path string, data []byte) configFormat {
 // loadFromEnv overlays environment variables onto c. Env-var values take
 // precedence over any file-loaded values per the API-first contract: an
 // operator can override one knob via env without rewriting the whole file.
-func (c *Config) loadFromEnv() {
+func (c *Config) loadFromEnv() error {
 	if v := os.Getenv("SW_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_PORT %q: %w", v, err)
 		}
+		c.Server.Port = port
 	}
 	if v := os.Getenv("SW_BASE_PATH"); v != "" {
 		c.Server.BasePath = v
@@ -441,14 +447,18 @@ func (c *Config) loadFromEnv() {
 		c.Server.TLS.KeyFile = v
 	}
 	if v := os.Getenv("SW_TLS_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.TLS.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_TLS_PORT %q: %w", v, err)
 		}
+		c.Server.TLS.Port = port
 	}
 	if v := os.Getenv("SW_HTTP_REDIRECT_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			c.Server.HTTPRedirect.Port = port
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid SW_HTTP_REDIRECT_PORT %q: %w", v, err)
 		}
+		c.Server.HTTPRedirect.Port = port
 	}
 	// Treat empty SW_HTTP3_ENABLED as "do not override"; the rest of the
 	// loader follows that convention so a `t.Setenv(key, "")` test helper
@@ -480,6 +490,7 @@ func (c *Config) loadFromEnv() {
 	if v := os.Getenv("SW_ACME_CACHE_DIR"); v != "" {
 		c.ACME.CacheDir = v
 	}
+	return nil
 }
 
 // validate enforces required fields and normalizes a few values that the
@@ -533,6 +544,14 @@ func (c *Config) validate() error {
 	redirectPort := c.Server.HTTPRedirect.Port
 	if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
 		return fmt.Errorf("TLS port and HTTP redirect port must differ (both=%d)", effectiveTLSPort)
+	}
+
+	// The redirect listener only makes sense when there is an HTTPS listener
+	// to redirect to. Refuse to start with the misconfiguration rather than
+	// quietly skipping the redirect (which would let a deploy that thought it
+	// was redirecting silently keep serving plain HTTP only on Server.Port).
+	if redirectPort != 0 && !tlsCertSet {
+		return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
 	}
 
 	return nil

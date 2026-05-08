@@ -14,6 +14,8 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -360,6 +362,198 @@ func TestRunListeners_NilArgs(t *testing.T) {
 	}
 }
 
+// TestRedirectHandler covers the redirect target construction across the host
+// shapes the handler must support: bare hostname, hostname with explicit port,
+// IPv4 literal, and bracketed IPv6 literal. Each row asserts that the 301
+// status fires and the Location header points to the right HTTPS URL.
+func TestRedirectHandler(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		httpsPort  int
+		hostHeader string
+		requestURI string
+		wantLoc    string
+	}{
+		{
+			name:       "bare host, default https port omits :443",
+			httpsPort:  443,
+			hostHeader: "example.com",
+			requestURI: "/artists",
+			wantLoc:    "https://example.com/artists",
+		},
+		{
+			name:       "host with explicit :80 stripped, redirect to non-default port",
+			httpsPort:  1973,
+			hostHeader: "example.com:80",
+			requestURI: "/",
+			wantLoc:    "https://example.com:1973/",
+		},
+		{
+			name:       "preserves query string",
+			httpsPort:  443,
+			hostHeader: "example.com",
+			requestURI: "/search?q=test&page=2",
+			wantLoc:    "https://example.com/search?q=test&page=2",
+		},
+		{
+			name:       "IPv4 literal with port",
+			httpsPort:  443,
+			hostHeader: "127.0.0.1:80",
+			requestURI: "/healthz",
+			wantLoc:    "https://127.0.0.1/healthz",
+		},
+		{
+			name:       "IPv6 literal with port preserves brackets",
+			httpsPort:  443,
+			hostHeader: "[::1]:80",
+			requestURI: "/",
+			wantLoc:    "https://[::1]/",
+		},
+		{
+			name:       "non-default https port appears in target",
+			httpsPort:  8443,
+			hostHeader: "stillwater.local",
+			requestURI: "/api/v1/health",
+			wantLoc:    "https://stillwater.local:8443/api/v1/health",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := redirectHandler(tc.httpsPort)
+			req := &http.Request{
+				Method:     "GET",
+				Host:       tc.hostHeader,
+				RequestURI: tc.requestURI,
+				URL:        mustParseURL(t, tc.requestURI),
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusMovedPermanently {
+				t.Errorf("status = %d; want 301", rec.Code)
+			}
+			gotLoc := rec.Header().Get("Location")
+			if gotLoc != tc.wantLoc {
+				t.Errorf("Location = %q; want %q", gotLoc, tc.wantLoc)
+			}
+		})
+	}
+}
+
+// TestRunListeners_RedirectIntegration asserts the redirect listener actually
+// runs alongside the HTTPS listener and returns 301 with the right Location
+// over a real socket. Without this, the unit test above passes even if the
+// listener never registers (buildEntries gating bug).
+func TestRunListeners_RedirectIntegration(t *testing.T) {
+	// Not t.Parallel: see TestRunListeners_PlainHTTPStartAndShutdown.
+	dir := t.TempDir()
+	certPath, keyPath := generateSelfSignedCert(t, dir)
+	tlsPort := freePort(t)
+	redirectPort := freePort(t)
+	if tlsPort == redirectPort {
+		t.Skip("freePort returned identical ports; rerun")
+	}
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port: freePort(t),
+			TLS: config.TLSConfig{
+				CertFile: certPath,
+				KeyFile:  keyPath,
+				Port:     tlsPort,
+			},
+			HTTPRedirect: config.HTTPRedirectConfig{Port: redirectPort},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+
+	redirectAddr := "127.0.0.1:" + strconv.Itoa(redirectPort)
+	tlsAddr := "127.0.0.1:" + strconv.Itoa(tlsPort)
+	pollUntilServing(t, redirectAddr)
+	pollUntilServing(t, tlsAddr)
+
+	// Verify the HTTPS sibling is actually serving. pollUntilServing only
+	// confirms the TCP socket is bound; without a real HTTPS round-trip a
+	// regression that stopped registering the TLS listener would still let
+	// the redirect-Location assertion pass (the URL is computed, not chased).
+	httpsClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+		},
+		Timeout: 2 * time.Second,
+	}
+	tlsResp, err := httpsClient.Get("https://" + tlsAddr + "/")
+	if err != nil {
+		t.Fatalf("HTTPS GET on TLS listener: %v", err)
+	}
+	tlsResp.Body.Close()
+	if tlsResp.StatusCode != http.StatusOK {
+		t.Fatalf("TLS listener status = %d; want 200", tlsResp.StatusCode)
+	}
+
+	// Use a client that does NOT follow redirects; we want to inspect the
+	// Location header directly, not chase it into the TLS listener.
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get("http://" + redirectAddr + "/foo?bar=baz")
+	if err != nil {
+		t.Fatalf("HTTP GET on redirect listener: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("status = %d; want 301", resp.StatusCode)
+	}
+	gotLoc := resp.Header.Get("Location")
+	wantLoc := "https://127.0.0.1:" + strconv.Itoa(tlsPort) + "/foo?bar=baz"
+	if gotLoc != wantLoc {
+		t.Errorf("Location = %q; want %q", gotLoc, wantLoc)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("RunListeners returned %v; want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunListeners did not exit within 5s of cancel")
+	}
+}
+
+// TestRunListeners_RedirectSkippedWithoutTLS asserts the redirect listener is
+// NOT registered when TLS is not configured, even if HTTPRedirect.Port is set.
+// (The config validator rejects this combination separately; this guard is
+// inside buildEntries as belt-and-suspenders.)
+func TestRunListeners_RedirectSkippedWithoutTLS(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         9999,
+			HTTPRedirect: config.HTTPRedirectConfig{Port: 8080},
+		},
+	}
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
+	entries := buildEntries(cfg, handler, discardLogger())
+	if len(entries) != 1 {
+		t.Errorf("buildEntries returned %d entries; want 1 (redirect must be skipped without TLS)", len(entries))
+	}
+	for _, e := range entries {
+		if e.name == "http-redirect" {
+			t.Errorf("redirect listener registered without TLS configured")
+		}
+	}
+}
+
 // TestRunListeners_BindFailureSurfacesError asserts a non-graceful start
 // error (port already in use) propagates as the function's return value.
 // The test binds the wildcard ":<port>" upfront so RunListeners' wildcard
@@ -383,4 +577,133 @@ func TestRunListeners_BindFailureSurfacesError(t *testing.T) {
 	if err == nil {
 		t.Fatal("RunListeners returned nil; want bind error")
 	}
+}
+
+// TestRedirectHandler_RejectsBadInputs covers the defensive guards: a
+// non-origin-form RequestURI (CONNECT/OPTIONS shapes) and a malformed Host
+// header must return 400, not splice into a malformed Location.
+func TestRedirectHandler_RejectsBadInputs(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		host       string
+		requestURI string
+	}{
+		{name: "RequestURI without leading slash (CONNECT-like)", host: "example.com", requestURI: "example.com:443"},
+		{name: "RequestURI = *", host: "example.com", requestURI: "*"},
+		{name: "Host with whitespace", host: "evil .com", requestURI: "/foo"},
+		{name: "Host with slash", host: "evil/com", requestURI: "/foo"},
+		{name: "Empty Host", host: "", requestURI: "/foo"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := redirectHandler(443)
+			req := &http.Request{Method: "GET", Host: tc.host, RequestURI: tc.requestURI}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d; want 400 (Location = %q)", rec.Code, rec.Header().Get("Location"))
+			}
+			if loc := rec.Header().Get("Location"); loc != "" {
+				t.Errorf("Location = %q; want empty", loc)
+			}
+		})
+	}
+}
+
+// TestRunListeners_RedirectShutdownPropagation verifies that canceling the
+// parent context tears down BOTH the HTTPS and the redirect listener -- not
+// just the one we happen to dial in TestRunListeners_RedirectIntegration.
+// Without this, a future regression where buildRedirectListener wires a no-op
+// shutdown would pass the integration test but leave the redirect socket
+// listening forever.
+func TestRunListeners_RedirectShutdownPropagation(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := generateSelfSignedCert(t, dir)
+	tlsPort := freePort(t)
+	redirectPort := freePort(t)
+	if tlsPort == redirectPort {
+		t.Skip("freePort returned identical ports; rerun")
+	}
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         freePort(t),
+			TLS:          config.TLSConfig{CertFile: certPath, KeyFile: keyPath, Port: tlsPort},
+			HTTPRedirect: config.HTTPRedirectConfig{Port: redirectPort},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- RunListeners(ctx, cfg, handler, discardLogger()) }()
+	pollUntilServing(t, "127.0.0.1:"+strconv.Itoa(redirectPort))
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunListeners did not exit within 5s of cancel")
+	}
+
+	// Re-dial both ports; both should refuse within ~250ms.
+	for _, p := range []int{redirectPort, tlsPort} {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(p), 250*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			t.Errorf("port %d still accepting connections after shutdown", p)
+		}
+	}
+}
+
+// TestRunListeners_RedirectBindFailureCancelsHTTPS asserts the errgroup
+// contract: if the redirect listener cannot bind (port already held), the
+// HTTPS sibling is also torn down so the operator sees a single fatal error
+// instead of a half-running daemon.
+func TestRunListeners_RedirectBindFailureCancelsHTTPS(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := generateSelfSignedCert(t, dir)
+	hold, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer hold.Close()
+	redirectPort := hold.Addr().(*net.TCPAddr).Port
+	tlsPort := freePort(t)
+	if tlsPort == redirectPort {
+		t.Skip("freePort collision with held port; rerun")
+	}
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         freePort(t),
+			TLS:          config.TLSConfig{CertFile: certPath, KeyFile: keyPath, Port: tlsPort},
+			HTTPRedirect: config.HTTPRedirectConfig{Port: redirectPort},
+		},
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = RunListeners(ctx, cfg, handler, discardLogger())
+	if err == nil {
+		t.Fatal("RunListeners returned nil; want bind error from redirect listener")
+	}
+	// HTTPS sibling must also be down.
+	conn, dialErr := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(tlsPort), 250*time.Millisecond)
+	if dialErr == nil {
+		conn.Close()
+		t.Errorf("HTTPS port %d still accepting connections after sibling bind failure", tlsPort)
+	}
+}
+
+// mustParseURL is a tiny helper so the redirect-handler table tests can
+// populate http.Request.URL without bubbling parse errors through every row.
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.ParseRequestURI(raw)
+	if err != nil {
+		t.Fatalf("url.ParseRequestURI(%q): %v", raw, err)
+	}
+	return u
 }

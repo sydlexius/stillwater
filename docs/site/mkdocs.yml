@@ -105,6 +105,7 @@ nav:
       - Update Stillwater: how-to/self-update.md
       - Reverse proxy: how-to/reverse-proxy.md
       - Direct TLS setup: how-to/direct-tls-setup.md
+      - HTTP-to-HTTPS redirect: how-to/http-redirect.md
   - Reference:
       - reference/index.md
       - Settings, by tab: reference/settings-by-tab.md
