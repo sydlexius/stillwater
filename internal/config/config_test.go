@@ -834,6 +834,50 @@ func TestValidate_TLSPortCollapseClashesWithRedirect(t *testing.T) {
 	}
 }
 
+// TestValidate_RedirectWithoutTLS rejects a configuration that asks for the
+// HTTP-to-HTTPS redirect listener but does not configure TLS. There would be
+// nothing to redirect to; quietly skipping the redirect would silently leave
+// the deploy on plain HTTP.
+func TestValidate_RedirectWithoutTLS(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "80")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: redirect port set without TLS")
+	}
+}
+
+// TestValidate_RedirectWithTLSAccepted covers the happy path: TLS configured
+// with a split port, redirect listener on a distinct port. Loader accepts it.
+func TestValidate_RedirectWithTLSAccepted(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_TLS_CERT_FILE", "/tmp/c.pem")
+	t.Setenv("SW_TLS_KEY_FILE", "/tmp/k.pem")
+	t.Setenv("SW_TLS_PORT", "443")
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "80")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.HTTPRedirect.Port != 80 {
+		t.Errorf("HTTPRedirect.Port = %d; want 80", cfg.Server.HTTPRedirect.Port)
+	}
+	if cfg.Server.TLS.Port != 443 {
+		t.Errorf("TLS.Port = %d; want 443", cfg.Server.TLS.Port)
+	}
+}
+
+// TestLoad_RedirectPortMalformedFailsLoud asserts that a non-numeric value
+// for SW_HTTP_REDIRECT_PORT returns an error from Load instead of silently
+// discarding the env var (which would leave the redirect listener disabled
+// and the operator unaware).
+func TestLoad_RedirectPortMalformedFailsLoud(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_HTTP_REDIRECT_PORT", "80a")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error: malformed SW_HTTP_REDIRECT_PORT must not be silently discarded")
+	}
+}
+
 // TestValidate_TLSConfiguredWithoutPortCollapsesToServerPort exercises the
 // happy path: cert and key set, TLS.Port unset. Loader accepts it; the
 // listener layer (RunListeners) treats Server.Port as the HTTPS port.

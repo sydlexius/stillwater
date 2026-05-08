@@ -1535,7 +1535,7 @@
   "settings.tls_status.active_acme_with_domain": "Active (ACME, %s)",
   "settings.tls_status.active_byo": "Active (BYO certificate)",
   "settings.tls_status.description": "Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or the [server.tls] block in config.toml.",
-  "settings.tls_status.help": "Stillwater can serve over HTTPS using either a certificate you provide (SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or [server.tls] in config.toml) or automatic Let's Encrypt issuance via ACME. This card shows which mode is active and which ports are bound; configuration is read-only here.",
+  "settings.tls_status.help": "Stillwater can serve over HTTPS using either a certificate you provide (SW_TLS_CERT_FILE / SW_TLS_KEY_FILE or [server.tls] in config.toml) or automatic Let's Encrypt issuance via ACME. The optional HTTP redirect listener (SW_HTTP_REDIRECT_PORT, typically 80) appears here when active and 301-redirects every plain-HTTP request to the HTTPS port. This card shows which mode is active and which ports are bound; configuration is read-only here.",
   "settings.tls_status.inactive": "Inactive",
   "settings.tls_status.listener_http": "HTTP on :%d",
   "settings.tls_status.listener_https": "HTTPS on :%d",

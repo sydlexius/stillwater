@@ -28,7 +28,7 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_DB_PATH` | path | `/config/stillwater.db` | Filesystem path to the SQLite database file. |
 | `SW_ENCRYPTION_KEY` | string | unset | Key used to encrypt provider API keys at rest. When unset Stillwater generates one on first run and persists it in the config directory. |
 | `SW_HTTP3_ENABLED` | boolean | `false` | Reserved for future use; not yet active. HTTP/3 (QUIC) listener wiring lands in a follow-up PR. |
-| `SW_HTTP_REDIRECT_PORT` | integer | unset | Reserved for future use; not yet active. Plain-HTTP redirect listener wiring lands in a follow-up PR. Numeric values outside 1-65535 are rejected at startup. |
+| `SW_HTTP_REDIRECT_PORT` | integer | unset | Optional plain-HTTP listener port that 301-redirects to the HTTPS listener. Requires TLS to be configured (SW_TLS_CERT_FILE + SW_TLS_KEY_FILE). Typical value 80; must differ from SW_TLS_PORT (or SW_PORT in collapse mode). Numeric values outside 1-65535 are rejected at startup. |
 | `SW_LOG_FORMAT` | string | `json` | Log output format. Use json for log aggregators or text for friendlier console output. |
 | `SW_LOG_LEVEL` | string | `info` | Log level at startup. One of trace, debug, info, warn, error. The runtime can also adjust the live level from the Logs settings tab. |
 | `SW_MUSIC_PATH` | path | `/music` | Default music library path used as a starting point when no library has been added through the UI. |

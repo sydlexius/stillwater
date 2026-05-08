@@ -10,6 +10,10 @@ services:
       # Direct TLS (BYO certificate). Uncomment when SW_TLS_CERT_FILE/KEY_FILE
       # are set below; pick whichever host port matches your deployment.
       # - "443:1973"
+      # Optional HTTP-to-HTTPS redirect listener. Uncomment alongside the TLS
+      # mappings above when SW_HTTP_REDIRECT_PORT is set. Pairs with port 80
+      # so users typing http://yourhost get sent to HTTPS automatically.
+      # - "80:80"
     environment:
       - PUID=99
       - PGID=100
@@ -21,6 +25,8 @@ services:
       # - SW_TLS_CERT_FILE=/config/tls/fullchain.pem
       # - SW_TLS_KEY_FILE=/config/tls/privkey.pem
       # - SW_TLS_PORT=1973  # 0 or unset reuses SW_PORT (collapse mode)
+      # Optional HTTP-to-HTTPS redirect listener (see docs/how-to/http-redirect):
+      # - SW_HTTP_REDIRECT_PORT=80
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw

@@ -18,7 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,7 +143,16 @@ func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler,
 // PRs an obvious place to splice in their entries without rewriting the
 // shutdown harness.
 func buildEntries(cfg *config.Config, handler http.Handler, logger *slog.Logger) []listenerEntry {
-	return []listenerEntry{buildPrimaryListener(cfg, handler, logger)}
+	entries := []listenerEntry{buildPrimaryListener(cfg, handler, logger)}
+	// The redirect listener is opt-in (HTTPRedirect.Port > 0) AND only meaningful
+	// when TLS is active -- there is nowhere to redirect to without an HTTPS
+	// listener. validate() rejects the misconfiguration up front; this guard is
+	// belt-and-suspenders so a future config path that bypasses validate() does
+	// not silently spin up a redirect-to-itself.
+	if cfg.Server.HTTPRedirect.Port > 0 && cfg.Server.TLS.Enabled() {
+		entries = append(entries, buildRedirectListener(cfg, logger))
+	}
+	return entries
 }
 
 // buildPrimaryListener returns the entry for the main HTTP/HTTPS server.
@@ -197,4 +209,119 @@ func buildPrimaryListener(cfg *config.Config, handler http.Handler, logger *slog
 		serve:    srv.ListenAndServe,
 		shutdown: srv.Shutdown,
 	}
+}
+
+// buildRedirectListener returns an entry for the optional plain-HTTP listener
+// that 301s every request to the HTTPS listener. It is only registered when
+// TLS is active and HTTPRedirect.Port is non-zero (see buildEntries).
+//
+// The effective HTTPS port is the same value the primary listener resolved:
+// TLS.Port when set, otherwise Server.Port (collapse mode). validate() rejects
+// the redirect-port-equals-TLS-port collision so this listener is guaranteed
+// to bind a distinct port.
+func buildRedirectListener(cfg *config.Config, logger *slog.Logger) listenerEntry {
+	httpsPort := cfg.Server.TLS.Port
+	if httpsPort == 0 {
+		httpsPort = cfg.Server.Port
+	}
+	addr := fmt.Sprintf(":%d", cfg.Server.HTTPRedirect.Port)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           redirectHandler(httpsPort),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+	logger.Debug("redirect listener configured",
+		slog.String("addr", addr),
+		slog.Int("https_port", httpsPort),
+	)
+	return listenerEntry{
+		name:     "http-redirect",
+		addr:     addr,
+		serve:    srv.ListenAndServe,
+		shutdown: srv.Shutdown,
+	}
+}
+
+// redirectHandler returns an http.Handler that issues a 301 Moved Permanently
+// to the same path on https://<host>:<httpsPort>. Query string and fragment
+// from the original request are preserved via r.RequestURI (which includes
+// the raw path + query exactly as the client sent it).
+//
+// Host parsing handles three shapes:
+//   - "example.com"        -- no port, use as-is
+//   - "example.com:80"     -- strip the explicit port, replace with httpsPort
+//   - "[::1]:80"           -- IPv6 literal, brackets preserved by net.SplitHostPort
+//
+// When httpsPort is 443 the port suffix is omitted from the Location header so
+// the browser address bar shows the canonical URL ("https://example.com/path"
+// instead of "https://example.com:443/path").
+func redirectHandler(httpsPort int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reject anything that is not a normal origin-form request. CONNECT
+		// (RequestURI = "host:port") and server-form OPTIONS (RequestURI = "*")
+		// would splice into a malformed Location otherwise.
+		if !strings.HasPrefix(r.RequestURI, "/") {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		// Reject Hosts whose hostname portion contains characters that have no
+		// place in a URL authority. net/http already blocks CRLF in header
+		// values, but spaces, control bytes, and stray quotes would still
+		// produce a Location that browsers either reject or interpret in
+		// surprising ways.
+		if !isValidHostName(host) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		// Re-add brackets for IPv6 literals so the resulting URL is well-formed.
+		if isIPv6Literal(host) {
+			host = "[" + host + "]"
+		}
+		var target string
+		if httpsPort == 443 {
+			target = "https://" + host + r.RequestURI
+		} else {
+			target = "https://" + host + ":" + strconv.Itoa(httpsPort) + r.RequestURI
+		}
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusMovedPermanently)
+	})
+}
+
+// isValidHostName accepts a hostname or IP literal containing only the ASCII
+// characters legal in a URL host: letters, digits, dot, hyphen, colon (for
+// IPv6 literals after net.SplitHostPort), and the brackets net/url permits.
+// Rejects empty input and anything containing whitespace, slashes, or other
+// reserved/control bytes.
+func isValidHostName(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		switch {
+		case c >= 'a' && c <= 'z',
+			c >= 'A' && c <= 'Z',
+			c >= '0' && c <= '9',
+			c == '.', c == '-', c == ':':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isIPv6Literal reports whether host is a bare IPv6 address (no brackets,
+// no port). net.SplitHostPort strips the brackets when present, so after that
+// step a colon in the remaining string means we are looking at an IPv6 host
+// that needs its brackets restored before we splice it back into a URL.
+func isIPv6Literal(host string) bool {
+	return net.ParseIP(host) != nil && strings.Contains(host, ":")
 }

@@ -61,7 +61,7 @@ key_file  = "/config/tls/privkey.pem"
 port      = 0  # 0 reuses [server].port; set to 443 for split-port deploys.
 ```
 
-## Confirm it took effect
+## TLS status { #settings-general-tls-status }
 
 Open Settings, scroll to the General tab. The TLS Status card shows one of three states:
 
@@ -97,4 +97,4 @@ Added in v1.1.0; see issue [#932](https://github.com/sydlexius/stillwater/issues
 
 ### HTTP-to-HTTPS redirect listener
 
-Added in v1.1.0; see issue [#929](https://github.com/sydlexius/stillwater/issues/929). Setting `SW_HTTP_REDIRECT_PORT=80` will make Stillwater bind a second plain-HTTP listener that 301-redirects every request to the HTTPS port.
+Added in v1.1.0. Setting `SW_HTTP_REDIRECT_PORT=80` makes Stillwater bind a second plain-HTTP listener that 301-redirects every request to the HTTPS port. See the [HTTP-to-HTTPS redirect](http-redirect.md) how-to for setup details and reverse-proxy interactions.
