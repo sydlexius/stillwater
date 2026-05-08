@@ -119,7 +119,7 @@ Minimum similarity score (0-100) required when matching artist names from search
 {: #settings-providers-provider-config-client-secret }
 - **Server** -- Which MusicBrainz endpoint Stillwater queries. Pick a preset or supply a custom mirror URL.
 {: #settings-providers-provider-config-server }
-- **Official** -- Send requests to musicbrainz.org. The public service is rate limited to roughly one request per second.
+- **Official** -- Send requests to musicbrainz.org. The public service is rate-limited to roughly one request per second.
 {: #settings-providers-provider-config-official }
 - **Beta** -- Send requests to the MusicBrainz beta server. The data set matches the official server, but the deployment runs preview code. Subject to the same one-request-per-second public rate limit.
 {: #settings-providers-provider-config-beta }
@@ -324,7 +324,7 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-guard-rail }
 - **Emby guard rail setting**
 {: #settings-auth-providers-auth-emby-guard-rail }
-- **Admins only** -- Only users who already have an admin account in the upstream provider are allowed to auto-provision. Other users can still sign in but will not have a Stillwater account created for them.
+- **Admins only** -- Only users with an existing admin account in the upstream provider are allowed to auto-provision. Other users can still sign in but will not have a Stillwater account created for them.
 {: #settings-auth-providers-auth-admins-only }
 - **Any user** -- Every user the upstream provider authenticates is auto-provisioned a Stillwater account at the configured default role.
 {: #settings-auth-providers-auth-any-user }
