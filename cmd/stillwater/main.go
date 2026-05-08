@@ -706,6 +706,13 @@ func run() error {
 
 	logger.Info("shutting down")
 
+	// Cancel the shared ctx now so background goroutines (watcher, scheduled
+	// jobs) stop before the scanner shuts down. On the SIGTERM path stop()
+	// has already fired; on the listener-failure path RunListeners returns
+	// without ctx being canceled, and any goroutine still using ctx could
+	// otherwise schedule a Run() into a draining scanner.
+	stop()
+
 	// Now stop the scanner -- the listener layer has drained, so no new
 	// scan requests can race with the scanner's WaitGroup.
 	scannerService.Shutdown()

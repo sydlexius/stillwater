@@ -20,7 +20,13 @@ COPY $TARGETPLATFORM/stillwater /usr/local/bin/stillwater
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Advertise both the plain HTTP port and the optional TLS port. EXPOSE is
+# metadata only -- the actual binds come from SW_PORT / SW_TLS_PORT at run
+# time -- but listing both makes split-port mode discoverable to docker run -P
+# and to orchestrators that scrape image metadata.
+ARG SW_TLS_PORT=1974
 EXPOSE 1973
+EXPOSE ${SW_TLS_PORT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD sh -c 'curl -fsk "${SW_HEALTH_URL:-http://localhost:1973${SW_BASE_PATH:-}/api/v1/health}" || exit 1'

@@ -25,11 +25,9 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build Tailwind CSS
-RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
-
-# Build Go binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
+# Build Tailwind CSS and Go binary in a single layer (hadolint DL3059).
+RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
 
 # Runtime stage
 FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
@@ -55,7 +53,13 @@ RUN chmod +x /entrypoint.sh
 
 WORKDIR /app
 
+# Advertise both the plain HTTP port and the optional TLS port. EXPOSE is
+# metadata only -- the actual binds come from SW_PORT / SW_TLS_PORT at run
+# time -- but listing both makes split-port mode discoverable to docker run -P
+# and to orchestrators that scrape image metadata.
+ARG SW_TLS_PORT=1974
 EXPOSE 1973
+EXPOSE ${SW_TLS_PORT}
 
 # Healthcheck. The shell-expanded URL lets the entrypoint override
 # SW_HEALTH_URL when SW_TLS_CERT_FILE is set so the probe targets HTTPS on

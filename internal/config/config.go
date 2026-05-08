@@ -65,13 +65,13 @@ func (c TLSConfig) Enabled() bool {
 // the HTTPS port. Stubbed today; the redirect listener wiring follows in a
 // later milestone PR.
 type HTTPRedirectConfig struct {
-	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Optional plain-HTTP port that 301-redirects to the HTTPS listener. Only honored when TLS is configured. Numeric values outside 1-65535 are rejected at startup."`
+	Port int `yaml:"port" toml:"port" env:"SW_HTTP_REDIRECT_PORT" default:"unset" desc:"Reserved for future use; not yet active. Plain-HTTP redirect listener wiring lands in a follow-up PR. Numeric values outside 1-65535 are rejected at startup."`
 }
 
 // HTTP3Config toggles the QUIC/HTTP3 listener. Stubbed today; the QUIC
 // listener wiring follows in a later milestone PR.
 type HTTP3Config struct {
-	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Enable the HTTP/3 (QUIC) listener on the same port as the HTTPS listener. Requires TLS to be configured."`
+	Enabled bool `yaml:"enabled" toml:"enabled" env:"SW_HTTP3_ENABLED" default:"false" desc:"Reserved for future use; not yet active. HTTP/3 (QUIC) listener wiring lands in a follow-up PR."`
 }
 
 // ACMEConfig holds Automatic Certificate Management Environment settings.
@@ -80,13 +80,13 @@ type HTTP3Config struct {
 // wirings ship in later milestone PRs. Leaving the struct populated but unread
 // keeps the env-var loader and reference docs stable across the milestone.
 type ACMEConfig struct {
-	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"DNS name to obtain certificates for via ACME. Mutually exclusive with SW_TLS_CERT_FILE; the ACME path wins when both are set."`
-	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Contact email registered with the ACME CA. Required by most public ACME endpoints."`
-	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"ACME directory URL or shorthand. Recognized shorthands include letsencrypt, letsencrypt-staging, buypass, and zerossl. Falls back to Let's Encrypt when unset."`
-	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL)."`
-	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; persisted at rest only after AES-256-GCM encryption."`
-	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Public IP address for IP-SAN certificate orders (ZeroSSL only). Must not be an RFC1918, loopback, or link-local address."`
-	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Directory where ACME account keys and issued certificates are cached. Defaults to acme-cache/ alongside the SQLite database when unset."`
+	Domain    string `yaml:"domain" toml:"domain" env:"SW_ACME_DOMAIN" default:"unset" desc:"Reserved for future use; not yet active. DNS name that the future ACME path will request certificates for."`
+	Email     string `yaml:"email" toml:"email" env:"SW_ACME_EMAIL" default:"unset" desc:"Reserved for future use; not yet active. Contact email that will be registered with the ACME CA when the ACME path lands."`
+	CA        string `yaml:"ca" toml:"ca" env:"SW_ACME_CA" default:"unset" desc:"Reserved for future use; not yet active. Will accept an ACME directory URL or shorthand (letsencrypt, letsencrypt-staging, buypass, zerossl) when the ACME path lands."`
+	EabKeyID  string `yaml:"eab_key_id" toml:"eab_key_id" env:"SW_ACME_EAB_KEY_ID" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding key identifier for ACME CAs that require it (for example ZeroSSL)."`
+	EabMacKey string `yaml:"eab_mac_key" toml:"eab_mac_key" env:"SW_ACME_EAB_MAC_KEY" default:"unset" desc:"Reserved for future use; not yet active. External Account Binding HMAC key paired with SW_ACME_EAB_KEY_ID. Treat as a secret; will be persisted only after AES-256-GCM encryption when the ACME path lands."`
+	IP        string `yaml:"ip" toml:"ip" env:"SW_ACME_IP" default:"unset" desc:"Reserved for future use; not yet active. Public IP address for IP-SAN certificate orders (ZeroSSL). Must not be an RFC1918, loopback, or link-local address."`
+	CacheDir  string `yaml:"cache_dir" toml:"cache_dir" env:"SW_ACME_CACHE_DIR" default:"unset" desc:"Reserved for future use; not yet active. Directory where ACME account keys and issued certificates will be cached when the ACME path lands."`
 }
 
 // DatabaseConfig holds SQLite settings.
@@ -179,23 +179,26 @@ const scaffoldTOML = `# Stillwater configuration
 
 # Direct TLS (BYO certificate). When both files are set, Stillwater serves
 # HTTPS itself instead of plain HTTP. Leave unset to keep terminating TLS at
-# a fronting reverse proxy. See docs/how-to/direct-tls-setup.
+# a fronting reverse proxy.
+# See: https://sydlexius.github.io/stillwater/how-to/direct-tls-setup/
 # [server.tls]
 # cert_file = "/config/tls/fullchain.pem"
 # key_file = "/config/tls/privkey.pem"
 # port = 0  # 0 reuses [server].port; set to e.g. 443 for split-port deploys.
 
-# Optional plain-HTTP redirect listener. Only honored when TLS is configured.
+# Plain-HTTP redirect listener. Reserved for future use; not yet active.
+# Wiring lands in a follow-up PR.
 # [server.http_redirect]
 # port = 80
 
-# HTTP/3 (QUIC) listener. Requires TLS to be configured.
+# HTTP/3 (QUIC) listener. Reserved for future use; not yet active. Wiring
+# lands in a follow-up PR.
 # [server.http3]
 # enabled = false
 
-# Automatic Certificate Management Environment (ACME). Wired in v1.1.0; see
-# docs/how-to/direct-tls-setup for ACME details. Leaving the section commented
-# falls back to BYO certificate (or plaintext when [server.tls] is also unset).
+# Automatic Certificate Management Environment (ACME). Reserved for future
+# use; not yet active. Until the ACME path lands, configure direct TLS via
+# [server.tls] above (BYO certificate) or terminate at a fronting proxy.
 # [acme]
 # domain = "stillwater.example.com"
 # email = "admin@example.com"
