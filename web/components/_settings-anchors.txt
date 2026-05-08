@@ -44,9 +44,14 @@ settings-automation-notif-badges-count-by-severity
 settings-automation-notif-badges-enable-badge
 settings-automation-webhooks
 settings-automation-webhooks-add
+settings-automation-webhooks-name
 settings-automation-webhooks-select-type
+settings-automation-webhooks-type
 settings-automation-webhooks-type-generic
+settings-automation-webhooks-url
 settings-connections-connections
+settings-connections-connections-api-key
+settings-connections-connections-base-url
 settings-connections-connections-feature-image-write
 settings-connections-connections-feature-library-import
 settings-connections-connections-feature-nfo-write
@@ -85,8 +90,12 @@ settings-libraries-libraries-fs-off
 settings-libraries-libraries-fs-poll
 settings-libraries-libraries-fs-watch
 settings-libraries-libraries-lock-nfo-label
+settings-libraries-libraries-name
+settings-libraries-libraries-path
+settings-libraries-libraries-poll-interval-title
 settings-libraries-libraries-resync
 settings-libraries-libraries-scan
+settings-libraries-libraries-type
 settings-libraries-libraries-type-classical
 settings-libraries-libraries-type-regular
 settings-logs-log-settings

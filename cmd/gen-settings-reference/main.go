@@ -625,13 +625,15 @@ var noiseTokens = []string{
 	// _header: dynamic sub-section headings substituted at runtime
 	// (e.g. settings.rules.category_header "%s Rules").
 	"_header",
-	// change_role_for, copy_invite_for: aria-label templates personalized with
-	// a subject name (e.g. "Change role for %s"). These are tf()-only keys;
-	// the plain "for" substring cannot be used as a token here because
+	// change_role_for, copy_invite_for, automation_mode_for: aria-label
+	// templates personalized with a subject name (e.g. "Change role for %s",
+	// "Automation mode for %s"). These are tf()-only keys; the plain "for"
+	// substring cannot be used as a token here because
 	// settings.users.role_for_invite (a real documented control) also contains
-	// it. The two specific patterns are listed instead.
+	// it. The specific leaf patterns are listed instead.
 	"change_role_for",
 	"copy_invite_for",
+	"automation_mode_for",
 	// deactivate_: destructive action label templates that include a user name
 	// subject (e.g. settings.users.deactivate_user "Deactivate %s"). Prefix
 	// form targets only the parametrized variant; the plain "deactivate" key

@@ -666,7 +666,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							if profileEditable(data.ActiveProfile) {
 								<div class="mt-4 flex items-center justify-between">
 									<div>
-										<div class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</div>
+										<div class="flex items-center gap-1">
+											<span class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</span>
+											@components.ContextHelp("help-symlinks", t(ctx, "settings.symlinks.title"), t(ctx, "settings.symlinks.help"), "settings-general-symlinks")
+										</div>
 										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 											if data.SymlinkSupported {
 												{ tf(ctx, "settings.symlinks.supported_description", img.ImageTermFor("fanart", data.ActiveProfile.Name)) }
@@ -899,7 +902,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4">
 						<div class="flex items-center justify-between">
 							<div>
-								<div class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</div>
+								<div class="flex items-center gap-1">
+									<span class="font-medium text-sm">{ t(ctx, "settings.platform_debug.title") }</span>
+									@components.ContextHelp("help-platform-debug", t(ctx, "settings.platform_debug.title"), t(ctx, "settings.platform_debug.help"), "settings-general-platform-debug")
+								</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 									{ t(ctx, "settings.platform_debug.description") }
 								</div>
@@ -943,7 +949,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
 						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div>
-								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.image_cache.max_size") }</label>
+								<div class="flex items-center gap-1 mb-1">
+									<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.image_cache.max_size") }</label>
+									@components.ContextHelp("help-cache-max-size", t(ctx, "settings.image_cache.max_size"), t(ctx, "settings.image_cache.max_size.help"), "settings-general-image-cache-max-size")
+								</div>
 								<select
 									id="cache-max-size"
 									aria-label={ t(ctx, "settings.image_cache.max_size") }
@@ -961,13 +970,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</select>
 							</div>
 							<div class="flex items-end gap-3">
-								<button
-									type="button"
-									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-									onclick="clearCache()"
-								>
-									{ t(ctx, "settings.image_cache.clear") }
-								</button>
+								<div class="flex items-center gap-1">
+									<button
+										type="button"
+										class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+										onclick="clearCache()"
+									>
+										{ t(ctx, "settings.image_cache.clear") }
+									</button>
+									@components.ContextHelp("help-cache-clear", t(ctx, "settings.image_cache.clear"), t(ctx, "settings.image_cache.clear.help"), "settings-general-image-cache-clear")
+								</div>
 								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
 							</div>
 						</div>
@@ -1233,20 +1245,37 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								hx-on::after-request="if(event.detail.successful) { onSettingsLibrarySaved(); }"
 							>
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-									<input
-										name="name"
-										placeholder={ t(ctx, "settings.libraries.name_placeholder") }
-										required
-										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									/>
-									<input
-										name="path"
-										placeholder={ t(ctx, "settings.libraries.path_placeholder") }
-										required
-										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									/>
+									<div class="flex flex-col gap-1">
+										<div class="flex items-center gap-1">
+											<label for="settings-library-name" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.name") }</label>
+											@components.ContextHelp("help-lib-add-name", t(ctx, "settings.libraries.name"), t(ctx, "settings.libraries.name.help"), "settings-libraries-libraries-name")
+										</div>
+										<input
+											id="settings-library-name"
+											name="name"
+											placeholder={ t(ctx, "settings.libraries.name_placeholder") }
+											required
+											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+										/>
+									</div>
+									<div class="flex flex-col gap-1">
+										<div class="flex items-center gap-1">
+											<label for="settings-library-path" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.path") }</label>
+											@components.ContextHelp("help-lib-add-path", t(ctx, "settings.libraries.path"), t(ctx, "settings.libraries.path.help"), "settings-libraries-libraries-path")
+										</div>
+										<input
+											id="settings-library-path"
+											name="path"
+											placeholder={ t(ctx, "settings.libraries.path_placeholder") }
+											required
+											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+										/>
+									</div>
 									<div class="flex flex-col gap-1.5">
-										<label for="settings-library-type" class="sr-only">Library type</label>
+										<div class="flex items-center gap-1">
+											<label for="settings-library-type" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.type") }</label>
+											@components.ContextHelp("help-lib-add-type", t(ctx, "settings.libraries.type"), t(ctx, "settings.libraries.type.help"), "settings-libraries-libraries-type")
+										</div>
 										<select
 											id="settings-library-type"
 											name="type"
@@ -1312,15 +1341,27 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="space-y-3"
 							>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<input name="name" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-									<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-										<option value="">{ t(ctx, "settings.webhooks.select_type") }</option>
-										<option value="generic">{ t(ctx, "settings.webhooks.type_generic") }</option>
-										<option value="discord">Discord</option>
-										<option value="slack">Slack</option>
-										<option value="gotify">Gotify</option>
-									</select>
-									<input name="url" type="url" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+									<div class="flex items-center gap-1">
+										<label id="webhook-name-label" for="webhook-name" class="sr-only">{ t(ctx, "settings.webhooks.name.label") }</label>
+										<input id="webhook-name" name="name" aria-labelledby="webhook-name-label" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+										@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name.label"), t(ctx, "settings.webhooks.name.help"), "settings-automation-webhooks-add")
+									</div>
+									<div class="flex items-center gap-1">
+										<label id="webhook-type-label" for="webhook-type" class="sr-only">{ t(ctx, "settings.webhooks.type.label") }</label>
+										<select id="webhook-type" name="type" aria-labelledby="webhook-type-label" required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+											<option value="">{ t(ctx, "settings.webhooks.select_type") }</option>
+											<option value="generic">{ t(ctx, "settings.webhooks.type_generic") }</option>
+											<option value="discord">Discord</option>
+											<option value="slack">Slack</option>
+											<option value="gotify">Gotify</option>
+										</select>
+										@components.ContextHelp("help-webhook-type", t(ctx, "settings.webhooks.type.label"), t(ctx, "settings.webhooks.type.help"), "settings-automation-webhooks-select-type")
+									</div>
+									<div class="col-span-full flex items-center gap-1">
+										<label id="webhook-url-label" for="webhook-url" class="sr-only">{ t(ctx, "settings.webhooks.url.label") }</label>
+										<input id="webhook-url" name="url" type="url" aria-labelledby="webhook-url-label" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+										@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url.label"), t(ctx, "settings.webhooks.url.help"), "settings-automation-webhooks-url")
+									</div>
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
@@ -1353,9 +1394,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
 							</label>
 							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
+							@components.ContextHelp("help-notif-enable-badge", t(ctx, "settings.notif_badges.enable_badge"), t(ctx, "settings.notif_badges.enable_badge.help"), "settings-automation-notif-badges-enable-badge")
 						</div>
 						<div class="space-y-2">
-							<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.count_by_severity") }</p>
+							<div class="flex items-center gap-1">
+								<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.count_by_severity") }</p>
+								@components.ContextHelp("help-notif-count-severity", t(ctx, "settings.notif_badges.count_by_severity"), t(ctx, "settings.notif_badges.count_by_severity.help"), "settings-automation-notif-badges-count-by-severity")
+							</div>
 							<div class="flex flex-col gap-2">
 								<label class="inline-flex items-center gap-2">
 									<input
@@ -1499,22 +1544,34 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
 								<input name="name" placeholder={ t(ctx, "settings.api_tokens.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 								<div class="flex flex-wrap gap-3">
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
-									</label>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
+										</label>
+										@components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read")
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
+										</label>
+										@components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write")
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
+										</label>
+										@components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook")
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
+										</label>
+										@components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin")
+									</div>
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.create") }</button>
@@ -1723,7 +1780,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
 							<div class="flex items-center gap-4">
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.db_maintenance.auto_schedule") }</label>
+								<div class="flex items-center gap-1">
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.db_maintenance.auto_schedule") }</label>
+									@components.ContextHelp("help-db-auto-schedule", t(ctx, "settings.db_maintenance.auto_schedule"), t(ctx, "settings.db_maintenance.auto_schedule.help"), "settings-maintenance-db-maintenance-auto-schedule")
+								</div>
 								<select
 									id="maint-interval"
 									onchange="updateMaintSchedule(this)"
@@ -1773,6 +1833,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="flex flex-wrap items-center gap-4">
 								<div class="flex items-center gap-2">
 									<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.keep") }</label>
+									@components.ContextHelp("help-backup-keep", t(ctx, "settings.backup.keep"), t(ctx, "settings.backup.keep.help"), "settings-maintenance-backup-keep")
 									<input
 										type="number"
 										id="backup-retention"
@@ -1785,6 +1846,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</div>
 								<div class="flex items-center gap-2">
 									<label for="backup-max-age" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.max_age") }</label>
+									@components.ContextHelp("help-backup-max-age", t(ctx, "settings.backup.max_age"), t(ctx, "settings.backup.max_age.help"), "settings-maintenance-backup-max-age")
 									<select
 										id="backup-max-age"
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1833,7 +1895,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							class="space-y-3"
 						>
 							<div>
-								<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.export_passphrase") }</label>
+								<div class="flex items-center gap-1 mb-1">
+									<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.export_passphrase") }</label>
+									@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.help"), "settings-maintenance-export-import-export-passphrase")
+								</div>
 								<input
 									id="export-passphrase"
 									name="export_passphrase"
@@ -1868,7 +1933,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="space-y-3"
 							>
 								<div>
-									<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.import_file_label") }</label>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_file_label") }</label>
+										@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.help"), "settings-maintenance-export-import-import-file-label")
+									</div>
 									<input
 										id="import-file"
 										name="file"
@@ -1879,7 +1947,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									/>
 								</div>
 								<div>
-									<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.import_passphrase") }</label>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_passphrase") }</label>
+										@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.help"), "settings-maintenance-export-import-import-passphrase")
+									</div>
 									<input
 										id="import-passphrase"
 										name="passphrase"
@@ -1939,7 +2010,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						>
 							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 								<div>
-									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.level") }</label>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="log-level" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.level") }</label>
+										@components.ContextHelp("help-log-level", t(ctx, "settings.log_settings.level"), t(ctx, "settings.log_settings.level.help"), "settings-logs-log-settings-level")
+									</div>
 									<select
 										id="log-level"
 										name="level"
@@ -1958,7 +2032,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									</select>
 								</div>
 								<div>
-									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.format") }</label>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="log-format" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.format") }</label>
+										@components.ContextHelp("help-log-format", t(ctx, "settings.log_settings.format"), t(ctx, "settings.log_settings.format.help"), "settings-logs-log-settings-format")
+									</div>
 									<select
 										id="log-format"
 										name="format"
@@ -1988,7 +2065,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<!-- Log to file toggle -->
 							<div class="flex items-center justify-between py-1">
 								<div>
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file.label") }</p>
+									<div class="flex items-center gap-1">
+										<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file.label") }</p>
+										@components.ContextHelp("help-log-to-file", t(ctx, "settings.log_settings.log_to_file.label"), t(ctx, "settings.log_settings.log_to_file.help"), "settings-logs-log-settings-log-to-file")
+									</div>
 									<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file.description") }</p>
 								</div>
 								<button
@@ -2006,7 +2086,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<!-- File logging settings (shown when toggle is on) -->
 							<div id="file-logging-settings" class="hidden space-y-4">
 								<div>
-									<label for="log-file-path-display" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.file_path") }</label>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="log-file-path-display" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.file_path") }</label>
+										@components.ContextHelp("help-log-file-path", t(ctx, "settings.log_settings.file_path"), t(ctx, "settings.log_settings.file_path.help"), "settings-logs-log-settings-file-path")
+									</div>
 									<input
 										id="log-file-path-display"
 										type="text"
@@ -2018,15 +2101,24 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</div>
 								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 									<div>
-										<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.max_size") }</label>
+										<div class="flex items-center gap-1 mb-1">
+											<label for="log-file-max-size" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_size") }</label>
+											@components.ContextHelp("help-log-max-size", t(ctx, "settings.log_settings.max_size"), t(ctx, "settings.log_settings.max_size.help"), "settings-logs-log-settings-max-size")
+										</div>
 										<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_size") }/>
 									</div>
 									<div>
-										<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.files_to_keep") }</label>
+										<div class="flex items-center gap-1 mb-1">
+											<label for="log-file-max-files" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.files_to_keep") }</label>
+											@components.ContextHelp("help-log-files-to-keep", t(ctx, "settings.log_settings.files_to_keep"), t(ctx, "settings.log_settings.files_to_keep.help"), "settings-logs-log-settings-files-to-keep")
+										</div>
 										<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.files_to_keep") }/>
 									</div>
 									<div>
-										<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.max_age") }</label>
+										<div class="flex items-center gap-1 mb-1">
+											<label for="log-file-max-age" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.max_age") }</label>
+											@components.ContextHelp("help-log-max-age", t(ctx, "settings.log_settings.max_age"), t(ctx, "settings.log_settings.max_age.help"), "settings-logs-log-settings-max-age")
+										</div>
 										<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_age") }/>
 									</div>
 								</div>
@@ -3362,6 +3454,7 @@ templ settingsLibraryRow(lib library.Library) {
 						<option value="3" selected?={ lib.FSWatch == library.FSModeBoth }>{ t(ctx, "settings.libraries.fs_both") }</option>
 					}
 				</select>
+				@components.ContextHelp("fs-mode-help-"+lib.ID, t(ctx, "settings.libraries.fs_mode_title"), t(ctx, "settings.libraries.fs_mode_title.help"), "settings-libraries-libraries-fs-mode-title")
 				if lib.FSPollEnabled() {
 					<select
 						class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
@@ -3373,6 +3466,7 @@ templ settingsLibraryRow(lib library.Library) {
 						<option value="900" selected?={ lib.FSPollInterval == 900 }>15m</option>
 						<option value="1800" selected?={ lib.FSPollInterval == 1800 }>30m</option>
 					</select>
+					@components.ContextHelp("help-lib-poll-interval-"+lib.ID, t(ctx, "settings.libraries.poll_interval_title"), t(ctx, "settings.libraries.poll_interval_title.help"), "settings-libraries-libraries-poll-interval-title")
 				}
 				<span class="inline-flex items-center gap-1">
 					{{ lockNfoDescID := "lock-nfo-desc-" + lib.ID }}
@@ -3387,7 +3481,7 @@ templ settingsLibraryRow(lib library.Library) {
 						<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
 					</label>
 					<span id={ lockNfoDescID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_label.description") }</span>
-					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.description"), "settings-libraries-libraries-lock-nfo-label")
+					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.help"), "settings-libraries-libraries-lock-nfo-label")
 				</span>
 			}
 			if lib.ConnectionID != "" {
@@ -5217,7 +5311,10 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						<div class="rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
 							<div class="flex items-center justify-between">
 								<div class="min-w-0 pr-3">
-									<div class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</div>
+									<div class="flex items-center gap-1">
+										<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.manage_title") }</span>
+										@components.ContextHelp("help-managed-"+c.ID, t(ctx, "settings.connections.manage_title"), t(ctx, "settings.connections.manage_title.help"), "settings-connections-connections-manage-title")
+									</div>
 									<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 										{ t(ctx, "settings.connections.manage_description") }
 									</div>
@@ -5284,23 +5381,37 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 					required
 					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
-				<input
-					name="url"
-					type="url"
-					placeholder={ "URL (e.g. " + exampleURL + ")" }
-					required
-					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
-				<input
-					name="api_key"
-					type="text"
-					placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
-					required
-					autocomplete="off"
-					data-1p-ignore
-					data-lpignore="true"
-					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
+				<div>
+					<div class="flex items-center gap-1 mb-1">
+						<label for={ "conn-url-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.base_url") }</label>
+						@components.ContextHelp("help-conn-url-"+connType, t(ctx, "settings.connections.base_url"), t(ctx, "settings.connections.base_url.help"), "settings-connections-connections-base-url")
+					</div>
+					<input
+						id={ "conn-url-" + connType }
+						name="url"
+						type="url"
+						placeholder={ "URL (e.g. " + exampleURL + ")" }
+						required
+						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div>
+					<div class="flex items-center gap-1 mb-1">
+						<label for={ "conn-api-key-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
+						@components.ContextHelp("help-conn-api-key-"+connType, t(ctx, "settings.connections.api_key"), t(ctx, "settings.connections.api_key.help"), "settings-connections-connections-api-key")
+					</div>
+					<input
+						id={ "conn-api-key-" + connType }
+						name="api_key"
+						type="text"
+						placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
+						required
+						autocomplete="off"
+						data-1p-ignore
+						data-lpignore="true"
+						class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
 				<div class="flex gap-2">
 					<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
 					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>{ t(ctx, "actions.cancel") }</button>
@@ -5654,16 +5765,21 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 				>
 					Run
 				</button>
-				<select
-					class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-					aria-label={ "Automation mode for " + rl.Name }
-					data-rule-id={ rl.ID }
-					onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
-					disabled?={ !rl.Enabled || fsUnavailable }
-				>
-					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>{ t(ctx, "settings.rules.auto_fix") }</option>
-					<option value="manual" selected?={ rl.AutomationMode == "manual" }>{ t(ctx, "settings.rules.manual") }</option>
-				</select>
+				<div class="flex items-center gap-1">
+					{{ autoModeLabelID := "rule-auto-mode-label-" + rl.ID }}
+					<span id={ autoModeLabelID } class="sr-only">{ tf(ctx, "settings.rules.automation_mode_for", rl.Name) }</span>
+					<select
+						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						aria-labelledby={ autoModeLabelID }
+						data-rule-id={ rl.ID }
+						onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
+						disabled?={ !rl.Enabled || fsUnavailable }
+					>
+						<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>{ t(ctx, "settings.rules.auto_fix") }</option>
+						<option value="manual" selected?={ rl.AutomationMode == "manual" }>{ t(ctx, "settings.rules.manual") }</option>
+					</select>
+					@components.ContextHelp("help-rule-auto-fix-"+rl.ID, t(ctx, "settings.rules.auto_fix"), t(ctx, "settings.rules.auto_fix.help"), "settings-rules-rules-auto-fix")
+				</div>
 				<button
 					type="button"
 					class={ ruleToggleBtnClasses(rl.Enabled) }
@@ -6447,11 +6563,15 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					t(ctx, "settings.updates.enabled.label"),
 					t(ctx, "settings.updates.enabled.description"),
 				)
+				@components.ContextHelp("help-updates-enabled", t(ctx, "settings.updates.enabled.label"), t(ctx, "settings.updates.enabled.help"), "settings-updates-updates-enabled")
 			</div>
 			<!-- Channel selector -->
 			<div class="flex items-center justify-between gap-4">
 				<div>
-					<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.channel.label") }</div>
+					<div class="flex items-center gap-1">
+						<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.updates.channel.label") }</div>
+						@components.ContextHelp("help-updates-channel", t(ctx, "settings.updates.channel.label"), t(ctx, "settings.updates.channel.help"), "settings-updates-updates-channel")
+					</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.updates.channel.description") }</div>
 				</div>
 				@components.Segmented("updates-channel", "updates_channel",
@@ -6472,6 +6592,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 					t(ctx, "settings.updates.auto_check.label"),
 					t(ctx, "settings.updates.auto_check.description"),
 				)
+				@components.ContextHelp("help-updates-auto-check", t(ctx, "settings.updates.auto_check.label"), t(ctx, "settings.updates.auto_check.help"), "settings-updates-updates-auto-check")
 			</div>
 			<!-- Auto-update toggle. Hidden in Docker because the scheduler
 			     no-ops on Docker hosts (orchestration handles container
@@ -6487,6 +6608,7 @@ templ settingsUpdatesTab(data UpdatesTabData, basePath string) {
 							t(ctx, "settings.updates.auto_update.label"),
 							t(ctx, "settings.updates.auto_update.description"),
 						)
+						@components.ContextHelp("help-updates-auto-update", t(ctx, "settings.updates.auto_update.label"), t(ctx, "settings.updates.auto_update.help"), "settings-updates-updates-auto-update")
 					</div>
 					if data.AutoUpdate && data.LastAutoApplied != "" {
 						<div class="mt-2 text-xs text-gray-500 dark:text-gray-400" id="updates-last-auto-applied-row">

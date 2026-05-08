@@ -158,6 +158,10 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-manage-title }
 - **Not configured**
 {: #settings-connections-connections-not-configured }
+- **Server URL**
+{: #settings-connections-connections-base-url }
+- **API Key**
+{: #settings-connections-connections-api-key }
 
 ## Libraries  {#tab-libraries}
 
@@ -171,6 +175,12 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-lock-nfo-label }
 - **Add Library**
 {: #settings-libraries-libraries-add }
+- **Library Name**
+{: #settings-libraries-libraries-name }
+- **Library Path**
+{: #settings-libraries-libraries-path }
+- **Library Type**
+{: #settings-libraries-libraries-type }
 - **Regular** -- Standard music library where the artist folder maps to the performing artist.
 {: #settings-libraries-libraries-type-regular }
 - **Classical** -- Treat the library as a classical collection. Stillwater applies composer-aware naming and folder conventions during scans and writes.
@@ -185,6 +195,8 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-fs-poll }
 - **Watch + Poll** -- Combine native filesystem events with periodic polling. Useful when watching alone misses some changes (for example, on certain network shares).
 {: #settings-libraries-libraries-fs-both }
+- **Poll interval**
+{: #settings-libraries-libraries-poll-interval-title }
 - **Re-sync Artists**
 {: #settings-libraries-libraries-resync }
 - **Scan Library**
@@ -198,10 +210,16 @@ A webhook is an HTTP POST Stillwater sends to a URL you provide whenever a chose
 
 - **Add Webhook**
 {: #settings-automation-webhooks-add }
+- **Webhook name**
+{: #settings-automation-webhooks-name }
+- **Webhook type**
+{: #settings-automation-webhooks-type }
 - **Select type...**
 {: #settings-automation-webhooks-select-type }
 - **Generic (JSON)** -- Send a generic JSON payload describing the event. Use this for in-house tooling or services without a dedicated formatter.
 {: #settings-automation-webhooks-type-generic }
+- **Webhook URL**
+{: #settings-automation-webhooks-url }
 
 ### Notification Badges  {#settings-automation-notif-badges}
 
@@ -271,15 +289,15 @@ User accounts and pending invites both live here. An account is someone who can 
 
 Single-user mode is the default and assumes one administrator owns the whole instance; multi-user mode unlocks invites, per-user roles, and per-account preferences so several people can share the same Stillwater. Turn it on before you create the first invite for someone other than yourself.
 
-- **Enable multi-user mode**
+- **Multi-User Mode**
 {: #settings-users-users-enable-multi-user }
 - **Create Invite**
 {: #settings-users-users-create-invite }
 - **Role** -- The permission level granted to the new account when this invite is redeemed. Admins manage settings; standard users browse and tag their own library.
 {: #settings-users-users-role }
-- **Role for invited user** -- Accessible label for the role selector when creating an invite. Mirrors the visible Role control.
+- **Invite Role** -- Accessible label for the role selector when creating an invite. Mirrors the visible Role control.
 {: #settings-users-users-role-for-invite }
-- **Expires In** -- How long the new invite link remains usable. After this period the link expires and can no longer redeem an account.
+- **Invite Expiry** -- How long the new invite link remains usable. After this period the link expires and can no longer redeem an account.
 {: #settings-users-users-expires-in }
 - **Invite expiry duration** -- Accessible label for the expiry-duration selector when creating an invite. Mirrors the visible Expires In control.
 {: #settings-users-users-invite-expiry }
@@ -325,7 +343,7 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-local }
 - **Emby** -- When this provider is on, the sign-in form asks for the username and password of an account on the linked Emby server and verifies them against Emby's API rather than against Stillwater's own user table. Reuses whichever Emby connection you have already configured.
 {: #settings-auth-providers-auth-emby }
-- **Enable Emby authentication**
+- **Enable Emby Auth**
 {: #settings-auth-providers-auth-enable-emby }
 - **Server URL**
 {: #settings-auth-providers-auth-server-url }
@@ -333,7 +351,7 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-sourced-from-emby }
 - **Auto-Provision** -- Auto-provisioning means Stillwater creates a local account on the fly the first time someone signs in through the upstream provider. With this on, anyone who can authenticate against the linked Emby server gets a Stillwater account without an admin issuing an invite first; the guard rail below decides who actually qualifies.
 {: #settings-auth-providers-auth-auto-provision-emby }
-- **Enable auto-provisioning for Emby users**
+- **Emby Auto-Provision**
 {: #settings-auth-providers-auth-enable-auto-provision-emby }
 - **Guard Rail** -- When auto-provisioning is on, the guard rail narrows who actually gets an account created. Pick admins-only to limit it to users with admin rights on the upstream Emby or Jellyfin server, or any user to provision everyone the provider authenticates.
 {: #settings-auth-providers-auth-guard-rail }
@@ -349,13 +367,13 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-default-role-emby }
 - **Jellyfin** -- When this provider is on, the sign-in form asks for the username and password of an account on the linked Jellyfin server and verifies them against Jellyfin's API rather than against Stillwater's own user table. Requires an active Jellyfin connection.
 {: #settings-auth-providers-auth-jellyfin }
-- **Enable Jellyfin authentication**
+- **Enable Jellyfin Auth**
 {: #settings-auth-providers-auth-enable-jellyfin }
 - **Sourced from your Jellyfin connection**
 {: #settings-auth-providers-auth-sourced-from-jellyfin }
 - **Auto-Provision** -- Auto-provisioning means Stillwater creates a local account on the fly the first time someone signs in through the upstream provider. With this on, anyone who can authenticate against the linked Jellyfin server gets a Stillwater account without an admin issuing an invite first; the guard rail below decides who actually qualifies.
 {: #settings-auth-providers-auth-auto-provision-jellyfin }
-- **Enable auto-provisioning for Jellyfin users**
+- **Jellyfin Auto-Provision**
 {: #settings-auth-providers-auth-enable-auto-provision-jellyfin }
 - **Jellyfin guard rail setting**
 {: #settings-auth-providers-auth-jellyfin-guard-rail }
@@ -363,7 +381,7 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-default-role-jellyfin }
 - **OpenID Connect (OIDC)** -- OpenID Connect (OIDC) is a standard protocol that lets Stillwater redirect sign-in to an existing identity provider so users authenticate there once and reach every connected app without re-entering credentials. Works with Authentik, Keycloak, Authelia, Auth0, or any OIDC-compliant provider.
 {: #settings-auth-providers-auth-oidc }
-- **Enable OpenID Connect authentication**
+- **Enable OIDC Auth**
 {: #settings-auth-providers-auth-enable-oidc }
 - **Issuer URL** -- Base URL of your OIDC provider. Stillwater discovers the rest of the endpoints automatically through the provider's well-known configuration document.
 {: #settings-auth-providers-auth-issuer-url }

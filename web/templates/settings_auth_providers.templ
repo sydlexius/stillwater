@@ -101,7 +101,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
 							<img src={ data.BasePath + "/static/img/logos/emby-32.png" } alt="" class="h-6 w-6"/>
 						</div>
-						<div>
+						<div class="flex items-center gap-2">
 							<span class="font-medium text-sm">{ t(ctx, "settings.auth.emby.label") }</span>
 							<span
 								class={
@@ -116,6 +116,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
+							@components.ContextHelp("help-auth-enable-emby", t(ctx, "settings.auth.enable_emby.label"), t(ctx, "settings.auth.enable_emby.help"), "settings-auth-providers-auth-enable-emby")
 						</div>
 					</div>
 					<button
@@ -156,7 +157,10 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_emby.label") }</div>
+								<div class="flex items-center gap-1">
+									<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_emby.label") }</div>
+									@components.ContextHelp("help-auth-auto-provision-emby", t(ctx, "settings.auth.enable_auto_provision_emby.label"), t(ctx, "settings.auth.enable_auto_provision_emby.help"), "settings-auth-providers-auth-enable-auto-provision-emby")
+								</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_emby.description") }</div>
 							</div>
 							<button
@@ -219,7 +223,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
 							<img src={ data.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-6 w-6"/>
 						</div>
-						<div>
+						<div class="flex items-center gap-2">
 							<span class="font-medium text-sm">{ t(ctx, "settings.auth.jellyfin.label") }</span>
 							<span
 								class={
@@ -234,6 +238,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
+							@components.ContextHelp("help-auth-enable-jellyfin", t(ctx, "settings.auth.enable_jellyfin.label"), t(ctx, "settings.auth.enable_jellyfin.help"), "settings-auth-providers-auth-enable-jellyfin")
 						</div>
 					</div>
 					<button
@@ -274,7 +279,10 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						}
 						<div class="flex items-center justify-between py-2">
 							<div>
-								<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_jellyfin.label") }</div>
+								<div class="flex items-center gap-1">
+									<div class="text-sm font-medium">{ t(ctx, "settings.auth.auto_provision_jellyfin.label") }</div>
+									@components.ContextHelp("help-auth-auto-provision-jellyfin", t(ctx, "settings.auth.enable_auto_provision_jellyfin.label"), t(ctx, "settings.auth.enable_auto_provision_jellyfin.help"), "settings-auth-providers-auth-enable-auto-provision-jellyfin")
+								</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.auth.auto_provision_jellyfin.description") }</div>
 							</div>
 							<button
@@ -337,7 +345,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 						<div class="h-7 w-7 rounded-md flex items-center justify-center" aria-hidden="true">
 							<img src={ data.BasePath + "/static/img/logos/openid.svg" } alt="" class="h-6 w-6"/>
 						</div>
-						<div>
+						<div class="flex items-center gap-2">
 							<span class="font-medium text-sm">{ t(ctx, "settings.auth.oidc.label") }</span>
 							<span
 								class={
@@ -352,6 +360,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 									{ t(ctx, "common.disabled") }
 								}
 							</span>
+							@components.ContextHelp("help-auth-enable-oidc", t(ctx, "settings.auth.enable_oidc.label"), t(ctx, "settings.auth.enable_oidc.help"), "settings-auth-providers-auth-enable-oidc")
 						</div>
 					</div>
 					<button
