@@ -49,7 +49,7 @@ warn() {
 # Marker forms checked: <<<<<<< (start), ======= (separator), >>>>>>> (end).
 # The trailing space/EOL guard avoids matching legitimate content like a string
 # of seven equals in a markdown ASCII rule.
-MARKERS=$(git diff --cached -U0 --diff-filter=ACM -- 2>/dev/null \
+MARKERS=$(git diff --cached -U0 --diff-filter=ACMR -- 2>/dev/null \
     | grep -nE '^\+(<{7}|={7}|>{7})( |$)' || true)
 if [ -n "$MARKERS" ]; then
     echo -e "${RED}${BOLD}FAIL${RESET} conflict-markers: unresolved merge conflict markers in staged content:"
@@ -58,7 +58,7 @@ if [ -n "$MARKERS" ]; then
     echo "Resolve the conflicts (search for '<<<<<<<') and re-stage."
     exit 1
 fi
-if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
+if git diff --cached --name-only --diff-filter=ACMR -- | grep -q .; then
     pass "conflict-markers"
 else
     warn "conflict-markers (no staged files)"
