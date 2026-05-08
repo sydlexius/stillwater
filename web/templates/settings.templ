@@ -1194,6 +1194,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
 							data-lock-nfo-disabled={ t(ctx, "settings.libraries.lock_nfo_disabled_toast") }
 							data-lock-nfo-failed={ t(ctx, "settings.libraries.lock_nfo_failed_toast") }
+							data-lock-nfo-doc-anchor="settings-libraries-libraries-lock-nfo-label"
 							data-help-read-more={ t(ctx, "help.read_more") }
 							data-net-error={ t(ctx, "common.network_error") }
 						>
@@ -3480,6 +3481,11 @@ templ settingsLibraryScript() {
 				// "Read more" link and no body text.
 				var lockNfoTitle = (list && list.dataset.lockNfoTitle) || lockNfoLabel;
 				var helpReadMore = (list && list.dataset.helpReadMore) || "Read more";
+				// Single-source the docs anchor: the templ render reads it
+				// from the matching ContextHelp call site; here we read it
+				// from the data attribute the templ also populates so the
+				// two render paths can never drift on rename.
+				var lockNfoDocAnchor = (list && list.dataset.lockNfoDocAnchor) || "settings-libraries-libraries-lock-nfo-label";
 				_escDiv.textContent = lockNfoLabel;
 				var safeLockNfoLabel = _escDiv.innerHTML;
 				_escDiv.textContent = lockNfoTitle;
@@ -3564,7 +3570,7 @@ templ settingsLibraryScript() {
 							+ '<span class="sw-context-help" id="' + helpId + '">'
 							+ '<button type="button" class="sw-context-help-btn" aria-label="' + safeLockNfoLabel + '" aria-expanded="false" aria-controls="' + helpId + '-popover" onclick="swContextHelpToggle(this)" onkeydown="if(event.key===&apos;Escape&apos;)swContextHelpClose(this)">?</button>'
 							+ '<span id="' + helpId + '-popover" role="tooltip" class="sw-context-help-popover" aria-hidden="true">' + safeLockNfoTitle
-							+ '<a href="https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-libraries-libraries-lock-nfo-label" target="_blank" rel="noopener" class="sw-context-help-link">' + safeHelpReadMore + '</a>'
+							+ '<a href="https://sydlexius.github.io/stillwater/reference/settings-by-tab/#' + encodeURIComponent(lockNfoDocAnchor) + '" target="_blank" rel="noopener" class="sw-context-help-link">' + safeHelpReadMore + '</a>'
 							+ '</span>'
 							+ '</span>'
 							+ '</span>';
