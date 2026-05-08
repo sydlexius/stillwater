@@ -1172,6 +1172,7 @@ func buildTLSStatus(cfg *config.Config) templates.TLSStatusData {
 			AcmeDomain:       cfg.ACME.Domain,
 			HTTPSPort:        port,
 			HTTPRedirectPort: cfg.Server.HTTPRedirect.Port,
+			HTTP3Port:        server.EffectiveHTTP3Port(cfg),
 		}
 	}
 	if cfg.Server.TLS.Enabled() {
