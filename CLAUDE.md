@@ -20,20 +20,24 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 
 ```
 cmd/stillwater/       - Main entry point
+cmd/gen-*/            - Doc generators (env-reference, provider-matrix, rules-catalogue, settings-reference)
 internal/api/         - HTTP handlers, middleware, and SSE hub
 internal/artist/      - Artist domain model, service, and repository interfaces
 internal/auth/        - Authentication (session-based)
 internal/backup/      - Database backup service
 internal/config/      - Configuration loading (env + YAML)
+internal/conflict/    - Conflict detection and gating (coalesce, ledger)
 internal/connection/  - External platform connections (Emby, Jellyfin, Lidarr)
 internal/database/    - SQLite database and migrations
 internal/dbutil/      - Shared database helpers (type conversions, nullable handling)
 internal/encryption/  - AES-256-GCM encryption for secrets
 internal/event/       - Channel-based event bus
 internal/filesystem/  - Atomic file writes (tmp/bak/rename pattern)
+internal/foreign/     - Foreign artist scanner and model
 internal/i18n/        - Internationalization support
 internal/image/       - Image processing (fetch, crop, compare)
 internal/imagebridge/ - Resolves artist IDs to platform-specific image URLs
+internal/langpref/    - Language preferences (per-user/per-locale)
 internal/library/     - Music library management
 internal/logging/     - Log manager (levels, rotation, ring buffer)
 internal/maintenance/ - Scheduled maintenance tasks
@@ -44,10 +48,13 @@ internal/publish/     - Publisher for NFO and platform writes
 internal/rule/        - Rule engine (Bliss-inspired)
 internal/scanner/     - Filesystem and API library scanners
 internal/scraper/     - Configurable web scraping
+internal/server/      - HTTPS / HTTP/3 listeners, ACME cert manager, TLS BYO
 internal/settingsio/  - Application settings persistence
+internal/updater/     - Self-updater with channel + semver gating
 internal/version/     - Build version injection via ldflags
 internal/watcher/     - Filesystem watcher for library directories
 internal/webhook/     - Webhook dispatcher
+web/components/       - Reusable templ components (badges, modals, toasts, icons)
 web/templates/        - Templ templates
 web/static/           - CSS, vendored JS
 api/bruno/            - Bruno API test collections
@@ -62,9 +69,13 @@ make build          # Build binary (runs templ generate + tailwind first)
 make run            # Build and run locally with debug logging
 make dev            # Hot reload with air
 make test           # Run all tests with race detector
+make test-race      # Race detector explicitly (matches `go test -race ./...`)
+make generate       # Regenerate templ + tailwind (umbrella)
 make lint           # Run golangci-lint
+make hadolint       # Lint Dockerfile(s)
 make fmt            # Format Go + Templ files
 make hooks          # Install git pre-commit hook
+make migrate        # Apply database migrations
 make check-openapi  # Validate OpenAPI spec
 make clean          # Remove build artifacts
 make scan           # Build Docker image (no cache) and scan for CVEs
@@ -117,6 +128,9 @@ Do not use `paths-ignore` on triggers when required status checks exist (GitHub 
 ## Helper Scripts
 
 - `scripts/pre-push-gate.sh` -- deterministic pre-push checks (tests, OpenAPI, generated files)
+- `scripts/dev-restart.sh` -- canonical dev rebuild + restart (use this; never kill by port)
+- `scripts/patch-coverage.sh` -- patch-level coverage check (called by pre-push-gate)
+- `scripts/smoke.sh` -- API smoke tests against a running instance
 - `scripts/check-generated.sh` -- verify *_templ.go was regenerated after .templ changes
 - `~/.claude/scripts/cleanup-worktree.sh <suffix>` -- remove worktree, delete local/remote branches, prune refs (repo-agnostic; auto-detects the main worktree's basename as the prefix)
 - `~/.claude/scripts/pr-unreplied-comments.sh [--wait] [--count-only] <PR>` -- unreplied bot comments
