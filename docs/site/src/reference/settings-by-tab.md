@@ -212,12 +212,12 @@ A webhook is an HTTP POST Stillwater sends to a URL you provide whenever a chose
 {: #settings-automation-webhooks-add }
 - **Webhook name**
 {: #settings-automation-webhooks-name }
+- **Webhook type**
+{: #settings-automation-webhooks-type }
 - **Select type...**
 {: #settings-automation-webhooks-select-type }
 - **Generic (JSON)** -- Send a generic JSON payload describing the event. Use this for in-house tooling or services without a dedicated formatter.
 {: #settings-automation-webhooks-type-generic }
-- **Webhook type**
-{: #settings-automation-webhooks-type }
 - **Webhook URL**
 {: #settings-automation-webhooks-url }
 

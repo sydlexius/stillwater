@@ -1342,11 +1342,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 									<div class="flex items-center gap-1">
-										<input name="name" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-										@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name_placeholder"), t(ctx, "settings.webhooks.name.help"), "settings-automation-webhooks-add")
+										<label id="webhook-name-label" for="webhook-name" class="sr-only">{ t(ctx, "settings.webhooks.name.label") }</label>
+										<input id="webhook-name" name="name" aria-labelledby="webhook-name-label" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+										@components.ContextHelp("help-webhook-name", t(ctx, "settings.webhooks.name.label"), t(ctx, "settings.webhooks.name.help"), "settings-automation-webhooks-add")
 									</div>
 									<div class="flex items-center gap-1">
-										<select name="type" required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+										<label id="webhook-type-label" for="webhook-type" class="sr-only">{ t(ctx, "settings.webhooks.type.label") }</label>
+										<select id="webhook-type" name="type" aria-labelledby="webhook-type-label" required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
 											<option value="">{ t(ctx, "settings.webhooks.select_type") }</option>
 											<option value="generic">{ t(ctx, "settings.webhooks.type_generic") }</option>
 											<option value="discord">Discord</option>
@@ -1356,8 +1358,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										@components.ContextHelp("help-webhook-type", t(ctx, "settings.webhooks.type.label"), t(ctx, "settings.webhooks.type.help"), "settings-automation-webhooks-select-type")
 									</div>
 									<div class="col-span-full flex items-center gap-1">
-										<input name="url" type="url" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-										@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url_placeholder"), t(ctx, "settings.webhooks.url.help"), "settings-automation-webhooks-url")
+										<label id="webhook-url-label" for="webhook-url" class="sr-only">{ t(ctx, "settings.webhooks.url.label") }</label>
+										<input id="webhook-url" name="url" type="url" aria-labelledby="webhook-url-label" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+										@components.ContextHelp("help-webhook-url", t(ctx, "settings.webhooks.url.label"), t(ctx, "settings.webhooks.url.help"), "settings-automation-webhooks-url")
 									</div>
 								</div>
 								<div class="flex gap-2">
@@ -1886,7 +1889,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div>
 								<div class="flex items-center gap-1 mb-1">
 									<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.export_passphrase") }</label>
-									@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.description"), "settings-maintenance-export-import-export-passphrase")
+									@components.ContextHelp("help-export-passphrase", t(ctx, "settings.export_import.export_passphrase"), t(ctx, "settings.export_import.export_passphrase.help"), "settings-maintenance-export-import-export-passphrase")
 								</div>
 								<input
 									id="export-passphrase"
@@ -1924,7 +1927,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<div>
 									<div class="flex items-center gap-1 mb-1">
 										<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_file_label") }</label>
-										@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.description"), "settings-maintenance-export-import-import-file-label")
+										@components.ContextHelp("help-import-file", t(ctx, "settings.export_import.import_file_label"), t(ctx, "settings.export_import.import_file_label.help"), "settings-maintenance-export-import-import-file-label")
 									</div>
 									<input
 										id="import-file"
@@ -1938,7 +1941,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<div>
 									<div class="flex items-center gap-1 mb-1">
 										<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.export_import.import_passphrase") }</label>
-										@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.description"), "settings-maintenance-export-import-import-passphrase")
+										@components.ContextHelp("help-import-passphrase", t(ctx, "settings.export_import.import_passphrase"), t(ctx, "settings.export_import.import_passphrase.help"), "settings-maintenance-export-import-import-passphrase")
 									</div>
 									<input
 										id="import-passphrase"
@@ -5372,10 +5375,11 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 				/>
 				<div>
 					<div class="flex items-center gap-1 mb-1">
-						<label class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.base_url") }</label>
+						<label for={ "conn-url-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.base_url") }</label>
 						@components.ContextHelp("help-conn-url-"+connType, t(ctx, "settings.connections.base_url"), t(ctx, "settings.connections.base_url.help"), "settings-connections-connections-base-url")
 					</div>
 					<input
+						id={ "conn-url-" + connType }
 						name="url"
 						type="url"
 						placeholder={ "URL (e.g. " + exampleURL + ")" }
@@ -5385,10 +5389,11 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 				</div>
 				<div>
 					<div class="flex items-center gap-1 mb-1">
-						<label class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
+						<label for={ "conn-api-key-" + connType } class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.connections.api_key") }</label>
 						@components.ContextHelp("help-conn-api-key-"+connType, t(ctx, "settings.connections.api_key"), t(ctx, "settings.connections.api_key.help"), "settings-connections-connections-api-key")
 					</div>
 					<input
+						id={ "conn-api-key-" + connType }
 						name="api_key"
 						type="text"
 						placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
@@ -5753,9 +5758,11 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					Run
 				</button>
 				<div class="flex items-center gap-1">
+					{{ autoModeLabelID := "rule-auto-mode-label-" + rl.ID }}
+					<span id={ autoModeLabelID } class="sr-only">{ tf(ctx, "settings.rules.automation_mode_for", rl.Name) }</span>
 					<select
 						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-						aria-label={ "Automation mode for " + rl.Name }
+						aria-labelledby={ autoModeLabelID }
 						data-rule-id={ rl.ID }
 						onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
 						disabled?={ !rl.Enabled || fsUnavailable }
