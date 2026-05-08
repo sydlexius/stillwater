@@ -127,7 +127,7 @@ If UDP is blocked anywhere in the path, HTTP/3 simply fails to connect and the c
 
 ### Docker
 
-The container image already declares `EXPOSE 1973/udp` so `docker run -P` and orchestrators that scrape image metadata pick up the UDP port automatically. With explicit port mappings, add the UDP variant alongside the TCP one in `docker-compose.yml`:
+The container image declares both `EXPOSE 1973/udp` and `EXPOSE ${SW_TLS_PORT}/udp` so `docker run -P` and orchestrators that scrape image metadata pick up the QUIC ports automatically. With explicit port mappings, add the UDP variant alongside each TCP one in `docker-compose.yml`:
 
 ```yaml
 ports:

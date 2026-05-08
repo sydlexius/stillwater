@@ -26,7 +26,12 @@ func AltSvc(port int) func(http.Handler) http.Handler {
 	header := fmt.Sprintf(`h3=":%d"; ma=%d`, port, altSvcMaxAge)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Alt-Svc", header)
+			// Only advertise HTTP/3 on TLS connections. Emitting Alt-Svc on
+			// plain-HTTP responses (split-port mode) would broaden the
+			// advertisement beyond the HTTPS-only scope of the QUIC listener.
+			if r.TLS != nil {
+				w.Header().Set("Alt-Svc", header)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

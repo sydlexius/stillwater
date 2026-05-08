@@ -345,17 +345,29 @@ func TestRunListeners_TLSSplitPort(t *testing.T) {
 	}
 }
 
-// freeUDPPort returns an OS-allocated UDP port. The caller binds it
-// immediately; for the HTTP/3 listener test we use the same port number on
-// both protocols (TCP for HTTPS, UDP for QUIC).
+// freeUDPPort returns a port number that is free on BOTH TCP and UDP. The
+// HTTP/3 listener test reuses one port for HTTPS (TCP) and QUIC (UDP), so a
+// UDP-only probe could hand back a number already bound by another TCP
+// listener and the HTTPS bind would race-fail before QUIC is exercised.
 func freeUDPPort(t *testing.T) int {
 	t.Helper()
-	c, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("net.ListenPacket(udp): %v", err)
+	for i := 0; i < 100; i++ {
+		tcp, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("net.Listen(tcp): %v", err)
+		}
+		port := tcp.Addr().(*net.TCPAddr).Port
+
+		udp, err := net.ListenPacket("udp", "127.0.0.1:"+strconv.Itoa(port))
+		if err == nil {
+			_ = udp.Close()
+			_ = tcp.Close()
+			return port
+		}
+		_ = tcp.Close()
 	}
-	defer c.Close()
-	return c.LocalAddr().(*net.UDPAddr).Port
+	t.Fatal("failed to reserve a port free on both TCP and UDP")
+	return 0
 }
 
 // TestEffectiveHTTP3Port covers the resolver that picks the UDP port for the
@@ -500,7 +512,10 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 	if resp.ProtoMajor != 3 {
 		t.Errorf("response proto = %s (major=%d); want HTTP/3", resp.Proto, resp.ProtoMajor)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll(resp.Body): %v", err)
+	}
 	if string(body) != "h3-ok" {
 		t.Errorf("body = %q; want h3-ok", string(body))
 	}

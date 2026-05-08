@@ -1,11 +1,22 @@
 package middleware
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// tlsReq returns a request with a non-nil TLS connection state so the AltSvc
+// middleware treats it as an HTTPS request. The middleware only advertises
+// HTTP/3 on TLS responses to keep the announcement scoped to the encrypted
+// listener (see alt_svc.go for the rationale).
+func tlsReq(method, target string) *http.Request {
+	r := httptest.NewRequest(method, target, nil)
+	r.TLS = &tls.ConnectionState{}
+	return r
+}
 
 func TestAltSvc_AddsHeaderWhenEnabled(t *testing.T) {
 	tests := []struct {
@@ -24,7 +35,7 @@ func TestAltSvc_AddsHeaderWhenEnabled(t *testing.T) {
 			})
 			h := AltSvc(tt.port)(next)
 			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req := tlsReq(http.MethodGet, "/")
 			h.ServeHTTP(rec, req)
 			got := rec.Header().Get("Alt-Svc")
 			if got != tt.want {
@@ -57,6 +68,23 @@ func TestAltSvc_PassThroughWhenDisabled(t *testing.T) {
 	}
 }
 
+// TestAltSvc_SuppressedOnPlainHTTP asserts that the middleware does not
+// advertise HTTP/3 on plain-HTTP responses. Emitting Alt-Svc over the
+// non-TLS listener would broaden the announcement beyond the HTTPS-only
+// scope of the QUIC listener.
+func TestAltSvc_SuppressedOnPlainHTTP(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h := AltSvc(443)(next)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil) // r.TLS is nil
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Alt-Svc"); got != "" {
+		t.Errorf("Alt-Svc must not be set on plain-HTTP responses; got %q", got)
+	}
+}
+
 func TestAltSvc_DoesNotOverrideOtherHeaders(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Custom", "value")
@@ -64,7 +92,7 @@ func TestAltSvc_DoesNotOverrideOtherHeaders(t *testing.T) {
 	})
 	h := AltSvc(443)(next)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := tlsReq(http.MethodGet, "/")
 	h.ServeHTTP(rec, req)
 	if rec.Header().Get("Alt-Svc") == "" {
 		t.Error("Alt-Svc missing")
