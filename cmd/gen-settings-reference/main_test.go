@@ -1014,6 +1014,22 @@ func TestRenderSubsectionControl(t *testing.T) {
 	if !strings.HasPrefix(strings.TrimLeft(notPromoted, "\n"), "- **") {
 		t.Errorf("multi_user_mode in section 'general' should be a bullet; got: %q", notPromoted)
 	}
+
+	// Promoted-after-bullet: when an H4 follows a bullet's anchor line, the
+	// markdownlint MD022 workaround must insert a leading newline so the H4
+	// has the required blank line above it. This is the buffer state the
+	// HasSuffix("\n\n") guard exists to handle; a regression that flipped
+	// the condition would not be caught by the empty-buffer cases above.
+	b.Reset()
+	b.WriteString("- **Prior** -- text\n{: #settings-users-users-prior }\n")
+	renderControl(&b, "users", "users", docControl{
+		ID:    "pending_invites",
+		Label: "Pending Invites",
+	})
+	afterBullet := b.String()
+	if !strings.Contains(afterBullet, "\n\n#### Pending Invites") {
+		t.Errorf("H4 following a bullet must be preceded by a blank line; got: %q", afterBullet)
+	}
 }
 
 // TestRenderTabIntro verifies that a tab with a non-empty Intro field emits

@@ -732,8 +732,6 @@ func buildTab(p panel, keys map[string]string) (docTab, error) {
 	tab := docTab{
 		ID:    p.ID,
 		Label: lookupLabel(keys, "settings.tab."+p.ID, p.ID),
-		// Intro is optional: present only when a contributor has authored
-		// relationship prose for this tab in settings.tab.{id}.intro.
 		Intro: keys["settings.tab."+p.ID+".intro"],
 	}
 	sections, err := buildSections(p.Keys, keys)
@@ -965,11 +963,6 @@ func humanize(id string) string {
 // subsectionControls names controls that render as H4 sub-section headings
 // instead of bulleted list items within their parent section. The mapping
 // is keyed by section ID; each entry is the control ID to promote.
-//
-// Promotion is rendering-only: the underlying anchor scheme is unchanged
-// (the existing settings-{tab}-{section}-{control} anchor still points at
-// the promoted heading), and the i18n key namespace is untouched. Adding
-// or removing entries here is a low-blast-radius operation.
 var subsectionControls = map[string]map[string]struct{}{
 	"users": {
 		"multi_user_mode": {},
@@ -1010,9 +1003,7 @@ func renderDocument(doc document) string {
 	b.WriteString("\n")
 	for _, tab := range doc.Tabs {
 		fmt.Fprintf(&b, "## %s  {#%s}\n\n", markdownEscape(tab.Label), tabAnchor(tab.ID))
-		// Emit the optional tab-intro paragraph between the H2 and the first H3.
-		// The intro teaches the relationship between sections in the tab and is
-		// authored in settings.tab.{id}.intro; tabs without that key get no paragraph.
+		// Optional intro paragraph (settings.tab.{id}.intro) between H2 and first H3.
 		if tab.Intro != "" {
 			b.WriteString(markdownEscape(tab.Intro))
 			b.WriteString("\n\n")
@@ -1039,21 +1030,15 @@ func renderSection(b *strings.Builder, tabID string, sec docSection) {
 	b.WriteString("\n")
 }
 
-// renderControl emits either a bullet-list entry or an H4 sub-section heading
-// for a control, depending on whether the section+control pair appears in
-// subsectionControls.
+// renderControl emits either a bullet-list entry or an H4 sub-section heading,
+// depending on whether the section+control pair appears in subsectionControls.
+// Promoted controls share the bullet path's anchor scheme so HelpHint deep links
+// continue to resolve.
 //
-// Bullet path (default): emits `- **Label** -- Description` followed by the
-// canonical attr_list block-form anchor line ({: #anchor }). We use the block
-// form rather than the inline form because Python-Markdown's attr_list extension
+// The bullet path uses the attr_list block form ({: #anchor } on its own line)
+// rather than the inline form because Python-Markdown's attr_list extension
 // only attaches inline {#...} to the immediately preceding inline element; the
-// block form produces <li id="anchor"> as required by the HelpHint deep-link
-// contract.
-//
-// Sub-section path (promoted controls): emits `#### Label  {#anchor}` followed
-// by description and visibility as prose paragraphs. The anchor scheme is
-// identical to the bullet path -- settings-{tab}-{section}-{control} -- so
-// existing HelpHint deep links continue to resolve after promotion.
+// block form produces <li id="anchor"> as required by the HelpHint contract.
 func renderControl(b *strings.Builder, tabID, secID string, ctrl docControl) {
 	if promoted, ok := subsectionControls[secID]; ok {
 		if _, isSubsection := promoted[ctrl.ID]; isSubsection {
