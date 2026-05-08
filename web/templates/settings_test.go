@@ -185,7 +185,11 @@ func TestSettingsPage_TLSStatusCard(t *testing.T) {
 				HTTPSPort: 443,
 			},
 			wantText: []string{"Active (BYO certificate)", "HTTPS on :443"},
-			denyText: []string{"HTTP on :", "HTTP redirect on :", "ACME"},
+			// Anchor "ACME" to the status pill marker (data-tls-mode="acme")
+			// rather than the bare substring; the latter started matching
+			// the help-popover prose, which mentions ACME as one of the
+			// configurable modes regardless of which mode is active.
+			denyText: []string{"HTTP on :", "HTTP redirect on :", `data-tls-mode="acme"`, "Active (ACME"},
 			wantMode: "byo",
 		},
 		{
