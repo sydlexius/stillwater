@@ -1544,26 +1544,34 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
 								<input name="name" placeholder={ t(ctx, "settings.api_tokens.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 								<div class="flex flex-wrap gap-3">
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
+										</label>
 										@components.ContextHelp("help-token-scope-read", t(ctx, "settings.api_tokens.scope_read"), t(ctx, "settings.api_tokens.scope_read.help"), "settings-automation-api-tokens-scope-read")
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
+										</label>
 										@components.ContextHelp("help-token-scope-write", t(ctx, "settings.api_tokens.scope_write"), t(ctx, "settings.api_tokens.scope_write.help"), "settings-automation-api-tokens-scope-write")
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
+										</label>
 										@components.ContextHelp("help-token-scope-webhook", t(ctx, "settings.api_tokens.scope_webhook"), t(ctx, "settings.api_tokens.scope_webhook.help"), "settings-automation-api-tokens-scope-webhook")
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
+									</div>
+									<div class="inline-flex items-center gap-1.5">
+										<label class="inline-flex items-center gap-1.5">
+											<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
+											<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
+										</label>
 										@components.ContextHelp("help-token-scope-admin", t(ctx, "settings.api_tokens.scope_admin"), t(ctx, "settings.api_tokens.scope_admin.help"), "settings-automation-api-tokens-scope-admin")
-									</label>
+									</div>
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.create") }</button>
@@ -3446,7 +3454,7 @@ templ settingsLibraryRow(lib library.Library) {
 						<option value="3" selected?={ lib.FSWatch == library.FSModeBoth }>{ t(ctx, "settings.libraries.fs_both") }</option>
 					}
 				</select>
-				@components.ContextHelp("fs-mode-help-"+lib.ID, t(ctx, "settings.libraries.fs_mode_title"), t(ctx, "settings.libraries.fs_mode_title.description"), "settings-libraries-libraries-fs-mode-title")
+				@components.ContextHelp("fs-mode-help-"+lib.ID, t(ctx, "settings.libraries.fs_mode_title"), t(ctx, "settings.libraries.fs_mode_title.help"), "settings-libraries-libraries-fs-mode-title")
 				if lib.FSPollEnabled() {
 					<select
 						class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
@@ -3473,7 +3481,7 @@ templ settingsLibraryRow(lib library.Library) {
 						<span>{ t(ctx, "settings.libraries.lock_nfo_label") }</span>
 					</label>
 					<span id={ lockNfoDescID } class="sr-only">{ t(ctx, "settings.libraries.lock_nfo_label.description") }</span>
-					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.description"), "settings-libraries-libraries-lock-nfo-label")
+					@components.ContextHelp("lock-nfo-help-"+lib.ID, t(ctx, "settings.libraries.lock_nfo_label"), t(ctx, "settings.libraries.lock_nfo_label.help"), "settings-libraries-libraries-lock-nfo-label")
 				</span>
 			}
 			if lib.ConnectionID != "" {
