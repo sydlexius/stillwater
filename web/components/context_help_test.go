@@ -96,21 +96,34 @@ func isContextHelpCall(call *ast.CallExpr) bool {
 	return false
 }
 
+// nonLiteralAnchorAllowlist names the *.templ source paths whose
+// ContextHelp call passes its docAnchor through from its own parameter
+// list rather than as a string literal. Each such templ component is
+// itself called only from sites whose docAnchor IS a literal (and those
+// upstream call sites get validated by this test), so the helper itself
+// is safe to skip. Keep this list short; the static-validation contract
+// is the whole point of the test.
+var nonLiteralAnchorAllowlist = map[string]struct{}{
+	// connectionFeatureToggleTT(connID, feature, label, enabled, tooltip, docAnchor)
+	// forwards docAnchor to ContextHelp. Its three caller sites in
+	// settings.templ pass literal anchors that this test validates.
+	"web/templates/settings.templ": {},
+}
+
 // TestContextHelpAnchors asserts that every components.ContextHelp(...)
-// call site passes a docAnchor that is either empty or present in the
-// embedded anchor set. The scan uses Go's AST over the templ-generated
-// *_templ.go files so nested string literals inside the first three args
-// (e.g. t(ctx, "settings.X.label")) don't trip the matcher. Drift here
-// surfaces as a broken "Read more" link in the rendered popover; failing
-// in CI is preferable to shipping a 404 to the user.
+// call site passes a docAnchor that is either empty, present in the
+// embedded anchor set, or routed through a templ helper whose own callers
+// are validated (see nonLiteralAnchorAllowlist). The scan uses Go's AST
+// over the templ-generated *_templ.go files so nested string literals
+// inside the first three args (e.g. t(ctx, "settings.X.label")) don't
+// trip the matcher. Drift here surfaces as a broken "Read more" link in
+// the rendered popover; failing in CI is preferable to shipping a 404
+// to the user.
 func TestContextHelpAnchors(t *testing.T) {
 	anchors := loadAnchorSet(t)
 	root := repoRoot(t)
 
-	var (
-		unknown    []string
-		nonLiteral []string
-	)
+	var unknown []string
 	walkErr := filepath.Walk(filepath.Join(root, "web"), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -124,7 +137,12 @@ func TestContextHelpAnchors(t *testing.T) {
 		fset := token.NewFileSet()
 		file, parseErr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 		if parseErr != nil {
-			t.Logf("%s: parse skipped: %v", path, parseErr)
+			// A *_templ.go file that won't parse is itself a CI-blocking
+			// defect (regenerate templ?). Skipping silently would leave the
+			// rest of this file's call sites unvalidated, so the anchor
+			// contract test could pass green while a real broken Read more
+			// link ships. Hard fail.
+			t.Errorf("%s: parse failed (regenerate templ?): %v", path, parseErr)
 			return nil
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -132,22 +150,42 @@ func TestContextHelpAnchors(t *testing.T) {
 			if !ok || !isContextHelpCall(call) {
 				return true
 			}
-			// ContextHelp(id, label, text, docAnchor). Index 3 is the
-			// docAnchor; if the call has fewer args (e.g. an old caller
-			// that the build hasn't surfaced yet) skip silently.
-			if len(call.Args) < 4 {
+			// ContextHelp(id, label, text, docAnchor). Anything other than
+			// the 4-arg signature is a legacy caller the build hasn't yet
+			// surfaced, or a misuse the build will eventually catch -- but
+			// "eventually" is too late for the anchor contract this test
+			// owns, so fail here with the call site.
+			if len(call.Args) != 4 {
+				pos := fset.Position(call.Pos())
+				t.Errorf("%s: ContextHelp called with %d args, want 4", pos, len(call.Args))
 				return true
 			}
 			lit, ok := call.Args[3].(*ast.BasicLit)
 			if !ok || lit.Kind != token.STRING {
+				// Resolve back to the source templ path. Templ
+				// generates *_templ.go alongside its *.templ; substituting
+				// the suffix gives the source file the allowlist keys on.
+				srcPath := strings.TrimSuffix(path, "_templ.go") + ".templ"
+				rel, relErr := filepath.Rel(root, srcPath)
+				if relErr != nil {
+					rel = srcPath
+				}
+				rel = filepath.ToSlash(rel)
+				if _, allowed := nonLiteralAnchorAllowlist[rel]; allowed {
+					return true
+				}
 				pos := fset.Position(call.Args[3].Pos())
-				nonLiteral = append(nonLiteral, pos.String())
+				// Dynamic anchors bypass static validation entirely. Either
+				// pass a string literal or add the source templ path to
+				// nonLiteralAnchorAllowlist with a comment explaining why
+				// the upstream callers are themselves validated.
+				t.Errorf("%s: ContextHelp called with non-literal docAnchor; pass a string literal or allowlist the source templ", pos)
 				return true
 			}
 			anchor, err := strconv.Unquote(lit.Value)
 			if err != nil {
 				pos := fset.Position(lit.Pos())
-				t.Logf("%s: cannot unquote anchor literal %q: %v", pos, lit.Value, err)
+				t.Errorf("%s: cannot unquote anchor literal %q: %v", pos, lit.Value, err)
 				return true
 			}
 			if anchor == "" {
@@ -163,12 +201,6 @@ func TestContextHelpAnchors(t *testing.T) {
 	})
 	if walkErr != nil {
 		t.Fatalf("walk web/: %v", walkErr)
-	}
-	if len(nonLiteral) > 0 {
-		// Dynamic anchors cannot be validated statically. Treat as a
-		// reviewer-visible warning rather than a hard failure so a future
-		// caller can opt out by allowlisting; today there are none.
-		t.Logf("ContextHelp call sites with non-literal docAnchor (skipped):\n  %s", strings.Join(nonLiteral, "\n  "))
 	}
 	if len(unknown) > 0 {
 		t.Fatalf("ContextHelp call sites reference unknown settings anchors:\n  %s\n\nFix: pick an existing slug from web/components/_settings-anchors.txt or add a settings panel/i18n entry that the codegen will emit.", strings.Join(unknown, "\n  "))

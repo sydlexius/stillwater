@@ -140,9 +140,9 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 {: #settings-connections-connections-sends-heading }
 - **Library import** -- When on, Stillwater imports library and artist metadata from this server during scans.
 {: #settings-connections-connections-feature-library-import }
-- **NFO write** -- When on, Stillwater writes artist.nfo files into folders this server's libraries cover. Writes can still be paused while a conflict gate is active.
+- **NFO write** -- When on, Stillwater writes artist.nfo files into folders this server's libraries cover. Writes can still be paused by the conflict banner shown at the top of the page when a round-trip with the platform's own NFO saver would otherwise overwrite Stillwater's edits.
 {: #settings-connections-connections-feature-nfo-write }
-- **Image download/write** -- When on, Stillwater downloads images from providers and writes them to artist folders that this server's libraries cover. Writes can still be paused while a conflict gate is active.
+- **Image download/write** -- When on, Stillwater downloads images from providers and writes them to artist folders that this server's libraries cover. Writes can still be paused by the conflict banner shown at the top of the page when a round-trip with the platform's own image saver would otherwise overwrite Stillwater's edits.
 {: #settings-connections-connections-feature-image-write }
 - **Let Stillwater manage artwork and NFO files on this server**
 {: #settings-connections-connections-manage-title }
@@ -214,7 +214,7 @@ API tokens are long-lived credentials that let scripts and external tools call t
 {: #settings-automation-api-tokens-scope-write }
 - **Webhook** -- Lets the token receive inbound webhook deliveries from external systems. Pair with a single integration so an exposed token does not also grant read or write access.
 {: #settings-automation-api-tokens-scope-webhook }
-- **Admin** -- Full administrative access. Treat tokens with this scope like a root password: they can change settings, manage users, and revoke other tokens.
+- **Admin** -- Grants every API scope (read, write, and webhook) on top of the routes the owning user's role allows. Routes that are gated by the administrator role still require the owning user to be an administrator; revocation is always limited to the owning user's own tokens.
 {: #settings-automation-api-tokens-scope-admin }
 
 ## Rules  {#tab-rules}
@@ -225,9 +225,9 @@ API tokens are long-lived credentials that let scripts and external tools call t
 {: #settings-rules-rules-conflict-gated-chip }
 - **Requires local library** -- Some rules check or rewrite files on disk, which only works for libraries whose path Stillwater can read directly (not API-only libraries imported through Emby or Jellyfin). This badge marks a rule that depends on local-filesystem access; the rule stays disabled until you add at least one library with a real filesystem path on the Libraries tab.
 {: #settings-rules-rules-requires-local }
-- **Auto-fix** -- Each rule has three modes: disabled, manual (record violations but never modify files), and auto. Auto means that when this rule's check fails, Stillwater applies the fix during the same scan without waiting for you to review it on the Reports page.
+- **Auto-fix** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan without waiting for review. Disabling the rule is a separate toggle.
 {: #settings-rules-rules-auto-fix }
-- **Manual (notify only)** -- Each rule has three modes: disabled, manual, and auto. Manual means Stillwater still runs the check and records any failures as violations on the Reports page, but never touches NFO or image files on its own; you decide which fixes to apply and click through them yourself.
+- **Manual (notify only)** -- When this rule is enabled, the dropdown picks how Stillwater handles a failed check: manual records the violation on the Reports page so you can review and apply fixes yourself, while auto applies the fix during the same scan. Disabling the rule is a separate toggle.
 {: #settings-rules-rules-manual }
 
 ### Scheduled Evaluation  {#settings-rules-rule-schedule}
@@ -352,15 +352,17 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-enable-oidc }
 - **Issuer URL** -- Base URL of your OIDC provider. Stillwater discovers the rest of the endpoints automatically through the provider's well-known configuration document.
 {: #settings-auth-providers-auth-issuer-url }
-- **Client ID** -- Public identifier registered for Stillwater in your OIDC provider.
+- **OIDC Issuer URL**
+{: #settings-auth-providers-auth-oidc-issuer }
+- **OIDC Client ID** -- Public identifier registered for Stillwater in your OIDC provider.
 {: #settings-auth-providers-auth-client-id }
-- **Client Secret** -- Confidential credential issued by your OIDC provider. Leave blank when editing other fields to keep the existing secret.
+- **OIDC Client Secret** -- Confidential credential issued by your OIDC provider. Leave blank when editing other fields to keep the existing secret.
 {: #settings-auth-providers-auth-client-secret }
 - **Default role for OIDC users not in an admin group**
 {: #settings-auth-providers-auth-default-role-oidc }
-- **Administrator Groups** -- Comma-separated list of OIDC groups whose members are granted the Administrator role. Stillwater reads the values from the groups claim on the ID token.
+- **OIDC Admin Groups** -- Comma-separated list of OIDC groups whose members are granted the Administrator role. Stillwater reads the values from the groups claim on the ID token.
 {: #settings-auth-providers-auth-admin-groups }
-- **Allowed Groups** -- Comma-separated list of OIDC groups allowed to log in. Leave empty to allow every authenticated user from this provider.
+- **OIDC Allowed Groups** -- Comma-separated list of OIDC groups allowed to log in. Leave empty to allow every authenticated user from this provider.
 {: #settings-auth-providers-auth-allowed-groups }
 - **Display Name** -- Provider name shown on the sign-in button. Falls back to a generic OIDC label when blank.
 {: #settings-auth-providers-auth-oidc-display-name }
@@ -370,6 +372,8 @@ An authentication provider is the system Stillwater asks to verify a user's pass
 {: #settings-auth-providers-auth-auto-provision-oidc }
 - **Enable auto-provisioning for OIDC users**
 {: #settings-auth-providers-auth-enable-auto-provision-oidc }
+- **OIDC Auto-Provision**
+{: #settings-auth-providers-auth-oidc-auto-provision }
 
 ## Maintenance  {#tab-maintenance}
 

@@ -1348,7 +1348,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-issuer", "OIDC Issuer URL", "The base URL of your OIDC provider (Authentik, Keycloak, Authelia, etc.). Stillwater uses this to discover endpoints via the .well-known/openid-configuration document.", "settings-auth-providers-auth-oidc").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-issuer", t(ctx, "settings.auth.oidc_issuer.label"), t(ctx, "settings.auth.oidc_issuer.help"), "settings-auth-providers-auth-oidc").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1395,7 +1395,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-id", "OIDC Client ID", "The public identifier for Stillwater registered in your identity provider. Used with the issuer URL to start the authorization flow.", "settings-auth-providers-auth-client-id").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-id", t(ctx, "settings.auth.client_id.label"), t(ctx, "settings.auth.client_id.help"), "settings-auth-providers-auth-client-id").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1442,7 +1442,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-secret", "OIDC Client Secret", "Confidential credential from your identity provider. Leave blank when editing to keep the currently stored secret unchanged.", "settings-auth-providers-auth-client-secret").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-client-secret", t(ctx, "settings.auth.client_secret.label"), t(ctx, "settings.auth.client_secret.help"), "settings-auth-providers-auth-client-secret").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1561,7 +1561,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-admin-groups", "OIDC Admin Groups", "Comma-separated list of OIDC group claim values. Users in any of these groups are granted the Administrator role. The claim is read from the 'groups' field in the ID token.", "settings-auth-providers-auth-admin-groups").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-admin-groups", t(ctx, "settings.auth.admin_groups.label"), t(ctx, "settings.auth.admin_groups.help"), "settings-auth-providers-auth-admin-groups").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1621,7 +1621,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-user-groups", "OIDC Allowed Groups", "Comma-separated list of groups allowed to log in. Leave empty to allow all authenticated users from this provider. Users not in any listed group will be denied access.", "settings-auth-providers-auth-allowed-groups").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-user-groups", t(ctx, "settings.auth.allowed_groups.label"), t(ctx, "settings.auth.allowed_groups.help"), "settings-auth-providers-auth-allowed-groups").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1887,7 +1887,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.ContextHelp("help-oidc-autoprovision", "OIDC Auto-Provision", "When enabled, a Stillwater account is automatically created the first time an OIDC user logs in. When disabled, an administrator must create the account manually before the user can log in.", "settings-auth-providers-auth-auto-provision-oidc").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-autoprovision", t(ctx, "settings.auth.oidc_auto_provision.label"), t(ctx, "settings.auth.oidc_auto_provision.help"), "settings-auth-providers-auth-auto-provision-oidc").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

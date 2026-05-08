@@ -1194,6 +1194,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							data-lock-nfo-enabled={ t(ctx, "settings.libraries.lock_nfo_enabled_toast") }
 							data-lock-nfo-disabled={ t(ctx, "settings.libraries.lock_nfo_disabled_toast") }
 							data-lock-nfo-failed={ t(ctx, "settings.libraries.lock_nfo_failed_toast") }
+							data-help-read-more={ t(ctx, "help.read_more") }
 							data-net-error={ t(ctx, "common.network_error") }
 						>
 							for _, lib := range data.Libraries {
@@ -3473,11 +3474,18 @@ templ settingsLibraryScript() {
 				// Same escape applied to the Lock NFOs label and tooltip,
 				// which are also concatenated into innerHTML below.
 				var lockNfoLabel = (list && list.dataset.lockNfoLabel) || "Lock NFOs";
-				var lockNfoTitle = (list && list.dataset.lockNfoTitle) || "";
+				// lockNfoTitle backs the popover body. If the i18n key is
+				// missing or empty for any reason, fall back to the label
+				// rather than letting the popover render with only a
+				// "Read more" link and no body text.
+				var lockNfoTitle = (list && list.dataset.lockNfoTitle) || lockNfoLabel;
+				var helpReadMore = (list && list.dataset.helpReadMore) || "Read more";
 				_escDiv.textContent = lockNfoLabel;
 				var safeLockNfoLabel = _escDiv.innerHTML;
 				_escDiv.textContent = lockNfoTitle;
 				var safeLockNfoTitle = _escDiv.innerHTML;
+				_escDiv.textContent = helpReadMore;
+				var safeHelpReadMore = _escDiv.innerHTML;
 				if (!libs || libs.length === 0) {
 					var emptyText = (list && list.dataset.empty) || "No libraries configured.";
 					_escDiv.textContent = emptyText;
@@ -3556,7 +3564,7 @@ templ settingsLibraryScript() {
 							+ '<span class="sw-context-help" id="' + helpId + '">'
 							+ '<button type="button" class="sw-context-help-btn" aria-label="Help: ' + safeLockNfoLabel + '" aria-expanded="false" aria-controls="' + helpId + '-popover" onclick="swContextHelpToggle(this)" onkeydown="if(event.key===&apos;Escape&apos;)swContextHelpClose(this)">?</button>'
 							+ '<span id="' + helpId + '-popover" role="tooltip" class="sw-context-help-popover" aria-hidden="true">' + safeLockNfoTitle
-							+ '<a href="https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-libraries-libraries-lock-nfo-label" target="_blank" rel="noopener" class="sw-context-help-link">Read more →</a>'
+							+ '<a href="https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-libraries-libraries-lock-nfo-label" target="_blank" rel="noopener" class="sw-context-help-link">' + safeHelpReadMore + '</a>'
 							+ '</span>'
 							+ '</span>'
 							+ '</span>';
@@ -5588,8 +5596,8 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 						target="_blank"
 						rel="noopener"
 						class="text-xs text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-						aria-label={ "Read more about " + rl.Name + " in the rules catalogue" }
-						title="Open this rule's catalogue entry"
+						aria-label={ t(ctx, "settings.rules.catalogue_link_aria") + ": " + rl.Name }
+						title={ t(ctx, "settings.rules.catalogue_link_title") }
 					>
 						<svg class="h-3.5 w-3.5 inline-block" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path>

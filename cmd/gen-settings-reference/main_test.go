@@ -55,6 +55,24 @@ func TestIsNoiseKey(t *testing.T) {
 		{"settings.auth.oidc_display_name_hint", true}, // suffix `_hint` IS noise
 		{"settings.api_tokens.confirm_delete", true},   // suffix `confirm_` IS noise
 		{"settings.api_tokens.confirm_revoke", true},   // suffix `confirm_` IS noise
+		// New tokens added in #1132 for runtime UI text that surfaces as
+		// long-prose-as-label bullets if not filtered. Each is paired with
+		// a non-matching real settings key to confirm anchoring.
+		{"settings.connections.feature_image_write_tooltip", true}, // `_tooltip` IS noise
+		{"settings.rules.requires_local_tooltip", true},            // `_tooltip` IS noise
+		{"settings.rule_schedule.note", true},                      // `note` IS noise
+		{"settings.db_maintenance.schedule_note", true},            // `note` IS noise (substring)
+		{"settings.provider_config.custom_help", true},             // `_help` IS noise
+		{"settings.users.revoke_confirm", true},                    // `_confirm` IS noise
+		{"settings.users.invite_revoked", true},                    // `_revoked` IS noise
+		{"settings.rules.help_nfo", true},                          // `help_` IS noise
+		{"settings.rules.help_image", true},                        // `help_` IS noise
+		{"settings.rules.help_metadata", true},                     // `help_` IS noise
+		// Real settings the new tokens must NOT catch:
+		{"settings.image_cache.max_size.description", false},     // `.description` is metadata, not `_description`
+		{"settings.image_cache.unlimited.description", false},    // ditto
+		{"settings.libraries.lock_nfo_label.description", false}, // ditto
+		{"settings.api_tokens.scope_admin.description", false},   // ditto
 	}
 	for _, tc := range cases {
 		got := isNoiseKey(tc.key)

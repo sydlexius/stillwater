@@ -26,7 +26,9 @@ settings-auth-providers-auth-jellyfin
 settings-auth-providers-auth-jellyfin-guard-rail
 settings-auth-providers-auth-local
 settings-auth-providers-auth-oidc
+settings-auth-providers-auth-oidc-auto-provision
 settings-auth-providers-auth-oidc-display-name
+settings-auth-providers-auth-oidc-issuer
 settings-auth-providers-auth-oidc-logo-url
 settings-auth-providers-auth-server-url
 settings-auth-providers-auth-sourced-from-emby
