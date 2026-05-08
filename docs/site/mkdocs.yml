@@ -88,11 +88,14 @@ nav:
   - Core concepts:
       - core-concepts/index.md
       - Artists and libraries: core-concepts/artists-and-libraries.md
-      - NFO files: core-concepts/nfo-files.md
+      - Auto-provisioning: core-concepts/auto-provisioning.md
+      - Conflict gate: core-concepts/conflict-gate.md
+      - Field locks: core-concepts/field-locks.md
       - Images: core-concepts/images.md
+      - NFO files: core-concepts/nfo-files.md
+      - Platform profiles: core-concepts/platform-profiles.md
       - Providers: core-concepts/providers.md
       - Rules: core-concepts/rules.md
-      - Field locks: core-concepts/field-locks.md
   - How-to:
       - how-to/index.md
       - Run scans: how-to/run-scans.md
