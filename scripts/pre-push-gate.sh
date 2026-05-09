@@ -6,6 +6,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
+# Validate BASE resolves to a real commit so downstream steps that pass it to
+# git diff / golangci-lint --new-from-rev fail loudly instead of silently
+# degrading to "no diff -> nothing to check -> pass" (the silent-degradation
+# class documented in reference_pre_push_gate_hardening.md).
+if ! git rev-parse --verify -q "$BASE^{commit}" >/dev/null; then
+  echo "FAIL: cannot resolve BASE ('$BASE') to a commit; aborting gate" >&2
+  exit 2
+fi
+
 # Source the per-worktree run-path helper. Provides $SW_RUN_DIR keyed by the
 # worktree basename so concurrent gate runs in different worktrees write to
 # disjoint paths and can never clobber each other's coverage profiles. See
@@ -42,6 +51,23 @@ echo "OK"
 echo ""
 echo "=== Tests ==="
 go test -race -count=1 -covermode=atomic -coverprofile="$COVER_OUT" ./...
+
+echo ""
+echo "=== Lint (diff-only) ==="
+# Lint only the lines changed since BASE. With a warm cache this runs in
+# ~5s; cold it can take ~30s. Closes the `git commit --no-verify` bypass:
+# the pre-commit hook lints staged files, but a `--no-verify` commit + plain
+# `git push` historically reached this gate without any lint pass, letting
+# regressions slip to CI. SKIP-with-hint when golangci-lint is missing,
+# matching the script's existing convention for optional dev tools (oasdiff,
+# python3); BASE is validated at intake, so an unreadable rev is caught
+# above this point rather than silently producing an empty diff.
+if ! command -v golangci-lint >/dev/null 2>&1; then
+  echo "SKIP: golangci-lint not in PATH (install: brew install golangci-lint)"
+else
+  golangci-lint run --new-from-rev="$BASE" ./...
+  echo "OK"
+fi
 
 echo ""
 echo "=== OpenAPI consistency ==="
