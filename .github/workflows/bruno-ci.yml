@@ -231,13 +231,20 @@ jobs:
         run: |
           mkdir -p "${{ runner.temp }}/bruno-results"
           cd api/bruno
-          bru run \
-            --env ci \
-            --env-var "baseUrl=http://127.0.0.1:${PORT}" \
-            --env-var "sessionToken=${SESSION_TOKEN}" \
-            --reporter-html "${{ runner.temp }}/bruno-results/bruno-results.html" \
-            -r \
-            . | tee "${{ runner.temp }}/bruno.log"
+          # Step-scoped watchdog so a hung Bruno invocation does not consume
+          # the full 15-min job timeout (which would also skip the always()
+          # cleanup + failure-artifact steps below). 300s SIGTERM, 30s
+          # SIGKILL grace. set -o pipefail so the bru exit code survives the
+          # pipe to tee.
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 300s \
+            bru run \
+              --env ci \
+              --env-var "baseUrl=http://127.0.0.1:${PORT}" \
+              --env-var "sessionToken=${SESSION_TOKEN}" \
+              --reporter-html "${{ runner.temp }}/bruno-results/bruno-results.html" \
+              -r \
+              . | tee "${{ runner.temp }}/bruno.log"
 
       - name: Gate on transport health
         env:
