@@ -8,6 +8,7 @@ linters:
   default: none
   enable:
     - errcheck
+    - exhaustive
     - govet
     - staticcheck
     - unused
@@ -22,6 +23,8 @@ linters:
     - revive
     - nilerr
   settings:
+    exhaustive:
+      default-signifies-exhaustive: true
     gosec:
       excludes:
         - G104  # Unhandled errors (too noisy for http.Error calls)
