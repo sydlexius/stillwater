@@ -2,6 +2,7 @@ package musicbrainz
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -601,13 +602,13 @@ func TestGetArtist_NamePromotion(t *testing.T) {
 }
 
 func isErrNotFound(err error) bool {
-	_, ok := err.(*provider.ErrNotFound)
-	return ok
+	var nf *provider.ErrNotFound
+	return errors.As(err, &nf)
 }
 
 func isErrUnavailable(err error) bool {
-	_, ok := err.(*provider.ErrProviderUnavailable)
-	return ok
+	var unavail *provider.ErrProviderUnavailable
+	return errors.As(err, &unavail)
 }
 
 // --- #973: YearsActive synthesis ---

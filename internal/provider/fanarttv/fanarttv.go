@@ -3,6 +3,7 @@ package fanarttv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -141,8 +142,8 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 }
 
 func isNotFound(err error) bool {
-	_, ok := err.(*provider.ErrNotFound)
-	return ok
+	var nf *provider.ErrNotFound
+	return errors.As(err, &nf)
 }
 
 func mapImages(resp *Response) []provider.ImageResult {

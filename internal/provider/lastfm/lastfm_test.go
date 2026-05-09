@@ -3,6 +3,7 @@ package lastfm
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -143,7 +144,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent artist")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected ErrNotFound, got %T", err)
 	}
 }
@@ -206,8 +208,8 @@ func TestGetArtistByNameRejectsMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when result name does not match search term")
 	}
-	nf, ok := err.(*provider.ErrNotFound)
-	if !ok {
+	var nf *provider.ErrNotFound
+	if !errors.As(err, &nf) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	} else if nf.ID != "Adele" {
 		t.Errorf("expected ErrNotFound.ID to be %q, got %q", "Adele", nf.ID)

@@ -2,6 +2,7 @@ package wikidata
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -139,7 +140,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected ErrNotFound, got %T", err)
 	}
 }
@@ -262,7 +264,8 @@ func TestGetImagesNoProperties(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for artist with no image properties")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundImg *provider.ErrNotFound
+	if !errors.As(err, &notFoundImg) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -280,7 +283,8 @@ func TestGetImagesNotFoundMBID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown MBID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundMBID *provider.ErrNotFound
+	if !errors.As(err, &notFoundMBID) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -344,7 +348,8 @@ func TestGetArtistInvalidMBID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid MBID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundInvalidID *provider.ErrNotFound
+	if !errors.As(err, &notFoundInvalidID) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -462,7 +467,8 @@ func TestGetImagesInvalidMBID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid MBID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundImgInvalid *provider.ErrNotFound
+	if !errors.As(err, &notFoundImgInvalid) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -610,7 +616,8 @@ func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all commons resolutions fail")
 	}
-	if _, ok := err.(*provider.ErrProviderUnavailable); !ok {
+	var unavail *provider.ErrProviderUnavailable
+	if !errors.As(err, &unavail) {
 		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 }

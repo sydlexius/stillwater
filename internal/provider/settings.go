@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -70,7 +71,7 @@ func (s *SettingsService) GetAPIKey(ctx context.Context, name ProviderName) (str
 	key := apiKeySettingKey(name)
 	var encrypted string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&encrypted)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
@@ -649,7 +650,7 @@ func (s *SettingsService) GetRateLimit(ctx context.Context, name ProviderName) (
 	key := rateLimitSettingKey(name)
 	var value string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
@@ -717,7 +718,7 @@ const nameSimilarityThresholdKey = "provider.name_similarity_threshold"
 func (s *SettingsService) GetNameSimilarityThreshold(ctx context.Context) (int, error) {
 	var value string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", nameSimilarityThresholdKey).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultNameSimilarityThreshold, nil
 	}
 	if err != nil {

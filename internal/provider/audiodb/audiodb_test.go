@@ -3,6 +3,7 @@ package audiodb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -516,7 +517,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not-found")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected ErrNotFound, got %T", err)
 	}
 }
