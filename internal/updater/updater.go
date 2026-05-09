@@ -995,7 +995,7 @@ func (s *Service) fetchReleases(ctx context.Context) ([]githubRelease, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "stillwater/"+version.Version)
+	req.Header.Set("User-Agent", version.UserAgent(""))
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -1034,7 +1034,7 @@ func (s *Service) downloadBytes(ctx context.Context, rawURL string) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("User-Agent", "stillwater/"+version.Version)
+	req.Header.Set("User-Agent", version.UserAgent(""))
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

@@ -1083,5 +1083,5 @@ func mergeDateRanges(periods [][2]string) (earliest, latest string) {
 }
 
 func userAgent() string {
-	return fmt.Sprintf("Stillwater/%s (https://github.com/sydlexius/stillwater)", version.Version)
+	return version.UserAgent("https://github.com/sydlexius/stillwater")
 }
