@@ -598,7 +598,7 @@ func InjectMeta(data []byte, meta *ExifMeta) ([]byte, error) {
 // provenance metadata. Returns nil, nil for images without a Stillwater tag
 // (this is not an error condition).
 func ReadProvenance(path string) (*ExifMeta, error) {
-	data, err := os.ReadFile(filepath.Clean(path)) //nolint:gosec // G304: path is from trusted internal callers
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, fmt.Errorf("reading image for provenance: %w", err)
 	}

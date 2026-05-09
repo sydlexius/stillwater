@@ -103,7 +103,7 @@ func TestOptimize(t *testing.T) {
 	// Insert some data to make optimize meaningful
 	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", //nolint:errcheck
+		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
 			"test."+string(rune('A'+i%26)), "value")
 	}
 
@@ -125,10 +125,10 @@ func TestVacuum(t *testing.T) {
 	// Insert and delete data to create freeable space
 	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?)", //nolint:errcheck
+		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?)",
 			"vacuum_test_"+string(rune('A'+i%26))+string(rune('0'+i/26)), "x")
 	}
-	db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'vacuum_test_%'") //nolint:errcheck
+	db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'vacuum_test_%'")
 
 	sizeBefore, _ := os.Stat(dbPath)
 
@@ -155,13 +155,13 @@ func TestGetBoolSetting(t *testing.T) {
 
 	// Set to true
 	ctx := context.Background()
-	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.bool', 'true')") //nolint:errcheck
+	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.bool', 'true')")
 	if !svc.getBoolSetting(ctx, "test.bool", false) {
 		t.Error("expected true")
 	}
 
 	// Set to false
-	db.ExecContext(ctx, "UPDATE settings SET value = 'false' WHERE key = 'test.bool'") //nolint:errcheck
+	db.ExecContext(ctx, "UPDATE settings SET value = 'false' WHERE key = 'test.bool'")
 	if svc.getBoolSetting(context.Background(), "test.bool", true) {
 		t.Error("expected false")
 	}
@@ -178,7 +178,7 @@ func TestGetIntSetting(t *testing.T) {
 
 	// Set to 12
 	ctx := context.Background()
-	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.int', '12')") //nolint:errcheck
+	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.int', '12')")
 	if v := svc.getIntSetting(context.Background(), "test.int", 0); v != 12 {
 		t.Errorf("expected 12, got %d", v)
 	}

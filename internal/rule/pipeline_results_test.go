@@ -25,7 +25,7 @@ func disableAllRulesExcept(t *testing.T, db *sql.DB, keep ...string) {
 	if err != nil {
 		t.Fatalf("listing rules: %v", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close()
 	var toDisable []string
 	for rows.Next() {
 		var id string

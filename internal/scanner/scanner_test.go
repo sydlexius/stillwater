@@ -70,7 +70,7 @@ func createArtistDirWithNFO(t *testing.T, base, name, nfoContent string) {
 	}
 }
 
-func waitForScan(t *testing.T, svc *Service, timeout time.Duration) *ScanResult { //nolint:unparam
+func waitForScan(t *testing.T, svc *Service, timeout time.Duration) *ScanResult { //nolint:unparam // timeout exposed for future per-test customization
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -494,8 +494,8 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 </artist>`
 	createArtistDirWithNFO(t, libDir, "Radiohead", nfoContent)
 	// Add thumb and fanart files
-	os.WriteFile(filepath.Join(libDir, "Radiohead", "folder.jpg"), []byte("jpg"), 0o644) //nolint:errcheck
-	os.WriteFile(filepath.Join(libDir, "Radiohead", "fanart.jpg"), []byte("jpg"), 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(libDir, "Radiohead", "folder.jpg"), []byte("jpg"), 0o644)
+	os.WriteFile(filepath.Join(libDir, "Radiohead", "fanart.jpg"), []byte("jpg"), 0o644)
 
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
@@ -603,7 +603,7 @@ func TestDetectFiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"artist.nfo", "folder.jpg", "backdrop.jpg", "logo.png", "banner.jpg"} {
-		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644) //nolint:errcheck
+		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644)
 	}
 
 	d, err := detectFiles(dir, nil)

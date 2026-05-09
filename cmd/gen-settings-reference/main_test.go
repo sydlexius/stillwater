@@ -1121,7 +1121,7 @@ func contains(haystack []string, needle string) bool {
 
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(path) //nolint:gosec // test helper, controlled path
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

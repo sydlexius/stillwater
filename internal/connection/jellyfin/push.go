@@ -158,11 +158,11 @@ func (c *Client) postFullItem(ctx context.Context, platformArtistID string, item
 	c.AuthFunc(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing %s request: %w", op, err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		// Cap the error body at 1 MB so a misbehaving peer that returns a
@@ -205,11 +205,11 @@ func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, 
 	}
 	c.AuthFunc(req)
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + item ID
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing fetch request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20
@@ -258,11 +258,11 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	c.AuthFunc(req)
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing image upload: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB
@@ -298,11 +298,11 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 	c.AuthFunc(req)
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing indexed image upload: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB
@@ -331,11 +331,11 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	}
 	c.AuthFunc(req)
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing image delete: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB

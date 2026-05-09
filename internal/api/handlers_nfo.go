@@ -293,7 +293,7 @@ func parseNFOFile(path string) (*nfo.ArtistNFO, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	parsed, err := nfo.Parse(f)
 	if err != nil {

@@ -91,7 +91,7 @@ func (r *Router) handlePostOnboardingConflictStep(w http.ResponseWriter, req *ht
 	// not leave the user stuck on a blank step.
 	if r.db != nil {
 		now := time.Now().UTC().Format(time.RFC3339)
-		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // G701: query is a string literal
+		_, err := r.db.ExecContext(req.Context(),
 			`INSERT INTO settings (key, value) VALUES ('onboarding.conflict_check_completed_at', ?)
 			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, now)
 		if err != nil {

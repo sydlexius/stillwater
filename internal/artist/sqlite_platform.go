@@ -79,7 +79,7 @@ func (r *sqlitePlatformIDRepo) GetAll(ctx context.Context, artistID string) ([]P
 	if err != nil {
 		return nil, fmt.Errorf("listing platform ids: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var ids []PlatformID
 	for rows.Next() {
@@ -159,7 +159,7 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 	if err != nil {
 		return nil, fmt.Errorf("batch getting platform presence: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string]PlatformPresence, len(artistIDs))
 	for rows.Next() {

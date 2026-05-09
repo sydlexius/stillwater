@@ -149,7 +149,7 @@ func (r *Router) handleClearLogs(w http.ResponseWriter, req *http.Request) {
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-sm">Log buffer cleared.</div>`)) //nolint:errcheck
+		w.Write([]byte(`<div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-sm">Log buffer cleared.</div>`)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 
@@ -161,7 +161,7 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 	w.Header().Set("Content-Type", "text/html")
 
 	if len(entries) == 0 {
-		w.Write([]byte(`<div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-sm">No log entries match the current filters.</div>`)) //nolint:errcheck
+		w.Write([]byte(`<div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-sm">No log entries match the current filters.</div>`)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 
@@ -225,7 +225,7 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 		b.WriteString("</span></div>\n")
 	}
 
-	w.Write([]byte(b.String())) //nolint:errcheck
+	w.Write([]byte(b.String())) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 }
 
 // levelBadgeClass returns Tailwind classes for the log level badge.

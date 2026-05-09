@@ -60,7 +60,7 @@ func (s *Service) GetConfig(ctx context.Context, scope string) (*ScraperConfig, 
 	conn, overrides, err := s.loadConfigWithOverrides(ctx, scope)
 	if err != nil {
 		// No connection config means full inheritance from global
-		return global, nil //nolint:nilerr
+		return global, nil //nolint:nilerr // missing scope config falls back to global; not an error condition
 	}
 
 	return mergeConfigs(global, conn, overrides), nil

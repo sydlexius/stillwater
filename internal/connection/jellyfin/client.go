@@ -269,7 +269,7 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 	// BuildRequestURL reconstructs the URL from parsed components via a url.URL
 	// struct literal, preventing path-based request target override.
 	reqURL := connection.BuildRequestURL(cleaned, "/Users/AuthenticateByName")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body)) //nolint:gosec // G107: URL is validated by connection.ValidateBaseURL
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -291,7 +291,7 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	switch resp.StatusCode {
 	case http.StatusOK:

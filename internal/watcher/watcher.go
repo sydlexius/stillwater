@@ -74,7 +74,7 @@ func (s *Service) Start(ctx context.Context) {
 	if err != nil {
 		s.logger.Warn("fsnotify unavailable, running poll-only", "error", err)
 	} else {
-		defer w.Close() //nolint:errcheck
+		defer w.Close() //nolint:errcheck // Close error not actionable on cleanup
 		s.mu.Lock()
 		s.watcher = w
 		s.mu.Unlock()

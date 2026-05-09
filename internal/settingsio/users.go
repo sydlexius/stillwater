@@ -57,7 +57,7 @@ func (s *Service) exportUsers(ctx context.Context) ([]UserExport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying users: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var out []UserExport
 	for rows.Next() {

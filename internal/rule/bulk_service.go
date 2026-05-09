@@ -77,7 +77,7 @@ func (s *BulkService) ListJobs(ctx context.Context, limit int) ([]BulkJob, error
 	if err != nil {
 		return nil, fmt.Errorf("listing bulk jobs: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var jobs []BulkJob
 	for rows.Next() {
@@ -140,7 +140,7 @@ func (s *BulkService) ListItems(ctx context.Context, jobID string) ([]BulkJobIte
 	if err != nil {
 		return nil, fmt.Errorf("listing bulk job items: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var items []BulkJobItem
 	for rows.Next() {

@@ -1186,7 +1186,7 @@ func collectAnchors(doc document) ([]string, error) {
 //
 // begin and end are parameters (not constants) so the helper can be exercised
 // with bespoke markers in tests.
-func replaceBetweenMarkers(src []byte, begin, end, body string) ([]byte, error) { //nolint:unparam // begin/end are exposed as parameters for testability
+func replaceBetweenMarkers(src []byte, begin, end, body string) ([]byte, error) {
 	beginIdx := bytes.Index(src, []byte(begin))
 	if beginIdx < 0 {
 		return nil, fmt.Errorf("begin marker %q not found", begin)

@@ -154,11 +154,11 @@ func (a *Adapter) getVQDFromMainPage(ctx context.Context, query string) (string,
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html")
 
-	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -181,11 +181,11 @@ func (a *Adapter) getVQDFromHTMLPage(ctx context.Context, query string) (string,
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -236,11 +236,11 @@ func (a *Adapter) fetchImages(ctx context.Context, query, vqd string) ([]imageHi
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", a.baseURL+"/")
 
-	resp, err := a.client.Do(req) //nolint:gosec // trusted base URL + URL-encoded query parameters
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)

@@ -445,7 +445,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) + ` violation(s).</div>`
 		}
-		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: fragment contains only static strings and strconv.Itoa output
+		if _, werr := io.WriteString(w, fragment); werr != nil {
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return

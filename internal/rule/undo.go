@@ -155,7 +155,7 @@ func FileRevert(snap FileSnapshot) RevertFunc {
 		}
 		// The fix modified or replaced this file; write the original content back
 		// using atomic tmp/bak/rename to prevent corruption on interruption.
-		if err := filesystem.WriteFileAtomic(snap.Path, snap.Content, 0o644); err != nil { //nolint:gosec // G306: 0644 is standard for media files
+		if err := filesystem.WriteFileAtomic(snap.Path, snap.Content, 0o644); err != nil {
 			return fmt.Errorf("restoring file %q: %w", snap.Path, err)
 		}
 		return nil

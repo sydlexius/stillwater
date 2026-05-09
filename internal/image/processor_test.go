@@ -345,7 +345,7 @@ func TestProbeRemoteImage(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-		w.Write(data) //nolint:errcheck
+		w.Write(data)
 	}))
 	defer ts.Close()
 

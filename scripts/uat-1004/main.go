@@ -61,7 +61,7 @@ func run(path string) error {
 	if err != nil {
 		return fmt.Errorf("open: %w", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("initial migrate: %w", err)

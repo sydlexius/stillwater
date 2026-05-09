@@ -92,7 +92,7 @@ func TestSeedAuthProviderDefaults_Idempotent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("first read: %v", err)
 		}
-		defer rows.Close() //nolint:errcheck
+		defer rows.Close()
 		for rows.Next() {
 			var k, v, u string
 			if err := rows.Scan(&k, &v, &u); err != nil {
@@ -113,7 +113,7 @@ func TestSeedAuthProviderDefaults_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second read: %v", err)
 	}
-	defer rows2.Close() //nolint:errcheck
+	defer rows2.Close()
 	for rows2.Next() {
 		var k, v, u string
 		if err := rows2.Scan(&k, &v, &u); err != nil {

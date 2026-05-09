@@ -263,11 +263,11 @@ func createTestJPEG(t *testing.T, path string, width, height int) {
 		}
 	}
 
-	f, err := os.Create(path) //nolint:gosec
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("creating test image: %v", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 
 	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 85}); err != nil {
 		t.Fatalf("encoding jpeg: %v", err)
@@ -795,11 +795,11 @@ func createTestPNGWithPadding(t *testing.T, path string, totalW, totalH, padLeft
 		}
 	}
 
-	f, err := os.Create(path) //nolint:gosec
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("creating test png: %v", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 
 	if err := png.Encode(f, img); err != nil {
 		t.Fatalf("encoding png: %v", err)
@@ -1201,11 +1201,11 @@ func createTestJPEGWithWhitespace(t *testing.T, path string, totalW, totalH, pad
 		}
 	}
 
-	f, err := os.Create(path) //nolint:gosec
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("creating test jpeg: %v", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 
 	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 95}); err != nil {
 		t.Fatalf("encoding jpeg: %v", err)

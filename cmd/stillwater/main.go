@@ -136,7 +136,7 @@ func run() error {
 		Format: cfg.Logging.Format,
 	}
 	logManager, logger := logging.NewManager(logCfg)
-	defer logManager.Close() //nolint:errcheck
+	defer logManager.Close() //nolint:errcheck // Close error not actionable on cleanup
 	slog.SetDefault(logger)
 
 	// Warn (but do not abort) if the version ldflags injection is malformed.
@@ -757,13 +757,13 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 	}
 
 	// Persist to file
-	if err := os.MkdirAll(dataDir, 0o750); err != nil { //nolint:gosec // G304: dataDir derived from trusted config, not user input
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		logger.Warn("could not create data directory for encryption key",
 			slog.String("path", dataDir), slog.Any("error", err))
 		return key, nil
 	}
 
-	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil { //nolint:gosec // G304: keyFile derived from trusted config, not user input
+	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil {
 		logger.Warn("could not save encryption key to file",
 			slog.String("path", keyFile), slog.Any("error", err))
 	} else {
@@ -792,7 +792,7 @@ func resetCredentials() error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	if err := database.EnableForeignKeys(db); err != nil {
 		return fmt.Errorf("enabling foreign keys: %w", err)
@@ -847,7 +847,7 @@ func resetPassword(username, password string) error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	if err := database.EnableForeignKeys(db); err != nil {
 		return fmt.Errorf("enabling foreign keys: %w", err)
@@ -915,7 +915,7 @@ func resetPasswordDB(ctx context.Context, db *sql.DB, username, password string)
 // For TTY (interactive): prompts twice and confirms passwords match.
 // For non-TTY (pipes/scripts): reads single line without confirmation.
 func promptPassword() (string, error) {
-	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: safe for file descriptors
+	fd := int(os.Stdin.Fd())
 
 	fmt.Fprint(os.Stderr, "Enter new password: ")
 	password, err := readPasswordNoEcho()
@@ -948,7 +948,7 @@ func promptPassword() (string, error) {
 // readPasswordNoEcho reads a password from stdin with echo suppression on TTY.
 // If stdin is not a TTY, falls back to plain line reading (for scripts/pipes).
 func readPasswordNoEcho() (string, error) {
-	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: uintptr to int is safe for file descriptors
+	fd := int(os.Stdin.Fd())
 
 	// Try to suppress echo on TTY
 	if term.IsTerminal(fd) {

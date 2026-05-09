@@ -75,7 +75,7 @@ WHERE a.is_excluded = 0`
 	if err != nil {
 		return nil, fmt.Errorf("querying completeness rows: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var results []CompletenessRow
 	for rows.Next() {
@@ -142,7 +142,7 @@ WHERE a.is_excluded = 0`
 	if err != nil {
 		return nil, fmt.Errorf("querying lowest completeness: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var results []LowestCompletenessArtist
 	for rows.Next() {

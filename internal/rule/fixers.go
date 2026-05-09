@@ -716,11 +716,11 @@ func readExistingImageDimensions(ctx context.Context, dir, imageType string, pla
 }
 
 func readFileDimensions(path string) (int, int, bool) {
-	f, err := os.Open(path) //nolint:gosec
+	f, err := os.Open(path) //nolint:gosec // G304: path is from validated library scanner output
 	if err != nil {
 		return 0, 0, false
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
 	w, h, err := img.GetDimensions(f)
 	if err != nil || w == 0 || h == 0 {
 		return 0, 0, false
@@ -974,8 +974,8 @@ func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *
 		newBase := savedNames[0]
 		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
 			newPath := filepath.Join(a.Path, newBase)
-			oldInfo, errOld := os.Stat(logoPath) //nolint:gosec // G703: trusted path
-			newInfo, errNew := os.Stat(newPath)  //nolint:gosec // G703: trusted path
+			oldInfo, errOld := os.Stat(logoPath)
+			newInfo, errNew := os.Stat(newPath) //nolint:gosec // G703: trusted path
 			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
 				if rmErr := os.Remove(logoPath); rmErr != nil {
 					f.logger.Warn("failed to remove case-mismatched logo duplicate",
@@ -1075,15 +1075,15 @@ func (f *LogoPaddingFixer) fixViaAPI(ctx context.Context, a *artist.Artist, v *V
 func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil) //nolint:gosec // URL from trusted provider results
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := client.Do(req) //nolint:gosec // G704: URL validated against stored provider results before reaching this point
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)

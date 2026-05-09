@@ -439,7 +439,7 @@ func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("querying updater config: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var k, v string
@@ -1001,7 +1001,7 @@ func (s *Service) fetchReleases(ctx context.Context) ([]githubRelease, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github API request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("github API rate limited (status %d); try again later", resp.StatusCode)
@@ -1040,7 +1040,7 @@ func (s *Service) downloadBytes(ctx context.Context, rawURL string) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("download request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -1230,7 +1230,7 @@ func extractBinary(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening gzip: %w", err)
 	}
-	defer gr.Close() //nolint:errcheck
+	defer gr.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	tr := tar.NewReader(gr)
 	for {
@@ -1469,7 +1469,7 @@ func (s *Service) applyAuto(candidateVersion string) error {
 		return ErrAlreadyRunning
 	}
 	go func() {
-		s.runApply(context.Background(), candidateVersion) //nolint:gosec // G118: detached on purpose; the apply must outlive the originating scheduler tick
+		s.runApply(context.Background(), candidateVersion)
 		// runApply has already toggled state. Check status to confirm
 		// the swap actually succeeded (markRestartRequired was called)
 		// and only then persist the auto-apply marker.

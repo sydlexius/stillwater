@@ -31,7 +31,7 @@ func (s *Service) List(ctx context.Context) ([]Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing platform profiles: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var profiles []Profile
 	for rows.Next() {
@@ -101,7 +101,7 @@ func (s *Service) SetActive(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `UPDATE platform_profiles SET is_active = 0`); err != nil {
 		return fmt.Errorf("deactivating profiles: %w", err)

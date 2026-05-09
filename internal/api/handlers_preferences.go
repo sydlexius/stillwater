@@ -382,7 +382,7 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var k, v string
@@ -573,7 +573,7 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	stored := make(map[string]string)
 	for rows.Next() {

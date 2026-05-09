@@ -37,12 +37,12 @@ func OptionalAuth(authService AuthProvider) func(http.Handler) http.Handler {
 					if userID, scopes, err := authService.ValidateAPIToken(r.Context(), token); err == nil {
 						role, roleErr := authService.GetUserRole(r.Context(), userID)
 						if roleErr != nil {
-							slog.Warn("failed to get user role for API token", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service, not raw user input
+							slog.Warn("failed to get user role for API token", "user_id", userID, "error", roleErr)
 							next.ServeHTTP(w, r)
 							return
 						}
 						if role == "" {
-							slog.Warn("API token belongs to inactive user", "user_id", userID) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							slog.Warn("API token belongs to inactive user", "user_id", userID)
 							next.ServeHTTP(w, r)
 							return
 						}
@@ -57,12 +57,12 @@ func OptionalAuth(authService AuthProvider) func(http.Handler) http.Handler {
 					if userID, err := authService.ValidateSession(r.Context(), token); err == nil {
 						role, roleErr := authService.GetUserRole(r.Context(), userID)
 						if roleErr != nil {
-							slog.Warn("failed to get user role for session", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							slog.Warn("failed to get user role for session", "user_id", userID, "error", roleErr)
 							next.ServeHTTP(w, r)
 							return
 						}
 						if role == "" {
-							slog.Warn("session belongs to inactive user", "user_id", userID) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							slog.Warn("session belongs to inactive user", "user_id", userID)
 							next.ServeHTTP(w, r)
 							return
 						}
@@ -97,7 +97,7 @@ func Auth(authService AuthProvider) func(http.Handler) http.Handler {
 				}
 				role, roleErr := authService.GetUserRole(r.Context(), userID)
 				if roleErr != nil {
-					slog.Error("failed to get user role for API token", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+					slog.Error("failed to get user role for API token", "user_id", userID, "error", roleErr)
 					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 					return
 				}
@@ -121,7 +121,7 @@ func Auth(authService AuthProvider) func(http.Handler) http.Handler {
 
 			role, roleErr := authService.GetUserRole(r.Context(), userID)
 			if roleErr != nil {
-				slog.Error("failed to get user role for session", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+				slog.Error("failed to get user role for session", "user_id", userID, "error", roleErr)
 				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 				return
 			}

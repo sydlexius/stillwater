@@ -57,7 +57,7 @@ func (r *sqliteAliasRepo) ListByArtistID(ctx context.Context, artistID string) (
 	if err != nil {
 		return nil, fmt.Errorf("listing aliases: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var aliases []Alias
 	for rows.Next() {
@@ -76,7 +76,7 @@ func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) (
 	pattern := "%" + strings.ToLower(query) + "%"
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT `+artistColumns+` FROM artists WHERE id IN ( `+ //nolint:gosec // G202: concatenation uses trusted static column list
+		SELECT `+artistColumns+` FROM artists WHERE id IN ( `+
 		`SELECT artists.id FROM artists
 		LEFT JOIN artist_aliases ON artists.id = artist_aliases.artist_id
 		WHERE LOWER(artists.name) LIKE ? OR LOWER(artist_aliases.alias) LIKE ?
@@ -84,7 +84,7 @@ func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) (
 	if err != nil {
 		return nil, fmt.Errorf("searching with aliases: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var artists []Artist
 	for rows.Next() {
@@ -114,7 +114,7 @@ func (r *sqliteAliasRepo) FindMBIDDuplicates(ctx context.Context) ([]DuplicateGr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	mbidMap := make(map[string][]Artist)
 	var mbidOrder []string
@@ -154,7 +154,7 @@ func (r *sqliteAliasRepo) FindAliasDuplicates(ctx context.Context) ([]DuplicateG
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	aliasMap := make(map[string][]Artist)
 	aliasSeenArtist := make(map[string]map[string]bool)

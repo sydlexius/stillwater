@@ -39,11 +39,11 @@ func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, err
 	// Wikimedia Commons blocks requests without a proper User-Agent.
 	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
-	resp, err := client.Do(req) //nolint:gosec // URL comes from trusted provider API
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching image: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body) // drain body to allow connection reuse

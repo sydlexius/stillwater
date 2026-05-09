@@ -235,7 +235,7 @@ func (r *Router) handlePlatformBackdropThumbnail(w http.ResponseWriter, req *htt
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data) //nolint:gosec // ResponseWriter.Write error after WriteHeader is unrecoverable
+	_, _ = w.Write(data)
 }
 
 // handleFanartSlotAssign assigns a platform backdrop to a specific local fanart slot.
@@ -443,7 +443,7 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	}
 
 	deleted := filepath.Base(paths[slot])
-	if removeErr := r.fileRemover.Remove(paths[slot]); removeErr != nil { //nolint:gosec // path from trusted fanart discovery
+	if removeErr := r.fileRemover.Remove(paths[slot]); removeErr != nil {
 		r.logger.Error("deleting fanart slot",
 			slog.String("artist_id", artistID),
 			slog.Int("slot", slot),
@@ -567,7 +567,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		tmpName := fmt.Sprintf("fanart_reorder_%d%s.tmp", i, ext)
 		tmpPath := filepath.Join(dir, tmpName)
 		// Remove any leftover temp file from a previous crashed operation.
-		if removeErr := r.fileRemover.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) { //nolint:gosec // tmpPath from trusted fanart discovery, not user input
+		if removeErr := r.fileRemover.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			r.logger.Error("clearing stale temp file for reorder",
 				slog.String("artist_id", artistID),
 				slog.String("path", tmpPath),
@@ -576,7 +576,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		filesystem.TraceFSWrite("Rename(reorder-stage)", tmpPath, 0)
-		if renameErr := os.Rename(paths[srcIdx], tmpPath); renameErr != nil { //nolint:gosec // path from trusted fanart discovery
+		if renameErr := os.Rename(paths[srcIdx], tmpPath); renameErr != nil {
 			r.logger.Error("staging fanart for reorder",
 				slog.String("artist_id", artistID),
 				slog.String("from", paths[srcIdx]),
@@ -585,7 +585,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 			// Best-effort rollback of already-staged files.
 			var rollbackIncomplete bool
 			for rollback := range i {
-				if rbErr := os.Rename(staged[rollback].tmpPath, paths[body.Order[rollback]]); rbErr != nil { //nolint:gosec // rollback to original trusted paths
+				if rbErr := os.Rename(staged[rollback].tmpPath, paths[body.Order[rollback]]); rbErr != nil {
 					rollbackIncomplete = true
 					r.logger.Error("rollback: restoring staged file",
 						slog.String("from", staged[rollback].tmpPath),
@@ -618,7 +618,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		finalName := newBase + sf.originalExt
 		finalPath := filepath.Join(dir, finalName)
 		filesystem.TraceFSWrite("Rename(reorder-finalize)", finalPath, 0)
-		if renameErr := os.Rename(sf.tmpPath, finalPath); renameErr != nil { //nolint:gosec // paths built from controlled directory
+		if renameErr := os.Rename(sf.tmpPath, finalPath); renameErr != nil {
 			r.logger.Error("applying fanart reorder",
 				slog.String("artist_id", artistID),
 				slog.String("from", sf.tmpPath),
@@ -644,7 +644,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		}
 		for i, sf := range staged {
 			srcIdx := body.Order[i]
-			if rbErr := os.Rename(sf.tmpPath, paths[srcIdx]); rbErr != nil { //nolint:gosec // rollback to original trusted paths
+			if rbErr := os.Rename(sf.tmpPath, paths[srcIdx]); rbErr != nil {
 				rollbackIncomplete = true
 				r.logger.Error("rollback: restoring original file",
 					slog.String("from", sf.tmpPath),

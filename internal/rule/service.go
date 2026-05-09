@@ -402,7 +402,7 @@ func (s *Service) List(ctx context.Context) ([]Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing rules: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var rules []Rule
 	for rows.Next() {
@@ -539,7 +539,7 @@ func (s *Service) DisableFilesystemRules(ctx context.Context) (int, error) {
 	}
 	var toDisable []string
 	scanErr := func() error {
-		defer rows.Close() //nolint:errcheck
+		defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
@@ -662,7 +662,7 @@ func (s *Service) TopViolationSummaries(ctx context.Context, limit int) ([]Viola
 	if err != nil {
 		return nil, fmt.Errorf("querying top violation summaries: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var results []ViolationSummary
 	for rows.Next() {
@@ -697,7 +697,7 @@ func (s *Service) GetHealthHistory(ctx context.Context, from, to time.Time) ([]H
 	if err != nil {
 		return nil, fmt.Errorf("querying health history: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var snapshots []HealthSnapshot
 	for rows.Next() {
@@ -752,7 +752,7 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	if err != nil {
 		return nil, fmt.Errorf("querying violation created trend: %w", err)
 	}
-	defer createdRows.Close() //nolint:errcheck
+	defer createdRows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for createdRows.Next() {
 		var day string
@@ -779,7 +779,7 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	if err != nil {
 		return nil, fmt.Errorf("querying violation resolved trend: %w", err)
 	}
-	defer resolvedRows.Close() //nolint:errcheck
+	defer resolvedRows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for resolvedRows.Next() {
 		var day string
@@ -848,7 +848,7 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	if err != nil {
 		return fmt.Errorf("beginning upsert-violation transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	// Issue #1107: dismissed is terminal from the user's perspective. Once a
 	// row is stored as 'dismissed', re-evaluation must NOT clobber the status
@@ -935,7 +935,7 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 	if err != nil {
 		return nil, fmt.Errorf("listing violations: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var violations []RuleViolation
 	for rows.Next() {
@@ -1049,14 +1049,14 @@ func buildViolationOrderClause(p ViolationListParams) string {
 	}
 
 	if col, ok := sortCols[p.Sort]; ok {
-		clause := " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
+		clause := " ORDER BY " + col + " " + order
 		if p.Sort != "created_at" {
 			clause += ", rv.created_at DESC"
 		}
 		return clause
 	}
 	// Default sort: severity DESC (errors first), then newest
-	return " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
+	return " ORDER BY " + severityRank + " DESC, rv.created_at DESC"
 }
 
 // ListViolationsFiltered returns violations matching the given params with dynamic SQL.
@@ -1067,7 +1067,7 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at`
 	query += buildViolationFromClause(needJoin)
 	if len(whereClauses) > 0 {
-		query += " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
+		query += " WHERE " + joinStrings(whereClauses, " AND ")
 	}
 	query += buildViolationOrderClause(p) //nolint:gosec // G202: order clause uses whitelisted column map
 
@@ -1075,7 +1075,7 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	if err != nil {
 		return nil, fmt.Errorf("listing filtered violations: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var violations []RuleViolation
 	for rows.Next() {
@@ -1098,7 +1098,7 @@ func (s *Service) ListViolationsFilteredPaged(ctx context.Context, p ViolationLi
 	fromClause := buildViolationFromClause(needJoin)
 	whereClause := ""
 	if len(whereClauses) > 0 {
-		whereClause = " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
+		whereClause = " WHERE " + joinStrings(whereClauses, " AND ")
 	}
 
 	// Count total matching rows.
@@ -1124,7 +1124,7 @@ func (s *Service) ListViolationsFilteredPaged(ctx context.Context, p ViolationLi
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing filtered violations (paged): %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var violations []RuleViolation
 	for rows.Next() {
@@ -1351,7 +1351,7 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context, p Violati
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by severity: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	counts := map[string]int{"error": 0, "warning": 0, "info": 0}
 	for rows.Next() {
@@ -1429,7 +1429,7 @@ func (s *Service) CountActiveViolationsByRule(ctx context.Context, p ViolationLi
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by rule: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var counts []RuleViolationCount
 	for rows.Next() {
@@ -1462,7 +1462,7 @@ func (s *Service) CountActiveViolationsByLibrary(ctx context.Context, p Violatio
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by library: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	counts := make(map[string]int)
 	for rows.Next() {
@@ -1494,7 +1494,7 @@ func (s *Service) CountActiveViolationsByFixable(ctx context.Context, p Violatio
 	if err != nil {
 		return 0, 0, fmt.Errorf("counting active violations by fixable: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var f, cnt int
@@ -1560,7 +1560,7 @@ func (s *Service) CountActiveViolationsByCategory(ctx context.Context, p Violati
 	if err != nil {
 		return nil, fmt.Errorf("counting active violations by category: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	counts := map[string]int{"nfo": 0, "image": 0, "metadata": 0}
 	for rows.Next() {
@@ -1672,7 +1672,7 @@ func (s *Service) GetComplianceForArtists(ctx context.Context, artistIDs []strin
 	if err != nil {
 		return nil, fmt.Errorf("querying compliance for artists: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var artistID string
@@ -1757,7 +1757,7 @@ func (s *Service) queryViolationChunk(ctx context.Context, chunk []string, dest 
 	if err != nil {
 		return fmt.Errorf("querying violations for artists: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var artistID string

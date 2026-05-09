@@ -447,7 +447,7 @@ func (e *Engine) getLogoBoundsContent(logoPath string) (content, original goimag
 			slog.String("error", err.Error()))
 		return goimage.Rectangle{}, goimage.Rectangle{}, false
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	c, orig, decErr := image.ContentBounds(f)
 	if decErr != nil {
@@ -859,7 +859,7 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 		e.logger.Debug("querying artist_images for extraneous check", "artist", a.Name, "error", err)
 		return nil
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	// Track DB slots so we can compare against platform-reported slots below.
 	dbSlots := make(map[string]bool)
@@ -1074,7 +1074,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			e.logger.Debug("querying image hashes", "artist", a.Name, "error", err)
 			return nil
 		}
-		defer rows.Close() //nolint:errcheck
+		defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 		var hashes []slotHash
 		for rows.Next() {
@@ -1223,7 +1223,7 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 		e.logger.Debug("querying fanart slots for sequencing check", "artist", a.Name, "error", err)
 		return nil
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var slots []int
 	for rows.Next() {

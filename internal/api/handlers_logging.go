@@ -97,7 +97,7 @@ func (r *Router) handleUpdateLogging(w http.ResponseWriter, req *http.Request) {
 		settings["logging.level"] = cfg.Level
 	}
 	for k, v := range settings {
-		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // static query
+		_, err := r.db.ExecContext(req.Context(),
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now)
@@ -114,7 +114,7 @@ func (r *Router) handleUpdateLogging(w http.ResponseWriter, req *http.Request) {
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<span class="text-sm text-green-600 dark:text-green-400">Logging settings updated.</span>`)) //nolint:errcheck
+		w.Write([]byte(`<span class="text-sm text-green-600 dark:text-green-400">Logging settings updated.</span>`)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 

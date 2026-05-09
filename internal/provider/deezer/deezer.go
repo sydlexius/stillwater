@@ -174,14 +174,14 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config and validated inputs
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDeezer,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	switch resp.StatusCode {
 	case http.StatusOK:

@@ -180,7 +180,7 @@ func (m *Manager) Reconfigure(cfg Config) {
 		oldCloser := m.closer
 		m.closer = closer
 		if oldCloser != nil {
-			oldCloser.Close() //nolint:errcheck
+			oldCloser.Close() //nolint:errcheck // Close error not actionable; old writer is being replaced
 		}
 	}
 

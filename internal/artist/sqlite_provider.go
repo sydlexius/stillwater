@@ -49,7 +49,7 @@ func (r *sqliteProviderIDRepo) GetForArtist(ctx context.Context, artistID string
 	if err != nil {
 		return nil, fmt.Errorf("getting provider IDs for artist %s: %w", artistID, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var ids []ProviderID
 	for rows.Next() {
@@ -87,7 +87,7 @@ func (r *sqliteProviderIDRepo) GetForArtists(ctx context.Context, artistIDs []st
 	if err != nil {
 		return nil, fmt.Errorf("batch getting provider IDs: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string][]ProviderID, len(artistIDs))
 	for rows.Next() {
@@ -111,7 +111,7 @@ func (r *sqliteProviderIDRepo) UpsertAll(ctx context.Context, artistID string, i
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM artist_provider_ids WHERE artist_id = ?`, artistID); err != nil {
 		return fmt.Errorf("deleting old provider IDs: %w", err)
@@ -122,7 +122,7 @@ func (r *sqliteProviderIDRepo) UpsertAll(ctx context.Context, artistID string, i
 	if err != nil {
 		return fmt.Errorf("preparing insert: %w", err)
 	}
-	defer stmt.Close() //nolint:errcheck
+	defer stmt.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for _, p := range ids {
 		if p.Provider == "" {
@@ -166,7 +166,7 @@ func (r *sqliteProviderIDRepo) UpdateProviderFetchedAt(ctx context.Context, arti
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = tx.ExecContext(ctx,

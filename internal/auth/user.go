@@ -94,7 +94,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	users := []User{}
 	for rows.Next() {
@@ -380,7 +380,7 @@ func (s *Service) withImmediateTx(ctx context.Context, fn func(conn *sql.Conn) e
 	if err != nil {
 		return fmt.Errorf("acquiring connection: %w", err)
 	}
-	defer conn.Close() //nolint:errcheck
+	defer conn.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("beginning immediate transaction: %w", err)
@@ -391,12 +391,12 @@ func (s *Service) withImmediateTx(ctx context.Context, fn func(conn *sql.Conn) e
 	cleanupCtx := context.WithoutCancel(ctx)
 
 	if err := fn(conn); err != nil {
-		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck
+		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck // Best-effort rollback in cleanup context; primary error is the actionable signal
 		return err
 	}
 
 	if _, err := conn.ExecContext(cleanupCtx, "COMMIT"); err != nil {
-		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck
+		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck // Best-effort rollback in cleanup context; primary error is the actionable signal
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 

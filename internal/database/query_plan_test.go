@@ -30,7 +30,7 @@ func TestQueryPlans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening test database: %v", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 
 	if err := Migrate(db); err != nil {
 		t.Fatalf("running migrations: %v", err)
@@ -332,7 +332,7 @@ func TestQueryPlanSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening test database: %v", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 
 	if err := Migrate(db); err != nil {
 		t.Fatalf("running migrations: %v", err)
@@ -344,7 +344,7 @@ func TestQueryPlanSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listing indexes: %v", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close()
 
 	for rows.Next() {
 		var name, table string
@@ -392,7 +392,7 @@ func explainQueryPlan(t *testing.T, ctx context.Context, db *sql.DB, query strin
 	if err != nil {
 		t.Fatalf("EXPLAIN QUERY PLAN failed: %v\nQuery: %s", err, query)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close()
 
 	var lines []string
 	for rows.Next() {

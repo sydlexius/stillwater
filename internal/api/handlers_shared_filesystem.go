@@ -85,7 +85,7 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 // an empty response so the bar element is removed from the DOM.
 // POST /api/v1/shared-filesystem/dismiss
 func (r *Router) handleSharedFilesystemDismiss(w http.ResponseWriter, req *http.Request) {
-	_, err := r.db.ExecContext(req.Context(), //nolint:gosec // G701: static query, no user input
+	_, err := r.db.ExecContext(req.Context(),
 		`INSERT INTO settings (key, value, updated_at) VALUES ('shared_filesystem.dismissed', 'true', datetime('now'))
 		 ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = datetime('now')`)
 	if err != nil {

@@ -416,7 +416,7 @@ func TestRepository_UpsertValidation(t *testing.T) {
 
 func mustWrite(t *testing.T, path string, b []byte) {
 	t.Helper()
-	if err := os.WriteFile(path, b, 0o644); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatalf("WriteFile %s: %v", path, err)
 	}
 }

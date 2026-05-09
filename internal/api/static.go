@@ -86,7 +86,7 @@ func (sa *StaticAssets) scan(logger *slog.Logger) {
 	if err := fs.WalkDir(sa.fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logger.Warn("failed to walk static asset", "path", path, "error", err)
-			return nil //nolint:nilerr // WalkDir callback: log and skip problem entries to continue walking
+			return nil
 		}
 		if d.IsDir() {
 			return nil

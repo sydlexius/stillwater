@@ -126,7 +126,7 @@ func (s *Service) GetRuleResultsForArtist(ctx context.Context, artistID string) 
 	if err != nil {
 		return nil, fmt.Errorf("querying rule_results for artist: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var results []RuleResult
 	for rows.Next() {
@@ -183,7 +183,7 @@ func (s *Service) CountRuleResultsByRule(ctx context.Context) (map[string]RuleRe
 	if err != nil {
 		return nil, fmt.Errorf("counting rule_results by rule: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	counts := map[string]RuleResultCount{}
 	for rows.Next() {
@@ -252,7 +252,7 @@ func (s *Service) queryRuleResultCountsChunk(ctx context.Context, chunk []string
 	if err != nil {
 		return fmt.Errorf("querying rule_result counts: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var (

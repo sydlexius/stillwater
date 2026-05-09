@@ -168,11 +168,11 @@ func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProv
 	}
 	c.AuthFunc(req)
 
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		// Read a small prefix for diagnostics and drain the rest so the
@@ -365,11 +365,11 @@ func (c *Client) getMetadataConsumers(ctx context.Context) ([]map[string]any, er
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	c.AuthFunc(req)
-	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL built from trusted base + literal path
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	if resp.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))

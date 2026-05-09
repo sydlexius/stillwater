@@ -36,7 +36,7 @@ func (r *Router) handleBackupCreate(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info) //nolint:errcheck
+	json.NewEncoder(w).Encode(info) //nolint:errcheck // Best-effort JSON encode to HTTP response; client disconnect mid-write is not actionable
 }
 
 // handleBackupHistory returns a list of all available backup files.
@@ -58,7 +58,7 @@ func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 		backups = []backup.BackupInfo{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(backups) //nolint:errcheck
+	json.NewEncoder(w).Encode(backups) //nolint:errcheck // Best-effort JSON encode to HTTP response; client disconnect mid-write is not actionable
 }
 
 // handleBackupDelete removes a backup file by filename.
@@ -118,7 +118,7 @@ func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) 
 func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.BackupInfo) {
 	w.Header().Set("Content-Type", "text/html")
 	if len(backups) == 0 {
-		w.Write([]byte(`<p class="text-sm text-gray-500 dark:text-gray-400 italic">No backups yet.</p>`)) //nolint:errcheck
+		w.Write([]byte(`<p class="text-sm text-gray-500 dark:text-gray-400 italic">No backups yet.</p>`)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 	out := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"></th></tr></thead><tbody>`
@@ -138,7 +138,7 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 		)
 	}
 	out += `</tbody></table>`
-	w.Write([]byte(out)) //nolint:errcheck,gosec // all values are from validated backup filenames, formatBytes, and time.Format
+	w.Write([]byte(out)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 }
 
 func formatBytes(b int64) string {

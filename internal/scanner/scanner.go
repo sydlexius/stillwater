@@ -491,7 +491,7 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) bool {
 		s.logger.Warn("failed to open artist.nfo", "path", nfoPath, "error", err)
 		return false
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	parsed, err := nfo.Parse(f)
 	if err != nil {

@@ -72,7 +72,7 @@ func (r *Router) requireImageDir(w http.ResponseWriter, req *http.Request, a *ar
 	}
 	// Ensure directory exists (cache dirs may not exist yet).
 	if a.Path == "" {
-		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // dir from imageDir(), trusted config + artist ID
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to create image directory")
 			return false
 		}
@@ -128,7 +128,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file field"})
 		return
 	}
-	defer file.Close() //nolint:errcheck
+	defer file.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	ct := header.Header.Get("Content-Type")
 	if !validContentTypes[ct] {
@@ -825,18 +825,18 @@ func ssrfSafeTransport() *http.Transport {
 func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 	client := r.ssrfClient
 
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil) //nolint:gosec,noctx // G107/G704: URL is validated by caller; background fetch is acceptable
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil) //nolint:noctx // background image fetch from validated URL; ssrfClient enforces safety, no request-scoped context available
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	// Wikimedia Commons blocks requests without a proper User-Agent.
 	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
-	resp, err := client.Do(req) //nolint:gosec // G107/G704: URL is validated by caller
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -959,7 +959,7 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 		if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
 				resolvedPath = filePath
-				defer f.Close() //nolint:errcheck
+				defer f.Close() //nolint:errcheck // Close error not actionable on cleanup
 				w, h, dimErr := img.GetDimensions(f)
 				if dimErr != nil {
 					r.logger.Warn("reading image dimensions",
@@ -1109,7 +1109,7 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		// renders show a placeholder instead of a broken image tag. Best-effort.
 		if imageExistsFlag(a, imageType) {
 			go func() { //nolint:gosec // Background context is intentional: this goroutine outlives the request.
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:gosec
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				if err := r.artistService.ClearImageFlag(ctx, a.ID, imageType, 0); err != nil {
 					r.logger.Warn("failed to clear stale image flag",
@@ -1185,7 +1185,7 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	stat, err := os.Stat(filePath) //nolint:gosec // path built from trusted naming patterns, not user input
+	stat, err := os.Stat(filePath)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to stat image"})
 		return
@@ -1264,7 +1264,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		var deleted []string
 		var removeFailed bool
 		for _, p := range fanartPaths {
-			if err := r.fileRemover.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
+			if err := r.fileRemover.Remove(p); err == nil {
 				deleted = append(deleted, filepath.Base(p))
 				r.logger.Info("deleted fanart", slog.String("path", p))
 			} else {
@@ -1462,7 +1462,7 @@ func truncateWarning(msg string) string {
 func deleteImageFiles(remover FileRemover, dir string, patterns []string, logger *slog.Logger) (deleted []string, failed bool) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
-		if err := remover.Remove(p); err == nil { //nolint:gosec // path from trusted naming patterns
+		if err := remover.Remove(p); err == nil {
 			logger.Info("deleted image file", slog.String("path", p))
 			deleted = append(deleted, pattern)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -1479,7 +1479,7 @@ func deleteImageFiles(remover FileRemover, dir string, patterns []string, logger
 			}
 			alt := base + ext
 			altPath := filepath.Join(dir, alt)
-			if err := remover.Remove(altPath); err == nil { //nolint:gosec // path from trusted naming patterns
+			if err := remover.Remove(altPath); err == nil {
 				logger.Info("deleted image file (alt ext)", slog.String("path", altPath))
 				deleted = append(deleted, alt)
 			} else if !errors.Is(err, os.ErrNotExist) {
@@ -1711,7 +1711,7 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 	// Update low-res flag from primary fanart
 	a.FanartLowRes = false
 	if count > 0 {
-		if f, err := os.Open(existing[0]); err == nil { //nolint:gosec // path from discovery
+		if f, err := os.Open(existing[0]); err == nil {
 			w, h, dimErr := img.GetDimensions(f)
 			_ = f.Close()
 			if dimErr != nil {
@@ -1763,7 +1763,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	items := make([]templates.FanartGalleryItem, 0, len(paths))
 	for i, p := range paths {
 		item := templates.FanartGalleryItem{Index: i, Filename: filepath.Base(p)}
-		if stat, statErr := os.Stat(p); statErr == nil { //nolint:gosec // path from DiscoverFanart, not user input
+		if stat, statErr := os.Stat(p); statErr == nil {
 			item.Size = stat.Size()
 		} else {
 			r.logger.Warn("stat fanart for gallery",
@@ -1902,7 +1902,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	var deleted []string
 	var removeFailed bool
 	for idx := range deleteSet {
-		if err := r.fileRemover.Remove(paths[idx]); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
+		if err := r.fileRemover.Remove(paths[idx]); err == nil {
 			deleted = append(deleted, filepath.Base(paths[idx]))
 			r.logger.Info("deleted fanart",
 				slog.String("artist_id", artistID),

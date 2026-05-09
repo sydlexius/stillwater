@@ -128,7 +128,7 @@ func FindExistingImage(dir string, patterns []string) (string, bool) {
 func FindExistingImageStrict(dir string, patterns []string) (string, bool, error) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
-		if _, err := os.Stat(p); err == nil { //nolint:gosec // path from trusted naming patterns
+		if _, err := os.Stat(p); err == nil {
 			return p, true, nil
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return "", false, err
@@ -140,7 +140,7 @@ func FindExistingImageStrict(dir string, patterns []string) (string, bool, error
 				continue
 			}
 			alt := filepath.Join(dir, base+ext)
-			if _, err := os.Stat(alt); err == nil { //nolint:gosec // path from trusted naming patterns
+			if _, err := os.Stat(alt); err == nil {
 				return alt, true, nil
 			} else if !errors.Is(err, fs.ErrNotExist) {
 				return "", false, err

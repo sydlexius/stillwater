@@ -191,7 +191,7 @@ func TestRunListeners_TLSStartAndShutdown(t *testing.T) {
 	// Skip cert verification: the test cert is self-signed.
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		Timeout: 2 * time.Second,
 	}
@@ -252,7 +252,7 @@ func TestRunListeners_TLSCollapseToServerPort(t *testing.T) {
 
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		Timeout: 2 * time.Second,
 	}
@@ -312,7 +312,7 @@ func TestRunListeners_TLSSplitPort(t *testing.T) {
 
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		Timeout: 2 * time.Second,
 	}
@@ -478,7 +478,7 @@ func TestRunListeners_HTTP3RoundTrip(t *testing.T) {
 
 	tr := &http3.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // test cert is self-signed
+			InsecureSkipVerify: true,
 			NextProtos:         []string{"h3"},
 		},
 	}
@@ -683,7 +683,7 @@ func TestRunListeners_RedirectIntegration(t *testing.T) {
 	// the redirect-Location assertion pass (the URL is computed, not chased).
 	httpsClient := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test cert is self-signed
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 		Timeout: 2 * time.Second,
 	}

@@ -232,7 +232,7 @@ func TestWriteOrCheckCreatesFile(t *testing.T) {
 		t.Fatalf("writeOrCheck: %v", err)
 	}
 
-	body, err := os.ReadFile(dest) //nolint:gosec // G304: test reads a path it just wrote
+	body, err := os.ReadFile(dest)
 	if err != nil {
 		t.Fatalf("readback: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestWriteOrCheckCheckMode(t *testing.T) {
 	}
 
 	// Mutate the file, check should fail.
-	if err := os.WriteFile(dest, []byte("stale\n"), 0o644); err != nil { //nolint:gosec // G306: test fixture
+	if err := os.WriteFile(dest, []byte("stale\n"), 0o644); err != nil {
 		t.Fatalf("mutate: %v", err)
 	}
 	if err := writeOrCheck(dest, anchors, true); err == nil {
@@ -307,7 +307,7 @@ func TestCollectAnchorsSkipsNonMarkdown(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil { //nolint:gosec // G306: test fixture
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -368,7 +368,7 @@ func TestRunEndToEnd(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(docsRoot, "core-concepts", "field-locks.md"),
-		[]byte("# Field locks\n\n## Layer 1: artist lock (the big switch)\n"), 0o644); err != nil { //nolint:gosec // G306: test fixture
+		[]byte("# Field locks\n\n## Layer 1: artist lock (the big switch)\n"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 
@@ -377,7 +377,7 @@ func TestRunEndToEnd(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	body, err := os.ReadFile(canonical) //nolint:gosec // G304: path constructed above
+	body, err := os.ReadFile(canonical)
 	if err != nil {
 		t.Fatalf("readback: %v", err)
 	}
