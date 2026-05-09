@@ -756,6 +756,33 @@ func TestHandleReportHealthHistory_DateOnlyParams(t *testing.T) {
 	}
 }
 
+// TestHandleReportHealthHistory_RFC3339Params verifies that the handler
+// accepts RFC3339 query parameters for the from/to range, exercising the
+// primary parse branch.
+func TestHandleReportHealthHistory_RFC3339Params(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/reports/health/history?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z", nil)
+	w := httptest.NewRecorder()
+
+	r.handleReportHealthHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string][]rule.HealthSnapshot
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if _, ok := resp["history"]; !ok {
+		t.Error("response missing 'history' key")
+	}
+}
+
 // TestHandleReportHealth_StoredScoresReflectNewArtists verifies that adding
 // artists changes the health endpoint response because it reads stored scores
 // from the database, not from a cache.
