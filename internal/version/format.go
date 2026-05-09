@@ -1,10 +1,20 @@
 package version
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.org/x/mod/semver"
 )
+
+// ErrEmpty is returned when Version is the empty string -- typically because
+// no -ldflags injection ran. Callers can distinguish this from a malformed
+// Version via errors.Is.
+var ErrEmpty = errors.New("version is empty")
+
+// ErrInvalidSemver is returned when Version is set but does not parse as semver.
+// Callers can distinguish this from an empty Version via errors.Is.
+var ErrInvalidSemver = errors.New("invalid semver")
 
 // String returns a canonical human-readable version string.
 //
@@ -28,20 +38,18 @@ func String() string {
 // prefix). It does not distinguish between dev and release builds -- a dev
 // fallback like "1.0.6" is a valid semver and Validate() succeeds.
 //
-// Returns a wrapped error on failure so callers can use errors.Is/As if needed.
+// Returns a wrapped error on failure so callers can use errors.Is/As to
+// distinguish ErrEmpty from ErrInvalidSemver.
 func Validate() error {
 	if Version == "" {
-		return fmt.Errorf("version: Version is empty: ldflags injection may be missing")
+		return fmt.Errorf("version: ldflags injection may be missing: %w", ErrEmpty)
 	}
 	v := canonicalVersion(Version)
 	if !semver.IsValid(v) {
-		return fmt.Errorf("version: %q is not a valid semver string: %w", Version, errInvalidSemver)
+		return fmt.Errorf("version: %q is not a valid semver string: %w", Version, ErrInvalidSemver)
 	}
 	return nil
 }
-
-// errInvalidSemver is a sentinel used as the wrapped cause in Validate errors.
-var errInvalidSemver = fmt.Errorf("invalid semver")
 
 // IsDevBuild reports whether the binary was built without full ldflags
 // injection. It returns true when Commit or Date is "unknown", which is the

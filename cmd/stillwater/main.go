@@ -143,7 +143,9 @@ func run() error {
 	// A bad Version string should not brick the binary; it simply means
 	// auto-update semver comparisons will fail gracefully downstream.
 	if err := version.Validate(); err != nil {
-		slog.Warn("version validation failed; ldflags injection may be malformed", "error", err)
+		logger.Warn("version validation failed; auto-updater will be unable to compare versions. "+
+			"Run a release build via goreleaser, or check the -ldflags injection in the build pipeline",
+			"error", err)
 	}
 
 	if scaffoldErr != nil {
