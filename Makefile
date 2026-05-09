@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan
+.PHONY: build run test test-shuffle test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind generate generate-docs migrate favicon hooks check-openapi hadolint scan bruno-ci
 
 # Binary name
 BINARY=stillwater
@@ -127,6 +127,101 @@ clean:
 	rm -f $(BINARY)
 	rm -f coverage.out coverage.html
 	rm -f $(TAILWIND_OUTPUT)
+
+## bruno-ci: Build binary, run ephemeral server, execute Bruno API tests, clean up.
+# Required: npx / @usebruno/cli reachable. Admin credentials are ephemeral and
+# auto-generated; DO NOT set STILLWATER_ADMIN_PASSWORD to a real password here.
+#
+# Environment variables (all optional -- defaults are ephemeral and CI-safe):
+#   SW_PORT                  Port the ephemeral server binds to (default: random free port)
+#   STILLWATER_ADMIN_USER    Admin username created on first-run (default: ci-admin)
+#   STILLWATER_ADMIN_PASSWORD Admin password for the ephemeral run (default: ci-ephemeral-pw)
+#   BRUNO_RESULTS_DIR        Directory for HTML report (default: /tmp/bruno-results)
+#
+# The target exits non-zero if Bruno reports any test failures. The server PID
+# is tracked in a temp file and cleaned up on exit (success or failure).
+bruno-ci: build
+	@set -euo pipefail; \
+	SW_DB="$${TMPDIR:-/tmp}/stillwater-ci-$$$$.db"; \
+	PID_FILE="$${TMPDIR:-/tmp}/stillwater-ci-$$$$.pid"; \
+	RESULTS_DIR="$${BRUNO_RESULTS_DIR:-$${TMPDIR:-/tmp}/bruno-results}"; \
+	ADMIN_USER="$${STILLWATER_ADMIN_USER:-ci-admin}"; \
+	ADMIN_PASS="$${STILLWATER_ADMIN_PASSWORD:-ci-ephemeral-pw}"; \
+	\
+	cleanup() { \
+	  if [ -f "$$PID_FILE" ]; then \
+	    kill "$$(cat $$PID_FILE)" 2>/dev/null || true; \
+	    rm -f "$$PID_FILE" "$$SW_DB" "$$SW_DB-wal" "$$SW_DB-shm"; \
+	  fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	\
+	if [ -z "$${SW_PORT:-}" ]; then \
+	  SW_PORT=$$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)'); \
+	fi; \
+	\
+	echo "[bruno-ci] starting server on port $$SW_PORT (db=$$SW_DB)"; \
+	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
+	  ./$(BINARY) > "$${TMPDIR:-/tmp}/stillwater-ci-$$$$.log" 2>&1 & \
+	echo $$! > "$$PID_FILE"; \
+	\
+	echo "[bruno-ci] waiting for health endpoint and capturing CSRF token..."; \
+	READY=0; \
+	CSRF_TOKEN=""; \
+	for i in $$(seq 1 30); do \
+	  HEALTH_RESP=$$(curl -sf -D - "http://127.0.0.1:$$SW_PORT/api/v1/health" 2>/dev/null || true); \
+	  if echo "$$HEALTH_RESP" | grep -q '"status":"ok"'; then \
+	    CSRF_TOKEN=$$(echo "$$HEALTH_RESP" \
+	      | grep -i "^set-cookie:" \
+	      | grep "csrf_token=" \
+	      | sed 's/.*csrf_token=\([^;]*\).*/\1/' \
+	      | tr -d '[:space:]' || true); \
+	    READY=1; break; \
+	  fi; \
+	  sleep 2; \
+	done; \
+	if [ "$$READY" -eq 0 ]; then \
+	  echo "[bruno-ci] server did not become ready within 60s"; \
+	  cat "$${TMPDIR:-/tmp}/stillwater-ci-$$$$.log" || true; \
+	  exit 1; \
+	fi; \
+	if [ -z "$$CSRF_TOKEN" ]; then \
+	  echo "[bruno-ci] CSRF token not found in health response; cannot proceed"; \
+	  exit 1; \
+	fi; \
+	\
+	echo "[bruno-ci] creating admin account"; \
+	curl -sf -X POST "http://127.0.0.1:$$SW_PORT/api/v1/auth/setup" \
+	  -H "Content-Type: application/json" \
+	  -d "{\"username\":\"$$ADMIN_USER\",\"password\":\"$$ADMIN_PASS\"}" > /dev/null; \
+	\
+	echo "[bruno-ci] logging in and capturing session cookie"; \
+	SESSION_COOKIE=$$(curl -sf -D - \
+	  -X POST "http://127.0.0.1:$$SW_PORT/api/v1/auth/login" \
+	  -H "Content-Type: application/json" \
+	  -H "X-CSRF-Token: $$CSRF_TOKEN" \
+	  -d "{\"username\":\"$$ADMIN_USER\",\"password\":\"$$ADMIN_PASS\"}" \
+	  | grep -i "^set-cookie:" \
+	  | grep "session=" \
+	  | sed 's/.*session=\([^;]*\).*/\1/' \
+	  | tr -d '[:space:]' || true); \
+	if [ -z "$$SESSION_COOKIE" ]; then \
+	  echo "[bruno-ci] login failed -- could not extract session cookie"; \
+	  exit 1; \
+	fi; \
+	\
+	mkdir -p "$$RESULTS_DIR"; \
+	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT)"; \
+	cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1 run \
+	  --env ci \
+	  --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
+	  --env-var "sessionToken=$$SESSION_COOKIE" \
+	  --reporter-html "$$RESULTS_DIR/bruno-results.html" \
+	  -r \
+	  .; \
+	EXIT_CODE=$$?; \
+	echo "[bruno-ci] results written to $$RESULTS_DIR/bruno-results.html"; \
+	exit $$EXIT_CODE
 
 ## help: Show this help message
 help:

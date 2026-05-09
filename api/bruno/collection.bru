@@ -1,0 +1,18 @@
+meta {
+  name: Stillwater API
+}
+
+script:pre-request {
+  // Inject CSRF token on state-changing requests. The token is obtained during
+  // CI bootstrap (GET /api/v1/health extracts the csrf_token cookie) and
+  // exported as STILLWATER_CSRF_TOKEN. When the env var is absent (e.g. local
+  // interactive runs via the Bruno GUI), the header is omitted and the browser
+  // CSRF cookie flow takes over.
+  const csrfToken = bru.getProcessEnv('STILLWATER_CSRF_TOKEN');
+  if (csrfToken) {
+    const method = req.getMethod();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      req.setHeader('X-CSRF-Token', csrfToken);
+    }
+  }
+}
