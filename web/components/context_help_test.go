@@ -18,6 +18,9 @@ import (
 //go:embed _settings-anchors.txt
 var settingsAnchorsRaw string
 
+//go:embed _doc-anchors.txt
+var docAnchorsRaw string
+
 // repoRoot walks upward from this package until it finds go.mod, then returns
 // that directory. Tests use it to read repo-relative artifacts (the canonical
 // anchors file under docs/, the templ tree).
@@ -39,13 +42,12 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// loadAnchorSet parses the embedded anchors file into a set keyed by anchor
-// slug. Empty lines and comment lines (#) are ignored to permit the codegen
-// tool to add a header in future revisions without breaking this loader.
-func loadAnchorSet(t *testing.T) map[string]struct{} {
+// loadAnchorSet parses an embedded anchors file into a set. Empty lines and
+// comment lines (#) are ignored to permit codegen headers.
+func loadAnchorSet(t *testing.T, raw string) map[string]struct{} {
 	t.Helper()
 	set := make(map[string]struct{})
-	scanner := bufio.NewScanner(strings.NewReader(settingsAnchorsRaw))
+	scanner := bufio.NewScanner(strings.NewReader(raw))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -78,6 +80,24 @@ func TestSettingsAnchorsInSync(t *testing.T) {
 	}
 	if !bytes.Equal(canonical, []byte(settingsAnchorsRaw)) {
 		t.Errorf("web/components/_settings-anchors.txt is out of sync with docs/site/src/reference/_settings-anchors.txt; run `make generate-docs`")
+	}
+}
+
+// TestDocAnchorsInSync asserts the embedded copy at
+// web/components/_doc-anchors.txt matches the canonical copy under
+// docs/site/src/reference/. The gen-doc-anchors tool writes both; this test
+// catches drift if a contributor regenerates one without the other.
+func TestDocAnchorsInSync(t *testing.T) {
+	root := repoRoot(t)
+	canonical, err := os.ReadFile(filepath.Join(root, "docs", "site", "src", "reference", "_doc-anchors.txt"))
+	if err != nil {
+		// In a docs-stripped checkout the canonical file may be absent;
+		// skip rather than fail so trimmed-tree builds still pass tests.
+		t.Skipf("canonical doc-anchors file not present: %v", err)
+		return
+	}
+	if !bytes.Equal(canonical, []byte(docAnchorsRaw)) {
+		t.Errorf("web/components/_doc-anchors.txt is out of sync with docs/site/src/reference/_doc-anchors.txt; run `make generate-docs`")
 	}
 }
 
@@ -123,8 +143,13 @@ var nonLiteralAnchorAllowlist = map[string]map[string]struct{}{
 // trip the matcher. Drift here surfaces as a broken "Read more" link in
 // the rendered popover; failing in CI is preferable to shipping a 404
 // to the user.
+//
+// Routing: if the anchor contains a slash it is looked up in the doc-anchors
+// set (cross-section docs pages); otherwise in the settings-anchors set
+// (legacy settings-by-tab behavior).
 func TestContextHelpAnchors(t *testing.T) {
-	anchors := loadAnchorSet(t)
+	settingsAnchors := loadAnchorSet(t, settingsAnchorsRaw)
+	docAnchors := loadAnchorSet(t, docAnchorsRaw)
 	root := repoRoot(t)
 
 	var unknown []string
@@ -206,9 +231,21 @@ func TestContextHelpAnchors(t *testing.T) {
 				if anchor == "" {
 					return true
 				}
+				// Route to the appropriate anchor set based on whether the
+				// anchor contains a slash (cross-section doc path) or not
+				// (legacy settings-by-tab slug).
+				var anchors map[string]struct{}
+				var setName string
+				if strings.Contains(anchor, "/") {
+					anchors = docAnchors
+					setName = "web/components/_doc-anchors.txt"
+				} else {
+					anchors = settingsAnchors
+					setName = "web/components/_settings-anchors.txt"
+				}
 				if _, ok := anchors[anchor]; !ok {
 					pos := fset.Position(lit.Pos())
-					unknown = append(unknown, pos.String()+": "+anchor)
+					unknown = append(unknown, pos.String()+": "+anchor+" (not in "+setName+")")
 				}
 				return true
 			})
@@ -219,7 +256,7 @@ func TestContextHelpAnchors(t *testing.T) {
 		t.Fatalf("walk web/: %v", walkErr)
 	}
 	if len(unknown) > 0 {
-		t.Fatalf("ContextHelp call sites reference unknown settings anchors:\n  %s\n\nFix: pick an existing slug from web/components/_settings-anchors.txt or add a settings panel/i18n entry that the codegen will emit.", strings.Join(unknown, "\n  "))
+		t.Fatalf("ContextHelp call sites reference unknown anchors:\n  %s\n\nFix: pick an existing slug from the appropriate anchors file or run `make generate-docs`.", strings.Join(unknown, "\n  "))
 	}
 }
 
@@ -239,9 +276,10 @@ func TestContextHelpRender_NoDocAnchor(t *testing.T) {
 	}
 }
 
-// TestContextHelpRender_WithDocAnchor verifies the popover renders the
-// "Read more" link pointing at the docs site when docAnchor is set.
-func TestContextHelpRender_WithDocAnchor(t *testing.T) {
+// TestContextHelpRender_WithSettingsAnchor verifies the popover renders the
+// "Read more" link pointing at the settings reference page when the docAnchor
+// is a plain slug (no slash) -- the legacy Settings call-site behavior.
+func TestContextHelpRender_WithSettingsAnchor(t *testing.T) {
 	var buf bytes.Buffer
 	if err := ContextHelp("help-test", "Test", "Body text", "settings-general-base-path").Render(context.Background(), &buf); err != nil {
 		t.Fatalf("render: %v", err)
@@ -252,5 +290,27 @@ func TestContextHelpRender_WithDocAnchor(t *testing.T) {
 	}
 	if !strings.Contains(out, "https://sydlexius.github.io/stillwater/reference/settings-by-tab/#settings-general-base-path") {
 		t.Errorf("expected docs deep link; got: %s", out)
+	}
+}
+
+// TestContextHelpRender_WithDocPathAnchor verifies the popover renders the
+// "Read more" link pointing at a cross-section docs page when the docAnchor
+// contains a slash (the new non-settings path). The URL must NOT contain the
+// "reference/settings-by-tab/" infix.
+func TestContextHelpRender_WithDocPathAnchor(t *testing.T) {
+	var buf bytes.Buffer
+	if err := ContextHelp("help-test", "Test", "Body text", "core-concepts/field-locks#layer-1-artist-lock-the-big-switch").Render(context.Background(), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "sw-context-help-link") {
+		t.Errorf("expected sw-context-help-link class; got: %s", out)
+	}
+	wantURL := "https://sydlexius.github.io/stillwater/core-concepts/field-locks#layer-1-artist-lock-the-big-switch"
+	if !strings.Contains(out, wantURL) {
+		t.Errorf("expected docs deep link %q; got: %s", wantURL, out)
+	}
+	if strings.Contains(out, "reference/settings-by-tab/") {
+		t.Errorf("cross-section docAnchor must not route through settings-by-tab; got: %s", out)
 	}
 }

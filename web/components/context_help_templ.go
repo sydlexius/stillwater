@@ -16,11 +16,14 @@ import templruntime "github.com/a-h/templ/runtime"
 //   - id:        a unique DOM id for this help icon (used to associate aria attributes)
 //   - label:     a short topic label used in the aria-label (e.g. "OIDC Issuer URL")
 //   - text:      1-3 sentences of help text shown in the popover
-//   - docAnchor: optional anchor slug on the settings reference page. When
-//     non-empty, a "Read more" link appears in the popover targeting
-//     https://sydlexius.github.io/stillwater/reference/settings-by-tab/#<docAnchor>.
-//     The slug must exist in docs/site/src/reference/_settings-anchors.txt;
-//     the contract is enforced by TestContextHelpAnchors.
+//   - docAnchor: optional docs anchor. Two forms:
+//     1. A plain slug (no slash): links into the Settings reference page at
+//     https://sydlexius.github.io/stillwater/reference/settings-by-tab/#<slug>.
+//     Slug must exist in web/components/_settings-anchors.txt.
+//     2. A path-and-fragment (contains a slash): treated as a full path
+//     relative to the docs root (e.g. "core-concepts/field-locks#layer-1").
+//     Slug must exist in web/components/_doc-anchors.txt.
+//     Both sets are enforced by TestContextHelpAnchors.
 func ContextHelp(id, label, text, docAnchor string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -49,7 +52,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 17, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 20, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -62,7 +65,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs("Help: " + label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 21, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 24, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -75,7 +78,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(id + "-popover")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 23, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 26, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -88,7 +91,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(id + "-popover")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 28, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 31, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -101,7 +104,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 33, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 36, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -117,9 +120,9 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 templ.SafeURL
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("https://sydlexius.github.io/stillwater/reference/settings-by-tab/#" + docAnchor))
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(contextHelpDocURL(docAnchor)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 36, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 39, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -132,7 +135,7 @@ func ContextHelp(id, label, text, docAnchor string) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "help.read_more"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 40, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_help.templ`, Line: 43, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -176,7 +179,7 @@ func ContextHelpScript() templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<script>\n\t\t(function () {\n\t\t\t// Guard: only register listeners once per page, even if this script\n\t\t\t// block is injected by multiple sub-templates.\n\t\t\tif (document.documentElement.dataset.swContextHelpInit) return;\n\t\t\tdocument.documentElement.dataset.swContextHelpInit = '1';\n\n\t\t\t// Close any open popover that is not `btn`.\n\t\t\tfunction swContextHelpCloseOthers(btn) {\n\t\t\t\tdocument.querySelectorAll('.sw-context-help-btn[aria-expanded=\"true\"]').forEach(function (b) {\n\t\t\t\t\tif (b !== btn) {\n\t\t\t\t\t\tb.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\tvar tip = document.getElementById(b.getAttribute('aria-controls'));\n\t\t\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Toggle the popover for `btn`.\n\t\t\twindow.swContextHelpToggle = function (btn) {\n\t\t\t\tvar open = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\tswContextHelpCloseOthers(open ? null : btn);\n\t\t\t\tif (open) {\n\t\t\t\t\tbtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar tip = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t\t} else {\n\t\t\t\t\tbtn.setAttribute('aria-expanded', 'true');\n\t\t\t\t\tvar tip2 = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\t\tif (tip2) tip2.setAttribute('aria-hidden', 'false');\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Close the popover attached to `btn`.\n\t\t\twindow.swContextHelpClose = function (btn) {\n\t\t\t\tbtn.setAttribute('aria-expanded', 'false');\n\t\t\t\tvar tip = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t};\n\n\t\t\t// Close all open popovers when clicking outside any help icon.\n\t\t\tdocument.addEventListener('click', function (e) {\n\t\t\t\tif (!e.target.closest('.sw-context-help')) {\n\t\t\t\t\tswContextHelpCloseOthers(null);\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Close on Escape from anywhere.\n\t\t\tdocument.addEventListener('keydown', function (e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\tswContextHelpCloseOthers(null);\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<script>\n\t\t(function () {\n\t\t\t// applyNoTabIndex sets tabindex=-1 on help icons whose wrapper opts\n\t\t\t// out of the tab order (e.g. inside an ARIA role=menu, where only\n\t\t\t// role=menuitem descendants should be tabbable). Mouse click still\n\t\t\t// works. This runs unconditionally on every script injection so\n\t\t\t// that ContextHelps rendered later (HTMX-loaded sub-templates with\n\t\t\t// new .sw-help-no-tab wrappers) still get the contract applied --\n\t\t\t// the once-per-page init guard below would otherwise skip them.\n\t\t\tfunction applyNoTabIndex() {\n\t\t\t\tdocument.querySelectorAll('.sw-help-no-tab .sw-context-help-btn').forEach(function (b) {\n\t\t\t\t\tb.tabIndex = -1;\n\t\t\t\t});\n\t\t\t}\n\t\t\tapplyNoTabIndex();\n\n\t\t\t// Guard: only register the global listeners once per page, even\n\t\t\t// if this script block is injected by multiple sub-templates.\n\t\t\tif (document.documentElement.dataset.swContextHelpInit) return;\n\t\t\tdocument.documentElement.dataset.swContextHelpInit = '1';\n\n\t\t\t// Close any open popover that is not `btn`.\n\t\t\tfunction swContextHelpCloseOthers(btn) {\n\t\t\t\tdocument.querySelectorAll('.sw-context-help-btn[aria-expanded=\"true\"]').forEach(function (b) {\n\t\t\t\t\tif (b !== btn) {\n\t\t\t\t\t\tb.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\tvar tip = document.getElementById(b.getAttribute('aria-controls'));\n\t\t\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// Toggle the popover for `btn`.\n\t\t\twindow.swContextHelpToggle = function (btn) {\n\t\t\t\tvar open = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\tswContextHelpCloseOthers(open ? null : btn);\n\t\t\t\tif (open) {\n\t\t\t\t\tbtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar tip = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t\t} else {\n\t\t\t\t\tbtn.setAttribute('aria-expanded', 'true');\n\t\t\t\t\tvar tip2 = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\t\tif (tip2) tip2.setAttribute('aria-hidden', 'false');\n\t\t\t\t}\n\t\t\t};\n\n\t\t\t// Close the popover attached to `btn`.\n\t\t\twindow.swContextHelpClose = function (btn) {\n\t\t\t\tbtn.setAttribute('aria-expanded', 'false');\n\t\t\t\tvar tip = document.getElementById(btn.getAttribute('aria-controls'));\n\t\t\t\tif (tip) tip.setAttribute('aria-hidden', 'true');\n\t\t\t};\n\n\t\t\t// Close all open popovers when clicking outside any help icon.\n\t\t\tdocument.addEventListener('click', function (e) {\n\t\t\t\tif (!e.target.closest('.sw-context-help')) {\n\t\t\t\t\tswContextHelpCloseOthers(null);\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Close on Escape from anywhere.\n\t\t\tdocument.addEventListener('keydown', function (e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\tswContextHelpCloseOthers(null);\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

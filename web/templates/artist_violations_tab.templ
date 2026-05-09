@@ -3,6 +3,7 @@ package templates
 import (
 	"fmt"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/web/components"
 	"strconv"
 )
 
@@ -16,14 +17,22 @@ type ArtistViolationsTabData struct {
 // violations tab. Loaded lazily via HTMX when the tab is first shown.
 templ ArtistViolationsTab(data ArtistViolationsTabData) {
 	<div id={ "violations-content-" + data.ArtistID } class="space-y-4">
-		<h2 class="text-lg font-semibold">
-			{ t(ctx, "artist.violations_title") }
-			if len(data.Violations) > 0 {
-				<span class="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-					({ strconv.Itoa(len(data.Violations)) })
-				</span>
-			}
-		</h2>
+		<div class="flex items-center gap-2">
+			<h2 class="text-lg font-semibold">
+				{ t(ctx, "artist.violations_title") }
+				if len(data.Violations) > 0 {
+					<span class="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+						({ strconv.Itoa(len(data.Violations)) })
+					</span>
+				}
+			</h2>
+			@components.ContextHelp(
+				"help-violations-overview",
+				t(ctx, "artist.help.violations_overview.label"),
+				t(ctx, "artist.help.violations_overview"),
+				"core-concepts/rules#what-rules-check",
+			)
+		</div>
 		if len(data.Violations) == 0 {
 			// Empty state
 			<div class="sw-card rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-8 text-center">
@@ -36,7 +45,22 @@ templ ArtistViolationsTab(data ArtistViolationsTabData) {
 					<thead class="bg-gray-50 dark:bg-gray-800">
 						<tr>
 							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.rule") }</th>
-							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.severity") }</th>
+							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+								<span class="inline-flex items-center gap-1">
+									{ t(ctx, "common.severity") }
+									// Empty docAnchor: the severity-bucket taxonomy is described in the
+									// tooltip body; no docs section currently covers it specifically.
+									// core-concepts/rules#what-rules-check is about rule categories
+									// (NFO/Image/Metadata), not severity buckets, so a Read-more link
+									// would misdirect. Same pattern as history.help.sources.
+									@components.ContextHelp(
+										"help-severity-column",
+										t(ctx, "artist.help.severity_column.label"),
+										t(ctx, "artist.help.severity_column"),
+										"",
+									)
+								</span>
+							</th>
 							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.message") }</th>
 							<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.age") }</th>
 							<th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{ t(ctx, "common.actions") }</th>

@@ -14,6 +14,15 @@ import (
 // with a header, count badge, and either the image(s) or an empty-state placeholder.
 templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, basePath string) {
 	<div class="space-y-8">
+		// Intro help: one ? explains the four-slot model and platform naming.
+		<p class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+			@components.ContextHelp(
+				"help-images-tab",
+				t(ctx, "artist.help.images_tab.label"),
+				t(ctx, "artist.help.images_tab"),
+				"core-concepts/images#the-four-slots",
+			)
+		</p>
 		// -- Thumbnail section (1:1) --
 		@imageSectionWithAction(
 			img.ImageTermFor("thumb", profileName),
