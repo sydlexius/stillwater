@@ -32,6 +32,8 @@ import (
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 const (
@@ -281,10 +283,8 @@ func writeOrCheck(dest string, anchors []string, checkOnly bool) error {
 		return fmt.Errorf("%s is stale; run `make generate-docs` to regenerate", filepath.ToSlash(dest))
 	}
 
-	// Ensure parent directory exists.
-	if mkdirErr := os.MkdirAll(filepath.Dir(dest), 0o750); mkdirErr != nil {
-		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), mkdirErr)
-	}
-
-	return os.WriteFile(dest, []byte(body), 0o644) //nolint:gosec // G306: 0644 is appropriate for a generated docs artifact
+	// Atomic write (tmp/bak/rename) so an interrupted run can never leave a
+	// partial anchors file on disk. WriteFileAtomic creates parent dirs as
+	// needed, so no separate MkdirAll is required.
+	return filesystem.WriteFileAtomic(dest, []byte(body), 0o644)
 }

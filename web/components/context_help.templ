@@ -56,8 +56,22 @@ templ ContextHelp(id, label, text, docAnchor string) {
 templ ContextHelpScript() {
 	<script>
 		(function () {
-			// Guard: only register listeners once per page, even if this script
-			// block is injected by multiple sub-templates.
+			// applyNoTabIndex sets tabindex=-1 on help icons whose wrapper opts
+			// out of the tab order (e.g. inside an ARIA role=menu, where only
+			// role=menuitem descendants should be tabbable). Mouse click still
+			// works. This runs unconditionally on every script injection so
+			// that ContextHelps rendered later (HTMX-loaded sub-templates with
+			// new .sw-help-no-tab wrappers) still get the contract applied --
+			// the once-per-page init guard below would otherwise skip them.
+			function applyNoTabIndex() {
+				document.querySelectorAll('.sw-help-no-tab .sw-context-help-btn').forEach(function (b) {
+					b.tabIndex = -1;
+				});
+			}
+			applyNoTabIndex();
+
+			// Guard: only register the global listeners once per page, even
+			// if this script block is injected by multiple sub-templates.
 			if (document.documentElement.dataset.swContextHelpInit) return;
 			document.documentElement.dataset.swContextHelpInit = '1';
 
@@ -106,13 +120,6 @@ templ ContextHelpScript() {
 				if (e.key === 'Escape') {
 					swContextHelpCloseOthers(null);
 				}
-			});
-
-			// Apply tabindex=-1 to help icons whose wrapper opts out of the tab
-			// order (e.g. inside an ARIA role=menu, where only role=menuitem
-			// descendants should be tabbable). Mouse click still works.
-			document.querySelectorAll('.sw-help-no-tab .sw-context-help-btn').forEach(function (b) {
-				b.tabIndex = -1;
 			});
 		})();
 	</script>

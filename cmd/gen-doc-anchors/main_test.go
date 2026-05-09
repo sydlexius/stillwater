@@ -36,8 +36,9 @@ func TestSlugify(t *testing.T) {
 		// Heading with colon and comma.
 		{"Resolution and aspect: rule-driven, configurable", "resolution-and-aspect-rule-driven-configurable"},
 		// Accented characters must be stripped (NFKD normalization drops the
-		// combining diacritic after decomposition).
-		{"Cafe au lait", "cafe-au-lait"},
+		// combining diacritic after decomposition). Input intentionally
+		// contains a non-ASCII rune so the NFKD branch is actually exercised.
+		{"Café au lait", "cafe-au-lait"},
 		// Underscore is preserved (python-markdown's slugify keeps it via \w);
 		// only whitespace and hyphens collapse to a single hyphen.
 		{"snake_case heading", "snake_case-heading"},
