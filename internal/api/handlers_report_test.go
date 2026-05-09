@@ -746,23 +746,22 @@ func seedHealthSnapshot(t *testing.T, db *sql.DB, id string, recordedAt time.Tim
 }
 
 // TestHandleReportHealthHistory_DateOnlyParams verifies that date-only query
-// parameters (time.DateOnly format) drive correct from/to filtering. Seeds
-// snapshots before, within, and after the queried range; asserts only the
-// in-range snapshots are returned and their scores match the seeded values.
+// parameters (time.DateOnly format) drive correct from/to filtering, including
+// the inclusive end-of-day contract: "to=2026-12-31" must include any snapshot
+// recorded during 2026-12-31 (right up to 23:59:59Z) and exclude snapshots at
+// 2027-01-01T00:00:00Z and later. Seeds snapshots before, within, at the
+// boundary, and after the queried range.
 func TestHandleReportHealthHistory_DateOnlyParams(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
 
-	// Seeded snapshots: 2 outside range (50, 80), 2 inside (60, 70).
-	// Query window: 2026-01-01 to 2026-12-31 (date-only -> midnight UTC bounds).
-	// In-range snapshots are placed well clear of the boundary instants so the
-	// date-only and RFC3339 tests can share the same data without boundary
-	// edge-case differences (date-only "to" is 2026-12-31T00:00:00Z while
-	// RFC3339 "to" is end-of-day).
+	// Seeded snapshots: 2 outside range (50, 80), 3 inside (60, 70, 75 at
+	// end-of-day). Query window: 2026-01-01 to 2026-12-31 (date-only).
 	seedHealthSnapshot(t, r.db, "before", time.Date(2025, 12, 15, 0, 0, 0, 0, time.UTC), 50.0)
 	seedHealthSnapshot(t, r.db, "in-1", time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC), 60.0)
 	seedHealthSnapshot(t, r.db, "in-2", time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), 70.0)
-	seedHealthSnapshot(t, r.db, "after", time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC), 80.0)
+	seedHealthSnapshot(t, r.db, "end-of-day", time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC), 75.0)
+	seedHealthSnapshot(t, r.db, "after", time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), 80.0)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health/history?from=2026-01-01&to=2026-12-31", nil)
 	w := httptest.NewRecorder()
@@ -782,22 +781,26 @@ func TestHandleReportHealthHistory_DateOnlyParams(t *testing.T) {
 	if !ok {
 		t.Fatal("response missing 'history' key")
 	}
-	if len(history) != 2 {
-		t.Fatalf("history length = %d, want 2 (only in-range snapshots); got: %+v", len(history), history)
+	if len(history) != 3 {
+		t.Fatalf("history length = %d, want 3 (only in-range snapshots); got: %+v", len(history), history)
 	}
-	// Service returns ascending by recorded_at, so in-1 (March) precedes in-2 (September).
+	// Service returns ascending by recorded_at: in-1 (March), in-2 (September), end-of-day (Dec 31 23:59:59).
 	if history[0].Score != 60.0 {
 		t.Errorf("history[0].Score = %v, want 60.0 (in-1)", history[0].Score)
 	}
 	if history[1].Score != 70.0 {
 		t.Errorf("history[1].Score = %v, want 70.0 (in-2)", history[1].Score)
 	}
+	if history[2].Score != 75.0 {
+		t.Errorf("history[2].Score = %v, want 75.0 (end-of-day)", history[2].Score)
+	}
 }
 
 // TestHandleReportHealthHistory_RFC3339Params verifies the primary RFC3339
 // parse branch with the same filtering-semantics assertions as the date-only
 // test. Same seeded data, equivalent query window expressed as full RFC3339
-// timestamps.
+// timestamps -- both code paths must enforce the same inclusive day-range
+// contract (end-of-day snapshot included, start-of-next-day snapshot excluded).
 func TestHandleReportHealthHistory_RFC3339Params(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouter(t)
@@ -805,7 +808,8 @@ func TestHandleReportHealthHistory_RFC3339Params(t *testing.T) {
 	seedHealthSnapshot(t, r.db, "before", time.Date(2025, 12, 15, 0, 0, 0, 0, time.UTC), 50.0)
 	seedHealthSnapshot(t, r.db, "in-1", time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC), 60.0)
 	seedHealthSnapshot(t, r.db, "in-2", time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), 70.0)
-	seedHealthSnapshot(t, r.db, "after", time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC), 80.0)
+	seedHealthSnapshot(t, r.db, "end-of-day", time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC), 75.0)
+	seedHealthSnapshot(t, r.db, "after", time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), 80.0)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/reports/health/history?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z", nil)
@@ -826,14 +830,17 @@ func TestHandleReportHealthHistory_RFC3339Params(t *testing.T) {
 	if !ok {
 		t.Fatal("response missing 'history' key")
 	}
-	if len(history) != 2 {
-		t.Fatalf("history length = %d, want 2 (only in-range snapshots); got: %+v", len(history), history)
+	if len(history) != 3 {
+		t.Fatalf("history length = %d, want 3 (only in-range snapshots); got: %+v", len(history), history)
 	}
 	if history[0].Score != 60.0 {
 		t.Errorf("history[0].Score = %v, want 60.0 (in-1)", history[0].Score)
 	}
 	if history[1].Score != 70.0 {
 		t.Errorf("history[1].Score = %v, want 70.0 (in-2)", history[1].Score)
+	}
+	if history[2].Score != 75.0 {
+		t.Errorf("history[2].Score = %v, want 75.0 (end-of-day)", history[2].Score)
 	}
 }
 

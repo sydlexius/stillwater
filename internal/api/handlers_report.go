@@ -141,7 +141,11 @@ func (r *Router) handleReportHealthHistory(w http.ResponseWriter, req *http.Requ
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			to = t
 		} else if t, err := time.Parse(time.DateOnly, v); err == nil {
-			to = t
+			// Date-only `to` is inclusive of the entire day. Without this
+			// adjustment "to=2026-12-31" would parse to 2026-12-31T00:00:00Z
+			// and the SQL BETWEEN clause would exclude any snapshot recorded
+			// later that day, which is surprising for a day-range query.
+			to = t.Add(24*time.Hour - time.Second)
 		}
 	}
 
