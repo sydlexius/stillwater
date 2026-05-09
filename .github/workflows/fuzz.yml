@@ -1,0 +1,128 @@
+# Scheduled fuzz workflow
+#
+# Triggers: weekly cron on Monday 06:00 UTC + manual workflow_dispatch.
+#
+# Schedule choice (Monday 06:00 UTC):
+#   - Offset from the existing security.yml cron (Monday 03:30 UTC) by 2.5 h
+#     so the two weekly jobs do not compete for ubuntu-latest capacity.
+#   - Morning UTC means failures appear early in the European/US workday.
+#
+# Discovery approach -- static matrix:
+#   The four fuzz targets are enumerated explicitly rather than via a
+#   runtime `grep | jq` dynamic approach. Reasons:
+#     1. Dynamic enumeration requires a separate "discover" job, adding
+#        latency and complexity for four targets.
+#     2. A static matrix is self-documenting and easy to review in CI.
+#     3. When M49 W3 lands new targets, adding a line is a one-line PR
+#        that goes through normal review -- intentional, not accidental.
+#   The trade-off is acceptable at the current target count (<10).
+#
+# Cache strategy:
+#   - Key: "fuzz-corpus-<package>-<fuzz_func>-<hash of go.sum>"
+#     go.sum changing (new/upgraded deps) busts the corpus to avoid
+#     replaying inputs that exercised old code paths against new code.
+#     Per-target keys keep concurrent matrix entries from stomping each
+#     other's save-cache.
+#   - restore-keys fall back to the previous corpus snapshot for the
+#     same (package, fuzz_func) pair so each target accumulates safely
+#     between go.sum bumps.
+#   - Cache paths per matrix entry:
+#       ~/.cache/go-build               -- the Go build cache (speeds up -fuzz compile)
+#       <package>/testdata/fuzz/<FuzzName>
+#                                       -- accumulated corpus entries for one
+#                                          target (written by go test -fuzz when
+#                                          new interesting inputs are found)
+#
+# Crash handling:
+#   - go test -fuzz exits non-zero on a crash, which fails the matrix entry.
+#   - The testdata/fuzz/<FuzzName>/ directory for the failing package is
+#     uploaded as a named artifact so developers can reproduce locally:
+#       go test -run=FuzzXxx/corpus-file ./internal/<pkg>/...
+#   - Automatic issue creation is deliberately omitted; CI failure + artifact
+#     is sufficient signal without the complexity of dedup / rate-limiting.
+
+name: Fuzz
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.fuzz_func }})
+    runs-on: ubuntu-latest
+    # Belt-and-braces against a fuzz target hanging outside the per-test
+    # -fuzztime budget; 15 minutes is well above the expected duration of
+    # 60s per matrix entry plus checkout/setup overhead.
+    timeout-minutes: 15
+    strategy:
+      # Let every target run even when one crashes so we collect all
+      # failing corpora in a single pass.
+      fail-fast: false
+      matrix:
+        include:
+          - package: internal/nfo
+            fuzz_func: FuzzParse
+          - package: internal/nfo
+            fuzz_func: FuzzParseWriteRoundTrip
+          - package: internal/image
+            fuzz_func: FuzzPerceptualHash
+          - package: internal/image
+            fuzz_func: FuzzPerceptualHashDeterminism
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          # Disable the built-in module/build cache so actions/cache below
+          # owns the cache lifecycle (keyed per package + go.sum hash).
+          cache: false
+
+      - name: Restore fuzz corpus and build cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          # Per-fuzz-function paths and keys: two matrix entries per package
+          # run concurrently and each writes new corpus into testdata/fuzz/<name>/.
+          # Sharing a path or key would let one job's save-cache stomp the
+          # other's new entries.
+          path: |
+            ~/.cache/go-build
+            ${{ matrix.package }}/testdata/fuzz/${{ matrix.fuzz_func }}
+          # Bust corpus when go.sum changes: new/upgraded deps may open or
+          # close code paths, making old inputs misleading.
+          key: fuzz-corpus-${{ matrix.package }}-${{ matrix.fuzz_func }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.package }}-${{ matrix.fuzz_func }}-
+
+      - name: Run fuzz target (${{ matrix.fuzz_func }})
+        run: |
+          go test \
+            -fuzz=^${{ matrix.fuzz_func }}$ \
+            -fuzztime=60s \
+            -run=^$ \
+            ./${{ matrix.package }}/...
+
+      - name: Upload crash corpus on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crash-${{ matrix.fuzz_func }}
+          # Upload the entire fuzz testdata directory for the failing package.
+          # This includes both the seed corpus and any new inputs that triggered
+          # the crash so a developer can reproduce with:
+          #   go test -run=FuzzXxx/corpus-entry ./internal/<pkg>/...
+          path: ${{ matrix.package }}/testdata/fuzz/${{ matrix.fuzz_func }}
+          if-no-files-found: warn
+          retention-days: 90
