@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"golang.org/x/mod/semver"
+	"golang.org/x/net/http/httpguts"
 )
 
 // ErrEmpty is returned when Version is the empty string -- typically because
@@ -74,10 +75,22 @@ func UserAgent(prefix, repoURL string) string {
 	if prefix == "" {
 		prefix = "stillwater"
 	}
-	if repoURL != "" {
-		return fmt.Sprintf("%s/%s (%s)", prefix, Version, repoURL)
+	// Defensive: ldflags injection from a CI pipeline that runs e.g.
+	// `git describe | tr ...` can leak newlines or control characters into
+	// Version. net/http.Client.Do() refuses to send headers whose values
+	// contain such characters, which would silently fail every outbound
+	// request to MusicBrainz, Wikipedia, Discogs, the updater, etc. Validate()
+	// at startup logs a warning, but does not abort -- so we still need a
+	// safe fallback here. Empty Version also falls back so the header is
+	// never just "stillwater/".
+	uaVersion := Version
+	if uaVersion == "" || !httpguts.ValidHeaderFieldValue(uaVersion) {
+		uaVersion = "unknown"
 	}
-	return prefix + "/" + Version
+	if repoURL != "" {
+		return fmt.Sprintf("%s/%s (%s)", prefix, uaVersion, repoURL)
+	}
+	return prefix + "/" + uaVersion
 }
 
 // canonicalVersion returns v with a leading "v" if it is not already present.

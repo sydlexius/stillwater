@@ -226,3 +226,22 @@ func TestUserAgent_SubsystemPrefix(t *testing.T) {
 		t.Errorf("UserAgent subsystem prefix should be 'Stillwater-Webhook/1.0.6', got: %q", ua)
 	}
 }
+
+// Header-unsafe Version values must be replaced with "unknown" so that
+// net/http.Client.Do() does not reject every outbound request. Whitespace
+// contamination is the realistic ldflags failure mode (newline leak from
+// `git describe | tr` in CI), but we also pin null-byte and control-char
+// rejection because those are the canonical "unsafe header value" cases.
+func TestUserAgent_FallsBackForHeaderUnsafeVersion(t *testing.T) {
+	cases := []string{"1.0.6\n", "1.0.6\r", "1.0.6\x00", ""}
+	for _, raw := range cases {
+		withVersion(t, raw, "abc1234", "2026-05-09")
+		ua := version.UserAgent("Stillwater", "")
+		if raw != "" && strings.Contains(ua, raw) {
+			t.Errorf("UserAgent leaked unsafe Version %q into header: %q", raw, ua)
+		}
+		if !strings.Contains(ua, "unknown") {
+			t.Errorf("UserAgent should fall back to 'unknown' for unsafe Version %q, got: %q", raw, ua)
+		}
+	}
+}
