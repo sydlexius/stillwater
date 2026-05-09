@@ -18,15 +18,20 @@
 #   The trade-off is acceptable at the current target count (<10).
 #
 # Cache strategy:
-#   - Key: "fuzz-corpus-<package>-<hash of go.sum>"
+#   - Key: "fuzz-corpus-<package>-<fuzz_func>-<hash of go.sum>"
 #     go.sum changing (new/upgraded deps) busts the corpus to avoid
 #     replaying inputs that exercised old code paths against new code.
+#     Per-target keys keep concurrent matrix entries from stomping each
+#     other's save-cache.
 #   - restore-keys fall back to the previous corpus snapshot for the
-#     same package so the corpus still accumulates between go.sum bumps.
+#     same (package, fuzz_func) pair so each target accumulates safely
+#     between go.sum bumps.
 #   - Cache paths per matrix entry:
-#       ~/.cache/go-build       -- the Go build cache (speeds up -fuzz compile)
-#       <package>/testdata/fuzz -- accumulated corpus entries (written by go test
-#                                  -fuzz when new interesting inputs are found)
+#       ~/.cache/go-build               -- the Go build cache (speeds up -fuzz compile)
+#       <package>/testdata/fuzz/<FuzzName>
+#                                       -- accumulated corpus entries for one
+#                                          target (written by go test -fuzz when
+#                                          new interesting inputs are found)
 #
 # Crash handling:
 #   - go test -fuzz exits non-zero on a crash, which fails the matrix entry.
