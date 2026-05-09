@@ -19,6 +19,8 @@ on:
       - 'internal/api/**'
       - 'internal/database/migrations/**'
       - 'cmd/stillwater/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'Makefile'
       - '.github/workflows/bruno-ci.yml'
   push:
@@ -28,6 +30,8 @@ on:
       - 'internal/api/**'
       - 'internal/database/migrations/**'
       - 'cmd/stillwater/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'Makefile'
       - '.github/workflows/bruno-ci.yml'
   workflow_dispatch:
