@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // HistoryTabData holds data for the history tab on the artist detail page.
@@ -22,6 +23,18 @@ type HistoryTabData struct {
 // This component is loaded lazily via HTMX when the tab is selected.
 templ ArtistHistoryTab(data HistoryTabData) {
 	<div id="history-tab-content" class="space-y-4">
+		// Intro line with ContextHelp explaining the Source column taxonomy.
+		// docAnchor is empty: no dedicated history docs page exists yet; the
+		// tooltip prose explains the source tokens without a Read-more link.
+		<p class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+			{ t(ctx, "history.intro_paragraph") }
+			@components.ContextHelp(
+				"help-history-sources",
+				t(ctx, "history.help.sources.label"),
+				t(ctx, "history.help.sources"),
+				"",
+			)
+		</p>
 		if len(data.Changes) == 0 && data.Offset == 0 {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-4 text-center">{ t(ctx, "history.empty_state") }</p>
 		} else {

@@ -63,4 +63,14 @@ if [ -f docs/site/src/reference/settings-by-tab.md ]; then
   fi
 fi
 
+# Verify the doc-anchors file is in sync with the docs tree. The generator
+# runs in -check mode and exits non-zero if regeneration is needed. Skip
+# silently if neither anchors file is present (e.g., a docs-stripped checkout).
+if [ -f docs/site/src/reference/_doc-anchors.txt ] || [ -f web/components/_doc-anchors.txt ]; then
+  if ! go run ./cmd/gen-doc-anchors -check; then
+    echo "ERROR: _doc-anchors.txt is stale. Run: make generate-docs"
+    exit 1
+  fi
+fi
+
 echo "Generated files: OK"

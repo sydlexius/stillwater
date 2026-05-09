@@ -232,6 +232,12 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									<span class="opacity-70">({ data.Artist.LockSource })</span>
 								}
 							</span>
+							@components.ContextHelp(
+								"help-locked-chip-"+data.Artist.ID,
+								t(ctx, "artist.help.locked_chip.label"),
+								t(ctx, "artist.help.locked_chip"),
+								"core-concepts/field-locks#layer-1-artist-lock-the-big-switch",
+							)
 						}
 						// Actions dropdown button
 						<div class="relative inline-flex" data-context-menu={ "artist-actions-" + data.Artist.ID }>
@@ -252,33 +258,61 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							</button>
 							<div
 								id={ "ctx-panel-artist-actions-" + data.Artist.ID }
-								class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+								class="hidden absolute right-0 top-full z-40 mt-1 min-w-[14rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
 								role="menu"
 							>
-								<button
-									type="button"
-									role="menuitem"
-									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
-									hx-target="#refresh-panel"
-									hx-swap="innerHTML"
-									hx-indicator="#rules-spinner"
-								>
-									@components.IconPlay("h-4 w-4 text-gray-400")
-									{ t(ctx, "artist.run_rules") }
-								</button>
-								<button
-									type="button"
-									role="menuitem"
-									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-									hx-target="#refresh-panel"
-									hx-swap="innerHTML"
-									hx-indicator="#refresh-spinner"
-								>
-									@components.IconArrowPath("h-4 w-4 text-gray-400")
-									{ t(ctx, "artist.refresh_metadata") }
-								</button>
+								// Help icons in this menu are siblings (not children) of their
+								// HTMX buttons, so clicking ? does not fire the hx-post. The
+								// sw-help-no-tab class on the wrapper span suppresses the inner
+								// button's tab stop (post-applied by ContextHelpScript) so
+								// keyboard menu navigation goes Run rules -> Refresh metadata
+								// without interleaving help icons. ARIA role=menu requires only
+								// menuitem descendants; this keeps the focus order coherent
+								// without restructuring the menu DOM.
+								<div class="flex items-center">
+									<button
+										type="button"
+										role="menuitem"
+										class="flex flex-1 items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
+										hx-target="#refresh-panel"
+										hx-swap="innerHTML"
+										hx-indicator="#rules-spinner"
+									>
+										@components.IconPlay("h-4 w-4 text-gray-400")
+										{ t(ctx, "artist.run_rules") }
+									</button>
+									<span class="pr-2 sw-help-no-tab">
+										@components.ContextHelp(
+											"help-run-rules-"+data.Artist.ID,
+											t(ctx, "artist.help.run_rules.label"),
+											t(ctx, "artist.help.run_rules"),
+											"core-concepts/rules#how-evaluation-runs",
+										)
+									</span>
+								</div>
+								<div class="flex items-center">
+									<button
+										type="button"
+										role="menuitem"
+										class="flex flex-1 items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+										hx-target="#refresh-panel"
+										hx-swap="innerHTML"
+										hx-indicator="#refresh-spinner"
+									>
+										@components.IconArrowPath("h-4 w-4 text-gray-400")
+										{ t(ctx, "artist.refresh_metadata") }
+									</button>
+									<span class="pr-2 sw-help-no-tab">
+										@components.ContextHelp(
+											"help-refresh-metadata-"+data.Artist.ID,
+											t(ctx, "artist.help.refresh_metadata.label"),
+											t(ctx, "artist.help.refresh_metadata"),
+											"how-to/refresh-metadata#what-a-refresh-does",
+										)
+									</span>
+								</div>
 								<button
 									type="button"
 									role="menuitem"
@@ -425,6 +459,12 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<div class="flex items-center gap-2 mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
 						@components.IconLockClosed("h-4 w-4")
 						<span>{ t(ctx, "artist.locked_fields") }</span>
+						@components.ContextHelp(
+							"help-locked-fields-panel-"+data.Artist.ID,
+							t(ctx, "artist.help.locked_fields_panel.label"),
+							t(ctx, "artist.help.locked_fields_panel"),
+							"core-concepts/field-locks#layer-2-field-locks-per-field-protection",
+						)
 					</div>
 					<div class="flex flex-wrap gap-2">
 						for _, f := range data.Artist.LockedFields {
@@ -701,6 +741,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			}
 			@artistDetailTabScript(data.Artist.ID)
+			@components.ContextHelpScript()
 		</div>
 	}
 }

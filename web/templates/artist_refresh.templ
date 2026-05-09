@@ -27,7 +27,15 @@ type RefreshOOBData struct {
 // has no MBID. Pre-filled with the artist name for immediate search.
 templ RefreshDisambiguationForm(artistID, artistName string) {
 	<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
-		<h3 class="font-semibold text-sm mb-2">{ t(ctx, "image.mbid_required") }</h3>
+		<div class="flex items-center gap-1.5 mb-2">
+			<h3 class="font-semibold text-sm">{ t(ctx, "image.mbid_required") }</h3>
+			@components.ContextHelp(
+				"help-disambiguation",
+				t(ctx, "artist.help.disambiguation.label"),
+				t(ctx, "artist.help.disambiguation"),
+				"how-to/refresh-metadata#when-you-get-the-disambiguation-prompt",
+			)
+		</div>
 		<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
 			{ t(ctx, "image.mbid_required_description") }
 		</p>
