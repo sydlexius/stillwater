@@ -1,6 +1,11 @@
 #!/bin/bash
 # pre-push-gate.sh -- deterministic pre-push checks; run before code review
-# Exit status: 0 = all hard checks passed; 1 = a hard check failed
+# Exit status:
+#   0 = all hard checks passed
+#   1 = a hard check failed (test, lint, openapi, etc.)
+#   2 = invalid input / setup state (e.g. BASE rev cannot be resolved by
+#       `git rev-parse --verify -q "$BASE^{commit}"` -- see the BASE guard
+#       directly below)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -58,16 +63,19 @@ echo "=== Lint (diff-only) ==="
 # ~5s; cold it can take ~30s. Closes the `git commit --no-verify` bypass:
 # the pre-commit hook lints staged files, but a `--no-verify` commit + plain
 # `git push` historically reached this gate without any lint pass, letting
-# regressions slip to CI. SKIP-with-hint when golangci-lint is missing,
-# matching the script's existing convention for optional dev tools (oasdiff,
-# python3); BASE is validated at intake, so an unreadable rev is caught
-# above this point rather than silently producing an empty diff.
+# regressions slip to CI. BASE is validated at intake, so an unreadable rev
+# is caught above this point rather than silently producing an empty diff.
+#
+# Hard-fail (not SKIP) when golangci-lint is missing: the lint step is the
+# entire purpose of closing the no-verify bypass. SKIP would re-open the
+# bypass on machines without the tool. Distinct from the oasdiff / python3
+# SKIPs above which gate optional warnings, not the project's lint policy.
 if ! command -v golangci-lint >/dev/null 2>&1; then
-  echo "SKIP: golangci-lint not in PATH (install: brew install golangci-lint)"
-else
-  golangci-lint run --new-from-rev="$BASE" ./...
-  echo "OK"
+  echo "FAIL: golangci-lint not in PATH (install: brew install golangci-lint)" >&2
+  exit 1
 fi
+golangci-lint run --new-from-rev="$BASE" ./...
+echo "OK"
 
 echo ""
 echo "=== OpenAPI consistency ==="
