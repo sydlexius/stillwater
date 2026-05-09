@@ -7,22 +7,23 @@ run:
 linters:
   default: none
   enable:
+    - bodyclose
     - errcheck
     - errorlint
     - exhaustive
-    - govet
-    - staticcheck
-    - unused
-    - bodyclose
     - gosec
+    - govet
+    - misspell
+    - nilerr
     - noctx
+    - revive
     - sqlclosecheck
+    - staticcheck
     - unconvert
     - unparam
+    - unused
+    - usestdlibvars
     - wastedassign
-    - misspell
-    - revive
-    - nilerr
   settings:
     errorlint:
       errorf: true
@@ -45,6 +46,17 @@ linters:
           severity: warning
     misspell:
       locale: US
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-weekday: true
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      default-rpc-path: true
+      sql-isolation-level: true
+      tls-signature-scheme: true
+      constant-kind: true
   exclusions:
     rules:
       - path: _test\.go

@@ -1818,7 +1818,7 @@ func TestHandleServeImage_ClearsStaleFlag(t *testing.T) {
 
 	// Request the image file via the serve endpoint.
 	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID)
-	req := httptest.NewRequest("GET", url, nil)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
 	w := httptest.NewRecorder()
@@ -1885,7 +1885,7 @@ func TestHandleRandomBackdrop_ServesValidFile(t *testing.T) {
 		t.Fatalf("seeding artist_images: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil)
 	w := httptest.NewRecorder()
 	r.handleRandomBackdrop(w, req)
 
@@ -1917,7 +1917,7 @@ func TestHandleRandomBackdrop_ClearsStaleFlag(t *testing.T) {
 		t.Fatalf("seeding artist_images: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil)
 	w := httptest.NewRecorder()
 	r.handleRandomBackdrop(w, req)
 
@@ -1942,7 +1942,7 @@ func TestHandleRandomBackdrop_EmptyPool(t *testing.T) {
 	t.Parallel()
 	r, _ := testRouterWithPlatform(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil)
 	w := httptest.NewRecorder()
 	r.handleRandomBackdrop(w, req)
 
@@ -2250,7 +2250,7 @@ func TestHandleServeImage_PreservesFlagOnStatError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
 	url := fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", a.ID)
-	req := httptest.NewRequest("GET", url, nil)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
 	w := httptest.NewRecorder()
@@ -2387,7 +2387,7 @@ func TestHandleRandomBackdrop_PreservesFlagOnStatError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
-	req := httptest.NewRequest("GET", "/api/v1/images/random-backdrop", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil)
 	w := httptest.NewRecorder()
 	r.handleRandomBackdrop(w, req)
 

@@ -622,7 +622,7 @@ func TestRedirectHandler(t *testing.T) {
 			t.Parallel()
 			h := redirectHandler(tc.httpsPort)
 			req := &http.Request{
-				Method:     "GET",
+				Method:     http.MethodGet,
 				Host:       tc.hostHeader,
 				RequestURI: tc.requestURI,
 				URL:        mustParseURL(t, tc.requestURI),
@@ -893,7 +893,7 @@ func TestRedirectHandler_RejectsBadInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := redirectHandler(443)
-			req := &http.Request{Method: "GET", Host: tc.host, RequestURI: tc.requestURI}
+			req := &http.Request{Method: http.MethodGet, Host: tc.host, RequestURI: tc.requestURI}
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			if rec.Code != http.StatusBadRequest {

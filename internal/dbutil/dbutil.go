@@ -20,7 +20,7 @@ func IntToBool(i int) bool {
 // It tries RFC3339, "2006-01-02 15:04:05", and "2006-01-02T15:04:05" in order,
 // returning the zero time if none match.
 func ParseTime(s string) time.Time {
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+	for _, layout := range []string{time.RFC3339, time.DateTime, "2006-01-02T15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t
 		}

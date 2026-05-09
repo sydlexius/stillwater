@@ -289,7 +289,7 @@ func parseNullableTime(s string) (time.Time, bool) {
 	}
 	// SQLite's datetime('now') default produces "YYYY-MM-DD HH:MM:SS"
 	// (no timezone). Accept that form too so backfill rows stay readable.
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+	if t, err := time.Parse(time.DateTime, s); err == nil {
 		return t.UTC(), true
 	}
 	return time.Time{}, false

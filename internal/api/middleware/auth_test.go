@@ -63,7 +63,7 @@ func TestAuth_ValidSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "valid-session"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -108,7 +108,7 @@ func TestAuth_ValidAPIToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_valid123")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -145,7 +145,7 @@ func TestAuth_InactiveUser_Session_Returns401(t *testing.T) {
 		t.Error("next handler should not be called for inactive user")
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "some-session"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -170,7 +170,7 @@ func TestAuth_InactiveUser_APIToken_Returns401(t *testing.T) {
 		t.Error("next handler should not be called for deactivated API token user")
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_deactivated")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -195,7 +195,7 @@ func TestAuth_GetUserRoleError_Session_Returns500(t *testing.T) {
 		t.Error("next handler should not be called on DB error")
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "valid"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -220,7 +220,7 @@ func TestAuth_GetUserRoleError_APIToken_Returns500(t *testing.T) {
 		t.Error("next handler should not be called on DB error")
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_token123")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -251,7 +251,7 @@ func TestOptionalAuth_ValidSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "good"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -290,7 +290,7 @@ func TestOptionalAuth_InactiveUser_ContinuesUnauthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "inactive-session"})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -326,7 +326,7 @@ func TestOptionalAuth_GetUserRoleError_ContinuesUnauthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -352,7 +352,7 @@ func TestOptionalAuth_NoToken_ContinuesUnauthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -367,7 +367,7 @@ func TestOptionalAuth_NoToken_ContinuesUnauthenticated(t *testing.T) {
 // TestExtractToken verifies token extraction from cookie, header, and query.
 func TestExtractToken_Cookie(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "session-abc"})
 
 	got := extractToken(req)
@@ -378,7 +378,7 @@ func TestExtractToken_Cookie(t *testing.T) {
 
 func TestExtractToken_BearerHeader(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer sw_testtoken123")
 
 	got := extractToken(req)
@@ -389,7 +389,7 @@ func TestExtractToken_BearerHeader(t *testing.T) {
 
 func TestExtractToken_QueryParam(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?apikey=qp-token", nil)
 
 	got := extractToken(req)
 	if got != "qp-token" {
@@ -399,7 +399,7 @@ func TestExtractToken_QueryParam(t *testing.T) {
 
 func TestExtractToken_CookieTakesPrecedence(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?apikey=qp-token", nil)
 	req.AddCookie(&http.Cookie{Name: "session", Value: "cookie-token"})
 	req.Header.Set("Authorization", "Bearer header-token")
 
@@ -411,7 +411,7 @@ func TestExtractToken_CookieTakesPrecedence(t *testing.T) {
 
 func TestExtractToken_HeaderOverQuery(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?apikey=qp-token", nil)
 	req.Header.Set("Authorization", "Bearer header-token")
 
 	got := extractToken(req)
@@ -422,7 +422,7 @@ func TestExtractToken_HeaderOverQuery(t *testing.T) {
 
 func TestExtractToken_Empty(t *testing.T) {
 	t.Parallel()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	got := extractToken(req)
 	if got != "" {
 		t.Errorf("extractToken(empty) = %q, want empty", got)
@@ -486,7 +486,7 @@ func TestRequireScope_Forbidden(t *testing.T) {
 	ctx := context.WithValue(context.Background(), authMethodKey, "api_token")
 	ctx = context.WithValue(ctx, tokenScopesKey, "read")
 
-	req := httptest.NewRequest("POST", "/", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -510,7 +510,7 @@ func TestRequireScope_Allowed(t *testing.T) {
 	ctx := context.WithValue(context.Background(), authMethodKey, "api_token")
 	ctx = context.WithValue(ctx, tokenScopesKey, "read,write")
 
-	req := httptest.NewRequest("GET", "/", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

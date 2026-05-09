@@ -220,7 +220,7 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 func parseHistoryTimestamp(changeID, raw string) time.Time {
 	t, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		t, err = time.Parse("2006-01-02 15:04:05", raw)
+		t, err = time.Parse(time.DateTime, raw)
 		if err != nil {
 			slog.Warn("unparsable created_at in metadata_changes",
 				"change_id", changeID,
