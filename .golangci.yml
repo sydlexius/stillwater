@@ -14,6 +14,7 @@ linters:
     - gosec
     - govet
     - misspell
+    - musttag
     - nilerr
     - noctx
     - revive
@@ -46,6 +47,15 @@ linters:
           severity: warning
     misspell:
       locale: US
+    musttag:
+      functions:
+        # API response wrapper. Without this, musttag only checks direct
+        # encoding/json call sites and misses every handler response struct
+        # that flows through writeJSON -- defeating the linter's purpose for
+        # the request/response body drift class M49 was created to deflect.
+        - name: github.com/sydlexius/stillwater/internal/api.writeJSON
+          tag: json
+          arg-pos: 2
     usestdlibvars:
       http-method: true
       http-status-code: true
