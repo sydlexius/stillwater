@@ -76,14 +76,21 @@ jobs:
         # because module resolution starts at the input.css directory. The
         # canonical install (per build/docker/Dockerfile) is the standalone
         # binary from GitHub Releases, which bundles tailwindcss internally
-        # and skips module resolution entirely. Keep TAILWIND_VERSION in sync
-        # with build/docker/Dockerfile's ARG TAILWIND_VERSION.
+        # and skips module resolution entirely.
+        #
+        # NOTE: GitHub ubuntu-latest is glibc-based, so we use the plain
+        # tailwindcss-linux-x64 (NOT the -musl variant the Dockerfile uses).
+        # Different binary, different checksum -- keep TAILWIND_VERSION and
+        # the matching arch's SHA256 in sync with build/docker/Dockerfile
+        # whenever bumping the version.
         env:
           TAILWIND_VERSION: v4.2.0
+          TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
         run: |
-          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64-musl"
-          chmod +x tailwindcss-linux-x64-musl
-          sudo mv tailwindcss-linux-x64-musl /usr/local/bin/tailwindcss
+          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
+          echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
+          chmod +x tailwindcss-linux-x64
+          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
 
       - name: Build Tailwind CSS
         run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify

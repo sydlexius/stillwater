@@ -7,14 +7,24 @@ RUN apk add --no-cache curl libstdc++ libgcc
 
 WORKDIR /src
 
-# Download Tailwind CSS standalone CLI (architecture-aware)
+# Download Tailwind CSS standalone CLI (architecture-aware) and verify checksum.
+# Bump TAILWIND_VERSION + the matching SHA-256 for both arches together.
+# Compute fresh hashes via:
+#   curl -fsSLO https://github.com/tailwindlabs/tailwindcss/releases/download/<vX>/tailwindcss-linux-{x64,arm64}-musl
+#   shasum -a 256 tailwindcss-linux-*-musl
+# Keep .github/workflows/bruno-ci.yml in sync with TAILWIND_VERSION + TAILWIND_SHA256_X64.
 ARG TAILWIND_VERSION=v4.2.0
+ARG TAILWIND_SHA256_X64=44b85e87dd1812b5b7e46b6522c80cfa045474c736afa6c9ad2279b7d4944354
+ARG TAILWIND_SHA256_ARM64=2db78c3d59d0b7f75fee28a7ea0d0dc6284761bd039bf633a9f5daac80060829
 RUN case "$(uname -m)" in \
-      x86_64)  TAILWIND_ARCH=x64 ;; \
-      aarch64) TAILWIND_ARCH=arm64 ;; \
+      x86_64)  TAILWIND_ARCH=x64;   TAILWIND_SHA256="$TAILWIND_SHA256_X64" ;; \
+      aarch64) TAILWIND_ARCH=arm64; TAILWIND_SHA256="$TAILWIND_SHA256_ARM64" ;; \
       *)       echo "unsupported arch: $(uname -m)" && exit 1 ;; \
     esac \
     && curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}-musl" \
+    && echo "${TAILWIND_SHA256}  tailwindcss-linux-${TAILWIND_ARCH}-musl" > /tmp/tw.sha256 \
+    && sha256sum -c /tmp/tw.sha256 \
+    && rm /tmp/tw.sha256 \
     && chmod +x "tailwindcss-linux-${TAILWIND_ARCH}-musl" \
     && mv "tailwindcss-linux-${TAILWIND_ARCH}-musl" /usr/local/bin/tailwindcss
 
