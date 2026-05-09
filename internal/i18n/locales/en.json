@@ -195,7 +195,7 @@
   "artists.bulk.reidentify.wizard.save_exit": "Save and exit",
   "artists.bulk.reidentify.wizard.skip": "Skip",
   "artists.bulk.reidentify.wizard.step_of": "Step %d of %d",
-  "artists.bulk.reidentify.wizard.help.actions": "Skip leaves the artist's existing MusicBrainz link unchanged and moves to the next artist. Mark unmatched records that no candidate is correct, which flags the artist for later manual linking. Clicking a candidate card accepts that match and links the MusicBrainz ID immediately.",
+  "artists.bulk.reidentify.wizard.help.actions": "Skip leaves the artist's existing MusicBrainz link unchanged and moves to the next artist. \"Mark unmatched\" records that no candidate fits and flags the artist for later manual linking. Clicking a candidate card accepts that match and links the MusicBrainz ID immediately.",
   "artists.bulk.reidentify.wizard.help.actions.label": "Wizard actions",
   "artists.bulk.reidentify.wizard.help.overview": "This wizard walks through artists that need a MusicBrainz ID confirmed or corrected. For each artist, Stillwater shows ranked candidates from its providers -- pick the correct match, mark as unmatched if none fit, or skip to revisit later.",
   "artists.bulk.reidentify.wizard.help.overview.label": "Re-identify wizard",
