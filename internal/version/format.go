@@ -63,23 +63,21 @@ func IsDevBuild() bool {
 
 // UserAgent returns an HTTP User-Agent header value for outbound requests.
 //
-// When repoURL is non-empty the format is:
+// prefix is the application/subsystem identifier (e.g., "Stillwater",
+// "Stillwater-Webhook"). An empty prefix defaults to "stillwater" (lowercase)
+// to preserve the historical updater convention.
 //
-//	Stillwater/1.0.6 (https://github.com/sydlexius/stillwater)
-//
-// When repoURL is empty the format is:
-//
-//	stillwater/1.0.6
-//
-// The MusicBrainz API requires the URL form; all other callers use the bare form.
-// Capitalisation follows each consumer's prior convention: MusicBrainz wants
-// "Stillwater/..." (capital S) while the updater uses "stillwater/..." (lower s).
-// Both forms are produced by passing or omitting repoURL.
-func UserAgent(repoURL string) string {
-	if repoURL != "" {
-		return fmt.Sprintf("Stillwater/%s (%s)", Version, repoURL)
+// When repoURL is non-empty the format is "<prefix>/<version> (<repoURL>)";
+// otherwise it is "<prefix>/<version>". The MusicBrainz API requires the URL
+// form; webhook receivers identify Stillwater-Webhook by the subsystem prefix.
+func UserAgent(prefix, repoURL string) string {
+	if prefix == "" {
+		prefix = "stillwater"
 	}
-	return "stillwater/" + Version
+	if repoURL != "" {
+		return fmt.Sprintf("%s/%s (%s)", prefix, Version, repoURL)
+	}
+	return prefix + "/" + Version
 }
 
 // canonicalVersion returns v with a leading "v" if it is not already present.

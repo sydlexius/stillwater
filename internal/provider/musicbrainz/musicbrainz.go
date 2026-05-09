@@ -1083,5 +1083,5 @@ func mergeDateRanges(periods [][2]string) (earliest, latest string) {
 }
 
 func userAgent() string {
-	return version.UserAgent("https://github.com/sydlexius/stillwater")
+	return version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
 }

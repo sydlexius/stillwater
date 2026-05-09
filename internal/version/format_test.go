@@ -186,30 +186,43 @@ func TestString_VPrefixNotDoubled(t *testing.T) {
 
 // ---- UserAgent ----
 
-func TestUserAgent_WithURL(t *testing.T) {
+func TestUserAgent_WithCapitalPrefixAndURL(t *testing.T) {
 	withVersion(t, "1.0.6", "unknown", "unknown")
-	ua := version.UserAgent("https://github.com/sydlexius/stillwater")
+	ua := version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
 	if !strings.HasPrefix(ua, "Stillwater/") {
-		t.Errorf("UserAgent with URL should start with 'Stillwater/', got: %q", ua)
+		t.Errorf("UserAgent with capital prefix should start with 'Stillwater/', got: %q", ua)
 	}
-	if !strings.Contains(ua, "https://github.com/sydlexius/stillwater") {
-		t.Errorf("UserAgent with URL should contain the repoURL, got: %q", ua)
+	if !strings.Contains(ua, "(https://github.com/sydlexius/stillwater)") {
+		t.Errorf("UserAgent with URL should contain '(repoURL)', got: %q", ua)
 	}
 	if !strings.Contains(ua, "1.0.6") {
-		t.Errorf("UserAgent with URL should contain version, got: %q", ua)
+		t.Errorf("UserAgent should contain version, got: %q", ua)
 	}
 }
 
-func TestUserAgent_WithoutURL(t *testing.T) {
+func TestUserAgent_EmptyPrefixDefaultsToLowercase(t *testing.T) {
 	withVersion(t, "1.0.6", "unknown", "unknown")
-	ua := version.UserAgent("")
+	ua := version.UserAgent("", "")
 	if !strings.HasPrefix(ua, "stillwater/") {
-		t.Errorf("UserAgent without URL should start with 'stillwater/', got: %q", ua)
+		t.Errorf("UserAgent with empty prefix should default to 'stillwater/', got: %q", ua)
 	}
 	if strings.Contains(ua, "(") {
 		t.Errorf("UserAgent without URL should not contain parentheses, got: %q", ua)
 	}
-	if !strings.Contains(ua, "1.0.6") {
-		t.Errorf("UserAgent without URL should contain version, got: %q", ua)
+}
+
+func TestUserAgent_CapitalPrefixWithoutURL(t *testing.T) {
+	withVersion(t, "1.0.6", "unknown", "unknown")
+	ua := version.UserAgent("Stillwater", "")
+	if ua != "Stillwater/1.0.6" {
+		t.Errorf("UserAgent capital-no-URL should be 'Stillwater/1.0.6', got: %q", ua)
+	}
+}
+
+func TestUserAgent_SubsystemPrefix(t *testing.T) {
+	withVersion(t, "1.0.6", "unknown", "unknown")
+	ua := version.UserAgent("Stillwater-Webhook", "")
+	if ua != "Stillwater-Webhook/1.0.6" {
+		t.Errorf("UserAgent subsystem prefix should be 'Stillwater-Webhook/1.0.6', got: %q", ua)
 	}
 }

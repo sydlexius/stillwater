@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 // qidPattern matches a Wikidata Q-item identifier ("Q" followed by at least
@@ -249,7 +250,7 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Stillwater/1.0 (https://github.com/sydlexius/stillwater)")
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 	req.Header.Set("Accept", "application/sparql-results+json")
 
 	a.logger.Debug("executing SPARQL query")
@@ -473,7 +474,7 @@ func (a *Adapter) resolveCommonsURL(ctx context.Context, filename string) (*Comm
 	if err != nil {
 		return nil, fmt.Errorf("creating commons request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Stillwater/1.0 (https://github.com/sydlexius/stillwater)")
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
 	a.logger.Debug("resolving commons image", slog.String("filename", filename))
 

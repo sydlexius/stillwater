@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 const defaultBaseURL = "https://api.genius.com"
@@ -211,7 +212,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("User-Agent", "Stillwater/1.0")
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater", ""))
 	req.Header.Set("Accept", "application/json")
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
