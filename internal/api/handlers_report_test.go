@@ -482,7 +482,7 @@ func TestHandleViolationTrend_PointShape(t *testing.T) {
 		t.Error("trend point missing 'date' field")
 	} else if dateStr, ok := dateVal.(string); !ok {
 		t.Errorf("trend point 'date' is %T, want string", dateVal)
-	} else if _, err := time.Parse("2006-01-02", dateStr); err != nil {
+	} else if _, err := time.Parse(time.DateOnly, dateStr); err != nil {
 		t.Errorf("trend point 'date' = %q, not valid YYYY-MM-DD: %v", dateStr, err)
 	}
 

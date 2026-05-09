@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/backup"
 )
@@ -131,7 +132,7 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 				`<a href="%s/api/v1/settings/backup/%s" class="text-blue-600 dark:text-blue-400 hover:underline mr-3">Download</a>`+
 				`<button type="button" class="text-red-600 dark:text-red-400 hover:underline" hx-delete="%s/api/v1/settings/backup/%s" hx-target="#backup-list" hx-swap="innerHTML" hx-confirm="Delete backup %s?">Delete</button>`+
 				`</td></tr>`,
-			b.Filename, formatBytes(b.Size), b.CreatedAt.Format("2006-01-02 15:04:05"),
+			b.Filename, formatBytes(b.Size), b.CreatedAt.Format(time.DateTime),
 			html.EscapeString(r.basePath), b.Filename,
 			html.EscapeString(r.basePath), b.Filename, b.Filename,
 		)

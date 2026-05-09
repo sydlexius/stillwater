@@ -63,7 +63,7 @@ func NormalizeDateForPlatform(s string) string {
 
 	for _, layout := range namedMonthLayouts {
 		if t, err := time.Parse(layout, cleaned); err == nil {
-			return t.Format("2006-01-02")
+			return t.Format(time.DateOnly)
 		}
 	}
 

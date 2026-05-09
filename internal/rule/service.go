@@ -736,7 +736,7 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	dateMap := make(map[string]*ViolationTrendPoint, maxDays)
 	dates := make([]string, 0, maxDays)
 	for i := range days {
-		d := start.AddDate(0, 0, i).Format("2006-01-02")
+		d := start.AddDate(0, 0, i).Format(time.DateOnly)
 		dates = append(dates, d)
 		dateMap[d] = &ViolationTrendPoint{Date: d}
 	}

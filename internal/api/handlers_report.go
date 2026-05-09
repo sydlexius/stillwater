@@ -133,14 +133,14 @@ func (r *Router) handleReportHealthHistory(w http.ResponseWriter, req *http.Requ
 	if v := req.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			from = t
-		} else if t, err := time.Parse("2006-01-02", v); err == nil {
+		} else if t, err := time.Parse(time.DateOnly, v); err == nil {
 			from = t
 		}
 	}
 	if v := req.URL.Query().Get("to"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			to = t
-		} else if t, err := time.Parse("2006-01-02", v); err == nil {
+		} else if t, err := time.Parse(time.DateOnly, v); err == nil {
 			to = t
 		}
 	}

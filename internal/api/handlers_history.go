@@ -89,7 +89,7 @@ func parseTimeValue(raw, name string) time.Time {
 	if t, err := time.Parse(time.RFC3339, raw); err == nil {
 		return t
 	}
-	if t, err := time.Parse("2006-01-02", raw); err == nil {
+	if t, err := time.Parse(time.DateOnly, raw); err == nil {
 		t = t.UTC()
 		if name == "to" && isPlainDate(raw) {
 			t = t.Add(24*time.Hour - time.Nanosecond)

@@ -1859,7 +1859,7 @@ func TestGetViolationTrend_CountsCreated(t *testing.T) {
 	}
 
 	// The last point should be today with created=2.
-	todayStr := today.Format("2006-01-02")
+	todayStr := today.Format(time.DateOnly)
 	last := trend[len(trend)-1]
 	if last.Date != todayStr {
 		t.Errorf("last point date = %q, want %q", last.Date, todayStr)

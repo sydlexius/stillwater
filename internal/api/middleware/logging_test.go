@@ -119,7 +119,7 @@ func TestLogging_LogLevels(t *testing.T) {
 			w.WriteHeader(tt.status)
 		}))
 
-		req := httptest.NewRequest("GET", "/api/v1/artists", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -173,7 +173,7 @@ func TestLogging_QuietPaths(t *testing.T) {
 			w.WriteHeader(tt.status)
 		}))
 
-		req := httptest.NewRequest("GET", tt.path, nil)
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 

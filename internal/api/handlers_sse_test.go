@@ -172,7 +172,7 @@ func TestHandleSSEStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", ts.URL, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestHandleSSEStream_NoHub(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/v1/events/stream", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/stream", nil)
 	r.handleSSEStream(w, req)
 
 	if w.Code != http.StatusServiceUnavailable {

@@ -46,8 +46,8 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		Enabled:               c.Enabled,
 		Status:                c.Status,
 		StatusMessage:         c.StatusMessage,
-		CreatedAt:             c.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:             c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:             c.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:             c.UpdatedAt.Format(time.RFC3339),
 		FeatureLibraryImport:  c.FeatureLibraryImport,
 		FeatureNFOWrite:       c.FeatureNFOWrite,
 		FeatureImageWrite:     c.FeatureImageWrite,
@@ -55,7 +55,7 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 		FeatureTriggerRefresh: c.FeatureTriggerRefresh,
 	}
 	if c.LastCheckedAt != nil {
-		s := c.LastCheckedAt.Format("2006-01-02T15:04:05Z07:00")
+		s := c.LastCheckedAt.Format(time.RFC3339)
 		resp.LastCheckedAt = &s
 	}
 	return resp

@@ -645,7 +645,7 @@ func TestHandleListGlobalHistory_DateRange(t *testing.T) {
 	// and to=YYYY-MM-DD as end-of-day UTC so the full day is included. Using
 	// today's UTC date guarantees the just-inserted change falls within the
 	// window regardless of the test machine's wall clock.
-	today := now.Format("2006-01-02")
+	today := now.Format(time.DateOnly)
 	req3 := httptest.NewRequest(http.MethodGet, "/api/v1/history?from="+today+"&to="+today, nil)
 	w3 := httptest.NewRecorder()
 

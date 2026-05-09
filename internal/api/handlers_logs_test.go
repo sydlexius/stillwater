@@ -34,7 +34,7 @@ func TestHandleGetLogs_JSON(t *testing.T) {
 	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "test message", Component: "api"})
 	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "warn", Message: "warning here"})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -69,7 +69,7 @@ func TestHandleGetLogs_HTMX(t *testing.T) {
 	now := time.Now()
 	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "hello world"})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=10", nil)
 	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
@@ -115,7 +115,7 @@ func TestHandleGetLogs_HTMX_AttrsAndSource(t *testing.T) {
 		},
 	})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=10", nil)
 	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
@@ -130,7 +130,7 @@ func TestHandleGetLogs_HTMX_AttrsAndSource(t *testing.T) {
 	out := string(body)
 
 	// Bug 3: timestamp should include date portion.
-	dateStr := now.Format("2006-01-02")
+	dateStr := now.Format(time.DateOnly)
 	if !strings.Contains(out, dateStr) {
 		t.Errorf("expected HTML to contain date %q", dateStr)
 	}
@@ -158,7 +158,7 @@ func TestHandleGetLogs_LevelFilter(t *testing.T) {
 	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "info", Message: "info msg"})
 	rb.Write(logging.LogEntry{Time: now.Add(2 * time.Second), Level: "error", Message: "error msg"})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?level=error&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?level=error&limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -190,7 +190,7 @@ func TestHandleGetLogs_SearchFilter(t *testing.T) {
 	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "connecting to database"})
 	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "info", Message: "starting server"})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?search=database&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?search=database&limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -219,7 +219,7 @@ func TestHandleGetLogs_ComponentFilter(t *testing.T) {
 	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "scanning dirs", Component: "scanner"})
 	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "info", Message: "fetching art", Component: "provider"})
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?component=scanner&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?component=scanner&limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -250,7 +250,7 @@ func TestHandleGetLogs_Empty(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -275,7 +275,7 @@ func TestHandleGetLogs_EmptyHTMX(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=10", nil)
 	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
@@ -301,7 +301,7 @@ func TestHandleClearLogs_JSON(t *testing.T) {
 		t.Fatal("expected entries before clear")
 	}
 
-	req := httptest.NewRequest("DELETE", "/api/v1/logs", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/logs", nil)
 	rec := httptest.NewRecorder()
 	r.handleClearLogs(rec, req)
 
@@ -322,7 +322,7 @@ func TestHandleClearLogs_HTMX(t *testing.T) {
 
 	rb.Write(logging.LogEntry{Time: time.Now(), Level: "info", Message: "test"})
 
-	req := httptest.NewRequest("DELETE", "/api/v1/logs", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/logs", nil)
 	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	r.handleClearLogs(rec, req)
@@ -353,7 +353,7 @@ func TestHandleGetLogs_NilManager(t *testing.T) {
 		logger:     slog.Default(),
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -372,7 +372,7 @@ func TestHandleClearLogs_NilManager(t *testing.T) {
 		logger:     slog.Default(),
 	}
 
-	req := httptest.NewRequest("DELETE", "/api/v1/logs", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/logs", nil)
 	rec := httptest.NewRecorder()
 	r.handleClearLogs(rec, req)
 
@@ -393,7 +393,7 @@ func TestHandleGetLogs_AfterFilter(t *testing.T) {
 	rb.Write(logging.LogEntry{Time: base.Add(5 * time.Minute), Level: "info", Message: "new entry"})
 
 	afterStr := base.Add(time.Minute).Format(time.RFC3339Nano)
-	req := httptest.NewRequest("GET", "/api/v1/logs?after="+afterStr+"&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?after="+afterStr+"&limit=10", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -421,7 +421,7 @@ func TestHandleGetLogs_InvalidLevel(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?level=verbose", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?level=verbose", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -434,7 +434,7 @@ func TestHandleGetLogs_InvalidAfter(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?after=not-a-date", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?after=not-a-date", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -447,7 +447,7 @@ func TestHandleGetLogs_InvalidLimit(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=abc", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
@@ -460,7 +460,7 @@ func TestHandleGetLogs_NegativeLimit(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?limit=-5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/logs?limit=-5", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 
