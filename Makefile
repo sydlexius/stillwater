@@ -168,7 +168,13 @@ bruno-ci: build
 	echo "[bruno-ci] waiting for health endpoint and capturing CSRF token..."; \
 	READY=0; \
 	CSRF_TOKEN=""; \
-	for i in $$(seq 1 30); do \
+	DEADLINE=$$(( $$(date +%s) + 60 )); \
+	while [ $$(date +%s) -lt $$DEADLINE ]; do \
+	  if ! kill -0 "$$(cat $$PID_FILE)" 2>/dev/null; then \
+	    echo "[bruno-ci] server exited before becoming ready"; \
+	    cat "$${TMPDIR:-/tmp}/stillwater-ci-$$$$.log" || true; \
+	    exit 1; \
+	  fi; \
 	  HEALTH_RESP=$$(curl -sf -D - --max-time 5 "http://127.0.0.1:$$SW_PORT/api/v1/health" 2>/dev/null || true); \
 	  if echo "$$HEALTH_RESP" | grep -q '"status":"ok"'; then \
 	    CSRF_TOKEN=$$(echo "$$HEALTH_RESP" \
@@ -213,7 +219,7 @@ bruno-ci: build
 	mkdir -p "$$RESULTS_DIR"; \
 	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT, watchdog=$${BRUNO_TIMEOUT_SEC:-300}s)"; \
 	BRUNO_TIMEOUT_SEC="$${BRUNO_TIMEOUT_SEC:-300}"; \
-	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1 run \
+	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1.22.0 run \
 	    --env ci \
 	    --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
 	    --env-var "sessionToken=$$SESSION_COOKIE" \
@@ -223,8 +229,11 @@ bruno-ci: build
 	BRU_PID=$$!; \
 	( sleep "$$BRUNO_TIMEOUT_SEC" && kill -TERM "$$BRU_PID" 2>/dev/null && sleep 5 && kill -KILL "$$BRU_PID" 2>/dev/null ) & \
 	WATCHDOG_PID=$$!; \
-	wait "$$BRU_PID"; \
-	EXIT_CODE=$$?; \
+	if wait "$$BRU_PID"; then \
+	  EXIT_CODE=0; \
+	else \
+	  EXIT_CODE=$$?; \
+	fi; \
 	kill "$$WATCHDOG_PID" 2>/dev/null || true; \
 	if [ "$$EXIT_CODE" = "143" ] || [ "$$EXIT_CODE" = "137" ]; then \
 	  echo "[bruno-ci] watchdog killed bru after $$BRUNO_TIMEOUT_SEC s; treating as failure"; \

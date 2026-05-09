@@ -106,7 +106,7 @@ jobs:
             -o stillwater ./cmd/stillwater
 
       - name: Install Bruno CLI
-        run: npm install -g @usebruno/cli@1
+        run: npm install -g @usebruno/cli@1.22.0
 
       - name: Pick a free port
         id: port
@@ -130,12 +130,21 @@ jobs:
         id: csrf
         env:
           PORT: ${{ steps.port.outputs.port }}
+          PID: ${{ steps.server.outputs.pid }}
         run: |
-          # The health endpoint sets a csrf_token cookie on its first response.
-          # Capture it here so the login step and the Bruno collection can use it.
-          # Retry for up to 60s to allow the server to complete its startup.
+          # Drive readiness off an absolute deadline (60s wall clock) and
+          # check the server PID before each probe so a startup crash fails
+          # fast instead of burning the full poll loop. The health endpoint
+          # sets a csrf_token cookie on its first response; capture it for
+          # the login step and the Bruno collection.
           echo "Polling http://127.0.0.1:${PORT}/api/v1/health ..."
-          for i in $(seq 1 30); do
+          DEADLINE=$(( $(date +%s) + 60 ))
+          while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
+            if ! kill -0 "${PID}" 2>/dev/null; then
+              echo "Stillwater exited before becoming ready"
+              cat "${{ runner.temp }}/stillwater-ci.log" || true
+              exit 1
+            fi
             HEALTH_RESP=$(curl -sf -D - --max-time 5 "http://127.0.0.1:${PORT}/api/v1/health" 2>/dev/null || true)
             if echo "${HEALTH_RESP}" | grep -q '"status":"ok"'; then
               CSRF=$(echo "${HEALTH_RESP}" \
@@ -148,7 +157,7 @@ jobs:
                 cat "${{ runner.temp }}/stillwater-ci.log" || true
                 exit 1
               fi
-              echo "Server is ready (attempt ${i})"
+              echo "Server is ready"
               echo "csrf=${CSRF}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
