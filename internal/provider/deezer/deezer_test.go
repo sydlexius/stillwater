@@ -2,6 +2,7 @@ package deezer
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -184,7 +185,8 @@ func TestGetArtistRejectsNonNumericID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-Deezer ID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundUUID *provider.ErrNotFound
+	if !errors.As(err, &notFoundUUID) {
 		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -199,7 +201,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-numeric ID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 }

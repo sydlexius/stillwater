@@ -812,7 +812,7 @@ func (s *Service) GetLatestHealthSnapshot(ctx context.Context) (*HealthSnapshot,
 	`)
 	snap, err := scanHealthSnapshot(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("getting latest health snapshot: %w", err)
@@ -1220,7 +1220,7 @@ func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolati
 	`, id)
 	v, err := scanViolation(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("violation not found: %s", id)
 		}
 		return nil, fmt.Errorf("getting violation by id: %w", err)

@@ -3,6 +3,7 @@ package genius
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -182,7 +183,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent artist")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -251,7 +253,8 @@ func TestGetArtistUUIDReturnsNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for UUID input")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFoundUUID *provider.ErrNotFound
+	if !errors.As(err, &notFoundUUID) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
@@ -299,8 +302,8 @@ func TestGetArtistByNameRejectsMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when top result is a name mismatch")
 	}
-	nf, ok := err.(*provider.ErrNotFound)
-	if !ok {
+	var nf *provider.ErrNotFound
+	if !errors.As(err, &nf) {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	} else if nf.ID != "Adele" {
 		t.Errorf("expected ErrNotFound.ID to be %q, got %q", "Adele", nf.ID)
@@ -477,7 +480,8 @@ func TestAuthRequired(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no API key is set")
 	}
-	if _, ok := err.(*provider.ErrAuthRequired); !ok {
+	var authRequired *provider.ErrAuthRequired
+	if !errors.As(err, &authRequired) {
 		t.Errorf("expected ErrAuthRequired, got %T: %v", err, err)
 	}
 }

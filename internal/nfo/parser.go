@@ -3,6 +3,7 @@ package nfo
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -82,7 +83,7 @@ func parseTokens(decoder *xml.Decoder, nfo *ArtistNFO) error {
 
 	for {
 		tok, err := decoder.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

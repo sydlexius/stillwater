@@ -3,6 +3,7 @@ package fanarttv
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -110,7 +111,8 @@ func TestGetImagesNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not-found")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected ErrNotFound, got %T", err)
 	}
 }
@@ -136,7 +138,8 @@ func TestGetImagesNoKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no API key configured")
 	}
-	if _, ok := err.(*provider.ErrAuthRequired); !ok {
+	var authRequired *provider.ErrAuthRequired
+	if !errors.As(err, &authRequired) {
 		t.Errorf("expected ErrAuthRequired, got %T", err)
 	}
 }

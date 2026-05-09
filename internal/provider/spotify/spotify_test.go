@@ -215,7 +215,8 @@ func TestGetArtistRejectsNonSpotifyID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-Spotify ID")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
 		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 
@@ -338,7 +339,8 @@ func TestNoCredentials(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no credentials configured")
 	}
-	if _, ok := err.(*provider.ErrAuthRequired); !ok {
+	var authRequired *provider.ErrAuthRequired
+	if !errors.As(err, &authRequired) {
 		t.Errorf("expected *provider.ErrAuthRequired, got %T: %v", err, err)
 	}
 }

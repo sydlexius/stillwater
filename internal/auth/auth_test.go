@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -723,7 +724,7 @@ func TestRevokeAPIToken_NotFound(t *testing.T) {
 	}
 
 	err = svc.RevokeAPIToken(ctx, "nonexistent-id", userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -755,7 +756,7 @@ func TestRevokeAPIToken_AlreadyRevoked(t *testing.T) {
 	// Second revocation should return ErrTokenNotFound because the WHERE
 	// clause requires status = 'active'.
 	err = svc.RevokeAPIToken(ctx, id, userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("second revoke error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -781,7 +782,7 @@ func TestRevokeAPIToken_WrongUser(t *testing.T) {
 
 	// Attempt to revoke with a different user ID.
 	err = svc.RevokeAPIToken(ctx, id, "wrong-user-id")
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -818,7 +819,7 @@ func TestDeleteAPIToken_Success(t *testing.T) {
 
 	// Token should no longer exist.
 	_, err = svc.GetAPIToken(ctx, id, userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error after delete = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -844,7 +845,7 @@ func TestDeleteAPIToken_ActiveToken(t *testing.T) {
 
 	// Attempt to delete without revoking first.
 	err = svc.DeleteAPIToken(ctx, id, userID)
-	if err != ErrTokenActive {
+	if !errors.Is(err, ErrTokenActive) {
 		t.Errorf("error = %v, want ErrTokenActive", err)
 	}
 }
@@ -864,7 +865,7 @@ func TestDeleteAPIToken_NotFound(t *testing.T) {
 	}
 
 	err = svc.DeleteAPIToken(ctx, "nonexistent-id", userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -989,7 +990,7 @@ func TestGetAPIToken_NotFound(t *testing.T) {
 	}
 
 	_, err = svc.GetAPIToken(ctx, "nonexistent", userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -1015,7 +1016,7 @@ func TestGetAPIToken_WrongUser(t *testing.T) {
 
 	// Attempting to get the token with a different user ID should fail.
 	_, err = svc.GetAPIToken(ctx, id, "different-user-id")
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error = %v, want ErrTokenNotFound", err)
 	}
 }
@@ -1130,7 +1131,7 @@ func TestFullTokenLifecycle(t *testing.T) {
 
 	// 9. Token should be gone.
 	_, err = svc.GetAPIToken(ctx, tokenID, userID)
-	if err != ErrTokenNotFound {
+	if !errors.Is(err, ErrTokenNotFound) {
 		t.Errorf("error after delete = %v, want ErrTokenNotFound", err)
 	}
 

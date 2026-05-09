@@ -3,6 +3,7 @@ package nfo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -78,7 +79,7 @@ func (s *SnapshotService) GetByID(ctx context.Context, id string) (*Snapshot, er
 	`, id)
 	snap, err := scanSnapshot(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("snapshot not found: %s", id)
 		}
 		return nil, fmt.Errorf("getting nfo snapshot: %w", err)

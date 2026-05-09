@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ func (r *sqlitePlatformIDRepo) Set(ctx context.Context, artistID, connectionID, 
 		WHERE connection_id = ? AND platform_artist_id = ?
 	`, connectionID, platformArtistID).Scan(&existingArtistID)
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		// No collision; fall through to upsert.
 	case err != nil:
 		return fmt.Errorf("checking existing platform id holder: %w", err)

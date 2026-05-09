@@ -8,6 +8,7 @@ linters:
   default: none
   enable:
     - errcheck
+    - errorlint
     - exhaustive
     - govet
     - staticcheck
@@ -23,6 +24,10 @@ linters:
     - revive
     - nilerr
   settings:
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
     exhaustive:
       default-signifies-exhaustive: true
     gosec:
