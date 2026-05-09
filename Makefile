@@ -169,7 +169,7 @@ bruno-ci: build
 	READY=0; \
 	CSRF_TOKEN=""; \
 	for i in $$(seq 1 30); do \
-	  HEALTH_RESP=$$(curl -sf -D - "http://127.0.0.1:$$SW_PORT/api/v1/health" 2>/dev/null || true); \
+	  HEALTH_RESP=$$(curl -sf -D - --max-time 5 "http://127.0.0.1:$$SW_PORT/api/v1/health" 2>/dev/null || true); \
 	  if echo "$$HEALTH_RESP" | grep -q '"status":"ok"'; then \
 	    CSRF_TOKEN=$$(echo "$$HEALTH_RESP" \
 	      | grep -i "^set-cookie:" \
@@ -191,12 +191,12 @@ bruno-ci: build
 	fi; \
 	\
 	echo "[bruno-ci] creating admin account"; \
-	curl -sf -X POST "http://127.0.0.1:$$SW_PORT/api/v1/auth/setup" \
+	curl -sf --max-time 10 -X POST "http://127.0.0.1:$$SW_PORT/api/v1/auth/setup" \
 	  -H "Content-Type: application/json" \
 	  -d "{\"username\":\"$$ADMIN_USER\",\"password\":\"$$ADMIN_PASS\"}" > /dev/null; \
 	\
 	echo "[bruno-ci] logging in and capturing session cookie"; \
-	SESSION_COOKIE=$$(curl -sf -D - \
+	SESSION_COOKIE=$$(curl -sf -D - --max-time 10 \
 	  -X POST "http://127.0.0.1:$$SW_PORT/api/v1/auth/login" \
 	  -H "Content-Type: application/json" \
 	  -H "X-CSRF-Token: $$CSRF_TOKEN" \
@@ -211,15 +211,24 @@ bruno-ci: build
 	fi; \
 	\
 	mkdir -p "$$RESULTS_DIR"; \
-	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT)"; \
-	cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1 run \
-	  --env ci \
-	  --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
-	  --env-var "sessionToken=$$SESSION_COOKIE" \
-	  --reporter-html "$$RESULTS_DIR/bruno-results.html" \
-	  -r \
-	  .; \
+	echo "[bruno-ci] running Bruno collection (env=ci, port=$$SW_PORT, watchdog=$${BRUNO_TIMEOUT_SEC:-300}s)"; \
+	BRUNO_TIMEOUT_SEC="$${BRUNO_TIMEOUT_SEC:-300}"; \
+	( cd api/bruno && STILLWATER_CSRF_TOKEN="$$CSRF_TOKEN" npx --yes @usebruno/cli@1 run \
+	    --env ci \
+	    --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
+	    --env-var "sessionToken=$$SESSION_COOKIE" \
+	    --reporter-html "$$RESULTS_DIR/bruno-results.html" \
+	    -r \
+	    . ) & \
+	BRU_PID=$$!; \
+	( sleep "$$BRUNO_TIMEOUT_SEC" && kill -TERM "$$BRU_PID" 2>/dev/null && sleep 5 && kill -KILL "$$BRU_PID" 2>/dev/null ) & \
+	WATCHDOG_PID=$$!; \
+	wait "$$BRU_PID"; \
 	EXIT_CODE=$$?; \
+	kill "$$WATCHDOG_PID" 2>/dev/null || true; \
+	if [ "$$EXIT_CODE" = "143" ] || [ "$$EXIT_CODE" = "137" ]; then \
+	  echo "[bruno-ci] watchdog killed bru after $$BRUNO_TIMEOUT_SEC s; treating as failure"; \
+	fi; \
 	echo "[bruno-ci] results written to $$RESULTS_DIR/bruno-results.html"; \
 	exit $$EXIT_CODE
 
