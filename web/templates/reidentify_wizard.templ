@@ -37,7 +37,10 @@ type ReIdentifyWizardDoneData struct {
 templ ReIdentifyWizardPage(assets AssetPaths, data ReIdentifyWizardStepData) {
 	@Layout(t(ctx, "artists.bulk.reidentify.wizard.title"), assets) {
 		<div class="max-w-3xl mx-auto space-y-4">
-			<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+			<div class="inline-flex items-center gap-2">
+				<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+				@components.ContextHelp("help-reidentify-wizard-overview", t(ctx, "artists.bulk.reidentify.wizard.help.overview.label"), t(ctx, "artists.bulk.reidentify.wizard.help.overview"), "how-to/refresh-metadata#when-you-get-the-disambiguation-prompt")
+			</div>
 			<div id="wizard-body">
 				@ReIdentifyWizardStep(data)
 			</div>
@@ -50,7 +53,10 @@ templ ReIdentifyWizardPage(assets AssetPaths, data ReIdentifyWizardStepData) {
 templ ReIdentifyWizardPageDone(assets AssetPaths, data ReIdentifyWizardDoneData) {
 	@Layout(t(ctx, "artists.bulk.reidentify.wizard.title"), assets) {
 		<div class="max-w-3xl mx-auto space-y-4">
-			<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+			<div class="inline-flex items-center gap-2">
+				<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
+				@components.ContextHelp("help-reidentify-wizard-overview-done", t(ctx, "artists.bulk.reidentify.wizard.help.overview.label"), t(ctx, "artists.bulk.reidentify.wizard.help.overview"), "how-to/refresh-metadata#when-you-get-the-disambiguation-prompt")
+			</div>
 			@ReIdentifyWizardDone(data)
 		</div>
 	}
@@ -79,6 +85,7 @@ templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
 			@reIdentifyWizardCandidates(data)
 		</div>
 		<footer class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+			@components.ContextHelp("help-reidentify-wizard-actions", t(ctx, "artists.bulk.reidentify.wizard.help.actions.label"), t(ctx, "artists.bulk.reidentify.wizard.help.actions"), "")
 			if data.Index > 0 {
 				<button
 					type="button"

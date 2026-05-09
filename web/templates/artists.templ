@@ -408,6 +408,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							</span>
 						}
 					</button>
+					@components.ContextHelp("help-artists-filters", t(ctx, "artists.help.filters.label"), t(ctx, "artists.help.filters"), "core-concepts/artists-and-libraries#libraries")
 					<details id="sort-dropdown" class="relative">
 						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title={ t(ctx, "common.sort") }>
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -429,6 +430,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							<button type="button" onclick="setOrder('desc')" class={ sortDropdownItem(data.Order == "desc") }>{ t(ctx, "artists.sort.descending") }</button>
 						</div>
 					</details>
+					@components.ContextHelp("help-artists-sort", t(ctx, "artists.help.sort.label"), t(ctx, "artists.help.sort"), "")
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 						@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
 							{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
@@ -1560,7 +1562,14 @@ templ BulkActionBar(data ArtistListData) {
 		>
 			{ t(ctx, "artists.bulk.show_selected") }
 		</button>
-		<div class="ml-auto">
+		<div class="ml-auto inline-flex items-center gap-2">
+			// docAnchor intentionally empty: the most relevant docs page
+			// (how-to/refresh-metadata) talks about a "Bulk actions > Refresh
+			// metadata" entry that the dropdown does not actually offer, so
+			// linking there would misdirect. The body text covers all five
+			// listed actions; a follow-up docs page can replace this with a
+			// real anchor.
+			@components.ContextHelp("help-artists-bulk-action", t(ctx, "artists.help.bulk_action.label"), t(ctx, "artists.help.bulk_action"), "")
 			<select
 				id="bulk-action-select"
 				class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
