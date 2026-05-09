@@ -242,7 +242,8 @@ jobs:
               --env ci \
               --env-var "baseUrl=http://127.0.0.1:${PORT}" \
               --env-var "sessionToken=${SESSION_TOKEN}" \
-              --reporter-html "${{ runner.temp }}/bruno-results/bruno-results.html" \
+              --output "${{ runner.temp }}/bruno-results/bruno-results.html" \
+              --format html \
               -r \
               . | tee "${{ runner.temp }}/bruno.log"
 

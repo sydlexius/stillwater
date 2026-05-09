@@ -223,7 +223,8 @@ bruno-ci: build
 	    --env ci \
 	    --env-var "baseUrl=http://127.0.0.1:$$SW_PORT" \
 	    --env-var "sessionToken=$$SESSION_COOKIE" \
-	    --reporter-html "$$RESULTS_DIR/bruno-results.html" \
+	    --output "$$RESULTS_DIR/bruno-results.html" \
+	    --format html \
 	    -r \
 	    . ) & \
 	BRU_PID=$$!; \
