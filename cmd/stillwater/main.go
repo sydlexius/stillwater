@@ -139,6 +139,15 @@ func run() error {
 	defer logManager.Close() //nolint:errcheck
 	slog.SetDefault(logger)
 
+	// Warn (but do not abort) if the version ldflags injection is malformed.
+	// A bad Version string should not brick the binary; it simply means
+	// auto-update semver comparisons will fail gracefully downstream.
+	if err := version.Validate(); err != nil {
+		logger.Warn("version validation failed; auto-updater will be unable to compare versions. "+
+			"Run a release build via goreleaser, or check the -ldflags injection in the build pipeline",
+			"error", err)
+	}
+
 	if scaffoldErr != nil {
 		logger.Warn("could not write first-run config scaffold",
 			"path", configPath, "error", scaffoldErr)

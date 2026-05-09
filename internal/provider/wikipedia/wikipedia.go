@@ -14,14 +14,19 @@ import (
 	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 const (
 	defaultActionEndpoint      = "https://en.wikipedia.org/w/api.php"
 	defaultWikidataEndpoint    = "https://query.wikidata.org/sparql"
 	defaultWikidataAPIEndpoint = "https://www.wikidata.org/w/api.php"
-	userAgent                  = "Stillwater/1.0 (https://github.com/sydlexius/stillwater)"
 )
+
+// userAgent is computed once at package init from the ldflags-injected version.
+// var (not const) because it calls a function; package-level vars are fine
+// here since version.Version itself is set at build time and never changes.
+var userAgent = version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater")
 
 // Adapter implements the provider.Provider interface for Wikipedia.
 // It fetches artist biographies from Wikipedia article extracts and

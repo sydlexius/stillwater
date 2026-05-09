@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 const (
@@ -125,7 +126,7 @@ func (d *Dispatcher) send(url string, body []byte, contentType string) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("User-Agent", "Stillwater-Webhook/1.0")
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater-Webhook", ""))
 
 	resp, err := d.httpClient.Do(req) //nolint:gosec // URL is user-configured webhook destination
 	if err != nil {

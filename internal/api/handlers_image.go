@@ -26,6 +26,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -829,7 +830,7 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	// Wikimedia Commons blocks requests without a proper User-Agent.
-	req.Header.Set("User-Agent", "Stillwater/1.0 (https://github.com/sydlexius/stillwater)")
+	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 
 	resp, err := client.Do(req) //nolint:gosec // G107/G704: URL is validated by caller
 	if err != nil {
