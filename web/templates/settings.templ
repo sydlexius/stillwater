@@ -1597,6 +1597,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != "rules"),
 				}
 			>
+				// Page-level first-occurrence flags for two ContextHelp icons inside
+				// ruleRow: severity-badge legend (universal across categories, so
+				// shown on the first rendered row regardless of category) and
+				// requires-local-chip (shown on the first FS-unavailable row, when
+				// any). Other ContextHelp instances on this tab (per-category and
+				// conflict-gated) render unconditionally and are not gated here.
+				{{ fsHelpShown := false }}
+				{{ severityHelpShown := false }}
 				for _, cat := range []string{"nfo", "image", "metadata"} {
 					{{ catRules := rulesForCategory(data.Rules, cat) }}
 					if len(catRules) > 0 {
@@ -1613,14 +1621,23 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								{{ categoryHeading := tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }}
 								<div class="flex items-center gap-2">
 									<h2 class="text-lg font-semibold">{ categoryHeading }</h2>
+									// The conflict-gated chip + its help icon share the same
+									// visibility hook (.sw-conflict-gated-chip is toggled by
+									// JS when the active conflict state changes). Keeping the
+									// help icon inside the chip wrapper ensures the "?"
+									// describing the chip never shows when the chip itself is
+									// hidden, which would otherwise refer to UI the user
+									// cannot see.
 									if cat == "image" {
 										<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_image_tooltip") }>
 											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+											@components.ContextHelp("help-rules-conflict-gated-image", categoryHeading, t(ctx, "settings.rules.help_conflict_gated_image"), "core-concepts/conflict-gate#how-writes-are-gated")
 										</span>
 									}
 									if cat == "nfo" {
 										<span class="sw-conflict-gated-chip hidden" title={ t(ctx, "settings.rules.conflict_gated_nfo_tooltip") }>
 											<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">{ t(ctx, "settings.rules.conflict_gated_chip") }</span>
+											@components.ContextHelp("help-rules-conflict-gated-nfo", categoryHeading, t(ctx, "settings.rules.help_conflict_gated_nfo"), "core-concepts/conflict-gate#how-writes-are-gated")
 										</span>
 									}
 									if cat == "nfo" {
@@ -1635,8 +1652,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</div>
 							</div>
 							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
+								// Each row inspects the page-level flags (declared above)
+								// before flipping them so the help icon emits exactly once.
 								for _, rl := range catRules {
-									@ruleRow(rl, data.HasLocalLibrary)
+									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+									{{ showSeverityHelp := !severityHelpShown }}
+									if showFsHelp {
+										{{ fsHelpShown = true }}
+									}
+									if showSeverityHelp {
+										{{ severityHelpShown = true }}
+									}
+									@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
 								}
 							</div>
 						</div>
@@ -5711,7 +5739,7 @@ templ profileCard(p platform.Profile) {
 	</div>
 }
 
-templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
+templ ruleRow(rl rule.Rule, hasLocalLibrary, showSeverityHelp, showFsHelp bool) {
 	// A filesystem-dependent rule is unavailable when no local library exists.
 	// In that state, all controls are disabled and a tooltip explains why.
 	{{ fsUnavailable := rl.FilesystemDependent && !hasLocalLibrary }}
@@ -5741,6 +5769,9 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 						</svg>
 					</a>
 					@severityBadge(rl.Config.Severity)
+					if showSeverityHelp {
+						@components.ContextHelp("help-rules-severity-badge", t(ctx, "common.severity"), t(ctx, "settings.rules.help_severity_badge"), "core-concepts/rules#what-rules-check")
+					}
 					if fsUnavailable {
 						<span
 							class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
@@ -5748,6 +5779,9 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 						>
 							{ t(ctx, "settings.rules.requires_local") }
 						</span>
+						if showFsHelp {
+							@components.ContextHelp("help-rules-requires-local-chip", t(ctx, "settings.rules.requires_local"), t(ctx, "settings.rules.help_requires_local_chip"), "core-concepts/rules#filesystem-dependent-rules")
+						}
 					}
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ rl.Description }</p>

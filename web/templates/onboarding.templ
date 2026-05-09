@@ -7,6 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // OnboardingData holds the data for the onboarding wizard page.
@@ -237,7 +238,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 2: Platform Profile -->
 					<div id="wizard-step-2" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 2) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.choose_platform") }</h2>
+						<div class="inline-flex items-center gap-2 mb-1">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.choose_platform") }</h2>
+							@components.ContextHelp("help-onboarding-platform", t(ctx, "onboarding.help.platform.label"), t(ctx, "onboarding.help.platform"), "getting-started/first-run-oobe#wizard-step-2-platform-profile")
+						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.platform_description") }
 						</p>
@@ -249,7 +253,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 3: Provider API Keys -->
 					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.provider_api_keys") }</h2>
+						<div class="inline-flex items-center gap-2 mb-1">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.provider_api_keys") }</h2>
+							@components.ContextHelp("help-onboarding-providers", t(ctx, "onboarding.help.providers.label"), t(ctx, "onboarding.help.providers"), "getting-started/first-run-oobe#wizard-step-3-provider-api-keys")
+						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.providers_description") }
 						</p>
@@ -274,7 +281,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 4: Server Connections -->
 					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.server_connections") }</h2>
+						<div class="inline-flex items-center gap-2 mb-1">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.server_connections") }</h2>
+							@components.ContextHelp("help-onboarding-connections", t(ctx, "onboarding.help.connections.label"), t(ctx, "onboarding.help.connections"), "getting-started/first-run-oobe#wizard-step-4-server-connections")
+						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.connections_description") }
 						</p>
@@ -314,7 +324,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 5: Conflict pre-flight (only when libraries + qualifying connections present) -->
 					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.step_conflict") }</h2>
+						<div class="inline-flex items-center gap-2 mb-1">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.step_conflict") }</h2>
+							@components.ContextHelp("help-onboarding-conflict-preflight", t(ctx, "onboarding.help.conflict_preflight.label"), t(ctx, "onboarding.help.conflict_preflight"), "getting-started/first-run-oobe#wizard-step-5-conflict-pre-flight-conditional")
+						</div>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							{ t(ctx, "onboarding.conflict_check_intro") }
 						</p>
@@ -348,7 +361,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					<div id="wizard-step-6" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 6) }>
 						<!-- Phase 1: Opt-in -->
 						<div id="discovery-opt-in">
-							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
+							<div class="inline-flex items-center gap-2 mb-1">
+								<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.artist_discovery") }</h2>
+								@components.ContextHelp("help-onboarding-discovery", t(ctx, "onboarding.help.discovery.label"), t(ctx, "onboarding.help.discovery"), "getting-started/first-run-oobe#wizard-step-6-artist-discovery")
+							</div>
 							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 								{ t(ctx, "onboarding.discovery_description") }
 							</p>

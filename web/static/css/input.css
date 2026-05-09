@@ -1641,6 +1641,8 @@ body[data-sw-nfo-gated="true"] [hx-delete*="/fields/"] {
 body[data-sw-image-gated="true"] [data-sw-requires-image-write] .sw-conflict-gated-chip,
 body[data-sw-nfo-gated="true"] [data-sw-requires-nfo-write] .sw-conflict-gated-chip {
   display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   opacity: 1;
   cursor: help;
   filter: none;
