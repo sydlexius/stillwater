@@ -38,6 +38,7 @@ Thumbs.db
 
 # Local overrides
 docker-compose.local.yml
+docker-compose.uat.yml
 docker-compose.wsl.yml
 setupdocker.sh
 .env
