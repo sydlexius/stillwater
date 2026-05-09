@@ -1779,6 +1779,8 @@ func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
 			thumbCount++
 		case ImageFanart:
 			fanartCount++
+		default:
+			// Other image types are not relevant to this assertion.
 		}
 	}
 	if thumbCount != 2 {
