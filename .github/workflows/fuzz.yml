@@ -91,7 +91,7 @@ jobs:
           cache: false
 
       - name: Restore fuzz corpus and build cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           # Per-fuzz-function paths and keys: two matrix entries per package
           # run concurrently and each writes new corpus into testdata/fuzz/<name>/.
