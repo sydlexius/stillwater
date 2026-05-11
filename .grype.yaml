@@ -5,33 +5,22 @@
 # The grype-ignore-expiry job in security.yml fails when entries expire.
 
 ignore:
-  # OpenSSL 3.5.5 -- no fix available in Alpine 3.23 as of 2026-04-09.
-  # Upstream: https://www.openssl.org/news/vulnerabilities.html
-  - vulnerability: CVE-2026-2673
-    package:
-      name: libcrypto3
-      type: apk
-    review-by: "2026-05-09"
-    reason: "No patched OpenSSL in Alpine 3.23; upstream fix is 3.5.6"
-  - vulnerability: CVE-2026-2673
-    package:
-      name: libssl3
-      type: apk
-    review-by: "2026-05-09"
-    reason: "No patched OpenSSL in Alpine 3.23; upstream fix is 3.5.6"
-
-  # curl 8.17.0 -- no fix available in Alpine 3.23 as of 2026-04-09.
+  # curl 8.17.0 -- no fix in Alpine 3.23-main as of 2026-05-11.
+  # v3.23 still carries 8.17.0-r1; fix is 8.19.0-r0 in edge-main only.
+  # Upstream: https://security.alpinelinux.org/vuln/CVE-2026-3805
   - vulnerability: CVE-2026-3805
     package:
       name: curl
       type: apk
-    review-by: "2026-05-09"
-    reason: "No patched curl in Alpine 3.23; awaiting upstream backport"
+    review-by: "2026-06-09"
+    reason: "Alpine 3.23 still on 8.17.0-r1; fix 8.19.0-r0 not yet backported"
 
-  # nghttp2 1.68.0 -- no fix available in Alpine 3.23 as of 2026-04-09.
+  # nghttp2 1.68.0 -- no fix in Alpine 3.23-main as of 2026-05-11.
+  # v3.23 still carries 1.68.0-r0; fix 1.68.1 not yet released in this branch.
+  # Upstream: https://security.alpinelinux.org/vuln/CVE-2026-27135
   - vulnerability: CVE-2026-27135
     package:
       name: nghttp2-libs
       type: apk
-    review-by: "2026-05-09"
-    reason: "No patched nghttp2 in Alpine 3.23; awaiting upstream backport"
+    review-by: "2026-06-09"
+    reason: "Alpine 3.23 still on 1.68.0-r0; fix 1.68.1 not yet backported"
