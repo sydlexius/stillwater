@@ -10,7 +10,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1
-	github.com/quic-go/quic-go v0.59.0
+	github.com/quic-go/quic-go v0.59.1
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.40.0
 	golang.org/x/mod v0.36.0
