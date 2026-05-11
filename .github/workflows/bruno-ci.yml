@@ -110,7 +110,18 @@ jobs:
             -o stillwater ./cmd/stillwater
 
       - name: Install Bruno CLI
-        run: npm install -g @usebruno/cli@1.22.0
+        # Pinned by SHA-256 against the published npm tarball so Scorecard
+        # treats this as a hash-pinned dependency. Bump VERSION + SHA256
+        # together; the registry attests SHA-512 integrity at publish time.
+        env:
+          BRUNO_VERSION: "1.22.0"
+          BRUNO_SHA256: "10e62e8d2385c1cb38820dbd374e829c1061d4e5a4aa7851b7cecc0ef02eb86f"
+        run: |
+          url="https://registry.npmjs.org/@usebruno/cli/-/cli-${BRUNO_VERSION}.tgz"
+          curl -fsSL --retry 3 --retry-delay 2 "$url" -o bruno-cli.tgz
+          echo "${BRUNO_SHA256}  bruno-cli.tgz" | sha256sum -c -
+          npm install -g ./bruno-cli.tgz
+          rm -f bruno-cli.tgz
 
       - name: Pick a free port
         id: port
