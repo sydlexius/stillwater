@@ -1,0 +1,1584 @@
+[
+  {
+    "operationId": "acceptReIdentifyWizardStep",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard/{sid}/step/{idx}/accept",
+    "handler": "handleReIdentifyWizardAccept",
+    "covered": true
+  },
+  {
+    "operationId": "activatePlatform",
+    "method": "POST",
+    "path": "/platforms/{id}/activate",
+    "handler": "handleSetActivePlatform",
+    "covered": false
+  },
+  {
+    "operationId": "addAlias",
+    "method": "POST",
+    "path": "/artists/{id}/aliases",
+    "handler": "handleAddAlias",
+    "covered": false
+  },
+  {
+    "operationId": "addUpdateSkip",
+    "method": "POST",
+    "path": "/updates/skips",
+    "handler": "handlePostUpdateSkips",
+    "covered": true
+  },
+  {
+    "operationId": "allowlistForeignFile",
+    "method": "POST",
+    "path": "/foreign-files/{id}/allowlist",
+    "handler": "handleForeignFileAllowlist",
+    "covered": true
+  },
+  {
+    "operationId": "applyUpdate",
+    "method": "POST",
+    "path": "/updates/apply",
+    "handler": "handlePostUpdateApply",
+    "covered": true
+  },
+  {
+    "operationId": "applyViolationCandidate",
+    "method": "POST",
+    "path": "/notifications/{id}/apply-candidate",
+    "handler": "handleApplyViolationCandidate",
+    "covered": false
+  },
+  {
+    "operationId": "assignFanartSlot",
+    "method": "POST",
+    "path": "/artists/{id}/images/fanart/{slot}/assign",
+    "handler": "handleFanartSlotAssign",
+    "covered": true
+  },
+  {
+    "operationId": "batchDeleteFanart",
+    "method": "DELETE",
+    "path": "/artists/{id}/images/fanart/batch",
+    "handler": "handleFanartBatchDelete",
+    "covered": true
+  },
+  {
+    "operationId": "batchFetchFanart",
+    "method": "POST",
+    "path": "/artists/{id}/images/fanart/fetch-batch",
+    "handler": "handleFanartBatchFetch",
+    "covered": false
+  },
+  {
+    "operationId": "browseFilesystem",
+    "method": "GET",
+    "path": "/filesystem/browse",
+    "handler": "handleFilesystemBrowse",
+    "covered": true
+  },
+  {
+    "operationId": "bulkDismissViolations",
+    "method": "POST",
+    "path": "/notifications/bulk-dismiss",
+    "handler": "handleBulkDismissViolations",
+    "covered": false
+  },
+  {
+    "operationId": "bulkFetchImages",
+    "method": "POST",
+    "path": "/bulk/fetch-images",
+    "handler": "handleBulkFetchImages",
+    "covered": false
+  },
+  {
+    "operationId": "bulkFetchMetadata",
+    "method": "POST",
+    "path": "/bulk/fetch-metadata",
+    "handler": "handleBulkFetchMetadata",
+    "covered": false
+  },
+  {
+    "operationId": "bulkIdentifyLink",
+    "method": "POST",
+    "path": "/artists/bulk-identify/link",
+    "handler": "handleBulkIdentifyLink",
+    "covered": true
+  },
+  {
+    "operationId": "cancelBulkAction",
+    "method": "POST",
+    "path": "/artists/bulk-actions/cancel",
+    "handler": "handleBulkActionCancel",
+    "covered": true
+  },
+  {
+    "operationId": "cancelBulkIdentify",
+    "method": "DELETE",
+    "path": "/artists/bulk-identify",
+    "handler": "handleBulkIdentifyCancel",
+    "covered": true
+  },
+  {
+    "operationId": "cancelBulkJob",
+    "method": "POST",
+    "path": "/bulk/jobs/{id}/cancel",
+    "handler": "handleBulkJobCancel",
+    "covered": false
+  },
+  {
+    "operationId": "checkForUpdates",
+    "method": "POST",
+    "path": "/updates/check",
+    "handler": "handlePostUpdateCheck",
+    "covered": true
+  },
+  {
+    "operationId": "checkNFOConflict",
+    "method": "GET",
+    "path": "/artists/{id}/nfo/conflict",
+    "handler": "handleNFOConflictCheck",
+    "covered": true
+  },
+  {
+    "operationId": "clearCache",
+    "method": "DELETE",
+    "path": "/settings/cache",
+    "handler": "handleCacheClear",
+    "covered": true
+  },
+  {
+    "operationId": "clearField",
+    "method": "DELETE",
+    "path": "/artists/{id}/fields/{field}",
+    "handler": "handleFieldClear",
+    "covered": true
+  },
+  {
+    "operationId": "clearLogs",
+    "method": "DELETE",
+    "path": "/logs",
+    "handler": "handleClearLogs",
+    "covered": true
+  },
+  {
+    "operationId": "clearMembers",
+    "method": "DELETE",
+    "path": "/artists/{id}/members",
+    "handler": "handleClearMembers",
+    "covered": true
+  },
+  {
+    "operationId": "clearResolvedViolations",
+    "method": "DELETE",
+    "path": "/notifications/resolved",
+    "handler": "handleClearResolvedViolations",
+    "covered": false
+  },
+  {
+    "operationId": "clobberCheck",
+    "method": "GET",
+    "path": "/connections/clobber-check",
+    "handler": "handleClobberCheck",
+    "covered": false
+  },
+  {
+    "operationId": "createAPIToken",
+    "method": "POST",
+    "path": "/auth/tokens",
+    "handler": "handleCreateAPIToken",
+    "covered": true
+  },
+  {
+    "operationId": "createBackup",
+    "method": "POST",
+    "path": "/settings/backup",
+    "handler": "handleBackupCreate",
+    "covered": true
+  },
+  {
+    "operationId": "createConnection",
+    "method": "POST",
+    "path": "/connections",
+    "handler": "handleCreateConnection",
+    "covered": false
+  },
+  {
+    "operationId": "createLibrary",
+    "method": "POST",
+    "path": "/libraries",
+    "handler": "handleCreateLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "createPlatform",
+    "method": "POST",
+    "path": "/platforms",
+    "handler": "handleCreatePlatform",
+    "covered": false
+  },
+  {
+    "operationId": "createWebhook",
+    "method": "POST",
+    "path": "/webhooks",
+    "handler": "handleCreateWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "cropImage",
+    "method": "POST",
+    "path": "/artists/{id}/images/crop",
+    "handler": "handleImageCrop",
+    "covered": true
+  },
+  {
+    "operationId": "declineReIdentifyWizardStep",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard/{sid}/step/{idx}/decline",
+    "handler": "handleReIdentifyWizardDecline",
+    "covered": true
+  },
+  {
+    "operationId": "deleteAPIToken",
+    "method": "DELETE",
+    "path": "/auth/tokens/{id}/permanent",
+    "handler": "handleDeleteAPIToken",
+    "covered": true
+  },
+  {
+    "operationId": "deleteBackup",
+    "method": "DELETE",
+    "path": "/settings/backup/{filename}",
+    "handler": "handleBackupDelete",
+    "covered": true
+  },
+  {
+    "operationId": "deleteConnection",
+    "method": "DELETE",
+    "path": "/connections/{id}",
+    "handler": "handleDeleteConnection",
+    "covered": false
+  },
+  {
+    "operationId": "deleteFanartSlot",
+    "method": "DELETE",
+    "path": "/artists/{id}/images/fanart/{slot}",
+    "handler": "handleFanartSlotDelete",
+    "covered": true
+  },
+  {
+    "operationId": "deleteForeignFile",
+    "method": "DELETE",
+    "path": "/foreign-files/{id}/file",
+    "handler": "handleForeignFileDelete",
+    "covered": true
+  },
+  {
+    "operationId": "deleteImage",
+    "method": "DELETE",
+    "path": "/artists/{id}/images/{type}",
+    "handler": "handleDeleteImage",
+    "covered": true
+  },
+  {
+    "operationId": "deleteLibrary",
+    "method": "DELETE",
+    "path": "/libraries/{id}",
+    "handler": "handleDeleteLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "deleteLogFiles",
+    "method": "DELETE",
+    "path": "/logs/files",
+    "handler": "handleDeleteLogFiles",
+    "covered": false
+  },
+  {
+    "operationId": "deletePlatform",
+    "method": "DELETE",
+    "path": "/platforms/{id}",
+    "handler": "handleDeletePlatform",
+    "covered": false
+  },
+  {
+    "operationId": "deletePlatformID",
+    "method": "DELETE",
+    "path": "/artists/{id}/platform-ids/{connectionId}",
+    "handler": "handleDeletePlatformID",
+    "covered": true
+  },
+  {
+    "operationId": "deleteProviderKey",
+    "method": "DELETE",
+    "path": "/providers/{name}/key",
+    "handler": "handleDeleteProviderKey",
+    "covered": false
+  },
+  {
+    "operationId": "deleteProviderMirror",
+    "method": "DELETE",
+    "path": "/providers/{name}/mirror",
+    "handler": "handleDeleteMirror",
+    "covered": false
+  },
+  {
+    "operationId": "deletePushImage",
+    "method": "DELETE",
+    "path": "/artists/{id}/push/images/{type}",
+    "handler": "handleDeletePushImage",
+    "covered": true
+  },
+  {
+    "operationId": "deleteWebhook",
+    "method": "DELETE",
+    "path": "/webhooks/{id}",
+    "handler": "handleDeleteWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "disablePlatformSettings",
+    "method": "POST",
+    "path": "/connections/{id}/platform-settings/disable",
+    "handler": "handleDisablePlatformSettings",
+    "covered": false
+  },
+  {
+    "operationId": "discoverLibraries",
+    "method": "GET",
+    "path": "/connections/{id}/libraries",
+    "handler": "handleDiscoverLibraries",
+    "covered": false
+  },
+  {
+    "operationId": "dismissForeignFiles",
+    "method": "POST",
+    "path": "/foreign-files/dismiss",
+    "handler": "handleForeignFilesDismiss",
+    "covered": true
+  },
+  {
+    "operationId": "dismissSharedFilesystem",
+    "method": "POST",
+    "path": "/shared-filesystem/dismiss",
+    "handler": "handleSharedFilesystemDismiss",
+    "covered": true
+  },
+  {
+    "operationId": "dismissViolation",
+    "method": "POST",
+    "path": "/notifications/{id}/dismiss",
+    "handler": "handleDismissViolation",
+    "covered": false
+  },
+  {
+    "operationId": "downloadBackup",
+    "method": "GET",
+    "path": "/settings/backup/{filename}",
+    "handler": "handleBackupDownload",
+    "covered": true
+  },
+  {
+    "operationId": "evaluateArtistHealth",
+    "method": "GET",
+    "path": "/artists/{id}/health",
+    "handler": "handleEvaluateArtist",
+    "covered": true
+  },
+  {
+    "operationId": "exportComplianceReport",
+    "method": "GET",
+    "path": "/reports/compliance/export",
+    "handler": "handleReportComplianceExport",
+    "covered": false
+  },
+  {
+    "operationId": "exportNotifications",
+    "method": "GET",
+    "path": "/notifications/export",
+    "handler": "handleNotificationsExport",
+    "covered": true
+  },
+  {
+    "operationId": "exportSettings",
+    "method": "POST",
+    "path": "/settings/export",
+    "handler": "handleSettingsExport",
+    "covered": true
+  },
+  {
+    "operationId": "fetchImage",
+    "method": "POST",
+    "path": "/artists/{id}/images/fetch",
+    "handler": "handleImageFetch",
+    "covered": true
+  },
+  {
+    "operationId": "fixAllStatus",
+    "method": "GET",
+    "path": "/notifications/fix-all/status",
+    "handler": "handleFixAllStatus",
+    "covered": true
+  },
+  {
+    "operationId": "fixAllViolations",
+    "method": "POST",
+    "path": "/notifications/fix-all",
+    "handler": "handleFixAll",
+    "covered": true
+  },
+  {
+    "operationId": "fixViolation",
+    "method": "POST",
+    "path": "/notifications/{id}/fix",
+    "handler": "handleFixViolation",
+    "covered": true
+  },
+  {
+    "operationId": "getAPIDocs",
+    "method": "GET",
+    "path": "/docs",
+    "handler": "handleAPIDocs",
+    "covered": false
+  },
+  {
+    "operationId": "getArtist",
+    "method": "GET",
+    "path": "/artists/{id}",
+    "handler": "handleGetArtist",
+    "covered": false
+  },
+  {
+    "operationId": "getArtistMusicBrainzDiffs",
+    "method": "GET",
+    "path": "/artists/{id}/musicbrainz/diffs",
+    "handler": "handleGetMBDiffs",
+    "covered": true
+  },
+  {
+    "operationId": "getArtistsBadge",
+    "method": "GET",
+    "path": "/artists/badge",
+    "handler": "handleArtistsBadge",
+    "covered": true
+  },
+  {
+    "operationId": "getBulkActionStatus",
+    "method": "GET",
+    "path": "/artists/bulk-actions/status",
+    "handler": "handleBulkActionStatus",
+    "covered": true
+  },
+  {
+    "operationId": "getBulkIdentifyProgress",
+    "method": "GET",
+    "path": "/artists/bulk-identify",
+    "handler": "handleBulkIdentifyProgress",
+    "covered": true
+  },
+  {
+    "operationId": "getBulkJob",
+    "method": "GET",
+    "path": "/bulk/jobs/{id}",
+    "handler": "handleBulkJobStatus",
+    "covered": true
+  },
+  {
+    "operationId": "getCacheStats",
+    "method": "GET",
+    "path": "/settings/cache/stats",
+    "handler": "handleCacheStats",
+    "covered": true
+  },
+  {
+    "operationId": "getClassicalMode",
+    "method": "GET",
+    "path": "/rules/classical-mode",
+    "handler": "handleGetClassicalMode",
+    "covered": false
+  },
+  {
+    "operationId": "getComplianceReport",
+    "method": "GET",
+    "path": "/reports/compliance",
+    "handler": "handleReportCompliance",
+    "covered": true
+  },
+  {
+    "operationId": "getConflictBanner",
+    "method": "GET",
+    "path": "/config/conflict-banner",
+    "handler": "handleGetConflictBanner",
+    "covered": true
+  },
+  {
+    "operationId": "getConflicts",
+    "method": "GET",
+    "path": "/conflicts",
+    "handler": "handleGetConflicts",
+    "covered": true
+  },
+  {
+    "operationId": "getConnection",
+    "method": "GET",
+    "path": "/connections/{id}",
+    "handler": "handleGetConnection",
+    "covered": false
+  },
+  {
+    "operationId": "getConnectionScraperConfig",
+    "method": "GET",
+    "path": "/scraper/config/connections/{id}",
+    "handler": "handleGetConnectionScraperConfig",
+    "covered": false
+  },
+  {
+    "operationId": "getDuplicates",
+    "method": "GET",
+    "path": "/artists/duplicates",
+    "handler": "handleDuplicates",
+    "covered": false
+  },
+  {
+    "operationId": "getEventStream",
+    "method": "GET",
+    "path": "/events/stream",
+    "handler": "handleSSEStream",
+    "covered": true
+  },
+  {
+    "operationId": "getFanartSyncState",
+    "method": "GET",
+    "path": "/artists/{id}/fanart-sync-state",
+    "handler": "handleFanartSyncState",
+    "covered": true
+  },
+  {
+    "operationId": "getFieldDisplay",
+    "method": "GET",
+    "path": "/artists/{id}/fields/{field}/display",
+    "handler": "handleFieldDisplay",
+    "covered": true
+  },
+  {
+    "operationId": "getFieldEdit",
+    "method": "GET",
+    "path": "/artists/{id}/fields/{field}/edit",
+    "handler": "handleFieldEdit",
+    "covered": false
+  },
+  {
+    "operationId": "getFieldProviders",
+    "method": "GET",
+    "path": "/artists/{id}/fields/{field}/providers",
+    "handler": "handleFieldProviders",
+    "covered": false
+  },
+  {
+    "operationId": "getHealth",
+    "method": "GET",
+    "path": "/health",
+    "handler": "handleHealth",
+    "covered": false
+  },
+  {
+    "operationId": "getHealthByLibrary",
+    "method": "GET",
+    "path": "/reports/health/by-library",
+    "handler": "handleReportHealthByLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "getHealthHistory",
+    "method": "GET",
+    "path": "/reports/health/history",
+    "handler": "handleReportHealthHistory",
+    "covered": true
+  },
+  {
+    "operationId": "getHealthReport",
+    "method": "GET",
+    "path": "/reports/health",
+    "handler": "handleReportHealth",
+    "covered": true
+  },
+  {
+    "operationId": "getImageInfo",
+    "method": "GET",
+    "path": "/artists/{id}/images/{type}/info",
+    "handler": "handleImageInfo",
+    "covered": false
+  },
+  {
+    "operationId": "getLibrary",
+    "method": "GET",
+    "path": "/libraries/{id}",
+    "handler": "handleGetLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "getLibraryOpStatus",
+    "method": "GET",
+    "path": "/libraries/{libId}/operation/status",
+    "handler": "handleLibraryOpStatus",
+    "covered": true
+  },
+  {
+    "operationId": "getLogging",
+    "method": "GET",
+    "path": "/settings/logging",
+    "handler": "handleGetLogging",
+    "covered": false
+  },
+  {
+    "operationId": "getLogs",
+    "method": "GET",
+    "path": "/logs",
+    "handler": "handleGetLogs",
+    "covered": true
+  },
+  {
+    "operationId": "getMaintenanceStatus",
+    "method": "GET",
+    "path": "/settings/maintenance/status",
+    "handler": "handleMaintenanceStatus",
+    "covered": false
+  },
+  {
+    "operationId": "getMe",
+    "method": "GET",
+    "path": "/auth/me",
+    "handler": "handleMe",
+    "covered": false
+  },
+  {
+    "operationId": "getMetadataCompleteness",
+    "method": "GET",
+    "path": "/reports/metadata-completeness",
+    "handler": "handleReportMetadataCompleteness",
+    "covered": true
+  },
+  {
+    "operationId": "getNFODiff",
+    "method": "GET",
+    "path": "/artists/{id}/nfo/diff",
+    "handler": "handleNFODiff",
+    "covered": true
+  },
+  {
+    "operationId": "getNFOOutput",
+    "method": "GET",
+    "path": "/settings/nfo-output",
+    "handler": "handleGetNFOOutput",
+    "covered": true
+  },
+  {
+    "operationId": "getNotificationBadge",
+    "method": "GET",
+    "path": "/notifications/badge",
+    "handler": "handleNotificationBadge",
+    "covered": false
+  },
+  {
+    "operationId": "getNotificationCounts",
+    "method": "GET",
+    "path": "/notifications/counts",
+    "handler": "handleNotificationCounts",
+    "covered": false
+  },
+  {
+    "operationId": "getOpenAPISpec",
+    "method": "GET",
+    "path": "/docs/openapi.yaml",
+    "handler": "handleOpenAPISpec",
+    "covered": false
+  },
+  {
+    "operationId": "getPlatform",
+    "method": "GET",
+    "path": "/platforms/{id}",
+    "handler": "handleGetPlatform",
+    "covered": false
+  },
+  {
+    "operationId": "getPlatformBackdropThumbnail",
+    "method": "GET",
+    "path": "/artists/{id}/platform-backdrops/{connectionId}/{index}/thumbnail",
+    "handler": "handlePlatformBackdropThumbnail",
+    "covered": true
+  },
+  {
+    "operationId": "getPlatformIDs",
+    "method": "GET",
+    "path": "/artists/{id}/platform-ids",
+    "handler": "handleGetPlatformIDs",
+    "covered": true
+  },
+  {
+    "operationId": "getPlatformSettings",
+    "method": "GET",
+    "path": "/connections/{id}/platform-settings",
+    "handler": "handleGetPlatformSettings",
+    "covered": false
+  },
+  {
+    "operationId": "getPlatformState",
+    "method": "GET",
+    "path": "/artists/{id}/platform-state",
+    "handler": "handleGetPlatformState",
+    "covered": false
+  },
+  {
+    "operationId": "getPlatformSummary",
+    "method": "GET",
+    "path": "/connections/{id}/platform-summary",
+    "handler": "handleGetPlatformSummary",
+    "covered": false
+  },
+  {
+    "operationId": "getPreference",
+    "method": "GET",
+    "path": "/preferences/{key}",
+    "handler": "handleGetPreference",
+    "covered": true
+  },
+  {
+    "operationId": "getPreferences",
+    "method": "GET",
+    "path": "/preferences",
+    "handler": "handleGetPreferences",
+    "covered": true
+  },
+  {
+    "operationId": "getPriorities",
+    "method": "GET",
+    "path": "/providers/priorities",
+    "handler": "handleGetPriorities",
+    "covered": false
+  },
+  {
+    "operationId": "getRulesStatus",
+    "method": "GET",
+    "path": "/rules/status",
+    "handler": "handleRulesStatus",
+    "covered": false
+  },
+  {
+    "operationId": "getRunAllRulesStatus",
+    "method": "GET",
+    "path": "/rules/run-all/status",
+    "handler": "handleRunAllRulesStatus",
+    "covered": false
+  },
+  {
+    "operationId": "getScannerStatus",
+    "method": "GET",
+    "path": "/scanner/status",
+    "handler": "handleScannerStatus",
+    "covered": false
+  },
+  {
+    "operationId": "getScraperConfig",
+    "method": "GET",
+    "path": "/scraper/config",
+    "handler": "handleGetScraperConfig",
+    "covered": false
+  },
+  {
+    "operationId": "getSettings",
+    "method": "GET",
+    "path": "/settings",
+    "handler": "handleGetSettings",
+    "covered": true
+  },
+  {
+    "operationId": "getSharedFilesystemStatus",
+    "method": "GET",
+    "path": "/shared-filesystem/status",
+    "handler": "handleSharedFilesystemStatus",
+    "covered": true
+  },
+  {
+    "operationId": "getUpdateConfig",
+    "method": "GET",
+    "path": "/updates/config",
+    "handler": "handleGetUpdateConfig",
+    "covered": true
+  },
+  {
+    "operationId": "getUpdateStatus",
+    "method": "GET",
+    "path": "/updates/status",
+    "handler": "handleGetUpdateStatus",
+    "covered": true
+  },
+  {
+    "operationId": "getViolationTrend",
+    "method": "GET",
+    "path": "/violations/trend",
+    "handler": "handleViolationTrend",
+    "covered": true
+  },
+  {
+    "operationId": "getWebSearchProviders",
+    "method": "GET",
+    "path": "/providers/websearch",
+    "handler": "handleGetWebSearchProviders",
+    "covered": false
+  },
+  {
+    "operationId": "getWebhook",
+    "method": "GET",
+    "path": "/webhooks/{id}",
+    "handler": "handleGetWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "handleEmbyWebhook",
+    "method": "POST",
+    "path": "/webhooks/inbound/emby",
+    "handler": "handleEmbyWebhook",
+    "covered": true
+  },
+  {
+    "operationId": "handleJellyfinWebhook",
+    "method": "POST",
+    "path": "/webhooks/inbound/jellyfin",
+    "handler": "handleJellyfinWebhook",
+    "covered": true
+  },
+  {
+    "operationId": "handleLidarrWebhook",
+    "method": "POST",
+    "path": "/webhooks/inbound/lidarr",
+    "handler": "handleLidarrWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "importLibraries",
+    "method": "POST",
+    "path": "/connections/{id}/libraries/import",
+    "handler": "handleImportLibraries",
+    "covered": true
+  },
+  {
+    "operationId": "importSettings",
+    "method": "POST",
+    "path": "/settings/import",
+    "handler": "handleSettingsImport",
+    "covered": true
+  },
+  {
+    "operationId": "listAPITokens",
+    "method": "GET",
+    "path": "/auth/tokens",
+    "handler": "handleListAPITokens",
+    "covered": false
+  },
+  {
+    "operationId": "listAliases",
+    "method": "GET",
+    "path": "/artists/{id}/aliases",
+    "handler": "handleListAliases",
+    "covered": false
+  },
+  {
+    "operationId": "listArtistHistory",
+    "method": "GET",
+    "path": "/artists/{id}/history",
+    "handler": "handleListArtistHistory",
+    "covered": true
+  },
+  {
+    "operationId": "listArtists",
+    "method": "GET",
+    "path": "/artists",
+    "handler": "handleListArtists",
+    "covered": true
+  },
+  {
+    "operationId": "listBackups",
+    "method": "GET",
+    "path": "/settings/backup/history",
+    "handler": "handleBackupHistory",
+    "covered": true
+  },
+  {
+    "operationId": "listBulkJobs",
+    "method": "GET",
+    "path": "/bulk/jobs",
+    "handler": "handleBulkJobList",
+    "covered": true
+  },
+  {
+    "operationId": "listConnections",
+    "method": "GET",
+    "path": "/connections",
+    "handler": "handleListConnections",
+    "covered": false
+  },
+  {
+    "operationId": "listFanart",
+    "method": "GET",
+    "path": "/artists/{id}/images/fanart/list",
+    "handler": "handleFanartList",
+    "covered": false
+  },
+  {
+    "operationId": "listForeignFileAllowlist",
+    "method": "GET",
+    "path": "/foreign-file-allowlist",
+    "handler": "handleForeignAllowlistList",
+    "covered": true
+  },
+  {
+    "operationId": "listForeignFiles",
+    "method": "GET",
+    "path": "/foreign-files",
+    "handler": "handleForeignFilesList",
+    "covered": true
+  },
+  {
+    "operationId": "listGlobalHistory",
+    "method": "GET",
+    "path": "/history",
+    "handler": "handleListGlobalHistory",
+    "covered": true
+  },
+  {
+    "operationId": "listLibraries",
+    "method": "GET",
+    "path": "/libraries",
+    "handler": "handleListLibraries",
+    "covered": true
+  },
+  {
+    "operationId": "listLockedArtists",
+    "method": "GET",
+    "path": "/artists/locked",
+    "handler": "handleListLockedArtists",
+    "covered": false
+  },
+  {
+    "operationId": "listLogFiles",
+    "method": "GET",
+    "path": "/logs/files",
+    "handler": "handleListLogFiles",
+    "covered": false
+  },
+  {
+    "operationId": "listNotifications",
+    "method": "GET",
+    "path": "/notifications",
+    "handler": "handleListNotifications",
+    "covered": false
+  },
+  {
+    "operationId": "listPlatformBackdrops",
+    "method": "GET",
+    "path": "/artists/{id}/platform-backdrops",
+    "handler": "handlePlatformBackdrops",
+    "covered": true
+  },
+  {
+    "operationId": "listPlatforms",
+    "method": "GET",
+    "path": "/platforms",
+    "handler": "handleListPlatforms",
+    "covered": false
+  },
+  {
+    "operationId": "listProviders",
+    "method": "GET",
+    "path": "/providers",
+    "handler": "handleListProviders",
+    "covered": false
+  },
+  {
+    "operationId": "listRules",
+    "method": "GET",
+    "path": "/rules",
+    "handler": "handleListRules",
+    "covered": true
+  },
+  {
+    "operationId": "listScraperProviders",
+    "method": "GET",
+    "path": "/scraper/providers",
+    "handler": "handleListScraperProviders",
+    "covered": false
+  },
+  {
+    "operationId": "listUpdateSkips",
+    "method": "GET",
+    "path": "/updates/skips",
+    "handler": "handleGetUpdateSkips",
+    "covered": true
+  },
+  {
+    "operationId": "listWebhooks",
+    "method": "GET",
+    "path": "/webhooks",
+    "handler": "handleListWebhooks",
+    "covered": false
+  },
+  {
+    "operationId": "lockArtist",
+    "method": "POST",
+    "path": "/artists/{id}/lock",
+    "handler": "handleLockArtist",
+    "covered": true
+  },
+  {
+    "operationId": "lockArtistField",
+    "method": "POST",
+    "path": "/artists/{id}/field-locks/{field}",
+    "handler": "handleLockArtistField",
+    "covered": true
+  },
+  {
+    "operationId": "lockArtistImage",
+    "method": "POST",
+    "path": "/artists/{id}/image-locks/{imageId}",
+    "handler": "handleLockArtistImage",
+    "covered": true
+  },
+  {
+    "operationId": "login",
+    "method": "POST",
+    "path": "/auth/login",
+    "handler": "handleLogin",
+    "covered": true
+  },
+  {
+    "operationId": "logout",
+    "method": "POST",
+    "path": "/auth/logout",
+    "handler": "handleLogout",
+    "covered": true
+  },
+  {
+    "operationId": "maintenanceOptimize",
+    "method": "POST",
+    "path": "/settings/maintenance/optimize",
+    "handler": "handleMaintenanceOptimize",
+    "covered": false
+  },
+  {
+    "operationId": "maintenanceVacuum",
+    "method": "POST",
+    "path": "/settings/maintenance/vacuum",
+    "handler": "handleMaintenanceVacuum",
+    "covered": false
+  },
+  {
+    "operationId": "oidcCallback",
+    "method": "GET",
+    "path": "/auth/oidc/callback",
+    "handler": "handleOIDCCallback",
+    "covered": false
+  },
+  {
+    "operationId": "oidcLogin",
+    "method": "GET",
+    "path": "/auth/oidc/login",
+    "handler": "handleOIDCLogin",
+    "covered": false
+  },
+  {
+    "operationId": "populateLibrary",
+    "method": "POST",
+    "path": "/connections/{id}/libraries/{libId}/populate",
+    "handler": "handlePopulateLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "postOnboardingConflictStep",
+    "method": "POST",
+    "path": "/onboarding/conflict-step",
+    "handler": "handlePostOnboardingConflictStep",
+    "covered": true
+  },
+  {
+    "operationId": "providerFetch",
+    "method": "POST",
+    "path": "/providers/fetch",
+    "handler": "handleProviderFetch",
+    "covered": false
+  },
+  {
+    "operationId": "providerSearch",
+    "method": "POST",
+    "path": "/providers/search",
+    "handler": "handleProviderSearch",
+    "covered": false
+  },
+  {
+    "operationId": "pullMetadata",
+    "method": "POST",
+    "path": "/artists/{id}/pull",
+    "handler": "handlePullMetadata",
+    "covered": false
+  },
+  {
+    "operationId": "pushImages",
+    "method": "POST",
+    "path": "/artists/{id}/push/images",
+    "handler": "handlePushImages",
+    "covered": true
+  },
+  {
+    "operationId": "pushMetadata",
+    "method": "POST",
+    "path": "/artists/{id}/push",
+    "handler": "handlePushMetadata",
+    "covered": false
+  },
+  {
+    "operationId": "randomBackdrop",
+    "method": "GET",
+    "path": "/images/random-backdrop",
+    "handler": "handleRandomBackdrop",
+    "covered": true
+  },
+  {
+    "operationId": "recheckSharedFilesystem",
+    "method": "POST",
+    "path": "/shared-filesystem/recheck",
+    "handler": "handleSharedFilesystemRecheck",
+    "covered": true
+  },
+  {
+    "operationId": "refreshArtist",
+    "method": "POST",
+    "path": "/artists/{id}/refresh",
+    "handler": "handleArtistRefresh",
+    "covered": false
+  },
+  {
+    "operationId": "refreshLink",
+    "method": "POST",
+    "path": "/artists/{id}/refresh/link",
+    "handler": "handleRefreshLink",
+    "covered": false
+  },
+  {
+    "operationId": "refreshSearch",
+    "method": "POST",
+    "path": "/artists/{id}/refresh/search",
+    "handler": "handleRefreshSearch",
+    "covered": false
+  },
+  {
+    "operationId": "reidentifyArtist",
+    "method": "POST",
+    "path": "/artists/{id}/reidentify",
+    "handler": "handleReidentify",
+    "covered": false
+  },
+  {
+    "operationId": "removeAlias",
+    "method": "DELETE",
+    "path": "/artists/{id}/aliases/{aliasId}",
+    "handler": "handleRemoveAlias",
+    "covered": false
+  },
+  {
+    "operationId": "removeForeignFileAllowlist",
+    "method": "DELETE",
+    "path": "/foreign-file-allowlist/{id}",
+    "handler": "handleForeignAllowlistRemove",
+    "covered": true
+  },
+  {
+    "operationId": "removeUpdateSkip",
+    "method": "DELETE",
+    "path": "/updates/skips/{version}",
+    "handler": "handleDeleteUpdateSkip",
+    "covered": true
+  },
+  {
+    "operationId": "renameArtistDirectory",
+    "method": "POST",
+    "path": "/artists/{id}/rename-directory",
+    "handler": "handleArtistRenameDirectory",
+    "covered": true
+  },
+  {
+    "operationId": "reorderFanart",
+    "method": "POST",
+    "path": "/artists/{id}/images/fanart/reorder",
+    "handler": "handleFanartReorder",
+    "covered": true
+  },
+  {
+    "operationId": "resetConnectionScraperConfig",
+    "method": "DELETE",
+    "path": "/scraper/config/connections/{id}",
+    "handler": "handleResetConnectionScraperConfig",
+    "covered": false
+  },
+  {
+    "operationId": "resetPriorities",
+    "method": "POST",
+    "path": "/providers/priorities/reset",
+    "handler": "handleResetPriorities",
+    "covered": true
+  },
+  {
+    "operationId": "resolveViolation",
+    "method": "POST",
+    "path": "/notifications/{id}/resolve",
+    "handler": "handleResolveViolation",
+    "covered": false
+  },
+  {
+    "operationId": "revertHistory",
+    "method": "POST",
+    "path": "/history/{id}/revert",
+    "handler": "handleRevertHistory",
+    "covered": true
+  },
+  {
+    "operationId": "revokeAPIToken",
+    "method": "DELETE",
+    "path": "/auth/tokens/{id}",
+    "handler": "handleRevokeAPIToken",
+    "covered": true
+  },
+  {
+    "operationId": "runAllRules",
+    "method": "POST",
+    "path": "/rules/run-all",
+    "handler": "handleRunAllRules",
+    "covered": true
+  },
+  {
+    "operationId": "runArtistRules",
+    "method": "POST",
+    "path": "/artists/{id}/run-rules",
+    "handler": "handleRunArtistRules",
+    "covered": true
+  },
+  {
+    "operationId": "runRule",
+    "method": "POST",
+    "path": "/rules/{id}/run",
+    "handler": "handleRunRule",
+    "covered": true
+  },
+  {
+    "operationId": "runScanner",
+    "method": "POST",
+    "path": "/scanner/run",
+    "handler": "handleScannerRun",
+    "covered": true
+  },
+  {
+    "operationId": "saveExitReIdentifyWizard",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard/{sid}/save-exit",
+    "handler": "handleReIdentifyWizardSaveExit",
+    "covered": true
+  },
+  {
+    "operationId": "saveMembersFromProvider",
+    "method": "POST",
+    "path": "/artists/{id}/members/from-provider",
+    "handler": "handleSaveMembers",
+    "covered": true
+  },
+  {
+    "operationId": "scanLibrary",
+    "method": "POST",
+    "path": "/connections/{id}/libraries/{libId}/scan",
+    "handler": "handleScanLibrary",
+    "covered": false
+  },
+  {
+    "operationId": "searchImages",
+    "method": "GET",
+    "path": "/artists/{id}/images/search",
+    "handler": "handleImageSearch",
+    "covered": false
+  },
+  {
+    "operationId": "serveFanartByIndex",
+    "method": "GET",
+    "path": "/artists/{id}/images/fanart/{index}/file",
+    "handler": "handleServeFanartByIndex",
+    "covered": false
+  },
+  {
+    "operationId": "serveImage",
+    "method": "GET",
+    "path": "/artists/{id}/images/{type}/file",
+    "handler": "handleServeImage",
+    "covered": true
+  },
+  {
+    "operationId": "setClassicalMode",
+    "method": "PUT",
+    "path": "/rules/classical-mode",
+    "handler": "handleSetClassicalMode",
+    "covered": false
+  },
+  {
+    "operationId": "setPlatformID",
+    "method": "PUT",
+    "path": "/artists/{id}/platform-ids/{connectionId}",
+    "handler": "handleSetPlatformID",
+    "covered": true
+  },
+  {
+    "operationId": "setPriorities",
+    "method": "PUT",
+    "path": "/providers/priorities",
+    "handler": "handleSetPriorities",
+    "covered": false
+  },
+  {
+    "operationId": "setProviderKey",
+    "method": "PUT",
+    "path": "/providers/{name}/key",
+    "handler": "handleSetProviderKey",
+    "covered": false
+  },
+  {
+    "operationId": "setProviderMirror",
+    "method": "PUT",
+    "path": "/providers/{name}/mirror",
+    "handler": "handleSetMirror",
+    "covered": false
+  },
+  {
+    "operationId": "setStillwaterManaged",
+    "method": "POST",
+    "path": "/connections/{id}/stillwater-managed",
+    "handler": "handleSetStillwaterManaged",
+    "covered": true
+  },
+  {
+    "operationId": "setUpdateConfig",
+    "method": "PUT",
+    "path": "/updates/config",
+    "handler": "handlePutUpdateConfig",
+    "covered": true
+  },
+  {
+    "operationId": "setWebSearchEnabled",
+    "method": "PUT",
+    "path": "/providers/websearch/{name}/toggle",
+    "handler": "handleSetWebSearchEnabled",
+    "covered": false
+  },
+  {
+    "operationId": "setup",
+    "method": "POST",
+    "path": "/auth/setup",
+    "handler": "handleSetup",
+    "covered": true
+  },
+  {
+    "operationId": "skipReIdentifyWizardStep",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard/{sid}/step/{idx}/skip",
+    "handler": "handleReIdentifyWizardSkip",
+    "covered": true
+  },
+  {
+    "operationId": "startBulkAction",
+    "method": "POST",
+    "path": "/artists/bulk-actions",
+    "handler": "handleBulkAction",
+    "covered": true
+  },
+  {
+    "operationId": "startBulkIdentify",
+    "method": "POST",
+    "path": "/artists/bulk-identify",
+    "handler": "handleBulkIdentify",
+    "covered": true
+  },
+  {
+    "operationId": "startReIdentifyWizard",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard",
+    "handler": "handleReIdentifyWizardStart",
+    "covered": true
+  },
+  {
+    "operationId": "testConnection",
+    "method": "POST",
+    "path": "/connections/{id}/test",
+    "handler": "handleTestConnection",
+    "covered": false
+  },
+  {
+    "operationId": "testProvider",
+    "method": "POST",
+    "path": "/providers/{name}/test",
+    "handler": "handleTestProvider",
+    "covered": false
+  },
+  {
+    "operationId": "testWebhook",
+    "method": "POST",
+    "path": "/webhooks/{id}/test",
+    "handler": "handleTestWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "toggleFieldProvider",
+    "method": "PUT",
+    "path": "/providers/priorities/{field}/{provider}/toggle",
+    "handler": "handleToggleFieldProvider",
+    "covered": false
+  },
+  {
+    "operationId": "trimLogo",
+    "method": "POST",
+    "path": "/artists/{id}/images/logo/trim",
+    "handler": "handleLogoTrim",
+    "covered": false
+  },
+  {
+    "operationId": "undoFix",
+    "method": "POST",
+    "path": "/fix-undo/{undoId}",
+    "handler": "handleUndoFix",
+    "covered": true
+  },
+  {
+    "operationId": "unlockArtist",
+    "method": "DELETE",
+    "path": "/artists/{id}/lock",
+    "handler": "handleUnlockArtist",
+    "covered": true
+  },
+  {
+    "operationId": "unlockArtistField",
+    "method": "DELETE",
+    "path": "/artists/{id}/field-locks/{field}",
+    "handler": "handleUnlockArtistField",
+    "covered": true
+  },
+  {
+    "operationId": "unlockArtistImage",
+    "method": "DELETE",
+    "path": "/artists/{id}/image-locks/{imageId}",
+    "handler": "handleUnlockArtistImage",
+    "covered": true
+  },
+  {
+    "operationId": "updateConnection",
+    "method": "PUT",
+    "path": "/connections/{id}",
+    "handler": "handleUpdateConnection",
+    "covered": false
+  },
+  {
+    "operationId": "updateConnectionFeatures",
+    "method": "PATCH",
+    "path": "/connections/{id}/features",
+    "handler": "handleUpdateConnectionFeatures",
+    "covered": false
+  },
+  {
+    "operationId": "updateConnectionScraperConfig",
+    "method": "PUT",
+    "path": "/scraper/config/connections/{id}",
+    "handler": "handleUpdateConnectionScraperConfig",
+    "covered": false
+  },
+  {
+    "operationId": "updateField",
+    "method": "PATCH",
+    "path": "/artists/{id}/fields/{field}",
+    "handler": "handleFieldUpdate",
+    "covered": true
+  },
+  {
+    "operationId": "updateLibrary",
+    "method": "PUT",
+    "path": "/libraries/{id}",
+    "handler": "handleUpdateLibrary",
+    "covered": true
+  },
+  {
+    "operationId": "updateLogging",
+    "method": "PUT",
+    "path": "/settings/logging",
+    "handler": "handleUpdateLogging",
+    "covered": false
+  },
+  {
+    "operationId": "updateMaintenanceSchedule",
+    "method": "PUT",
+    "path": "/settings/maintenance/schedule",
+    "handler": "handleMaintenanceSchedule",
+    "covered": false
+  },
+  {
+    "operationId": "updateNFOOutput",
+    "method": "PUT",
+    "path": "/settings/nfo-output",
+    "handler": "handleUpdateNFOOutput",
+    "covered": true
+  },
+  {
+    "operationId": "updatePlatform",
+    "method": "PUT",
+    "path": "/platforms/{id}",
+    "handler": "handleUpdatePlatform",
+    "covered": true
+  },
+  {
+    "operationId": "updatePreference",
+    "method": "PUT",
+    "path": "/preferences/{key}",
+    "handler": "handleUpdatePreference",
+    "covered": true
+  },
+  {
+    "operationId": "updateRule",
+    "method": "PUT",
+    "path": "/rules/{id}",
+    "handler": "handleUpdateRule",
+    "covered": true
+  },
+  {
+    "operationId": "updateScraperConfig",
+    "method": "PUT",
+    "path": "/scraper/config",
+    "handler": "handleUpdateScraperConfig",
+    "covered": false
+  },
+  {
+    "operationId": "updateSettings",
+    "method": "PUT",
+    "path": "/settings",
+    "handler": "handleUpdateSettings",
+    "covered": true
+  },
+  {
+    "operationId": "updateWebhook",
+    "method": "PUT",
+    "path": "/webhooks/{id}",
+    "handler": "handleUpdateWebhook",
+    "covered": false
+  },
+  {
+    "operationId": "uploadImage",
+    "method": "POST",
+    "path": "/artists/{id}/images/upload",
+    "handler": "handleImageUpload",
+    "covered": true
+  },
+  {
+    "operationId": "webImageSearch",
+    "method": "GET",
+    "path": "/artists/{id}/images/websearch",
+    "handler": "handleWebImageSearch",
+    "covered": false
+  }
+]
