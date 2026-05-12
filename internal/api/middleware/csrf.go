@@ -13,16 +13,95 @@ const csrfTokenHeader = "X-CSRF-Token" //nolint:gosec // G101: not a credential,
 const csrfCookieName = "csrf_token"
 const csrfTokenTTL = 24 * time.Hour
 
+// csrfCleanupInterval is how often expired tokens are swept from the in-memory
+// map. One hour is well below csrfTokenTTL (24h), which means expired tokens
+// never linger long enough to bloat memory under sustained load, but the sweep
+// is infrequent enough that the lock-contention cost is negligible.
+const csrfCleanupInterval = time.Hour
+
 // CSRF provides token-based CSRF protection for HTMX form submissions.
 // It validates that state-changing requests include a matching CSRF token.
+//
+// A background goroutine started in NewCSRF periodically sweeps expired
+// tokens from the in-memory map. Callers must invoke Close exactly once
+// (typically tied to server shutdown) to stop the goroutine.
 type CSRF struct {
 	mu     sync.RWMutex
 	tokens map[string]time.Time
+
+	// stop is closed by Close to signal the cleanup goroutine to exit.
+	// closeOnce guards against multiple Close calls so the channel is
+	// closed at most once (closing a closed channel panics).
+	stop      chan struct{}
+	closeOnce sync.Once
+
+	// trigger is an optional test hook: sending on it forces a cleanup
+	// sweep without waiting for the ticker. Nil in production; tests
+	// populate it via newCSRFForTest.
+	trigger chan struct{}
+	// done is closed by the cleanup goroutine right before it returns.
+	// Tests use it to assert the goroutine has fully exited after Close.
+	done chan struct{}
 }
 
-// NewCSRF creates a CSRF middleware instance.
+// NewCSRF creates a CSRF middleware instance and starts its background
+// cleanup goroutine. Callers must invoke Close when the instance is no
+// longer needed (typically wired to the server's shutdown context) to
+// avoid leaking the goroutine.
 func NewCSRF() *CSRF {
-	return &CSRF{tokens: make(map[string]time.Time)}
+	c := &CSRF{
+		tokens: make(map[string]time.Time),
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+	}
+	go c.cleanupLoop(csrfCleanupInterval)
+	return c
+}
+
+// newCSRFForTest is identical to NewCSRF except it accepts an explicit
+// cleanup interval and exposes a trigger channel so tests can fire a
+// sweep synchronously rather than waiting on wall-clock time.
+func newCSRFForTest(interval time.Duration) *CSRF {
+	c := &CSRF{
+		tokens:  make(map[string]time.Time),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
+		trigger: make(chan struct{}, 1),
+	}
+	go c.cleanupLoop(interval)
+	return c
+}
+
+// Close stops the background cleanup goroutine. It is safe to call multiple
+// times; subsequent calls are no-ops. Close blocks until the goroutine has
+// returned, which guarantees no further map mutations after Close returns.
+func (c *CSRF) Close() {
+	c.closeOnce.Do(func() {
+		close(c.stop)
+	})
+	<-c.done
+}
+
+// cleanupLoop runs until stop is closed, sweeping expired tokens on every
+// tick. The trigger channel (test-only) forces an immediate sweep.
+func (c *CSRF) cleanupLoop(interval time.Duration) {
+	defer close(c.done)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.stop:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			c.cleanExpiredLocked()
+			c.mu.Unlock()
+		case <-c.trigger:
+			c.mu.Lock()
+			c.cleanExpiredLocked()
+			c.mu.Unlock()
+		}
+	}
 }
 
 // Middleware returns the CSRF handler that validates tokens on unsafe methods.
@@ -88,10 +167,6 @@ func (c *CSRF) generate() string {
 
 	c.mu.Lock()
 	c.tokens[token] = time.Now()
-	// Periodically clean up expired tokens to prevent memory growth
-	if len(c.tokens) > 0 && len(c.tokens)%100 == 0 {
-		c.cleanExpiredLocked()
-	}
 	c.mu.Unlock()
 
 	return token
