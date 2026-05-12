@@ -46,7 +46,7 @@ type errorHandler struct {
 }
 
 func (h *errorHandler) Handle(ctx context.Context, r slog.Record) error {
-	h.captureHandler.Handle(ctx, r) //nolint:errcheck
+	h.captureHandler.Handle(ctx, r)
 	return h.err
 }
 

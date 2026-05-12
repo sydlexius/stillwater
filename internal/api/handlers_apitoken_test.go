@@ -196,7 +196,7 @@ func TestDeleteRevokedToken_AuditAnonymization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("querying audit log: %v", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close()
 
 	type auditRow struct {
 		tokenID   *string

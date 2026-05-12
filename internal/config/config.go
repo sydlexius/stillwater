@@ -100,7 +100,7 @@ type DatabaseConfig struct {
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	SessionSecret string `yaml:"session_secret" toml:"session_secret" env:"SW_SESSION_SECRET" default:"unset" desc:"Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory."` //nolint:gosec // G117: not a hardcoded secret, this is a config field
+	SessionSecret string `yaml:"session_secret" toml:"session_secret" env:"SW_SESSION_SECRET" default:"unset" desc:"Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory."`
 }
 
 // EncryptionConfig holds encryption key settings.

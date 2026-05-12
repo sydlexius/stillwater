@@ -124,7 +124,7 @@ func (s *Service) Delete(filename string) error {
 		return fmt.Errorf("invalid backup filename")
 	}
 	path := filepath.Join(s.backupDir, filename)
-	if err := os.Remove(path); err != nil { //nolint:gosec // G703: filename validated by IsValidBackupFilename above
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("removing backup: %w", err)
 	}
 	s.logger.Info("backup deleted", slog.String("filename", filename))

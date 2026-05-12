@@ -44,7 +44,7 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 	if err != nil {
 		return nil, fmt.Errorf("querying api tokens: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var out []APITokenExport
 	for rows.Next() {

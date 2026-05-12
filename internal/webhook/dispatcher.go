@@ -88,7 +88,7 @@ func (d *Dispatcher) deliver(w Webhook, e event.Event) {
 	var lastErr error
 	for attempt := range maxRetries {
 		if attempt > 0 {
-			backoff := time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt is bounded by maxRetries (3)
+			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
 			d.sleep(backoff)
 		}
 
@@ -128,12 +128,12 @@ func (d *Dispatcher) send(url string, body []byte, contentType string) error {
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", version.UserAgent("Stillwater-Webhook", ""))
 
-	resp, err := d.httpClient.Do(req) //nolint:gosec // URL is user-configured webhook destination
+	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
-	defer resp.Body.Close()        //nolint:errcheck
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+	defer resp.Body.Close()        //nolint:errcheck // Close error not actionable on HTTP response cleanup
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck // Draining response body to enable connection reuse; copy errors mean the connection is unhealthy and not actionable here
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)

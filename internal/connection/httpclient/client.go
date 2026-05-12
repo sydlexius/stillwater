@@ -55,11 +55,11 @@ func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
 	}
 	b.AuthFunc(req)
 
-	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
@@ -82,11 +82,11 @@ func (b *BaseClient) Post(ctx context.Context, path string, body io.Reader) erro
 	}
 	b.AuthFunc(req)
 
-	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
@@ -104,11 +104,11 @@ func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, e
 	}
 	b.AuthFunc(req)
 
-	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
@@ -136,11 +136,11 @@ func (b *BaseClient) PutJSON(ctx context.Context, path string, body io.Reader, r
 	b.AuthFunc(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
@@ -165,11 +165,11 @@ func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, 
 	b.AuthFunc(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := b.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))

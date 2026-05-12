@@ -128,7 +128,7 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 			// Fix did not resolve -- return 422 with message so the card
 			// stays in place and HTMX does not swap it out.
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = fmt.Fprint(w, html.EscapeString(fr.Message)) //nolint:gosec // G705: fr.Message is rule-engine text, escaped for safety
+			_, _ = fmt.Fprint(w, html.EscapeString(fr.Message))
 		}
 		return
 	}

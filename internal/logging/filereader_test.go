@@ -200,7 +200,7 @@ func TestParseLogLine_TraceLevel(t *testing.T) {
 func TestManagerReadLogFile_PathTraversal(t *testing.T) {
 	cfg := Config{Level: "info", Format: "json", FilePath: "/tmp/test.log"}
 	mgr, _ := NewManager(cfg)
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	tests := []struct {
 		name     string
@@ -225,7 +225,7 @@ func TestManagerReadLogFile_PathTraversal(t *testing.T) {
 	// Empty FilePath config should return "file logging not configured".
 	emptyCfg := Config{Level: "info", Format: "json"}
 	emptyMgr, _ := NewManager(emptyCfg)
-	defer emptyMgr.Close() //nolint:errcheck
+	defer emptyMgr.Close()
 	_, err := emptyMgr.ReadLogFile("test.log", LogFilter{})
 	if err == nil || err.Error() != "file logging not configured" {
 		t.Errorf("expected 'file logging not configured' error, got %v", err)

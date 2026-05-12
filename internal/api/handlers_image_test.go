@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -317,7 +316,7 @@ func TestSSRFSafeTransport_BlocksPrivateIP(t *testing.T) {
 
 	// Attempt to connect to a loopback address -- should be rejected.
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/test", nil)
-	resp, err := client.Do(req) //nolint:bodyclose // err expected
+	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
 		t.Fatal("expected error connecting to loopback address")
@@ -331,11 +330,9 @@ func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
 	// but we verify the guard exists by reading the function.
 	// Instead, test that a non-existent host returns an error (not a panic).
 	transport := ssrfSafeTransport()
-	// Disable TLS to avoid handshake errors on non-existent hosts.
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test only
 	client := &http.Client{Transport: transport}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://this-host-does-not-exist-abc123xyz.invalid/test", nil)
-	resp, err := client.Do(req) //nolint:bodyclose // err expected
+	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
 		t.Fatal("expected error for non-existent host")

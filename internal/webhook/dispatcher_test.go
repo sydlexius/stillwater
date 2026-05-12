@@ -36,11 +36,12 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 
 	var mu sync.Mutex
 	var received map[string]any
+	var decodeErr error
 	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		decodeErr = json.NewDecoder(r.Body).Decode(&received)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 		close(done)
@@ -73,6 +74,9 @@ func TestDispatcher_GenericWebhook(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if decodeErr != nil {
+		t.Fatalf("decoding webhook payload: %v", decodeErr)
+	}
 	if received == nil {
 		t.Fatal("expected to receive webhook payload")
 	}
@@ -87,11 +91,12 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 
 	var mu sync.Mutex
 	var received map[string]any
+	var decodeErr error
 	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		json.NewDecoder(r.Body).Decode(&received) //nolint:errcheck
+		decodeErr = json.NewDecoder(r.Body).Decode(&received)
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 		close(done)
@@ -124,6 +129,9 @@ func TestDispatcher_DiscordFormat(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if decodeErr != nil {
+		t.Fatalf("decoding webhook payload: %v", decodeErr)
+	}
 	if received == nil {
 		t.Fatal("expected to receive webhook payload")
 	}

@@ -83,14 +83,14 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 
 	a.logger.Debug("requesting images", slog.String("mbid", mbid))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted base + MBID
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameFanartTV,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode == http.StatusNotFound {
 		_, _ = io.Copy(io.Discard, resp.Body)

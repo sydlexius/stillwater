@@ -89,7 +89,7 @@ func (r *sqliteMembershipRepo) ListForArtist(ctx context.Context, artistID strin
 	if err != nil {
 		return nil, fmt.Errorf("listing memberships for artist %s: %w", artistID, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var out []LibraryMembership
 	for rows.Next() {

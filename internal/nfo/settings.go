@@ -35,11 +35,11 @@ func (s *NFOSettingsService) GetFieldMap(ctx context.Context) (NFOFieldMap, erro
 	fm := DefaultFieldMap()
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT key, value FROM settings WHERE key LIKE 'nfo.output.%'`) //nolint:gosec // G201: static prefix, no user input
+		`SELECT key, value FROM settings WHERE key LIKE 'nfo.output.%'`)
 	if err != nil {
 		return fm, fmt.Errorf("querying nfo output settings: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var k, v string

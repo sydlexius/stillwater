@@ -72,7 +72,7 @@ func (s *Service) List(ctx context.Context) ([]Webhook, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing webhooks: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var webhooks []Webhook
 	for rows.Next() {

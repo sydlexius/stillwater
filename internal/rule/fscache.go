@@ -366,7 +366,7 @@ func (e *Engine) getImageDimensionsCached(dirPath string, patterns []string) (in
 				continue
 			}
 			w, h, dimErr := image.GetDimensions(f)
-			f.Close() //nolint:errcheck
+			f.Close() //nolint:errcheck // Close error not actionable; explicit close where defer is not appropriate
 			if dimErr != nil {
 				continue
 			}

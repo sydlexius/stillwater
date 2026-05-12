@@ -65,10 +65,10 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		}
 	} else {
 		var body struct {
-			APIKey       string `json:"api_key"`       //nolint:gosec // G117: not a hardcoded credential, this is user input
-			SkipTest     bool   `json:"skip_test"`     //nolint:gosec // G101: not a credential
-			ClientID     string `json:"client_id"`     //nolint:gosec // G101: not a credential
-			ClientSecret string `json:"client_secret"` //nolint:gosec // G101: not a credential
+			APIKey       string `json:"api_key"`
+			SkipTest     bool   `json:"skip_test"`
+			ClientID     string `json:"client_id"`
+			ClientSecret string `json:"client_secret"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			writeError(w, req, http.StatusBadRequest, "invalid request body")

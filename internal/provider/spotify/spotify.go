@@ -250,14 +250,14 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 		[]byte(creds.ClientID+":"+creds.ClientSecret),
 	))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL is from adapter config
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", time.Time{}, &provider.ErrProviderUnavailable{
 			Provider: provider.NameSpotify,
 			Cause:    fmt.Errorf("token request: %w", err),
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {
@@ -357,14 +357,14 @@ func (a *Adapter) executeRequest(ctx context.Context, reqURL, token string) ([]b
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from adapter config
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, 0, &provider.ErrProviderUnavailable{
 			Provider: provider.NameSpotify,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	// For non-200 responses, drain body
 	if resp.StatusCode != http.StatusOK {

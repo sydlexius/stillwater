@@ -17,7 +17,7 @@ import (
 func newTestRouterWithLogs(t *testing.T) (*Router, *logging.RingBuffer) {
 	t.Helper()
 	mgr, _ := logging.NewManager(logging.Config{Level: "debug", Format: "json"})
-	t.Cleanup(func() { mgr.Close() }) //nolint:errcheck
+	t.Cleanup(func() { mgr.Close() })
 	rb := mgr.RingBuffer()
 	r := &Router{
 		logManager: mgr,

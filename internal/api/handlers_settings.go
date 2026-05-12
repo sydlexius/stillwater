@@ -14,13 +14,13 @@ import (
 // handleGetSettings returns all application settings as a key-value map.
 // GET /api/v1/settings
 func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
-	rows, err := r.db.QueryContext(req.Context(), `SELECT key, value FROM settings ORDER BY key`) //nolint:gosec // G701: static query, no user input
+	rows, err := r.db.QueryContext(req.Context(), `SELECT key, value FROM settings ORDER BY key`)
 	if err != nil {
 		r.logger.Error("listing settings", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	settings := make(map[string]string)
 	for rows.Next() {
@@ -206,7 +206,7 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {
-		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // G701: static query with parameterized values
+		_, err := r.db.ExecContext(req.Context(),
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now)

@@ -1537,7 +1537,7 @@ func (s *Service) hydratePrimaryLibrariesBatch(ctx context.Context, artists []Ar
 	if err != nil {
 		return fmt.Errorf("batch hydrating primary library: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	libByArtist := make(map[string]string, len(artists))
 	for rows.Next() {

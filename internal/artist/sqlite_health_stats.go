@@ -68,7 +68,7 @@ func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("querying unevaluated artists: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var ids []string
 	for rows.Next() {

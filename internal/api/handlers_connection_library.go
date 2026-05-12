@@ -840,7 +840,7 @@ func validatedArtistPath(itemPath, libraryPath string) string {
 		return ""
 	} else {
 		// Path exists: verify it is a directory (not a file).
-		info, statErr := os.Stat(itemReal) //nolint:gosec // itemReal resolved via filepath.EvalSymlinks from platform path
+		info, statErr := os.Stat(itemReal)
 		if statErr != nil || !info.IsDir() {
 			return ""
 		}
@@ -877,13 +877,13 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 
 	if a.Path == "" {
 		// Cache directory: create if needed.
-		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // dir from imageDir() uses trusted config path + artist ID
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			r.logger.Warn("creating cache directory", "artist", a.Name, "dir", dir, "error", err)
 			return
 		}
 	} else {
 		// Filesystem path: must already exist from scan and be a directory.
-		info, err := os.Stat(dir) //nolint:gosec // G703: dir from imageDir() uses validated artist path
+		info, err := os.Stat(dir)
 		if err != nil {
 			r.logger.Debug("artist directory not accessible, skipping images", "artist", a.Name, "dir", dir, "error", err)
 			return
@@ -946,7 +946,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			skipDownload := false
 			for _, ext := range []string{".jpg", ".jpeg", ".png"} {
 				candidate := filepath.Join(dir, base+ext)
-				_, statErr := os.Stat(candidate) //nolint:gosec // path from validated dir + naming fn
+				_, statErr := os.Stat(candidate)
 				if statErr == nil {
 					slotExists = true
 					break

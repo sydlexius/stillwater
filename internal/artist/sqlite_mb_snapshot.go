@@ -28,7 +28,7 @@ func (r *sqliteMBSnapshotRepo) UpsertAll(ctx context.Context, artistID string, s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	const q = `
 		INSERT INTO mb_snapshots (id, artist_id, field, mb_value, fetched_at)
@@ -64,7 +64,7 @@ func (r *sqliteMBSnapshotRepo) GetForArtist(ctx context.Context, artistID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string]MBSnapshot)
 	for rows.Next() {

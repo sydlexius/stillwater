@@ -151,7 +151,7 @@ func (r *Router) buildAvatarURL(ctx context.Context, user *auth.User) string {
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Username string `json:"username"`
-		Password string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
+		Password string `json:"password"`
 		Provider string `json:"provider"` // optional; overrides the auth.method setting
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
@@ -436,7 +436,7 @@ func validateReturnURL(rawURL string) string {
 	// to prevent header injection via Location or HX-Redirect headers.
 	for _, c := range rawURL {
 		if c < 0x20 || c == 0x7f {
-			slog.Debug("rejected return URL: contains control character", "raw", rawURL) //nolint:gosec // G706: debug audit log
+			slog.Debug("rejected return URL: contains control character", "raw", rawURL)
 			return ""
 		}
 	}
@@ -445,30 +445,30 @@ func validateReturnURL(rawURL string) string {
 	// normalize to "/", turning "\evil.com" into "//evil.com".
 	cleaned := strings.ReplaceAll(rawURL, "\\", "")
 	if cleaned == "" {
-		slog.Debug("rejected return URL: empty after backslash strip", "raw", rawURL) //nolint:gosec // G706: debug audit log; slog escapes values in structured output
+		slog.Debug("rejected return URL: empty after backslash strip", "raw", rawURL)
 		return ""
 	}
 
 	// Must start with a single forward slash (relative path).
 	if !strings.HasPrefix(cleaned, "/") {
-		slog.Debug("rejected return URL: no leading slash", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		slog.Debug("rejected return URL: no leading slash", "raw", rawURL)
 		return ""
 	}
 
 	// Reject protocol-relative URLs ("//evil.com").
 	if strings.HasPrefix(cleaned, "//") {
-		slog.Debug("rejected return URL: protocol-relative", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		slog.Debug("rejected return URL: protocol-relative", "raw", rawURL)
 		return ""
 	}
 
 	// Reject any URL with a scheme (e.g. "javascript:", "data:", "http:").
 	parsed, err := url.Parse(cleaned)
 	if err != nil {
-		slog.Debug("rejected return URL: parse error", "raw", rawURL, "error", err) //nolint:gosec // G706: debug audit log
+		slog.Debug("rejected return URL: parse error", "raw", rawURL, "error", err)
 		return ""
 	}
 	if parsed.Scheme != "" || parsed.Host != "" {
-		slog.Debug("rejected return URL: has scheme or host", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		slog.Debug("rejected return URL: has scheme or host", "raw", rawURL)
 		return ""
 	}
 
@@ -797,8 +797,8 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		AuthMethod string `json:"auth_method"`
 		Username   string `json:"username"`
-		Password   string `json:"password"`   //nolint:gosec // G117: not a hardcoded secret, this is a request field
-		ServerURL  string `json:"server_url"` //nolint:gosec // G117: not a secret, this is a server address
+		Password   string `json:"password"`
+		ServerURL  string `json:"server_url"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -949,7 +949,10 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now); err != nil {
 			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID) //nolint:errcheck
+			if _, delErr := r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID); delErr != nil {
+				r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+					"auth_method", authMethod, "provider_id", result.User.ID, "error", delErr)
+			}
 			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 			return
 		}
@@ -1040,7 +1043,10 @@ func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Reques
 				ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 				k, v, now); err != nil {
 				r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-				_, _ = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID) //nolint:errcheck
+				if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID); delErr != nil {
+					r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+						"user_id", user.ID, "error", delErr)
+				}
 				writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 				return
 			}
@@ -1106,7 +1112,7 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 
 	// Check if onboarding wizard needs to run
 	var completed string
-	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+	err = r.db.QueryRowContext(req.Context(),
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		r.logger.Error("checking onboarding status", "error", err)
@@ -1156,7 +1162,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 
 	// If onboarding already completed, redirect to dashboard
 	var completed string
-	err := r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+	err := r.db.QueryRowContext(req.Context(),
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		r.logger.Error("checking onboarding status", "error", err)
@@ -1182,7 +1188,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	// Load current step from settings (default to 0 = intro).
 	currentStep := 0
 	var stepStr string
-	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+	err = r.db.QueryRowContext(req.Context(),
 		`SELECT value FROM settings WHERE key = 'onboarding.step'`).Scan(&stepStr)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		r.logger.Error("loading onboarding step", "error", err)
@@ -1222,7 +1228,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	unidentifiedCount := -1
-	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+	err = r.db.QueryRowContext(req.Context(),
 		`SELECT COUNT(*) FROM artists WHERE is_excluded = 0 AND locked = 0
 		 AND NOT EXISTS (
 		    SELECT 1 FROM artist_provider_ids
@@ -1266,7 +1272,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := component.Render(r.Context(), w); err != nil {
-		slog.Error("template render failed", //nolint:gosec // G706: err is a Go error from templ.Render, not raw user input
+		slog.Error("template render failed",
 			slog.String("path", r.URL.Path),
 			slog.String("error", err.Error()))
 		http.Error(w, "render error", http.StatusInternalServerError)

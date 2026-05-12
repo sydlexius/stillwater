@@ -476,7 +476,7 @@ func TestHandleFanartReorder(t *testing.T) {
 	}
 	expected := []string{"CCC", "AAA", "BBB"}
 	for i, p := range paths {
-		data, err := os.ReadFile(p) //nolint:gosec // test code
+		data, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatalf("reading fanart %d: %v", i, err)
 		}

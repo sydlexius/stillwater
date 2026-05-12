@@ -135,7 +135,7 @@ func (s *Service) ListPendingInvites(ctx context.Context) ([]Invite, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing pending invites: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	invites := []Invite{}
 	for rows.Next() {

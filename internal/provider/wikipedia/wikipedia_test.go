@@ -65,7 +65,7 @@ func sparqlServerReturningWithItem(t *testing.T, articleURL, itemURI string) *ht
 			"results": map[string]any{"bindings": bindings},
 		}
 		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(payload) //nolint:errcheck
+		json.NewEncoder(w).Encode(payload)
 	}))
 }
 
@@ -81,13 +81,13 @@ func actionExtractServer(t *testing.T, title, extract string) *httptest.Server {
 			resp.Query.Pages = map[string]extractPage{
 				"12345": {PageID: 12345, Title: title, Extract: extract},
 			}
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		case "parse":
 			// Return empty wikitext (no infobox).
 			resp := parseResponse{}
 			resp.Parse.Title = title
 			resp.Parse.PageID = 12345
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -103,20 +103,20 @@ func actionExtractAndWikitextServer(t *testing.T, title, extract, wikitext strin
 			meta := r.URL.Query().Get("meta")
 			if meta == "siteinfo" {
 				// TestConnection probe.
-				json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+				json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
 				return
 			}
 			resp := extractResponse{}
 			resp.Query.Pages = map[string]extractPage{
 				"12345": {PageID: 12345, Title: title, Extract: extract},
 			}
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		case "parse":
 			resp := parseResponse{}
 			resp.Parse.Title = title
 			resp.Parse.PageID = 12345
 			resp.Parse.Wikitext.Text = wikitext
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -137,7 +137,7 @@ func wikidataEntityServer(t *testing.T, qid, articleTitle string) *httptest.Serv
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -233,7 +233,7 @@ func TestGetArtist_ExtractNotFound(t *testing.T) {
 		resp.Query.Pages = map[string]extractPage{
 			"-1": {},
 		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp)
 	}))
 	defer actionSrv.Close()
 
@@ -422,7 +422,7 @@ func TestGetArtist_WikitextFetchFailure(t *testing.T) {
 			resp.Query.Pages = map[string]extractPage{
 				"1": {PageID: 1, Title: "Some Artist", Extract: "Some Artist is a musician."},
 			}
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		case "parse":
 			w.WriteHeader(http.StatusInternalServerError)
 		default:
@@ -471,7 +471,7 @@ func TestGetArtist_QID_NotFound(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp)
 	}))
 	defer wdSrv.Close()
 
@@ -515,7 +515,7 @@ func okServer(t *testing.T) *httptest.Server {
 
 func TestTestConnection(t *testing.T) {
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
 	}))
 	defer actionSrv.Close()
 
@@ -651,7 +651,7 @@ func TestTestConnection_ActionAPIFailure(t *testing.T) {
 
 func TestTestConnection_SPARQLFailure(t *testing.T) {
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
 	}))
 	defer actionSrv.Close()
 
@@ -674,7 +674,7 @@ func TestTestConnection_SPARQLFailure(t *testing.T) {
 
 func TestTestConnection_EntityAPIFailure(t *testing.T) {
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
 	}))
 	defer actionSrv.Close()
 
@@ -724,7 +724,7 @@ func TestGetArtist_EmptyPagesMap(t *testing.T) {
 		// Empty pages map.
 		resp := extractResponse{}
 		resp.Query.Pages = map[string]extractPage{}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp)
 	}))
 	defer actionSrv.Close()
 
@@ -837,11 +837,11 @@ func buildLangWalkAdapter(t *testing.T, perLangExtracts map[string]string, enTit
 					"42": {PageID: 42, Title: articleTitle, Extract: extract},
 				}
 			}
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		case "parse":
 			// Return empty wikitext.
 			resp := parseResponse{}
-			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			json.NewEncoder(w).Encode(resp)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -860,7 +860,7 @@ func buildLangWalkAdapter(t *testing.T, perLangExtracts map[string]string, enTit
 				resp.Entities[qid].Sitelinks[site] = wbSitelink{Title: lang + "::LocalTitle"}
 			}
 		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		json.NewEncoder(w).Encode(resp)
 	}))
 
 	sparqlSrv := sparqlServerReturningWithItem(t,

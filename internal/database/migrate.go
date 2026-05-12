@@ -292,7 +292,7 @@ func collectDuplicatePlatformKeys(ctx context.Context, db *sql.DB) ([]dupPlatfor
 	if err != nil {
 		return nil, fmt.Errorf("scanning duplicate artist_platform_ids: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var dupes []dupPlatformKey
 	for rows.Next() {
@@ -497,7 +497,7 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 	if err != nil {
 		return fmt.Errorf("begin collapse tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	var totalRepointed, totalRemoved int64
 	for _, g := range allGroups {
@@ -661,7 +661,7 @@ func findDuplicateGroupsByMBID(ctx context.Context, db *sql.DB) ([]collapseGroup
 	if err != nil {
 		return nil, fmt.Errorf("querying mbid duplicate groups: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	groups := []collapseGroup{}
 	var current *collapseGroup
@@ -703,7 +703,7 @@ func findDuplicateGroupsByName(ctx context.Context, db *sql.DB, claimed map[stri
 	if err != nil {
 		return nil, fmt.Errorf("querying name duplicate groups: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	type rawRow struct {
 		id, name string
@@ -893,7 +893,7 @@ func rebuildArtistLibrariesIfStaleCheck(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("begin rebuild tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `
 		CREATE TABLE artist_libraries_new (
@@ -948,11 +948,11 @@ func tableExists(db *sql.DB, name string) (bool, error) {
 // the orphan artists.library_id column (present on pre-1004 DBs only).
 func columnExists(db *sql.DB, table, column string) (bool, error) {
 	rows, err := db.QueryContext(context.Background(),
-		fmt.Sprintf("PRAGMA table_info(%s)", table)) //nolint:gosec // G201: table is a hard-coded literal
+		fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return false, fmt.Errorf("reading %s schema: %w", table, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var (
@@ -1011,11 +1011,11 @@ func lowercaseASCII(s string) string {
 // statement, so callers must only pass internal literals.
 func ensureColumn(db *sql.DB, table, column, definition string) error {
 	ctx := context.Background()
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table)) //nolint:gosec // G201: table is a hard-coded literal, not user input
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return fmt.Errorf("reading %s schema: %w", table, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for rows.Next() {
 		var (
@@ -1037,7 +1037,7 @@ func ensureColumn(db *sql.DB, table, column, definition string) error {
 		return fmt.Errorf("iterating %s schema: %w", table, err)
 	}
 
-	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition) //nolint:gosec // G201: table, column, and definition are hard-coded literals
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
 		return fmt.Errorf("adding %s.%s: %w", table, column, err)
 	}

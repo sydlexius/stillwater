@@ -51,7 +51,7 @@ func ProbeFSNotify(path string, timeout time.Duration) bool {
 	if err != nil {
 		return false
 	}
-	defer w.Close() //nolint:errcheck
+	defer w.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	if err := w.Add(path); err != nil {
 		return false
@@ -61,10 +61,10 @@ func ProbeFSNotify(path string, timeout time.Duration) bool {
 	probeName := fmt.Sprintf(".stillwater_probe_%d", rand.Int63()) //nolint:gosec // G404: not security-sensitive
 	probeDir := filepath.Join(path, probeName)
 
-	if err := os.Mkdir(probeDir, 0o750); err != nil { //nolint:gosec // G301: probe dir is temporary
+	if err := os.Mkdir(probeDir, 0o750); err != nil {
 		return false
 	}
-	defer os.Remove(probeDir) //nolint:errcheck
+	defer os.Remove(probeDir) //nolint:errcheck // Best-effort cleanup; remove error not actionable on probe exit
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

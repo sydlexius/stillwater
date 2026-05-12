@@ -208,7 +208,7 @@ func (r *sqliteArtistRepo) List(ctx context.Context, params ListParams) ([]Artis
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing artists: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var artists []Artist
 	for rows.Next() {
@@ -291,7 +291,7 @@ func (r *sqliteArtistRepo) UpdateField(ctx context.Context, id, field, value str
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.db.ExecContext(ctx,
-		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?", //nolint:gosec // col is from validated map
+		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?",
 		dbValue, now, id,
 	)
 	if err != nil {
@@ -313,7 +313,7 @@ func (r *sqliteArtistRepo) ClearField(ctx context.Context, id, field string) err
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.db.ExecContext(ctx,
-		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?", //nolint:gosec // col is from validated map
+		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?",
 		zeroValue, now, id,
 	)
 	if err != nil {
@@ -349,7 +349,7 @@ func (r *sqliteArtistRepo) ListPathsByLibrary(ctx context.Context, libraryID str
 	if err != nil {
 		return nil, fmt.Errorf("listing artist paths for library %s: %w", libraryID, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string]string)
 	for rows.Next() {
@@ -372,7 +372,7 @@ func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, 
 	if err != nil {
 		return nil, fmt.Errorf("searching artists: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var artists []Artist
 	for rows.Next() {

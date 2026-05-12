@@ -73,7 +73,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 	writeImportErr := func(status int, msg string) {
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(msg)) //nolint:errcheck
+			fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(msg)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 			return
 		}
 		writeJSON(w, status, map[string]string{"error": msg})
@@ -140,7 +140,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			writeImportErr(http.StatusBadRequest, "missing file field")
 			return
 		}
-		defer file.Close() //nolint:errcheck
+		defer file.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 		data, err := io.ReadAll(io.LimitReader(file, maxImportSize+1))
 		if err != nil {
@@ -224,7 +224,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
 			result.Rules, result.ScraperConfigs, result.UserPreferences, extras,
 		)
-		w.Write([]byte(fragment)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
+		w.Write([]byte(fragment)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 

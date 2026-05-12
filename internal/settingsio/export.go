@@ -245,7 +245,7 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	if err != nil {
 		return nil, fmt.Errorf("querying settings: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
@@ -485,7 +485,7 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 	// The inner AES-GCM error is retained in the chain for server-side logging.
 	plaintext, err := decryptWithPassphrase(env.Data, env.Salt, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrWrongPassphrase, err) //nolint:errorlint // intentional dual-wrap (Go 1.20+)
+		return nil, fmt.Errorf("%w: %w", ErrWrongPassphrase, err)
 	}
 
 	var payload Payload
@@ -704,7 +704,7 @@ func (s *Service) listScraperScopes(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying scraper scopes: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 	var scopes []string
 	for rows.Next() {
 		var scope string
@@ -740,7 +740,7 @@ func (s *Service) exportUserPreferences(ctx context.Context) ([]UserPrefsExport,
 	if err != nil {
 		return nil, fmt.Errorf("querying user preferences: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	// Build an ordered list preserving username ordering.
 	var result []UserPrefsExport

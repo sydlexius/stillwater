@@ -95,7 +95,7 @@ func (s *Service) List(ctx context.Context) ([]Connection, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing connections: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var connections []Connection
 	for rows.Next() {
@@ -121,7 +121,7 @@ func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection
 	if err != nil {
 		return nil, fmt.Errorf("listing connections by type: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var connections []Connection
 	for rows.Next() {

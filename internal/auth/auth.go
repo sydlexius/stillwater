@@ -263,7 +263,7 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 
 	// Best-effort update of last_used_at using the caller's context.
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, _ = s.db.ExecContext(ctx, //nolint:gosec // G701: static query
+	_, _ = s.db.ExecContext(ctx,
 		`UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?`, now, tokenHash)
 
 	return userID, scopes, nil
@@ -281,7 +281,7 @@ func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken,
 	if err != nil {
 		return nil, fmt.Errorf("listing api tokens: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var tokens []APIToken
 	for rows.Next() {
@@ -337,7 +337,7 @@ func (s *Service) DeleteAPIToken(ctx context.Context, id, userID string) error {
 	if err != nil {
 		return fmt.Errorf("beginning delete transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	// Anonymize audit log entries that reference this token.
 	_, err = tx.ExecContext(ctx, `

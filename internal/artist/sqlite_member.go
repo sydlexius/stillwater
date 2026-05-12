@@ -27,7 +27,7 @@ func (r *sqliteMemberRepo) ListByArtistID(ctx context.Context, artistID string) 
 	if err != nil {
 		return nil, fmt.Errorf("listing band members: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var members []BandMember
 	for rows.Next() {
@@ -86,7 +86,7 @@ func (r *sqliteMemberRepo) Upsert(ctx context.Context, artistID string, members 
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM band_members WHERE artist_id = ?`, artistID); err != nil {
 		return fmt.Errorf("clearing existing members: %w", err)

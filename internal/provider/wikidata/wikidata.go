@@ -255,14 +255,14 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 
 	a.logger.Debug("executing SPARQL query")
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted SPARQL endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -478,11 +478,11 @@ func (a *Adapter) resolveCommonsURL(ctx context.Context, filename string) (*Comm
 
 	a.logger.Debug("resolving commons image", slog.String("filename", filename))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Commons endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("commons request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)

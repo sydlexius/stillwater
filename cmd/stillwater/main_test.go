@@ -19,7 +19,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("opening test database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() }) //nolint:errcheck
+	t.Cleanup(func() { db.Close() })
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("running migrations: %v", err)
 	}

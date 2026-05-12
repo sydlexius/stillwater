@@ -256,7 +256,7 @@ func TestMockOIDCServerDiscovery(t *testing.T) {
 	defer srv.Close()
 
 	// Verify discovery returns valid JSON with expected fields.
-	resp, err := http.Get(srv.URL + "/.well-known/openid-configuration") //nolint:gosec // G107: test URL
+	resp, err := http.Get(srv.URL + "/.well-known/openid-configuration")
 	if err != nil {
 		t.Fatalf("discovery request: %v", err)
 	}

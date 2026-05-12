@@ -27,7 +27,7 @@ func (r *sqliteImageRepo) GetForArtist(ctx context.Context, artistID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("getting images for artist %s: %w", artistID, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	return scanImageRows(rows)
 }
@@ -53,7 +53,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 	if err != nil {
 		return nil, fmt.Errorf("batch getting images: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string][]ArtistImage, len(artistIDs))
 	for rows.Next() {
@@ -112,7 +112,7 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	// Build a set of (image_type, slot_index) keys present in the incoming data
 	// so we can mark absent slots as not-existing afterward.
@@ -138,7 +138,7 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	if err != nil {
 		return fmt.Errorf("preparing upsert: %w", err)
 	}
-	defer upsertStmt.Close() //nolint:errcheck
+	defer upsertStmt.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	for _, img := range images {
 		id := img.ID
@@ -164,7 +164,7 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	if err != nil {
 		return fmt.Errorf("querying existing image slots: %w", err)
 	}
-	defer existing.Close() //nolint:errcheck
+	defer existing.Close() //nolint:errcheck // Close error not actionable on cleanup
 	var toRemove []slotKey
 	for existing.Next() {
 		var k slotKey
@@ -185,7 +185,7 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 		if err != nil {
 			return fmt.Errorf("preparing delete for removed slots: %w", err)
 		}
-		defer delStmt.Close() //nolint:errcheck
+		defer delStmt.Close() //nolint:errcheck // Close error not actionable on cleanup
 		for _, k := range toRemove {
 			if _, err := delStmt.ExecContext(ctx, artistID, k.imageType, k.slotIndex); err != nil {
 				return fmt.Errorf("deleting removed slot %s/%d: %w", k.imageType, k.slotIndex, err)
@@ -283,7 +283,7 @@ func (r *sqliteImageRepo) NewestWriteTimesByArtist(ctx context.Context, libraryI
 	if err != nil {
 		return nil, fmt.Errorf("querying newest write times by artist for library %s: %w", libraryID, err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	result := make(map[string]string)
 	for rows.Next() {

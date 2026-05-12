@@ -124,13 +124,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close() //nolint:errcheck
+	defer in.Close() //nolint:errcheck // Close error not actionable on read path
 
 	out, err := os.Create(dst) //nolint:gosec // G304: dst is from trusted internal path
 	if err != nil {
 		return err
 	}
-	defer out.Close() //nolint:errcheck
+	defer out.Close() //nolint:errcheck // Safety-net close for error paths; success path closes explicitly via the return below
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err

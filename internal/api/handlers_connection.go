@@ -179,9 +179,9 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		Name     string `json:"name"`
 		Type     string `json:"type"`
 		URL      string `json:"url"`
-		APIKey   string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
+		APIKey   string `json:"api_key"`
 		Enabled  bool   `json:"enabled"`
-		SkipTest bool   `json:"skip_test"` //nolint:gosec // G101: not a credential
+		SkipTest bool   `json:"skip_test"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -189,12 +189,12 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 			return
 		}
 	} else {
-		body.Name = req.FormValue("name")      //nolint:gosec // G120: admin-only form on self-hosted instance
-		body.Type = req.FormValue("type")      //nolint:gosec // G120: admin-only form on self-hosted instance
-		body.URL = req.FormValue("url")        //nolint:gosec // G120: admin-only form on self-hosted instance
-		body.APIKey = req.FormValue("api_key") //nolint:gosec // G120: admin-only form on self-hosted instance
+		body.Name = req.FormValue("name")
+		body.Type = req.FormValue("type")
+		body.URL = req.FormValue("url")
+		body.APIKey = req.FormValue("api_key")
 		body.Enabled = true
-		body.SkipTest = req.FormValue("skip_test") == "true" //nolint:gosec // G120: admin-only form on self-hosted instance
+		body.SkipTest = req.FormValue("skip_test") == "true"
 	}
 
 	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
@@ -336,7 +336,7 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		Name                  string `json:"name"`
 		Type                  string `json:"type"`
 		URL                   string `json:"url"`
-		APIKey                string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
+		APIKey                string `json:"api_key"`
 		Enabled               *bool  `json:"enabled"`
 		FeatureLibraryImport  *bool  `json:"feature_library_import"`
 		FeatureNFOWrite       *bool  `json:"feature_nfo_write"`

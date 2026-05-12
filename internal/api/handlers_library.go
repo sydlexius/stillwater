@@ -62,8 +62,8 @@ func (r *Router) handleCreateLibrary(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
-		body.Name = req.FormValue("name") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
-		body.Path = req.FormValue("path") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
+		body.Name = req.FormValue("name")
+		body.Path = req.FormValue("path")
 		body.Type = req.FormValue("type")
 	}
 	if body.Name == "" {
@@ -135,8 +135,8 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
-		body.Name = req.FormValue("name") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
-		body.Path = req.FormValue("path") //nolint:gosec // G120: admin-only endpoint on self-hosted instance
+		body.Name = req.FormValue("name")
+		body.Path = req.FormValue("path")
 		body.Type = req.FormValue("type")
 		// Only treat nfo_lock_data as present when the form actually
 		// carried the key, so an absent field preserves the existing

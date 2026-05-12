@@ -129,7 +129,7 @@ func (s *Service) List(ctx context.Context) ([]Library, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing libraries: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var libs []Library
 	for rows.Next() {
@@ -252,7 +252,7 @@ func collectUnlinkCandidates(ctx context.Context, tx *sql.Tx, libraryID string) 
 	if err != nil {
 		return nil, fmt.Errorf("listing memberships for unlink: %w", err)
 	}
-	defer memberRows.Close() //nolint:errcheck
+	defer memberRows.Close() //nolint:errcheck // Close error not actionable on cleanup
 	for memberRows.Next() {
 		var aid string
 		if err := memberRows.Scan(&aid); err != nil {
@@ -290,7 +290,7 @@ func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
 
 	var connectionID sql.NullString
 	if err := tx.QueryRowContext(ctx,
@@ -433,7 +433,7 @@ func (s *Service) ListByConnectionID(ctx context.Context, connectionID string) (
 	if err != nil {
 		return nil, fmt.Errorf("listing libraries by connection: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var libs []Library
 	for rows.Next() {
@@ -554,7 +554,7 @@ func (s *Service) ListSharedFS(ctx context.Context) ([]Library, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing shared-filesystem libraries: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var libs []Library
 	for rows.Next() {

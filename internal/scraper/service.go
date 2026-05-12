@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -59,8 +60,13 @@ func (s *Service) GetConfig(ctx context.Context, scope string) (*ScraperConfig, 
 
 	conn, overrides, err := s.loadConfigWithOverrides(ctx, scope)
 	if err != nil {
-		// No connection config means full inheritance from global
-		return global, nil //nolint:nilerr
+		// Missing scoped config falls back to global; any other error (DB
+		// failure, JSON decode error, context cancellation) must propagate so
+		// the caller does not silently receive stale/effective config.
+		if errors.Is(err, sql.ErrNoRows) {
+			return global, nil
+		}
+		return nil, fmt.Errorf("loading scoped config for %q: %w", scope, err)
 	}
 
 	return mergeConfigs(global, conn, overrides), nil

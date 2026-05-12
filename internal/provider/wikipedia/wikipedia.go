@@ -317,14 +317,14 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		return err
 	}
 	wikiReq.Header.Set("User-Agent", userAgent)
-	wikiResp, err := a.client.Do(wikiReq) //nolint:gosec // URL constructed from trusted endpoint
+	wikiResp, err := a.client.Do(wikiReq)
 	if err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("wikipedia Action API: %w", err),
 		}
 	}
-	defer wikiResp.Body.Close() //nolint:errcheck
+	defer wikiResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, wikiResp.Body)
 	if wikiResp.StatusCode != http.StatusOK {
 		return &provider.ErrProviderUnavailable{
@@ -352,14 +352,14 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	}
 	sparqlReq.Header.Set("User-Agent", userAgent)
 	sparqlReq.Header.Set("Accept", "application/sparql-results+json")
-	sparqlResp, err := a.client.Do(sparqlReq) //nolint:gosec // URL constructed from trusted SPARQL endpoint
+	sparqlResp, err := a.client.Do(sparqlReq)
 	if err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("wikidata SPARQL: %w", err),
 		}
 	}
-	defer sparqlResp.Body.Close() //nolint:errcheck
+	defer sparqlResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, sparqlResp.Body)
 	if sparqlResp.StatusCode != http.StatusOK {
 		return &provider.ErrProviderUnavailable{
@@ -388,14 +388,14 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		return err
 	}
 	entityReq.Header.Set("User-Agent", userAgent)
-	entityResp, err := a.client.Do(entityReq) //nolint:gosec // URL constructed from trusted Wikidata endpoint
+	entityResp, err := a.client.Do(entityReq)
 	if err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("wikidata entity API: %w", err),
 		}
 	}
-	defer entityResp.Body.Close() //nolint:errcheck
+	defer entityResp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 	_, _ = io.Copy(io.Discard, entityResp.Body)
 	if entityResp.StatusCode != http.StatusOK {
 		return &provider.ErrProviderUnavailable{
@@ -510,14 +510,14 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, str
 
 	a.logger.Debug("resolving MBID to Wikipedia title via Wikidata", slog.String("mbid", mbid))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted SPARQL endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -601,14 +601,14 @@ func (a *Adapter) resolveToLocalizedTitle(ctx context.Context, qid, lang string)
 	a.logger.Debug("resolving localized Wikipedia title via Wikidata sitelinks",
 		slog.String("qid", qid), slog.String("lang", lang))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikidata endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -670,14 +670,14 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 
 	a.logger.Debug("resolving Q-ID to Wikipedia title via Wikidata sitelinks", slog.String("qid", qid))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikidata endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -752,14 +752,14 @@ func (a *Adapter) fetchExtractFrom(ctx context.Context, endpoint, title string) 
 
 	a.logger.Debug("fetching Wikipedia extract", slog.String("title", title))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode == http.StatusNotFound {
 		_, _ = io.Copy(io.Discard, resp.Body)
@@ -825,14 +825,14 @@ func (a *Adapter) fetchWikitext(ctx context.Context, title string) (string, erro
 
 	a.logger.Debug("fetching Wikipedia wikitext", slog.String("title", title))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)

@@ -106,7 +106,7 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 	// is always non-nil when Status is "running". This prevents a race where
 	// a concurrent DELETE observes Status=="running" but cancelFn==nil.
 	bgCtx := context.WithoutCancel(req.Context())
-	cancelCtx, cancel := context.WithCancel(bgCtx) //nolint:gosec // cancel stored in progress.cancelFn, deferred in goroutine
+	cancelCtx, cancel := context.WithCancel(bgCtx)
 	progress := &IdentifyProgress{
 		Status:   "running",
 		cancelFn: cancel,

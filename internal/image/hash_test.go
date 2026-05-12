@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func solidImage(w, h int, c color.Color) image.Image { //nolint:unparam // test helper, w varies conceptually
+func solidImage(w, h int, c color.Color) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {

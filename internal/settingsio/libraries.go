@@ -47,7 +47,7 @@ func (s *Service) exportLibraries(ctx context.Context) ([]LibraryExport, error) 
 	if err != nil {
 		return nil, fmt.Errorf("querying libraries: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
 
 	var out []LibraryExport
 	for rows.Next() {

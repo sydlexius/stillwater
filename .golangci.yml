@@ -17,6 +17,7 @@ linters:
     - musttag
     - nilerr
     - noctx
+    - nolintlint
     - revive
     - sqlclosecheck
     - staticcheck
@@ -47,6 +48,19 @@ linters:
           severity: warning
     misspell:
       locale: US
+    nolintlint:
+      # Every //nolint:foo directive must carry a // reason comment so that
+      # future readers can judge whether the suppression is still valid. The
+      # cost at the directive site -- writing one sentence -- is the friction
+      # we want; it converts "I'll just nolint this" into "let me actually
+      # fix it" or at least "let me document why this is safe."
+      require-explanation: true
+      # require-specific defaults to false; no bare //nolint directives exist
+      # in this tree so leaving it off avoids ceremony for a problem we don't
+      # have. Revisit if bare directives start appearing.
+      # allow-unused defaults to false in golangci-lint v2; an unused
+      # //nolint (e.g. one that duplicates an exclusion already in this file)
+      # is itself a smell worth deleting.
     musttag:
       functions:
         # API response wrapper. Without this, musttag only checks direct

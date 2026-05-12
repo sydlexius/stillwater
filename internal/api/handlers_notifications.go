@@ -209,7 +209,7 @@ func (r *Router) handleBulkDismissViolations(w http.ResponseWriter, req *http.Re
 	w.Header().Set("HX-Trigger", "dashboard:action-resolved")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "%d", n) //nolint:errcheck,gosec // G705: n is int, no XSS risk
+	fmt.Fprintf(w, "%d", n) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 }
 
 // handleClearResolvedViolations deletes resolved violations older than 7 days.
@@ -449,8 +449,8 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 
 	display := fmt.Sprintf("%d", total)
 	badge := fmt.Sprintf(`<span class="sw-sidebar-badge-pill">%s</span>`, display)
-	//nolint:errcheck,gosec // display is derived from an integer, no XSS risk
-	fmt.Fprint(w, badge)
+
+	fmt.Fprint(w, badge) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 }
 
 // handleArtistViolationsTab renders the per-artist violations tab as an HTMX partial.

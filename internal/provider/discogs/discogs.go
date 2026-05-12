@@ -264,14 +264,14 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, 
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
 
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted base + API params
+	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDiscogs,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // Close error not actionable on HTTP response cleanup
 
 	if resp.StatusCode == http.StatusNotFound {
 		_, _ = io.Copy(io.Discard, resp.Body)

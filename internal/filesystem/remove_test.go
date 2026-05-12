@@ -10,7 +10,7 @@ import (
 func TestRemoveFileSafe_RemovesFile(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "x.jpg")
-	if err := os.WriteFile(target, []byte("hello"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(target, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := RemoveFileSafe(target); err != nil {
@@ -45,14 +45,14 @@ func TestRemoveFileSafe_MissingFile(t *testing.T) {
 func TestRemoveFileSafe_RenameFailureFallsBackToDirectRemove(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "x.jpg")
-	if err := os.WriteFile(target, []byte("hello"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(target, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 	tomb := target + ".removing"
 	if err := os.Mkdir(tomb, 0o755); err != nil {
 		t.Fatalf("mkdir tomb: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tomb, "keep"), []byte("x"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(filepath.Join(tomb, "keep"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("seed tomb: %v", err)
 	}
 

@@ -100,11 +100,11 @@ func ReadLogFile(path string, filter LogFilter) ([]LogEntry, error) {
 	if strings.Contains(cleaned, "..") {
 		return nil, fmt.Errorf("invalid log file path")
 	}
-	f, err := os.Open(cleaned) //nolint:gosec // G304: path validated above and by Manager.ReadLogFile
+	f, err := os.Open(cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("opening log file: %w", err)
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // Close error not actionable on read path
 
 	limit := filter.Limit
 	if limit <= 0 {
@@ -191,7 +191,7 @@ func parseLogLine(line string) LogEntry {
 
 	// Second unmarshal to extract arbitrary attrs. Known fields are skipped.
 	var raw map[string]json.RawMessage
-	_ = json.Unmarshal([]byte(line), &raw) //nolint:errcheck
+	_ = json.Unmarshal([]byte(line), &raw)
 
 	reserved := map[string]bool{"time": true, "level": true, "source": true, "msg": true}
 	attrs := make(map[string]any)

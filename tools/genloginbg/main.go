@@ -59,7 +59,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "create dir: %v\n", err)
 		os.Exit(1)
 	}
-	f, err := os.Create(outputFile) //nolint:gosec // G304: outputFile is a compile-time constant
+	f, err := os.Create(outputFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create output: %v\n", err)
 		os.Exit(1)

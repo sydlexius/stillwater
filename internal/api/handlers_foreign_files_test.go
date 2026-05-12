@@ -77,7 +77,7 @@ func TestHandleForeignFilesList(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.handleForeignFilesList(rec, req)
 	res := rec.Result()
-	defer res.Body.Close() //nolint:errcheck
+	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d", res.StatusCode)
 	}
@@ -137,7 +137,7 @@ func TestHandleForeignFileDelete(t *testing.T) {
 	r, db := newTestRouterWithForeign(t)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "backdrop.jpg")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha',?)`, dir)
@@ -377,7 +377,7 @@ func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "backdrop.jpg")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil { //nolint:gosec
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a2','Beth',?)`, dir)

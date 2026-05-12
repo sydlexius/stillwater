@@ -11,7 +11,7 @@ import (
 func TestNewManager_DefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	mgr, logger := NewManager(cfg)
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	if logger == nil {
 		t.Fatal("expected non-nil logger")
@@ -26,7 +26,7 @@ func TestNewManager_DefaultConfig(t *testing.T) {
 
 func TestManager_LevelSwap(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "info", Format: "json"})
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	// The ring handler uses the same level as the configured level, so
 	// Enabled() accurately reflects what will be captured.
@@ -67,7 +67,7 @@ func TestManager_LevelSwap(t *testing.T) {
 
 func TestManager_FormatSwap(t *testing.T) {
 	mgr, _ := NewManager(Config{Level: "info", Format: "json"})
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	if mgr.Config().Format != "json" {
 		t.Errorf("expected json, got %s", mgr.Config().Format)
@@ -121,7 +121,7 @@ func TestManager_CloseIdempotent(t *testing.T) {
 func TestManager_ReconfigureIdempotent(t *testing.T) {
 	cfg := Config{Level: "info", Format: "json"}
 	mgr, _ := NewManager(cfg)
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	// Reconfigure with same config should be fine
 	mgr.Reconfigure(cfg)
@@ -191,7 +191,7 @@ func TestFormatLevel(t *testing.T) {
 
 func TestDerivedHandler_SeesReconfigure(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "debug", Format: "json"})
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	// Create a derived logger with an extra attribute.
 	derived := logger.With("component", "test")
@@ -225,7 +225,7 @@ func TestDerivedHandler_SeesReconfigure(t *testing.T) {
 
 func TestDerivedHandler_WithGroup(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "debug", Format: "json"})
-	defer mgr.Close() //nolint:errcheck
+	defer mgr.Close()
 
 	// Create a grouped derived logger.
 	grouped := logger.WithGroup("mygroup")

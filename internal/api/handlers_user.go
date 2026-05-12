@@ -106,7 +106,7 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Code        string `json:"code"`
 		Username    string `json:"username"`
-		Password    string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
+		Password    string `json:"password"`
 		DisplayName string `json:"display_name"`
 	}
 	// Limit request body to 1 MB to prevent abuse on this public endpoint.

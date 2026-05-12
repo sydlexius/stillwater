@@ -49,7 +49,7 @@ func (r *Router) handleCacheClear(w http.ResponseWriter, req *http.Request) {
 	// Best-effort deletion: walk and remove all files, then empty dirs.
 	var deleted int
 	var freed int64
-	filepath.WalkDir(r.imageCacheDir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
+	filepath.WalkDir(r.imageCacheDir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck // Best-effort walk; per-entry errors are handled inside the callback
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // skip errors during best-effort deletion
 		}
@@ -72,7 +72,7 @@ func (r *Router) handleCacheClear(w http.ResponseWriter, req *http.Request) {
 			subdir := filepath.Join(r.imageCacheDir, e.Name())
 			sub, _ := os.ReadDir(subdir)
 			if len(sub) == 0 {
-				os.Remove(subdir) //nolint:errcheck
+				os.Remove(subdir) //nolint:errcheck // Best-effort cleanup; remove error is not actionable
 			}
 		}
 	}
