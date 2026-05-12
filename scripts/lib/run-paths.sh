@@ -14,9 +14,11 @@
 # Why deterministic (no mktemp XXXXXX):
 #   - Same worktree always writes the same path -- trivial to inspect, diff
 #     across runs, and clean up (`rm -rf $SW_RUN_DIR`).
-#   - Same-worktree concurrent runs WOULD clobber each other, but
-#     `feedback_no_parallel_heavy_gates` already bans that; the scope of
-#     "multi-agent safe" we want is ACROSS worktrees, which this delivers.
+#   - Same-worktree concurrent runs WOULD clobber each other; the scope of
+#     "multi-agent safe" this lib delivers is ACROSS worktrees. Callers that
+#     need exclusive same-worktree access (e.g. pre-push-gate.sh, which
+#     writes cover.out) must take their own lock under $SW_RUN_DIR; the gate
+#     uses an atomic `mkdir $SW_RUN_DIR/.gate-lock` for that purpose.
 #
 # Why source instead of inline:
 #   - Single place to evolve the convention. Future scripts get the same
