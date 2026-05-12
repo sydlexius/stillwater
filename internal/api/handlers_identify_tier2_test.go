@@ -768,6 +768,27 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	if w2.Code == http.StatusConflict {
 		t.Fatalf("second POST returned 409; slot was not released after panic")
 	}
+
+	// Wait for the second job's background goroutine to reach a terminal
+	// status before the test returns. Without this, the goroutine races
+	// against router/database cleanup under `go test -race` and can flake
+	// the gate. 5s is generous given the test's two-artist corpus.
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		r.identifyMu.Lock()
+		p := r.identifyProgress
+		r.identifyMu.Unlock()
+		if p == nil {
+			break
+		}
+		p.mu.RLock()
+		st := p.Status
+		p.mu.RUnlock()
+		if st == "failed" || st == "completed" || st == "canceled" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // syncWriter is a tiny mutex-guarded writer used to safely interleave slog

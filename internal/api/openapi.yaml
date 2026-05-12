@@ -433,8 +433,8 @@ components:
       properties:
         status:
           type: string
-          enum: [idle, running, completed, canceled]
-          description: Current state of the identification process.
+          enum: [idle, running, completed, canceled, failed]
+          description: Current state of the identification process. "failed" surfaces when the bulk-identify pipeline recovers from a panic; the slot is released and a subsequent POST starts a fresh job.
         total:
           type: integer
           description: Total number of unidentified artists to process.
