@@ -31,9 +31,10 @@ failure mode is "nothing happens" with no console error.
 ## `HX-Trigger` response header
 
 Server-emitted events use the `namespace:event-name` form
-(`dashboard:action-resolved`, `artist:show-violations-tab`,
-`oobeConflictRefresh`, `clobberRecheck`). Listeners on the client side use
-`hx-trigger="<event> from:body"`.
+(`dashboard:action-resolved`, `artist:show-violations-tab`). A handful of
+legacy names predate the convention (`oobeConflictRefresh`, `clobberRecheck`)
+and remain in use, but new events should follow the namespaced form.
+Listeners on the client side use `hx-trigger="<event> from:body"`.
 
 The header MUST NOT be set on a failure path. `handlers_fix_test.go` already
 asserts this for the fix endpoint; the rule generalises: if the operation
