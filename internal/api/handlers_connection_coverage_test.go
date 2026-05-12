@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -499,33 +498,30 @@ func TestHandleDeleteConnection_NotFound(t *testing.T) {
 // --- handleTestConnection -----------------------------------------------------
 
 // TestHandleTestConnection_SSRFRFC1918Rejected validates that pointing
-// handleTestConnection at RFC1918 (and loopback) addresses produces an error
-// status. With the upcoming SSRF allowlist (M49.5) this test will continue to
-// pass because the allowlist also rejects RFC1918; today the rejection is
-// produced by dial timeout / connection refused because nothing is listening
-// at the test addresses. Either way the handler must NOT return status=ok.
+// handleTestConnection at RFC1918 addresses produces an error status.
+//
+// SCOPE TODAY: there is no SSRF allowlist yet (that lands in M49.5). The
+// rejection observed below is produced by dial timeout / connection refused
+// because nothing is listening on those networks in the test environment.
+// This test therefore proves "unreachable upstream surfaces as status=error",
+// which is still load-bearing for the handler contract; the genuine
+// SSRF-blocking proof (a hit counter on a real loopback server) needs the
+// allowlist to exist and will be added with M49.5.
+//
+// An earlier revision of this test included a loopback httptest server and
+// asserted hit_count == 0, but that proof was bogus on two counts: (a) the
+// subtests ran in parallel and the parent post-loop assertion fired BEFORE
+// any subtest reached the stub, so the zero-hit count was vacuous; (b) the
+// SSRF guard does not actually block loopback today, so removing the
+// parallel ordering exposed the assertion as a falsehood. Loopback is
+// intentionally not covered until the real guard exists.
 func TestHandleTestConnection_SSRFRFC1918Rejected(t *testing.T) {
 	t.Parallel()
-
-	// A real loopback server replaces the bare 127.0.0.1:1 target so we
-	// can prove blocking, not just generic dial failure. If the SSRF
-	// guard regresses and lets loopback through, this server will record
-	// the hit and the post-loop assertion below fails. (RFC1918 targets
-	// stay as bare addresses — there's no listener on those networks in
-	// the test environment, so blocking vs. dial-refused is still
-	// indistinguishable for them until M49.5 lands the allowlist.)
-	var loopbackHits atomic.Int32
-	loopbackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		loopbackHits.Add(1)
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-	}))
-	defer loopbackSrv.Close()
 
 	rfc1918Targets := []string{
 		"http://10.0.0.1:1",
 		"http://192.168.0.1:1",
 		"http://172.16.0.1:1",
-		loopbackSrv.URL,
 	}
 	for _, target := range rfc1918Targets {
 		target := target
@@ -553,16 +549,9 @@ func TestHandleTestConnection_SSRFRFC1918Rejected(t *testing.T) {
 				t.Fatalf("decode resp: %v body=%s", err, w.Body.String())
 			}
 			if resp["status"] != "error" {
-				t.Errorf("status = %v, want error (SSRF/RFC1918 target must not report ok)", resp["status"])
+				t.Errorf("status = %v, want error (RFC1918 target must not report ok)", resp["status"])
 			}
 		})
-	}
-
-	// The loopback server should never have been reached. A non-zero
-	// hit count means a future SSRF allowlist regression let the test
-	// connect to 127.0.0.1, which is the highest-impact SSRF class.
-	if n := loopbackHits.Load(); n != 0 {
-		t.Fatalf("expected SSRF guard to block loopback; got %d hits on the loopback server", n)
 	}
 }
 

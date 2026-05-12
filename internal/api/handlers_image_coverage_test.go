@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"image"
+	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -64,13 +66,18 @@ func testJPEG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-// testPNG encodes a PNG of the given dimensions with full opacity. Used by
+// testPNG encodes a fully-opaque white PNG of the given dimensions. Used by
 // handleLogoTrim tests where the alpha channel determines whether trimming
-// is a no-op.
+// is a no-op. image.NewRGBA zero-initializes the Pix slice (A=0), which would
+// produce a transparent canvas; we explicitly Draw a uniform opaque white so
+// the fixture matches the docstring and the trim contract has real pixels to
+// operate on.
 func testPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.RGBA{R: 255, G: 255, B: 255, A: 255}}, image.Point{}, draw.Src)
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+	if err := png.Encode(&buf, img); err != nil {
 		t.Fatalf("encoding PNG: %v", err)
 	}
 	return buf.Bytes()

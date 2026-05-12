@@ -743,19 +743,23 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 		t.Fatalf("first POST status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
-	// Wait for terminal state.
+	// Wait for terminal state. A nil progress slot is also terminal: the
+	// panic-recovery deferred handler may have cleared it outright instead
+	// of leaving a "failed" sentinel behind, and either outcome is a
+	// "no in-flight job" signal that lets the second POST proceed.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()
 		p := r.identifyProgress
 		r.identifyMu.RUnlock()
-		if p != nil {
-			p.mu.RLock()
-			st := p.Status
-			p.mu.RUnlock()
-			if st == "failed" || st == "completed" || st == "canceled" {
-				break
-			}
+		if p == nil {
+			break
+		}
+		p.mu.RLock()
+		st := p.Status
+		p.mu.RUnlock()
+		if st == "failed" || st == "completed" || st == "canceled" {
+			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
