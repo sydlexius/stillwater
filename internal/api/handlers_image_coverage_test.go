@@ -938,6 +938,40 @@ func TestClearImageFlagAsync_RecoversFromPanic(t *testing.T) {
 	}
 }
 
+// TestClearImageFlagAsync_LogsWarnOnError closes the underlying DB so the
+// ClearImageFlag service call returns an error. The helper must log a Warn
+// entry (not panic) and return cleanly. This is the only branch in the
+// helper not exercised by the panic-injection / happy-path tests.
+func TestClearImageFlagAsync_LogsWarnOnError(t *testing.T) {
+	t.Parallel()
+	r, svc := newImageHandlerTestServer(t)
+
+	var logBuf safeBuffer
+	r.logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	a := &artist.Artist{Name: "DBClosed", SortName: "DBClosed", Path: t.TempDir(), ThumbExists: true}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Force the next DB call to fail by closing the connection pool.
+	// Subsequent service calls then return a "database is closed" error,
+	// taking the helper into its Warn branch.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	r.clearImageFlagAsync(a.ID, "thumb")
+
+	got := logBuf.String()
+	if !strings.Contains(got, "failed to clear stale image flag") {
+		t.Errorf("expected warn log on error path; got %q", got)
+	}
+	if strings.Contains(got, "panic in clearImageFlagAsync") {
+		t.Errorf("unexpected panic log on plain-error path; got %q", got)
+	}
+}
+
 // TestClearImageFlagAsync_HappyPath confirms the non-panic branch still emits
 // the cleared-flag info log and exits cleanly. Together with the panic-
 // injection test this proves recover() does not swallow normal operation.
