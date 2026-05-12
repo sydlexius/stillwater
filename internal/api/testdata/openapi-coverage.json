@@ -319,7 +319,7 @@
     "method": "DELETE",
     "path": "/providers/{name}/mirror",
     "handler": "handleDeleteMirror",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "deletePushImage",
@@ -389,7 +389,7 @@
     "method": "GET",
     "path": "/reports/compliance/export",
     "handler": "handleReportComplianceExport",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "exportNotifications",
@@ -648,7 +648,7 @@
     "method": "GET",
     "path": "/auth/me",
     "handler": "handleMe",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "getMetadataCompleteness",
@@ -956,7 +956,7 @@
     "method": "GET",
     "path": "/artists/locked",
     "handler": "handleListLockedArtists",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "listLogFiles",
@@ -970,7 +970,7 @@
     "method": "GET",
     "path": "/notifications",
     "handler": "handleListNotifications",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "listPlatformBackdrops",
@@ -1348,7 +1348,7 @@
     "method": "PUT",
     "path": "/providers/{name}/mirror",
     "handler": "handleSetMirror",
-    "covered": true
+    "covered": false
   },
   {
     "operationId": "setStillwaterManaged",

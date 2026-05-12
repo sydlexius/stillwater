@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 // TestOperationIDCoverage asserts that every operationId in openapi.yaml has at
@@ -396,16 +398,24 @@ func loadTestHandlerRefs(dir string) (map[string]bool, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Count only handler INVOCATIONS, not bare identifier references.
+		// A bare ast.Ident match would also flag the handler's own func
+		// declaration site (and any test helper that takes handleXxx as a
+		// value), falsely marking it covered. Walking only *ast.CallExpr
+		// limits the signal to "a test actually calls this handler."
 		ast.Inspect(file, func(n ast.Node) bool {
-			switch v := n.(type) {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch fn := call.Fun.(type) {
 			case *ast.SelectorExpr:
-				name := v.Sel.Name
-				if isHandlerName(name) {
-					refs[name] = true
+				if isHandlerName(fn.Sel.Name) {
+					refs[fn.Sel.Name] = true
 				}
 			case *ast.Ident:
-				if isHandlerName(v.Name) {
-					refs[v.Name] = true
+				if isHandlerName(fn.Name) {
+					refs[fn.Name] = true
 				}
 			}
 			return true
@@ -435,7 +445,10 @@ func writeCoverageSummary(entries any) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile("testdata/openapi-coverage.json", data, 0o644)
+	// Use the repo's atomic-write helper (tmp/bak/rename) so an
+	// interrupted run never leaves a partial JSON artifact on disk.
+	// Matches the convention enforced everywhere else in the codebase.
+	return filesystem.WriteFileAtomic("testdata/openapi-coverage.json", data, 0o644)
 }
 
 // loadBaseline reads the baseline allow-list of currently-uncovered
