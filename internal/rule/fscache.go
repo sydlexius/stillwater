@@ -381,11 +381,11 @@ func (e *Engine) getImageDimensionsCached(dirPath string, patterns []string) (in
 // of a specific image type (slot 0, exists_flag = 1). Returns (0, 0, nil) when
 // the row exists but dimensions are not populated, or when no matching row
 // exists. An error is only returned on actual database failures.
-func (e *Engine) getImageDimensionsFromDB(artistID, imageType string) (int, int, error) {
+func (e *Engine) getImageDimensionsFromDB(ctx context.Context, artistID, imageType string) (int, int, error) {
 	if e.db == nil {
 		return 0, 0, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var w, h int
@@ -410,9 +410,9 @@ func (e *Engine) getImageDimensionsFromDB(artistID, imageType string) (int, int,
 // checks to work for API-imported artists (no filesystem path) as long as some
 // pipeline (e.g., scanner or provider image downloads) has populated the
 // artist_images width/height columns.
-func (e *Engine) getImageDimensionsResolved(artistID, dirPath, imageType string, patterns []string) (int, int, error) {
+func (e *Engine) getImageDimensionsResolved(ctx context.Context, artistID, dirPath, imageType string, patterns []string) (int, int, error) {
 	// Try DB first -- works for both filesystem and API-imported artists.
-	w, h, err := e.getImageDimensionsFromDB(artistID, imageType)
+	w, h, err := e.getImageDimensionsFromDB(ctx, artistID, imageType)
 	if err != nil {
 		return 0, 0, fmt.Errorf("querying dimensions from DB: %w", err)
 	}

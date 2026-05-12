@@ -33,8 +33,18 @@ HTTP handlers run concurrently (net/http). Check for:
 - Package-level variables read or written without synchronization
 - Shared caches, maps, or singletons accessed from handlers
 - Goroutines using `context.Background()` where `context.WithoutCancel(reqCtx)`
-  should be used. This is review-only today; planned for machine enforcement once
-  `contextcheck` is enabled in `.golangci.yml`.
+  should be used. Machine-enforced by gosec G118 and `contextcheck`. The
+  suppression form depends on which rules actually fire:
+  - Direct `go fn(context.Background(), ...)` triggers both rules; suppress with
+    `//nolint:gosec,contextcheck // reason`.
+  - Boot-time constructors, helpers without a ctx parameter, and detached
+    bodies that first build `context.WithTimeout(context.Background(), ...)`
+    typically only fire `contextcheck`; suppress with `//nolint:contextcheck // reason`.
+  - Note that `contextcheck` cannot flag `context.Background()` inside an
+    http.Handler method whose signature is `(w, *http.Request)` -- the rule
+    needs a ctx parameter to compare against. Reviewer eyes still catch this
+    class; use `context.WithoutCancel(req.Context())` over bare `Background()`
+    when the handler spawns a goroutine that should inherit request values.
 
 ## Status code changes
 

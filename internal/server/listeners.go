@@ -52,6 +52,8 @@ type listenerEntry struct {
 // shuts down all listeners in parallel with a shared 10s deadline. The
 // first non-http.ErrServerClosed start error wins; otherwise every
 // non-nil shutdown error is wrapped together via errors.Join.
+//
+//nolint:contextcheck // boot-time entry point; ctx originates from main's signal handler and is the long-lived app context, not inherited from a caller's request ctx
 func RunListeners(ctx context.Context, cfg *config.Config, handler http.Handler, logger *slog.Logger) error {
 	if cfg == nil {
 		return errors.New("server: nil config")
