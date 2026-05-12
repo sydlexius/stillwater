@@ -494,8 +494,12 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 </artist>`
 	createArtistDirWithNFO(t, libDir, "Radiohead", nfoContent)
 	// Add thumb and fanart files
-	os.WriteFile(filepath.Join(libDir, "Radiohead", "folder.jpg"), []byte("jpg"), 0o644)
-	os.WriteFile(filepath.Join(libDir, "Radiohead", "fanart.jpg"), []byte("jpg"), 0o644)
+	if err := os.WriteFile(filepath.Join(libDir, "Radiohead", "folder.jpg"), []byte("jpg"), 0o644); err != nil {
+		t.Fatalf("writing folder.jpg fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(libDir, "Radiohead", "fanart.jpg"), []byte("jpg"), 0o644); err != nil {
+		t.Fatalf("writing fanart.jpg fixture: %v", err)
+	}
 
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
@@ -603,7 +607,9 @@ func TestDetectFiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"artist.nfo", "folder.jpg", "backdrop.jpg", "logo.png", "banner.jpg"} {
-		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644); err != nil {
+			t.Fatalf("writing %s fixture: %v", name, err)
+		}
 	}
 
 	d, err := detectFiles(dir, nil)

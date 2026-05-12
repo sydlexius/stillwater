@@ -420,12 +420,12 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	// Write lockdata element to protect NFO from platform overwrites.
 	// Only written when true; omitted entirely when false.
 	if nfo.LockData {
-		fmt.Fprintf(w, "  <lockdata>true</lockdata>\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+		fmt.Fprintf(w, "  <lockdata>true</lockdata>\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	}
 
 	// Write Stillwater provenance element to identify the NFO writer.
 	if nfo.Stillwater != nil {
-		fmt.Fprintf(w, "  <stillwater version=%q written=%q />\n", //nolint:errcheck // NFO write to in-memory buffer; errors surface via the final WriteString check at function exit
+		fmt.Fprintf(w, "  <stillwater version=%q written=%q />\n", //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 			nfo.Stillwater.Version, nfo.Stillwater.Written)
 	}
 
@@ -440,19 +440,19 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	}
 
 	if nfo.Fanart != nil && len(nfo.Fanart.Thumbs) > 0 {
-		fmt.Fprintf(w, "  <fanart>\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+		fmt.Fprintf(w, "  <fanart>\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 		for _, thumb := range nfo.Fanart.Thumbs {
-			fmt.Fprintf(w, "    ") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+			fmt.Fprintf(w, "    ") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 			writeThumbInline(w, thumb)
 		}
-		fmt.Fprintf(w, "  </fanart>\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+		fmt.Fprintf(w, "  </fanart>\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	}
 
 	// Write preserved unknown elements
 	for _, extra := range nfo.ExtraElements {
-		fmt.Fprintf(w, "  ") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
-		w.Write(extra.Raw)   //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
-		fmt.Fprintf(w, "\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+		fmt.Fprintf(w, "  ") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
+		w.Write(extra.Raw)   //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
+		fmt.Fprintf(w, "\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	}
 
 	if _, err := io.WriteString(w, "</artist>\n"); err != nil {
@@ -471,7 +471,7 @@ func writeElement(w io.Writer, name, value string) {
 	if err := xml.EscapeText(&buf, []byte(value)); err != nil {
 		return
 	}
-	fmt.Fprintf(w, "  <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, "  <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 }
 
 // writeAlbum writes a single <album> entry with title, year, and optional
@@ -480,11 +480,11 @@ func writeAlbum(w io.Writer, a DiscographyAlbum) {
 	if a.Title == "" && a.Year == "" && a.MusicBrainzReleaseGroupID == "" {
 		return
 	}
-	fmt.Fprintf(w, "  <album>\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, "  <album>\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	writeInnerElement(w, "title", a.Title)
 	writeInnerElement(w, "year", a.Year)
 	writeInnerElement(w, "musicbrainzreleasegroupid", a.MusicBrainzReleaseGroupID)
-	fmt.Fprintf(w, "  </album>\n") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, "  </album>\n") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 }
 
 // writeInnerElement writes a nested XML element with four-space indent.
@@ -497,27 +497,27 @@ func writeInnerElement(w io.Writer, name, value string) {
 	if err := xml.EscapeText(&buf, []byte(value)); err != nil {
 		return
 	}
-	fmt.Fprintf(w, "    <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, "    <%s>%s</%s>\n", name, buf.String(), name) //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 }
 
 // writeThumb writes a <thumb> element with optional attributes.
 func writeThumb(w io.Writer, t Thumb) {
-	fmt.Fprintf(w, "  ") //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, "  ") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	writeThumbInline(w, t)
 }
 
 // writeThumbInline writes a <thumb> element without leading indent.
 func writeThumbInline(w io.Writer, t Thumb) {
-	fmt.Fprintf(w, "<thumb") //nolint:errcheck // NFO write to in-memory buffer; errors surface via the final WriteString check at function exit
+	fmt.Fprintf(w, "<thumb") //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	if t.Aspect != "" {
-		fmt.Fprintf(w, " aspect=%q", t.Aspect) //nolint:errcheck // NFO write to in-memory buffer; errors surface via the final WriteString check at function exit
+		fmt.Fprintf(w, " aspect=%q", t.Aspect) //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	}
 	if t.Preview != "" {
-		fmt.Fprintf(w, " preview=%q", t.Preview) //nolint:errcheck // NFO write to in-memory buffer; errors surface via the final WriteString check at function exit
+		fmt.Fprintf(w, " preview=%q", t.Preview) //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 	}
 	var buf bytes.Buffer
 	xml.EscapeText(&buf, []byte(t.Value))         //nolint:errcheck // EscapeText to bytes.Buffer; Write to in-memory buffer cannot fail
-	fmt.Fprintf(w, ">%s</thumb>\n", buf.String()) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+	fmt.Fprintf(w, ">%s</thumb>\n", buf.String()) //nolint:errcheck // best-effort write to io.Writer; intermediate serializer fragment errors are intentionally ignored
 }
 
 // parseBoolString interprets a string as a boolean value.

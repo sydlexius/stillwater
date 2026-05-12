@@ -103,8 +103,10 @@ func TestOptimize(t *testing.T) {
 	// Insert some data to make optimize meaningful
 	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-			"test."+string(rune('A'+i%26)), "value")
+		if _, err := db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+			"test."+string(rune('A'+i%26)), "value"); err != nil {
+			t.Fatalf("seeding optimize row %d: %v", i, err)
+		}
 	}
 
 	if err := svc.Optimize(context.Background()); err != nil {
@@ -125,10 +127,14 @@ func TestVacuum(t *testing.T) {
 	// Insert and delete data to create freeable space
 	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?)",
-			"vacuum_test_"+string(rune('A'+i%26))+string(rune('0'+i/26)), "x")
+		if _, err := db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?)",
+			"vacuum_test_"+string(rune('A'+i%26))+string(rune('0'+i/26)), "x"); err != nil {
+			t.Fatalf("seeding vacuum row %d: %v", i, err)
+		}
 	}
-	db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'vacuum_test_%'")
+	if _, err := db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'vacuum_test_%'"); err != nil {
+		t.Fatalf("cleaning vacuum rows: %v", err)
+	}
 
 	sizeBefore, _ := os.Stat(dbPath)
 
@@ -155,13 +161,17 @@ func TestGetBoolSetting(t *testing.T) {
 
 	// Set to true
 	ctx := context.Background()
-	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.bool', 'true')")
+	if _, err := db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.bool', 'true')"); err != nil {
+		t.Fatalf("seeding bool=true: %v", err)
+	}
 	if !svc.getBoolSetting(ctx, "test.bool", false) {
 		t.Error("expected true")
 	}
 
 	// Set to false
-	db.ExecContext(ctx, "UPDATE settings SET value = 'false' WHERE key = 'test.bool'")
+	if _, err := db.ExecContext(ctx, "UPDATE settings SET value = 'false' WHERE key = 'test.bool'"); err != nil {
+		t.Fatalf("seeding bool=false: %v", err)
+	}
 	if svc.getBoolSetting(context.Background(), "test.bool", true) {
 		t.Error("expected false")
 	}
@@ -178,7 +188,9 @@ func TestGetIntSetting(t *testing.T) {
 
 	// Set to 12
 	ctx := context.Background()
-	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.int', '12')")
+	if _, err := db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.int', '12')"); err != nil {
+		t.Fatalf("seeding int=12: %v", err)
+	}
 	if v := svc.getIntSetting(context.Background(), "test.int", 0); v != 12 {
 		t.Errorf("expected 12, got %d", v)
 	}
