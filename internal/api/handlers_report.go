@@ -257,7 +257,10 @@ func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) 
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	params := complianceListParams(req)
+	params, ok := complianceListParams(w, req)
+	if !ok {
+		return
+	}
 
 	artists, total, err := r.artistService.List(ctx, params)
 	if err != nil {
@@ -319,7 +322,10 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	params := complianceListParams(req)
+	params, ok := complianceListParams(w, req)
+	if !ok {
+		return
+	}
 	params.Page = 1
 	params.PageSize = 200
 
@@ -428,11 +434,20 @@ func sanitizeCSV(s string) string {
 }
 
 // complianceListParams extracts ListParams from a compliance report request.
-func complianceListParams(req *http.Request) artist.ListParams {
-	sort := req.URL.Query().Get("sort")
-	order := req.URL.Query().Get("order")
-	if sort == "" {
-		sort = "name"
+// Validates the sort and order parameters against the artist allowlist; on
+// unknown values it writes a 400 response and returns ok=false so the caller
+// can stop processing.
+func complianceListParams(w http.ResponseWriter, req *http.Request) (artist.ListParams, bool) {
+	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
+	if !ok {
+		return artist.ListParams{}, false
+	}
+	order, ok := validateOrderParam(w, req)
+	if !ok {
+		return artist.ListParams{}, false
+	}
+	if sortKey == "" {
+		sortKey = "name"
 	}
 	if order == "" {
 		order = "asc"
@@ -441,7 +456,7 @@ func complianceListParams(req *http.Request) artist.ListParams {
 	params := artist.ListParams{
 		Page:           intQuery(req, "page", 1),
 		PageSize:       intQuery(req, "page_size", 50),
-		Sort:           sort,
+		Sort:           sortKey,
 		Order:          order,
 		Search:         req.URL.Query().Get("search"),
 		Filter:         req.URL.Query().Get("filter"),
@@ -459,7 +474,7 @@ func complianceListParams(req *http.Request) artist.ListParams {
 	}
 
 	params.Validate()
-	return params
+	return params, true
 }
 
 // handleCompliancePage renders the compliance report HTML page.
@@ -472,7 +487,10 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-	params := complianceListParams(req)
+	params, ok := complianceListParams(w, req)
+	if !ok {
+		return
+	}
 	status := req.URL.Query().Get("status")
 
 	artists, total, err := r.artistService.List(ctx, params)

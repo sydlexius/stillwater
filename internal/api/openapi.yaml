@@ -2036,8 +2036,13 @@ paths:
             default: 50
         - name: sort
           in: query
+          description: |
+            Sort column. Unknown values are rejected with 400 Bad Request.
+            Empty defaults to "name".
           schema:
             type: string
+            enum: [name, sort_name, health_score, updated_at, created_at]
+            default: name
         - name: order
           in: query
           schema:
@@ -2146,6 +2151,12 @@ paths:
                   page_size:
                     type: integer
                     description: Number of records per page.
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/badge:
     get:
@@ -2214,8 +2225,13 @@ paths:
             default: 50
         - name: sort
           in: query
+          description: |
+            Sort column. Unknown values are rejected with 400 Bad Request.
+            Empty defaults to "name".
           schema:
             type: string
+            enum: [name, sort_name, health_score, updated_at, created_at]
+            default: name
         - name: order
           in: query
           schema:
@@ -2243,6 +2259,12 @@ paths:
                   page_size:
                     type: integer
                     description: Number of records per page.
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/lock:
     post:
@@ -2929,6 +2951,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Invalid sort parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/images/crop:
     post:
@@ -5192,6 +5220,21 @@ paths:
           schema:
             type: string
             enum: [compliant, non_compliant]
+        - name: sort
+          in: query
+          description: |
+            Sort column. Unknown values are rejected with 400 Bad Request.
+            Empty defaults to "name".
+          schema:
+            type: string
+            enum: [name, sort_name, health_score, updated_at, created_at]
+            default: name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
       responses:
         "200":
           description: Paginated compliance report
@@ -5249,6 +5292,12 @@ paths:
                   page_size:
                     type: integer
                     description: Number of records per page.
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /webhooks:
     get:
@@ -7128,6 +7177,12 @@ paths:
                   count:
                     type: integer
                     description: Total number of violations in this response.
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /notifications/{id}/dismiss:
     post:
@@ -7568,6 +7623,12 @@ paths:
                   count:
                     type: integer
                     description: Total number of violations in this response.
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /notifications/resolved:
     delete:
@@ -7689,14 +7750,19 @@ paths:
       parameters:
         - name: sort
           in: query
+          description: |
+            Sort column. Unknown values are rejected with 400 Bad Request.
+            Empty defaults to "name".
           schema:
             type: string
+            enum: [name, sort_name, health_score, updated_at, created_at]
             default: name
         - name: order
           in: query
           schema:
             type: string
             enum: [asc, desc]
+            default: asc
         - name: search
           in: query
           schema:
@@ -7729,6 +7795,12 @@ paths:
             text/csv:
               schema:
                 type: string
+        "400":
+          description: Invalid sort or order parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /reports/metadata-completeness:
     get:
@@ -9750,6 +9822,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Invalid sort parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/images/logo/trim:
     post:

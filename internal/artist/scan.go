@@ -164,10 +164,12 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 }
 
 // validatedOrderClause returns a safe ORDER BY column expression from
-// ListParams. It assumes params.Validate() was called upstream to normalize
-// and allowlist the Sort and Order fields. The switch on params.Sort and the
-// fixed dir values below use only string literals, so static-analysis tools
-// can verify no user input flows into the SQL string.
+// ListParams. The HTTP boundary (dbutil.ValidateSortKey via the api package
+// helpers) rejects unknown sort keys with 400, and params.Validate() is a
+// second-line defense that normalizes any remaining unexpected value to the
+// "name" default. The switch on params.Sort and the fixed dir values below
+// use only string literals, so static-analysis tools can verify no user
+// input flows into the SQL string.
 func validatedOrderClause(params ListParams) string {
 	var col string
 	switch params.Sort {

@@ -19,7 +19,10 @@ import (
 // handleListNotifications returns rule violations with optional filtering and sorting.
 // GET /api/v1/notifications?status=open&severity=error&category=image&sort=artist_name&order=asc
 func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Request) {
-	p := parseNotificationParams(req)
+	p, ok := parseNotificationParams(w, req)
+	if !ok {
+		return
+	}
 
 	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
 	if err != nil {
@@ -41,7 +44,10 @@ func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Reques
 // Respects the same filter/sort params as handleListNotifications.
 // GET /api/v1/notifications/export
 func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Request) {
-	p := parseNotificationParams(req)
+	p, ok := parseNotificationParams(w, req)
+	if !ok {
+		return
+	}
 
 	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
 	if err != nil {
@@ -235,7 +241,10 @@ var validGroupByValues = map[string]bool{
 }
 
 // parseNotificationParams extracts filter/sort/group params from the request.
-func parseNotificationParams(req *http.Request) rule.ViolationListParams {
+// Validates the sort and order parameters against the violation allowlist;
+// on unknown values it writes a 400 response and returns ok=false so the
+// caller can stop processing.
+func parseNotificationParams(w http.ResponseWriter, req *http.Request) (rule.ViolationListParams, bool) {
 	q := req.URL.Query()
 
 	status := q.Get("status")
@@ -243,11 +252,17 @@ func parseNotificationParams(req *http.Request) rule.ViolationListParams {
 		status = "active"
 	}
 
-	sort := q.Get("sort")
-	order := q.Get("order")
+	sortKey, ok := validateSortParam(w, req, allowedViolationSort)
+	if !ok {
+		return rule.ViolationListParams{}, false
+	}
+	order, ok := validateOrderParam(w, req)
+	if !ok {
+		return rule.ViolationListParams{}, false
+	}
 	// Normalize defaults so UI sort icons match actual query behavior.
-	if sort == "" {
-		sort = "severity"
+	if sortKey == "" {
+		sortKey = "severity"
 	}
 	if order == "" {
 		order = "desc"
@@ -260,13 +275,13 @@ func parseNotificationParams(req *http.Request) rule.ViolationListParams {
 
 	return rule.ViolationListParams{
 		Status:   status,
-		Sort:     sort,
+		Sort:     sortKey,
 		Order:    order,
 		Severity: q.Get("severity"),
 		Category: q.Get("category"),
 		RuleID:   q.Get("rule_id"),
 		GroupBy:  groupBy,
-	}
+	}, true
 }
 
 // handleApplyViolationCandidate downloads and applies a chosen image candidate.
