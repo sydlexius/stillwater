@@ -421,8 +421,14 @@ func newEmbyTestServer(hits *pushHits) *httptest.Server {
 		case http.MethodPost:
 			// Capture body before incrementing the counter so any
 			// concurrent reader observing posts > N is guaranteed to
-			// see the corresponding body snapshot.
-			body, _ := io.ReadAll(r.Body)
+			// see the corresponding body snapshot. A read error must
+			// fail-fast: silently appending an empty body to
+			// postBodies would mask a malformed-request regression.
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			hits.mu.Lock()
 			hits.postBodies = append(hits.postBodies, body)
 			hits.mu.Unlock()

@@ -444,8 +444,13 @@ func TestSyncImageToPlatforms_PerConnectionBranches(t *testing.T) {
 
 // TestSyncImageToPlatforms_ReadErrorWarning verifies the read-error warning
 // when the resolved file is unreadable. Chmod 0o000 produces a deterministic
-// permission error on os.ReadFile across macOS and Linux.
+// permission error on os.ReadFile across macOS and Linux non-root users; root
+// (typical CI container) ignores permissions, so the test skips there rather
+// than misreport a silent pass.
 func TestSyncImageToPlatforms_ReadErrorWarning(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0o000 does not block reads and the read-error branch cannot be exercised on this runner")
+	}
 	dir := t.TempDir()
 	seedJPG(t, dir, "folder.jpg")
 	bad := filepath.Join(dir, "folder.jpg")
@@ -681,13 +686,22 @@ func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 	if !hasLookup || !hasUnsupported {
 		t.Errorf("expected lookup-error + unsupported-type warnings; got %v", warnings)
 	}
+	// The c-ok connection (last entry above) is the readable/supported
+	// path. Assert that the warning-emitting branches do not short-circuit
+	// the entire sync — a regression that aborts on the first warning
+	// would still satisfy the warning checks above.
+	waitForUploads(t, hits, 1)
 }
 
 // TestSyncAllFanartToPlatforms_ReadErrorWarning verifies the per-file read
 // error path: making a discovered fanart file unreadable (chmod 0000) makes
 // os.ReadFile fail and the function emits a "failed to read fanart N"
-// warning while well-formed files still upload.
+// warning while well-formed files still upload. Skips when running as root
+// (chmod 0o000 does not block root reads on the runner).
 func TestSyncAllFanartToPlatforms_ReadErrorWarning(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0o000 does not block reads and the read-error branch cannot be exercised on this runner")
+	}
 	dir := t.TempDir()
 	// fanart.jpg is primary (index 0) and a real readable file.
 	seedJPG(t, dir, "fanart.jpg")
@@ -723,6 +737,11 @@ func TestSyncAllFanartToPlatforms_ReadErrorWarning(t *testing.T) {
 	if !foundReadErr {
 		t.Errorf("expected 'failed to read fanart' warning; got %v", warnings)
 	}
+	// fanart.jpg is readable and primary; it must still upload despite
+	// the per-file read error on fanart2.jpg. A regression that aborts
+	// the whole sync on the first read error would slip past the warning
+	// assertion alone.
+	waitForUploads(t, hits, 1)
 }
 
 // errFanartDiscovery: not directly invocable from outside the package, but we
