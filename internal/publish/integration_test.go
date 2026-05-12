@@ -22,13 +22,21 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 )
 
-// setupNFODB creates an in-memory SQLite DB with the minimum schema needed
-// by NFOSettingsService and SnapshotService. Mirrors the helpers in
+// setupNFODB creates a SQLite test DB with the minimum schema needed by
+// NFOSettingsService and SnapshotService. Mirrors the helpers in
 // internal/nfo/*_test.go but kept local to honor the M49 W5 file-ownership
 // boundary (no shared test helpers across packages).
+//
+// The DB lives in t.TempDir(), NOT ":memory:". sql.DB is a connection
+// pool, and modernc.org/sqlite makes each ":memory:" connection a private
+// in-memory database; a query on a fresh pooled connection would not see
+// the schema we just created and would fail with `no such table`. The
+// temp-file pattern (used by internal/backup/backup_test.go) shares one
+// on-disk DB across the whole pool. t.TempDir cleans up automatically.
 func setupNFODB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	dbPath := filepath.Join(t.TempDir(), "nfo.db")
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}
@@ -367,10 +375,40 @@ func TestWriteBackNFO_RespectsLibraryLockSetting(t *testing.T) {
 // --- PushMetadataAsync ---
 
 // embyServer returns a test server that responds to both the GET item fetch
-// and the POST item update. It records every POST body for later assertion.
+// and the POST item update. POST bodies are buffered under a mutex so tests
+// can assert that required metadata fields actually round-trip into the
+// pushed payload (a happy-path test could otherwise pass even if the
+// serializer dropped Name or the date fields).
 type pushHits struct {
-	posts atomic.Int32
-	gets  atomic.Int32
+	posts      atomic.Int32
+	gets       atomic.Int32
+	mu         sync.Mutex
+	postBodies [][]byte
+}
+
+// findPostBody returns a snapshot of POST bodies that contain ALL of the
+// required substrings. The publisher dispatches both a metadata-update POST
+// (carrying the marshaled artist payload) and a follow-up lock POST whose
+// body is empty; asserting against "the last body" would race between them.
+// Searching by substring lets the caller assert on the meaningful payload
+// regardless of arrival order.
+func (h *pushHits) findPostBody(required ...string) []byte {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, b := range h.postBodies {
+		s := string(b)
+		matched := true
+		for _, want := range required {
+			if !strings.Contains(s, want) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return append([]byte(nil), b...)
+		}
+	}
+	return nil
 }
 
 func newEmbyTestServer(hits *pushHits) *httptest.Server {
@@ -381,9 +419,14 @@ func newEmbyTestServer(hits *pushHits) *httptest.Server {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Id":"p1","LockData":false}`))
 		case http.MethodPost:
+			// Capture body before incrementing the counter so any
+			// concurrent reader observing posts > N is guaranteed to
+			// see the corresponding body snapshot.
+			body, _ := io.ReadAll(r.Body)
+			hits.mu.Lock()
+			hits.postBodies = append(hits.postBodies, body)
+			hits.mu.Unlock()
 			hits.posts.Add(1)
-			// drain body
-			_, _ = io.Copy(io.Discard, r.Body)
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -418,6 +461,23 @@ func TestPushMetadataAsync_HappyPath(t *testing.T) {
 	p.PushMetadataAsync(context.Background(), a)
 
 	waitForPosts(t, &hits.posts, 1)
+
+	// Verify the POST payload actually carries the artist's metadata.
+	// Without this assertion, the happy-path test would pass even if the
+	// serializer silently dropped Name or the date fields. findPostBody
+	// searches all captured bodies for one that contains every required
+	// substring, so we don't race against the empty follow-up POST that
+	// the publisher dispatches after the metadata one.
+	if body := hits.findPostBody(`"Name":"PushMe"`, `"1970-01-01"`); body == nil {
+		// Surface every captured body to make the failure diagnosable.
+		hits.mu.Lock()
+		all := append([][]byte(nil), hits.postBodies...)
+		hits.mu.Unlock()
+		t.Errorf("no POST body carried the artist payload; captured bodies:")
+		for i, b := range all {
+			t.Errorf("  [%d] %s", i, string(b))
+		}
+	}
 }
 
 // TestPushMetadataAsync_ListerErrorReturnsEarly verifies that an error from

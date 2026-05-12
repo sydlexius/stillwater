@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -231,14 +232,35 @@ func TestUploaderConstructors(t *testing.T) {
 
 // --- SyncImageToPlatforms ---
 
-// uploadHits records image upload arrivals so tests can assert.
+// uploadHits records image upload arrivals so tests can assert. The
+// Content-Type seen on each upload is captured under a mutex so tests can
+// verify the uploader's extension-based dispatch (image/jpeg for .jpg,
+// image/png for .png) -- a regression that always sent image/jpeg would
+// otherwise still pass an upload-counter-only assertion.
 type uploadHits struct {
-	uploads atomic.Int32
+	uploads      atomic.Int32
+	mu           sync.Mutex
+	contentTypes []string
+}
+
+// lastContentType returns the Content-Type header recorded on the most
+// recent upload, or "" if none has been observed.
+func (h *uploadHits) lastContentType() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.contentTypes) == 0 {
+		return ""
+	}
+	return h.contentTypes[len(h.contentTypes)-1]
 }
 
 func newImageUploadServer(hits *uploadHits) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/Images/") {
+			ct := r.Header.Get("Content-Type")
+			hits.mu.Lock()
+			hits.contentTypes = append(hits.contentTypes, ct)
+			hits.mu.Unlock()
 			hits.uploads.Add(1)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -500,6 +522,12 @@ func TestSyncImageToPlatforms_PNGContentType(t *testing.T) {
 		t.Errorf("expected no warnings; got %v", warnings)
 	}
 	waitForUploads(t, hits, 1)
+	// A regression that hard-codes image/jpeg would otherwise pass the
+	// upload-count assertion. Verify the uploader actually picked image/png
+	// from the .png extension.
+	if got := hits.lastContentType(); got != "image/png" {
+		t.Errorf("Content-Type: got %q, want image/png", got)
+	}
 }
 
 // --- SyncAllFanartToPlatforms ---
@@ -719,18 +747,23 @@ func TestSyncAllFanartToPlatforms_DiscoverError(t *testing.T) {
 	})
 	warnings := p.SyncAllFanartToPlatforms(context.Background(), &artist.Artist{ID: "a1", Path: dir, Name: "X"})
 
-	// On systems where the unreadable-dir error is suppressed by io/fs, we'd
-	// see the empty path instead; the assertion just guards against a panic
-	// and accepts either branch.
+	// One of these early-return warnings must surface; otherwise the
+	// discover-error branch was never exercised and the test name is a
+	// lie. We accept either form because io/fs may swallow chmod 0o000
+	// behavior in some sandboxed environments (CI containers run as
+	// root, for example, where 0o000 still permits reads).
 	for _, w := range warnings {
-		// at least one of the early-return warnings is acceptable
 		if strings.Contains(w, "failed to read fanart directory") ||
 			strings.Contains(w, "no image directory configured") {
 			return
 		}
 	}
-	// If neither matched, ensure we still produced a sensible response.
-	if len(warnings) > 0 {
-		t.Logf("DiscoverError test observed warnings: %v", warnings)
+	// If we're running as root (CI container, common case), chmod 0o000
+	// does not block reads and the discover-error branch genuinely cannot
+	// be reached from this test. t.Skip with a structured reason so the
+	// CI shows the skip explicitly instead of an opaque pass.
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0o000 does not block reads and the discover-error branch cannot be exercised on this runner")
 	}
+	t.Fatalf("discover-error branch was not exercised; got warnings: %v", warnings)
 }
