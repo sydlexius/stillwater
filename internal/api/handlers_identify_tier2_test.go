@@ -524,8 +524,11 @@ func TestIdentifyArtist(t *testing.T) {
 		if got.Outcome != outcomeQueued {
 			t.Fatalf("Outcome = %v, want queued", got.Outcome)
 		}
-		if got.Candidate == nil || got.Candidate.Tier != "name" {
-			t.Errorf("Candidate.Tier = %v, want name", got.Candidate)
+		if got.Candidate == nil {
+			t.Fatal("Candidate = nil, want populated (Tier+Candidates)")
+		}
+		if got.Candidate.Tier != "name" {
+			t.Errorf("Candidate.Tier = %q, want %q", got.Candidate.Tier, "name")
 		}
 		if len(got.Candidate.Candidates) != 2 {
 			t.Errorf("len = %d, want 2", len(got.Candidate.Candidates))
@@ -756,17 +759,15 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	}
 
 	// A subsequent POST must not be rejected with 409. The slot should be
-	// released after the panic, allowing a new job to start (or report no
-	// work). "Crashy" still has no MBID — the linking never completed —
-	// so handleBulkIdentify rediscovers it and returns 202 accepted, NOT
-	// 409 conflict. We only assert "not 409" here because exercising the
-	// runner state machine more precisely would require synchronizing on
-	// the asynchronous goroutine, which is out of scope for this test.
+	// released after the panic, allowing a new job to start. "Crashy"
+	// still has no MBID — the linking never completed — so
+	// handleBulkIdentify rediscovers it and returns 202 accepted.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify", nil)
 	w2 := httptest.NewRecorder()
 	r.handleBulkIdentify(w2, req2)
-	if w2.Code == http.StatusConflict {
-		t.Fatalf("second POST returned 409; slot was not released after panic")
+	if w2.Code != http.StatusAccepted {
+		t.Fatalf("second POST status = %d, want %d (panic slot not released cleanly); body: %s",
+			w2.Code, http.StatusAccepted, w2.Body.String())
 	}
 
 	// Wait for the second job's background goroutine to reach a terminal
@@ -774,22 +775,31 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	// against router/database cleanup under `go test -race` and can flake
 	// the gate. 5s is generous given the test's two-artist corpus.
 	// RLock matches the read-only-pointer access pattern used by the
-	// first polling loop in this test.
+	// first polling loop in this test. If the deadline elapses without
+	// reaching terminal, fail the test — silently letting the test
+	// return while the goroutine is still live defeats the whole
+	// purpose of this wait (the teardown race remains live).
+	reached := false
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()
 		p := r.identifyProgress
 		r.identifyMu.RUnlock()
 		if p == nil {
+			reached = true
 			break
 		}
 		p.mu.RLock()
 		st := p.Status
 		p.mu.RUnlock()
 		if st == "failed" || st == "completed" || st == "canceled" {
+			reached = true
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if !reached {
+		t.Fatalf("second bulk-identify job did not reach terminal status within 5s; teardown race remains live")
 	}
 }
 
