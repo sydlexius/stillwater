@@ -223,7 +223,10 @@ func TestHandleCreateConnection_BadJSON(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
-	conns, _ := r.connectionService.List(context.Background())
+	conns, err := r.connectionService.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
 	if len(conns) != 0 {
 		t.Errorf("len(conns) = %d, want 0", len(conns))
 	}
@@ -321,7 +324,10 @@ func TestHandleCreateConnection_DuplicateUpdatesExisting(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (dedupe-update); body=%s", w.Code, w.Body.String())
 	}
-	conns, _ := r.connectionService.List(context.Background())
+	conns, err := r.connectionService.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
 	if len(conns) != 1 || conns[0].Name != "Renamed" {
 		t.Errorf("conns = %+v, want one renamed", conns)
 	}
@@ -670,7 +676,10 @@ func TestHandleUpdateConnectionFeatures_Patches(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
-	got, _ := r.connectionService.GetByID(context.Background(), c.ID)
+	got, err := r.connectionService.GetByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
 	if !got.FeatureLibraryImport || !got.FeatureMetadataPush || !got.FeatureTriggerRefresh {
 		t.Errorf("features not toggled: %+v", got)
 	}
@@ -1205,14 +1214,24 @@ func TestHandleDisablePlatformSettings_LidarrSuccess(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// Disable hits the per-config PUT endpoint
-		// (lidarr/client.go:155 PutJSON).
+		// (lidarr/client.go:155 PutJSON). The handler resolves the
+		// consumer_id from the POST body (5) into the URL path, so a
+		// regression that routes to the collection endpoint or to the
+		// wrong ID surfaces here as a 404 from the stub.
 		assertLidarrContract(t, req, http.MethodPut)
-		switch {
-		case strings.HasPrefix(req.URL.Path, "/api/v1/config/metadataprovider/"):
-			w.WriteHeader(http.StatusOK)
-		default:
-			w.WriteHeader(http.StatusNotFound)
+		if req.URL.Path != "/api/v1/config/metadataprovider/5" {
+			http.Error(w, "unexpected provider target", http.StatusNotFound)
+			return
 		}
+		// Body must be a non-empty JSON object (Lidarr's MetadataProvider
+		// payload). An empty/malformed body would mean the handler dropped
+		// the resolved config it just fetched from the GET.
+		var payload map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil || len(payload) == 0 {
+			http.Error(w, "invalid or empty request body", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 

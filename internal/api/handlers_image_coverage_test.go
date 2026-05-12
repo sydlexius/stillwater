@@ -577,6 +577,22 @@ func TestHandleWebImageSearch_EmptyResults_JSON(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
+	// JSON arm: Content-Type must be application/json and the body must be
+	// the documented {"images": [...]} shape. A regression that flips the
+	// arm to text/html or returns a bare array would still pass a 200-only
+	// check but fail here.
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	var resp struct {
+		Images []provider.ImageResult `json:"images"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(resp.Images) != 0 {
+		t.Errorf("images = %d, want 0", len(resp.Images))
+	}
 }
 
 func TestHandleWebImageSearch_HTMX(t *testing.T) {
@@ -596,6 +612,10 @@ func TestHandleWebImageSearch_HTMX(t *testing.T) {
 	r.handleWebImageSearch(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	// HTMX arm: must render a text/html fragment, not the JSON envelope.
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 }
 
