@@ -352,6 +352,23 @@ func (r *Router) runBulkIdentify(ctx context.Context, artists []artist.Artist, p
 		// regardless of whether it completed normally or was canceled.
 		defer progress.cancelFn()
 
+		// Recover from any panic inside the identify pipeline so a single bad
+		// artist (or a misbehaving dependency such as the orchestrator) cannot
+		// crash the server-wide background goroutine. The slot is released by
+		// transitioning Status to "failed" so subsequent POSTs are not blocked
+		// by a phantom "running" job. We log with a stable message so operators
+		// can correlate against the structured-log assertion in tests.
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.logger.Error("bulk-identify panic recovered",
+					"panic", rec)
+				progress.mu.Lock()
+				progress.Status = "failed"
+				progress.CurrentName = ""
+				progress.mu.Unlock()
+			}
+		}()
+
 		// Build connection index for Tier 1.
 		connIdx := r.buildConnectionIndex(ctx)
 
