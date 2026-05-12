@@ -112,6 +112,26 @@ func authSetupFakeMediaServer(t *testing.T, opts authSetupFakeServerOpts) *httpt
 			http.NotFound(w, req)
 			return
 		}
+		// Guard the inbound request shape so a regression in handleSetup
+		// (wrong verb, missing Content-Type, malformed body) surfaces here
+		// instead of silently passing through. Mirrors the
+		// "Mock servers/handlers check request bodies and headers" guideline.
+		if req.Method != http.MethodPost {
+			http.Error(w, "expected POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := req.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			// Body kept generic; the failing-test signal is the 400 status,
+			// not the response text. Matches the gate's "no raw error in
+			// client-visible message" rule.
+			http.Error(w, "unexpected Content-Type", http.StatusBadRequest)
+			return
+		}
+		var inbound map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&inbound); err != nil {
+			http.Error(w, "malformed request body", http.StatusBadRequest)
+			return
+		}
 		if opts.statusCode != http.StatusOK {
 			w.WriteHeader(opts.statusCode)
 			return

@@ -868,6 +868,12 @@ func TestProbeImageDimensions_ProbesMissingDims(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2", len(out))
 	}
+	// The probed entry should now carry the JPEG's real dimensions; without
+	// this assertion the test would pass even if the probe goroutine never
+	// wrote back into the slice.
+	if out[0].Width != 640 || out[0].Height != 480 {
+		t.Errorf("probed entry: got %dx%d, want 640x480", out[0].Width, out[0].Height)
+	}
 	// The already-populated entry should be untouched.
 	if out[1].Width != 50 || out[1].Height != 50 {
 		t.Errorf("already-populated entry was clobbered: %+v", out[1])
@@ -924,7 +930,7 @@ func TestClearImageFlagAsync_RecoversFromPanic(t *testing.T) {
 	// Run synchronously by calling the helper directly (the production call
 	// site spawns a goroutine; calling directly lets us deterministically
 	// observe the recovery without test-side timing flakes).
-	r.clearImageFlagAsync(a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
 
 	got := logBuf.String()
 	if !strings.Contains(got, "panic in clearImageFlagAsync") {
@@ -961,7 +967,7 @@ func TestClearImageFlagAsync_LogsWarnOnError(t *testing.T) {
 		t.Fatalf("closing db: %v", err)
 	}
 
-	r.clearImageFlagAsync(a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
 
 	got := logBuf.String()
 	if !strings.Contains(got, "failed to clear stale image flag") {
@@ -987,7 +993,7 @@ func TestClearImageFlagAsync_HappyPath(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	r.clearImageFlagAsync(a.ID, "thumb")
+	r.clearImageFlagAsync(context.Background(), a.ID, "thumb")
 
 	got := logBuf.String()
 	if !strings.Contains(got, "cleared stale image flag") {

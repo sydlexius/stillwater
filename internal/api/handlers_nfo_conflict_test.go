@@ -400,7 +400,9 @@ func FuzzHandleNFOConflictCheck(f *testing.F) {
 
 	// Seed corpus from the happy-path test body shapes. The handler does
 	// not decode JSON today, but seeding with valid-shaped JSON keeps the
-	// corpus useful if a future patch starts decoding the body.
+	// corpus useful if a future patch starts decoding the body. The seed
+	// containing the real artist UUID drives the GetByID success path; all
+	// other inputs route through the not-found / lookup-error branches.
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"force":true}`))
 	f.Add([]byte(`{"unknown_field":"value"}`))
@@ -408,10 +410,20 @@ func FuzzHandleNFOConflictCheck(f *testing.F) {
 	f.Add([]byte("not-json-at-all"))
 	f.Add([]byte(""))
 	f.Add([]byte("\x00\x01\x02"))
+	f.Add([]byte(a.ID))
 
 	f.Fuzz(func(t *testing.T, body []byte) {
+		// Derive the path-param id from the fuzz input so adversarial
+		// bytes also exercise artistSvc.GetByID's parsing/lookup path,
+		// not only the request-body branch. Empty bodies fall back to
+		// the seed artist's UUID so the lookup-success branch still
+		// runs on the empty seed.
+		id := string(body)
+		if id == "" {
+			id = a.ID
+		}
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", bytes.NewReader(body))
-		req.SetPathValue("id", a.ID)
+		req.SetPathValue("id", id)
 		w := httptest.NewRecorder()
 
 		// The contract under fuzz is: must not panic.

@@ -1112,7 +1112,11 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		// (every probe returned ENOENT), clear the stale flag so subsequent UI
 		// renders show a placeholder instead of a broken image tag. Best-effort.
 		if imageExistsFlag(a, imageType) {
-			go r.clearImageFlagAsync(a.ID, imageType) //nolint:gosec // Background context is intentional: this goroutine outlives the request.
+			// context.WithoutCancel propagates request-scoped values (trace
+			// IDs, logging context) while detaching cancellation so the
+			// goroutine survives after the response is written. Matches the
+			// pattern in handlers_conflict / handlers_fix / handlers_refresh.
+			go r.clearImageFlagAsync(context.WithoutCancel(req.Context()), a.ID, imageType)
 		}
 		http.NotFound(w, req)
 		return
@@ -1144,14 +1148,16 @@ func imageExistsFlag(a *artist.Artist, imageType string) bool {
 }
 
 // clearImageFlagAsync clears the exists_flag for a stale image entry in a
-// background goroutine that outlives the HTTP request. A panic in the
-// dependency (artistService.ClearImageFlag) or in our log emission must not
-// crash the process: this background path is intentionally best-effort, so we
-// recover, log structurally at slog.Error, and let the next serve request
-// re-attempt the cleanup. The recovered panic value is included as a string
-// attribute so operators can correlate the log with later artist-state
-// confusion (e.g. a UI still showing a broken-image tile).
-func (r *Router) clearImageFlagAsync(artistID, imageType string) {
+// background goroutine that outlives the HTTP request. The caller is
+// expected to pass context.WithoutCancel(req.Context()) so request-scoped
+// values still propagate. A panic in the dependency
+// (artistService.ClearImageFlag) or in our log emission must not crash the
+// process: this background path is intentionally best-effort, so we recover,
+// log structurally at slog.Error, and let the next serve request re-attempt
+// the cleanup. The recovered panic value is included as a string attribute
+// so operators can correlate the log with later artist-state confusion
+// (e.g. a UI still showing a broken-image tile).
+func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType string) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			r.logger.Error("panic in clearImageFlagAsync",
@@ -1161,7 +1167,7 @@ func (r *Router) clearImageFlagAsync(artistID, imageType string) {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := r.artistService.ClearImageFlag(ctx, artistID, imageType, 0); err != nil {
 		r.logger.Warn("failed to clear stale image flag",
