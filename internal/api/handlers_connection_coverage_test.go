@@ -160,8 +160,10 @@ func TestHandleCreateConnection_JSON_SkipTest_Lidarr(t *testing.T) {
 
 	r.handleCreateConnection(w, req)
 
-	if w.Code != http.StatusCreated && w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 201/200; body=%s", w.Code, w.Body.String())
+	// New connection (no dedupe) on the JSON path: handler at
+	// handlers_connection.go:315 returns 201 Created.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
 
 	conns, err := r.connectionService.List(context.Background())
@@ -200,8 +202,9 @@ func TestHandleCreateConnection_FormSkipTest(t *testing.T) {
 
 	r.handleCreateConnection(w, req)
 
-	if w.Code/100 != 2 {
-		t.Fatalf("status = %d, want 2xx; body=%s", w.Code, w.Body.String())
+	// Form-encoded new connection on the non-HTMX path: 201 Created.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -248,8 +251,9 @@ func TestHandleCreateConnection_TestSuccess_WithStub(t *testing.T) {
 
 	r.handleCreateConnection(w, req)
 
-	if w.Code/100 != 2 {
-		t.Fatalf("status = %d, want 2xx; body=%s", w.Code, w.Body.String())
+	// Live-test success creates a new row: 201 Created.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
 
 	conns, err := r.connectionService.List(context.Background())
@@ -312,8 +316,10 @@ func TestHandleCreateConnection_DuplicateUpdatesExisting(t *testing.T) {
 
 	r.handleCreateConnection(w, req)
 
-	if w.Code/100 != 2 {
-		t.Fatalf("status = %d", w.Code)
+	// Duplicate POST on (type, url) takes the dedupe-update branch at
+	// handlers_connection.go:317 (`status = http.StatusOK`).
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (dedupe-update); body=%s", w.Code, w.Body.String())
 	}
 	conns, _ := r.connectionService.List(context.Background())
 	if len(conns) != 1 || conns[0].Name != "Renamed" {
@@ -902,6 +908,9 @@ func TestHandleListConnections_TwoEntries(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.handleListConnections(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
 	var resp []connectionResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)

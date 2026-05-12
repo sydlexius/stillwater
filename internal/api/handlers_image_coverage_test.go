@@ -297,6 +297,24 @@ func TestHandleImageFetch_FanartAppend(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
+
+	// Verify the append side-effect on disk: the seed dropped one fanart.jpg,
+	// the handler should have created a second indexed file (e.g. fanart1.jpg).
+	// Without this assertion, an append regression that overwrites the
+	// original or no-ops entirely would still pass the 200 check.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	jpgCount := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".jpg") {
+			jpgCount++
+		}
+	}
+	if jpgCount < 2 {
+		t.Fatalf("jpg files on disk = %d, want >= 2 (original + appended); entries=%v", jpgCount, entries)
+	}
 }
 
 func TestHandleImageFetch_InvalidJSON(t *testing.T) {
