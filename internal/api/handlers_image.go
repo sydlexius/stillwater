@@ -443,6 +443,13 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Validate sort before any provider fetch/probe work so bad requests
+	// fail fast with 400 rather than after expensive upstream calls.
+	sortBy, ok := validateSortParam(w, req, allowedImageSearchSort)
+	if !ok {
+		return
+	}
+
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
@@ -476,12 +483,6 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	// Probe dimensions for images that have none (e.g., Fanart.tv)
 	images = r.probeImageDimensions(req.Context(), images)
 
-	// Sort images by the requested criterion (default: likes descending).
-	// Normalize unknown sort values so only valid values propagate to templates.
-	sortBy := req.URL.Query().Get("sort")
-	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
-		sortBy = ""
-	}
 	sortImageResults(images, sortBy)
 
 	// Return HTML for HTMX requests, JSON for API requests
@@ -509,6 +510,11 @@ var validWebSearchImageTypes = map[string]bool{
 // GET /api/v1/artists/{id}/images/websearch?type=thumb
 func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	sortBy, ok := validateSortParam(w, req, allowedImageSearchSort)
 	if !ok {
 		return
 	}
@@ -544,11 +550,6 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		allImages = append(allImages, images...)
 	}
 
-	// Sort web search results the same way as the main image search.
-	sortBy := req.URL.Query().Get("sort")
-	if sortBy != "" && sortBy != "likes" && sortBy != "resolution" {
-		sortBy = ""
-	}
 	sortImageResults(allImages, sortBy)
 
 	if isHTMXRequest(req) {

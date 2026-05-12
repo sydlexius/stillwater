@@ -18,11 +18,19 @@ import (
 // GET /api/v1/artists
 func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
+	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
+	if !ok {
+		return
+	}
+	order, ok := validateOrderParam(w, req)
+	if !ok {
+		return
+	}
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
 		PageSize:  r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
-		Sort:      req.URL.Query().Get("sort"),
-		Order:     req.URL.Query().Get("order"),
+		Sort:      sortKey,
+		Order:     order,
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
@@ -149,11 +157,19 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
+	if !ok {
+		return
+	}
+	order, ok := validateOrderParam(w, req)
+	if !ok {
+		return
+	}
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
 		PageSize:  r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
-		Sort:      req.URL.Query().Get("sort"),
-		Order:     req.URL.Query().Get("order"),
+		Sort:      sortKey,
+		Order:     order,
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),

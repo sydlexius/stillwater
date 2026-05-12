@@ -215,11 +215,19 @@ func (r *Router) setImageLock(w http.ResponseWriter, req *http.Request, locked b
 // handleListLockedArtists returns a paginated list of locked artists.
 // GET /api/v1/artists/locked
 func (r *Router) handleListLockedArtists(w http.ResponseWriter, req *http.Request) {
+	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
+	if !ok {
+		return
+	}
+	order, ok := validateOrderParam(w, req)
+	if !ok {
+		return
+	}
 	params := artist.ListParams{
 		Page:     intQuery(req, "page", 1),
 		PageSize: intQuery(req, "page_size", 50),
-		Sort:     req.URL.Query().Get("sort"),
-		Order:    req.URL.Query().Get("order"),
+		Sort:     sortKey,
+		Order:    order,
 		Filter:   "locked",
 	}
 	params.Validate()

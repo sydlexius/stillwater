@@ -78,7 +78,11 @@ func TestParseNotificationParams(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
-			p := parseNotificationParams(req)
+			w := httptest.NewRecorder()
+			p, ok := parseNotificationParams(w, req)
+			if !ok {
+				t.Fatalf("parseNotificationParams returned ok=false; status=%d body=%q", w.Code, w.Body.String())
+			}
 			if p.Sort != tc.wantSort {
 				t.Errorf("Sort = %q, want %q", p.Sort, tc.wantSort)
 			}
@@ -101,7 +105,11 @@ func TestParseNotificationParams(t *testing.T) {
 func TestParseNotificationParams_DefaultStatus(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/notifications/table", nil)
-	p := parseNotificationParams(req)
+	w := httptest.NewRecorder()
+	p, ok := parseNotificationParams(w, req)
+	if !ok {
+		t.Fatalf("parseNotificationParams returned ok=false; status=%d body=%q", w.Code, w.Body.String())
+	}
 	if p.Status != "active" {
 		t.Errorf("default status = %q, want active", p.Status)
 	}

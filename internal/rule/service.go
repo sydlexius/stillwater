@@ -1032,7 +1032,12 @@ func buildViolationFromClause(needJoin bool) string {
 	return q
 }
 
-// buildViolationOrderClause returns the ORDER BY portion for a violation query.
+// buildViolationOrderClause returns the ORDER BY portion for a violation
+// query. The HTTP boundary (dbutil.ValidateSortKey via the api package
+// helpers) rejects unknown sort keys with 400, so by the time control
+// reaches this helper p.Sort is either empty or a member of the allowlist.
+// The default branch ("severity DESC, created_at DESC") remains as a second
+// line of defense for non-HTTP callers (tests, internal call sites).
 func buildViolationOrderClause(p ViolationListParams) string {
 	severityRank := `CASE rv.severity WHEN 'error' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END`
 
