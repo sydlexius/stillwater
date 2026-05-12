@@ -474,17 +474,27 @@ func TestPushMetadataAsync_HappyPath(t *testing.T) {
 	waitForPosts(t, &hits.posts, 1)
 
 	// Verify the POST payload actually carries the artist's metadata.
-	// Without this assertion, the happy-path test would pass even if the
-	// serializer silently dropped Name or the date fields. findPostBody
-	// searches all captured bodies for one that contains every required
-	// substring, so we don't race against the empty follow-up POST that
-	// the publisher dispatches after the metadata one.
-	if body := hits.findPostBody(`"Name":"PushMe"`, `"1970-01-01"`); body == nil {
+	// PushMetadataAsync emits BOTH a JSON update POST and an empty
+	// follow-up lock POST; either can arrive first, so a single
+	// waitForPosts(.., 1) plus immediate findPostBody is flaky — the
+	// captured body could be the lock POST alone. Poll findPostBody
+	// up to 2s for the metadata payload (matches waitForPosts's
+	// own deadline).
+	deadline := time.Now().Add(2 * time.Second)
+	var body []byte
+	for time.Now().Before(deadline) {
+		body = hits.findPostBody(`"Name":"PushMe"`, `"1970-01-01"`)
+		if body != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if body == nil {
 		// Surface every captured body to make the failure diagnosable.
 		hits.mu.Lock()
 		all := append([][]byte(nil), hits.postBodies...)
 		hits.mu.Unlock()
-		t.Errorf("no POST body carried the artist payload; captured bodies:")
+		t.Errorf("no POST body carried the artist payload within deadline; captured bodies:")
 		for i, b := range all {
 			t.Errorf("  [%d] %s", i, string(b))
 		}
