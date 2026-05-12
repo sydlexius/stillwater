@@ -137,6 +137,11 @@ func TestHandleNFOConflictCheck_NoConflict(t *testing.T) {
 	if got.ExternalWriter != "" {
 		t.Errorf("ExternalWriter = %q, want empty", got.ExternalWriter)
 	}
+	// The on-disk NFO file exists (writeNFO was called), so the handler
+	// must surface its mtime via LastModified to lock the API contract.
+	if got.LastModified == nil || got.LastModified.IsZero() {
+		t.Errorf("LastModified = %v, want populated (file is on disk)", got.LastModified)
+	}
 }
 
 // TestHandleNFOConflictCheck_DetectedConflict covers the path where:
@@ -188,6 +193,11 @@ func TestHandleNFOConflictCheck_DetectedConflict(t *testing.T) {
 	if got.Reason == "" {
 		t.Errorf("Reason empty, want populated for detected conflict")
 	}
+	// File exists and is the source of the conflict; LastModified must
+	// carry the file's mtime so the UI can show "modified at X".
+	if got.LastModified == nil || got.LastModified.IsZero() {
+		t.Errorf("LastModified = %v, want populated for file-driven conflict", got.LastModified)
+	}
 }
 
 // TestHandleNFOConflictCheck_NoSnapshotFallback exercises the 24h-fallback
@@ -222,6 +232,11 @@ func TestHandleNFOConflictCheck_NoSnapshotFallback(t *testing.T) {
 	// The file is younger than the 24h cutoff => HasConflict=true.
 	if !got.HasConflict {
 		t.Errorf("HasConflict = false, want true (no snapshot, file inside 24h window)")
+	}
+	// File exists on disk; LastModified must echo its mtime so the UI
+	// can render the "modified at" timestamp on the conflict banner.
+	if got.LastModified == nil || got.LastModified.IsZero() {
+		t.Errorf("LastModified = %v, want populated", got.LastModified)
 	}
 }
 
@@ -315,6 +330,13 @@ func TestHandleNFOConflictCheck_LidarrWriterFlagged(t *testing.T) {
 	}
 	if got.HasConflict {
 		t.Errorf("HasConflict = true, want false (no file conflict, only writer flagged)")
+	}
+	// No on-disk NFO was written in this test; LastModified must remain
+	// nil (omitted from the JSON via the `,omitempty` tag) so the API
+	// contract for "writer-only conflict" stays distinct from "file
+	// conflict".
+	if got.LastModified != nil {
+		t.Errorf("LastModified = %v, want nil (no file on disk)", got.LastModified)
 	}
 	wantPrefix := connection.TypeLidarr + ":"
 	if !strings.HasPrefix(got.ExternalWriter, wantPrefix) {
