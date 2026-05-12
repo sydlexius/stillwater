@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -331,8 +330,6 @@ func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
 	// but we verify the guard exists by reading the function.
 	// Instead, test that a non-existent host returns an error (not a panic).
 	transport := ssrfSafeTransport()
-	// Disable TLS to avoid handshake errors on non-existent hosts.
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	client := &http.Client{Transport: transport}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://this-host-does-not-exist-abc123xyz.invalid/test", nil)
 	resp, err := client.Do(req)

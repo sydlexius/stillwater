@@ -597,6 +597,15 @@ func InjectMeta(data []byte, meta *ExifMeta) ([]byte, error) {
 // ReadProvenance reads an image file and extracts any embedded Stillwater
 // provenance metadata. Returns nil, nil for images without a Stillwater tag
 // (this is not an error condition).
+//
+// The security boundary on the path argument is enforced at the call sites,
+// not inside this function: filepath.Clean below only normalises separators
+// and resolves dots, it does not validate that the path is allowed. Callers
+// (internal/rule/fixers.go, internal/api/handlers_image.go,
+// internal/scanner/scanner.go) construct paths from trusted sources only
+// (database records, filesystem scans, fixed naming patterns), never from
+// request-tainted input. Do not call ReadProvenance with paths derived from
+// untrusted input without re-establishing that invariant.
 func ReadProvenance(path string) (*ExifMeta, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {

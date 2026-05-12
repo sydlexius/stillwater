@@ -949,7 +949,10 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now); err != nil {
 			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID)
+			if _, delErr := r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID); delErr != nil {
+				r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+					"auth_method", authMethod, "provider_id", result.User.ID, "error", delErr)
+			}
 			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 			return
 		}
@@ -1040,7 +1043,10 @@ func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Reques
 				ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 				k, v, now); err != nil {
 				r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-				_, _ = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID)
+				if _, delErr := r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID); delErr != nil {
+					r.logger.Error("rollback DELETE failed; setup retry may hit duplicate-user state",
+						"user_id", user.ID, "error", delErr)
+				}
 				writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 				return
 			}

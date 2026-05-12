@@ -975,7 +975,7 @@ func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *
 		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
 			newPath := filepath.Join(a.Path, newBase)
 			oldInfo, errOld := os.Stat(logoPath)
-			newInfo, errNew := os.Stat(newPath) //nolint:gosec // G703: trusted path
+			newInfo, errNew := os.Stat(newPath) //nolint:gosec // G703: newPath is filepath.Join(a.Path, savedNames[0]); a.Path is the scanner-validated artist directory and newBase comes from the platform image-write result, both trusted
 			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
 				if rmErr := os.Remove(logoPath); rmErr != nil {
 					f.logger.Warn("failed to remove case-mismatched logo duplicate",
