@@ -336,10 +336,13 @@ func TestHandleNFOConflictCheck_DisabledConnectionIgnored(t *testing.T) {
 	ctx := context.Background()
 
 	// Fake Lidarr that would normally flag a writer -- but the connection
-	// is created with Enabled=false, so the loop must skip it.
+	// is created with Enabled=false, so the loop must skip it. The handler
+	// t.Errorfs on any hit, turning "loop skipped disabled connection
+	// correctly" into a directly-observable assertion: a regression that
+	// dispatches outbound calls to disabled connections fails this test.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"id":1,"name":"Kodi","enable":true,"fields":[{"name":"artistMetadata","value":true}]}]`))
+		t.Errorf("disabled connection should not make outbound metadata requests")
+		http.Error(w, "unexpected outbound call to disabled connection", http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
 
