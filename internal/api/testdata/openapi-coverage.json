@@ -200,7 +200,7 @@
     "method": "POST",
     "path": "/connections",
     "handler": "handleCreateConnection",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "createLibrary",
@@ -256,7 +256,7 @@
     "method": "DELETE",
     "path": "/connections/{id}",
     "handler": "handleDeleteConnection",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "deleteFanartSlot",
@@ -340,14 +340,14 @@
     "method": "POST",
     "path": "/connections/{id}/platform-settings/disable",
     "handler": "handleDisablePlatformSettings",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "discoverLibraries",
     "method": "GET",
     "path": "/connections/{id}/libraries",
     "handler": "handleDiscoverLibraries",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "dismissForeignFiles",
@@ -522,7 +522,7 @@
     "method": "GET",
     "path": "/connections/{id}",
     "handler": "handleGetConnection",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getConnectionScraperConfig",
@@ -606,7 +606,7 @@
     "method": "GET",
     "path": "/artists/{id}/images/{type}/info",
     "handler": "handleImageInfo",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getLibrary",
@@ -718,7 +718,7 @@
     "method": "GET",
     "path": "/connections/{id}/platform-settings",
     "handler": "handleGetPlatformSettings",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getPlatformState",
@@ -732,7 +732,7 @@
     "method": "GET",
     "path": "/connections/{id}/platform-summary",
     "handler": "handleGetPlatformSummary",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "getPreference",
@@ -914,7 +914,7 @@
     "method": "GET",
     "path": "/connections",
     "handler": "handleListConnections",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "listFanart",
@@ -1292,14 +1292,14 @@
     "method": "POST",
     "path": "/connections/{id}/libraries/{libId}/scan",
     "handler": "handleScanLibrary",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "searchImages",
     "method": "GET",
     "path": "/artists/{id}/images/search",
     "handler": "handleImageSearch",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "serveFanartByIndex",
@@ -1411,7 +1411,7 @@
     "method": "POST",
     "path": "/connections/{id}/test",
     "handler": "handleTestConnection",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "testProvider",
@@ -1439,7 +1439,7 @@
     "method": "POST",
     "path": "/artists/{id}/images/logo/trim",
     "handler": "handleLogoTrim",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "undoFix",
@@ -1474,14 +1474,14 @@
     "method": "PUT",
     "path": "/connections/{id}",
     "handler": "handleUpdateConnection",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "updateConnectionFeatures",
     "method": "PATCH",
     "path": "/connections/{id}/features",
     "handler": "handleUpdateConnectionFeatures",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "updateConnectionScraperConfig",
@@ -1579,6 +1579,6 @@
     "method": "GET",
     "path": "/artists/{id}/images/websearch",
     "handler": "handleWebImageSearch",
-    "covered": false
+    "covered": true
   }
 ]

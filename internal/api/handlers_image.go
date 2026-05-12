@@ -303,7 +303,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	data, err := r.fetchImageFromURL(imageURL)
+	data, err := r.fetchImageFromURL(req.Context(), imageURL)
 	if err != nil {
 		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to fetch image"})
@@ -823,10 +823,13 @@ func ssrfSafeTransport() *http.Transport {
 }
 
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
-func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
+// The supplied ctx is honored for request cancellation (e.g. when the caller's
+// HTTP request is canceled); SSRF protection is enforced by the configured
+// ssrfClient transport regardless of ctx.
+func (r *Router) fetchImageFromURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := r.ssrfClient
 
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil) //nolint:noctx // background image fetch from validated URL; ssrfClient enforces safety, no request-scoped context available
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -1109,20 +1112,11 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		// (every probe returned ENOENT), clear the stale flag so subsequent UI
 		// renders show a placeholder instead of a broken image tag. Best-effort.
 		if imageExistsFlag(a, imageType) {
-			go func() { //nolint:gosec // Background context is intentional: this goroutine outlives the request.
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if err := r.artistService.ClearImageFlag(ctx, a.ID, imageType, 0); err != nil {
-					r.logger.Warn("failed to clear stale image flag",
-						slog.String("artist_id", a.ID),
-						slog.String("image_type", imageType),
-						slog.String("error", err.Error()))
-				} else {
-					r.logger.Info("cleared stale image flag",
-						slog.String("artist_id", a.ID),
-						slog.String("image_type", imageType))
-				}
-			}()
+			// context.WithoutCancel propagates request-scoped values (trace
+			// IDs, logging context) while detaching cancellation so the
+			// goroutine survives after the response is written. Matches the
+			// pattern in handlers_conflict / handlers_fix / handlers_refresh.
+			go r.clearImageFlagAsync(context.WithoutCancel(req.Context()), a.ID, imageType)
 		}
 		http.NotFound(w, req)
 		return
@@ -1151,6 +1145,40 @@ func imageExistsFlag(a *artist.Artist, imageType string) bool {
 	default:
 		return false
 	}
+}
+
+// clearImageFlagAsync clears the exists_flag for a stale image entry in a
+// background goroutine that outlives the HTTP request. The caller is
+// expected to pass context.WithoutCancel(req.Context()) so request-scoped
+// values still propagate. A panic in the dependency
+// (artistService.ClearImageFlag) or in our log emission must not crash the
+// process: this background path is intentionally best-effort, so we recover,
+// log structurally at slog.Error, and let the next serve request re-attempt
+// the cleanup. The recovered panic value is included as a string attribute
+// so operators can correlate the log with later artist-state confusion
+// (e.g. a UI still showing a broken-image tile).
+func (r *Router) clearImageFlagAsync(ctx context.Context, artistID, imageType string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.logger.Error("panic in clearImageFlagAsync",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType),
+				slog.Any("panic", rec))
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := r.artistService.ClearImageFlag(ctx, artistID, imageType, 0); err != nil {
+		r.logger.Warn("failed to clear stale image flag",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("error", err.Error()))
+		return
+	}
+	r.logger.Info("cleared stale image flag",
+		slog.String("artist_id", artistID),
+		slog.String("image_type", imageType))
 }
 
 // handleImageInfo returns metadata about a local artist image (dimensions, file size).
@@ -2042,7 +2070,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			errors = append(errors, fmt.Sprintf("private/reserved address: %s", u))
 			continue
 		}
-		data, fetchErr := r.fetchImageFromURL(u)
+		data, fetchErr := r.fetchImageFromURL(req.Context(), u)
 		if fetchErr != nil {
 			r.logger.Warn("fetching fanart image", "url", u, "error", fetchErr)
 			errors = append(errors, fmt.Sprintf("fetch failed: %s", u))
