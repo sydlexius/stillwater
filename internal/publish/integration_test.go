@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -663,7 +662,3 @@ func TestPublishMetadata_NoPathSkipsNFOButStillPushes(t *testing.T) {
 
 	waitForPosts(t, &hits.posts, 1)
 }
-
-// silenceUnused makes sure the slog discard handler import is used even if
-// linting flags any helper. (No-op at runtime.)
-var _ = slog.LevelInfo

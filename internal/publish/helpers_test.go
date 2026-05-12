@@ -3,7 +3,6 @@ package publish
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -611,7 +610,11 @@ func TestSyncAllFanartToPlatforms_HappyPath(t *testing.T) {
 func TestSyncAllFanartToPlatforms_PerConnectionBranches(t *testing.T) {
 	dir := t.TempDir()
 	seedJPG(t, dir, "fanart.jpg")
-	seedJPG(t, dir, "fanart.png") // mixed extension exercises PNG content type
+	// Naming this file fanart.png drives the publisher's extension-based
+	// Content-Type detection (filepath.Ext -> image/png), even though the
+	// bytes are still JPEG. Production never sniffs magic bytes, so the
+	// mismatch is intentional and exercises only the dispatch path.
+	seedJPG(t, dir, "fanart.png")
 
 	hits := &uploadHits{}
 	srv := newImageUploadServer(hits)
@@ -728,6 +731,6 @@ func TestSyncAllFanartToPlatforms_DiscoverError(t *testing.T) {
 	}
 	// If neither matched, ensure we still produced a sensible response.
 	if len(warnings) > 0 {
-		fmt.Printf("DiscoverError test observed warnings: %v\n", warnings)
+		t.Logf("DiscoverError test observed warnings: %v", warnings)
 	}
 }
