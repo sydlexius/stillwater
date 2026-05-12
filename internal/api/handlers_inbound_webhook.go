@@ -15,6 +15,8 @@ import (
 
 // handleLidarrWebhook receives inbound webhook events from Lidarr.
 // POST /api/v1/webhooks/inbound/lidarr
+//
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
 func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 	// Limit request body to 1 MB
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
@@ -189,6 +191,8 @@ func artistNameFromPayload(p webhook.LidarrPayload) string {
 
 // handleEmbyWebhook receives inbound webhook events from Emby.
 // POST /api/v1/webhooks/inbound/emby
+//
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
@@ -320,6 +324,8 @@ func (r *Router) handleEmbyLibraryScan(ctx context.Context) {
 
 // handleJellyfinWebhook receives inbound webhook events from the Jellyfin webhook plugin.
 // POST /api/v1/webhooks/inbound/jellyfin
+//
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
 func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 

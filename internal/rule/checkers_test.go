@@ -913,7 +913,7 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 func TestCountBackdrops_Empty(t *testing.T) {
 	dir := t.TempDir()
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(dir)
+	count := e.countBackdrops(context.Background(), dir)
 	if count != 0 {
 		t.Errorf("countBackdrops empty dir = %d, want 0", count)
 	}
@@ -924,7 +924,7 @@ func TestCountBackdrops_SingleFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(dir)
+	count := e.countBackdrops(context.Background(), dir)
 	if count != 1 {
 		t.Errorf("countBackdrops single = %d, want 1", count)
 	}
@@ -937,7 +937,7 @@ func TestCountBackdrops_MultipleFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(dir)
+	count := e.countBackdrops(context.Background(), dir)
 	if count < 3 {
 		t.Errorf("countBackdrops multiple = %d, want >= 3", count)
 	}
@@ -950,7 +950,7 @@ func TestCountBackdrops_IgnoresNonFanart(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir, "logo.png"), 400, 200)
 
 	e := &Engine{platformService: nil}
-	count := e.countBackdrops(dir)
+	count := e.countBackdrops(context.Background(), dir)
 	if count != 1 {
 		t.Errorf("countBackdrops with non-fanart = %d, want 1", count)
 	}
@@ -1455,7 +1455,7 @@ func TestGetImageDimensionsFromDB(t *testing.T) {
 	e := &Engine{db: db, logger: slog.Default()}
 
 	// No row: returns (0, 0, nil).
-	w, h, err := e.getImageDimensionsFromDB("nonexistent", "thumb")
+	w, h, err := e.getImageDimensionsFromDB(context.Background(), "nonexistent", "thumb")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1466,7 +1466,7 @@ func TestGetImageDimensionsFromDB(t *testing.T) {
 	// Insert a row with real dimensions.
 	seedImageDimensions(t, db, "artist-1", "thumb", 600, 600)
 
-	w, h, err = e.getImageDimensionsFromDB("artist-1", "thumb")
+	w, h, err = e.getImageDimensionsFromDB(context.Background(), "artist-1", "thumb")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1475,7 +1475,7 @@ func TestGetImageDimensionsFromDB(t *testing.T) {
 	}
 
 	// Different image type returns (0, 0) when not seeded.
-	w, h, err = e.getImageDimensionsFromDB("artist-1", "fanart")
+	w, h, err = e.getImageDimensionsFromDB(context.Background(), "artist-1", "fanart")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1487,7 +1487,7 @@ func TestGetImageDimensionsFromDB(t *testing.T) {
 func TestGetImageDimensionsFromDB_NilDB(t *testing.T) {
 	e := &Engine{db: nil, logger: slog.Default()}
 
-	w, h, err := e.getImageDimensionsFromDB("artist-1", "thumb")
+	w, h, err := e.getImageDimensionsFromDB(context.Background(), "artist-1", "thumb")
 	if err != nil {
 		t.Fatalf("unexpected error with nil db: %v", err)
 	}
@@ -1503,7 +1503,7 @@ func TestGetImageDimensionsResolved_DBFirst(t *testing.T) {
 	seedImageDimensions(t, db, "artist-2", "fanart", 1920, 1080)
 
 	// DB has dimensions: should return them even with empty Path.
-	w, h, err := e.getImageDimensionsResolved("artist-2", "", "fanart", fanartPatterns)
+	w, h, err := e.getImageDimensionsResolved(context.Background(), "artist-2", "", "fanart", fanartPatterns)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1520,7 +1520,7 @@ func TestGetImageDimensionsResolved_FallbackToFS(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 
-	w, h, err := e.getImageDimensionsResolved("artist-3", dir, "fanart", fanartPatterns)
+	w, h, err := e.getImageDimensionsResolved(context.Background(), "artist-3", dir, "fanart", fanartPatterns)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1534,7 +1534,7 @@ func TestGetImageDimensionsResolved_NoDBNoFS(t *testing.T) {
 	e := &Engine{db: db, logger: slog.Default()}
 
 	// No DB dimensions and empty path: should return an error.
-	_, _, err := e.getImageDimensionsResolved("artist-4", "", "thumb", thumbPatterns)
+	_, _, err := e.getImageDimensionsResolved(context.Background(), "artist-4", "", "thumb", thumbPatterns)
 	if err == nil {
 		t.Error("expected error when neither DB nor filesystem can provide dimensions")
 	}
@@ -1921,7 +1921,7 @@ func TestCheckExtraneousImagesFromDB_ValidImages(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-1", Name: "Test Artist", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for artist with only valid images, got: %s", v.Message)
 	}
@@ -1935,7 +1935,7 @@ func TestCheckExtraneousImagesFromDB_UnknownImageType(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-2", Name: "Test Artist 2", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for unknown image_type 'poster'")
 	}
@@ -1958,7 +1958,7 @@ func TestCheckExtraneousImagesFromDB_InvalidSlotIndex(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-3", Name: "Test Artist 3", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for thumb with slot_index > 0")
 	}
@@ -1976,7 +1976,7 @@ func TestCheckExtraneousImagesFromDB_FanartMultiSlotValid(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-4", Name: "Test Artist 4", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for fanart with multiple valid slots, got: %s", v.Message)
 	}
@@ -1988,7 +1988,7 @@ func TestCheckExtraneousImagesFromDB_NoImages(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-5", Name: "Test Artist 5", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for artist with no images, got: %s", v.Message)
 	}
@@ -1997,7 +1997,7 @@ func TestCheckExtraneousImagesFromDB_NoImages(t *testing.T) {
 func TestCheckExtraneousImagesFromDB_NilDB(t *testing.T) {
 	e := &Engine{db: nil, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-6", Name: "Test Artist 6", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when db is nil, got: %s", v.Message)
 	}
@@ -2015,7 +2015,7 @@ func TestCheckExtraneousImagesFromDB_PlatformUntracked(t *testing.T) {
 	}
 	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
 	a := &artist.Artist{ID: "art-plat-1", Name: "Platform Artist", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for platform-reported fanart with no DB row")
 	}
@@ -2049,7 +2049,7 @@ func TestCheckExtraneousImagesFromDB_PlatformAllTracked(t *testing.T) {
 	}
 	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
 	a := &artist.Artist{ID: "art-plat-2", Name: "Tracked Artist", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when all platform slots are tracked in DB, got: %s", v.Message)
 	}
@@ -2067,7 +2067,7 @@ func TestCheckExtraneousImagesFromDB_PlatformFetchError(t *testing.T) {
 	}
 	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
 	a := &artist.Artist{ID: "art-plat-3", Name: "Error Artist", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when platform fetch fails, got: %s", v.Message)
 	}
@@ -2081,7 +2081,7 @@ func TestCheckExtraneousImagesFromDB_NoFetcher(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()} // no imageFetcher
 	a := &artist.Artist{ID: "art-plat-4", Name: "No Fetcher Artist", Path: ""}
-	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	v := e.checkExtraneousImagesFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for valid DB rows with no fetcher, got: %s", v.Message)
 	}
@@ -2098,7 +2098,7 @@ func TestCheckBackdropSequencingFromDB_Contiguous(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-10", Name: "Test Artist 10", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for contiguous fanart slots, got: %s", v.Message)
 	}
@@ -2112,7 +2112,7 @@ func TestCheckBackdropSequencingFromDB_WithGap(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-11", Name: "Test Artist 11", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation for gap in fanart slot sequence")
 	}
@@ -2134,7 +2134,7 @@ func TestCheckBackdropSequencingFromDB_NoFanart(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-12", Name: "Test Artist 12", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when no fanart images exist, got: %s", v.Message)
 	}
@@ -2147,7 +2147,7 @@ func TestCheckBackdropSequencingFromDB_SingleFanart(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-13", Name: "Test Artist 13", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for single fanart image, got: %s", v.Message)
 	}
@@ -2156,7 +2156,7 @@ func TestCheckBackdropSequencingFromDB_SingleFanart(t *testing.T) {
 func TestCheckBackdropSequencingFromDB_NilDB(t *testing.T) {
 	e := &Engine{db: nil, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-14", Name: "Test Artist 14", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when db is nil, got: %s", v.Message)
 	}
@@ -2170,7 +2170,7 @@ func TestCheckBackdropSequencingFromDB_StartsAtNonZero(t *testing.T) {
 
 	e := &Engine{db: db, logger: slog.Default()}
 	a := &artist.Artist{ID: "art-15", Name: "Test Artist 15", Path: ""}
-	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	v := e.checkBackdropSequencingFromDB(context.Background(), a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation when fanart starts at slot 1 instead of 0")
 	}

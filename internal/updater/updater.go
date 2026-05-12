@@ -813,7 +813,7 @@ func (s *Service) Apply(ctx context.Context) error {
 	// HTTP request. The handler already detaches via context.WithoutCancel, but
 	// using context.Background() here makes the intent explicit at the service
 	// layer and avoids any inherited deadline or cancellation from the caller.
-	go s.runApply(context.Background(), "") //nolint:gosec // G118: intentional -- goroutine must outlive request context
+	go s.runApply(context.Background(), "") //nolint:gosec,contextcheck // gosec G118 + contextcheck both fire on this line; apply goroutine intentionally outlives request context (handler already detaches via WithoutCancel)
 	return nil
 }
 
@@ -1434,7 +1434,7 @@ func (s *Service) maybeAutoApply(_ context.Context, cfg Config, result CheckResu
 	// Apply is async; writing the marker here at kickoff time would
 	// record an "applied" event for downloads that ultimately failed
 	// checksum or extraction.
-	if err := s.applyAuto(result.Latest); err != nil {
+	if err := s.applyAuto(result.Latest); err != nil { //nolint:contextcheck // applyAuto detaches by design; goroutine must outlive scheduler tick
 		// ErrAlreadyRunning / ErrRestartRequired are expected when the
 		// admin already triggered a manual Apply. Anything else is a
 		// real failure but still non-fatal for the scheduler.
@@ -1453,8 +1453,9 @@ func (s *Service) maybeAutoApply(_ context.Context, cfg Config, result CheckResu
 // Takes no ctx because runApply uses context.Background() (the goroutine
 // must outlive the originating tick); the marker write also uses a
 // fresh background context for the same reason. Keeping the signature
-// ctx-free makes that intent explicit and avoids the gosec G118
-// false-positive on a deliberately detached goroutine.
+// ctx-free makes that intent explicit; the contextcheck suppression at
+// the call site documents that applyAuto has no ctx parameter by design
+// because its internal goroutine (below) must outlive the scheduler tick.
 func (s *Service) applyAuto(candidateVersion string) error {
 	if s.isDocker {
 		return fmt.Errorf("binary update is not supported in Docker environments")

@@ -8,6 +8,7 @@ linters:
   default: none
   enable:
     - bodyclose
+    - contextcheck
     - errcheck
     - errorlint
     - exhaustive
@@ -88,9 +89,26 @@ linters:
           - gosec
           - errcheck
           - noctx
+          - contextcheck
       - text: "catalogue.*is a misspelling"
         linters:
           - misspell
+      # contextcheck descends through the templ.Component interface boundary
+      # and reports synthetic cascade findings at every handler that calls a
+      # templ component. templ's runtime propagates ctx correctly via
+      # Render(ctx, w) but the static analyzer cannot see that across the
+      # interface, so the "should pass the context parameter" class fires on
+      # the hand-written call site. Suppressing only that error text leaves
+      # the "Non-inherited new context" class active in the same files --
+      # though note that class requires the enclosing function to have a
+      # `ctx context.Context` parameter to compare against, which most
+      # http.Handler methods (`(w, *http.Request)`) lack. Reviewer eyes still
+      # catch handler-method goroutines that should use
+      # `context.WithoutCancel(req.Context())` instead of bare Background.
+      - text: "should pass the context parameter"
+        path: 'internal/api/handlers.*\.go'
+        linters:
+          - contextcheck
 
 formatters:
   enable:

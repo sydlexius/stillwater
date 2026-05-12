@@ -81,12 +81,12 @@ func checkThumbExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Violat
 // makeThumbSquareChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbSquareChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
 
-		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "thumb", thumbPatterns)
+		w, h, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "thumb", thumbPatterns)
 		if err != nil {
 			return nil // cannot read image; skip check
 		}
@@ -119,12 +119,12 @@ func (e *Engine) makeThumbSquareChecker() Checker {
 // makeThumbMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbMinResChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
 
-		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "thumb", thumbPatterns)
+		w, h, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "thumb", thumbPatterns)
 		if err != nil {
 			return nil // cannot read image; skip check
 		}
@@ -209,11 +209,11 @@ func checkBioExists(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violat
 // makeFanartMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartMinResChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil // fanart_exists handles missing fanart
 		}
-		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "fanart", fanartPatterns)
+		w, h, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "fanart", fanartPatterns)
 		if err != nil {
 			return nil
 		}
@@ -241,11 +241,11 @@ func (e *Engine) makeFanartMinResChecker() Checker {
 // makeFanartAspectChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartAspectChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil
 		}
-		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "fanart", fanartPatterns)
+		w, h, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "fanart", fanartPatterns)
 		if err != nil {
 			return nil
 		}
@@ -275,11 +275,11 @@ func (e *Engine) makeFanartAspectChecker() Checker {
 // makeLogoMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the logo.
 func (e *Engine) makeLogoMinResChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {
 			return nil
 		}
-		w, _, err := e.getImageDimensionsResolved(a.ID, a.Path, "logo", logoPatterns)
+		w, _, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "logo", logoPatterns)
 		if err != nil {
 			return nil
 		}
@@ -318,11 +318,11 @@ func checkBannerExists(_ context.Context, a *artist.Artist, _ RuleConfig) *Viola
 // makeBannerMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the banner.
 func (e *Engine) makeBannerMinResChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.BannerExists {
 			return nil
 		}
-		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "banner", bannerPatterns)
+		w, h, err := e.getImageDimensionsResolved(ctx, a.ID, a.Path, "banner", bannerPatterns)
 		if err != nil {
 			return nil
 		}
@@ -482,7 +482,7 @@ func (e *Engine) getLogoBoundsFromBytes(data []byte) (content, original goimage.
 // the logo through the platform image fetcher and caches the raw bytes only
 // when a violation is found, so the fixer can consume them.
 func (e *Engine) makeLogoPaddingChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {
 			return nil
 		}
@@ -525,7 +525,7 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 			if !cached {
 				var fetchErr error
 				data, _, fetchErr = e.imageFetcher.FetchArtistImage(
-					context.Background(), a.ID, "logo")
+					ctx, a.ID, "logo")
 				if fetchErr != nil {
 					e.logger.Debug("logo padding check skipped: API fetch failed",
 						slog.String("artist", a.Name),
@@ -743,21 +743,21 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 // backdrop3.jpg with no backdrop2.jpg). Gap detection is handled by the
 // backdrop_sequencing rule (#519).
 func (e *Engine) makeExtraneousImagesChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
-			return e.checkExtraneousImagesFromDB(a, cfg)
+			return e.checkExtraneousImagesFromDB(ctx, a, cfg)
 		}
 
 		// When shared filesystem is detected, union expected files from all
 		// profiles to avoid flagging platform-written images.
-		if e.IsSharedFilesystem(context.Background(), a) && e.platformService != nil {
-			expected := expectedImageFilesAllProfiles(context.Background(), e.platformService, e.logger, a.Path)
+		if e.IsSharedFilesystem(ctx, a) && e.platformService != nil {
+			expected := expectedImageFilesAllProfiles(ctx, e.platformService, e.logger, a.Path)
 			return e.checkExtraneousAgainst(a, expected, cfg)
 		}
 
 		var profile *platform.Profile
 		if e.platformService != nil {
-			profile, _ = e.platformService.GetActive(context.Background())
+			profile, _ = e.platformService.GetActive(ctx)
 		}
 		expected := expectedImageFiles(profile, a.Path)
 
@@ -839,7 +839,7 @@ func (e *Engine) checkExtraneousAgainst(a *artist.Artist, expected map[string]bo
 // files, it queries the artist_images table for rows with unrecognized
 // image_type values or invalid slot_index values (e.g., slot_index > 0 for
 // non-fanart types, which only support a single slot).
-func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *Violation {
+func (e *Engine) checkExtraneousImagesFromDB(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	if e.db == nil {
 		return nil
 	}
@@ -852,7 +852,7 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 		"banner": true,
 	}
 
-	rows, err := e.db.QueryContext(context.Background(),
+	rows, err := e.db.QueryContext(ctx,
 		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ?`,
 		a.ID)
 	if err != nil {
@@ -894,7 +894,7 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 	// artist_images row. These are images the platform knows about but
 	// Stillwater does not track, indicating unmanaged/orphaned images.
 	if e.imageFetcher != nil {
-		platformSlots, slotErr := e.imageFetcher.ListArtistImageSlots(context.Background(), a.ID)
+		platformSlots, slotErr := e.imageFetcher.ListArtistImageSlots(ctx, a.ID)
 		if slotErr == nil {
 			for imgType, count := range platformSlots {
 				for slot := 0; slot < count; slot++ {
@@ -1049,7 +1049,7 @@ func checkDirectoryNameMismatch(_ context.Context, a *artist.Artist, cfg RuleCon
 // pre-computed dHash values from the artist_images table and compares all
 // pairs using Hamming distance.
 func (e *Engine) makeImageDuplicateChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" || e.db == nil {
 			return nil
 		}
@@ -1067,7 +1067,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		// Select one hash per image_type (slot_index = 0) to compare across
 		// different types only. Within-type comparison (e.g. fanart slot 0 vs 1)
 		// is not the goal of this rule.
-		rows, err := e.db.QueryContext(context.Background(),
+		rows, err := e.db.QueryContext(ctx,
 			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND slot_index = 0 AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
 			a.ID)
 		if err != nil {
@@ -1148,14 +1148,14 @@ func checkMetadataQuality(_ context.Context, a *artist.Artist, cfg RuleConfig) *
 // backdrop3.jpg exist (gap at 1,2), or backdrop1.jpg exists without
 // backdrop.jpg (wrong starting point), a violation is returned.
 func (e *Engine) makeBackdropSequencingChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
-			return e.checkBackdropSequencingFromDB(a, cfg)
+			return e.checkBackdropSequencingFromDB(ctx, a, cfg)
 		}
 
 		var profile *platform.Profile
 		if e.platformService != nil {
-			profile, _ = e.platformService.GetActive(context.Background())
+			profile, _ = e.platformService.GetActive(ctx)
 		}
 
 		var fanartNames []string
@@ -1211,12 +1211,12 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 // backdrop sequencing checker. Instead of discovering fanart files on disk, it
 // queries the artist_images table for fanart slot indices and checks that they
 // form a contiguous 0..N-1 sequence with no gaps.
-func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig) *Violation {
+func (e *Engine) checkBackdropSequencingFromDB(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 	if e.db == nil {
 		return nil
 	}
 
-	rows, err := e.db.QueryContext(context.Background(),
+	rows, err := e.db.QueryContext(ctx,
 		`SELECT slot_index FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' ORDER BY slot_index`,
 		a.ID)
 	if err != nil {
@@ -1276,10 +1276,10 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 // the active platform profile (falling back to defaults) and sums the discovered
 // files for each pattern. Duplicate files across patterns are not double-counted
 // A `seen` map deduplicates files that appear under multiple naming patterns.
-func (e *Engine) countBackdrops(dir string) int {
+func (e *Engine) countBackdrops(ctx context.Context, dir string) int {
 	var profile *platform.Profile
 	if e.platformService != nil {
-		profile, _ = e.platformService.GetActive(context.Background())
+		profile, _ = e.platformService.GetActive(ctx)
 	}
 
 	var fanartNames []string
@@ -1312,12 +1312,12 @@ func (e *Engine) countBackdrops(dir string) int {
 // countBackdropsFromDB counts the number of fanart image slots recorded in the
 // artist_images table for the given artist. Used for API-imported artists that
 // have no local filesystem path.
-func (e *Engine) countBackdropsFromDB(artistID string) int {
+func (e *Engine) countBackdropsFromDB(ctx context.Context, artistID string) int {
 	if e.db == nil {
 		return 0
 	}
 	var count int
-	err := e.db.QueryRowContext(context.Background(),
+	err := e.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1`,
 		artistID).Scan(&count)
 	if err != nil {
@@ -1333,7 +1333,7 @@ func (e *Engine) countBackdropsFromDB(artistID string) int {
 // scanning the directory. For API-imported artists (no path), the artist_images
 // table is queried instead.
 func (e *Engine) makeBackdropMinCountChecker() Checker {
-	return func(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		minCount := cfg.MinCount
 		if minCount <= 0 {
 			minCount = 1 // safety default
@@ -1341,9 +1341,9 @@ func (e *Engine) makeBackdropMinCountChecker() Checker {
 
 		var count int
 		if a.Path != "" {
-			count = e.countBackdrops(a.Path)
+			count = e.countBackdrops(ctx, a.Path)
 		} else {
-			count = e.countBackdropsFromDB(a.ID)
+			count = e.countBackdropsFromDB(ctx, a.ID)
 		}
 
 		if count >= minCount {

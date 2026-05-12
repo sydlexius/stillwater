@@ -121,7 +121,7 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	// Use the shutdown context so the scan outlives the HTTP request but
 	// is still canceled on application shutdown.
 	s.scanWg.Add(1)
-	go s.runScan(s.shutdownCtx, result)
+	go s.runScan(s.shutdownCtx, result) //nolint:contextcheck // intentional -- scan goroutine must outlive request; scoped to shutdownCtx for app-level cancellation
 
 	return &snapshot, nil
 }
