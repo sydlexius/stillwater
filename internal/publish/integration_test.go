@@ -329,22 +329,27 @@ func TestWriteBackNFO_FieldMapServiceErrorFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestWriteBackNFO_FilesystemErrorLogsAndReturns verifies the partial-write
-// recovery branch: when stat returns a non-IsNotExist error (e.g. the NFO
-// path is a directory, not a file), WriteBackNFO logs and returns without
-// crashing or writing.
+// TestWriteBackNFO_StatNonNotExistError verifies the partial-write recovery
+// branch: when os.Stat returns a non-IsNotExist error, WriteBackNFO logs and
+// returns without crashing or writing.
+//
+// To exercise the actual `stat != nil && !os.IsNotExist(err)` branch the
+// fixture makes artist.Path point at a regular file (not a directory), so
+// filepath.Join(path, "artist.nfo") fails with ENOTDIR during os.Stat. The
+// prior fixture made artist.nfo itself a directory, which Stat handles
+// successfully — the failure surfaced later in the writer, NOT in the stat
+// branch the test is named for.
 func TestWriteBackNFO_StatNonNotExistError(t *testing.T) {
 	dir := t.TempDir()
-	// Make "artist.nfo" a directory so os.Stat succeeds but the writer cannot
-	// overwrite it. Stat does not return an error here so this exercises the
-	// success branch of Stat followed by a failure in the writer.
-	if err := os.MkdirAll(filepath.Join(dir, "artist.nfo"), 0o755); err != nil {
-		t.Fatalf("seeding artist.nfo as a directory: %v", err)
+	path := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seeding non-directory path: %v", err)
 	}
 
 	p := New(Deps{Logger: silentLogger()})
-	a := &artist.Artist{ID: "a1", Name: "X", Path: dir}
-	// Must not panic; underlying atomic write will fail (logged at Error).
+	a := &artist.Artist{ID: "a1", Name: "X", Path: path}
+	// Must not panic; os.Stat returns ENOTDIR which is non-IsNotExist,
+	// so the partial-write recovery branch logs and returns cleanly.
 	p.WriteBackNFO(context.Background(), a)
 }
 

@@ -3,6 +3,7 @@ package publish
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -232,15 +233,19 @@ func TestUploaderConstructors(t *testing.T) {
 
 // --- SyncImageToPlatforms ---
 
-// uploadHits records image upload arrivals so tests can assert. The
-// Content-Type seen on each upload is captured under a mutex so tests can
-// verify the uploader's extension-based dispatch (image/jpeg for .jpg,
-// image/png for .png) -- a regression that always sent image/jpeg would
-// otherwise still pass an upload-counter-only assertion.
+// uploadHits records image upload arrivals so tests can assert. Per-upload
+// Content-Type and body size are captured under a mutex so tests can verify
+//   - the uploader's extension-based dispatch (image/jpeg for .jpg,
+//     image/png for .png) — a regression that always sent image/jpeg would
+//     otherwise still pass an upload-counter-only assertion;
+//   - that the request body actually carried payload bytes — a regression
+//     that drops the file body entirely would otherwise still register as
+//     an "upload" because the path-match alone is enough.
 type uploadHits struct {
 	uploads      atomic.Int32
 	mu           sync.Mutex
 	contentTypes []string
+	bodySizes    []int
 }
 
 // lastContentType returns the Content-Type header recorded on the most
@@ -254,12 +259,30 @@ func (h *uploadHits) lastContentType() string {
 	return h.contentTypes[len(h.contentTypes)-1]
 }
 
+// lastBodySize returns the body byte-length recorded on the most recent
+// upload, or -1 if none has been observed. -1 distinguishes "no upload
+// yet" from "upload with empty body".
+func (h *uploadHits) lastBodySize() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.bodySizes) == 0 {
+		return -1
+	}
+	return h.bodySizes[len(h.bodySizes)-1]
+}
+
 func newImageUploadServer(hits *uploadHits) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/Images/") {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			ct := r.Header.Get("Content-Type")
 			hits.mu.Lock()
 			hits.contentTypes = append(hits.contentTypes, ct)
+			hits.bodySizes = append(hits.bodySizes, len(body))
 			hits.mu.Unlock()
 			hits.uploads.Add(1)
 		}
@@ -527,6 +550,12 @@ func TestSyncImageToPlatforms_PNGContentType(t *testing.T) {
 		t.Errorf("expected no warnings; got %v", warnings)
 	}
 	waitForUploads(t, hits, 1)
+	// Verify the upload actually carried bytes. A regression that drops
+	// the file payload would still match the path-prefix + counter check
+	// above without this assertion.
+	if got := hits.lastBodySize(); got <= 0 {
+		t.Errorf("uploaded body size = %d, want >0 (payload missing)", got)
+	}
 	// A regression that hard-codes image/jpeg would otherwise pass the
 	// upload-count assertion. Verify the uploader actually picked image/png
 	// from the .png extension.
