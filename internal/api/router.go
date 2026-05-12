@@ -281,6 +281,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	authMw := middleware.Auth(r.authService)
 	optAuthMw := middleware.OptionalAuth(r.authService)
 	csrf := middleware.NewCSRF()
+	// Stop the CSRF cleanup goroutine when the server context is canceled.
+	// CSRF mirrors LoginRateLimiter's lifecycle but exposes an explicit
+	// Close() so tests can stop the goroutine without a context.
+	go func() {
+		<-ctx.Done()
+		csrf.Close()
+	}()
 	loginRL := middleware.NewLoginRateLimiter(ctx)
 	requireMultiUser := middleware.RequireMultiUser(r.getStringSetting)
 
