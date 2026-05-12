@@ -36,6 +36,14 @@ fi
 # re-acquired once. Lives in $SW_RUN_DIR so it cleans up when callers want
 # a fresh slate via `rm -rf $SW_RUN_DIR`.
 LOCK_DIR="$SW_RUN_DIR/.gate-lock"
+# Grace window before an empty/malformed pid file counts as stale. The only
+# legitimate way to observe an empty $LOCK_DIR/pid is by racing into the
+# window between `mkdir "$LOCK_DIR"` and `echo $$ > $LOCK_DIR/pid`, which
+# lasts microseconds. A few seconds of grace covers any plausible scheduler
+# delay; a previous run that crashed between those two lines recovers after
+# the window elapses. Kept small so a legitimately-killed gate is recovered
+# quickly on the next attempt.
+LOCK_INIT_GRACE_SECONDS=5
 acquire_lock() {
   if mkdir "$LOCK_DIR" 2>/dev/null; then
     echo "$$" > "$LOCK_DIR/pid"
@@ -43,12 +51,31 @@ acquire_lock() {
   fi
   local holder stale=0
   holder=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+  # `stat -c` is GNU (Linux CI); `stat -f` is BSD (macOS dev). Fall back to
+  # epoch=0 (=> "old enough to be stale") only if both fail, so a missing
+  # stat does not leave the lock un-recoverable.
+  local now lock_mtime lock_age
+  now=$(date +%s)
+  lock_mtime=$(stat -c %Y "$LOCK_DIR" 2>/dev/null \
+            || stat -f %m "$LOCK_DIR" 2>/dev/null \
+            || echo 0)
+  lock_age=$(( now - lock_mtime ))
   # A lock is stale when the recorded pid is missing/malformed (race between
   # `mkdir` and `echo $$ > pid`, or the previous run crashed before writing
-  # pid), or when the recorded pid is no longer alive. Treating empty/garbage
-  # pid as "not stale" would block every future run with a permanent exit 2.
+  # pid), or when the recorded pid is no longer alive. The age gate avoids
+  # the TOCTOU window where a racer reads empty pid right after another
+  # caller's mkdir and clobbers a live lock; only treat missing/malformed
+  # pid as stale after the grace window. Treating empty/garbage pid as
+  # "not stale" indefinitely would block every future run with a permanent
+  # exit 2 if a gate was killed mid-init, so the age gate is the recovery
+  # path for that case too.
   if [[ ! "$holder" =~ ^[0-9]+$ ]]; then
-    stale=1
+    if [ "$lock_age" -ge "$LOCK_INIT_GRACE_SECONDS" ]; then
+      stale=1
+    else
+      echo "FAIL: pre-push-gate lock is initializing in this worktree; retry in a moment." >&2
+      exit 2
+    fi
   elif ! kill -0 "$holder" 2>/dev/null; then
     stale=1
   fi
