@@ -773,11 +773,13 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	// status before the test returns. Without this, the goroutine races
 	// against router/database cleanup under `go test -race` and can flake
 	// the gate. 5s is generous given the test's two-artist corpus.
+	// RLock matches the read-only-pointer access pattern used by the
+	// first polling loop in this test.
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		r.identifyMu.Lock()
+		r.identifyMu.RLock()
 		p := r.identifyProgress
-		r.identifyMu.Unlock()
+		r.identifyMu.RUnlock()
 		if p == nil {
 			break
 		}
