@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -76,9 +77,27 @@ func newConnectionTestRouter(t *testing.T) *Router {
 // newConnectionStubEmbyServer returns an httptest.Server that satisfies the
 // minimum set of Emby endpoints the connection handlers exercise. The optional
 // failPath causes that path to return 500 to drive the error branch in tests.
+//
+// The handler validates the inbound request contract (GET-only, auth material
+// present) so a regression that drops the auth header or sends the wrong verb
+// fails fast across every test that uses this stub.
 func newConnectionStubEmbyServer(t *testing.T, failPath string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		// Emby/Jellyfin accept any one of three auth-bearing forms; require
+		// at least one. Stillwater's client wraps the api key into X-Emby-Token
+		// (or the legacy api_key query param) — a regression that strips both
+		// surfaces as 401 here.
+		if req.Header.Get("Authorization") == "" &&
+			req.Header.Get("X-Emby-Token") == "" &&
+			req.URL.Query().Get("api_key") == "" {
+			http.Error(w, "missing auth material", http.StatusUnauthorized)
+			return
+		}
 		if failPath != "" && strings.HasPrefix(req.URL.Path, failPath) {
 			http.Error(w, "stub failure", http.StatusInternalServerError)
 			return
@@ -473,11 +492,25 @@ func TestHandleDeleteConnection_NotFound(t *testing.T) {
 func TestHandleTestConnection_SSRFRFC1918Rejected(t *testing.T) {
 	t.Parallel()
 
+	// A real loopback server replaces the bare 127.0.0.1:1 target so we
+	// can prove blocking, not just generic dial failure. If the SSRF
+	// guard regresses and lets loopback through, this server will record
+	// the hit and the post-loop assertion below fails. (RFC1918 targets
+	// stay as bare addresses — there's no listener on those networks in
+	// the test environment, so blocking vs. dial-refused is still
+	// indistinguishable for them until M49.5 lands the allowlist.)
+	var loopbackHits atomic.Int32
+	loopbackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		loopbackHits.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer loopbackSrv.Close()
+
 	rfc1918Targets := []string{
 		"http://10.0.0.1:1",
 		"http://192.168.0.1:1",
 		"http://172.16.0.1:1",
-		"http://127.0.0.1:1",
+		loopbackSrv.URL,
 	}
 	for _, target := range rfc1918Targets {
 		target := target
@@ -508,6 +541,13 @@ func TestHandleTestConnection_SSRFRFC1918Rejected(t *testing.T) {
 				t.Errorf("status = %v, want error (SSRF/RFC1918 target must not report ok)", resp["status"])
 			}
 		})
+	}
+
+	// The loopback server should never have been reached. A non-zero
+	// hit count means a future SSRF allowlist regression let the test
+	// connect to 127.0.0.1, which is the highest-impact SSRF class.
+	if n := loopbackHits.Load(); n != 0 {
+		t.Fatalf("expected SSRF guard to block loopback; got %d hits on the loopback server", n)
 	}
 }
 

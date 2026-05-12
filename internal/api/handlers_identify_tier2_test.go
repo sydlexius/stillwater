@@ -752,9 +752,13 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// A subsequent POST must not be rejected with 409. With no artists
-	// (we already crashed processing the only one), the second call returns
-	// 200 "completed" with total=0, NOT 409.
+	// A subsequent POST must not be rejected with 409. The slot should be
+	// released after the panic, allowing a new job to start (or report no
+	// work). "Crashy" still has no MBID — the linking never completed —
+	// so handleBulkIdentify rediscovers it and returns 202 accepted, NOT
+	// 409 conflict. We only assert "not 409" here because exercising the
+	// runner state machine more precisely would require synchronizing on
+	// the asynchronous goroutine, which is out of scope for this test.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify", nil)
 	w2 := httptest.NewRecorder()
 	r.handleBulkIdentify(w2, req2)

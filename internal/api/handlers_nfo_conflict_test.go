@@ -256,6 +256,17 @@ func TestHandleNFOConflictCheck_LidarrWriterFlagged(t *testing.T) {
 	// artistMetadata=true. The path-prefix check is sufficient because
 	// the Lidarr client appends "/api/v1/metadata" verbatim.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Guard the inbound request contract so a regression that drops
+		// the API key or sends the wrong verb fails the test directly
+		// instead of silently returning success. Mirrors the
+		// "Mock servers/handlers check request bodies and headers"
+		// guideline.
+		if req.Method != http.MethodGet {
+			t.Errorf("Lidarr mock: method = %s, want GET", req.Method)
+		}
+		if req.Header.Get("X-Api-Key") == "" && req.URL.Query().Get("apikey") == "" {
+			t.Errorf("Lidarr mock: expected X-Api-Key header or apikey query param")
+		}
 		if strings.HasSuffix(req.URL.Path, "/api/v1/metadata") {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[
