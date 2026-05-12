@@ -33,7 +33,8 @@ HTTP handlers run concurrently (net/http). Check for:
 - Package-level variables read or written without synchronization
 - Shared caches, maps, or singletons accessed from handlers
 - Goroutines using `context.Background()` where `context.WithoutCancel(reqCtx)`
-  should be used (gosec G118)
+  should be used. This is review-only today; planned for machine enforcement once
+  `contextcheck` is enabled in `.golangci.yml`.
 
 ## Status code changes
 
