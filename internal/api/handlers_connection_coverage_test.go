@@ -129,6 +129,21 @@ func newConnectionTestConn(t *testing.T, r *Router, c *connection.Connection) {
 	}
 }
 
+// assertLidarrContract checks that an outbound request from the Stillwater
+// Lidarr client carries the expected HTTP method and the X-Api-Key header
+// the client sets at lidarr/client.go:491. Used at the top of every Lidarr
+// test stub so a regression that drops the API-key header or sends the
+// wrong verb fails the test directly instead of silently returning success.
+func assertLidarrContract(t *testing.T, req *http.Request, wantMethod string) {
+	t.Helper()
+	if req.Method != wantMethod {
+		t.Errorf("Lidarr mock: method = %s, want %s (path %s)", req.Method, wantMethod, req.URL.Path)
+	}
+	if req.Header.Get("X-Api-Key") == "" && req.URL.Query().Get("apikey") == "" {
+		t.Errorf("Lidarr mock: missing API key on %s %s", req.Method, req.URL.Path)
+	}
+}
+
 // --- handleCreateConnection ---------------------------------------------------
 
 // TestHandleCreateConnection_JSON_SkipTest_Lidarr exercises the JSON request
@@ -1005,6 +1020,7 @@ func TestHandleCreateConnection_HTMXSuccessTriggersRefresh(t *testing.T) {
 func TestHandleTestConnection_Lidarr(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
 		switch req.URL.Path {
 		case "/api/v1/system/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0", "appName": "Lidarr"})
@@ -1038,6 +1054,7 @@ func TestHandleTestConnection_Lidarr(t *testing.T) {
 func TestHandleGetPlatformSettings_Lidarr(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
 		if req.URL.Path == "/api/v1/config/metadataprovider" {
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": 1, "metadataType": "Kodi", "consumerName": "Kodi", "enable": false},
@@ -1070,6 +1087,7 @@ func TestHandleGetPlatformSettings_Lidarr(t *testing.T) {
 func TestHandleGetPlatformSummary_Lidarr(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
 		if req.URL.Path == "/api/v1/config/metadataprovider" {
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"id": 1, "metadataType": "Kodi", "consumerName": "Kodi", "enable": true},
@@ -1183,6 +1201,9 @@ func TestHandleGetPlatformSettings_Jellyfin(t *testing.T) {
 func TestHandleDisablePlatformSettings_LidarrSuccess(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Disable hits the per-config PUT endpoint
+		// (lidarr/client.go:155 PutJSON).
+		assertLidarrContract(t, req, http.MethodPut)
 		switch {
 		case strings.HasPrefix(req.URL.Path, "/api/v1/config/metadataprovider/"):
 			w.WriteHeader(http.StatusOK)

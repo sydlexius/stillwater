@@ -498,7 +498,10 @@ func TestIdentifyArtist(t *testing.T) {
 		if got.Outcome != outcomeAutoLinked {
 			t.Fatalf("Outcome = %v, want autoLinked", got.Outcome)
 		}
-		reloaded, _ := artistSvc.GetByID(ctx, a.ID)
+		reloaded, err := artistSvc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("reloading: %v", err)
+		}
 		if reloaded.MusicBrainzID != "mb-solo" {
 			t.Errorf("MBID = %q, want mb-solo", reloaded.MusicBrainzID)
 		}
