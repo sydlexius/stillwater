@@ -26,10 +26,51 @@ fi
 # scripts/lib/run-paths.sh for the full rationale.
 . "$SCRIPT_DIR/lib/run-paths.sh"
 
+# Acquire an exclusive lock on this worktree's run-dir. Two gate invocations
+# in the same worktree both write to $SW_RUN_DIR/cover.out; without the lock,
+# whichever finishes last leaves a truncated profile and the patch-coverage
+# step then fails with "profile not found or empty". `mkdir` is atomic, so
+# the first caller wins; the loser exits with a clear pointer at the live
+# pid. Stale lock recovery: if the recorded pid no longer exists (gate was
+# killed, terminal was closed, machine rebooted), the lock is cleared and
+# re-acquired once. Lives in $SW_RUN_DIR so it cleans up when callers want
+# a fresh slate via `rm -rf $SW_RUN_DIR`.
+LOCK_DIR="$SW_RUN_DIR/.gate-lock"
+acquire_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "$$" > "$LOCK_DIR/pid"
+    return 0
+  fi
+  local holder stale=0
+  holder=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+  # A lock is stale when the recorded pid is missing/malformed (race between
+  # `mkdir` and `echo $$ > pid`, or the previous run crashed before writing
+  # pid), or when the recorded pid is no longer alive. Treating empty/garbage
+  # pid as "not stale" would block every future run with a permanent exit 2.
+  if [[ ! "$holder" =~ ^[0-9]+$ ]]; then
+    stale=1
+  elif ! kill -0 "$holder" 2>/dev/null; then
+    stale=1
+  fi
+  if [ "$stale" -eq 1 ]; then
+    echo "pre-push-gate: clearing stale lock (pid='${holder:-empty}')" >&2
+    rm -rf "$LOCK_DIR"
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      echo "$$" > "$LOCK_DIR/pid"
+      return 0
+    fi
+  fi
+  echo "FAIL: another pre-push-gate is running in this worktree (pid ${holder:-unknown})." >&2
+  echo "      Wait for it to finish or kill it before retrying." >&2
+  exit 2
+}
+acquire_lock
+
 COVER_OUT="$SW_RUN_DIR/cover.out"
 tmp_openapi=""
 cleanup() {
   rm -f "${COVER_OUT:-}" "${tmp_openapi:-}"
+  rm -rf "${LOCK_DIR:-}"
 }
 trap cleanup EXIT
 
