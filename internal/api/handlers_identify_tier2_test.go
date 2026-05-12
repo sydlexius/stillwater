@@ -553,7 +553,7 @@ func TestIdentifyArtist(t *testing.T) {
 		}
 	})
 
-	t.Run("tier 3 search error returns failed", func(t *testing.T) {
+	t.Run("tier 3 search error returns unmatched", func(t *testing.T) {
 		t.Parallel()
 		r, _ := newIdentifyTestServer(t,
 			func(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
@@ -563,6 +563,8 @@ func TestIdentifyArtist(t *testing.T) {
 		)
 		// SearchForLinking swallows per-provider errors and returns nil error
 		// with no results, so the path here ends in "no results" => unmatched.
+		// The subtest name mirrors the asserted outcome so `go test -v` output
+		// stays consistent with the orchestrator's actual behavior.
 		a := &artist.Artist{Name: "Err"}
 		got := r.identifyArtist(context.Background(), a, nil)
 		if got.Outcome != outcomeUnmatched {

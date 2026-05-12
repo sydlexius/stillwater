@@ -494,9 +494,26 @@ func TestHandleSetupFederated_AuthSetupReturnsErr(t *testing.T) {
 	// Empty Name passes the Emby client's incomplete-response guard (which
 	// only checks ID + AccessToken) but trips auth.Service.SetupFederated's
 	// "missing user ID or name" check inside the handler.
+	//
+	// Same request-shape guards as authSetupFakeMediaServer so a regression
+	// that changes verb / Content-Type / body shape fails this test instead
+	// of silently passing through.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path != "/Users/AuthenticateByName" {
 			http.NotFound(w, req)
+			return
+		}
+		if req.Method != http.MethodPost {
+			http.Error(w, "expected POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := req.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			http.Error(w, "unexpected Content-Type", http.StatusBadRequest)
+			return
+		}
+		var inbound map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&inbound); err != nil {
+			http.Error(w, "malformed request body", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

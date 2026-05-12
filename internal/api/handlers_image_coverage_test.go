@@ -15,14 +15,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
-	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // newImageHandlerTestServer builds a Router with the platform service wired,
@@ -854,7 +850,13 @@ func TestProbeImageDimensions_ProbesMissingDims(t *testing.T) {
 	// Spin up a server that serves a JPEG so ProbeRemoteImage can decode
 	// real dimensions. This exercises the goroutine fan-out path end-to-end.
 	body := testJPEG(t, 640, 480)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Guard the inbound request contract so a regression that changes
+		// the probe to a different verb or omits the body surfaces here
+		// rather than as a silent "probed dims didn't change" result.
+		if req.Method != http.MethodGet {
+			t.Errorf("probe mock: method = %s, want GET", req.Method)
+		}
 		w.Header().Set("Content-Type", "image/jpeg")
 		_, _ = w.Write(body)
 	}))
@@ -1023,17 +1025,3 @@ func (b *safeBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
-
-// ----------------------------------------------------------------------------
-// suppress unused import lint when none of the helpers in this file end up
-// touching every imported package directly. atomic + time + publish + platform
-// are pulled in via helpers shared with the existing handlers_image_test.go;
-// keep blank references so go vet stays quiet if a test is later trimmed.
-// ----------------------------------------------------------------------------
-
-var (
-	_ = atomic.LoadInt32
-	_ = time.Now
-	_ = publish.New
-	_ = platform.NewService
-)

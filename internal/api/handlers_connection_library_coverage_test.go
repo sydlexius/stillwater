@@ -17,6 +17,25 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 )
 
+// assertEmbyContract checks the inbound contract of an Emby/Jellyfin stub:
+// GET-only, plus at least one of the three auth-bearing forms the Stillwater
+// Emby client may set (Authorization header, X-Emby-Token header, api_key
+// query). Mirrors newConnectionStubEmbyServer's guards so every stub in this
+// suite catches the same class of regression (dropped auth header / wrong
+// verb). assertLidarrContract is defined in handlers_connection_coverage_test.go
+// in this same package and is reused directly by the Lidarr stubs below.
+func assertEmbyContract(t *testing.T, req *http.Request) {
+	t.Helper()
+	if req.Method != http.MethodGet {
+		t.Errorf("Emby mock: method = %s, want GET (path %s)", req.Method, req.URL.Path)
+	}
+	if req.Header.Get("Authorization") == "" &&
+		req.Header.Get("X-Emby-Token") == "" &&
+		req.URL.Query().Get("api_key") == "" {
+		t.Errorf("Emby mock: missing auth material on %s %s", req.Method, req.URL.Path)
+	}
+}
+
 // newConnLibTestConn is the connection-library coverage suite's prefixed helper
 // for seeding a connection row directly.
 func newConnLibTestConn(t *testing.T, r *Router, c *connection.Connection) {
@@ -35,6 +54,7 @@ func newConnLibTestConn(t *testing.T, r *Router, c *connection.Connection) {
 func TestHandleDiscoverLibraries_Emby(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertEmbyContract(t, req)
 		if req.URL.Path == "/Library/VirtualFolders" {
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{"Name": "Music", "CollectionType": "music", "ItemId": "lib-music"},
@@ -164,6 +184,7 @@ func TestHandleDiscoverLibraries_NotTested(t *testing.T) {
 func TestHandleScanLibrary_AcceptedAndCompletes(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertEmbyContract(t, req)
 		// Empty result set -- the scan completes with 0 updates and no errors.
 		if strings.Contains(req.URL.Path, "/Items") || strings.Contains(req.URL.Path, "/AlbumArtists") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{}, "TotalRecordCount": 0})
@@ -239,7 +260,12 @@ func waitForOpStatus(t *testing.T, r *Router, libID string, timeout time.Duratio
 // op.Status == "failed" branch we need for runLibraryScan coverage.
 func TestHandleScanLibrary_FailsOnUpstreamError(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Even on the all-errors path the stub validates the request
+		// contract so a regression that drops the API key surfaces as a
+		// contract failure rather than masquerading as upstream-error
+		// coverage.
+		assertLidarrContract(t, req, http.MethodGet)
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -372,6 +398,7 @@ func TestHandleScanLibrary_AlreadyRunning(t *testing.T) {
 func TestPopulateFromLidarrCtx_CreatesArtists(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
 		if req.URL.Path != "/api/v1/artist" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -416,7 +443,8 @@ func TestPopulateFromLidarrCtx_CreatesArtists(t *testing.T) {
 // still record a platform-id mapping rather than creating a duplicate.
 func TestPopulateFromLidarrCtx_SkipsExistingByMBID(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assertLidarrContract(t, req, http.MethodGet)
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"id": 99, "artistName": "Cuttlefish", "foreignArtistId": "33333333-3333-3333-3333-333333333333"},
 		})

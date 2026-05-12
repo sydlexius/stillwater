@@ -1127,7 +1127,12 @@ func TestHandleGetPlatformSummary_Lidarr(t *testing.T) {
 // branch in the Lidarr arm.
 func TestHandleGetPlatformSummary_LidarrUpstreamError(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Even though this stub always errors, assert the request contract so
+		// a regression that drops the X-Api-Key header or sends the wrong
+		// verb fails here instead of silently exercising the error path for
+		// the wrong reason.
+		assertLidarrContract(t, req, http.MethodGet)
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
