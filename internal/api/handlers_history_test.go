@@ -473,6 +473,76 @@ func TestHandleRevertHistory(t *testing.T) {
 	})
 }
 
+// TestHandleRevertHistory_HTMXActivityFragment verifies that an HTMX POST from
+// the activity feed returns an HTML fragment (200, Content-Type text/html).
+func TestHandleRevertHistory_HTMXActivityFragment(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "HTMX Activity Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/activity")
+	w := httptest.NewRecorder()
+
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html prefix", ct)
+	}
+}
+
+// TestHandleRevertHistory_HTMXArtistTabFragment verifies that an HTMX POST from
+// the artist history tab returns an HTML fragment (200, Content-Type text/html).
+func TestHandleRevertHistory_HTMXArtistTabFragment(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "HTMX Tab Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "tab bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/artists/"+a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html prefix", ct)
+	}
+}
+
 func TestHandleListGlobalHistory(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)

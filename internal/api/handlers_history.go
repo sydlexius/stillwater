@@ -408,7 +408,12 @@ func (r *Router) renderActivityRevertFragment(
 	userID := middleware.UserIDFromContext(req.Context())
 	limit := r.getUserPageSize(req.Context(), userID, 0)
 	activeFilter.Limit = limit
-	_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
+	_, total, listErr := r.historyService.ListGlobal(req.Context(), activeFilter)
+	if listErr != nil {
+		r.logger.Error("fetching global history for revert counter",
+			"artist_id", revertChange.ArtistID, "error", listErr)
+		return false
+	}
 	// Compute fallback from offset+limit. After Load-more the browser URL
 	// does not push offset, so this only matches reality when no Load-more
 	// clicks have occurred. The client-supplied hx-vals showing hint is
