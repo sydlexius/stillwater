@@ -148,10 +148,12 @@ func (s *Service) importProviderPriorities(ctx context.Context, priorities []Pri
 		if err := s.providerSettings.SetPriority(ctx, p.Field, p.Providers); err != nil {
 			return fmt.Errorf("setting priority for %q: %w", p.Field, err)
 		}
-		if len(p.Disabled) > 0 {
-			if err := s.providerSettings.SetDisabledProviders(ctx, p.Field, p.Disabled); err != nil {
-				return fmt.Errorf("setting disabled providers for %q: %w", p.Field, err)
-			}
+		disabled := p.Disabled
+		if disabled == nil {
+			disabled = []provider.ProviderName{}
+		}
+		if err := s.providerSettings.SetDisabledProviders(ctx, p.Field, disabled); err != nil {
+			return fmt.Errorf("setting disabled providers for %q: %w", p.Field, err)
 		}
 		result.Priorities++
 	}

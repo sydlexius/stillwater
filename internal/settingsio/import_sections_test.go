@@ -495,6 +495,79 @@ func TestImportProviderPriorities_CountsAndPersists(t *testing.T) {
 	}
 }
 
+// TestImportProviderPriorities_DisabledPersisted verifies that a non-empty
+// Disabled list is written alongside the priority order.
+func TestImportProviderPriorities_DisabledPersisted(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	priorities := []PriorityExport{
+		{
+			Field:     "biography",
+			Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikipedia},
+			Disabled:  []provider.ProviderName{provider.NameWikipedia},
+		},
+	}
+	result := &ImportResult{}
+	if err := svc.importProviderPriorities(ctx, priorities, result); err != nil {
+		t.Fatalf("importProviderPriorities: %v", err)
+	}
+
+	fps, err := provSettings.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	var got []provider.ProviderName
+	for _, fp := range fps {
+		if fp.Field == "biography" {
+			got = fp.Disabled
+			break
+		}
+	}
+	if len(got) != 1 || got[0] != provider.NameWikipedia {
+		t.Errorf("Disabled: got %v, want [%s]", got, provider.NameWikipedia)
+	}
+}
+
+// TestImportProviderPriorities_EmptyDisabledClears verifies that importing an
+// entry with no Disabled providers clears any previously-stored disabled list,
+// ensuring idempotent restore behavior.
+func TestImportProviderPriorities_EmptyDisabledClears(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Seed a disabled entry directly so we can verify it gets cleared.
+	if err := provSettings.SetDisabledProviders(ctx, "biography", []provider.ProviderName{provider.NameWikipedia}); err != nil {
+		t.Fatalf("SetDisabledProviders seed: %v", err)
+	}
+
+	priorities := []PriorityExport{
+		{
+			Field:     "biography",
+			Providers: []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikipedia},
+			// Disabled is intentionally nil -- import should clear the seeded value.
+		},
+	}
+	result := &ImportResult{}
+	if err := svc.importProviderPriorities(ctx, priorities, result); err != nil {
+		t.Fatalf("importProviderPriorities: %v", err)
+	}
+
+	fps, err := provSettings.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	for _, fp := range fps {
+		if fp.Field == "biography" && len(fp.Disabled) > 0 {
+			t.Errorf("expected disabled list cleared, got %v", fp.Disabled)
+		}
+	}
+}
+
 // --- API token orphan / FK-skip unit tests (section-level) ---
 
 // TestImportAPITokens_OrphanTokenSkipped tests that a token whose owner is
