@@ -14,26 +14,8 @@ name: Bruno API Tests
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'api/bruno/**'
-      - 'internal/api/**'
-      - 'internal/database/migrations/**'
-      - 'cmd/stillwater/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - '.github/workflows/bruno-ci.yml'
   push:
     branches: [main]
-    paths:
-      - 'api/bruno/**'
-      - 'internal/api/**'
-      - 'internal/database/migrations/**'
-      - 'cmd/stillwater/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - '.github/workflows/bruno-ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -57,24 +39,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Check relevant paths
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - 'api/bruno/**'
+              - 'internal/api/**'
+              - 'internal/database/migrations/**'
+              - 'cmd/stillwater/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - '.github/workflows/bruno-ci.yml'
+
       - name: Set up Go
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up Node
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: lts/*
 
       - name: Install templ
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
       - name: Generate templ
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         run: templ generate
 
       - name: Install Tailwind CSS standalone binary
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         # The project's input.css uses v4 syntax (@import "tailwindcss") which
         # postcss-import cannot resolve from a globally npm-installed package
         # because module resolution starts at the input.css directory. The
@@ -97,9 +99,11 @@ jobs:
           sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
 
       - name: Build Tailwind CSS
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
 
       - name: Build binary
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
           COMMIT=$(git rev-parse --short HEAD)
@@ -110,6 +114,7 @@ jobs:
             -o stillwater ./cmd/stillwater
 
       - name: Install Bruno CLI
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         # Pinned by SHA-256 against the published npm tarball so Scorecard
         # treats this as a hash-pinned dependency. Bump VERSION + SHA256
         # together; the registry attests SHA-512 integrity at publish time.
@@ -124,12 +129,14 @@ jobs:
           rm -f bruno-cli.tgz
 
       - name: Pick a free port
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: port
         run: |
           PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); p=s.getsockname()[1]; s.close(); print(p)')
           echo "port=${PORT}" >> "$GITHUB_OUTPUT"
 
       - name: Start Stillwater
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: server
         env:
           SW_DB_PATH: ${{ runner.temp }}/stillwater-ci.db
@@ -142,6 +149,7 @@ jobs:
           echo "pid=$!" >> "$GITHUB_OUTPUT"
 
       - name: Wait for server ready and capture CSRF token
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: csrf
         env:
           PORT: ${{ steps.port.outputs.port }}
@@ -183,6 +191,7 @@ jobs:
           exit 1
 
       - name: Bootstrap admin account
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         env:
           PORT: ${{ steps.port.outputs.port }}
           ADMIN_USER: ci-admin
@@ -199,6 +208,7 @@ jobs:
           echo "Admin account created"
 
       - name: Obtain session token
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: session
         env:
           PORT: ${{ steps.port.outputs.port }}
@@ -225,6 +235,7 @@ jobs:
           echo "session=${SESSION}" >> "$GITHUB_OUTPUT"
 
       - name: Run Bruno collection
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         id: bruno
         # Bruno's exit code IS the gate: a non-zero exit means at least one
         # in-script `expect` assertion failed, which is what M49's charter
@@ -262,6 +273,7 @@ jobs:
               . | tee "${{ runner.temp }}/bruno.log"
 
       - name: Gate on transport health
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         env:
           BRUNO_LOG: ${{ runner.temp }}/bruno.log
           # Belt-and-braces against the (rare) case where every request hits
@@ -295,7 +307,7 @@ jobs:
           fi
 
       - name: Stop server
-        if: always()
+        if: always() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
         env:
           PID: ${{ steps.server.outputs.pid }}
         run: |
@@ -304,7 +316,7 @@ jobs:
           fi
 
       - name: Upload test results on failure
-        if: failure()
+        if: failure() && (steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bruno-results
