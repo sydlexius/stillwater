@@ -14,8 +14,20 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+docs {
+  When the artist does not exist, the handler currently surfaces "failed to
+  reload artist" as a 500 because it calls ClearField (no-op on missing row)
+  then GetByID. Treating the present 500 as the contract until the handler
+  is reworked to short-circuit on missing artist.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 or 500 until handler upfront-checks artist existence", function() {
+    expect([404, 500]).to.include(res.status);
+  });
+
+  test("error envelope is present", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
   });
 }

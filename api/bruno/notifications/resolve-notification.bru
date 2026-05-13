@@ -15,7 +15,12 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
+  test("resolve is idempotent and returns 200 even for unknown ids", function() {
     expect(res.status).to.equal(200);
+  });
+
+  test("response surfaces resolved sentinel", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.status).to.equal("resolved");
   });
 }

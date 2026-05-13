@@ -22,13 +22,12 @@ body:json {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
   });
 
-  test("should return saved filenames", function() {
-    expect(res.body.status).to.equal("ok");
-    expect(res.body.saved).to.be.an("array");
-    expect(res.body.type).to.equal("thumb");
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
   });
 }

@@ -1,11 +1,11 @@
 meta {
-  name: List Snapshots
+  name: Logout
   type: http
-  seq: 3
+  seq: 1
 }
 
-get {
-  url: {{apiBase}}/artists/{{artistId}}/nfo/snapshots
+post {
+  url: {{apiBase}}/auth/logout
   body: none
   auth: none
 }
@@ -19,7 +19,7 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("should return snapshots array", function() {
-    expect(res.body.snapshots).to.be.an("array");
+  test("should return ok status", function() {
+    expect(res.body.status).to.equal("ok");
   });
 }

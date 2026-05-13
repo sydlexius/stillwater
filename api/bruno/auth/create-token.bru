@@ -17,13 +17,27 @@ headers {
 
 body:json {
   {
-    "name": "test-token",
-    "scopes": ["read"]
+    "name": "bruno-ci-token",
+    "scopes": "read"
+  }
+}
+
+script:post-response {
+  // Capture the created token's id for later revoke/delete tests.
+  if (res.status === 201 && res.body && res.body.id) {
+    bru.setVar('tokenId', res.body.id);
   }
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("should return 201", function() {
+    expect(res.status).to.equal(201);
+  });
+
+  test("response carries id, token, and name", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.id).to.be.a("string");
+    expect(res.body.token).to.be.a("string");
+    expect(res.body.name).to.equal("bruno-ci-token");
   });
 }

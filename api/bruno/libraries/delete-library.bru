@@ -19,7 +19,8 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("should return deleted status", function() {
+  test("response surfaces the deleted sentinel", function() {
+    expect(res.body).to.be.an("object");
     expect(res.body.status).to.equal("deleted");
   });
 }

@@ -138,13 +138,14 @@ clean:
 #   STILLWATER_ADMIN_PASSWORD Admin password for the ephemeral run (default: ci-ephemeral-pw)
 #   BRUNO_RESULTS_DIR        Directory for HTML report (default: /tmp/bruno-results)
 #   BRUNO_TIMEOUT_SEC        Watchdog ceiling for the bru run invocation (default: 300)
-#   MIN_TRANSPORT_PCT        Transport-pass-rate threshold for success (default: 90)
+#   MIN_TRANSPORT_PCT        Transport-pass-rate threshold for success (default: 100)
 #
 # Gate semantics MATCH the CI workflow (.github/workflows/bruno-ci.yml): the
-# target exits 0 when at least MIN_TRANSPORT_PCT (default 90%) of HTTP requests
-# reach the server, regardless of in-script `expect` assertion results. This
-# tolerance exists because the api/bruno/ collection has stale assertions
-# tracked in #1435; once that lands, MIN_TRANSPORT_PCT can be raised to 100.
+# target fails when Bruno's exit code is non-zero (one or more `expect`
+# assertions failed) OR when transport health drops below MIN_TRANSPORT_PCT
+# (a backstop against silent zero-test runs). The assertion gate is the
+# primary signal -- it's what catches the oneOf/discriminator drift and
+# request-body shape regressions that M49 was designed to surface.
 # The server PID is tracked in a temp file and cleaned up on exit.
 bruno-ci: build
 	@set -euo pipefail; \
@@ -249,6 +250,10 @@ bruno-ci: build
 	  echo "[bruno-ci] watchdog killed bru after $$BRUNO_TIMEOUT_SEC s; treating as failure"; \
 	  exit 1; \
 	fi; \
+	if [ "$$BRU_EXIT" != "0" ]; then \
+	  echo "[bruno-ci] bru exited $$BRU_EXIT (one or more expect assertions failed); failing"; \
+	  exit "$$BRU_EXIT"; \
+	fi; \
 	\
 	echo "[bruno-ci] checking transport health (matches CI .github/workflows/bruno-ci.yml gate)"; \
 	REQ_LINE=$$(grep -E '^Requests: +[0-9]+ (passed|failed)' "$$BRUNO_LOG" | tail -1 || true); \
@@ -263,7 +268,7 @@ bruno-ci: build
 	  exit 1; \
 	fi; \
 	PCT=$$(( PASSED * 100 / TOTAL )); \
-	MIN_PCT="$${MIN_TRANSPORT_PCT:-90}"; \
+	MIN_PCT="$${MIN_TRANSPORT_PCT:-100}"; \
 	echo "[bruno-ci] transport: $$PASSED/$$TOTAL requests reached server = $$PCT% (threshold $$MIN_PCT%)"; \
 	if [ "$$PCT" -lt "$$MIN_PCT" ]; then \
 	  echo "[bruno-ci] transport pass rate below threshold -- failing"; \

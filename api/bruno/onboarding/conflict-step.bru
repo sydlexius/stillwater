@@ -1,0 +1,42 @@
+meta {
+  name: OOBE Conflict Pre-flight
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{apiBase}}/onboarding/conflict-step
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  POST /api/v1/onboarding/conflict-step renders the OOBE pre-flight body
+  (#1184). The endpoint is HTMX-loaded by onboarding.templ on step 5 and
+  returns a server-rendered HTML fragment, not JSON. It is POST rather
+  than GET because it persists the conflict_check_completed_at marker
+  on every call -- keeping the route CSRF-protected.
+
+  In the ephemeral CI database there are no enabled emby/jellyfin/lidarr
+  connections, so the response is a "no conflicts" clean-state body with
+  ob-conflict-block-state set to a non-blocking value.
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is an HTML fragment, not JSON", function() {
+    expect(res.headers['content-type']).to.include("text/html");
+  });
+
+  test("body carries the conflict-block-state input the OOBE wizard reads", function() {
+    var body = typeof res.body === "string" ? res.body : JSON.stringify(res.body);
+    expect(body).to.include('id="ob-conflict-block-state"');
+  });
+}

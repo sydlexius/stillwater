@@ -14,8 +14,20 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+docs {
+  No backup file exists in the ephemeral CI environment and the
+  filename variable is intentionally unset, so the handler rejects
+  the request with 400 invalid filename. The contract under test is
+  the filename validation gate, not a successful download.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 400 because the filename is empty/invalid", function() {
+    expect(res.status).to.equal(400);
+  });
+
+  test("error envelope reports invalid filename", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("invalid filename");
   });
 }

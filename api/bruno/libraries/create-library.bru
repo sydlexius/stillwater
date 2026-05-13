@@ -16,9 +16,18 @@ headers {
 
 body:json {
   {
-    "name": "Test Library",
-    "path": "/music/test",
+    "name": "Bruno CI Library",
+    "path": "",
     "type": "regular"
+  }
+}
+
+script:post-response {
+  // Hand the new library's id off to update-library (seq 4) and
+  // delete-library (seq 5) so they target a transient row instead of
+  // mutating the bootstrap-seeded Default.
+  if (res.status === 201 && res.body && res.body.id) {
+    bru.setVar('libraryId', res.body.id);
   }
 }
 
@@ -27,10 +36,10 @@ tests {
     expect(res.status).to.equal(201);
   });
 
-  test("should return library with id", function() {
-    expect(res.body).to.have.property("id");
-    expect(res.body.name).to.equal("Test Library");
-    expect(res.body.path).to.equal("/music/test");
+  test("response carries id, name, and the configured type", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.id).to.be.a("string");
+    expect(res.body.name).to.equal("Bruno CI Library");
     expect(res.body.type).to.equal("regular");
   });
 }

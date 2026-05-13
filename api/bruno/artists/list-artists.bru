@@ -19,9 +19,16 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("should return paginated list", function() {
-    expect(res.body.artists).to.be.an("array");
-    expect(res.body.total).to.be.a("number");
+  test("response is a paginated envelope (page, page_size, total)", function() {
+    expect(res.body).to.be.an("object");
     expect(res.body.page).to.equal(1);
+    expect(res.body.page_size).to.equal(50);
+    expect(res.body.total).to.be.a("number");
+  });
+
+  test("artists field is either an array or null when no rows match", function() {
+    var artists = res.body.artists;
+    var ok = artists === null || Array.isArray(artists);
+    expect(ok).to.equal(true);
   });
 }

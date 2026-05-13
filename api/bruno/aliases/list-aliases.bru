@@ -19,7 +19,7 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("should return array", function() {
+  test("body is an array (empty for sentinel artistId)", function() {
     expect(res.body).to.be.an("array");
   });
 }

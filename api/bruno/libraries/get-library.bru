@@ -19,7 +19,10 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("should include artist_count", function() {
+  test("response wraps the library and surfaces artist_count", function() {
+    expect(res.body).to.be.an("object");
     expect(res.body).to.have.property("artist_count");
+    expect(res.body.library).to.be.an("object");
+    expect(res.body.library.id).to.equal(bru.getVar("libraryId"));
   });
 }

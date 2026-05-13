@@ -14,12 +14,24 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+script:post-response {
+  // Stash the first library's id (the bootstrap-seeded Default) so
+  // get-library (seq 2) has a real target. create-library (seq 3) will
+  // override libraryId with the new transient library it provisions.
+  if (Array.isArray(res.body) && res.body.length > 0 && res.body[0].id) {
+    bru.setVar('libraryId', res.body[0].id);
+  }
+}
+
 tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
   });
 
-  test("should return array", function() {
+  test("response is a top-level array of library records", function() {
     expect(res.body).to.be.an("array");
+    expect(res.body.length).to.be.at.least(1);
+    expect(res.body[0]).to.have.property("id");
+    expect(res.body[0]).to.have.property("name");
   });
 }
