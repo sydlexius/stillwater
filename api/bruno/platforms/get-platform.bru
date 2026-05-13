@@ -22,6 +22,7 @@ tests {
   test("response carries the platform record with id, name, image_naming", function() {
     expect(res.body).to.be.an("object");
     expect(res.body.id).to.equal("custom");
+    expect(res.body.name).to.equal("Custom");
     expect(res.body.is_builtin).to.equal(true);
     expect(res.body.image_naming).to.be.an("object");
   });

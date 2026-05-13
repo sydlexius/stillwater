@@ -21,5 +21,6 @@ tests {
 
   test("body is an array (empty for sentinel artistId)", function() {
     expect(res.body).to.be.an("array");
+    expect(res.body.length).to.equal(0);
   });
 }

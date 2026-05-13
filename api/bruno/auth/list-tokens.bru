@@ -24,7 +24,8 @@ tests {
   });
 
   test("array contains the token created earlier in the run", function() {
-    var names = (res.body || []).map(function(t) { return t.name; });
+    var items = Array.isArray(res.body) ? res.body : [];
+    var names = items.map(function(t) { return t.name; });
     expect(names).to.include("bruno-ci-token");
   });
 }
