@@ -249,7 +249,6 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 }
 
 func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, result *ScanResult) error {
-	// Check if directory name matches exclusion list
 	excluded := s.exclusions[strings.ToLower(name)]
 
 	// Look up existing artist before detectFiles so we can skip expensive
@@ -266,220 +265,243 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 	}
 
 	if existing == nil {
-		// New artist
-		a := &artist.Artist{
-			Name:              name,
-			SortName:          name,
-			Path:              dirPath,
-			LibraryID:         libraryID,
-			NFOExists:         detected.NFOExists,
-			ThumbExists:       detected.ThumbExists,
-			FanartExists:      detected.FanartExists,
-			FanartCount:       detected.FanartCount,
-			LogoExists:        detected.LogoExists,
-			BannerExists:      detected.BannerExists,
-			ThumbLowRes:       detected.ThumbLowRes,
-			FanartLowRes:      detected.FanartLowRes,
-			LogoLowRes:        detected.LogoLowRes,
-			BannerLowRes:      detected.BannerLowRes,
-			ThumbPlaceholder:  detected.ThumbPlaceholder,
-			FanartPlaceholder: detected.FanartPlaceholder,
-			LogoPlaceholder:   detected.LogoPlaceholder,
-			BannerPlaceholder: detected.BannerPlaceholder,
-			ThumbWidth:        detected.ThumbWidth,
-			ThumbHeight:       detected.ThumbHeight,
-			FanartWidth:       detected.FanartWidth,
-			FanartHeight:      detected.FanartHeight,
-			LogoWidth:         detected.LogoWidth,
-			LogoHeight:        detected.LogoHeight,
-			BannerWidth:       detected.BannerWidth,
-			BannerHeight:      detected.BannerHeight,
-		}
-		if excluded {
-			a.IsExcluded = true
-			a.ExclusionReason = "default exclusion list"
-		}
+		return s.processNewArtist(ctx, dirPath, name, libraryID, excluded, detected, result)
+	}
+	return s.processExistingArtist(ctx, dirPath, existing, excluded, detected, result)
+}
 
-		// Parse NFO if it exists for metadata
-		if detected.NFOExists {
-			if s.populateFromNFO(dirPath, a) {
-				// Import lockdata from NFO only for newly discovered artists.
-				a.Locked = true
-				a.LockSource = "imported"
-				now := time.Now().UTC()
-				a.LockedAt = &now
-			}
-		}
+// processNewArtist creates a new artist record for a directory not yet in the
+// database. It applies file detection results, parses NFO metadata if present,
+// and publishes an ArtistUpdated event.
+func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID string, excluded bool, detected detectedFiles, result *ScanResult) error {
+	a := &artist.Artist{
+		Name:              name,
+		SortName:          name,
+		Path:              dirPath,
+		LibraryID:         libraryID,
+		NFOExists:         detected.NFOExists,
+		ThumbExists:       detected.ThumbExists,
+		FanartExists:      detected.FanartExists,
+		FanartCount:       detected.FanartCount,
+		LogoExists:        detected.LogoExists,
+		BannerExists:      detected.BannerExists,
+		ThumbLowRes:       detected.ThumbLowRes,
+		FanartLowRes:      detected.FanartLowRes,
+		LogoLowRes:        detected.LogoLowRes,
+		BannerLowRes:      detected.BannerLowRes,
+		ThumbPlaceholder:  detected.ThumbPlaceholder,
+		FanartPlaceholder: detected.FanartPlaceholder,
+		LogoPlaceholder:   detected.LogoPlaceholder,
+		BannerPlaceholder: detected.BannerPlaceholder,
+		ThumbWidth:        detected.ThumbWidth,
+		ThumbHeight:       detected.ThumbHeight,
+		FanartWidth:       detected.FanartWidth,
+		FanartHeight:      detected.FanartHeight,
+		LogoWidth:         detected.LogoWidth,
+		LogoHeight:        detected.LogoHeight,
+		BannerWidth:       detected.BannerWidth,
+		BannerHeight:      detected.BannerHeight,
+	}
+	if excluded {
+		a.IsExcluded = true
+		a.ExclusionReason = "default exclusion list"
+	}
 
-		now := time.Now().UTC()
-		a.LastScannedAt = &now
-
-		if err := s.artistService.Create(ctx, a); err != nil {
-			return fmt.Errorf("creating artist: %w", err)
-		}
-
-		if s.eventBus != nil {
-			s.eventBus.Publish(event.Event{
-				Type: event.ArtistUpdated,
-				Data: map[string]any{"artist_id": a.ID},
-			})
-		}
-
-		s.mu.Lock()
-		result.NewArtists++
-		s.mu.Unlock()
-		s.logger.Debug("new artist discovered", "name", name, "path", dirPath)
-	} else {
-		// Protect existing placeholders from transient I/O failures:
-		// if the image file still exists on disk but placeholder generation
-		// failed (returned empty), preserve the existing placeholder.
-		thumbPH := detected.ThumbPlaceholder
-		if thumbPH == "" && detected.ThumbExists {
-			thumbPH = existing.ThumbPlaceholder
-		}
-		fanartPH := detected.FanartPlaceholder
-		if fanartPH == "" && detected.FanartExists {
-			fanartPH = existing.FanartPlaceholder
-		}
-		logoPH := detected.LogoPlaceholder
-		if logoPH == "" && detected.LogoExists {
-			logoPH = existing.LogoPlaceholder
-		}
-		bannerPH := detected.BannerPlaceholder
-		if bannerPH == "" && detected.BannerExists {
-			bannerPH = existing.BannerPlaceholder
-		}
-
-		// Preserve existing dimensions when probe fails (returns 0,0).
-		if detected.ThumbWidth == 0 && existing.ThumbWidth > 0 {
-			detected.ThumbWidth = existing.ThumbWidth
-			detected.ThumbHeight = existing.ThumbHeight
-		}
-		if detected.FanartWidth == 0 && existing.FanartWidth > 0 {
-			detected.FanartWidth = existing.FanartWidth
-			detected.FanartHeight = existing.FanartHeight
-		}
-		if detected.LogoWidth == 0 && existing.LogoWidth > 0 {
-			detected.LogoWidth = existing.LogoWidth
-			detected.LogoHeight = existing.LogoHeight
-		}
-		if detected.BannerWidth == 0 && existing.BannerWidth > 0 {
-			detected.BannerWidth = existing.BannerWidth
-			detected.BannerHeight = existing.BannerHeight
-		}
-
-		// Update file existence, low-resolution, and placeholder flags
-		changed := existing.NFOExists != detected.NFOExists ||
-			existing.ThumbExists != detected.ThumbExists ||
-			existing.FanartExists != detected.FanartExists ||
-			existing.FanartCount != detected.FanartCount ||
-			existing.LogoExists != detected.LogoExists ||
-			existing.BannerExists != detected.BannerExists ||
-			existing.ThumbLowRes != detected.ThumbLowRes ||
-			existing.FanartLowRes != detected.FanartLowRes ||
-			existing.LogoLowRes != detected.LogoLowRes ||
-			existing.BannerLowRes != detected.BannerLowRes ||
-			existing.ThumbPlaceholder != thumbPH ||
-			existing.FanartPlaceholder != fanartPH ||
-			existing.LogoPlaceholder != logoPH ||
-			existing.BannerPlaceholder != bannerPH ||
-			existing.ThumbWidth != detected.ThumbWidth ||
-			existing.ThumbHeight != detected.ThumbHeight ||
-			existing.FanartWidth != detected.FanartWidth ||
-			existing.FanartHeight != detected.FanartHeight ||
-			existing.LogoWidth != detected.LogoWidth ||
-			existing.LogoHeight != detected.LogoHeight ||
-			existing.BannerWidth != detected.BannerWidth ||
-			existing.BannerHeight != detected.BannerHeight ||
-			existing.IsExcluded != excluded
-
-		if changed || detected.NFOExists {
-			existing.NFOExists = detected.NFOExists
-			existing.ThumbExists = detected.ThumbExists
-			existing.FanartExists = detected.FanartExists
-			existing.FanartCount = detected.FanartCount
-			existing.LogoExists = detected.LogoExists
-			existing.BannerExists = detected.BannerExists
-			existing.ThumbLowRes = detected.ThumbLowRes
-			existing.FanartLowRes = detected.FanartLowRes
-			existing.LogoLowRes = detected.LogoLowRes
-			existing.BannerLowRes = detected.BannerLowRes
-			existing.ThumbPlaceholder = thumbPH
-			existing.FanartPlaceholder = fanartPH
-			existing.LogoPlaceholder = logoPH
-			existing.BannerPlaceholder = bannerPH
-			existing.ThumbWidth = detected.ThumbWidth
-			existing.ThumbHeight = detected.ThumbHeight
-			existing.FanartWidth = detected.FanartWidth
-			existing.FanartHeight = detected.FanartHeight
-			existing.LogoWidth = detected.LogoWidth
-			existing.LogoHeight = detected.LogoHeight
-			existing.BannerWidth = detected.BannerWidth
-			existing.BannerHeight = detected.BannerHeight
-
-			// Update exclusion status
-			if excluded {
-				existing.IsExcluded = true
-				existing.ExclusionReason = "default exclusion list"
-			} else {
-				existing.IsExcluded = false
-				existing.ExclusionReason = ""
-			}
-
-			// Re-parse NFO for updated metadata. Skip for locked artists
-			// to avoid overwriting user-curated metadata.
-			if detected.NFOExists && !existing.Locked {
-				if s.populateFromNFO(dirPath, existing) {
-					// Mirror the new-artist path: an NFO carrying
-					// <lockdata>true</lockdata> (set by Stillwater or another
-					// tool) surfaces as an artist-level lock so the UI reflects
-					// that the metadata is locked. One-way (NFO -> artist).
-					existing.Locked = true
-					existing.LockSource = "imported"
-					lockedAt := time.Now().UTC()
-					existing.LockedAt = &lockedAt
-				}
-			}
-
+	// Parse NFO if it exists for metadata
+	if detected.NFOExists {
+		if s.populateFromNFO(dirPath, a) {
+			// Import lockdata from NFO only for newly discovered artists.
+			a.Locked = true
+			a.LockSource = "imported"
 			now := time.Now().UTC()
-			existing.LastScannedAt = &now
-
-			if err := s.artistService.Update(ctx, existing); err != nil {
-				return fmt.Errorf("updating artist: %w", err)
-			}
-
-			if s.eventBus != nil {
-				s.eventBus.Publish(event.Event{
-					Type: event.ArtistUpdated,
-					Data: map[string]any{"artist_id": existing.ID},
-				})
-			}
-
-			s.mu.Lock()
-			result.UpdatedArtists++
-			s.mu.Unlock()
-			s.logger.Debug("artist updated", "name", existing.Name, "path", dirPath)
-		} else {
-			// No flag change, so Update() was skipped and the artist_images
-			// registry was not refreshed. Converge it directly so a row that
-			// was deleted out-of-band (#1225) heals on the next visit even
-			// when nothing else about the artist looks different. Mirror the
-			// Update() path's event fanout only when reconciliation actually
-			// repaired drift, so quiet rescans do not flood subscribers.
-			repaired, err := s.artistService.ReconcileImages(ctx, existing)
-			if err != nil {
-				return fmt.Errorf("reconciling artist images: %w", err)
-			}
-			if repaired && s.eventBus != nil {
-				s.eventBus.Publish(event.Event{
-					Type: event.ArtistUpdated,
-					Data: map[string]any{"artist_id": existing.ID},
-				})
-			}
+			a.LockedAt = &now
 		}
 	}
 
+	now := time.Now().UTC()
+	a.LastScannedAt = &now
+
+	if err := s.artistService.Create(ctx, a); err != nil {
+		return fmt.Errorf("creating artist: %w", err)
+	}
+
+	s.publishArtistUpdated(a.ID)
+
+	s.mu.Lock()
+	result.NewArtists++
+	s.mu.Unlock()
+	s.logger.Debug("new artist discovered", "name", name, "path", dirPath)
 	return nil
+}
+
+// processExistingArtist reconciles an artist already in the database against
+// the current filesystem state. It preserves placeholders and dimensions on
+// transient probe failures, applies NFO re-import for unlocked artists, and
+// falls back to a lightweight ReconcileImages call when nothing has changed.
+func (s *Service) processExistingArtist(ctx context.Context, dirPath string, existing *artist.Artist, excluded bool, detected detectedFiles, result *ScanResult) error {
+	// Protect existing placeholders from transient I/O failures: if the image
+	// file still exists on disk but placeholder generation failed (returned
+	// empty), preserve the existing placeholder.
+	preservePlaceholders(existing, &detected)
+
+	// Preserve existing dimensions when a probe fails (returns 0,0).
+	preserveDimensions(existing, &detected)
+
+	// Update file existence, low-resolution, and placeholder flags
+	changed := existing.NFOExists != detected.NFOExists ||
+		existing.ThumbExists != detected.ThumbExists ||
+		existing.FanartExists != detected.FanartExists ||
+		existing.FanartCount != detected.FanartCount ||
+		existing.LogoExists != detected.LogoExists ||
+		existing.BannerExists != detected.BannerExists ||
+		existing.ThumbLowRes != detected.ThumbLowRes ||
+		existing.FanartLowRes != detected.FanartLowRes ||
+		existing.LogoLowRes != detected.LogoLowRes ||
+		existing.BannerLowRes != detected.BannerLowRes ||
+		existing.ThumbPlaceholder != detected.ThumbPlaceholder ||
+		existing.FanartPlaceholder != detected.FanartPlaceholder ||
+		existing.LogoPlaceholder != detected.LogoPlaceholder ||
+		existing.BannerPlaceholder != detected.BannerPlaceholder ||
+		existing.ThumbWidth != detected.ThumbWidth ||
+		existing.ThumbHeight != detected.ThumbHeight ||
+		existing.FanartWidth != detected.FanartWidth ||
+		existing.FanartHeight != detected.FanartHeight ||
+		existing.LogoWidth != detected.LogoWidth ||
+		existing.LogoHeight != detected.LogoHeight ||
+		existing.BannerWidth != detected.BannerWidth ||
+		existing.BannerHeight != detected.BannerHeight ||
+		existing.IsExcluded != excluded
+
+	if !changed && !detected.NFOExists {
+		// No flag change, so Update() was skipped and the artist_images
+		// registry was not refreshed. Converge it directly so a row that
+		// was deleted out-of-band (#1225) heals on the next visit even
+		// when nothing else about the artist looks different. Mirror the
+		// Update() path's event fanout only when reconciliation actually
+		// repaired drift, so quiet rescans do not flood subscribers.
+		repaired, err := s.artistService.ReconcileImages(ctx, existing)
+		if err != nil {
+			return fmt.Errorf("reconciling artist images: %w", err)
+		}
+		if repaired {
+			s.publishArtistUpdated(existing.ID)
+		}
+		return nil
+	}
+
+	existing.NFOExists = detected.NFOExists
+	existing.ThumbExists = detected.ThumbExists
+	existing.FanartExists = detected.FanartExists
+	existing.FanartCount = detected.FanartCount
+	existing.LogoExists = detected.LogoExists
+	existing.BannerExists = detected.BannerExists
+	existing.ThumbLowRes = detected.ThumbLowRes
+	existing.FanartLowRes = detected.FanartLowRes
+	existing.LogoLowRes = detected.LogoLowRes
+	existing.BannerLowRes = detected.BannerLowRes
+	existing.ThumbPlaceholder = detected.ThumbPlaceholder
+	existing.FanartPlaceholder = detected.FanartPlaceholder
+	existing.LogoPlaceholder = detected.LogoPlaceholder
+	existing.BannerPlaceholder = detected.BannerPlaceholder
+	existing.ThumbWidth = detected.ThumbWidth
+	existing.ThumbHeight = detected.ThumbHeight
+	existing.FanartWidth = detected.FanartWidth
+	existing.FanartHeight = detected.FanartHeight
+	existing.LogoWidth = detected.LogoWidth
+	existing.LogoHeight = detected.LogoHeight
+	existing.BannerWidth = detected.BannerWidth
+	existing.BannerHeight = detected.BannerHeight
+
+	// Update exclusion status
+	if excluded {
+		existing.IsExcluded = true
+		existing.ExclusionReason = "default exclusion list"
+	} else {
+		existing.IsExcluded = false
+		existing.ExclusionReason = ""
+	}
+
+	// Re-parse NFO for updated metadata. Skip for locked artists
+	// to avoid overwriting user-curated metadata.
+	if detected.NFOExists && !existing.Locked {
+		if s.populateFromNFO(dirPath, existing) {
+			// Mirror the new-artist path: an NFO carrying
+			// <lockdata>true</lockdata> (set by Stillwater or another
+			// tool) surfaces as an artist-level lock so the UI reflects
+			// that the metadata is locked. One-way (NFO -> artist).
+			existing.Locked = true
+			existing.LockSource = "imported"
+			lockedAt := time.Now().UTC()
+			existing.LockedAt = &lockedAt
+		}
+	}
+
+	now := time.Now().UTC()
+	existing.LastScannedAt = &now
+
+	if err := s.artistService.Update(ctx, existing); err != nil {
+		return fmt.Errorf("updating artist: %w", err)
+	}
+
+	s.publishArtistUpdated(existing.ID)
+
+	s.mu.Lock()
+	result.UpdatedArtists++
+	s.mu.Unlock()
+	s.logger.Debug("artist updated", "name", existing.Name, "path", dirPath)
+	return nil
+}
+
+// preservePlaceholders fills any empty placeholder in detected from existing
+// when the corresponding image file is still present on disk. This guards
+// against transient I/O failures during placeholder generation clobbering a
+// previously stored placeholder.
+func preservePlaceholders(existing *artist.Artist, detected *detectedFiles) {
+	if detected.ThumbPlaceholder == "" && detected.ThumbExists {
+		detected.ThumbPlaceholder = existing.ThumbPlaceholder
+	}
+	if detected.FanartPlaceholder == "" && detected.FanartExists {
+		detected.FanartPlaceholder = existing.FanartPlaceholder
+	}
+	if detected.LogoPlaceholder == "" && detected.LogoExists {
+		detected.LogoPlaceholder = existing.LogoPlaceholder
+	}
+	if detected.BannerPlaceholder == "" && detected.BannerExists {
+		detected.BannerPlaceholder = existing.BannerPlaceholder
+	}
+}
+
+// preserveDimensions copies stored dimensions from existing into detected for
+// any image slot where the probe returned 0,0. A zero result signals a decode
+// failure, not a truly zero-dimension image.
+func preserveDimensions(existing *artist.Artist, detected *detectedFiles) {
+	if detected.ThumbWidth == 0 && existing.ThumbWidth > 0 {
+		detected.ThumbWidth = existing.ThumbWidth
+		detected.ThumbHeight = existing.ThumbHeight
+	}
+	if detected.FanartWidth == 0 && existing.FanartWidth > 0 {
+		detected.FanartWidth = existing.FanartWidth
+		detected.FanartHeight = existing.FanartHeight
+	}
+	if detected.LogoWidth == 0 && existing.LogoWidth > 0 {
+		detected.LogoWidth = existing.LogoWidth
+		detected.LogoHeight = existing.LogoHeight
+	}
+	if detected.BannerWidth == 0 && existing.BannerWidth > 0 {
+		detected.BannerWidth = existing.BannerWidth
+		detected.BannerHeight = existing.BannerHeight
+	}
+}
+
+// publishArtistUpdated publishes an ArtistUpdated event if the event bus is
+// configured. It is a no-op when no bus is set.
+func (s *Service) publishArtistUpdated(artistID string) {
+	if s.eventBus != nil {
+		s.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": artistID},
+		})
+	}
 }
 
 // populateFromNFO parses the artist.nfo file and merges metadata into the artist.
