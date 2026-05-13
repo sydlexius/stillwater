@@ -737,8 +737,7 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify", nil)
-	w := httptest.NewRecorder()
-	r.handleBulkIdentify(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleBulkIdentify), req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("first POST status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
@@ -769,8 +768,7 @@ func TestBulkIdentify_ResetsAfterPanic(t *testing.T) {
 	// still has no MBID — the linking never completed — so
 	// handleBulkIdentify rediscovers it and returns 202 accepted.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify", nil)
-	w2 := httptest.NewRecorder()
-	r.handleBulkIdentify(w2, req2)
+	w2 := serveValidated(t, http.HandlerFunc(r.handleBulkIdentify), req2)
 	if w2.Code != http.StatusAccepted {
 		t.Fatalf("second POST status = %d, want %d (panic slot not released cleanly); body: %s",
 			w2.Code, http.StatusAccepted, w2.Body.String())

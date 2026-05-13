@@ -168,9 +168,8 @@ func TestHandleSetupLocal_HappyPath(t *testing.T) {
 	body := `{"auth_method":"local","username":"admin","password":"correcthorse"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
@@ -204,8 +203,7 @@ func TestHandleSetupLocal_MissingCredentials(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-			r.handleSetup(w, req)
+			w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 			}
@@ -220,9 +218,8 @@ func TestHandleSetupLocal_ShortPassword(t *testing.T) {
 	body := `{"auth_method":"local","username":"admin","password":"short"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
@@ -237,8 +234,7 @@ func TestHandleSetupLocal_AlreadyExists(t *testing.T) {
 	body := `{"auth_method":"local","username":"admin","password":"correcthorse"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("first setup: status = %d, want 201", w.Code)
 	}
@@ -246,8 +242,7 @@ func TestHandleSetupLocal_AlreadyExists(t *testing.T) {
 	// Second setup is blocked by handleSetup's HasUsers gate (returns 409).
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req2.Header.Set("Content-Type", "application/json")
-	w2 := httptest.NewRecorder()
-	r.handleSetup(w2, req2)
+	w2 := serveValidated(t, http.HandlerFunc(r.handleSetup), req2)
 	if w2.Code != http.StatusConflict {
 		t.Errorf("second setup: status = %d, want 409", w2.Code)
 	}
@@ -291,9 +286,8 @@ func TestHandleSetupFederated_HappyPath_Emby(t *testing.T) {
 	body := `{"auth_method":"emby","username":"embyadmin","password":"correcthorse","server_url":"` + srv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
@@ -360,9 +354,8 @@ func TestHandleSetupFederated_HappyPath_Jellyfin(t *testing.T) {
 	body := `{"auth_method":"jellyfin","username":"jfadmin","password":"correcthorse","server_url":"` + srv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
@@ -426,9 +419,8 @@ func TestHandleSetupFederated_InvalidCredentials(t *testing.T) {
 	body := `{"auth_method":"emby","username":"embyadmin","password":"wrong","server_url":"` + srv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401; body: %s", w.Code, w.Body.String())
 	}
@@ -443,9 +435,8 @@ func TestHandleSetupFederated_ServerUnreachable(t *testing.T) {
 	body := `{"auth_method":"emby","username":"embyadmin","password":"correcthorse","server_url":"http://127.0.0.1:1"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want 502; body: %s", w.Code, w.Body.String())
 	}
@@ -524,9 +515,8 @@ func TestHandleSetupFederated_AuthSetupReturnsErr(t *testing.T) {
 	body := `{"auth_method":"emby","username":"admin","password":"correcthorse","server_url":"` + srv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500 (SetupFederated rejects empty Name); body: %s", w.Code, w.Body.String())
 	}
@@ -543,9 +533,8 @@ func TestHandleSetupFederated_NonAdminRejected(t *testing.T) {
 	body := `{"auth_method":"emby","username":"normaluser","password":"correcthorse","server_url":"` + srv.URL + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403; body: %s", w.Code, w.Body.String())
 	}
@@ -606,9 +595,8 @@ func TestHandleSetupWithIdentity_HappyPath_Emby(t *testing.T) {
 	body := `{"auth_method":"emby","username":"any","password":"any","server_url":"http://emby.local:8096"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
@@ -672,9 +660,8 @@ func TestHandleSetupWithIdentity_NonAdmin(t *testing.T) {
 	body := `{"auth_method":"emby","username":"reg","password":"any","server_url":"http://emby.local:8096"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403; body: %s", w.Code, w.Body.String())
 	}
@@ -700,9 +687,8 @@ func TestHandleSetupWithIdentity_MissingServerURL(t *testing.T) {
 	body := `{"auth_method":"emby","username":"any","password":"any","server_url":""}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
@@ -728,9 +714,8 @@ func TestHandleSetupWithIdentity_InvalidServerURL(t *testing.T) {
 	body := `{"auth_method":"emby","username":"any","password":"any","server_url":"ftp://nope"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
@@ -828,9 +813,8 @@ func TestHandleSetupWithIdentity_NonMediaProvider(t *testing.T) {
 	body := `{"auth_method":"oidc","username":"any","password":"any"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleSetup(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleSetup), req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
 	}
@@ -872,8 +856,7 @@ func TestHandleLoginFederated_HappyPath(t *testing.T) {
 	setupBody := `{"auth_method":"emby","username":"embyadmin","password":"correcthorse","server_url":"` + srv.URL + `"}`
 	setupReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/setup", strings.NewReader(setupBody))
 	setupReq.Header.Set("Content-Type", "application/json")
-	setupW := httptest.NewRecorder()
-	r.handleSetup(setupW, setupReq)
+	setupW := serveValidated(t, http.HandlerFunc(r.handleSetup), setupReq)
 	if setupW.Code != http.StatusCreated {
 		t.Fatalf("setup prereq: status = %d, want 201; body: %s", setupW.Code, setupW.Body.String())
 	}
