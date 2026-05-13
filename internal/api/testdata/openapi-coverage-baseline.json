@@ -1,6 +1,5 @@
 [
   "activatePlatform",
-  "addAlias",
   "applyViolationCandidate",
   "batchFetchFanart",
   "bulkDismissViolations",
