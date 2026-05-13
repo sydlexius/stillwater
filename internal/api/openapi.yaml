@@ -2992,14 +2992,12 @@ paths:
                 type: object
                 properties:
                   images:
-                    type: array
-                    nullable: true
+                    type: [array, "null"]
                     items:
                       type: object
                     description: List of available images from providers. May be null when no providers returned results.
                   errors:
-                    type: array
-                    nullable: true
+                    type: [array, "null"]
                     items:
                       type: string
                     description: Errors encountered during the image search. May be null when no errors occurred.
@@ -9876,8 +9874,7 @@ paths:
                 type: object
                 properties:
                   images:
-                    type: array
-                    nullable: true
+                    type: [array, "null"]
                     items:
                       type: object
                     description: Image results from web search providers. May be null when no providers returned results.
