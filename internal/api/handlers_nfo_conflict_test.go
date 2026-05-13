@@ -120,9 +120,8 @@ func TestHandleNFOConflictCheck_NoConflict(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleNFOConflictCheck(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleNFOConflictCheck), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -176,9 +175,8 @@ func TestHandleNFOConflictCheck_DetectedConflict(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleNFOConflictCheck(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleNFOConflictCheck), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -218,9 +216,8 @@ func TestHandleNFOConflictCheck_NoSnapshotFallback(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleNFOConflictCheck(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleNFOConflictCheck), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
@@ -242,6 +239,15 @@ func TestHandleNFOConflictCheck_NoSnapshotFallback(t *testing.T) {
 
 // TestHandleNFOConflictCheck_NotFound covers the early-return on
 // artistService.GetByID failure.
+//
+// Sentinel: this is the ONE test in the file that invokes
+// handleNFOConflictCheck directly rather than through serveValidated. The
+// operationId coverage walker at internal/api/operationid_coverage_test.go
+// scans CallExpr.Fun for handler-name selectors; wrapping with
+// http.HandlerFunc(r.handleNFOConflictCheck) demotes the handler to an
+// argument, making it invisible to the walker. Keeping one direct call
+// preserves the "covered" entry in testdata/openapi-coverage.json for the
+// checkNFOConflict operationId. Do NOT "fix" this by also wrapping it.
 func TestHandleNFOConflictCheck_NotFound(t *testing.T) {
 	t.Parallel()
 	r, _, _, _ := newNFOTestServer(t)
@@ -317,9 +323,8 @@ func TestHandleNFOConflictCheck_LidarrWriterFlagged(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleNFOConflictCheck(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleNFOConflictCheck), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -387,9 +392,8 @@ func TestHandleNFOConflictCheck_DisabledConnectionIgnored(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleNFOConflictCheck(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleNFOConflictCheck), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
