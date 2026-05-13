@@ -2933,12 +2933,32 @@ paths:
                   image_data:
                     type: string
                     description: Base64-encoded data URI of the fetched image. Present only when needs_crop is true, for use in a client-side crop tool.
+        "204":
+          description: Image fetched and saved (HTMX request); HX-Refresh response header tells the client to reload.
+        "400":
+          description: Invalid request (missing or unsupported URL, unsupported image type, malformed body, or non-public URL)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Write blocked by the conflict ledger
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConflictWriteBlock"
+        "502":
+          description: Upstream image fetch failed (network error, non-2xx response, or decode failure)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/images/search:
     get:
@@ -2973,19 +2993,27 @@ paths:
                 properties:
                   images:
                     type: array
+                    nullable: true
                     items:
                       type: object
-                    description: List of available images from providers.
+                    description: List of available images from providers. May be null when no providers returned results.
                   errors:
                     type: array
+                    nullable: true
                     items:
                       type: string
-                    description: Errors encountered during the image search.
+                    description: Errors encountered during the image search. May be null when no errors occurred.
             text/html:
               schema:
                 type: string
         "400":
           description: Invalid sort parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
           content:
             application/json:
               schema:
@@ -9849,14 +9877,21 @@ paths:
                 properties:
                   images:
                     type: array
+                    nullable: true
                     items:
                       type: object
-                    description: Image results from web search providers.
+                    description: Image results from web search providers. May be null when no providers returned results.
             text/html:
               schema:
                 type: string
         "400":
           description: Invalid sort parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
           content:
             application/json:
               schema:
@@ -9889,6 +9924,8 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+        "204":
+          description: Logo trimmed (HTMX request); HX-Refresh response header tells the client to reload.
         "404":
           description: Artist or logo not found
           content:
