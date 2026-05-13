@@ -79,6 +79,16 @@ func newBulkActionFuzzRouter(t testing.TB) *Router {
 // Action vocabulary is intentionally not in the seeds' enum value list so
 // the fuzzer can discover any input that bypasses validActions's switch.
 func FuzzHandleBulkAction(f *testing.F) {
+	// Build the router once per fuzz run rather than per iteration.
+	// Sharing is safe: the only iteration that successfully claims the
+	// singleton bulk-action slot drops it via releaseSlot() before
+	// returning (pipeline=nil here, so every claimed slot is released
+	// inside the 503 branch). Bodies that fail JSON / validActions /
+	// ID-regex validation never claim a slot, so no cross-iteration
+	// state leaks. Sharing avoids replaying migrations per input and
+	// lifts throughput substantially.
+	r := newBulkActionFuzzRouter(f)
+
 	// Happy-path: run_rules over two IDs.
 	f.Add([]byte(`{"action":"run_rules","ids":["a1","b2"]}`))
 	// Happy-path: re_identify (legacy alias).
@@ -165,7 +175,6 @@ func FuzzHandleBulkAction(f *testing.F) {
 	f.Add(bigBody)
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		r := newBulkActionFuzzRouter(t)
 		req := httptest.NewRequest(http.MethodPost,
 			"/api/v1/artists/bulk-actions", bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
