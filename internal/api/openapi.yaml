@@ -1820,9 +1820,11 @@ paths:
       summary: Create initial admin account
       description: |
         Creates the initial administrator account during first-time setup.
-        Supports three auth methods: "local" creates a username/password account,
-        "emby" or "jellyfin" authenticates against a media server and auto-creates
-        the first server connection.
+        Built-in auth methods: "local" creates a username/password account;
+        "emby" or "jellyfin" authenticates against a media server and
+        auto-creates the first server connection. Additional values registered
+        in the server's auth.Registry (e.g. "oidc") are also accepted and
+        resolved by their provider, bypassing media-server auth.
       security: []
       operationId: setup
       requestBody:
@@ -1852,6 +1854,14 @@ paths:
                   format: uri
                   description: Media server URL, required when auth_method is emby or jellyfin
               required: [username, password]
+              allOf:
+                - if:
+                    properties:
+                      auth_method:
+                        enum: [emby, jellyfin]
+                    required: [auth_method]
+                  then:
+                    required: [server_url]
       responses:
         "201":
           description: Admin account created (and auto-logged in for federated auth)
