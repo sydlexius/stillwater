@@ -389,214 +389,280 @@ func detectFormat(path string, data []byte) configFormat {
 	return formatYAML
 }
 
+// envBinding pairs an environment variable key with the function that applies
+// its value to the config. Apply is called only when the variable is non-empty
+// (Getenv semantics). Use lookupBinding for variables that need LookupEnv
+// semantics (i.e. react to an explicitly-empty value).
+type envBinding struct {
+	Key   string
+	Apply func(v string) error
+}
+
+// setString returns an Apply func that writes v into *dst.
+func setString(dst *string) func(string) error {
+	return func(v string) error {
+		*dst = v
+		return nil
+	}
+}
+
+// setInt returns an Apply func that parses v as a decimal integer and writes
+// the result into *dst. A parse failure is returned as a named error so the
+// caller can surface which variable was malformed.
+func setInt(key string, dst *int) func(string) error {
+	return func(v string) error {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid %s %q: %w", key, v, err)
+		}
+		*dst = n
+		return nil
+	}
+}
+
+// setIntPositive returns an Apply func that parses v as a decimal integer and
+// writes the result into *dst only when the parsed value is positive. Non-
+// positive and non-numeric values are silently ignored, matching the original
+// lenient behavior for retry/interval knobs.
+func setIntPositive(dst *int) func(string) error {
+	return func(v string) error {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			*dst = n
+		}
+		return nil
+	}
+}
+
+// setBool returns an Apply func that treats "true" or "1" as true and any
+// other non-empty value as false.
+func setBool(dst *bool) func(string) error {
+	return func(v string) error {
+		*dst = v == "true" || v == "1"
+		return nil
+	}
+}
+
+// setCSV returns an Apply func that splits v on commas, trims whitespace from
+// each token, and writes the resulting slice into *dst.
+func setCSV(dst *[]string) func(string) error {
+	return func(v string) error {
+		parts := strings.Split(v, ",")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		*dst = parts
+		return nil
+	}
+}
+
 // loadFromEnv overlays environment variables onto c. Env-var values take
 // precedence over any file-loaded values per the API-first contract: an
 // operator can override one knob via env without rewriting the whole file.
+//
+// SW_BASE_PATH also sets BasePathFromEnv so the Settings UI can mark the
+// field read-only when the operator has pinned it via the environment.
+//
+// SW_BACKUP_ENABLED uses LookupEnv semantics: a variable that is present but
+// empty does not change the setting, preserving the original behavior.
 func (c *Config) loadFromEnv() error {
-	if v := os.Getenv("SW_PORT"); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid SW_PORT %q: %w", v, err)
-		}
-		c.Server.Port = port
+	// Standard bindings: applied only when the variable is non-empty.
+	bindings := []envBinding{
+		// Server
+		{Key: "SW_PORT", Apply: setInt("SW_PORT", &c.Server.Port)},
+		{Key: "SW_DB_PATH", Apply: setString(&c.Database.Path)},
+		// Auth / encryption
+		{Key: "SW_SESSION_SECRET", Apply: setString(&c.Auth.SessionSecret)},
+		{Key: "SW_ENCRYPTION_KEY", Apply: setString(&c.Encryption.Key)},
+		// Music
+		{Key: "SW_MUSIC_PATH", Apply: setString(&c.Music.LibraryPath)},
+		{Key: "SW_SCANNER_EXCLUSIONS", Apply: setCSV(&c.Scanner.Exclusions)},
+		// Backup (lenient int; non-positive values are silently ignored)
+		{Key: "SW_BACKUP_PATH", Apply: setString(&c.Backup.Path)},
+		{Key: "SW_BACKUP_RETENTION", Apply: setIntPositive(&c.Backup.RetentionCount)},
+		{Key: "SW_BACKUP_INTERVAL", Apply: setIntPositive(&c.Backup.IntervalHours)},
+		// Logging
+		{Key: "SW_LOG_LEVEL", Apply: setString(&c.Logging.Level)},
+		{Key: "SW_LOG_FORMAT", Apply: setString(&c.Logging.Format)},
+		// TLS -- SW_TLS_CERT_FILE/KEY_FILE/PORT have behavior today; the
+		// remaining entries keep the env-var surface stable so future
+		// milestones only add behavior, not new env knobs.
+		{Key: "SW_TLS_CERT_FILE", Apply: setString(&c.Server.TLS.CertFile)},
+		{Key: "SW_TLS_KEY_FILE", Apply: setString(&c.Server.TLS.KeyFile)},
+		{Key: "SW_TLS_PORT", Apply: setInt("SW_TLS_PORT", &c.Server.TLS.Port)},
+		{Key: "SW_HTTP_REDIRECT_PORT", Apply: setInt("SW_HTTP_REDIRECT_PORT", &c.Server.HTTPRedirect.Port)},
+		// HTTP/3: empty value means "do not override" (same convention as the
+		// rest of the loader; a deliberately-blanked deploy var must not turn
+		// the feature off).
+		{Key: "SW_HTTP3_ENABLED", Apply: setBool(&c.Server.HTTP3.Enabled)},
+		{Key: "SW_HTTP3_PORT", Apply: setInt("SW_HTTP3_PORT", &c.Server.HTTP3.Port)},
+		// ACME stubs: populated for completeness so env-reference codegen
+		// emits stable rows, but no consumer reads them yet.
+		{Key: "SW_ACME_DOMAIN", Apply: setString(&c.ACME.Domain)},
+		{Key: "SW_ACME_EMAIL", Apply: setString(&c.ACME.Email)},
+		{Key: "SW_ACME_CA", Apply: setString(&c.ACME.CA)},
+		{Key: "SW_ACME_EAB_KEY_ID", Apply: setString(&c.ACME.EabKeyID)},
+		{Key: "SW_ACME_EAB_MAC_KEY", Apply: setString(&c.ACME.EabMacKey)},
+		{Key: "SW_ACME_IP", Apply: setString(&c.ACME.IP)},
+		{Key: "SW_ACME_CACHE_DIR", Apply: setString(&c.ACME.CacheDir)},
 	}
+	for _, b := range bindings {
+		if v := os.Getenv(b.Key); v != "" {
+			if err := b.Apply(v); err != nil {
+				return err
+			}
+		}
+	}
+
+	// SW_BASE_PATH: non-empty value also marks the field as env-pinned.
 	if v := os.Getenv("SW_BASE_PATH"); v != "" {
 		c.Server.BasePath = v
 		c.Server.BasePathFromEnv = true
 	}
-	if v := os.Getenv("SW_DB_PATH"); v != "" {
-		c.Database.Path = v
-	}
-	if v := os.Getenv("SW_SESSION_SECRET"); v != "" {
-		c.Auth.SessionSecret = v
-	}
-	if v := os.Getenv("SW_ENCRYPTION_KEY"); v != "" {
-		c.Encryption.Key = v
-	}
-	if v := os.Getenv("SW_MUSIC_PATH"); v != "" {
-		c.Music.LibraryPath = v
-	}
-	if v := os.Getenv("SW_SCANNER_EXCLUSIONS"); v != "" {
-		c.Scanner.Exclusions = strings.Split(v, ",")
-		for i := range c.Scanner.Exclusions {
-			c.Scanner.Exclusions[i] = strings.TrimSpace(c.Scanner.Exclusions[i])
-		}
-	}
-	if v := os.Getenv("SW_BACKUP_PATH"); v != "" {
-		c.Backup.Path = v
-	}
-	if v := os.Getenv("SW_BACKUP_RETENTION"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			c.Backup.RetentionCount = n
-		}
-	}
-	if v := os.Getenv("SW_BACKUP_INTERVAL"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			c.Backup.IntervalHours = n
-		}
-	}
-	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok {
+
+	// SW_BACKUP_ENABLED: uses LookupEnv so an explicit empty value does not
+	// change the setting (present-but-empty is treated as absent).
+	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok && v != "" {
 		c.Backup.Enabled = v == "true" || v == "1"
 	}
-	if v := os.Getenv("SW_LOG_LEVEL"); v != "" {
-		c.Logging.Level = v
-	}
-	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
-		c.Logging.Format = v
-	}
-	// TLS, HTTP redirect, and HTTP/3 settings. Only SW_TLS_CERT_FILE/KEY_FILE/
-	// PORT have behavior today; the remaining branches keep the env-var
-	// surface stable so the rest of the milestone only adds behavior, not new
-	// env knobs.
-	if v := os.Getenv("SW_TLS_CERT_FILE"); v != "" {
-		c.Server.TLS.CertFile = v
-	}
-	if v := os.Getenv("SW_TLS_KEY_FILE"); v != "" {
-		c.Server.TLS.KeyFile = v
-	}
-	if v := os.Getenv("SW_TLS_PORT"); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid SW_TLS_PORT %q: %w", v, err)
-		}
-		c.Server.TLS.Port = port
-	}
-	if v := os.Getenv("SW_HTTP_REDIRECT_PORT"); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid SW_HTTP_REDIRECT_PORT %q: %w", v, err)
-		}
-		c.Server.HTTPRedirect.Port = port
-	}
-	// Treat empty SW_HTTP3_ENABLED as "do not override"; the rest of the
-	// loader follows that convention so a `t.Setenv(key, "")` test helper
-	// (or a deliberately-blanked deploy var) does not silently turn the
-	// feature off.
-	if v := os.Getenv("SW_HTTP3_ENABLED"); v != "" {
-		c.Server.HTTP3.Enabled = v == "true" || v == "1"
-	}
-	if v := os.Getenv("SW_HTTP3_PORT"); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("invalid SW_HTTP3_PORT %q: %w", v, err)
-		}
-		c.Server.HTTP3.Port = port
-	}
-	// ACME stubs: populated for completeness (and so the env-reference codegen
-	// emits stable rows), but no consumer reads them yet.
-	if v := os.Getenv("SW_ACME_DOMAIN"); v != "" {
-		c.ACME.Domain = v
-	}
-	if v := os.Getenv("SW_ACME_EMAIL"); v != "" {
-		c.ACME.Email = v
-	}
-	if v := os.Getenv("SW_ACME_CA"); v != "" {
-		c.ACME.CA = v
-	}
-	if v := os.Getenv("SW_ACME_EAB_KEY_ID"); v != "" {
-		c.ACME.EabKeyID = v
-	}
-	if v := os.Getenv("SW_ACME_EAB_MAC_KEY"); v != "" {
-		c.ACME.EabMacKey = v
-	}
-	if v := os.Getenv("SW_ACME_IP"); v != "" {
-		c.ACME.IP = v
-	}
-	if v := os.Getenv("SW_ACME_CACHE_DIR"); v != "" {
-		c.ACME.CacheDir = v
+
+	return nil
+}
+
+// validatePort returns an error when p is outside the valid TCP port range.
+func validatePort(label string, p int) error {
+	if p < 1 || p > 65535 {
+		return fmt.Errorf("invalid %s: %d", label, p)
 	}
 	return nil
 }
 
-// validate enforces required fields and normalizes a few values that the
-// rest of the codebase assumes are well-formed (e.g. trimming a trailing
-// slash from BasePath so route registration is unambiguous).
+// validateOptionalPort returns an error when p is non-zero and outside the
+// valid TCP port range. 0 is the "unset" sentinel and is always accepted.
+func validateOptionalPort(label string, p int) error {
+	if p != 0 && (p < 1 || p > 65535) {
+		return fmt.Errorf("invalid %s: %d", label, p)
+	}
+	return nil
+}
+
+// crossFieldRules contains the ordered set of cross-field validation
+// functions. Each rule is independently testable. Rules run after per-field
+// validators and after BasePath normalization.
+//
+// Rule ordering matters for the error messages: more specific rules (cert/key
+// pairing) run before derived rules (ACME exclusivity) so the first error
+// reported is the most actionable.
+var crossFieldRules = []func(*Config) error{
+	// TLS cert/key must be configured as a pair. A half-configured pair would
+	// let the binary boot with surprising semantics (cert path ignored because
+	// key is missing); reject loudly instead. Filesystem checks on the paths
+	// happen at listener-startup time so config loading stays pure.
+	func(c *Config) error {
+		certSet := c.Server.TLS.CertFile != ""
+		keySet := c.Server.TLS.KeyFile != ""
+		if certSet != keySet {
+			return fmt.Errorf("TLS cert and key must both be set or both be empty (cert=%q, key=%q)",
+				c.Server.TLS.CertFile, c.Server.TLS.KeyFile)
+		}
+		return nil
+	},
+
+	// ACME (autocert) is mutually exclusive with BYO TLS cert/key. The
+	// listener layer would have to pick one source and silently ignore the
+	// other; rejecting the combination at config time surfaces the ambiguity
+	// loudly. Operators who want to migrate from BYO to ACME (or vice versa)
+	// flip one set of variables, not both.
+	func(c *Config) error {
+		if c.ACME.Domain != "" && (c.Server.TLS.CertFile != "" || c.Server.TLS.KeyFile != "") {
+			return fmt.Errorf("SW_ACME_DOMAIN is mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE; pick one TLS source")
+		}
+		return nil
+	},
+
+	// Port collision: the HTTPS listener and the HTTP redirect / ACME
+	// challenge listener cannot share a port.
+	//
+	// effectiveTLSPort collapses to Server.Port when TLS.Port is unset. This
+	// applies to both BYO TLS (cert+key) and ACME -- both modes support
+	// collapse mode. Without this, an ACME deploy with SW_PORT=80 (or a
+	// matching SW_HTTP_REDIRECT_PORT) would pass validation and then the
+	// https-acme and acme-challenge listeners would race for the socket.
+	//
+	// When ACME is on, the challenge listener defaults to port 80 if
+	// HTTPRedirect.Port is unset, so we surface that default for the
+	// collision check too.
+	func(c *Config) error {
+		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Domain != ""
+		effectiveTLSPort := c.Server.TLS.Port
+		if tlsConfigured && effectiveTLSPort == 0 {
+			effectiveTLSPort = c.Server.Port
+		}
+		redirectPort := c.Server.HTTPRedirect.Port
+		if c.ACME.Domain != "" && redirectPort == 0 {
+			redirectPort = 80
+		}
+		if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
+			return fmt.Errorf("TLS port and HTTP redirect / ACME challenge port must differ (both=%d)", effectiveTLSPort)
+		}
+		return nil
+	},
+
+	// The redirect listener only makes sense when there is an HTTPS listener
+	// to redirect to. Refuse to start with the misconfiguration rather than
+	// quietly skipping the redirect (which would silently leave the deploy on
+	// plain HTTP). Either BYO cert or ACME counts as "TLS configured".
+	func(c *Config) error {
+		redirectPort := c.Server.HTTPRedirect.Port
+		if c.ACME.Domain != "" && redirectPort == 0 {
+			redirectPort = 80
+		}
+		tlsConfigured := c.Server.TLS.CertFile != "" || c.ACME.Domain != ""
+		if redirectPort != 0 && !tlsConfigured {
+			return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE, or SW_ACME_DOMAIN)")
+		}
+		return nil
+	},
+
+	// HTTP/3 requires TLS (HTTP/3 mandates TLS 1.3). BYO cert must be
+	// configured; ACME is not yet wired to the HTTP/3 listener.
+	func(c *Config) error {
+		if c.Server.HTTP3.Enabled && c.Server.TLS.CertFile == "" {
+			return fmt.Errorf("HTTP/3 requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
+		}
+		return nil
+	},
+}
+
+// validate enforces required fields, normalizes values that the rest of the
+// codebase assumes are well-formed (e.g. trimming a trailing slash from
+// BasePath), and runs a set of cross-field rules.
 func (c *Config) validate() error {
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("invalid port: %d", c.Server.Port)
+	// Per-field validators.
+	if err := validatePort("port", c.Server.Port); err != nil {
+		return err
 	}
 	if c.Database.Path == "" {
 		return fmt.Errorf("database path is required")
 	}
+	if err := validateOptionalPort("TLS port", c.Server.TLS.Port); err != nil {
+		return err
+	}
+	if err := validateOptionalPort("HTTP redirect port", c.Server.HTTPRedirect.Port); err != nil {
+		return err
+	}
+	if err := validateOptionalPort("HTTP/3 port", c.Server.HTTP3.Port); err != nil {
+		return err
+	}
+
+	// Normalize BasePath: strip trailing slash so route registration is
+	// unambiguous (e.g. /app/ becomes /app).
 	c.Server.BasePath = strings.TrimRight(c.Server.BasePath, "/")
 
-	// TLS cert/key must be set as a pair. A half-configured pair would let
-	// the binary boot with surprising semantics (e.g. cert path ignored
-	// because key is missing); reject loudly instead. Filesystem checks on
-	// the paths happen at listener-startup time so config loading stays
-	// pure -- a missing or malformed cert surfaces as a startup error
-	// when the listener actually tries to bind.
-	tlsCertSet := c.Server.TLS.CertFile != ""
-	tlsKeySet := c.Server.TLS.KeyFile != ""
-	if tlsCertSet != tlsKeySet {
-		return fmt.Errorf("TLS cert and key must both be set or both be empty (cert=%q, key=%q)",
-			c.Server.TLS.CertFile, c.Server.TLS.KeyFile)
+	// Cross-field rules.
+	for _, rule := range crossFieldRules {
+		if err := rule(c); err != nil {
+			return err
+		}
 	}
-
-	// 0 is the "unset" sentinel for optional ports; any non-zero value must
-	// be a valid TCP port. Reject invalid values rather than silently
-	// clamping.
-	if c.Server.TLS.Port != 0 && (c.Server.TLS.Port < 1 || c.Server.TLS.Port > 65535) {
-		return fmt.Errorf("invalid TLS port: %d", c.Server.TLS.Port)
-	}
-	if c.Server.HTTPRedirect.Port != 0 && (c.Server.HTTPRedirect.Port < 1 || c.Server.HTTPRedirect.Port > 65535) {
-		return fmt.Errorf("invalid HTTP redirect port: %d", c.Server.HTTPRedirect.Port)
-	}
-
-	// Resolve the effective TLS port for collision checks: when TLS is
-	// configured but TLS.Port is unset, HTTPS reuses Server.Port (the
-	// "collapse" mode documented in the M47 plan).
-	// effectiveTLSPort collapses to Server.Port when TLS.Port is unset.
-	// This applies to both BYO TLS (cert+key) and ACME -- both modes can
-	// run in collapse mode. Without this, an ACME deploy with SW_PORT=80
-	// (or matching SW_HTTP_REDIRECT_PORT) would pass validation and then
-	// the https-acme + acme-challenge listeners would race for the socket.
-	effectiveTLSPort := c.Server.TLS.Port
-	if (tlsCertSet || c.ACME.Domain != "") && effectiveTLSPort == 0 {
-		effectiveTLSPort = c.Server.Port
-	}
-
-	// Cross-port collision: the HTTPS listener and the HTTP redirect /
-	// ACME challenge listener cannot share a port. The plain Server.Port
-	// collision is implicit -- when TLS.Port is unset, the TLS listener
-	// replaces (does not coexist with) the plain HTTP server on
-	// Server.Port. When ACME is on, the challenge listener defaults to
-	// port 80 if HTTPRedirect.Port is unset, so we surface that default
-	// for the collision check too.
-	redirectPort := c.Server.HTTPRedirect.Port
-	if c.ACME.Domain != "" && redirectPort == 0 {
-		redirectPort = 80
-	}
-	if effectiveTLSPort != 0 && redirectPort != 0 && effectiveTLSPort == redirectPort {
-		return fmt.Errorf("TLS port and HTTP redirect / ACME challenge port must differ (both=%d)", effectiveTLSPort)
-	}
-
-	// ACME (autocert) is mutually exclusive with BYO TLS cert/key. The
-	// listener layer would have to pick one source and silently ignore
-	// the other; rejecting the combination at config time surfaces the
-	// ambiguity loudly. Operators who want to migrate from BYO to ACME
-	// (or vice versa) flip one set of variables, not both.
-	if c.ACME.Domain != "" && (tlsCertSet || tlsKeySet) {
-		return fmt.Errorf("SW_ACME_DOMAIN is mutually exclusive with SW_TLS_CERT_FILE/SW_TLS_KEY_FILE; pick one TLS source")
-	}
-
-	// The redirect listener only makes sense when there is an HTTPS listener
-	// to redirect to. Refuse to start with the misconfiguration rather than
-	// quietly skipping the redirect (which would let a deploy that thought
-	// it was redirecting silently keep serving plain HTTP only on
-	// Server.Port). Either BYO cert OR ACME counts as "TLS configured".
-	if redirectPort != 0 && !tlsCertSet && c.ACME.Domain == "" {
-		return fmt.Errorf("HTTP redirect port requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE, or SW_ACME_DOMAIN)")
-	}
-
-	// HTTP/3 prerequisites: requires TLS (HTTP/3 mandates TLS 1.3) and a
-	// valid optional port.
-	if c.Server.HTTP3.Enabled && !tlsCertSet {
-		return fmt.Errorf("HTTP/3 requires TLS to be configured (set SW_TLS_CERT_FILE and SW_TLS_KEY_FILE)")
-	}
-	if c.Server.HTTP3.Port != 0 && (c.Server.HTTP3.Port < 1 || c.Server.HTTP3.Port > 65535) {
-		return fmt.Errorf("invalid HTTP/3 port: %d", c.Server.HTTP3.Port)
-	}
-
 	return nil
 }
