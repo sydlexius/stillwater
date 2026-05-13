@@ -77,6 +77,12 @@ jobs:
             fuzz_func: FuzzPerceptualHash
           - package: internal/image
             fuzz_func: FuzzPerceptualHashDeterminism
+          - package: internal/api
+            fuzz_func: FuzzHandleAddAlias
+          - package: internal/api
+            fuzz_func: FuzzHandleFieldUpdate
+          - package: internal/api
+            fuzz_func: FuzzHandleBulkAction
 
     steps:
       - name: Checkout
