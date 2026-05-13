@@ -168,8 +168,15 @@ func TestBuildWhereClause_MultiFilter_MissingImages(t *testing.T) {
 				t.Errorf("exclude: expected image_type = '%s' in clause %q", imgType, clause)
 			}
 		}
-		if !strings.Contains(clause, " AND ") {
-			t.Errorf("exclude: expected AND logic, got %q", clause)
+		// Each image type produces an EXISTS(...) fragment joined with AND.
+		// Counting "EXISTS (" proves the top-level join is AND, not OR -- a bare
+		// " AND " check is satisfied by ANDs inside each subquery.
+		existsCount := strings.Count(clause, "EXISTS (")
+		if existsCount < 2 {
+			t.Errorf("exclude: expected at least 2 EXISTS ( fragments, got %d in %q", existsCount, clause)
+		}
+		if strings.Contains(clause, " OR ") {
+			t.Errorf("exclude: expected no OR logic (top-level join must be AND), got %q", clause)
 		}
 		if len(args) != 0 {
 			t.Errorf("exclude: expected no args, got %v", args)
@@ -186,6 +193,11 @@ func TestBuildWhereClause_MultiFilter_MissingMBID(t *testing.T) {
 		if !strings.Contains(clause, "NOT EXISTS") || !strings.Contains(clause, "provider = 'musicbrainz'") {
 			t.Errorf("include: expected NOT EXISTS musicbrainz, got %q", clause)
 		}
+		// Must gate on non-empty provider_id; a bare row-existence check
+		// misclassifies artists where UpsertAll stored an empty MBID.
+		if !strings.Contains(clause, "provider_id IS NOT NULL") || !strings.Contains(clause, "provider_id <> ''") {
+			t.Errorf("include: expected non-empty provider_id guard, got %q", clause)
+		}
 	})
 	t.Run("exclude", func(t *testing.T) {
 		t.Parallel()
@@ -195,6 +207,9 @@ func TestBuildWhereClause_MultiFilter_MissingMBID(t *testing.T) {
 		}
 		if !strings.Contains(clause, "provider = 'musicbrainz'") {
 			t.Errorf("exclude: expected provider = 'musicbrainz', got %q", clause)
+		}
+		if !strings.Contains(clause, "provider_id IS NOT NULL") || !strings.Contains(clause, "provider_id <> ''") {
+			t.Errorf("exclude: expected non-empty provider_id guard, got %q", clause)
 		}
 	})
 }

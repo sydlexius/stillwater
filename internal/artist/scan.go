@@ -252,11 +252,14 @@ var artistFilterPredicates = map[string]filterPredicate{
 	},
 	"missing_images": missingImagesPredicate,
 	"missing_mbid": func(state string) (string, []any) {
+		// Check for a non-empty provider_id, not just row existence.
+		// UpsertAll inserts a musicbrainz row even when no MBID was found
+		// (provider_id == ""), so a bare EXISTS would misclassify those artists.
 		switch state {
 		case "include":
-			return "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')", nil
+			return "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')", nil
 		case "exclude":
-			return "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')", nil
+			return "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')", nil
 		}
 		return "", nil
 	},
@@ -303,7 +306,7 @@ var legacyFilterSQL = map[string]string{
 	"missing_fanart": imageExistsClause("fanart", false),
 	"missing_logo":   imageExistsClause("logo", false),
 	"missing_banner": imageExistsClause("banner", false),
-	"missing_mbid":   "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')",
+	"missing_mbid":   "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')",
 	"excluded":       "is_excluded = 1",
 	"not_excluded":   "is_excluded = 0",
 	"locked":         "locked = 1",
