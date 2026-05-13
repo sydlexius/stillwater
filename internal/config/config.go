@@ -462,8 +462,8 @@ func setCSV(dst *[]string) func(string) error {
 // SW_BASE_PATH also sets BasePathFromEnv so the Settings UI can mark the
 // field read-only when the operator has pinned it via the environment.
 //
-// SW_BACKUP_ENABLED uses LookupEnv semantics: a variable that is present but
-// empty does not change the setting, preserving the original behavior.
+// SW_BACKUP_ENABLED uses LookupEnv semantics: a variable that is absent leaves
+// the YAML default intact; present-but-empty sets Enabled = false.
 func (c *Config) loadFromEnv() error {
 	// Standard bindings: applied only when the variable is non-empty.
 	bindings := []envBinding{
@@ -519,9 +519,9 @@ func (c *Config) loadFromEnv() error {
 		c.Server.BasePathFromEnv = true
 	}
 
-	// SW_BACKUP_ENABLED: uses LookupEnv so an explicit empty value does not
-	// change the setting (present-but-empty is treated as absent).
-	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok && v != "" {
+	// SW_BACKUP_ENABLED: LookupEnv so an unset variable leaves the YAML default
+	// intact; a present-but-empty value sets Enabled = false (original behavior).
+	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok {
 		c.Backup.Enabled = v == "true" || v == "1"
 	}
 
