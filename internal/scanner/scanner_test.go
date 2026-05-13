@@ -1446,9 +1446,15 @@ func TestPreserveDimensions(t *testing.T) {
 		BannerHeight: 185,
 	}
 
-	t.Run("fills zero dimensions from existing", func(t *testing.T) {
+	t.Run("fills zero dimensions from existing when file exists and probe failed", func(t *testing.T) {
 		t.Parallel()
-		d := detectedFiles{} // all widths/heights zero
+		// All *Exists flags true (file present), all dims 0 (probe failed).
+		d := detectedFiles{
+			ThumbExists:  true,
+			FanartExists: true,
+			LogoExists:   true,
+			BannerExists: true,
+		}
 		preserveDimensions(existing, &d)
 
 		if d.ThumbWidth != 500 || d.ThumbHeight != 500 {
@@ -1468,6 +1474,7 @@ func TestPreserveDimensions(t *testing.T) {
 	t.Run("does not overwrite a successful probe result", func(t *testing.T) {
 		t.Parallel()
 		d := detectedFiles{
+			ThumbExists: true,
 			ThumbWidth:  600,
 			ThumbHeight: 400,
 		}
@@ -1481,11 +1488,36 @@ func TestPreserveDimensions(t *testing.T) {
 	t.Run("does not fill when existing dims are zero", func(t *testing.T) {
 		t.Parallel()
 		zeroed := &artist.Artist{} // all dims zero
-		d := detectedFiles{}
+		d := detectedFiles{ThumbExists: true}
 		preserveDimensions(zeroed, &d)
 
 		if d.ThumbWidth != 0 || d.ThumbHeight != 0 {
 			t.Errorf("thumb dims = %dx%d, want 0x0 (no fallback when existing is also zero)", d.ThumbWidth, d.ThumbHeight)
+		}
+	})
+
+	t.Run("does not fill when file is absent", func(t *testing.T) {
+		t.Parallel()
+		// *Exists false means the file was deleted -- stale dims must not be copied.
+		d := detectedFiles{
+			ThumbExists:  false,
+			FanartExists: false,
+			LogoExists:   false,
+			BannerExists: false,
+		}
+		preserveDimensions(existing, &d)
+
+		if d.ThumbWidth != 0 || d.ThumbHeight != 0 {
+			t.Errorf("thumb dims = %dx%d, want 0x0 when file is absent", d.ThumbWidth, d.ThumbHeight)
+		}
+		if d.FanartWidth != 0 || d.FanartHeight != 0 {
+			t.Errorf("fanart dims = %dx%d, want 0x0 when file is absent", d.FanartWidth, d.FanartHeight)
+		}
+		if d.LogoWidth != 0 || d.LogoHeight != 0 {
+			t.Errorf("logo dims = %dx%d, want 0x0 when file is absent", d.LogoWidth, d.LogoHeight)
+		}
+		if d.BannerWidth != 0 || d.BannerHeight != 0 {
+			t.Errorf("banner dims = %dx%d, want 0x0 when file is absent", d.BannerWidth, d.BannerHeight)
 		}
 	})
 }

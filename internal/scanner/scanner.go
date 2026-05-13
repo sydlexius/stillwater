@@ -475,19 +475,19 @@ func preservePlaceholders(existing *artist.Artist, detected *detectedFiles) {
 // any image slot where the probe returned 0,0. A zero result signals a decode
 // failure, not a truly zero-dimension image.
 func preserveDimensions(existing *artist.Artist, detected *detectedFiles) {
-	if detected.ThumbWidth == 0 && existing.ThumbWidth > 0 {
+	if detected.ThumbExists && detected.ThumbWidth == 0 && detected.ThumbHeight == 0 && existing.ThumbWidth > 0 && existing.ThumbHeight > 0 {
 		detected.ThumbWidth = existing.ThumbWidth
 		detected.ThumbHeight = existing.ThumbHeight
 	}
-	if detected.FanartWidth == 0 && existing.FanartWidth > 0 {
+	if detected.FanartExists && detected.FanartWidth == 0 && detected.FanartHeight == 0 && existing.FanartWidth > 0 && existing.FanartHeight > 0 {
 		detected.FanartWidth = existing.FanartWidth
 		detected.FanartHeight = existing.FanartHeight
 	}
-	if detected.LogoWidth == 0 && existing.LogoWidth > 0 {
+	if detected.LogoExists && detected.LogoWidth == 0 && detected.LogoHeight == 0 && existing.LogoWidth > 0 && existing.LogoHeight > 0 {
 		detected.LogoWidth = existing.LogoWidth
 		detected.LogoHeight = existing.LogoHeight
 	}
-	if detected.BannerWidth == 0 && existing.BannerWidth > 0 {
+	if detected.BannerExists && detected.BannerWidth == 0 && detected.BannerHeight == 0 && existing.BannerWidth > 0 && existing.BannerHeight > 0 {
 		detected.BannerWidth = existing.BannerWidth
 		detected.BannerHeight = existing.BannerHeight
 	}
