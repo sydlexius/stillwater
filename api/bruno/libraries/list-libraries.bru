@@ -1,7 +1,7 @@
 meta {
   name: List Libraries
   type: http
-  seq: 1
+  seq: 2
 }
 
 get {
@@ -14,13 +14,17 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
-script:post-response {
-  // Stash the first library's id (the bootstrap-seeded Default) so
-  // get-library (seq 2) has a real target. create-library (seq 3) will
-  // override libraryId with the new transient library it provisions.
-  if (Array.isArray(res.body) && res.body.length > 0 && res.body[0].id) {
-    bru.setVar('libraryId', res.body[0].id);
-  }
+docs {
+  Runs after create-library (seq 1) so the response is guaranteed to
+  contain at least one row regardless of whether the ephemeral DB has
+  an auto-seeded Default library. The macOS dev environment auto-seeds
+  Default (because /music exists via firmlink); ubuntu-latest CI does
+  not, so this test cannot assume bootstrap state.
+
+  Note: when the DB has no libraries, list-libraries currently returns
+  the JSON literal `null` (Go marshals a nil slice that way) rather
+  than `[]`. Worth a small follow-up to normalise the empty-list shape
+  to `[]` for API-consumer ergonomics.
 }
 
 tests {
