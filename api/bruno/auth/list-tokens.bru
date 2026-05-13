@@ -18,4 +18,14 @@ tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
   });
+
+  test("response body is an array", function() {
+    expect(res.body).to.be.an("array");
+  });
+
+  test("array contains the token created earlier in the run", function() {
+    var items = Array.isArray(res.body) ? res.body : [];
+    var names = items.map(function(t) { return t.name; });
+    expect(names).to.include("bruno-ci-token");
+  });
 }

@@ -15,7 +15,7 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
+  test("dismiss is idempotent and returns 200 even for unknown ids", function() {
     expect(res.status).to.equal(200);
   });
 }

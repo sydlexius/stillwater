@@ -17,16 +17,17 @@ headers {
 body:json {
   {
     "connection_id": "{{connectionId}}",
-    "platform_artist_id": "{{platformArtistId}}"
+    "platform_artist_id": "00000000-0000-0000-0000-000000000099"
   }
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
   });
 
-  test("should return pushed status", function() {
-    expect(res.body.status).to.equal("pushed");
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
   });
 }

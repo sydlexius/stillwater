@@ -18,4 +18,9 @@ tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
   });
+
+  test("response carries the revoked status sentinel", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.status).to.equal("revoked");
+  });
 }

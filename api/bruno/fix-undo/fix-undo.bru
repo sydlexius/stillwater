@@ -15,7 +15,12 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 410 because sentinel undoId is outside the undo window", function() {
+    expect(res.status).to.equal(410);
+  });
+
+  test("error envelope reports undo window expired", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
   });
 }

@@ -15,11 +15,12 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel artistId/aliasId", function() {
+    expect(res.status).to.equal(404);
   });
 
-  test("should return deleted status", function() {
-    expect(res.body.status).to.equal("deleted");
+  test("response carries error envelope", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
   });
 }

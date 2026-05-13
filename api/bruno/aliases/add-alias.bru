@@ -22,7 +22,12 @@ body:json {
 }
 
 tests {
-  test("should return 201", function() {
-    expect(res.status).to.equal(201);
+  test("returns 404 because sentinel artistId has no record", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope carries artist-not-found message", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
   });
 }

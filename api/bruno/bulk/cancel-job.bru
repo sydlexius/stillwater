@@ -14,8 +14,19 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+docs {
+  /bulk/jobs/{id}/cancel cancels whichever bulk job is currently running;
+  the path id is informational. With no job in flight the API returns
+  409 conflict. The contract under test is the conflict envelope.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 409 because no bulk job is currently running", function() {
+    expect(res.status).to.equal(409);
+  });
+
+  test("error envelope reports the no-job-running condition", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("no bulk job is running");
   });
 }

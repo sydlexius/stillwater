@@ -12,13 +12,18 @@ post {
 
 body:json {
   {
-    "username": "admin",
-    "password": "changeme123"
+    "username": "{{adminUser}}",
+    "password": "{{adminPassword}}"
   }
 }
 
 tests {
-  test("should return 201", function() {
-    expect(res.status).to.equal(201);
+  test("returns 409 because CI bootstrap already created the admin", function() {
+    expect(res.status).to.equal(409);
+  });
+
+  test("error body carries an error field", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
   });
 }

@@ -21,8 +21,21 @@ body:json {
   }
 }
 
+docs {
+  refresh/search runs a provider-side disambiguation search and only
+  uses the path artistId opportunistically (for local-album comparison
+  when the artist exists). With a sentinel artistId the search still
+  succeeds; local-album enrichment is skipped. The contract under test
+  is the JSON envelope shape returned by the search.
+}
+
 tests {
-  test("should return 200", function() {
+  test("should return 200 even for a sentinel artistId", function() {
     expect(res.status).to.equal(200);
+  });
+
+  test("response surfaces a results array", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.results).to.be.an("array");
   });
 }

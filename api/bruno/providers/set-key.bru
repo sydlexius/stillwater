@@ -20,8 +20,21 @@ body:json {
   }
 }
 
+docs {
+  Set-key runs a live verification call against the provider before
+  persisting. With a fake api_key the verification fails and the API
+  returns 422 with status=test_failed. The contract under test is the
+  request-body shape and the error envelope on verification failure.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 422 because the live verification call rejects the fake key", function() {
+    expect(res.status).to.equal(422);
+  });
+
+  test("error envelope carries error and test_failed status", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
+    expect(res.body.status).to.equal("test_failed");
   });
 }

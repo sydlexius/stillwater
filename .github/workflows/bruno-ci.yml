@@ -226,13 +226,12 @@ jobs:
 
       - name: Run Bruno collection
         id: bruno
-        # The Bruno collection currently has stale `expect` assertions in many
-        # .bru files (tracked in #1435). Until they're
-        # aligned with the current API, this step's exit code is allowed to
-        # be non-zero -- the gate that follows checks transport health
-        # (server reachable, no mass connection failures) which is the
-        # actual M49 charter signal until assertions are fixed.
-        continue-on-error: true
+        # Bruno's exit code IS the gate: a non-zero exit means at least one
+        # in-script `expect` assertion failed, which is what M49's charter
+        # asked CI to surface (oneOf/discriminator drift, request-body
+        # shape regressions). Per-test green is the contract; transport
+        # health below is now belt-and-braces against a server crash that
+        # silently produces 0 tests.
         env:
           PORT: ${{ steps.port.outputs.port }}
           SESSION_TOKEN: ${{ steps.session.outputs.session }}
@@ -265,11 +264,12 @@ jobs:
       - name: Gate on transport health
         env:
           BRUNO_LOG: ${{ runner.temp }}/bruno.log
-          # Minimum percent of HTTP requests that must reach the server and
-          # get a response (any status code, including 4xx). Below this we
-          # assume the server is down or seriously broken and fail the job.
-          # Tune up to 100 once #1435 lands.
-          MIN_TRANSPORT_PCT: 90
+          # Belt-and-braces against the (rare) case where every request hits
+          # a connection failure but Bruno still exits 0 -- e.g. all .bru
+          # files were excluded by a filter. With the assertion gate active
+          # the only realistic path to zero-transport-and-zero-failures is a
+          # misscoped run, so this stays at 100%.
+          MIN_TRANSPORT_PCT: 100
         run: |
           set -euo pipefail
           # Bruno emits "Requests:    N passed, M failed, T total" per run; the

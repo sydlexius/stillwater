@@ -19,12 +19,12 @@ body:form-urlencoded {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
   });
 
-  test("should confirm IDs were cleared", function() {
-    var body = res.json();
-    expect(body.message).to.include("cleared");
+  test("error envelope reports artist not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
   });
 }

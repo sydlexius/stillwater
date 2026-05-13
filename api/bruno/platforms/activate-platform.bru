@@ -15,11 +15,12 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
+  test("should return 200 for the built-in 'custom' platform", function() {
     expect(res.status).to.equal(200);
   });
 
-  test("should return active status", function() {
+  test("response surfaces the active sentinel", function() {
+    expect(res.body).to.be.an("object");
     expect(res.body.status).to.equal("active");
   });
 }

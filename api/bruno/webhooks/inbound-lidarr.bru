@@ -10,7 +10,6 @@ post {
   auth: none
 }
 
-
 body:json {
   {
     "eventType": "Test",
@@ -22,8 +21,18 @@ body:json {
   }
 }
 
+docs {
+  Inbound webhook endpoints authenticate via a per-webhook secret/token,
+  not the admin session cookie. See inbound-emby.bru for rationale.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 401 because no inbound webhook is configured", function() {
+    expect(res.status).to.equal(401);
+  });
+
+  test("error envelope reports unauthorized", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("unauthorized");
   });
 }

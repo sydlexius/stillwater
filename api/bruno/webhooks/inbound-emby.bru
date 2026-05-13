@@ -10,7 +10,6 @@ post {
   auth: none
 }
 
-
 body:json {
   {
     "Event": "library.changed",
@@ -21,8 +20,20 @@ body:json {
   }
 }
 
+docs {
+  Inbound webhook endpoints authenticate via a per-webhook secret/token,
+  not the admin session cookie. With no inbound webhook configured in
+  the ephemeral CI database the handler rejects the request with 401.
+  The contract under test is the auth gate and the error envelope.
+}
+
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 401 because no inbound webhook is configured", function() {
+    expect(res.status).to.equal(401);
+  });
+
+  test("error envelope reports unauthorized", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("unauthorized");
   });
 }

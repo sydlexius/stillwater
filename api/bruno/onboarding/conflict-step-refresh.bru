@@ -1,0 +1,38 @@
+meta {
+  name: OOBE Conflict Pre-flight (refresh=1)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{apiBase}}/onboarding/conflict-step?refresh=1
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Same endpoint as conflict-step.bru with ?refresh=1, which invalidates
+  the conflict-detector cache before re-rendering. Used by the in-step
+  "Re-check" button and after a per-connection "Let Stillwater manage"
+  toggle so the user sees the post-remediation state, not the cached
+  pre-remediation ledger.
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("response is an HTML fragment", function() {
+    expect(res.headers['content-type']).to.include("text/html");
+  });
+
+  test("body re-renders with the conflict-block-state input", function() {
+    var body = typeof res.body === "string" ? res.body : JSON.stringify(res.body);
+    expect(body).to.include('id="ob-conflict-block-state"');
+  });
+}

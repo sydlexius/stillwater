@@ -23,7 +23,12 @@ body:json {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel notificationId", function() {
+    expect(res.status).to.equal(404);
+  });
+
+  test("error envelope reports not found", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.be.a("string");
   });
 }

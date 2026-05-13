@@ -1,7 +1,7 @@
 meta {
   name: List Libraries
   type: http
-  seq: 1
+  seq: 2
 }
 
 get {
@@ -14,12 +14,32 @@ headers {
   Cookie: session={{sessionToken}}
 }
 
+docs {
+  Runs after create-library (seq 1) so the response is guaranteed to
+  contain at least one row regardless of whether the ephemeral DB has
+  an auto-seeded Default library. The macOS dev environment auto-seeds
+  Default (because /music exists via firmlink); ubuntu-latest CI does
+  not, so this test cannot assume bootstrap state.
+
+  Note: when the DB has no libraries, list-libraries currently returns
+  the JSON literal `null` (Go marshals a nil slice that way) rather
+  than `[]`. Worth a small follow-up to normalise the empty-list shape
+  to `[]` for API-consumer ergonomics.
+}
+
 tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
   });
 
-  test("should return array", function() {
+  test("response is a top-level array containing the library just created", function() {
     expect(res.body).to.be.an("array");
+    expect(res.body.length).to.be.at.least(1);
+    var createdLibraryId = bru.getVar("libraryId");
+    var createdLibrary = res.body.find(function(lib) {
+      return lib && lib.id === createdLibraryId;
+    });
+    expect(createdLibrary).to.be.an("object");
+    expect(createdLibrary).to.have.property("name");
   });
 }

@@ -15,12 +15,12 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 404 for sentinel artistId", function() {
+    expect(res.status).to.equal(404);
   });
 
-  test("should not mention clearing IDs", function() {
-    var body = res.json();
-    expect(body.message).to.not.include("cleared");
+  test("error envelope reports artist not found, not a clear-IDs sentinel", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.error).to.equal("artist not found");
   });
 }

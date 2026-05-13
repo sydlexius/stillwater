@@ -16,14 +16,17 @@ headers {
 
 body:json {
   {
-    "name": "Updated Library",
-    "path": "/music/updated",
-    "type": "classical"
+    "name": "Bruno CI Library (renamed)"
   }
 }
 
 tests {
   test("should return 200", function() {
     expect(res.status).to.equal(200);
+  });
+
+  test("response surfaces the renamed library", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.name).to.equal("Bruno CI Library (renamed)");
   });
 }

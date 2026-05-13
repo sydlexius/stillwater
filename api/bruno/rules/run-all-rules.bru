@@ -15,7 +15,15 @@ headers {
 }
 
 tests {
-  test("should return 200", function() {
-    expect(res.status).to.equal(200);
+  test("returns 202 Accepted; run-all is an async job", function() {
+    expect(res.status).to.equal(202);
+  });
+
+  test("response surfaces job progress fields", function() {
+    expect(res.body).to.be.an("object");
+    expect(res.body.status).to.be.a("string");
+    expect(res.body).to.have.property("artists_processed");
+    expect(res.body).to.have.property("artists_total");
+    expect(res.body).to.have.property("violations_found");
   });
 }
