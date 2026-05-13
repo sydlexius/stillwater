@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +12,148 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// validator validates a setting value and returns the canonical form to persist.
+// If the value is invalid the returned error message is surfaced directly to the
+// caller; keep it user-readable and free of internal package details.
+type validator func(v string) (canonical string, err error)
+
+// settingValidators maps setting keys to their validation functions.
+// To add a new validated setting: add one entry here.
+// Keys absent from the map are accepted without validation (pass-through).
+var settingValidators = map[string]validator{
+	"backup_retention_count":             validatePositiveInt("backup_retention_count"),
+	"backup_max_age_days":                validateNonNegativeInt("backup_max_age_days"),
+	"cache.image.max_size_mb":            validateNonNegativeInt("cache.image.max_size_mb"),
+	"images.backdrop.target_count":       validateIntRange("images.backdrop.target_count", 1, 10),
+	"provider.name_similarity_threshold": validateIntRange("provider.name_similarity_threshold", 0, 100),
+	"rule_schedule.interval_minutes":     validateRuleScheduleMinutes,
+	"musicbrainz.contributions":          validateEnum("musicbrainz.contributions", "disabled", "web_form", "api"),
+	"auth.method":                        validateEnum("auth.method", "local", "emby", "jellyfin"),
+	"server.base_path":                   validateBasePath,
+	"auth.providers.local.enabled":       validateLocalAuthEnabled,
+}
+
+// validatePositiveInt returns a validator that accepts integers >= 1.
+func validatePositiveInt(key string) validator {
+	return func(v string) (string, error) {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("%s must be a positive integer", key)
+		}
+		return v, nil
+	}
+}
+
+// validateNonNegativeInt returns a validator that accepts integers >= 0.
+func validateNonNegativeInt(key string) validator {
+	return func(v string) (string, error) {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return "", fmt.Errorf("%s must be zero or a positive integer", key)
+		}
+		return v, nil
+	}
+}
+
+// validateIntRange returns a validator that accepts integers in [lo, hi].
+func validateIntRange(key string, lo, hi int) validator {
+	return func(v string) (string, error) {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < lo || n > hi {
+			return "", fmt.Errorf("%s must be between %d and %d", key, lo, hi)
+		}
+		return v, nil
+	}
+}
+
+// validateEnum returns a validator that accepts only the listed literal values.
+func validateEnum(key string, allowed ...string) validator {
+	return func(v string) (string, error) {
+		for _, a := range allowed {
+			if v == a {
+				return v, nil
+			}
+		}
+		return "", fmt.Errorf("%s must be %s", key, strings.Join(allowed, ", "))
+	}
+}
+
+// validateRuleScheduleMinutes accepts 0 (disabled) or any value >= 5.
+func validateRuleScheduleMinutes(v string) (string, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || (n != 0 && n < 5) {
+		return "", errors.New("rule_schedule.interval_minutes must be 0 (disabled) or >= 5")
+	}
+	return v, nil
+}
+
+// validateBasePath validates the server.base_path setting.
+//
+// Rules:
+//   - "/" (root) is the canonical "no prefix" value and is always valid.
+//   - An empty string is normalised to "/".
+//   - Any other value must start with "/" and must NOT end with "/".
+//   - The value must not start with "//" or "/\".
+//   - Allowed characters: letters, digits, hyphen, underscore, slash.
+//
+// We do NOT enforce here that the env override is unset: an admin who edits
+// the YAML config out-of-band still expects the saved override to take effect
+// on the next process restart that lacks SW_BASE_PATH. The UI already hides
+// the editable input when the env override is active, so the only way to reach
+// this validator with the env set is a direct API call, which we treat as
+// "save the override anyway; env still wins at runtime."
+func validateBasePath(v string) (string, error) {
+	bp := strings.TrimSpace(v)
+	if bp == "" {
+		return "/", nil
+	}
+	if bp == "/" {
+		return "/", nil
+	}
+	if !strings.HasPrefix(bp, "/") {
+		return "", errors.New("server.base_path must start with \"/\"")
+	}
+	// Mirror the loader (cmd/stillwater/main.go isValidPersistedBasePath) and
+	// the client (web/templates/settings.templ saveBasePath): a second character
+	// of "/" or "\" is rejected. The charset check below would already reject
+	// backslash, but "//foo" passes that check and would otherwise persist a
+	// value the loader then refuses to apply on next restart, leaving the user
+	// with a successful save and a restart banner for a base path that is
+	// silently ignored.
+	if len(bp) >= 2 && (bp[1] == '/' || bp[1] == '\\') {
+		return "", errors.New("server.base_path must not start with \"//\" or \"/\\\\\"")
+	}
+	if strings.HasSuffix(bp, "/") {
+		return "", errors.New("server.base_path must not end with \"/\"")
+	}
+	for _, c := range bp {
+		ok := (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '/'
+		if !ok {
+			return "", errors.New("server.base_path may only contain letters, digits, hyphens, underscores, and slashes")
+		}
+	}
+	return bp, nil
+}
+
+// validateLocalAuthEnabled rejects any attempt to disable local authentication.
+// Local auth provides break-glass access when all federated providers are
+// misconfigured. The value is normalised (trimmed, lowercased) before the check
+// to guard against "FALSE", " false ", and similar variants.
+func validateLocalAuthEnabled(v string) (string, error) {
+	normalized := strings.TrimSpace(strings.ToLower(v))
+	switch normalized {
+	case "true", "1":
+		return "true", nil
+	case "false", "0", "":
+		return "", errors.New("local authentication cannot be disabled; it provides break-glass access if all other providers are misconfigured")
+	default:
+		return "", errors.New("auth.providers.local.enabled must be \"true\"")
+	}
+}
 
 // handleGetSettings returns all application settings as a key-value map.
 // GET /api/v1/settings
@@ -42,6 +186,11 @@ func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
 
 // handleUpdateSettings upserts one or more application settings.
 // PUT /api/v1/settings
+//
+// Validation is handled by settingValidators: each key present in the request
+// body is looked up in the registry and, if a validator is found, the value is
+// validated and potentially normalised. Keys absent from the registry are
+// accepted without validation. All validations run before any write occurs.
 func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) {
 	var body map[string]string
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -49,159 +198,21 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Validate backup settings before persisting
-	if v, ok := body["backup_retention_count"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "backup_retention_count must be a positive integer"})
-			return
+	// Validate all keys up front; normalise values in-place.
+	for k, v := range body {
+		fn, ok := settingValidators[k]
+		if !ok {
+			continue
 		}
-	}
-	if v, ok := body["backup_max_age_days"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "backup_max_age_days must be zero or a positive integer"})
-			return
-		}
-	}
-	if v, ok := body["cache.image.max_size_mb"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cache.image.max_size_mb must be zero or a positive integer"})
-			return
-		}
-	}
-	if v, ok := body["images.backdrop.target_count"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 10 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "images.backdrop.target_count must be between 1 and 10"})
-			return
-		}
-	}
-	if v, ok := body["provider.name_similarity_threshold"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 || n > 100 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provider.name_similarity_threshold must be between 0 and 100"})
-			return
-		}
-		_ = n // validated, will be stored as string by the generic upsert below
-	}
-	if v, ok := body["rule_schedule.interval_minutes"]; ok {
-		n, err := strconv.Atoi(v)
-		if err != nil || (n != 0 && n < 5) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "rule_schedule.interval_minutes must be 0 (disabled) or >= 5",
-			})
-			return
-		}
-	}
-	if v, ok := body["musicbrainz.contributions"]; ok {
-		if v != "disabled" && v != "web_form" && v != "api" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "musicbrainz.contributions must be disabled, web_form, or api",
-			})
-			return
-		}
-	}
-	// server.base_path: path prefix for sub-path deployments. The HTTP mux
-	// is wired at startup and cannot rebind on the fly, so this value is
-	// applied on the next process restart. The UI surfaces a "restart
-	// required" banner after a successful save.
-	//
-	// Rules:
-	//   - "/" (root) is the canonical "no prefix" value and is always valid.
-	//   - Any other value must start with "/" and must NOT end with "/".
-	//   - Allowed characters: letters, digits, hyphen, underscore, slash.
-	//
-	// We do NOT enforce here that the env override is unset: an admin who
-	// edits the YAML config out-of-band still expects the saved override to
-	// take effect on the next restart that lacks SW_BASE_PATH. The UI
-	// already hides the editable input when the env override is active, so
-	// the only way to reach this branch with the env set is a direct API
-	// call, which we treat as "save the override anyway; env still wins
-	// at runtime."
-	if v, ok := body["server.base_path"]; ok {
-		bp := strings.TrimSpace(v)
-		if bp == "" {
-			bp = "/"
-		}
-		if bp != "/" {
-			if !strings.HasPrefix(bp, "/") {
-				writeJSON(w, http.StatusBadRequest, map[string]string{
-					"error": "server.base_path must start with \"/\"",
-				})
-				return
+		canonical, err := fn(v)
+		if err != nil {
+			if k == "auth.providers.local.enabled" {
+				r.logger.Warn("rejecting settings update", "key", k, "value", v)
 			}
-			// Mirror the loader (cmd/stillwater/main.go isValidPersistedBasePath)
-			// and the client (web/templates/settings.templ saveBasePath): a second
-			// character of "/" or "\\" is rejected. The charset check below would
-			// already reject backslash, but "//foo" passes that check and would
-			// otherwise persist a value the loader then refuses to apply on next
-			// restart, leaving the user with a successful save and a restart
-			// banner for a base path that is silently ignored.
-			if len(bp) >= 2 && (bp[1] == '/' || bp[1] == '\\') {
-				writeJSON(w, http.StatusBadRequest, map[string]string{
-					"error": "server.base_path must not start with \"//\" or \"/\\\\\"",
-				})
-				return
-			}
-			if strings.HasSuffix(bp, "/") {
-				writeJSON(w, http.StatusBadRequest, map[string]string{
-					"error": "server.base_path must not end with \"/\"",
-				})
-				return
-			}
-			for _, c := range bp {
-				ok := (c >= 'a' && c <= 'z') ||
-					(c >= 'A' && c <= 'Z') ||
-					(c >= '0' && c <= '9') ||
-					c == '-' || c == '_' || c == '/'
-				if !ok {
-					writeJSON(w, http.StatusBadRequest, map[string]string{
-						"error": "server.base_path may only contain letters, digits, hyphens, underscores, and slashes",
-					})
-					return
-				}
-			}
-		}
-		body["server.base_path"] = bp
-	}
-	if v, ok := body["auth.method"]; ok {
-		if v != "local" && v != "emby" && v != "jellyfin" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "auth.method must be local, emby, or jellyfin",
-			})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-	}
-	// Local authentication cannot be disabled: it provides break-glass access
-	// when all federated providers are misconfigured. Reject any attempt to
-	// set auth.providers.local.enabled to a falsy value, normalising the input
-	// to guard against case and whitespace variants (e.g. "FALSE", " false ").
-	if v, ok := body["auth.providers.local.enabled"]; ok {
-		normalized := strings.TrimSpace(strings.ToLower(v))
-		switch normalized {
-		case "true", "1":
-			body["auth.providers.local.enabled"] = "true"
-		case "false", "0", "":
-			r.logger.Warn("rejecting settings update",
-				"key", "auth.providers.local.enabled",
-				"value", normalized,
-			)
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "local authentication cannot be disabled; it provides break-glass access if all other providers are misconfigured",
-			})
-			return
-		default:
-			r.logger.Warn("rejecting settings update",
-				"key", "auth.providers.local.enabled",
-				"value", normalized,
-			)
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "auth.providers.local.enabled must be \"true\"",
-			})
-			return
-		}
+		body[k] = canonical
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -223,7 +234,8 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		_, _ = r.db.ExecContext(req.Context(), `DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
 	}
 
-	// Apply backup settings to the service immediately
+	// Apply backup settings to the service immediately so the live service
+	// reflects the new values without requiring a restart.
 	if v, ok := body["backup_retention_count"]; ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			r.backupService.SetRetention(n)
