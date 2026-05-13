@@ -32,10 +32,14 @@ tests {
     expect(res.status).to.equal(200);
   });
 
-  test("response is a top-level array of library records", function() {
+  test("response is a top-level array containing the library just created", function() {
     expect(res.body).to.be.an("array");
     expect(res.body.length).to.be.at.least(1);
-    expect(res.body[0]).to.have.property("id");
-    expect(res.body[0]).to.have.property("name");
+    var createdLibraryId = bru.getVar("libraryId");
+    var createdLibrary = res.body.find(function(lib) {
+      return lib && lib.id === createdLibraryId;
+    });
+    expect(createdLibrary).to.be.an("object");
+    expect(createdLibrary).to.have.property("name");
   });
 }
