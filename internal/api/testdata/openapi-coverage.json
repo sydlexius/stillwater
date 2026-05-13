@@ -18,7 +18,7 @@
     "method": "POST",
     "path": "/artists/{id}/aliases",
     "handler": "handleAddAlias",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "addUpdateSkip",
