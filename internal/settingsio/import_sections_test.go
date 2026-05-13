@@ -209,11 +209,15 @@ func TestImportPlatformProfiles_CreateAndUpdate(t *testing.T) {
 		t.Fatalf("listing profiles: %v", err)
 	}
 	var found *platform.Profile
+	foundCount := 0
 	for i := range all {
 		if all[i].Name == "Test Profile" {
+			foundCount++
 			found = &all[i]
-			break
 		}
+	}
+	if foundCount != 1 {
+		t.Fatalf("expected exactly 1 Test Profile row, got %d", foundCount)
 	}
 	if found == nil {
 		t.Fatal("Test Profile not found after import")
@@ -256,11 +260,15 @@ func TestImportWebhooks_CreateAndUpdate(t *testing.T) {
 	}
 	// Locate "Hook A" -- the DB may already have other webhooks.
 	var found *webhook.Webhook
+	foundCount := 0
 	for i := range all {
 		if all[i].Name == "Hook A" {
+			foundCount++
 			found = &all[i]
-			break
 		}
+	}
+	if foundCount != 1 {
+		t.Fatalf("expected exactly 1 Hook A row, got %d", foundCount)
 	}
 	if found == nil {
 		t.Fatal("Hook A not found after import")
@@ -565,6 +573,118 @@ func TestImportProviderPriorities_EmptyDisabledClears(t *testing.T) {
 		if fp.Field == "biography" && len(fp.Disabled) > 0 {
 			t.Errorf("expected disabled list cleared, got %v", fp.Disabled)
 		}
+	}
+}
+
+// --- error-path coverage (closed-DB) ---
+
+// TestImportSettings_DBError verifies that a DB failure propagates as an error.
+func TestImportSettings_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	err := svc.importSettings(t.Context(), map[string]string{"k": "v"}, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportProviderKeys_DBError verifies that a provider key write failure propagates.
+func TestImportProviderKeys_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	err := svc.importProviderKeys(t.Context(), map[string]string{string(provider.NameFanartTV): "key"}, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportConnections_DBError verifies that a connection lookup failure propagates.
+func TestImportConnections_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	conns := []ConnectionExport{{Name: "x", Type: "emby", URL: "http://localhost:8096"}}
+	err := svc.importConnections(t.Context(), conns, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportPlatformProfiles_DBError verifies that a profile lookup failure propagates.
+func TestImportPlatformProfiles_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	profiles := []platform.Profile{{Name: "Test"}}
+	err := svc.importPlatformProfiles(t.Context(), profiles, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportWebhooks_DBError verifies that a webhook lookup failure propagates.
+func TestImportWebhooks_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	hooks := []webhook.Webhook{{Name: "h", URL: "https://example.com/h", Type: "generic"}}
+	err := svc.importWebhooks(t.Context(), hooks, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportProviderPriorities_DBError verifies that a priority write failure propagates.
+func TestImportProviderPriorities_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	_ = db.Close()
+	priorities := []PriorityExport{{Field: "biography", Providers: []provider.ProviderName{provider.NameMusicBrainz}}}
+	err := svc.importProviderPriorities(t.Context(), priorities, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportRules_DBError verifies that a non-ErrNotFound DB error propagates
+// instead of being silently swallowed as an unknown-rule skip.
+func TestImportRules_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(t.Context()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithRuleService(ruleSvc)
+	_ = db.Close()
+	// Use a known rule ID so the GetByID path is exercised (unknown IDs are
+	// silently skipped; a closed-DB error is not ErrNotFound and must surface).
+	rules := []RuleExport{{ID: rule.RuleThumbExists, Enabled: false, AutomationMode: rule.AutomationModeAuto}}
+	err := svc.importRules(t.Context(), rules, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
+	}
+}
+
+// TestImportScraperPreferences_DBError verifies that a SaveConfig failure propagates.
+func TestImportScraperPreferences_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	scraperSvc := scraper.NewService(db, slog.Default())
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc).WithScraperService(scraperSvc)
+	_ = db.Close()
+	configs := []ScraperConfigExport{{Scope: "global", Config: scraper.ScraperConfig{}}}
+	err := svc.importScraperPreferences(t.Context(), configs, &ImportResult{})
+	if err == nil {
+		t.Fatal("expected error with closed DB, got nil")
 	}
 }
 
