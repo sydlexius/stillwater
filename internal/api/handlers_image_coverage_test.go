@@ -19,9 +19,23 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// init registers a text/html body decoder for the kin-openapi validator. The
+// image search / info / websearch endpoints negotiate JSON vs HTML responses
+// via the HX-Request header, and several tests exercise the HTML arm so that
+// regressions flipping the arm (or dropping the Content-Type) surface here.
+// kin-openapi ships decoders only for application/json, text/plain, etc.;
+// without a text/html decoder ValidateResponse fatals with "unsupported
+// content type" before checking the schema. Registering PlainBodyDecoder
+// treats the body as an opaque string, which matches how the spec declares
+// these responses (`text/html: schema: type: string`).
+func init() {
+	openapi3filter.RegisterBodyDecoder("text/html", openapi3filter.PlainBodyDecoder)
+}
 
 // newImageHandlerTestServer builds a Router with the platform service wired,
 // an empty orchestrator + web-search registry (both required by the search
@@ -95,9 +109,8 @@ func TestHandleImageFetch_ArtistNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/missing/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "missing")
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -117,6 +130,10 @@ func TestHandleImageFetch_InvalidImageType(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec's request body declares `type` enum [thumb,fanart,logo,banner].
+	// Sending `poster` would be rejected by the request validator before
+	// reaching the handler; this test exercises the handler's own
+	// defense-in-depth rejection, so call the handler directly.
 	r.handleImageFetch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
@@ -135,9 +152,8 @@ func TestHandleImageFetch_MissingURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -155,9 +171,8 @@ func TestHandleImageFetch_NonHTTPScheme(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -178,9 +193,8 @@ func TestHandleImageFetch_PrivateURL_Rejected(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
@@ -204,9 +218,8 @@ func TestHandleImageFetch_FetchFails_BadGateway(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502; body: %s", w.Code, w.Body.String())
 	}
@@ -236,9 +249,8 @@ func TestHandleImageFetch_NeedsCrop(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -267,9 +279,8 @@ func TestHandleImageFetch_FormEncoded_Success(t *testing.T) {
 		strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -291,9 +302,8 @@ func TestHandleImageFetch_FanartAppend(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/fetch?skip_crop=true", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -331,6 +341,9 @@ func TestHandleImageFetch_InvalidJSON(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: malformed JSON is rejected by the wrapper's request validator
+	// before the handler sees it; this test exercises the handler's own
+	// decode-error path, so call the handler directly.
 	r.handleImageFetch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -352,9 +365,8 @@ func TestHandleImageFetch_HTMXSuccess(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageFetch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageFetch), req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body: %s", w.Code, w.Body.String())
 	}
@@ -373,9 +385,8 @@ func TestHandleImageSearch_ArtistNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/missing/images/search", nil)
 	req.SetPathValue("id", "missing")
-	w := httptest.NewRecorder()
 
-	r.handleImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageSearch), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -391,9 +402,8 @@ func TestHandleImageSearch_NoMBID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/search", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageSearch), req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
@@ -411,6 +421,9 @@ func TestHandleImageSearch_InvalidSort(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec declares sort enum [likes,resolution]; the wrapper would
+	// reject `evil` before the handler runs. This test exercises the handler's
+	// own enum check, so call directly.
 	r.handleImageSearch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -427,9 +440,8 @@ func TestHandleImageSearch_EmptyResults_JSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/search?type=thumb", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageSearch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -455,9 +467,8 @@ func TestHandleImageSearch_HTMXFanart(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/search?type=fanart", nil)
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageSearch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -477,9 +488,8 @@ func TestHandleImageSearch_HTMXNonFanart(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/search?type=thumb", nil)
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageSearch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -496,9 +506,8 @@ func TestHandleWebImageSearch_ArtistNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/artists/missing/images/websearch?type=thumb", nil)
 	req.SetPathValue("id", "missing")
-	w := httptest.NewRecorder()
 
-	r.handleWebImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleWebImageSearch), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -516,6 +525,9 @@ func TestHandleWebImageSearch_MissingType(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec marks `type` query param required. Wrapper rejects the
+	// missing param before the handler runs; this test exercises the handler's
+	// own check, so call directly.
 	r.handleWebImageSearch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -535,6 +547,8 @@ func TestHandleWebImageSearch_InvalidType(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec declares type enum [thumb,fanart,logo,banner]. Wrapper
+	// rejects `poster`; this test exercises the handler's own enum check.
 	r.handleWebImageSearch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -554,6 +568,8 @@ func TestHandleWebImageSearch_InvalidSort(t *testing.T) {
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec declares sort enum [likes,resolution]. Wrapper rejects
+	// `evil`; this test exercises the handler's own enum check.
 	r.handleWebImageSearch(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -571,9 +587,8 @@ func TestHandleWebImageSearch_EmptyResults_JSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/artists/"+a.ID+"/images/websearch?type=thumb", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleWebImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleWebImageSearch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -607,9 +622,8 @@ func TestHandleWebImageSearch_HTMX(t *testing.T) {
 		"/api/v1/artists/"+a.ID+"/images/websearch?type=thumb", nil)
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleWebImageSearch(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleWebImageSearch), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -636,6 +650,8 @@ func TestHandleImageInfo_InvalidType(t *testing.T) {
 	req.SetPathValue("type", "poster")
 	w := httptest.NewRecorder()
 
+	// Pattern B: spec restricts the path `type` to enum [thumb,fanart,logo,banner].
+	// Wrapper rejects `poster`; this test exercises the handler's own check.
 	r.handleImageInfo(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -649,9 +665,8 @@ func TestHandleImageInfo_ArtistNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/missing/images/thumb/info", nil)
 	req.SetPathValue("id", "missing")
 	req.SetPathValue("type", "thumb")
-	w := httptest.NewRecorder()
 
-	r.handleImageInfo(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -670,9 +685,8 @@ func TestHandleImageInfo_NoImageDir(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/thumb/info", nil)
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
-	w := httptest.NewRecorder()
 
-	r.handleImageInfo(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -689,9 +703,8 @@ func TestHandleImageInfo_FileMissing(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/thumb/info", nil)
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
-	w := httptest.NewRecorder()
 
-	r.handleImageInfo(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -711,9 +724,8 @@ func TestHandleImageInfo_Success_JSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/images/thumb/info", nil)
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
-	w := httptest.NewRecorder()
 
-	r.handleImageInfo(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -752,9 +764,8 @@ func TestHandleImageInfo_Success_HTMX(t *testing.T) {
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
 	req.SetPathValue("type", "thumb")
-	w := httptest.NewRecorder()
 
-	r.handleImageInfo(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleImageInfo), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -775,6 +786,12 @@ func TestHandleLogoTrim_ArtistNotFound(t *testing.T) {
 	req.SetPathValue("id", "missing")
 	w := httptest.NewRecorder()
 
+	// Sentinel direct call: TestOperationIDCoverage scans test files for
+	// CallExprs whose Fun is `r.handleX`; the other LogoTrim cases go through
+	// serveValidated(http.HandlerFunc(r.handleLogoTrim), ...), which the AST
+	// walker reads as a HandlerFunc CallExpr (not a handleLogoTrim CallExpr)
+	// and so doesn't count toward `trimLogo` operationId coverage. Keep one
+	// raw call so the ratchet sees the reference.
 	r.handleLogoTrim(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
@@ -791,9 +808,8 @@ func TestHandleLogoTrim_LogoNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleLogoTrim(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleLogoTrim), req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", w.Code, w.Body.String())
 	}
@@ -826,9 +842,8 @@ func TestHandleLogoTrim_Success_JSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleLogoTrim(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleLogoTrim), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
@@ -850,9 +865,8 @@ func TestHandleLogoTrim_HTMX_Success(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/logo/trim", nil)
 	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
 
-	r.handleLogoTrim(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleLogoTrim), req)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body: %s", w.Code, w.Body.String())
 	}
