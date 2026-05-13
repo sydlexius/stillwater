@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -895,6 +896,135 @@ func TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint(t *testing.T) {
 			t.Errorf("non-numeric hint not rejected: body missing 'Showing 6 of 6'\nbody: %s", body)
 		}
 	})
+}
+
+// TestValidateRevertable exercises the eligibility checks in isolation.
+// These rules must be enforced at the validate stage before any mutation.
+func TestValidateRevertable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		field   string
+		source  string
+		wantErr error
+	}{
+		{"trackable field, non-revert source", "biography", "manual", nil},
+		{"trackable field, provider source", "genres", "provider:musicbrainz", nil},
+		{"untrackable field", "unknown_field_xyz", "manual", errRevertNotTrackable},
+		{"revert source is rejected", "biography", "revert", errRevertOfRevert},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			change := &artist.MetadataChange{
+				Field:  tc.field,
+				Source: tc.source,
+			}
+			err := validateRevertable(change)
+			if tc.wantErr == nil && err != nil {
+				t.Errorf("validateRevertable() = %v, want nil", err)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Errorf("validateRevertable() = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestPerformRevert_ClearBranch verifies that performRevert calls ClearField
+// when change.OldValue is empty and records a new history entry with source
+// "revert". The returned revertChangeID must match the row written to the DB.
+func TestPerformRevert_ClearBranch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "PerformRevert Clear Artist")
+
+	// Set biography to non-empty so ClearField has something to clear.
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+
+	change := &artist.MetadataChange{
+		ArtistID: a.ID,
+		Field:    "biography",
+		OldValue: "", // triggers ClearField
+		NewValue: "some bio",
+		Source:   "manual",
+	}
+
+	revertChangeID, err := r.performRevert(context.Background(), change)
+	if err != nil {
+		t.Fatalf("performRevert: %v", err)
+	}
+	if revertChangeID == "" {
+		t.Fatal("revertChangeID is empty")
+	}
+
+	// The artist's biography should now be cleared.
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Biography != "" {
+		t.Errorf("Biography = %q, want empty after clear revert", updated.Biography)
+	}
+
+	// A history row with source "revert" and the pre-assigned ID must exist.
+	row, err := historySvc.GetByID(context.Background(), revertChangeID)
+	if err != nil {
+		t.Fatalf("GetByID(revert row): %v", err)
+	}
+	if row.Source != "revert" {
+		t.Errorf("row.Source = %q, want revert", row.Source)
+	}
+	if row.ID != revertChangeID {
+		t.Errorf("row.ID = %q, want %q", row.ID, revertChangeID)
+	}
+}
+
+// TestPerformRevert_UpdateBranch verifies that performRevert calls UpdateField
+// when change.OldValue is non-empty, restoring the old value.
+func TestPerformRevert_UpdateBranch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "PerformRevert Update Artist")
+
+	change := &artist.MetadataChange{
+		ArtistID: a.ID,
+		Field:    "biography",
+		OldValue: "original bio", // triggers UpdateField
+		NewValue: "changed bio",
+		Source:   "manual",
+	}
+
+	revertChangeID, err := r.performRevert(context.Background(), change)
+	if err != nil {
+		t.Fatalf("performRevert: %v", err)
+	}
+
+	// The artist's biography should be restored to the old value.
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Biography != "original bio" {
+		t.Errorf("Biography = %q, want 'original bio'", updated.Biography)
+	}
+
+	// Verify the revert history row was recorded with the deterministic ID.
+	row, err := historySvc.GetByID(context.Background(), revertChangeID)
+	if err != nil {
+		t.Fatalf("GetByID(revert row): %v", err)
+	}
+	if row.Source != "revert" {
+		t.Errorf("row.Source = %q, want revert", row.Source)
+	}
 }
 
 // TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint covers the same

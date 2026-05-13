@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -312,6 +313,148 @@ func (r *Router) handleArtistHistoryTab(w http.ResponseWriter, req *http.Request
 	renderTempl(w, req, templates.ArtistHistoryTab(data))
 }
 
+// errRevertNotTrackable is returned by validateRevertable when the field is
+// not tracked by the history system.
+var errRevertNotTrackable = errors.New("field is not revertible")
+
+// errRevertOfRevert is returned by validateRevertable when the caller attempts
+// to revert an entry that was itself produced by a revert.
+var errRevertOfRevert = errors.New("revert entries cannot be reverted")
+
+// validateRevertable returns an error if the change is ineligible for revert.
+// It checks two conditions independently so tests can cover each in isolation:
+// (a) the field must be tracked by the history system, and (b) the source must
+// not already be "revert" (reverting a revert would create infinite chains).
+func validateRevertable(change *artist.MetadataChange) error {
+	if !artist.IsTrackableField(change.Field) {
+		return errRevertNotTrackable
+	}
+	if change.Source == "revert" {
+		return errRevertOfRevert
+	}
+	return nil
+}
+
+// performRevert applies the revert mutation for a single metadata change.
+// It injects "revert" as the history source and pre-assigns a deterministic
+// change ID (returned as revertChangeID) via ContextWithHistoryID so the
+// caller can fetch the resulting history row by ID without racing against
+// concurrent writers to the same field. The returned revertChangeID is the
+// ID pre-assigned to the new history row; callers should fetch it with
+// GetByID after this call returns.
+//
+// ClearField/UpdateField currently succeed silently when the artist ID does
+// not exist (UPDATE affects zero rows). The ErrNotFound guards are defensive:
+// they activate if the repo layer is updated to check RowsAffected.
+func (r *Router) performRevert(ctx context.Context, change *artist.MetadataChange) (revertChangeID string, err error) {
+	revertChangeID = uuid.New().String()
+	ctx = artist.ContextWithSource(ctx, "revert")
+	ctx = artist.ContextWithHistoryID(ctx, revertChangeID)
+
+	if change.OldValue == "" {
+		err = r.artistService.ClearField(ctx, change.ArtistID, change.Field)
+	} else {
+		err = r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue)
+	}
+	return revertChangeID, err
+}
+
+// renderActivityRevertFragment renders the HTMX fragment for a revert that was
+// triggered from the global activity feed. It fetches the artist name, applies
+// the active source and date filters, and falls through to the generic fallback
+// if the new revert row does not belong in the current view.
+// Returns true when a rich fragment was written to w; false signals the caller
+// should write the generic fallback instead.
+func (r *Router) renderActivityRevertFragment(
+	w http.ResponseWriter, req *http.Request,
+	origChangeID string,
+	revertChange *artist.MetadataChange,
+) bool {
+	artistRow, artistErr := r.artistService.GetByID(req.Context(), revertChange.ArtistID)
+	if artistErr != nil {
+		r.logger.Error("fetching artist for revert fragment",
+			"artist_id", revertChange.ArtistID, "error", artistErr)
+		return false
+	}
+
+	newChange := artist.MetadataChangeWithArtist{
+		MetadataChange: *revertChange,
+		ArtistName:     artistRow.Name,
+	}
+
+	// Rebuild the active filter from query params carried in HX-Current-URL
+	// so the "showing X of Y" counter stays accurate relative to the feed.
+	activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
+
+	// If the active feed filter restricts sources and does not include
+	// "revert", the new row is outside the current view. Skip injection to
+	// avoid inserting a row that would not normally appear in the feed.
+	// Also suppress when SourcePrefixes is non-empty: "revert" does not
+	// match any provider:/rule: prefix pattern.
+	allowsRevert := (len(activeFilter.Sources) == 0 && len(activeFilter.SourcePrefixes) == 0) ||
+		sliceContains(activeFilter.Sources, "revert")
+	if !allowsRevert {
+		return false
+	}
+
+	// Guard against active date-range bounds: skip if the revert row falls
+	// outside the from/to window.
+	createdAt := newChange.CreatedAt
+	if (!activeFilter.From.IsZero() && createdAt.Before(activeFilter.From)) ||
+		(!activeFilter.To.IsZero() && createdAt.After(activeFilter.To)) {
+		return false
+	}
+
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, 0)
+	activeFilter.Limit = limit
+	_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
+	// Compute fallback from offset+limit. After Load-more the browser URL
+	// does not push offset, so this only matches reality when no Load-more
+	// clicks have occurred. The client-supplied hx-vals showing hint is
+	// preferred when present (see resolveShowingCount).
+	fallback := activeFilter.Offset + limit
+	if fallback > total {
+		fallback = total
+	}
+	showing := resolveShowingCount(req, fallback, total, r.logger)
+	renderTempl(w, req, templates.ActivityRevertFragment(origChangeID, newChange, r.basePath, showing, total))
+	return true
+}
+
+// renderArtistTabRevertFragment renders the HTMX fragment for a revert that
+// was triggered from the artist detail page's history tab. It calls List once
+// to get the page total for the counter and delegates to resolveShowingCount
+// to honor the hx-vals showing hint when present.
+// Returns true when a rich fragment was written to w.
+func (r *Router) renderArtistTabRevertFragment(
+	w http.ResponseWriter, req *http.Request,
+	origChangeID string,
+	origChange *artist.MetadataChange,
+	revertChange *artist.MetadataChange,
+) bool {
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, 0)
+	changes, total, listErr := r.historyService.List(req.Context(), origChange.ArtistID, limit, 0)
+	if listErr != nil {
+		r.logger.Error("fetching revert confirmation", "change_id", origChangeID, "error", listErr)
+		return false
+	}
+	// The fragment hides the reverted row and prepends the new revert row so
+	// the visible count is unchanged (+1 prepended, -1 hidden). DB total grew
+	// by exactly 1 and len(changes) from the first page overstates visible rows
+	// by 1 when the list fits on one page. Compensate by subtracting 1
+	// (clamped at 0). When Load-more has been used the hx-vals showing hint
+	// overrides this fallback via resolveShowingCount.
+	fallback := len(changes) - 1
+	if fallback < 0 {
+		fallback = 0
+	}
+	showing := resolveShowingCount(req, fallback, total, r.logger)
+	renderTempl(w, req, templates.HistoryRevertFragment(origChangeID, *revertChange, showing, total))
+	return true
+}
+
 // handleRevertHistory reverts a single metadata change by restoring the old value.
 // POST /api/v1/history/{id}/revert
 func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
@@ -336,190 +479,82 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if !artist.IsTrackableField(change.Field) {
-		writeError(w, req, http.StatusBadRequest, "field is not revertible")
+	if err := validateRevertable(change); err != nil {
+		writeError(w, req, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if change.Source == "revert" {
-		writeError(w, req, http.StatusBadRequest, "revert entries cannot be reverted")
+	revertChangeID, err := r.performRevert(req.Context(), change)
+	if err != nil {
+		if errors.Is(err, artist.ErrNotFound) {
+			writeError(w, req, http.StatusNotFound, "artist not found")
+			return
+		}
+		r.logger.Error("performing revert", "change_id", changeID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "revert failed")
 		return
-	}
-
-	// Inject "revert" as the history source so the auto-recorded change
-	// is distinguishable from manual edits. Pre-assign the change ID via
-	// ContextWithHistoryID so we can fetch the resulting row deterministically
-	// with GetByID below; otherwise the post-mutation lookup races against any
-	// concurrent writer that touches the same field at the same instant
-	// (e.g. a metadata refresh, an automated rule fix, or a parallel revert).
-	revertChangeID := uuid.New().String()
-	ctx := artist.ContextWithSource(req.Context(), "revert")
-	ctx = artist.ContextWithHistoryID(ctx, revertChangeID)
-
-	// ClearField/UpdateField currently succeed silently when the artist ID
-	// does not exist (UPDATE affects zero rows). The ErrNotFound guards below
-	// are defensive: they will activate if the repo layer is updated to check
-	// RowsAffected and return ErrNotFound for missing artists.
-	if change.OldValue == "" {
-		if err := r.artistService.ClearField(ctx, change.ArtistID, change.Field); err != nil {
-			if errors.Is(err, artist.ErrNotFound) {
-				writeError(w, req, http.StatusNotFound, "artist not found")
-				return
-			}
-			r.logger.Error("reverting change (clear)", "change_id", changeID, "error", err)
-			writeError(w, req, http.StatusInternalServerError, "revert failed")
-			return
-		}
-	} else {
-		if err := r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue); err != nil {
-			if errors.Is(err, artist.ErrNotFound) {
-				writeError(w, req, http.StatusNotFound, "artist not found")
-				return
-			}
-			r.logger.Error("reverting change (update)", "change_id", changeID, "error", err)
-			writeError(w, req, http.StatusInternalServerError, "revert failed")
-			return
-		}
 	}
 
 	// For HTMX requests (undo button click), return an HTML fragment showing
-	// the new history entry that was created by the revert. For API callers,
-	// return JSON.
-	if isHTMXRequest(req) {
-		// Determine whether the undo was triggered from the activity page or
-		// the artist history tab so we can render the correct fragment type.
-		fromActivity := strings.Contains(req.Header.Get("HX-Current-URL"), "/activity")
-
-		// Fetch the new revert change row deterministically by its pre-assigned
-		// ID. This avoids the prior "find most recent revert for this field"
-		// pattern, which races against any concurrent writer to the same field.
-		revertChange, err := r.historyService.GetByID(req.Context(), revertChangeID)
-		if err != nil {
-			// A missing revert history row is an expected edge case: the revert
-			// can become a no-op (e.g. the field already matched OldValue so
-			// UpdateField/ClearField recorded nothing) or history recording was
-			// best-effort. Log at Info in that case to avoid noisy error logs
-			// from user-initiated reverts; reserve Error for genuine failures.
-			if errors.Is(err, artist.ErrChangeNotFound) {
-				r.logger.Info("revert change history row not found; rendering fallback fragment",
-					"change_id", changeID, "revert_change_id", revertChangeID)
-			} else {
-				r.logger.Error("fetching revert change by id",
-					"change_id", changeID, "revert_change_id", revertChangeID, "error", err)
-			}
-		}
-
-		if fromActivity && revertChange != nil {
-			// Activity feed needs MetadataChangeWithArtist (includes artist name).
-			// Fetch the artist name separately since GetByID returns only the
-			// metadata_changes row.
-			artistRow, artistErr := r.artistService.GetByID(req.Context(), revertChange.ArtistID)
-			if artistErr != nil {
-				r.logger.Error("fetching artist for revert fragment",
-					"artist_id", revertChange.ArtistID, "error", artistErr)
-			}
-			if artistErr == nil {
-				newChange := artist.MetadataChangeWithArtist{
-					MetadataChange: *revertChange,
-					ArtistName:     artistRow.Name,
-				}
-
-				// Rebuild the active filter from query params carried in
-				// HX-Current-URL so the "showing X of Y" counter stays
-				// accurate relative to the current feed view.
-				activeFilter := buildGlobalFilterFromURL(req.Header.Get("HX-Current-URL"))
-
-				// If the active feed filter restricts sources and does not
-				// include "revert", the new revert row is outside the current
-				// view. Skip the fragment injection so we don't insert a row
-				// that would not normally appear in the feed.
-				// Also suppress when SourcePrefixes is non-empty: "revert" does
-				// not match any provider:/rule: prefix pattern.
-				allowsRevert := (len(activeFilter.Sources) == 0 && len(activeFilter.SourcePrefixes) == 0) ||
-					sliceContains(activeFilter.Sources, "revert")
-				sourceFiltered := !allowsRevert
-
-				// Guard against active date-range bounds: if the new revert row
-				// falls outside the current feed's from/to window, skip fragment
-				// injection so we don't insert a row that would not appear in the feed.
-				createdAt := newChange.CreatedAt
-				dateFiltered := (!activeFilter.From.IsZero() && createdAt.Before(activeFilter.From)) ||
-					(!activeFilter.To.IsZero() && createdAt.After(activeFilter.To))
-
-				if !sourceFiltered && !dateFiltered {
-					userID := middleware.UserIDFromContext(req.Context())
-					limit := r.getUserPageSize(req.Context(), userID, 0)
-					activeFilter.Limit = limit
-					_, total, _ := r.historyService.ListGlobal(req.Context(), activeFilter)
-					// Compute the fallback showing count from offset+limit. After
-					// Load-more the browser URL does not push offset, so this
-					// fallback only matches reality when no Load-more clicks have
-					// occurred. The client-supplied hx-vals showing hint is
-					// preferred when present.
-					fallback := activeFilter.Offset + limit
-					if fallback > total {
-						fallback = total
-					}
-					showing := resolveShowingCount(req, fallback, total, r.logger)
-					renderTempl(w, req, templates.ActivityRevertFragment(changeID, newChange, r.basePath, showing, total))
-					return
-				}
-			}
-		} else if !fromActivity && revertChange != nil {
-			// Artist history tab needs MetadataChange (no artist name needed).
-			// Use the deterministically-fetched revertChange and call List only
-			// to get the page total for the "showing X of Y" counter.
-			userID := middleware.UserIDFromContext(req.Context())
-			limit := r.getUserPageSize(req.Context(), userID, 0)
-			changes, total, listErr := r.historyService.List(req.Context(), change.ArtistID, limit, 0)
-			if listErr != nil {
-				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", listErr)
-			} else {
-				// The fragment hides the reverted row and prepends the new
-				// revert row, so the number of visible rows is unchanged
-				// (+1 prepended, -1 hidden). This branch only runs when
-				// revertChange != nil (the revert history row exists), so
-				// DB total grew by exactly 1 and len(changes) from the
-				// first page overstates visible rows by 1 when the list
-				// fits on one page. Compensate by subtracting 1 (clamped
-				// at 0). This fallback assumes a single page was loaded;
-				// when Load-more has been used, the hx-vals showing hint is
-				// authoritative.
-				fallback := len(changes) - 1
-				if fallback < 0 {
-					fallback = 0
-				}
-				showing := resolveShowingCount(req, fallback, total, r.logger)
-				renderTempl(w, req, templates.HistoryRevertFragment(changeID, *revertChange, showing, total))
-				return
-			}
-		}
-
-		// Fallback: the revert succeeded but we could not render the rich
-		// confirmation. The cause is one of (a) the new revert row falls
-		// outside the active feed filter, (b) GetByID/artist lookup returned
-		// an error already logged above, or (c) the row is genuinely missing.
-		// Logged at INFO when revertChange was found (filter mismatch is the
-		// expected branch), WARN otherwise so genuine misses stand out.
-		if revertChange != nil {
-			r.logger.Info("revert succeeded; fragment suppressed by active filter",
-				"change_id", changeID, "revert_change_id", revertChangeID,
-				"field", change.Field, "artist_id", change.ArtistID)
-		} else {
-			r.logger.Warn("revert record not located after mutation, using fallback confirmation",
-				"change_id", changeID, "revert_change_id", revertChangeID,
-				"field", change.Field, "artist_id", change.ArtistID)
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted. Refresh the page to see the updated entry.</p></div>`))
+	// the new history entry. For plain API callers, return JSON.
+	if !isHTMXRequest(req) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"reverted":  true,
+			"change_id": changeID,
+		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"reverted":  true,
-		"change_id": changeID,
-	})
+	// Fetch the new revert history row by its pre-assigned ID. This avoids
+	// the prior "find most recent revert for this field" pattern, which races
+	// against any concurrent writer to the same field at the same instant
+	// (e.g. a metadata refresh, an automated rule fix, or a parallel revert).
+	revertChange, err := r.historyService.GetByID(req.Context(), revertChangeID)
+	if err != nil {
+		// A missing revert history row is an expected edge case: the revert
+		// can become a no-op (e.g. the field already matched OldValue so
+		// UpdateField/ClearField recorded nothing) or history recording was
+		// best-effort. Log at Info rather than Error to avoid noise.
+		if errors.Is(err, artist.ErrChangeNotFound) {
+			r.logger.Info("revert change history row not found; rendering fallback fragment",
+				"change_id", changeID, "revert_change_id", revertChangeID)
+		} else {
+			r.logger.Error("fetching revert change by id",
+				"change_id", changeID, "revert_change_id", revertChangeID, "error", err)
+		}
+	}
+
+	// Determine whether the undo was triggered from the activity page or the
+	// artist history tab, then delegate to the appropriate render helper.
+	fromActivity := strings.Contains(req.Header.Get("HX-Current-URL"), "/activity")
+	if revertChange != nil {
+		if fromActivity {
+			if r.renderActivityRevertFragment(w, req, changeID, revertChange) {
+				return
+			}
+		} else {
+			if r.renderArtistTabRevertFragment(w, req, changeID, change, revertChange) {
+				return
+			}
+		}
+	}
+
+	// Fallback: the revert succeeded but we could not render the rich
+	// confirmation fragment. Causes: (a) new row is outside the active feed
+	// filter, (b) a lookup failed (already logged above), or (c) the row is
+	// genuinely missing. Log level distinguishes the cases.
+	if revertChange != nil {
+		r.logger.Info("revert succeeded; fragment suppressed by active filter",
+			"change_id", changeID, "revert_change_id", revertChangeID,
+			"field", change.Field, "artist_id", change.ArtistID)
+	} else {
+		r.logger.Warn("revert record not located after mutation, using fallback confirmation",
+			"change_id", changeID, "revert_change_id", revertChangeID,
+			"field", change.Field, "artist_id", change.ArtistID)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted. Refresh the page to see the updated entry.</p></div>`))
 }
 
 // handleListGlobalHistory returns paginated metadata changes across all artists.
