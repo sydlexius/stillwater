@@ -367,7 +367,8 @@ components:
         last_checked_at:
           type: string
           format: date-time
-          description: When the connection was last health-checked (UTC, RFC 3339).
+          nullable: true
+          description: When the connection was last health-checked (UTC, RFC 3339). Null when the connection has never been tested.
         created_at:
           type: string
           format: date-time
@@ -3750,12 +3751,45 @@ paths:
                   type: boolean
               required: [name, type, url]
       responses:
+        "200":
+          description: Existing connection updated (deduped on type+url).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionResponse"
         "201":
           description: Connection created
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConnectionResponse"
+        "204":
+          description: HTMX success. No body; the handler sets HX-Refresh so the client reloads the page.
+        "400":
+          description: Invalid request body or unsupported connection type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
+        "422":
+          description: Live test-before-save failed; the connection was not persisted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Test result status; "test_failed" indicates the live probe was rejected by the upstream platform.
+                  message:
+                    type: string
+                    description: Human-readable detail from the test failure.
+            text/html:
+              schema:
+                type: string
 
   /connections/{id}:
     get:
@@ -3815,6 +3849,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConnectionResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Connections]
       summary: Delete connection
@@ -3832,6 +3878,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "404":
+          description: Connection not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /connections/{id}/test:
     post:
@@ -3864,6 +3916,18 @@ paths:
                     description: Platform settings that may conflict with Stillwater-managed metadata. Present only when drift is detected.
                     items:
                       type: string
+        "400":
+          description: Connection type is unsupported or otherwise unrecognized by the test handler.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Connection not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /providers:
     get:
