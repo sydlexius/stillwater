@@ -1834,9 +1834,14 @@ paths:
               properties:
                 auth_method:
                   type: string
-                  enum: [local, emby, jellyfin]
                   default: local
-                  description: Authentication method for this instance
+                  description: |
+                    Authentication method for this instance. Built-in values
+                    are "local" (username + password), "emby", and "jellyfin"
+                    (federated against a media server). Any string registered
+                    in the server's auth.Registry is also accepted (e.g.
+                    "oidc"); the registry path bypasses media-server auth and
+                    expects the provider to resolve an identity directly.
                 username:
                   type: string
                 password:
@@ -1854,6 +1859,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: Request validation failed (missing fields, password policy, or invalid server URL)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Media server rejected the supplied credentials (federated auth only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "403":
           description: Media server user is not an administrator (federated auth only)
           content:
@@ -1862,6 +1879,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: Admin account already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error while creating the admin account (e.g. federated identity rejected by the user service)
           content:
             application/json:
               schema:
