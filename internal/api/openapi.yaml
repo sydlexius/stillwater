@@ -3141,6 +3141,12 @@ paths:
                     type: string
                     format: date-time
                     description: Present when the NFO file exists and is accessible; contains the file's last-modified timestamp regardless of conflict status. Omitted when the file does not exist or cannot be accessed (pathless artists, missing file, or filesystem errors).
+        "404":
+          description: Artist not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /history/{id}/revert:
     post:
