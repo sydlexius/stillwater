@@ -365,9 +365,8 @@ components:
           type: string
           description: Human-readable detail about the connection status.
         last_checked_at:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
           description: When the connection was last health-checked (UTC, RFC 3339). Null when the connection has never been tested.
         created_at:
           type: string
@@ -3783,10 +3782,12 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Test result status; "test_failed" indicates the live probe was rejected by the upstream platform.
-                  message:
+                    enum: [test_failed]
+                    description: Test result status; only "test_failed" is emitted on this branch.
+                  error:
                     type: string
                     description: Human-readable detail from the test failure.
+                required: [status, error]
             text/html:
               schema:
                 type: string
