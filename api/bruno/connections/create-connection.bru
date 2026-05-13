@@ -18,18 +18,24 @@ body:json {
   {
     "name": "Test Jellyfin",
     "type": "jellyfin",
-    "url": "http://localhost:8096",
+    "url": "http://127.0.0.1:1",
     "api_key": "test-key",
     "enabled": true
   }
 }
 
 docs {
-  Create-connection runs a live connectivity probe before persisting. With no
-  Jellyfin instance reachable at the given URL the probe fails and the API
-  returns 422 with status=test_failed. The contract under test here is the
-  request-body shape and the error envelope on connectivity failure -- not
-  the success path, which requires an external service.
+  Create-connection runs a live connectivity probe before persisting. The
+  probe target is loopback port 1, which is privileged and unbound on
+  every supported host, so the connection is refused deterministically
+  regardless of what services the developer is running locally. Using
+  the real Jellyfin default port 8096 here would silently turn this
+  contract test into a "does the dev box happen to have Jellyfin up"
+  flake -- M49's exact regression class.
+
+  The contract under test is the request-body shape and the error
+  envelope on connectivity failure (422 + status=test_failed), not the
+  success path, which requires an external service.
 }
 
 tests {

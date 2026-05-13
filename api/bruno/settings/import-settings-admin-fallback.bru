@@ -52,6 +52,7 @@ tests {
   });
 
   test("re-import is idempotent: counters never go negative", function() {
+    expect(res.body.settings).to.be.at.least(0);
     expect(res.body.libraries).to.be.at.least(0);
     expect(res.body.api_tokens).to.be.at.least(0);
   });
