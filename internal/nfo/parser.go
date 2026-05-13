@@ -189,8 +189,9 @@ func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start 
 		return parseAlbumElement(decoder, nfo)
 	case "stillwater":
 		return parseStillwater(decoder, nfo, start)
+	default:
+		return fmt.Errorf("unhandled known element %q: add a case or remove from knownElements", name)
 	}
-	return nil
 }
 
 // parseSliceField reads a single string element and appends a non-empty value
