@@ -156,9 +156,8 @@ func TestHandleCreateConnection_JSON_SkipTest_Lidarr(t *testing.T) {
 	body := strings.NewReader(`{"name":"Lidarr1","type":"lidarr","url":"http://lidarr.local:8686","api_key":"k","enabled":true,"skip_test":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", body)
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	// New connection (no dedupe) on the JSON path: handler at
 	// handlers_connection.go:315 returns 201 Created.
@@ -198,9 +197,8 @@ func TestHandleCreateConnection_FormSkipTest(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	// Form-encoded new connection on the non-HTMX path: 201 Created.
 	if w.Code != http.StatusCreated {
@@ -216,6 +214,9 @@ func TestHandleCreateConnection_BadJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", strings.NewReader("{not json"))
 	req.Header.Set("Content-Type", "application/json")
+	// NOT wrapped with serveValidated: the openapi request validator would
+	// reject malformed JSON before the handler runs, but the purpose of this
+	// test is to verify the handler's own 400 branch on a parse error.
 	w := httptest.NewRecorder()
 
 	r.handleCreateConnection(w, req)
@@ -250,9 +251,8 @@ func TestHandleCreateConnection_TestSuccess_WithStub(t *testing.T) {
 	buf, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	// Live-test success creates a new row: 201 Created.
 	if w.Code != http.StatusCreated {
@@ -284,9 +284,8 @@ func TestHandleCreateConnection_TestFailure_JSON(t *testing.T) {
 	buf, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body=%s", w.Code, w.Body.String())
@@ -315,9 +314,8 @@ func TestHandleCreateConnection_DuplicateUpdatesExisting(t *testing.T) {
 	body := strings.NewReader(`{"name":"Renamed","type":"lidarr","url":"http://dup.local:8686","api_key":"new","enabled":true,"skip_test":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", body)
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	// Duplicate POST on (type, url) takes the dedupe-update branch at
 	// handlers_connection.go:317 (`status = http.StatusOK`).
@@ -359,9 +357,8 @@ func TestHandleUpdateConnection_PatchesFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleUpdateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
@@ -386,9 +383,8 @@ func TestHandleUpdateConnection_NotFound(t *testing.T) {
 		strings.NewReader(`{"name":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "missing")
-	w := httptest.NewRecorder()
 
-	r.handleUpdateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnection), req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
@@ -408,6 +404,7 @@ func TestHandleUpdateConnection_BadJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/connections/"+c.ID, strings.NewReader("garbage"))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
+	// NOT wrapped with serveValidated: testing the handler's parse-error 400.
 	w := httptest.NewRecorder()
 
 	r.handleUpdateConnection(w, req)
@@ -439,9 +436,8 @@ func TestHandleDeleteConnection_DefaultClearsLibraryRefs(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+c.ID, nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDeleteConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDeleteConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -480,9 +476,8 @@ func TestHandleDeleteConnection_DeleteLibrariesQueryParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete,
 		"/api/v1/connections/"+c.ID+"?deleteLibraries=true", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDeleteConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDeleteConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -498,6 +493,10 @@ func TestHandleDeleteConnection_NotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/no-such-id", nil)
 	req.SetPathValue("id", "no-such-id")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet (which detects CallExpr selectors)
+	// continues to see deleteConnection as covered. Other tests in this file
+	// exercise the spec-validation surface via serveValidated.
 	w := httptest.NewRecorder()
 
 	r.handleDeleteConnection(w, req)
@@ -549,9 +548,8 @@ func TestHandleTestConnection_SSRFRFC1918Rejected(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost,
 				"/api/v1/connections/"+c.ID+"/test", nil)
 			req.SetPathValue("id", c.ID)
-			w := httptest.NewRecorder()
 
-			r.handleTestConnection(w, req)
+			w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
 
 			if w.Code != http.StatusOK {
 				t.Fatalf("status code = %d, want 200 (handler returns body status field)", w.Code)
@@ -574,6 +572,8 @@ func TestHandleTestConnection_NotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/none/test", nil)
 	req.SetPathValue("id", "none")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees testConnection as covered.
 	w := httptest.NewRecorder()
 
 	r.handleTestConnection(w, req)
@@ -606,9 +606,8 @@ func TestHandleTestConnection_UnsupportedType(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/connections/"+c.ID+"/test", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleTestConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -631,9 +630,8 @@ func TestHandleTestConnection_EmbyOK(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/connections/"+c.ID+"/test", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleTestConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
@@ -669,9 +667,8 @@ func TestHandleUpdateConnectionFeatures_Patches(t *testing.T) {
 		"/api/v1/connections/"+c.ID+"/features", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleUpdateConnectionFeatures(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleUpdateConnectionFeatures), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
@@ -693,6 +690,8 @@ func TestHandleUpdateConnectionFeatures_NotFound(t *testing.T) {
 		"/api/v1/connections/nope/features", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "nope")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees updateConnectionFeatures as covered.
 	w := httptest.NewRecorder()
 
 	r.handleUpdateConnectionFeatures(w, req)
@@ -717,9 +716,8 @@ func TestHandleGetPlatformSettings_Emby(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-settings", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSettings), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
@@ -733,6 +731,8 @@ func TestHandleGetPlatformSettings_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/missing/platform-settings", nil)
 	req.SetPathValue("id", "missing")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees getPlatformSettings as covered.
 	w := httptest.NewRecorder()
 
 	r.handleGetPlatformSettings(w, req)
@@ -756,9 +756,8 @@ func TestHandleGetPlatformSettings_UpstreamError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-settings", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSettings), req)
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", w.Code)
@@ -782,9 +781,8 @@ func TestHandleDisablePlatformSettings_EmbyMissingLibraryID(t *testing.T) {
 		strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDisablePlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDisablePlatformSettings), req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -806,9 +804,8 @@ func TestHandleDisablePlatformSettings_LidarrMissingConsumerID(t *testing.T) {
 		strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDisablePlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDisablePlatformSettings), req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
@@ -824,6 +821,8 @@ func TestHandleDisablePlatformSettings_NotFound(t *testing.T) {
 		strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "missing")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees disablePlatformSettings as covered.
 	w := httptest.NewRecorder()
 
 	r.handleDisablePlatformSettings(w, req)
@@ -848,9 +847,8 @@ func TestHandleGetPlatformSummary_Emby(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-summary", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSummary(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSummary), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
@@ -871,6 +869,8 @@ func TestHandleGetPlatformSummary_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/missing/platform-summary", nil)
 	req.SetPathValue("id", "missing")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees getPlatformSummary as covered.
 	w := httptest.NewRecorder()
 
 	r.handleGetPlatformSummary(w, req)
@@ -886,6 +886,8 @@ func TestHandleListConnections_Empty(t *testing.T) {
 	r := newConnectionTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees listConnections as covered.
 	w := httptest.NewRecorder()
 	r.handleListConnections(w, req)
 
@@ -914,8 +916,7 @@ func TestHandleListConnections_TwoEntries(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
-	w := httptest.NewRecorder()
-	r.handleListConnections(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleListConnections), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -941,8 +942,7 @@ func TestHandleGetConnection_OK(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/"+c.ID, nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
-	r.handleGetConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
@@ -962,6 +962,8 @@ func TestHandleGetConnection_NotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/missing", nil)
 	req.SetPathValue("id", "missing")
+	// NOT wrapped with serveValidated: kept as a direct invocation so the
+	// operationId-coverage ratchet sees getConnection as covered.
 	w := httptest.NewRecorder()
 	r.handleGetConnection(w, req)
 
@@ -985,6 +987,11 @@ func TestHandleCreateConnection_HTMXFailureRendersTemplate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("HX-Request", "true")
+	// NOT wrapped with serveValidated: the HTMX failure path emits a
+	// text/html error fragment and kin-openapi's body decoder registry has
+	// no text/html decoder, so the wrapper would fail to validate even a
+	// correctly-declared response. The HTMX surface is still documented in
+	// openapi.yaml as text/html content under the 422 response.
 	w := httptest.NewRecorder()
 
 	r.handleCreateConnection(w, req)
@@ -1009,9 +1016,8 @@ func TestHandleCreateConnection_HTMXSuccessTriggersRefresh(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("HX-Request", "true")
-	w := httptest.NewRecorder()
 
-	r.handleCreateConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleCreateConnection), req)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
@@ -1049,9 +1055,8 @@ func TestHandleTestConnection_Lidarr(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/connections/"+c.ID+"/test", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleTestConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1082,9 +1087,8 @@ func TestHandleGetPlatformSettings_Lidarr(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-settings", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSettings), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1115,9 +1119,8 @@ func TestHandleGetPlatformSummary_Lidarr(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-summary", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSummary(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSummary), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1154,9 +1157,8 @@ func TestHandleGetPlatformSummary_LidarrUpstreamError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-summary", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSummary(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSummary), req)
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", w.Code)
 	}
@@ -1177,9 +1179,8 @@ func TestHandleGetPlatformSummary_Jellyfin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-summary", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSummary(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSummary), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1200,9 +1201,8 @@ func TestHandleGetPlatformSettings_Jellyfin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/connections/"+c.ID+"/platform-settings", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleGetPlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleGetPlatformSettings), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1247,9 +1247,8 @@ func TestHandleDisablePlatformSettings_LidarrSuccess(t *testing.T) {
 		"/api/v1/connections/"+c.ID+"/platform-settings/disable", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDisablePlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDisablePlatformSettings), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
@@ -1274,9 +1273,8 @@ func TestHandleDisablePlatformSettings_UnsupportedType(t *testing.T) {
 		"/api/v1/connections/"+c.ID+"/platform-settings/disable", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDisablePlatformSettings(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDisablePlatformSettings), req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -1306,9 +1304,8 @@ func TestHandleDeleteConnection_WithArtists(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete,
 		"/api/v1/connections/"+c.ID+"?deleteLibraries=true&deleteArtists=true", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleDeleteConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleDeleteConnection), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
@@ -1333,9 +1330,8 @@ func TestHandleTestConnection_Jellyfin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/connections/"+c.ID+"/test", nil)
 	req.SetPathValue("id", c.ID)
-	w := httptest.NewRecorder()
 
-	r.handleTestConnection(w, req)
+	w := serveValidated(t, http.HandlerFunc(r.handleTestConnection), req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
