@@ -4,6 +4,10 @@ description: Configure Stillwater to obtain and renew TLS certificates automatic
 
 # ACME (Let's Encrypt / Buypass)
 
+!!! warning "Experimental"
+
+    The ACME path -- Let's Encrypt today, any future provider such as ZeroSSL -- has not been validated end-to-end against a real public deployment by the project. Treat it as preview. When ACME is active, the TLS Status card in **Settings -> General** shows an amber **Experimental** chip next to the status text and an amber caveat paragraph below it, so operators know to verify their setup before relying on it. For production, prefer [Direct TLS setup](direct-tls-setup.md) with a certificate you control.
+
 Stillwater can fetch and renew TLS certificates automatically via ACME, the same protocol Caddy and certbot use. Set one environment variable and a fresh certificate appears on first start; renewals run quietly in the background.
 
 ACME is the right answer when:

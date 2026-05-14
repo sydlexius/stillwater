@@ -37,6 +37,8 @@ Read-only summary of the HTTPS listener. Configure TLS via SW_TLS_CERT_FILE / SW
 {: #settings-general-tls-status-active-acme-with-domain }
 - **Active (ACME)**
 {: #settings-general-tls-status-active-acme }
+- **Experimental** -- Small chip rendered next to the Active (ACME) status when ACME auto-cert is in use. Signals that the ACME path (Let's Encrypt today; future providers such as ZeroSSL) is unverified and should be treated as preview-only until validated against a real deployment.
+{: #settings-general-tls-status-acme-experimental-badge }
 - **Inactive**
 {: #settings-general-tls-status-inactive }
 - **Listening:**
