@@ -89,6 +89,16 @@ docker_signs:
       - ${artifact}@${digest}
 
 changelog:
+  # The signed annotated tag's body is the source of truth for release
+  # notes (see release.header below, where {{ .TagBody }} is injected).
+  # Auto-generated commit-title dumps were overwriting hand-crafted
+  # release prose; v1.0.5 had to be patched with `gh release edit
+  # --notes-file` after the fact. Tag with:
+  #   git tag -s vX.Y.Z -F path/to/notes.md
+  # If the tag annotation is empty, the release body will simply omit
+  # the changelog section -- preferable to silently restoring the
+  # commit dump, which is the bug we're fixing.
+  disable: true
   sort: asc
   use: github
   groups:
@@ -125,10 +135,16 @@ release:
     name: stillwater
   prerelease: auto
   make_latest: false
+  # The body of a signed annotated tag (everything below the subject
+  # line of `git tag -s -F notes.md`) is injected here via {{ .TagBody }}.
+  # Footer below appends Docker pull + full-changelog link regardless,
+  # so even a minimal tag annotation produces a useful release page.
   header: |
     ## Stillwater {{ .Tag }}
 
     {{ if .Prerelease }}> This is a pre-release version. Use the `beta` Docker tag to try it out.{{ end }}
+
+    {{ .TagBody }}
   footer: |
     **Docker:** `docker pull ghcr.io/sydlexius/stillwater:{{ .Version }}`
 

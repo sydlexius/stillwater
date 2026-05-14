@@ -12,7 +12,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -435,14 +434,7 @@ func TestLayout_RendersWithoutHandlerContext(t *testing.T) {
 func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
 	t.Parallel()
 	// Set up test database and services
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 

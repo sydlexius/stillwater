@@ -4,29 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
-// openTestDB sets up an in-memory SQLite database with the production
-// migration applied + foreign keys enabled, matching the convention used in
-// internal/database/migrate_test.go. Tests share this helper so they get the
-// same schema as production startup, including the artist_libraries table
-// .
+// openTestDB returns a pre-migrated, foreign-key-enabled test database.
+// Delegates to newTestDB (testmain_test.go) so migration runs once per package.
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	if err := database.EnableForeignKeys(db); err != nil {
-		t.Fatalf("foreign keys: %v", err)
-	}
-	return db
+	return newTestDB(t)
 }
 
 // seedMembershipFixtures inserts the libraries and artists referenced by

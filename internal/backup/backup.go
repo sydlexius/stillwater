@@ -24,12 +24,25 @@ type BackupInfo struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Clock is the time source used by Service for backup filename timestamps.
+// The default implementation delegates to time.Now. Tests inject a fake clock
+// to generate unique filenames without sleeping.
+type Clock interface {
+	Now() time.Time
+}
+
+// realClock is the production Clock implementation.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now().UTC() }
+
 // Service manages database backups.
 type Service struct {
 	db         *sql.DB
 	backupDir  string
 	retention  int
 	maxAgeDays int
+	clock      Clock
 	mu         sync.RWMutex
 	logger     *slog.Logger
 }
@@ -40,8 +53,18 @@ func NewService(db *sql.DB, backupDir string, retention int, logger *slog.Logger
 		db:        db,
 		backupDir: backupDir,
 		retention: retention,
+		clock:     realClock{},
 		logger:    logger.With(slog.String("component", "backup")),
 	}
+}
+
+// WithClock attaches a clock to the service. Intended for tests that need to
+// generate unique backup filenames without sleeping.
+func (s *Service) WithClock(c Clock) *Service {
+	if c != nil {
+		s.clock = c
+	}
+	return s
 }
 
 // Backup creates a snapshot of the database using VACUUM INTO.
@@ -50,7 +73,7 @@ func (s *Service) Backup(ctx context.Context) (*BackupInfo, error) {
 		return nil, fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := s.clock.Now()
 	filename := fmt.Sprintf("stillwater-%s.db", now.Format("20060102-150405"))
 	dest := filepath.Join(s.backupDir, filename)
 
@@ -196,7 +219,7 @@ func (s *Service) Prune() error {
 
 	// Age-based pruning
 	if maxAge > 0 {
-		cutoff := time.Now().UTC().AddDate(0, 0, -maxAge)
+		cutoff := s.clock.Now().AddDate(0, 0, -maxAge)
 		// Re-read after count-based pruning may have removed some
 		backups, err = s.ListBackups()
 		if err != nil {

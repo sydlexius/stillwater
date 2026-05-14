@@ -24,7 +24,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -35,14 +34,7 @@ import (
 func testRouterForLibraryOps(t *testing.T) *Router {
 	t.Helper()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 

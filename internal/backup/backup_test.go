@@ -6,11 +6,32 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// testClock is a Clock for tests. Each call to Now advances the internal
+// counter by one second so sequential Backup calls produce distinct filenames
+// without requiring time.Sleep.
+type testClock struct {
+	mu  sync.Mutex
+	cur time.Time
+}
+
+func newTestClock() *testClock {
+	return &testClock{cur: time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)}
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := c.cur
+	c.cur = c.cur.Add(time.Second)
+	return t
+}
 
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -73,15 +94,16 @@ func TestListBackups(t *testing.T) {
 	db := setupTestDB(t)
 	backupDir := filepath.Join(t.TempDir(), "backups")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewService(db, backupDir, 7, logger)
+	// The fake clock advances by 1s per call so each Backup gets a unique
+	// filename without requiring time.Sleep.
+	svc := NewService(db, backupDir, 7, logger).WithClock(newTestClock())
 
-	// Create 3 backups with small delays
+	// Create 3 backups -- no sleep needed with the injected clock.
 	for i := 0; i < 3; i++ {
 		_, err := svc.Backup(context.Background())
 		if err != nil {
 			t.Fatalf("Backup %d: %v", i, err)
 		}
-		time.Sleep(1100 * time.Millisecond) // Ensure different timestamps
 	}
 
 	backups, err := svc.ListBackups()
@@ -102,15 +124,14 @@ func TestPrune(t *testing.T) {
 	db := setupTestDB(t)
 	backupDir := filepath.Join(t.TempDir(), "backups")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewService(db, backupDir, 2, logger) // Keep only 2
+	svc := NewService(db, backupDir, 2, logger).WithClock(newTestClock()) // Keep only 2
 
-	// Create 4 backups
+	// Create 4 backups -- no sleep needed with the injected clock.
 	for i := 0; i < 4; i++ {
 		_, err := svc.Backup(context.Background())
 		if err != nil {
 			t.Fatalf("Backup %d: %v", i, err)
 		}
-		time.Sleep(1100 * time.Millisecond)
 	}
 
 	if err := svc.Prune(); err != nil {
