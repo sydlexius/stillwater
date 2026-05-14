@@ -11,13 +11,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 )
 
-// baseTestTime is the starting timestamp for FakeClock instances. It is set to
-// a time well ahead of any datetime('now') written into the template DB so that
-// fake clock ticks are always strictly greater than pre-seeded timestamps.
-// Using time.Now() + 1 minute (rather than a fixed historical date) prevents
-// the migration-seeded extraneous_images rule's updated_at from appearing newer
-// than the fake clock values.
-var baseTestTime = time.Now().UTC().Add(time.Minute)
+// baseTestTime is the starting timestamp for FakeClock instances. Initialized
+// in TestMain after the template DB is migrated, so the value is guaranteed to
+// be strictly greater than any datetime('now') the migrations wrote during
+// setup (notably the seeded extraneous_images rule's updated_at). Computing it
+// at package-init time worked in practice but left a race: anything that ran
+// slower than the test-clock-vs-migration tolerance could see the wrong
+// ordering.
+var baseTestTime time.Time
 
 // FakeClock is a Clock implementation for tests. Each call to Now advances the
 // internal counter by one second, so callers that need strictly ordered
@@ -61,6 +62,10 @@ func TestMain(m *testing.M) {
 		panic("checkpointing template db: " + err.Error())
 	}
 	_ = db.Close()
+
+	// Initialize baseTestTime here, after every datetime('now') the migrations
+	// just wrote, so FakeClock ticks always start strictly after seeded rows.
+	baseTestTime = time.Now().UTC().Add(time.Minute)
 
 	code := m.Run()
 	_ = os.RemoveAll(dir)
