@@ -191,6 +191,130 @@ func validatedOrderClause(params ListParams) string {
 	return col + " " + dir
 }
 
+// filterPredicate maps an include/exclude state to a SQL fragment and its bound
+// arguments. An empty fragment signals that the state is not applicable (e.g.
+// an unrecognized state string); the caller skips such entries.
+type filterPredicate func(state string) (fragment string, args []any)
+
+// imageExistsClause builds a single NOT EXISTS / EXISTS sub-select for the
+// artist_images table. Keeping the template here avoids repeating the table
+// name and column list in every predicate definition.
+func imageExistsClause(imageType string, exists bool) string {
+	if exists {
+		return "EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = '" + imageType + "' AND exists_flag = 1)"
+	}
+	return "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = '" + imageType + "' AND exists_flag = 1)"
+}
+
+// legacyImageTypes is the ordered set of image types used by the missing_images
+// multi-EXISTS predicate. Order is stable so generated SQL is deterministic.
+var legacyImageTypes = []string{"thumb", "fanart", "logo", "banner"}
+
+// missingImagesPredicate returns a compound SQL fragment that matches artists
+// missing ANY image type (include) or having ALL image types (exclude).
+func missingImagesPredicate(state string) (string, []any) {
+	parts := make([]string, len(legacyImageTypes))
+	switch state {
+	case "include":
+		// Match artists missing ANY of the tracked image types.
+		for i, t := range legacyImageTypes {
+			parts[i] = imageExistsClause(t, false)
+		}
+		return "(" + strings.Join(parts, " OR ") + ")", nil
+	case "exclude":
+		// Match artists that have ALL of the tracked image types (drops the missing ones).
+		for i, t := range legacyImageTypes {
+			parts[i] = imageExistsClause(t, true)
+		}
+		return "(" + strings.Join(parts, " AND ") + ")", nil
+	}
+	return "", nil
+}
+
+// artistFilterPredicates maps flyout filter keys to their predicate functions.
+// Keys here are the canonical names from ListParams.Filters. Each predicate
+// receives the filter state ("include" or "exclude") and returns the SQL
+// fragment and any bound arguments for that state. Predicates that produce no
+// SQL for a given state return an empty fragment.
+//
+// Type filters (type_person, type_group, type_orchestra) and library filters
+// (library_{id}) are NOT in this map; they aggregate across multiple keys and
+// are handled separately in buildWhereClause.
+var artistFilterPredicates = map[string]filterPredicate{
+	"missing_meta": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "nfo_exists = 0", nil
+		case "exclude":
+			return "nfo_exists = 1", nil
+		}
+		return "", nil
+	},
+	"missing_images": missingImagesPredicate,
+	"missing_mbid": func(state string) (string, []any) {
+		// Check for a non-empty provider_id, not just row existence.
+		// UpsertAll inserts a musicbrainz row even when no MBID was found
+		// (provider_id == ""), so a bare EXISTS would misclassify those artists.
+		switch state {
+		case "include":
+			return "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')", nil
+		case "exclude":
+			return "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')", nil
+		}
+		return "", nil
+	},
+	"excluded": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "is_excluded = 1", nil
+		case "exclude":
+			return "is_excluded = 0", nil
+		}
+		return "", nil
+	},
+	"locked": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "locked = 1", nil
+		case "exclude":
+			return "locked = 0", nil
+		}
+		return "", nil
+	},
+}
+
+// typeFilterKeys maps flyout type-filter keys to their database type name
+// values. type_person maps to two values because MusicBrainz stores Person as
+// "solo" while legacy imports may use "person".
+var typeFilterKeys = map[string][]string{
+	"type_person":    {"person", "solo"},
+	"type_group":     {"group"},
+	"type_orchestra": {"orchestra"},
+}
+
+// buildPlaceholders returns a comma-separated "?,?,?" string of length n.
+func buildPlaceholders(n int) string {
+	ph := strings.Repeat("?,", n)
+	return ph[:len(ph)-1]
+}
+
+// legacyFilterSQL maps the legacy single-value params.Filter strings to fixed
+// SQL fragments. These use only literal values (no user input is interpolated).
+var legacyFilterSQL = map[string]string{
+	"missing_nfo":    "nfo_exists = 0",
+	"missing_thumb":  imageExistsClause("thumb", false),
+	"missing_fanart": imageExistsClause("fanart", false),
+	"missing_logo":   imageExistsClause("logo", false),
+	"missing_banner": imageExistsClause("banner", false),
+	"missing_mbid":   "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz' AND provider_id IS NOT NULL AND provider_id <> '')",
+	"excluded":       "is_excluded = 1",
+	"not_excluded":   "is_excluded = 0",
+	"locked":         "locked = 1",
+	"not_locked":     "locked = 0",
+	"compliant":      "health_score >= 100",
+	"non_compliant":  "health_score < 100",
+}
+
 // buildWhereClause constructs WHERE conditions from list parameters.
 func buildWhereClause(params ListParams) (string, []any) {
 	var conditions []string
@@ -227,154 +351,81 @@ func buildWhereClause(params ListParams) (string, []any) {
 		args = append(args, params.LibraryID)
 	}
 
-	switch params.Filter {
-	case "missing_nfo":
-		conditions = append(conditions, "nfo_exists = 0")
-	case "missing_thumb":
-		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1)")
-	case "missing_fanart":
-		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1)")
-	case "missing_logo":
-		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1)")
-	case "missing_banner":
-		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1)")
-	case "missing_mbid":
-		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
-	case "excluded":
-		conditions = append(conditions, "is_excluded = 1")
-	case "not_excluded":
-		conditions = append(conditions, "is_excluded = 0")
-	case "locked":
-		conditions = append(conditions, "locked = 1")
-	case "not_locked":
-		conditions = append(conditions, "locked = 0")
-	case "compliant":
-		conditions = append(conditions, "health_score >= 100")
-	case "non_compliant":
-		conditions = append(conditions, "health_score < 100")
+	// Legacy single-filter param: maps a fixed set of filter names to SQL.
+	if frag, ok := legacyFilterSQL[params.Filter]; ok {
+		conditions = append(conditions, frag)
 	}
 
-	// Apply flyout-driven multi-filter conditions. Each key maps to "include"
-	// (add positive condition) or "exclude" (add negative condition). The
-	// "missing_images" key matches any artist missing at least one image type.
-	for key, state := range params.Filters {
-		switch key {
-		case "missing_meta":
-			switch state {
-			case "include":
-				conditions = append(conditions, "nfo_exists = 0")
-			case "exclude":
-				conditions = append(conditions, "nfo_exists = 1")
-			}
-		case "missing_images":
-			switch state {
-			case "include":
-				// Include artists missing ANY of thumb, fanart, logo, or banner.
-				conditions = append(conditions, "(NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
-			case "exclude":
-				// Exclude artists that have ALL of thumb, fanart, logo, and banner.
-				conditions = append(conditions, "(EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
-			}
-		case "missing_mbid":
-			switch state {
-			case "include":
-				conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
-			case "exclude":
-				conditions = append(conditions, "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
-			}
-		case "excluded":
-			switch state {
-			case "include":
-				conditions = append(conditions, "is_excluded = 1")
-			case "exclude":
-				conditions = append(conditions, "is_excluded = 0")
-			}
-		case "locked":
-			switch state {
-			case "include":
-				conditions = append(conditions, "locked = 1")
-			case "exclude":
-				conditions = append(conditions, "locked = 0")
-			}
-		}
-	}
-
-	// Aggregate artist-type filters into IN/NOT IN conditions so that
-	// including multiple types produces OR logic (not impossible AND logic).
+	// Flyout multi-filter: each key dispatches through the predicate map.
+	// Type and library keys are accumulated separately below.
 	var typeIncludes, typeExcludes []string
+	var libIncludes, libExcludes []string
+
 	for key, state := range params.Filters {
-		var typeNames []string
-		switch key {
-		case "type_person":
-			// MusicBrainz stores Person as "solo"; match both for
-			// compatibility with manually-set "person" values.
-			typeNames = []string{"person", "solo"}
-		case "type_group":
-			typeNames = []string{"group"}
-		case "type_orchestra":
-			typeNames = []string{"orchestra"}
-		default:
+		if typeNames, ok := typeFilterKeys[key]; ok {
+			switch state {
+			case "include":
+				typeIncludes = append(typeIncludes, typeNames...)
+			case "exclude":
+				typeExcludes = append(typeExcludes, typeNames...)
+			}
 			continue
 		}
-		switch state {
-		case "include":
-			typeIncludes = append(typeIncludes, typeNames...)
-		case "exclude":
-			typeExcludes = append(typeExcludes, typeNames...)
+		if strings.HasPrefix(key, "library_") {
+			libID := key[len("library_"):]
+			if libID == "" {
+				continue
+			}
+			switch state {
+			case "include":
+				libIncludes = append(libIncludes, libID)
+			case "exclude":
+				libExcludes = append(libExcludes, libID)
+			}
+			continue
+		}
+		if pred, ok := artistFilterPredicates[key]; ok {
+			if frag, pArgs := pred(state); frag != "" {
+				conditions = append(conditions, frag)
+				args = append(args, pArgs...)
+			}
 		}
 	}
+
+	// Aggregate type filters into a single IN / NOT IN clause so that
+	// selecting multiple types produces OR logic (not impossible AND).
 	if len(typeIncludes) > 0 {
-		ph := strings.Repeat("?,", len(typeIncludes))
-		conditions = append(conditions, "type IN ("+ph[:len(ph)-1]+")")
+		conditions = append(conditions, "type IN ("+buildPlaceholders(len(typeIncludes))+")")
 		for _, t := range typeIncludes {
 			args = append(args, t)
 		}
 	}
 	if len(typeExcludes) > 0 {
-		ph := strings.Repeat("?,", len(typeExcludes))
-		conditions = append(conditions, "type NOT IN ("+ph[:len(ph)-1]+")")
+		conditions = append(conditions, "type NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
 		for _, t := range typeExcludes {
 			args = append(args, t)
 		}
 	}
 
-	// Aggregate per-library filters into IN/NOT IN conditions.
-	var libIncludes, libExcludes []string
-	for key, state := range params.Filters {
-		if !strings.HasPrefix(key, "library_") {
-			continue
-		}
-		libID := key[len("library_"):]
-		if libID == "" {
-			continue
-		}
-		switch state {
-		case "include":
-			libIncludes = append(libIncludes, libID)
-		case "exclude":
-			libExcludes = append(libExcludes, libID)
-		}
-	}
+	// Aggregate per-library filters into EXISTS / NOT EXISTS sub-selects.
 	if len(libIncludes) > 0 {
-		ph := strings.Repeat("?,", len(libIncludes))
 		// Match artists with membership in ANY of the included libraries.
 		conditions = append(conditions, `EXISTS (
 			SELECT 1 FROM artist_libraries al
 			WHERE al.artist_id = artists.id
-			  AND al.library_id IN (`+ph[:len(ph)-1]+`)
+			  AND al.library_id IN (`+buildPlaceholders(len(libIncludes))+`)
 		)`)
 		for _, id := range libIncludes {
 			args = append(args, id)
 		}
 	}
 	if len(libExcludes) > 0 {
-		ph := strings.Repeat("?,", len(libExcludes))
 		// Drop artists with membership in any excluded library. Artists
 		// with no membership in the excluded set pass through.
 		conditions = append(conditions, `NOT EXISTS (
 			SELECT 1 FROM artist_libraries al
 			WHERE al.artist_id = artists.id
-			  AND al.library_id IN (`+ph[:len(ph)-1]+`)
+			  AND al.library_id IN (`+buildPlaceholders(len(libExcludes))+`)
 		)`)
 		for _, id := range libExcludes {
 			args = append(args, id)
