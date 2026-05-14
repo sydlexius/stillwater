@@ -24,17 +24,10 @@ import (
 func testRouterWithLibrary(t *testing.T) (*Router, *library.Service, *artist.Service) {
 	t.Helper()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
+	db := newTestDB(t)
 	if err := database.EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 

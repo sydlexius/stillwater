@@ -3,21 +3,11 @@ package artist
 import (
 	"context"
 	"testing"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 func setupAliasTest(t *testing.T) *Service {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return NewService(db)
+	return NewService(newTestDB(t))
 }
 
 func createTestArtist(t *testing.T, svc *Service, name string) *Artist {

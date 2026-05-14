@@ -17,7 +17,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -31,14 +30,7 @@ import (
 func newNFOTestServer(t testing.TB) (*Router, *artist.Service, *connection.Service, *nfo.SnapshotService) {
 	t.Helper()
 
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	enc, _, err := encryption.NewEncryptor("")

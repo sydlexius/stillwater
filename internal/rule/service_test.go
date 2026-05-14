@@ -2775,7 +2775,7 @@ func TestListViolationsFiltered_SearchEscapesLikeWildcards(t *testing.T) {
 // perspective; only an explicit reset path may transition out of it.
 func TestUpsertViolation_PreservesDismissedStatus(t *testing.T) {
 	db := setupTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db).WithClock(NewFakeClock(baseTestTime))
 	ctx := context.Background()
 
 	// Step 1: insert an open violation.
@@ -2847,8 +2847,8 @@ func TestUpsertViolation_PreservesDismissedStatus(t *testing.T) {
 	).Scan(&beforeLastFailed); err != nil && err != sql.ErrNoRows {
 		t.Fatalf("reading pre-resurrect evaluated_at: %v", err)
 	}
-	// Nudge clock so a fresh write would visibly bump the timestamp.
-	time.Sleep(1100 * time.Millisecond)
+	// The fake clock advances each Now() call by one second, so any accidental
+	// write to rule_results.evaluated_at would produce a visibly different value.
 	if err := svc.UpsertViolation(ctx, &RuleViolation{
 		RuleID: v.RuleID, ArtistID: v.ArtistID, ArtistName: v.ArtistName,
 		Severity: v.Severity, Message: v.Message, Fixable: true,

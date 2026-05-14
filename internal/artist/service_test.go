@@ -6,8 +6,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 // failingMembershipRepo wraps a real MembershipRepository but returns a
@@ -35,17 +33,12 @@ func (f *failingMembershipRepo) AddDerivingSource(ctx context.Context, artistID,
 	return f.err
 }
 
+// setupTestDB returns a pre-migrated test database. It delegates to newTestDB
+// (defined in testmain_test.go) so migration runs once per package via
+// TestMain rather than once per test.
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return newTestDB(t)
 }
 
 // seedLibraries inserts placeholder libraries rows so that Service.Create's

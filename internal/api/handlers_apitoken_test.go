@@ -6,13 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/auth"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -22,17 +20,7 @@ import (
 func testRouterWithAuth(t *testing.T) (*Router, *auth.Service, string) {
 	t.Helper()
 
-	dbDir := t.TempDir()
-	dbPath := filepath.Join(dbDir, "test.db")
-
-	db, err := database.Open(dbPath)
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
