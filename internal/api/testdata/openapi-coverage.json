@@ -851,7 +851,7 @@
     "method": "POST",
     "path": "/webhooks/inbound/lidarr",
     "handler": "handleLidarrWebhook",
-    "covered": false
+    "covered": true
   },
   {
     "operationId": "importLibraries",
