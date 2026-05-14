@@ -236,6 +236,12 @@ how-to/http-redirect#port-80-reachability-http-redirect-port-80
 how-to/http-redirect#settings-page-indicator-http-redirect-settings
 how-to/http-redirect#verifying-the-redirect-http-redirect-verify
 how-to/http-redirect#when-to-enable-it-http-redirect-when
+how-to/inbound-webhooks#configure-a-webhook
+how-to/inbound-webhooks#graceful-shutdown
+how-to/inbound-webhooks#how-signature-verification-works
+how-to/inbound-webhooks#inbound-webhooks
+how-to/inbound-webhooks#operational-notes
+how-to/inbound-webhooks#troubleshooting
 how-to/index#how-to-guides
 how-to/refresh-metadata#refresh-many-artists
 how-to/refresh-metadata#refresh-metadata

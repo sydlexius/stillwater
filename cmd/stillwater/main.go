@@ -585,6 +585,7 @@ func run() error {
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,
 		I18nBundle:         i18nBundle,
+		Encryptor:          encryptor,
 	})
 
 	// Graceful shutdown
@@ -723,13 +724,25 @@ func run() error {
 	// otherwise schedule a Run() into a draining scanner.
 	stop()
 
-	// Drain in-flight webhook deliveries before stopping the scanner so that
-	// goroutines spawned by HandleEvent can finish cleanly. A 10s deadline
-	// matches requestTimeout and prevents a misbehaving webhook target from
+	// Drain in-flight INBOUND webhook handlers first. Each handler can spawn
+	// outbound work (HandleEvent -> webhookDispatcher.Send), so we want them
+	// finished before we start draining the dispatcher; otherwise the
+	// dispatcher's deadline could expire while new outbound jobs are still
+	// being enqueued by surviving handlers. The 5-minute bound matches the
+	// per-handler context window and ensures shutdown cannot hang on a worker
+	// stuck in non-context-aware code.
+	inboundDrainCtx, inboundDrainCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer inboundDrainCancel()
+	if err := router.DrainWebhooks(inboundDrainCtx); err != nil {
+		logger.Warn("webhook drain did not complete cleanly", "error", err)
+	}
+
+	// Now drain in-flight OUTBOUND webhook deliveries. A 10s deadline matches
+	// requestTimeout and prevents a misbehaving external webhook target from
 	// blocking shutdown indefinitely.
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer drainCancel()
-	if err := webhookDispatcher.Drain(drainCtx); err != nil {
+	outboundDrainCtx, outboundDrainCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer outboundDrainCancel()
+	if err := webhookDispatcher.Drain(outboundDrainCtx); err != nil {
 		logger.Warn("webhook drain timed out", slog.String("error", err.Error()))
 	}
 
