@@ -28,8 +28,12 @@ var ErrPrivateAddress = errors.New("address is private or reserved")
 //   - MaxIdleConnsPerHost: 32
 //   - IdleConnTimeout: 90s
 //
-// All other settings (TLS timeouts, HTTP/2, proxy support) are preserved from
-// http.DefaultTransport via Clone().
+// All other settings (TLS timeouts, HTTP/2) are preserved from
+// http.DefaultTransport via Clone(). Proxy is explicitly disabled (t.Proxy = nil)
+// so DialContext always receives the request's real destination -- forward
+// proxies would otherwise hide the target host and let private addresses bypass
+// the SSRF guard. Operators who need an egress proxy must wire one after
+// constructing SafeTransport.
 func SafeTransport() *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {

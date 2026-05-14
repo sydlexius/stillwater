@@ -203,7 +203,10 @@ func TestSafeTransport_DNSRebinding_DirectDialContext(t *testing.T) {
 		for _, ip := range ips {
 			if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
 				ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
-				return fmt.Errorf("resolved address %s is private or reserved", ip.IP)
+				// Mirror production semantics: wrap the sentinel so the test
+				// assertion (errors.Is against ErrPrivateAddress) sees the
+				// same shape SafeTransport would have produced.
+				return fmt.Errorf("resolved address %s: %w", ip.IP, httpsafe.ErrPrivateAddress)
 			}
 		}
 		var lastErr error
@@ -222,23 +225,16 @@ func TestSafeTransport_DNSRebinding_DirectDialContext(t *testing.T) {
 
 	// First call: stubLookup returns 8.8.8.8 (public). The guard passes; the
 	// TCP connection to port 12345 fails (no listener), but the error must NOT
-	// be the SSRF block message.
+	// be the SSRF block sentinel.
 	err1 := blockingDial(ctx, "tcp", "rebind-victim.test:12345")
-	if err1 != nil {
-		errStr := err1.Error()
-		for i := 0; i <= len(errStr)-len("private or reserved"); i++ {
-			if errStr[i:i+len("private or reserved")] == "private or reserved" {
-				t.Fatalf("first dial (8.8.8.8) was incorrectly SSRF-blocked: %v", err1)
-			}
-		}
-		t.Logf("first dial error (expected TCP failure, not SSRF block): %v", err1)
+	if err1 != nil && errors.Is(err1, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("first dial (8.8.8.8) was incorrectly SSRF-blocked: %v", err1)
 	}
 
 	// Second call: stubLookup returns 10.0.0.1 (RFC 1918). The guard MUST
 	// reject this -- the rebinding attack has flipped the resolved IP.
 	err2 := blockingDial(ctx, "tcp", "rebind-victim.test:12345")
-	if err2 == nil {
-		t.Fatal("expected SSRF block on second dial (rebind to 10.0.0.1)")
+	if !errors.Is(err2, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("second dial err = %v; want errors.Is(err, ErrPrivateAddress) (rebind to 10.0.0.1)", err2)
 	}
-	t.Logf("second dial correctly blocked: %v", err2)
 }
