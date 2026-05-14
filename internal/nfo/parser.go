@@ -134,117 +134,146 @@ func parseTokens(decoder *xml.Decoder, nfo *ArtistNFO) error {
 	return nil
 }
 
+// stringFieldTarget maps simple string-valued element names to the ArtistNFO
+// field they populate. All targets are populated by reading character data only;
+// no attributes are involved.
+//
+// The map is keyed on the XML element local name. Values are accessor functions
+// that return a pointer to the target string field given an *ArtistNFO, allowing
+// a single decodeCharData call to handle every entry in the table.
+var stringFieldTarget = map[string]func(*ArtistNFO) *string{
+	"name":                func(n *ArtistNFO) *string { return &n.Name },
+	"sortname":            func(n *ArtistNFO) *string { return &n.SortName },
+	"type":                func(n *ArtistNFO) *string { return &n.Type },
+	"gender":              func(n *ArtistNFO) *string { return &n.Gender },
+	"disambiguation":      func(n *ArtistNFO) *string { return &n.Disambiguation },
+	"musicbrainzartistid": func(n *ArtistNFO) *string { return &n.MusicBrainzArtistID },
+	"audiodbartistid":     func(n *ArtistNFO) *string { return &n.AudioDBArtistID },
+	"discogsartistid":     func(n *ArtistNFO) *string { return &n.DiscogsArtistID },
+	"wikidataid":          func(n *ArtistNFO) *string { return &n.WikidataID },
+	"deezerartistid":      func(n *ArtistNFO) *string { return &n.DeezerArtistID },
+	"spotifyartistid":     func(n *ArtistNFO) *string { return &n.SpotifyArtistID },
+	"yearsactive":         func(n *ArtistNFO) *string { return &n.YearsActive },
+	"born":                func(n *ArtistNFO) *string { return &n.Born },
+	"formed":              func(n *ArtistNFO) *string { return &n.Formed },
+	"died":                func(n *ArtistNFO) *string { return &n.Died },
+	"disbanded":           func(n *ArtistNFO) *string { return &n.Disbanded },
+	"biography":           func(n *ArtistNFO) *string { return &n.Biography },
+}
+
 // parseKnownElement handles a recognized XML element.
+// Simple string fields are dispatched through stringFieldTarget; structured
+// elements (thumb, fanart, lockdata, album, stillwater) are handled by
+// dedicated parse helpers.
 func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start xml.StartElement) error {
+	// Fast path: plain string fields.
+	if target := stringFieldTarget[name]; target != nil {
+		return decodeCharData(decoder, target(nfo))
+	}
+
+	// Slice-appending fields and structured elements.
 	switch name {
-	case "name":
-		return decodeCharData(decoder, &nfo.Name)
-	case "sortname":
-		return decodeCharData(decoder, &nfo.SortName)
-	case "type":
-		return decodeCharData(decoder, &nfo.Type)
-	case "gender":
-		return decodeCharData(decoder, &nfo.Gender)
-	case "disambiguation":
-		return decodeCharData(decoder, &nfo.Disambiguation)
-	case "musicbrainzartistid":
-		return decodeCharData(decoder, &nfo.MusicBrainzArtistID)
-	case "audiodbartistid":
-		return decodeCharData(decoder, &nfo.AudioDBArtistID)
-	case "discogsartistid":
-		return decodeCharData(decoder, &nfo.DiscogsArtistID)
-	case "wikidataid":
-		return decodeCharData(decoder, &nfo.WikidataID)
-	case "deezerartistid":
-		return decodeCharData(decoder, &nfo.DeezerArtistID)
-	case "spotifyartistid":
-		return decodeCharData(decoder, &nfo.SpotifyArtistID)
 	case "genre":
-		var s string
-		if err := decodeCharData(decoder, &s); err != nil {
-			return err
-		}
-		if s != "" {
-			nfo.Genres = append(nfo.Genres, s)
-		}
+		return parseSliceField(decoder, &nfo.Genres)
 	case "style":
-		var s string
-		if err := decodeCharData(decoder, &s); err != nil {
-			return err
-		}
-		if s != "" {
-			nfo.Styles = append(nfo.Styles, s)
-		}
+		return parseSliceField(decoder, &nfo.Styles)
 	case "mood":
-		var s string
-		if err := decodeCharData(decoder, &s); err != nil {
-			return err
-		}
-		if s != "" {
-			nfo.Moods = append(nfo.Moods, s)
-		}
-	case "yearsactive":
-		return decodeCharData(decoder, &nfo.YearsActive)
-	case "born":
-		return decodeCharData(decoder, &nfo.Born)
-	case "formed":
-		return decodeCharData(decoder, &nfo.Formed)
-	case "died":
-		return decodeCharData(decoder, &nfo.Died)
-	case "disbanded":
-		return decodeCharData(decoder, &nfo.Disbanded)
-	case "biography":
-		return decodeCharData(decoder, &nfo.Biography)
+		return parseSliceField(decoder, &nfo.Moods)
 	case "thumb":
-		thumb := Thumb{}
-		for _, attr := range start.Attr {
-			switch attr.Name.Local {
-			case "aspect":
-				thumb.Aspect = attr.Value
-			case "preview":
-				thumb.Preview = attr.Value
-			}
-		}
-		if err := decodeCharData(decoder, &thumb.Value); err != nil {
-			return err
-		}
-		nfo.Thumbs = append(nfo.Thumbs, thumb)
+		return parseThumb(decoder, nfo, start)
 	case "fanart":
-		fanart := &Fanart{}
-		if err := parseFanart(decoder, fanart); err != nil {
-			return err
-		}
-		nfo.Fanart = fanart
+		return parseFanartElement(decoder, nfo)
 	case "lockdata":
-		var s string
-		if err := decodeCharData(decoder, &s); err != nil {
-			return err
-		}
-		nfo.LockData = parseBoolString(s)
+		return parseLockData(decoder, nfo)
 	case "album":
-		album := DiscographyAlbum{}
-		if err := parseAlbum(decoder, &album); err != nil {
-			return err
-		}
-		// Preserve empty <album/> entries if callers include them; skip
-		// wholly-empty entries to avoid polluting round-tripped output.
-		if album.Title != "" || album.Year != "" || album.MusicBrainzReleaseGroupID != "" {
-			nfo.Albums = append(nfo.Albums, album)
-		}
+		return parseAlbumElement(decoder, nfo)
 	case "stillwater":
-		nfo.Stillwater = &StillwaterMeta{}
-		for _, attr := range start.Attr {
-			switch attr.Name.Local {
-			case "version":
-				nfo.Stillwater.Version = attr.Value
-			case "written":
-				nfo.Stillwater.Written = attr.Value
-			}
+		return parseStillwater(decoder, nfo, start)
+	default:
+		return fmt.Errorf("unhandled known element %q: add a case or remove from knownElements", name)
+	}
+}
+
+// parseSliceField reads a single string element and appends a non-empty value
+// to the target slice. It is used for repeating elements such as genre, style,
+// and mood.
+func parseSliceField(decoder *xml.Decoder, target *[]string) error {
+	var s string
+	if err := decodeCharData(decoder, &s); err != nil {
+		return err
+	}
+	if s != "" {
+		*target = append(*target, s)
+	}
+	return nil
+}
+
+// parseThumb reads a <thumb> element with optional aspect and preview
+// attributes and appends the result to nfo.Thumbs.
+func parseThumb(decoder *xml.Decoder, nfo *ArtistNFO, start xml.StartElement) error {
+	thumb := Thumb{}
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "aspect":
+			thumb.Aspect = attr.Value
+		case "preview":
+			thumb.Preview = attr.Value
 		}
-		// Consume the end element (or self-closing element content).
-		if err := decoder.Skip(); err != nil {
-			return fmt.Errorf("skipping stillwater element content: %w", err)
+	}
+	if err := decodeCharData(decoder, &thumb.Value); err != nil {
+		return err
+	}
+	nfo.Thumbs = append(nfo.Thumbs, thumb)
+	return nil
+}
+
+// parseFanartElement reads the <fanart> element and assigns it to nfo.Fanart.
+func parseFanartElement(decoder *xml.Decoder, nfo *ArtistNFO) error {
+	fanart := &Fanart{}
+	if err := parseFanart(decoder, fanart); err != nil {
+		return err
+	}
+	nfo.Fanart = fanart
+	return nil
+}
+
+// parseLockData reads the <lockdata> element and sets nfo.LockData.
+func parseLockData(decoder *xml.Decoder, nfo *ArtistNFO) error {
+	var s string
+	if err := decodeCharData(decoder, &s); err != nil {
+		return err
+	}
+	nfo.LockData = parseBoolString(s)
+	return nil
+}
+
+// parseAlbumElement reads a single <album> entry and appends it to nfo.Albums.
+// Wholly-empty entries are skipped to avoid polluting round-tripped output.
+func parseAlbumElement(decoder *xml.Decoder, nfo *ArtistNFO) error {
+	album := DiscographyAlbum{}
+	if err := parseAlbum(decoder, &album); err != nil {
+		return err
+	}
+	if album.Title != "" || album.Year != "" || album.MusicBrainzReleaseGroupID != "" {
+		nfo.Albums = append(nfo.Albums, album)
+	}
+	return nil
+}
+
+// parseStillwater reads the <stillwater> element attributes and sets
+// nfo.Stillwater. The element body (if any) is consumed via decoder.Skip.
+func parseStillwater(decoder *xml.Decoder, nfo *ArtistNFO, start xml.StartElement) error {
+	nfo.Stillwater = &StillwaterMeta{}
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "version":
+			nfo.Stillwater.Version = attr.Value
+		case "written":
+			nfo.Stillwater.Written = attr.Value
 		}
+	}
+	if err := decoder.Skip(); err != nil {
+		return fmt.Errorf("skipping stillwater element content: %w", err)
 	}
 	return nil
 }
