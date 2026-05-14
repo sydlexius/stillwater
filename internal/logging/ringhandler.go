@@ -75,9 +75,12 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	// Collect attributes: start with pre-stored attrs from WithAttrs,
-	// then append the record's own attrs.
+	// then append the record's own attrs. Each attribute is passed through
+	// RedactingReplaceAttr so that sensitive field values are scrubbed in
+	// the ring buffer (log viewer) as well as in the primary handler.
 	attrs := make(map[string]any)
 	for _, a := range h.attrs {
+		a = RedactingReplaceAttr(nil, a)
 		key := a.Key
 		if h.group != "" {
 			key = h.group + "." + key
@@ -90,6 +93,7 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	r.Attrs(func(a slog.Attr) bool {
+		a = RedactingReplaceAttr(nil, a)
 		key := a.Key
 		if h.group != "" {
 			key = h.group + "." + key
