@@ -495,202 +495,64 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 
 	result := &ImportResult{}
 
-	// Import settings
-	now := time.Now().UTC().Format(time.RFC3339)
-	for k, v := range payload.Settings {
-		_, err := s.db.ExecContext(ctx,
-			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-			k, v, now)
-		if err != nil {
-			return nil, fmt.Errorf("upserting setting %q: %w", k, err)
-		}
-		result.Settings++
+	// Each per-section helper increments the relevant counter(s) on result.
+	// Sections are called in dependency order: connections must precede
+	// libraries (which remap by (type, url)), and users must precede both
+	// user_preferences and api_tokens (which remap by username).
+
+	if err := s.importSettings(ctx, payload.Settings, result); err != nil {
+		return nil, fmt.Errorf("importing settings: %w", err)
 	}
 
-	// Import provider keys
-	for name, key := range payload.ProviderKeys {
-		if err := s.providerSettings.SetAPIKey(ctx, provider.ProviderName(name), key); err != nil {
-			return nil, fmt.Errorf("setting provider key %q: %w", name, err)
-		}
-		result.ProviderKeys++
+	if err := s.importProviderKeys(ctx, payload.ProviderKeys, result); err != nil {
+		return nil, fmt.Errorf("importing provider keys: %w", err)
 	}
 
-	// Import connections: match by type + url, update or insert
-	for _, ce := range payload.Connections {
-		existing, err := s.connectionSvc.GetByTypeAndURL(ctx, ce.Type, ce.URL)
-		if err != nil {
-			return nil, fmt.Errorf("looking up connection %q: %w", ce.Name, err)
-		}
-		if existing != nil {
-			// Update existing
-			existing.Name = ce.Name
-			existing.APIKey = ce.APIKey
-			existing.Enabled = ce.Enabled
-			existing.FeatureLibraryImport = ce.FeatureLibraryImport
-			existing.FeatureNFOWrite = ce.FeatureNFOWrite
-			existing.FeatureImageWrite = ce.FeatureImageWrite
-			if err := s.connectionSvc.Update(ctx, existing); err != nil {
-				return nil, fmt.Errorf("updating connection %q: %w", ce.Name, err)
-			}
-		} else {
-			// Create new
-			c := &connection.Connection{
-				Name:                 ce.Name,
-				Type:                 ce.Type,
-				URL:                  ce.URL,
-				APIKey:               ce.APIKey,
-				Enabled:              ce.Enabled,
-				FeatureLibraryImport: ce.FeatureLibraryImport,
-				FeatureNFOWrite:      ce.FeatureNFOWrite,
-				FeatureImageWrite:    ce.FeatureImageWrite,
-			}
-			if err := s.connectionSvc.Create(ctx, c); err != nil {
-				return nil, fmt.Errorf("creating connection %q: %w", ce.Name, err)
-			}
-		}
-		result.Connections++
+	if err := s.importConnections(ctx, payload.Connections, result); err != nil {
+		return nil, fmt.Errorf("importing connections: %w", err)
 	}
 
-	// Import platform profiles: match by name, update or insert
-	for _, p := range payload.PlatformProfiles {
-		existing, err := s.platformSvc.GetByName(ctx, p.Name)
-		if err != nil {
-			return nil, fmt.Errorf("looking up platform profile %q: %w", p.Name, err)
-		}
-		if existing != nil {
-			p.ID = existing.ID
-			if err := s.platformSvc.Update(ctx, &p); err != nil {
-				return nil, fmt.Errorf("updating platform profile %q: %w", p.Name, err)
-			}
-		} else {
-			p.ID = ""          // Let Create generate a new ID
-			p.IsActive = false // Avoid creating multiple active profiles on import
-			if err := s.platformSvc.Create(ctx, &p); err != nil {
-				return nil, fmt.Errorf("creating platform profile %q: %w", p.Name, err)
-			}
-		}
-		result.Profiles++
+	if err := s.importPlatformProfiles(ctx, payload.PlatformProfiles, result); err != nil {
+		return nil, fmt.Errorf("importing platform profiles: %w", err)
 	}
 
-	// Import webhooks: match by name + url, upsert
-	for _, w := range payload.Webhooks {
-		existing, err := s.webhookSvc.GetByNameAndURL(ctx, w.Name, w.URL)
-		if err != nil {
-			return nil, fmt.Errorf("looking up webhook %q: %w", w.Name, err)
-		}
-		if existing != nil {
-			w.ID = existing.ID
-			if err := s.webhookSvc.Update(ctx, &w); err != nil {
-				return nil, fmt.Errorf("updating webhook %q: %w", w.Name, err)
-			}
-		} else {
-			w.ID = "" // Let Create generate a new ID
-			if err := s.webhookSvc.Create(ctx, &w); err != nil {
-				return nil, fmt.Errorf("creating webhook %q: %w", w.Name, err)
-			}
-		}
-		result.Webhooks++
+	if err := s.importWebhooks(ctx, payload.Webhooks, result); err != nil {
+		return nil, fmt.Errorf("importing webhooks: %w", err)
 	}
 
-	// Import provider priorities
-	for _, p := range payload.ProviderPriorities {
-		if err := s.providerSettings.SetPriority(ctx, p.Field, p.Providers); err != nil {
-			return nil, fmt.Errorf("setting priority for %q: %w", p.Field, err)
-		}
-		if len(p.Disabled) > 0 {
-			if err := s.providerSettings.SetDisabledProviders(ctx, p.Field, p.Disabled); err != nil {
-				return nil, fmt.Errorf("setting disabled providers for %q: %w", p.Field, err)
-			}
-		}
-		result.Priorities++
+	if err := s.importProviderPriorities(ctx, payload.ProviderPriorities, result); err != nil {
+		return nil, fmt.Errorf("importing provider priorities: %w", err)
 	}
 
-	// Import rule configuration (only mutable fields: enabled, automation_mode, config).
-	// Rules are matched by ID; unknown IDs are silently skipped to allow exports from
-	// newer application versions to be imported without error.
-	if s.ruleService != nil {
-		for _, re := range payload.Rules {
-			if re.ID == "" {
-				continue
-			}
-			existing, err := s.ruleService.GetByID(ctx, re.ID)
-			if err != nil {
-				// Unknown rule IDs (newer export, older binary) are expected -- skip.
-				// Other errors (DB connection, corruption) must surface instead of
-				// silently dropping rule imports.
-				if errors.Is(err, rule.ErrNotFound) {
-					continue
-				}
-				return nil, fmt.Errorf("looking up rule %q: %w", re.ID, err)
-			}
-			// Validate automation_mode before writing to the DB. A tampered or
-			// stale payload could carry an unrecognized value. Only the two
-			// constants defined in the rule package are valid; "disabled" is not
-			// a valid automation_mode -- use enabled=false to disable a rule.
-			switch re.AutomationMode {
-			case rule.AutomationModeAuto, rule.AutomationModeManual:
-				// valid
-			default:
-				slog.Warn("import: skipping rule with invalid automation_mode",
-					"rule_id", re.ID,
-					"automation_mode", re.AutomationMode,
-				)
-				continue
-			}
-			existing.Enabled = re.Enabled
-			existing.AutomationMode = re.AutomationMode
-			existing.Config = re.Config
-			if err := s.ruleService.Update(ctx, existing); err != nil {
-				return nil, fmt.Errorf("updating rule %q: %w", re.ID, err)
-			}
-			result.Rules++
-		}
+	if err := s.importRules(ctx, payload.Rules, result); err != nil {
+		return nil, fmt.Errorf("importing rules: %w", err)
 	}
 
-	// Import scraper configurations. Each scope is upserted via SaveConfig which
-	// performs an ON CONFLICT update internally.
-	if s.scraperService != nil {
-		for _, sce := range payload.ScraperConfigs {
-			if sce.Scope == "" {
-				continue
-			}
-			// Clear the ID so SaveConfig resolves it from the DB, avoiding ID
-			// collisions when importing across instances.
-			sce.Config.ID = ""
-			if err := s.scraperService.SaveConfig(ctx, sce.Scope, &sce.Config, sce.Overrides); err != nil {
-				return nil, fmt.Errorf("saving scraper config for scope %q: %w", sce.Scope, err)
-			}
-			result.ScraperConfigs++
-		}
+	if err := s.importScraperPreferences(ctx, payload.ScraperConfigs, result); err != nil {
+		return nil, fmt.Errorf("importing scraper preferences: %w", err)
 	}
 
-	// Import users from the envelope FIRST (before user_preferences and
-	// api_tokens) so absent owners are recreated and their downstream rows
-	// can attribute back to them via the username -> user_id lookup. Users
-	// that already exist on the target are left untouched; the operator's
-	// existing setup wins over the envelope (#1283).
+	// Users must precede user_preferences and api_tokens so absent owners
+	// are recreated from the envelope before the downstream remap lookups
+	// run. See importUsers for the "existing users left untouched" policy.
 	if err := s.importUsers(ctx, payload.Users, result); err != nil {
 		return nil, fmt.Errorf("importing users: %w", err)
 	}
 
-	// Import user preferences. Preferences are matched by username; rows for users
-	// that do not exist on this instance are silently skipped.
 	if err := s.importUserPreferences(ctx, payload.UserPreferences, result); err != nil {
 		return nil, fmt.Errorf("importing user preferences: %w", err)
 	}
 
-	// Import libraries. Must run AFTER connections so the (type, url) -> id
-	// remap can resolve to the freshly-imported connection rows.
+	// Libraries must run AFTER connections so the (type, url) -> id remap
+	// can resolve to the freshly-imported connection rows.
 	if err := s.importLibraries(ctx, payload.Libraries, result); err != nil {
 		return nil, fmt.Errorf("importing libraries: %w", err)
 	}
 
-	// Import API tokens. Must run AFTER importUsers so the username ->
-	// user_id lookup sees the final user set on the target instance,
-	// including any users just recreated from the envelope. The opts
-	// parameter controls the admin-fallback opt-in behavior for tokens
-	// whose original owner is still absent after user import.
+	// API tokens must run AFTER importUsers so the username -> user_id
+	// lookup sees the final user set, including any users just recreated
+	// from the envelope. The opts parameter controls the admin-fallback
+	// opt-in behavior for tokens whose owner is still absent after user import.
 	if err := s.importAPITokens(ctx, payload.APITokens, result, opts); err != nil {
 		return nil, fmt.Errorf("importing api tokens: %w", err)
 	}
