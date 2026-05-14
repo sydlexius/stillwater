@@ -1144,6 +1144,52 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	}
 }
 
+// providerURLEntry pairs a URL key with the parser for that provider's URLs and
+// a pointer-returning accessor so the dispatch loop can check and set the ID
+// without a separate switch.
+type providerURLEntry struct {
+	key   string
+	parse func(string) (string, bool)
+	getID func(*ArtistMetadata) string
+	setID func(*ArtistMetadata, string)
+}
+
+// providerURLParsers is the dispatch table used by ExtractProviderIDsFromURLs.
+// Each entry maps a MusicBrainz URL-relation key to its parser and the
+// corresponding ID field on ArtistMetadata.
+var providerURLParsers = []providerURLEntry{
+	{
+		key:   "discogs",
+		parse: parseDiscogsURL,
+		getID: func(m *ArtistMetadata) string { return m.DiscogsID },
+		setID: func(m *ArtistMetadata, id string) { m.DiscogsID = id },
+	},
+	{
+		key:   "wikidata",
+		parse: parseWikidataURL,
+		getID: func(m *ArtistMetadata) string { return m.WikidataID },
+		setID: func(m *ArtistMetadata, id string) { m.WikidataID = id },
+	},
+	{
+		key:   "deezer",
+		parse: parseDeezerURL,
+		getID: func(m *ArtistMetadata) string { return m.DeezerID },
+		setID: func(m *ArtistMetadata, id string) { m.DeezerID = id },
+	},
+	{
+		key:   "allmusic",
+		parse: parseAllMusicURL,
+		getID: func(m *ArtistMetadata) string { return m.AllMusicID },
+		setID: func(m *ArtistMetadata, id string) { m.AllMusicID = id },
+	},
+	{
+		key:   "spotify",
+		parse: parseSpotifyURL,
+		getID: func(m *ArtistMetadata) string { return m.SpotifyID },
+		setID: func(m *ArtistMetadata, id string) { m.SpotifyID = id },
+	},
+}
+
 // ExtractProviderIDsFromURLs backfills provider IDs from URL relations returned
 // by MusicBrainz when the IDs are not yet set.
 //
@@ -1158,95 +1204,115 @@ func ExtractProviderIDsFromURLs(meta *ArtistMetadata) {
 	if meta == nil {
 		return
 	}
-
-	if meta.DiscogsID == "" {
-		if u, ok := meta.URLs["discogs"]; ok && u != "" {
-			// Last path segment may be "24941" or "24941-artist-name".
-			// Extract only the leading numeric portion.
-			if idx := strings.LastIndex(u, "/"); idx >= 0 {
-				segment := u[idx+1:]
-				end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
-				if end < 0 {
-					end = len(segment)
-				}
-				if end > 0 {
-					meta.DiscogsID = segment[:end]
-				}
-			}
+	for _, entry := range providerURLParsers {
+		if entry.getID(meta) != "" {
+			continue
+		}
+		u, ok := meta.URLs[entry.key]
+		if !ok || u == "" {
+			continue
+		}
+		if id, ok := entry.parse(u); ok {
+			entry.setID(meta, id)
 		}
 	}
+}
 
-	if meta.WikidataID == "" {
-		if u, ok := meta.URLs["wikidata"]; ok && u != "" {
-			// Last path segment is the Q-item ID; strip any query/fragment first.
-			if qIdx := strings.IndexAny(u, "?#"); qIdx >= 0 {
-				u = u[:qIdx]
-			}
-			if idx := strings.LastIndex(u, "/"); idx >= 0 {
-				candidate := u[idx+1:]
-				if wikidataQIDRe.MatchString(candidate) {
-					meta.WikidataID = candidate
-				}
-			}
-		}
+// parseDiscogsURL extracts the numeric artist ID from a Discogs artist URL.
+// The last path segment may be "24941" or "24941-artist-name"; only the
+// leading numeric portion is returned.
+func parseDiscogsURL(rawURL string) (string, bool) {
+	idx := strings.LastIndex(rawURL, "/")
+	if idx < 0 {
+		return "", false
 	}
+	segment := rawURL[idx+1:]
+	end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
+	if end < 0 {
+		end = len(segment)
+	}
+	if end == 0 {
+		return "", false
+	}
+	return segment[:end], true
+}
 
-	if meta.DeezerID == "" {
-		if u, ok := meta.URLs["deezer"]; ok && u != "" {
-			// Last path segment is the numeric Deezer artist ID.
-			if idx := strings.LastIndex(u, "/"); idx >= 0 {
-				segment := u[idx+1:]
-				end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
-				if end < 0 {
-					end = len(segment)
-				}
-				if end > 0 {
-					meta.DeezerID = segment[:end]
-				}
-			}
-		}
+// parseWikidataURL extracts the Q-item ID from a Wikidata entity URL.
+// Query strings and fragments are stripped before the last path segment is
+// validated against wikidataQIDRe.
+func parseWikidataURL(rawURL string) (string, bool) {
+	if qIdx := strings.IndexAny(rawURL, "?#"); qIdx >= 0 {
+		rawURL = rawURL[:qIdx]
 	}
+	idx := strings.LastIndex(rawURL, "/")
+	if idx < 0 {
+		return "", false
+	}
+	candidate := rawURL[idx+1:]
+	if !wikidataQIDRe.MatchString(candidate) {
+		return "", false
+	}
+	return candidate, true
+}
 
-	if meta.AllMusicID == "" {
-		if u, ok := meta.URLs["allmusic"]; ok && u != "" {
-			// AllMusic artist URLs: https://www.allmusic.com/artist/mn0000505828
-			// or https://www.allmusic.com/artist/dolly-parton-mn0000205560
-			// The ID is always the "mn" followed by digits at the end.
-			if idx := strings.LastIndex(u, "/"); idx >= 0 {
-				segment := u[idx+1:]
-				// Strip any query params or fragments
-				if qIdx := strings.IndexAny(segment, "?#"); qIdx >= 0 {
-					segment = segment[:qIdx]
-				}
-				// The mn-ID may be the entire segment or suffixed after a slug.
-				// Look for "mn" followed by digits.
-				if mnIdx := strings.LastIndex(segment, "mn"); mnIdx >= 0 {
-					candidate := segment[mnIdx:]
-					if isAllMusicID(candidate) {
-						meta.AllMusicID = candidate
-					}
-				}
-			}
-		}
+// parseDeezerURL extracts the numeric artist ID from a Deezer artist URL.
+// The last path segment is expected to be a pure numeric string.
+func parseDeezerURL(rawURL string) (string, bool) {
+	idx := strings.LastIndex(rawURL, "/")
+	if idx < 0 {
+		return "", false
 	}
+	segment := rawURL[idx+1:]
+	end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
+	if end < 0 {
+		end = len(segment)
+	}
+	if end == 0 {
+		return "", false
+	}
+	return segment[:end], true
+}
 
-	if meta.SpotifyID == "" {
-		if u, ok := meta.URLs["spotify"]; ok && u != "" {
-			// Spotify artist URLs: https://open.spotify.com/artist/{id}
-			const prefix = "/artist/"
-			if idx := strings.LastIndex(u, prefix); idx >= 0 {
-				candidate := u[idx+len(prefix):]
-				candidate = strings.TrimRight(candidate, "/")
-				// Strip any query params
-				if qIdx := strings.IndexAny(candidate, "?#"); qIdx >= 0 {
-					candidate = candidate[:qIdx]
-				}
-				if isSpotifyID(candidate) {
-					meta.SpotifyID = candidate
-				}
-			}
-		}
+// parseAllMusicURL extracts the AllMusic artist ID from an AllMusic artist URL.
+// The ID is "mn" followed by 10 digits and may appear as the entire last path
+// segment or as a suffix after a slug (e.g. "dolly-parton-mn0000205560").
+func parseAllMusicURL(rawURL string) (string, bool) {
+	idx := strings.LastIndex(rawURL, "/")
+	if idx < 0 {
+		return "", false
 	}
+	segment := rawURL[idx+1:]
+	if qIdx := strings.IndexAny(segment, "?#"); qIdx >= 0 {
+		segment = segment[:qIdx]
+	}
+	mnIdx := strings.LastIndex(segment, "mn")
+	if mnIdx < 0 {
+		return "", false
+	}
+	candidate := segment[mnIdx:]
+	if !isAllMusicID(candidate) {
+		return "", false
+	}
+	return candidate, true
+}
+
+// parseSpotifyURL extracts the Spotify artist ID from an open.spotify.com URL.
+// The ID is the 22-character base62 path component after "/artist/".
+func parseSpotifyURL(rawURL string) (string, bool) {
+	const prefix = "/artist/"
+	idx := strings.LastIndex(rawURL, prefix)
+	if idx < 0 {
+		return "", false
+	}
+	candidate := rawURL[idx+len(prefix):]
+	candidate = strings.TrimRight(candidate, "/")
+	if qIdx := strings.IndexAny(candidate, "?#"); qIdx >= 0 {
+		candidate = candidate[:qIdx]
+	}
+	if !isSpotifyID(candidate) {
+		return "", false
+	}
+	return candidate, true
 }
 
 // isAllMusicID reports whether s matches the AllMusic artist ID format: "mn" followed by 10 digits.
