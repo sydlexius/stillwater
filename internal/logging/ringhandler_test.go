@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -160,6 +161,41 @@ func TestRingHandler_AddSourcePopulatesSource(t *testing.T) {
 	}
 	if !strings.Contains(entries[0].Source, ":") {
 		t.Errorf("expected Source to contain file:line format, got %q", entries[0].Source)
+	}
+}
+
+func TestRingHandler_NestedGroupRedaction(t *testing.T) {
+	rb := NewRingBuffer(10)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
+	logger := slog.New(h)
+
+	logger.Info("auth event", slog.Group("credentials",
+		slog.String("api_key", "sk-supersecret"),
+		slog.String("user", "alice"),
+	))
+
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	// Sensitive key inside the group must be redacted.
+	if v, ok := entries[0].Attrs["credentials.api_key"]; !ok {
+		t.Error("expected credentials.api_key in attrs")
+	} else if v != "[REDACTED]" {
+		t.Errorf("expected credentials.api_key=[REDACTED], got %v", v)
+	}
+
+	// Raw secret must not appear in any attr value.
+	for k, v := range entries[0].Attrs {
+		if strings.Contains(strings.ToLower(strings.Join([]string{k, fmt.Sprintf("%v", v)}, "")), "supersecret") {
+			t.Errorf("raw secret found in attrs: key=%q value=%v", k, v)
+		}
+	}
+
+	// Non-sensitive sibling field must survive.
+	if v, ok := entries[0].Attrs["credentials.user"]; !ok || v != "alice" {
+		t.Errorf("expected credentials.user=alice in attrs, got %v", entries[0].Attrs)
 	}
 }
 
