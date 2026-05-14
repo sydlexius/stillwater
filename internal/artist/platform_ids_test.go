@@ -4,23 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 func setupPlatformIDTest(t *testing.T) *Service {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := newTestDB(t)
 
 	// Insert test connections for foreign key constraints.
-	_, err = db.ExecContext(context.Background(), `
+	_, err := db.ExecContext(context.Background(), `
 		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
 		VALUES ('conn-1', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
 	`)
@@ -247,20 +238,8 @@ func TestSetPlatformID_MultipleArtists(t *testing.T) {
 // Returns the service and db for direct SQL access in tests.
 func setupPlatformPresenceTest(t *testing.T) *Service {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatal(err)
-	}
-	// Mirror production: enforce foreign keys so orphan
-	// artist_libraries / artist_platform_ids writes fail loudly in tests
-	// rather than silently passing.
-	if err := database.EnableForeignKeys(db); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	// newTestDB already enables foreign keys (see testmain_test.go).
+	db := newTestDB(t)
 
 	ctx := context.Background()
 	for _, q := range []string{

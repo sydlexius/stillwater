@@ -284,9 +284,25 @@ func DefaultRules() []Rule {
 // rows.
 const snapshotThrottleTTL = 60 * time.Second
 
+// Clock is the time source used by Service for timestamp writes. The default
+// implementation delegates to time.Now. Tests inject a fake clock to advance
+// time without sleeping.
+type Clock interface {
+	Now() time.Time
+}
+
+// realClock is the production Clock implementation.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now().UTC() }
+
 // Service provides rule data operations.
 type Service struct {
 	db *sql.DB
+
+	// clock is the time source for all timestamp writes. Defaults to realClock.
+	// Override with WithClock in tests to eliminate time.Sleep calls.
+	clock Clock
 
 	// logger is the package logger; defaults to slog.Default() and can be
 	// overridden via WithLogger for tests that want to capture output.
@@ -306,8 +322,18 @@ type Service struct {
 func NewService(db *sql.DB) *Service {
 	return &Service{
 		db:     db,
+		clock:  realClock{},
 		logger: slog.Default(),
 	}
+}
+
+// WithClock attaches a clock to the service. Intended for tests that need to
+// control the wall time seen by SeedDefaults and Update without sleeping.
+func (s *Service) WithClock(c Clock) *Service {
+	if c != nil {
+		s.clock = c
+	}
+	return s
 }
 
 // WithLogger attaches a logger for the rule service. Defaults to slog.Default()
@@ -334,7 +360,7 @@ func (s *Service) WithLogger(logger *slog.Logger) *Service {
 // Newly inserted rules naturally have updated_at = now, which is the correct
 // signal for the dirty-tracking query to schedule them on the next pass.
 func (s *Service) SeedDefaults(ctx context.Context) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := s.clock.Now().Format(time.RFC3339)
 	for _, r := range defaultRules {
 		autoMode := r.AutomationMode
 		if autoMode == "" {
@@ -460,7 +486,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 // when a fixer succeeds, so downstream consumers (compliance counts, history
 // charts) treat the two transitions identically.
 func (s *Service) Update(ctx context.Context, r *Rule) error {
-	r.UpdatedAt = time.Now().UTC()
+	r.UpdatedAt = s.clock.Now()
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE rules SET enabled = ?, automation_mode = ?, config = ?, updated_at = ? WHERE id = ?
 	`, dbutil.BoolToInt(r.Enabled), r.AutomationMode, MarshalConfig(r.Config),
@@ -562,7 +588,7 @@ func (s *Service) DisableFilesystemRules(ctx context.Context) (int, error) {
 	// Flip enabled=0 in one statement.
 	disablePlaceholders := make([]string, len(toDisable))
 	disableArgs := make([]any, 0, len(toDisable)+1)
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := s.clock.Now().Format(time.RFC3339)
 	disableArgs = append(disableArgs, now)
 	for i, id := range toDisable {
 		disablePlaceholders[i] = "?"
@@ -833,7 +859,7 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	if v.ID == "" {
 		v.ID = uuid.New().String()
 	}
-	v.UpdatedAt = time.Now().UTC()
+	v.UpdatedAt = s.clock.Now()
 	if v.CreatedAt.IsZero() {
 		v.CreatedAt = v.UpdatedAt
 	}

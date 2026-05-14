@@ -9,7 +9,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -324,16 +323,9 @@ func TestHandleDashboardActionQueue_StatsError(t *testing.T) {
 	t.Parallel()
 	r := testDashboardRouter(t, false)
 
-	// Open a separate in-memory database for the artist service so we can
-	// close it independently of the rule service database.
-	artistDB, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening artist test db: %v", err)
-	}
-	if err := database.Migrate(artistDB); err != nil {
-		_ = artistDB.Close()
-		t.Fatalf("migrating artist test db: %v", err)
-	}
+	// Open a separate database for the artist service so we can close it
+	// independently of the rule service database to simulate a stats error.
+	artistDB := newTestDB(t)
 
 	// Replace the router's artist service with one backed by the new database.
 	r.artistService = artist.NewService(artistDB)

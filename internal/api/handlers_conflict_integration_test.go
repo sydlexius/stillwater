@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
@@ -25,14 +24,7 @@ import (
 // only includes the fields the conflict handlers consult.
 func testRouterForConflictToggle(t *testing.T) (*Router, *connection.Service) {
 	t.Helper()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	enc, _, err := encryption.NewEncryptor("")
 	if err != nil {

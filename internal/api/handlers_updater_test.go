@@ -8,13 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/auth"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
@@ -24,15 +22,7 @@ import (
 func testRouterWithUpdater(t *testing.T) *Router {
 	t.Helper()
 
-	dir := t.TempDir()
-	db, err := database.Open(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrating: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	updSvc := updater.NewService(db, logger)
@@ -358,15 +348,7 @@ func TestHandlePostUpdateApply_Docker(t *testing.T) {
 	r := testRouterWithUpdater(t)
 	// Replace the updater service with a Docker-mode one.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	dir := t.TempDir()
-	db2, err := database.Open(filepath.Join(dir, "docker.db"))
-	if err != nil {
-		t.Fatalf("opening docker db: %v", err)
-	}
-	if err := database.Migrate(db2); err != nil {
-		t.Fatalf("migrating docker db: %v", err)
-	}
-	t.Cleanup(func() { _ = db2.Close() })
+	db2 := newTestDB(t)
 	r.updaterService = updater.NewDockerService(db2, logger)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/updates/apply", nil)

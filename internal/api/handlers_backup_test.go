@@ -13,7 +13,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -23,17 +22,8 @@ import (
 func testRouterWithBackup(t *testing.T) (*Router, *backup.Service) {
 	t.Helper()
 
+	db := newTestDB(t)
 	dbDir := t.TempDir()
-	dbPath := filepath.Join(dbDir, "test.db")
-
-	db, err := database.Open(dbPath)
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
