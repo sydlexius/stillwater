@@ -327,8 +327,14 @@ func buildWriter(cfg Config) (io.Writer, io.Closer) {
 
 // buildHandler creates a slog.Handler with the given writer, leveler, and format.
 // AddSource is enabled so that log entries include the source file and line number.
+// RedactingReplaceAttr is wired in to ensure sensitive field values never appear
+// in log output.
 func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler {
-	opts := &slog.HandlerOptions{Level: leveler, AddSource: true}
+	opts := &slog.HandlerOptions{
+		Level:       leveler,
+		AddSource:   true,
+		ReplaceAttr: RedactingReplaceAttr,
+	}
 	if format == "text" {
 		return slog.NewTextHandler(w, opts)
 	}
