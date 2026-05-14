@@ -19,72 +19,82 @@ func TestParse_BasicNFO(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if nfo.Name != "Nirvana" {
-		t.Errorf("Name = %q, want %q", nfo.Name, "Nirvana")
-	}
-	if nfo.SortName != "Nirvana" {
-		t.Errorf("SortName = %q, want %q", nfo.SortName, "Nirvana")
-	}
-	if nfo.Type != "group" {
-		t.Errorf("Type = %q, want %q", nfo.Type, "group")
-	}
-	if nfo.Disambiguation != "US grunge band" {
-		t.Errorf("Disambiguation = %q, want %q", nfo.Disambiguation, "US grunge band")
-	}
-	if nfo.MusicBrainzArtistID != "5b11f4ce-a62d-471e-81fc-a69a8278c7da" {
-		t.Errorf("MusicBrainzArtistID = %q", nfo.MusicBrainzArtistID)
-	}
-	if nfo.AudioDBArtistID != "111239" {
-		t.Errorf("AudioDBArtistID = %q", nfo.AudioDBArtistID)
-	}
-	if nfo.DeezerArtistID != "67549" {
-		t.Errorf("DeezerArtistID = %q, want %q", nfo.DeezerArtistID, "67549")
-	}
-	if nfo.SpotifyArtistID != "6olE6TJLqED3rqDCT0FyPh" {
-		t.Errorf("SpotifyArtistID = %q, want %q", nfo.SpotifyArtistID, "6olE6TJLqED3rqDCT0FyPh")
-	}
-	if len(nfo.Genres) != 3 {
-		t.Errorf("Genres count = %d, want 3", len(nfo.Genres))
-	} else if nfo.Genres[0] != "Rock" || nfo.Genres[1] != "Grunge" {
-		t.Errorf("Genres = %v", nfo.Genres)
-	}
-	if len(nfo.Styles) != 2 {
-		t.Errorf("Styles count = %d, want 2", len(nfo.Styles))
-	}
-	if len(nfo.Moods) != 2 {
-		t.Errorf("Moods count = %d, want 2", len(nfo.Moods))
-	}
-	if nfo.YearsActive != "1987 - 1994" {
-		t.Errorf("YearsActive = %q", nfo.YearsActive)
-	}
-	if nfo.Formed != "1987" {
-		t.Errorf("Formed = %q", nfo.Formed)
-	}
-	if nfo.Disbanded != "1994" {
-		t.Errorf("Disbanded = %q", nfo.Disbanded)
-	}
-	if !strings.Contains(nfo.Biography, "American rock band") {
-		t.Errorf("Biography doesn't contain expected text: %q", nfo.Biography[:50])
-	}
+	t.Run("scalar fields", func(t *testing.T) {
+		if nfo.Name != "Nirvana" {
+			t.Errorf("Name = %q, want %q", nfo.Name, "Nirvana")
+		}
+		if nfo.SortName != "Nirvana" {
+			t.Errorf("SortName = %q, want %q", nfo.SortName, "Nirvana")
+		}
+		if nfo.Type != "group" {
+			t.Errorf("Type = %q, want %q", nfo.Type, "group")
+		}
+		if nfo.Disambiguation != "US grunge band" {
+			t.Errorf("Disambiguation = %q, want %q", nfo.Disambiguation, "US grunge band")
+		}
+		if nfo.YearsActive != "1987 - 1994" {
+			t.Errorf("YearsActive = %q", nfo.YearsActive)
+		}
+		if nfo.Formed != "1987" {
+			t.Errorf("Formed = %q", nfo.Formed)
+		}
+		if nfo.Disbanded != "1994" {
+			t.Errorf("Disbanded = %q", nfo.Disbanded)
+		}
+		if !strings.Contains(nfo.Biography, "American rock band") {
+			t.Errorf("Biography doesn't contain expected text: %q", nfo.Biography[:50])
+		}
+	})
 
-	// Thumbs
-	if len(nfo.Thumbs) != 2 {
-		t.Fatalf("Thumbs count = %d, want 2", len(nfo.Thumbs))
-	}
-	if nfo.Thumbs[0].Aspect != "poster" {
-		t.Errorf("Thumb[0].Aspect = %q, want %q", nfo.Thumbs[0].Aspect, "poster")
-	}
-	if nfo.Thumbs[1].Preview != "https://example.com/preview.jpg" {
-		t.Errorf("Thumb[1].Preview = %q", nfo.Thumbs[1].Preview)
-	}
+	t.Run("provider IDs", func(t *testing.T) {
+		if nfo.MusicBrainzArtistID != "5b11f4ce-a62d-471e-81fc-a69a8278c7da" {
+			t.Errorf("MusicBrainzArtistID = %q", nfo.MusicBrainzArtistID)
+		}
+		if nfo.AudioDBArtistID != "111239" {
+			t.Errorf("AudioDBArtistID = %q", nfo.AudioDBArtistID)
+		}
+		if nfo.DeezerArtistID != "67549" {
+			t.Errorf("DeezerArtistID = %q, want %q", nfo.DeezerArtistID, "67549")
+		}
+		if nfo.SpotifyArtistID != "6olE6TJLqED3rqDCT0FyPh" {
+			t.Errorf("SpotifyArtistID = %q, want %q", nfo.SpotifyArtistID, "6olE6TJLqED3rqDCT0FyPh")
+		}
+	})
 
-	// Fanart
-	if nfo.Fanart == nil {
-		t.Fatal("expected Fanart to be non-nil")
-	}
-	if len(nfo.Fanart.Thumbs) != 2 {
-		t.Errorf("Fanart.Thumbs count = %d, want 2", len(nfo.Fanart.Thumbs))
-	}
+	t.Run("genres styles moods", func(t *testing.T) {
+		if len(nfo.Genres) != 3 {
+			t.Errorf("Genres count = %d, want 3", len(nfo.Genres))
+		} else if nfo.Genres[0] != "Rock" || nfo.Genres[1] != "Grunge" {
+			t.Errorf("Genres = %v", nfo.Genres)
+		}
+		if len(nfo.Styles) != 2 {
+			t.Errorf("Styles count = %d, want 2", len(nfo.Styles))
+		}
+		if len(nfo.Moods) != 2 {
+			t.Errorf("Moods count = %d, want 2", len(nfo.Moods))
+		}
+	})
+
+	t.Run("thumbs", func(t *testing.T) {
+		if len(nfo.Thumbs) != 2 {
+			t.Fatalf("Thumbs count = %d, want 2", len(nfo.Thumbs))
+		}
+		if nfo.Thumbs[0].Aspect != "poster" {
+			t.Errorf("Thumb[0].Aspect = %q, want %q", nfo.Thumbs[0].Aspect, "poster")
+		}
+		if nfo.Thumbs[1].Preview != "https://example.com/preview.jpg" {
+			t.Errorf("Thumb[1].Preview = %q", nfo.Thumbs[1].Preview)
+		}
+	})
+
+	t.Run("fanart", func(t *testing.T) {
+		if nfo.Fanart == nil {
+			t.Fatal("expected Fanart to be non-nil")
+		}
+		if len(nfo.Fanart.Thumbs) != 2 {
+			t.Errorf("Fanart.Thumbs count = %d, want 2", len(nfo.Fanart.Thumbs))
+		}
+	})
 }
 
 func TestParse_WithBOM(t *testing.T) {

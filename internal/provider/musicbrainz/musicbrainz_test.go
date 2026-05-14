@@ -180,60 +180,66 @@ func TestGetArtist(t *testing.T) {
 		t.Fatalf("GetArtist: %v", err)
 	}
 
-	if meta.Name != "Radiohead" {
-		t.Errorf("expected name Radiohead, got %s", meta.Name)
-	}
-	if meta.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
-		t.Errorf("unexpected MBID: %s", meta.MusicBrainzID)
-	}
-	if meta.Type != "group" {
-		t.Errorf("expected type group, got %s", meta.Type)
-	}
-	if meta.Origin != "United Kingdom" {
-		t.Errorf("expected origin United Kingdom, got %s", meta.Origin)
-	}
-	if meta.Formed != "1991" {
-		t.Errorf("expected formed 1991, got %s", meta.Formed)
-	}
+	t.Run("scalar fields", func(t *testing.T) {
+		if meta.Name != "Radiohead" {
+			t.Errorf("expected name Radiohead, got %s", meta.Name)
+		}
+		if meta.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
+			t.Errorf("unexpected MBID: %s", meta.MusicBrainzID)
+		}
+		if meta.Type != "group" {
+			t.Errorf("expected type group, got %s", meta.Type)
+		}
+		if meta.Origin != "United Kingdom" {
+			t.Errorf("expected origin United Kingdom, got %s", meta.Origin)
+		}
+		if meta.Formed != "1991" {
+			t.Errorf("expected formed 1991, got %s", meta.Formed)
+		}
+	})
 
-	// Genres
-	if len(meta.Genres) != 3 {
-		t.Fatalf("expected 3 genres, got %d", len(meta.Genres))
-	}
-	if meta.Genres[0] != "alternative rock" {
-		t.Errorf("expected first genre 'alternative rock', got %s", meta.Genres[0])
-	}
+	t.Run("genres", func(t *testing.T) {
+		if len(meta.Genres) != 3 {
+			t.Fatalf("expected 3 genres, got %d", len(meta.Genres))
+		}
+		if meta.Genres[0] != "alternative rock" {
+			t.Errorf("expected first genre 'alternative rock', got %s", meta.Genres[0])
+		}
+	})
 
-	// Aliases
-	if len(meta.Aliases) != 1 {
-		t.Fatalf("expected 1 alias, got %d", len(meta.Aliases))
-	}
+	t.Run("aliases", func(t *testing.T) {
+		if len(meta.Aliases) != 1 {
+			t.Fatalf("expected 1 alias, got %d", len(meta.Aliases))
+		}
+	})
 
-	// Members
-	if len(meta.Members) != 5 {
-		t.Fatalf("expected 5 members, got %d", len(meta.Members))
-	}
-	thom := meta.Members[0]
-	if thom.Name != "Thom Yorke" {
-		t.Errorf("expected first member Thom Yorke, got %s", thom.Name)
-	}
-	if thom.MBID != "8bfac288-ccc5-448d-9573-c33ea2aa5c30" {
-		t.Errorf("unexpected MBID for Thom Yorke: %s", thom.MBID)
-	}
-	if len(thom.Instruments) != 2 {
-		t.Errorf("expected 2 instruments for Thom Yorke, got %d", len(thom.Instruments))
-	}
-	if !thom.IsActive {
-		t.Error("expected Thom Yorke to be active")
-	}
+	t.Run("members", func(t *testing.T) {
+		if len(meta.Members) != 5 {
+			t.Fatalf("expected 5 members, got %d", len(meta.Members))
+		}
+		thom := meta.Members[0]
+		if thom.Name != "Thom Yorke" {
+			t.Errorf("expected first member Thom Yorke, got %s", thom.Name)
+		}
+		if thom.MBID != "8bfac288-ccc5-448d-9573-c33ea2aa5c30" {
+			t.Errorf("unexpected MBID for Thom Yorke: %s", thom.MBID)
+		}
+		if len(thom.Instruments) != 2 {
+			t.Errorf("expected 2 instruments for Thom Yorke, got %d", len(thom.Instruments))
+		}
+		if !thom.IsActive {
+			t.Error("expected Thom Yorke to be active")
+		}
+	})
 
-	// URLs
-	if meta.URLs["official"] != "https://www.radiohead.com/" {
-		t.Errorf("unexpected official URL: %s", meta.URLs["official"])
-	}
-	if meta.URLs["wikipedia"] != "https://en.wikipedia.org/wiki/Radiohead" {
-		t.Errorf("unexpected wikipedia URL: %s", meta.URLs["wikipedia"])
-	}
+	t.Run("URLs", func(t *testing.T) {
+		if meta.URLs["official"] != "https://www.radiohead.com/" {
+			t.Errorf("unexpected official URL: %s", meta.URLs["official"])
+		}
+		if meta.URLs["wikipedia"] != "https://en.wikipedia.org/wiki/Radiohead" {
+			t.Errorf("unexpected wikipedia URL: %s", meta.URLs["wikipedia"])
+		}
+	})
 }
 
 func TestGetArtistNotFound(t *testing.T) {
