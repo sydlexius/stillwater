@@ -7,12 +7,15 @@ import (
 	"strings"
 )
 
-// safeBaseURL returns base if it starts with "/" (a relative path), or if it
-// has an http/https scheme. Any other value -- including javascript:, data:,
-// and vbscript: -- is replaced with "/" so pageURL never produces a link with
-// a dangerous scheme, regardless of how PaginationData.BaseURL is set.
+// safeBaseURL returns base if it is a same-origin relative path or carries an
+// http/https scheme. A leading "/" is required, BUT "//" is rejected: browsers
+// resolve "//attacker.tld/path" as a protocol-relative cross-origin URL, which
+// would defeat this hardening boundary. Any other value -- including
+// javascript:, data:, vbscript:, and protocol-relative -- is replaced with "/"
+// so pageURL never produces a link with a dangerous scheme regardless of how
+// PaginationData.BaseURL is set.
 func safeBaseURL(base string) string {
-	if strings.HasPrefix(base, "/") {
+	if strings.HasPrefix(base, "/") && !strings.HasPrefix(base, "//") {
 		return base
 	}
 	lower := strings.ToLower(base)
@@ -88,7 +91,19 @@ func (p PaginationData) pageURL(page int) string {
 		// expects on the server side.
 		v.Set("ids", strings.Join(p.IDs, ","))
 	}
-	return safeBaseURL(p.BaseURL) + "?" + v.Encode()
+	// Parse the base rather than concatenating: if BaseURL already carries
+	// "?" or "#", string concatenation would leak prior state into the
+	// pagination link and produce malformed URLs. RawQuery is REPLACED so
+	// the pagination component's query contract is authoritative; fragment
+	// is dropped because paging anchors don't carry meaning here.
+	base := safeBaseURL(p.BaseURL)
+	u, err := url.Parse(base)
+	if err != nil {
+		u = &url.URL{Path: "/"}
+	}
+	u.RawQuery = v.Encode()
+	u.Fragment = ""
+	return u.String()
 }
 
 // LoadMore renders an append-style pagination button that fetches the next page
