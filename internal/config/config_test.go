@@ -459,6 +459,20 @@ func TestLoadFromEnv_AllRemaining(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnv_BackupEnabledEmptyString(t *testing.T) {
+	// SW_BACKUP_ENABLED="" (present-but-empty) must set Enabled = false,
+	// matching the original LookupEnv behavior before the table-driven refactor.
+	clearSWEnv(t)
+	t.Setenv("SW_BACKUP_ENABLED", "")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Backup.Enabled {
+		t.Error("Backup.Enabled = true; want false when SW_BACKUP_ENABLED is present-but-empty")
+	}
+}
+
 func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
 	clearSWEnv(t)
 	t.Setenv("SW_SCANNER_EXCLUSIONS", "Various Artists, Soundtrack, OST")
