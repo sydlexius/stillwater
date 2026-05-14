@@ -1049,3 +1049,175 @@ func TestApplyMergeableFields_DoesNotTouchIDs(t *testing.T) {
 		t.Errorf("applyMergeableFields leaked provider IDs: %+v", result.Metadata)
 	}
 }
+
+// TestApplyFieldValue_PerFieldTable verifies every entry in fieldAppliers:
+// each field must apply when populated and skip when empty.
+func TestApplyFieldValue_PerFieldTable(t *testing.T) {
+	type fieldCase struct {
+		field    FieldName
+		populate func(*provider.ArtistMetadata)
+		readBack func(*provider.ArtistMetadata) bool // returns true when value was written
+	}
+
+	cases := []fieldCase{
+		{
+			field:    FieldGenres,
+			populate: func(m *provider.ArtistMetadata) { m.Genres = []string{"rock"} },
+			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Genres) == 1 && m.Genres[0] == "rock" },
+		},
+		{
+			field:    FieldStyles,
+			populate: func(m *provider.ArtistMetadata) { m.Styles = []string{"shoegaze"} },
+			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Styles) == 1 },
+		},
+		{
+			field:    FieldMoods,
+			populate: func(m *provider.ArtistMetadata) { m.Moods = []string{"melancholic"} },
+			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Moods) == 1 },
+		},
+		{
+			field:    FieldMembers,
+			populate: func(m *provider.ArtistMetadata) { m.Members = []provider.MemberInfo{{Name: "Alice"}, {Name: "Bob"}} },
+			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Members) == 2 },
+		},
+		{
+			field:    FieldFormed,
+			populate: func(m *provider.ArtistMetadata) { m.Formed = "1995" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Formed == "1995" },
+		},
+		{
+			field:    FieldBorn,
+			populate: func(m *provider.ArtistMetadata) { m.Born = "1970-01-01" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Born == "1970-01-01" },
+		},
+		{
+			field:    FieldDied,
+			populate: func(m *provider.ArtistMetadata) { m.Died = "2020-06-01" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Died == "2020-06-01" },
+		},
+		{
+			field:    FieldDisbanded,
+			populate: func(m *provider.ArtistMetadata) { m.Disbanded = "2005" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Disbanded == "2005" },
+		},
+		{
+			field:    FieldYearsActive,
+			populate: func(m *provider.ArtistMetadata) { m.YearsActive = "1995-2005" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.YearsActive == "1995-2005" },
+		},
+		{
+			field:    FieldType,
+			populate: func(m *provider.ArtistMetadata) { m.Type = "Group" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Type == "Group" },
+		},
+		{
+			field:    FieldGender,
+			populate: func(m *provider.ArtistMetadata) { m.Gender = "Female" },
+			readBack: func(m *provider.ArtistMetadata) bool { return m.Gender == "Female" },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.field)+"/populated", func(t *testing.T) {
+			meta := &provider.ArtistMetadata{}
+			tc.populate(meta)
+			pr := &providerResult{meta: meta}
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+			if !applyFieldValue(tc.field, pr, result) {
+				t.Fatalf("applyFieldValue(%s) = false, want true", tc.field)
+			}
+			if !tc.readBack(result.Metadata) {
+				t.Errorf("applyFieldValue(%s): value not written to result", tc.field)
+			}
+		})
+
+		t.Run(string(tc.field)+"/empty", func(t *testing.T) {
+			pr := &providerResult{meta: &provider.ArtistMetadata{}}
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+			if applyFieldValue(tc.field, pr, result) {
+				t.Fatalf("applyFieldValue(%s) with empty meta = true, want false", tc.field)
+			}
+		})
+	}
+}
+
+// TestApplyFieldValue_BiographyJunkFilter verifies that the junk-biography
+// predicate prevents short or template-like bios from being applied.
+func TestApplyFieldValue_BiographyJunkFilter(t *testing.T) {
+	t.Run("valid biography applied", func(t *testing.T) {
+		bio := "A long and meaningful biography that clearly passes the minimum length threshold for the junk filter."
+		pr := &providerResult{meta: &provider.ArtistMetadata{Biography: bio}}
+		result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+		if !applyFieldValue(FieldBiography, pr, result) {
+			t.Fatal("applyFieldValue(biography) with valid bio = false, want true")
+		}
+		if result.Metadata.Biography != bio {
+			t.Errorf("biography not written; got %q", result.Metadata.Biography)
+		}
+	})
+
+	t.Run("empty biography skipped", func(t *testing.T) {
+		pr := &providerResult{meta: &provider.ArtistMetadata{Biography: ""}}
+		result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+		if applyFieldValue(FieldBiography, pr, result) {
+			t.Fatal("applyFieldValue(biography) with empty bio = true, want false")
+		}
+	})
+
+	t.Run("junk biography skipped", func(t *testing.T) {
+		junkBio := "short"
+		if !provider.IsJunkBiography(junkBio) {
+			t.Fatalf("test fixture no longer classified as junk: %q", junkBio)
+		}
+		pr := &providerResult{meta: &provider.ArtistMetadata{Biography: junkBio}}
+		result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+		if applyFieldValue(FieldBiography, pr, result) {
+			t.Fatal("applyFieldValue(biography) with junk bio = true, want false")
+		}
+		if result.Metadata.Biography != "" {
+			t.Errorf("junk biography should not be written, got %q", result.Metadata.Biography)
+		}
+	})
+}
+
+// TestApplyFieldValue_ImageFields verifies that image fields are routed
+// through pr.images (not pr.meta) and only matching image types are appended.
+func TestApplyFieldValue_ImageFields(t *testing.T) {
+	images := []provider.ImageResult{
+		{Type: provider.ImageThumb, URL: "https://example.com/thumb.jpg"},
+		{Type: provider.ImageFanart, URL: "https://example.com/fanart.jpg"},
+		{Type: provider.ImageLogo, URL: "https://example.com/logo.png"},
+		{Type: provider.ImageBanner, URL: "https://example.com/banner.jpg"},
+	}
+
+	imageCases := []struct {
+		field   FieldName
+		wantURL string
+	}{
+		{FieldThumb, "https://example.com/thumb.jpg"},
+		{FieldFanart, "https://example.com/fanart.jpg"},
+		{FieldLogo, "https://example.com/logo.png"},
+		{FieldBanner, "https://example.com/banner.jpg"},
+	}
+
+	for _, tc := range imageCases {
+		t.Run(string(tc.field)+"/populated", func(t *testing.T) {
+			pr := &providerResult{images: images}
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+			if !applyFieldValue(tc.field, pr, result) {
+				t.Fatalf("applyFieldValue(%s) = false, want true", tc.field)
+			}
+			if len(result.Images) == 0 || result.Images[0].URL != tc.wantURL {
+				t.Errorf("applyFieldValue(%s): want URL %q, got images %v", tc.field, tc.wantURL, result.Images)
+			}
+		})
+
+		t.Run(string(tc.field)+"/empty", func(t *testing.T) {
+			pr := &providerResult{images: nil}
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
+			if applyFieldValue(tc.field, pr, result) {
+				t.Fatalf("applyFieldValue(%s) with no images = true, want false", tc.field)
+			}
+		})
+	}
+}
