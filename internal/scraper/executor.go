@@ -453,6 +453,100 @@ func imageFieldQueried(pr *providerResult) bool {
 	return pr.imagesAttempted && pr.imageErr == nil
 }
 
+// fieldApplier copies one field from a provider's metadata into the merged
+// FetchResult. It returns true when a non-empty value was applied.
+type fieldApplier func(meta *provider.ArtistMetadata, result *provider.FetchResult) bool
+
+// fieldAppliers maps each text/slice field to its apply function. Image fields
+// are handled separately in applyFieldValue because they read from pr.images
+// rather than pr.meta.
+var fieldAppliers = map[FieldName]fieldApplier{
+	FieldBiography: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Biography == "" || provider.IsJunkBiography(m.Biography) {
+			return false
+		}
+		r.Metadata.Biography = m.Biography
+		return true
+	},
+	FieldGenres: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if len(m.Genres) == 0 {
+			return false
+		}
+		r.Metadata.Genres = m.Genres
+		return true
+	},
+	FieldStyles: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if len(m.Styles) == 0 {
+			return false
+		}
+		r.Metadata.Styles = m.Styles
+		return true
+	},
+	FieldMoods: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if len(m.Moods) == 0 {
+			return false
+		}
+		r.Metadata.Moods = m.Moods
+		return true
+	},
+	FieldMembers: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if len(m.Members) == 0 {
+			return false
+		}
+		r.Metadata.Members = m.Members
+		return true
+	},
+	FieldFormed: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Formed == "" {
+			return false
+		}
+		r.Metadata.Formed = m.Formed
+		return true
+	},
+	FieldBorn: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Born == "" {
+			return false
+		}
+		r.Metadata.Born = m.Born
+		return true
+	},
+	FieldDied: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Died == "" {
+			return false
+		}
+		r.Metadata.Died = m.Died
+		return true
+	},
+	FieldDisbanded: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Disbanded == "" {
+			return false
+		}
+		r.Metadata.Disbanded = m.Disbanded
+		return true
+	},
+	FieldYearsActive: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.YearsActive == "" {
+			return false
+		}
+		r.Metadata.YearsActive = m.YearsActive
+		return true
+	},
+	FieldType: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Type == "" {
+			return false
+		}
+		r.Metadata.Type = m.Type
+		return true
+	},
+	FieldGender: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
+		if m.Gender == "" {
+			return false
+		}
+		r.Metadata.Gender = m.Gender
+		return true
+	},
+}
+
 // applyFieldValue checks whether a provider result has data for a given field
 // and writes the value into the merged FetchResult. Returns true if the field
 // has a non-empty value that was applied.
@@ -461,85 +555,8 @@ func applyFieldValue(field FieldName, pr *providerResult, result *provider.Fetch
 		return false
 	}
 
-	meta := pr.meta
-	if meta == nil {
-		meta = &provider.ArtistMetadata{}
-	}
-
-	switch field {
-	case FieldBiography:
-		if meta.Biography == "" || provider.IsJunkBiography(meta.Biography) {
-			return false
-		}
-		result.Metadata.Biography = meta.Biography
-		return true
-	case FieldGenres:
-		if len(meta.Genres) == 0 {
-			return false
-		}
-		result.Metadata.Genres = meta.Genres
-		return true
-	case FieldStyles:
-		if len(meta.Styles) == 0 {
-			return false
-		}
-		result.Metadata.Styles = meta.Styles
-		return true
-	case FieldMoods:
-		if len(meta.Moods) == 0 {
-			return false
-		}
-		result.Metadata.Moods = meta.Moods
-		return true
-	case FieldMembers:
-		if len(meta.Members) == 0 {
-			return false
-		}
-		result.Metadata.Members = meta.Members
-		return true
-	case FieldFormed:
-		if meta.Formed == "" {
-			return false
-		}
-		result.Metadata.Formed = meta.Formed
-		return true
-	case FieldBorn:
-		if meta.Born == "" {
-			return false
-		}
-		result.Metadata.Born = meta.Born
-		return true
-	case FieldDied:
-		if meta.Died == "" {
-			return false
-		}
-		result.Metadata.Died = meta.Died
-		return true
-	case FieldDisbanded:
-		if meta.Disbanded == "" {
-			return false
-		}
-		result.Metadata.Disbanded = meta.Disbanded
-		return true
-	case FieldYearsActive:
-		if meta.YearsActive == "" {
-			return false
-		}
-		result.Metadata.YearsActive = meta.YearsActive
-		return true
-	case FieldType:
-		if meta.Type == "" {
-			return false
-		}
-		result.Metadata.Type = meta.Type
-		return true
-	case FieldGender:
-		if meta.Gender == "" {
-			return false
-		}
-		result.Metadata.Gender = meta.Gender
-		return true
-	case FieldThumb, FieldFanart, FieldLogo, FieldBanner:
+	// Image fields read from pr.images, not pr.meta.
+	if CategoryFor(field) == CategoryImages {
 		imgType := fieldToImageType(field)
 		found := false
 		for _, img := range pr.images {
@@ -551,6 +568,14 @@ func applyFieldValue(field FieldName, pr *providerResult, result *provider.Fetch
 		return found
 	}
 
+	meta := pr.meta
+	if meta == nil {
+		meta = &provider.ArtistMetadata{}
+	}
+
+	if apply, ok := fieldAppliers[field]; ok {
+		return apply(meta, result)
+	}
 	return false
 }
 
