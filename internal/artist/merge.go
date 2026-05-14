@@ -318,6 +318,9 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 	if u == nil {
 		return false
 	}
+	if strategy < OverwriteAttempted || strategy > SnapshotRestore {
+		return false
+	}
 
 	locked := buildLockedSet(opts.LockedFields)
 
