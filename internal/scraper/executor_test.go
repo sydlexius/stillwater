@@ -1165,15 +1165,17 @@ func TestApplyFieldValue_BiographyJunkFilter(t *testing.T) {
 	})
 
 	t.Run("junk biography skipped", func(t *testing.T) {
-		// provider.IsJunkBiography returns true for very short strings.
-		pr := &providerResult{meta: &provider.ArtistMetadata{Biography: "short"}}
+		junkBio := "short"
+		if !provider.IsJunkBiography(junkBio) {
+			t.Fatalf("test fixture no longer classified as junk: %q", junkBio)
+		}
+		pr := &providerResult{meta: &provider.ArtistMetadata{Biography: junkBio}}
 		result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}}
-		// Regardless of whether "short" triggers the junk filter, an empty bio
-		// must also be skipped; this exercises the filter path specifically.
-		_ = applyFieldValue(FieldBiography, pr, result)
-		// The result biography must not have been set to a junk value.
-		if result.Metadata.Biography == "short" && provider.IsJunkBiography("short") {
-			t.Error("junk biography was applied to result")
+		if applyFieldValue(FieldBiography, pr, result) {
+			t.Fatal("applyFieldValue(biography) with junk bio = true, want false")
+		}
+		if result.Metadata.Biography != "" {
+			t.Errorf("junk biography should not be written, got %q", result.Metadata.Biography)
 		}
 	})
 }
