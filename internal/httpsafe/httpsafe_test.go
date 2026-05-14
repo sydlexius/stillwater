@@ -101,6 +101,12 @@ func TestSafeTransport_PreservesDefaultTransportSettings(t *testing.T) {
 	if transport.IdleConnTimeout != 90*time.Second {
 		t.Errorf("IdleConnTimeout = %v, want 90s", transport.IdleConnTimeout)
 	}
+	// Proxy must be nil. Re-enabling ProxyFromEnvironment (the default on
+	// http.DefaultTransport.Clone()) would reopen the SSRF bypass where
+	// DialContext sees the proxy hop instead of the request's real host.
+	if transport.Proxy != nil {
+		t.Fatal("transport.Proxy must be nil so DialContext sees the final destination")
+	}
 	// HTTP/2 support preserved from DefaultTransport.Clone().
 	if !transport.ForceAttemptHTTP2 {
 		t.Error("ForceAttemptHTTP2 should be true (inherited from DefaultTransport)")

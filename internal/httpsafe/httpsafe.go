@@ -60,12 +60,12 @@ func SafeTransport() *http.Transport {
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("split host/port %q: %w", addr, err)
 		}
 
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve %q: %w", host, err)
 		}
 		if len(ips) == 0 {
 			return nil, fmt.Errorf("DNS lookup for %s returned no addresses", host)
