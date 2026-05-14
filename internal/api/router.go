@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/foreign"
 	"github.com/sydlexius/stillwater/internal/i18n"
@@ -85,6 +86,10 @@ type RouterDeps struct {
 	Publisher     *publish.Publisher
 	SSEHub        *SSEHub
 	I18nBundle    *i18n.Bundle
+	// Encryptor is used to decrypt inbound webhook HMAC secrets stored
+	// encrypted-at-rest in the settings table. Nil disables HMAC verification
+	// (secrets are never read and all requests pass through unchecked).
+	Encryptor *encryption.Encryptor
 }
 
 // Router sets up all HTTP routes for the application.
@@ -182,6 +187,9 @@ type Router struct {
 	// the application is going down.
 	webhookShutdownCtx    context.Context
 	webhookShutdownCancel context.CancelFunc
+	// encryptor decrypts inbound webhook HMAC secrets stored encrypted-at-rest
+	// in the settings table. Nil means HMAC verification is disabled.
+	encryptor *encryption.Encryptor
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -241,6 +249,7 @@ func NewRouter(deps RouterDeps) *Router {
 		reIdentifyWizardStore: newReIdentifyWizardStore(),
 		webhookShutdownCtx:    webhookCtx,
 		webhookShutdownCancel: webhookCancel,
+		encryptor:             deps.Encryptor,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream

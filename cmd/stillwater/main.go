@@ -585,6 +585,7 @@ func run() error {
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,
 		I18nBundle:         i18nBundle,
+		Encryptor:          encryptor,
 	})
 
 	// Graceful shutdown

@@ -2,10 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
@@ -21,8 +27,21 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 	// Limit request body to 1 MB.
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
+	// HMAC verification must read the raw body before JSON decoding.
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read request body"})
+		return
+	}
+
+	if err := r.verifyInboundHMAC(req.Context(), req, body, "webhook.inbound.lidarr.secret"); err != nil {
+		r.logger.Warn("lidarr webhook HMAC verification failed", "error", err)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "signature verification failed"})
+		return
+	}
+
 	var payload webhook.LidarrPayload
-	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
@@ -199,8 +218,20 @@ func artistNameFromPayload(p webhook.LidarrPayload) string {
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read request body"})
+		return
+	}
+
+	if err := r.verifyInboundHMAC(req.Context(), req, body, "webhook.inbound.emby.secret"); err != nil {
+		r.logger.Warn("emby webhook HMAC verification failed", "error", err)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "signature verification failed"})
+		return
+	}
+
 	var payload webhook.EmbyPayload
-	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		r.logger.Warn("emby webhook: failed to decode payload", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
@@ -334,8 +365,20 @@ func (r *Router) handleEmbyLibraryScan(ctx context.Context) {
 func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read request body"})
+		return
+	}
+
+	if err := r.verifyInboundHMAC(req.Context(), req, body, "webhook.inbound.jellyfin.secret"); err != nil {
+		r.logger.Warn("jellyfin webhook HMAC verification failed", "error", err)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "signature verification failed"})
+		return
+	}
+
 	var payload webhook.JellyfinPayload
-	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		r.logger.Warn("jellyfin webhook: failed to decode payload", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
@@ -461,4 +504,80 @@ func (r *Router) handleJellyfinLibraryScan(ctx context.Context) {
 			r.logger.Error("scan after jellyfin library changed failed", "error", err)
 		}
 	}
+}
+
+// verifyInboundHMAC checks the X-Hub-Signature-256 header against the request
+// body using the HMAC-SHA256 secret stored (encrypted-at-rest) under settingsKey.
+//
+// Behavior:
+//   - No secret configured: returns nil (verification skipped, backward compatible).
+//   - Secret configured, header missing: returns an error (401).
+//   - Secret configured, header present but MAC wrong: returns an error (401).
+//   - Secret configured, header present, MAC correct: returns nil.
+//
+// The secret is read from the settings table on every call so operators can
+// rotate it without a restart.
+func (r *Router) verifyInboundHMAC(ctx context.Context, req *http.Request, body []byte, settingsKey string) error {
+	// Skip if no encryptor is wired (e.g. in unit tests that do not need HMAC).
+	if r.encryptor == nil || r.db == nil {
+		return nil
+	}
+
+	encryptedSecret, secretConfigured := r.loadEncryptedSetting(ctx, settingsKey)
+	if !secretConfigured {
+		// Key absent or empty -- HMAC verification is not configured.
+		return nil
+	}
+
+	secret, err := r.encryptor.Decrypt(encryptedSecret)
+	if err != nil {
+		// Treat a corrupt/unreadable secret as "not configured" to avoid
+		// bricking the endpoint; log at warn so operators notice.
+		r.logger.Warn("inbound webhook: failed to decrypt HMAC secret, skipping verification",
+			"settings_key", settingsKey, "error", err)
+		return nil
+	}
+
+	return verifyHMACSignature(req, body, secret)
+}
+
+// verifyHMACSignature validates the X-Hub-Signature-256 header on the request.
+// It returns nil on success and a descriptive error on failure.
+// This function is exported for testing without a Router.
+func verifyHMACSignature(req *http.Request, body []byte, secret string) error {
+	sig := req.Header.Get("X-Hub-Signature-256")
+	if sig == "" {
+		return fmt.Errorf("missing X-Hub-Signature-256 header")
+	}
+
+	const prefix = "sha256="
+	if !strings.HasPrefix(sig, prefix) {
+		return fmt.Errorf("X-Hub-Signature-256 header does not start with %q", prefix)
+	}
+	sigHex := sig[len(prefix):]
+
+	sigBytes, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return fmt.Errorf("X-Hub-Signature-256 header is not valid hex: %w", err)
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := mac.Sum(nil)
+
+	if !hmac.Equal(sigBytes, expected) {
+		return fmt.Errorf("HMAC signature mismatch")
+	}
+	return nil
+}
+
+// loadEncryptedSetting reads a settings-table value by key and returns it with
+// a boolean indicating whether the value was found and non-empty. The caller
+// is responsible for decrypting the returned value.
+func (r *Router) loadEncryptedSetting(ctx context.Context, key string) (string, bool) {
+	var val string
+	if err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&val); err != nil {
+		return "", false
+	}
+	return val, val != ""
 }

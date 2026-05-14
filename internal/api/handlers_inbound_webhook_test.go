@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -281,4 +285,234 @@ func TestDrainWebhooks_CancelPropagates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from DrainWebhooks when context canceled, got nil")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// HMAC verification tests (#1404)
+// ---------------------------------------------------------------------------
+
+// testHMACSignature computes the sha256= header value for a given body and secret.
+func testHMACSignature(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// TestVerifyHMACSignature_Valid verifies that a correct signature returns nil.
+func TestVerifyHMACSignature_Valid(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"eventType":"Test"}`)
+	secret := "supersecret"
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(body, secret))
+
+	if err := verifyHMACSignature(req, body, secret); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
+// TestVerifyHMACSignature_Invalid verifies that a wrong signature returns an error.
+func TestVerifyHMACSignature_Invalid(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	req.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
+
+	if err := verifyHMACSignature(req, body, "secret"); err == nil {
+		t.Error("expected error for invalid signature, got nil")
+	}
+}
+
+// TestVerifyHMACSignature_MissingHeader verifies that an absent header returns an error.
+func TestVerifyHMACSignature_MissingHeader(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+
+	if err := verifyHMACSignature(req, body, "secret"); err == nil {
+		t.Error("expected error for missing header, got nil")
+	}
+}
+
+// TestHandleLidarrWebhook_HMAC_NoSecret verifies that requests pass when no
+// secret is configured in the settings table (backward compatible).
+func TestHandleLidarrWebhook_HMAC_NoSecret(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	body := `{"eventType":"Test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/lidarr",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleLidarrWebhook(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleLidarrWebhook_HMAC_Valid verifies 200 when a valid HMAC is provided.
+func TestHandleLidarrWebhook_HMAC_Valid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.lidarr.secret", "mysecret")
+
+	bodyBytes := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/lidarr",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(bodyBytes, "mysecret"))
+	w := httptest.NewRecorder()
+
+	r.handleLidarrWebhook(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleLidarrWebhook_HMAC_Invalid verifies 401 when the HMAC is wrong.
+func TestHandleLidarrWebhook_HMAC_Invalid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.lidarr.secret", "mysecret")
+
+	bodyBytes := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/lidarr",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256=badhex")
+	w := httptest.NewRecorder()
+
+	r.handleLidarrWebhook(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+}
+
+// TestHandleLidarrWebhook_HMAC_MissingHeader verifies 401 when a secret is
+// configured but the signature header is absent.
+func TestHandleLidarrWebhook_HMAC_MissingHeader(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.lidarr.secret", "mysecret")
+
+	body := `{"eventType":"Test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/lidarr",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	// No X-Hub-Signature-256 header.
+	w := httptest.NewRecorder()
+
+	r.handleLidarrWebhook(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+}
+
+// TestHandleEmbyWebhook_HMAC_Valid verifies 200 when Emby HMAC is correct.
+func TestHandleEmbyWebhook_HMAC_Valid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.emby.secret", "embysecret")
+
+	bodyBytes := []byte(`{"Event":"system.notificationtest"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(bodyBytes, "embysecret"))
+	w := httptest.NewRecorder()
+
+	r.handleEmbyWebhook(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleEmbyWebhook_HMAC_Invalid verifies 401 when Emby HMAC is wrong.
+func TestHandleEmbyWebhook_HMAC_Invalid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.emby.secret", "embysecret")
+
+	bodyBytes := []byte(`{"Event":"system.notificationtest"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256=wrongmac")
+	w := httptest.NewRecorder()
+
+	r.handleEmbyWebhook(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+}
+
+// TestHandleJellyfinWebhook_HMAC_Valid verifies 200 when Jellyfin HMAC is correct.
+func TestHandleJellyfinWebhook_HMAC_Valid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.jellyfin.secret", "jfsecret")
+
+	bodyBytes := []byte(`{"NotificationType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/jellyfin",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(bodyBytes, "jfsecret"))
+	w := httptest.NewRecorder()
+
+	r.handleJellyfinWebhook(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleJellyfinWebhook_HMAC_Invalid verifies 401 when Jellyfin HMAC is wrong.
+func TestHandleJellyfinWebhook_HMAC_Invalid(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterWithHMACSecret(t, "webhook.inbound.jellyfin.secret", "jfsecret")
+
+	bodyBytes := []byte(`{"NotificationType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/jellyfin",
+		strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256=badhex")
+	w := httptest.NewRecorder()
+
+	r.handleJellyfinWebhook(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+}
+
+// testRouterWithHMACSecret returns a Router with a real encryptor and the given
+// HMAC secret stored encrypted in the settings table under settingsKey.
+func testRouterWithHMACSecret(t *testing.T, settingsKey, secret string) (*Router, *artist.Service) {
+	t.Helper()
+
+	r, artistSvc := testRouter(t)
+
+	// Wire a real encryptor into the router.
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	r.encryptor = enc
+
+	// Encrypt the secret and persist it to the settings table.
+	encrypted, err := enc.Encrypt(secret)
+	if err != nil {
+		t.Fatalf("encrypting HMAC secret: %v", err)
+	}
+	_, err = r.db.ExecContext(context.Background(),
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		settingsKey, encrypted, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("inserting HMAC secret into settings: %v", err)
+	}
+
+	return r, artistSvc
 }
