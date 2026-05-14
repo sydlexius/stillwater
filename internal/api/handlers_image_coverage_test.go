@@ -921,6 +921,10 @@ func TestProbeImageDimensions_ProbesMissingDims(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// Install the test server's own client on the router so probeImageDimensions
+	// can reach the loopback address without being blocked by the SSRF-safe transport.
+	r.ssrfClient = srv.Client()
+
 	in := []provider.ImageResult{
 		{URL: srv.URL + "/x.jpg"}, // missing dims, will be probed
 		{URL: "https://example.com/already.jpg", Width: 50, Height: 50},
@@ -950,6 +954,9 @@ func TestProbeImageDimensions_FailedProbeLeavesZero(t *testing.T) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
+
+	// Install the test server's client so the loopback address is reachable.
+	r.ssrfClient = srv.Client()
 
 	in := []provider.ImageResult{{URL: srv.URL + "/x.jpg"}}
 	out := r.probeImageDimensions(context.Background(), in)
