@@ -539,12 +539,12 @@ func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphra
 		return nil, fmt.Errorf("importing users: %w", err)
 	}
 
-	// Libraries must run AFTER connections so the (type, url) -> id remap
-	// can resolve to the freshly-imported connection rows.
 	if err := s.importUserPreferences(ctx, payload.UserPreferences, result); err != nil {
 		return nil, fmt.Errorf("importing user preferences: %w", err)
 	}
 
+	// Libraries must run AFTER connections so the (type, url) -> id remap
+	// can resolve to the freshly-imported connection rows.
 	if err := s.importLibraries(ctx, payload.Libraries, result); err != nil {
 		return nil, fmt.Errorf("importing libraries: %w", err)
 	}
