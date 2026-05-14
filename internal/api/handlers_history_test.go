@@ -1274,3 +1274,128 @@ func TestHandleRevertHistory_ActivityFromArtistPageRoute(t *testing.T) {
 		t.Errorf("artist-page route did not render history tab fragment\nbody: %s", bodyArt)
 	}
 }
+
+func TestParseFilterValues(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   []string
+		want []string
+	}{
+		{[]string{"manual", "+scan", "-provider:mb"}, []string{"manual", "scan"}},
+		{[]string{"", "  ", "+good"}, []string{"good"}},
+		{[]string{"-only-excludes"}, nil},
+		{[]string{}, nil},
+	}
+	for _, tc := range cases {
+		got := parseFilterValues(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("input %v: got %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("input %v index %d: got %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestSliceContains(t *testing.T) {
+	t.Parallel()
+	if !sliceContains([]string{"a", "b", "c"}, "b") {
+		t.Error("expected true for present element")
+	}
+	if sliceContains([]string{"a", "b", "c"}, "d") {
+		t.Error("expected false for absent element")
+	}
+	if sliceContains(nil, "a") {
+		t.Error("expected false for nil slice")
+	}
+}
+
+func TestIsPlainDate(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		s    string
+		want bool
+	}{
+		{"2024-01-15", true},
+		{"2024-1-15", false},  // too short
+		{"2024-01-1", false},  // too short
+		{"2024/01/15", false}, // wrong separator
+		{"20240115", false},   // no separators
+		{"abcd-ef-gh", false}, // non-digit body
+		{"", false},
+	}
+	for _, tc := range cases {
+		got := isPlainDate(tc.s)
+		if got != tc.want {
+			t.Errorf("isPlainDate(%q) = %v, want %v", tc.s, got, tc.want)
+		}
+	}
+}
+
+func TestParseTimeValue(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty returns zero", func(t *testing.T) {
+		if !parseTimeValue("", "from").IsZero() {
+			t.Error("expected zero time for empty input")
+		}
+	})
+
+	t.Run("unparsable returns zero", func(t *testing.T) {
+		if !parseTimeValue("not-a-date", "from").IsZero() {
+			t.Error("expected zero time for unparsable input")
+		}
+	})
+
+	t.Run("RFC3339 parsed correctly", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01T12:00:00Z", "from")
+		if got.IsZero() {
+			t.Error("expected non-zero time for RFC3339 input")
+		}
+	})
+
+	t.Run("plain date from is midnight UTC", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01", "from")
+		if got.Hour() != 0 || got.Minute() != 0 {
+			t.Errorf("from date: expected midnight UTC, got %v", got)
+		}
+	})
+
+	t.Run("plain date to is end-of-day UTC", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01", "to")
+		if got.Hour() != 23 || got.Minute() != 59 {
+			t.Errorf("to date: expected end-of-day UTC, got %v", got)
+		}
+	})
+}
+
+func TestBuildGlobalFilterFromURL(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid URL returns empty filter", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("://not-a-url")
+		if f.ArtistID != "" || f.Offset != 0 {
+			t.Errorf("expected empty filter for invalid URL, got %+v", f)
+		}
+	})
+
+	t.Run("negative offset clamped to zero", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("http://localhost/activity?offset=-5")
+		if f.Offset != 0 {
+			t.Errorf("expected offset=0 for negative input, got %d", f.Offset)
+		}
+	})
+
+	t.Run("source prefix extracted", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("http://localhost/activity?source=provider:*&artist_id=abc")
+		if f.ArtistID != "abc" {
+			t.Errorf("ArtistID = %q, want abc", f.ArtistID)
+		}
+		if len(f.SourcePrefixes) != 1 || f.SourcePrefixes[0] != "provider:" {
+			t.Errorf("SourcePrefixes = %v, want [provider:]", f.SourcePrefixes)
+		}
+	})
+}
