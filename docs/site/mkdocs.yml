@@ -110,6 +110,7 @@ nav:
       - Direct TLS setup: how-to/direct-tls-setup.md
       - HTTP-to-HTTPS redirect: how-to/http-redirect.md
       - ACME (Let's Encrypt / Buypass): how-to/acme-letsencrypt.md
+      - Inbound webhooks: how-to/inbound-webhooks.md
   - Reference:
       - reference/index.md
       - Settings, by tab: reference/settings-by-tab.md
