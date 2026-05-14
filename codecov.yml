@@ -6,9 +6,14 @@ coverage:
         # Generated template files (*_templ.go) are excluded via the ignore list below.
         target: 70%
     project:
-      # Per-package floors mirror testdata/coverage-floor.json.
-      # Each entry sets the minimum total coverage for that package's source files.
-      # Update both files together when raising a floor with scripts/coverage-floor.sh --bump.
+      # Per-package floors mirror testdata/coverage-floor.json exactly: every
+      # entry in the JSON has a matching entry here, including aggregate
+      # entries (e.g. `connection` for `internal/connection`) AND subpackage
+      # entries (`connection_emby`, etc.). Codecov runs each as an independent
+      # status check, so a regression in a single subpackage fails the
+      # specific check rather than being averaged away by its better-covered
+      # siblings. Update both files together when raising a floor with
+      # `scripts/coverage-floor.sh --bump`.
       default:
         # Catch-all for any package not listed below.
         target: auto
@@ -22,7 +27,7 @@ coverage:
         paths:
           - internal/api/middleware
       artist:
-        target: 84%
+        target: 83%
         paths:
           - internal/artist
       auth:
@@ -45,6 +50,26 @@ coverage:
         target: 83%
         paths:
           - internal/connection
+      connection_emby:
+        target: 79%
+        paths:
+          - internal/connection/emby
+      connection_httpclient:
+        target: 68%
+        paths:
+          - internal/connection/httpclient
+      connection_jellyfin:
+        target: 79%
+        paths:
+          - internal/connection/jellyfin
+      connection_lidarr:
+        target: 73%
+        paths:
+          - internal/connection/lidarr
+      connection_mediabrowser:
+        target: 88%
+        paths:
+          - internal/connection/mediabrowser
       database:
         target: 75%
         paths:
@@ -109,6 +134,58 @@ coverage:
         target: 84%
         paths:
           - internal/provider
+      provider_audiodb:
+        target: 80%
+        paths:
+          - internal/provider/audiodb
+      provider_deezer:
+        target: 75%
+        paths:
+          - internal/provider/deezer
+      provider_discogs:
+        target: 76%
+        paths:
+          - internal/provider/discogs
+      provider_duckduckgo:
+        target: 81%
+        paths:
+          - internal/provider/duckduckgo
+      provider_fanarttv:
+        target: 60%
+        paths:
+          - internal/provider/fanarttv
+      provider_genius:
+        target: 77%
+        paths:
+          - internal/provider/genius
+      provider_lastfm:
+        target: 67%
+        paths:
+          - internal/provider/lastfm
+      provider_musicbrainz:
+        target: 89%
+        paths:
+          - internal/provider/musicbrainz
+      provider_spotify:
+        target: 83%
+        paths:
+          - internal/provider/spotify
+      provider_tagclass:
+        target: 100%
+        paths:
+          - internal/provider/tagclass
+      provider_tagdict:
+        target: 100%
+        paths:
+          - internal/provider/tagdict
+      provider_wikidata:
+        target: 84%
+        paths:
+          - internal/provider/wikidata
+      provider_wikipedia:
+        target: 84%
+        paths:
+          - internal/provider/wikipedia
       publish:
         target: 94%
         paths:
