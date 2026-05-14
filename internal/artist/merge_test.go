@@ -901,6 +901,189 @@ func TestBuildLockedSet_DropsBlankTokens(t *testing.T) {
 // born/formed/died/disbanded value based on the artist's Type. A user who
 // pinned born="1970" on a group should see that date survive the merge AND
 // the post-merge type filter.
+// --- Field policy table regression tests ---
+// These tests verify that each of the three merge modes (modeAttemptedPopulated,
+// modeNonEmpty, modeFillEmpty) behaves correctly for representative fields,
+// and that modeSkip fields are never touched.
+
+func TestFieldPolicy_AttemptedPopulated_RequiresBothFlags(t *testing.T) {
+	t.Parallel()
+	// biography, genres, and born all use modeAttemptedPopulated in OverwriteAttempted.
+	// Only fields in BOTH attempted and populated are written.
+	tests := []struct {
+		name       string
+		attempted  []string
+		populated  []string
+		wantChange bool
+	}{
+		{"both set", []string{"biography", "genres", "born"}, []string{"biography", "genres", "born"}, true},
+		{"attempted only", []string{"biography", "genres", "born"}, nil, false},
+		{"neither", nil, nil, false},
+		{"populated only (edge)", nil, []string{"biography"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Artist{Biography: "old", Genres: []string{"jazz"}, Born: "1960"}
+			u := &MetadataUpdate{Biography: "new", Genres: []string{"rock"}, Born: "1970"}
+			changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+				AttemptedFields: tt.attempted,
+				PopulatedFields: tt.populated,
+			})
+			if changed != tt.wantChange {
+				t.Errorf("changed = %v, want %v", changed, tt.wantChange)
+			}
+			if tt.wantChange {
+				if a.Biography != "new" {
+					t.Errorf("biography = %q, want %q", a.Biography, "new")
+				}
+				if a.Born != "1970" {
+					t.Errorf("born = %q, want %q", a.Born, "1970")
+				}
+			} else {
+				if a.Biography != "old" {
+					t.Errorf("biography = %q, want preserved %q", a.Biography, "old")
+				}
+			}
+		})
+	}
+}
+
+func TestFieldPolicy_NonEmpty_NeverClears(t *testing.T) {
+	t.Parallel()
+	// type, gender, origin, disambiguation, years_active all use modeNonEmpty
+	// in OverwriteAttempted: they can be updated to a new non-empty value
+	// but an empty incoming value must never clear the existing one.
+	fields := []struct {
+		name     string
+		existing string
+		incoming string
+		getField func(*Artist) string
+	}{
+		{"type", "person", "group", func(a *Artist) string { return a.Type }},
+		{"gender", "male", "female", func(a *Artist) string { return a.Gender }},
+		{"origin", "UK", "US", func(a *Artist) string { return a.Origin }},
+		{"disambiguation", "UK band", "US band", func(a *Artist) string { return a.Disambiguation }},
+		{"years_active", "1990-2000", "2000-2010", func(a *Artist) string { return a.YearsActive }},
+	}
+	for _, f := range fields {
+		f := f
+		t.Run(f.name+"/empty-incoming-preserves", func(t *testing.T) {
+			a := &Artist{}
+			u := &MetadataUpdate{}
+			// set existing via reflect-free struct literal approach
+			switch f.name {
+			case "type":
+				a.Type = f.existing
+			case "gender":
+				a.Gender = f.existing
+			case "origin":
+				a.Origin = f.existing
+			case "disambiguation":
+				a.Disambiguation = f.existing
+			case "years_active":
+				a.YearsActive = f.existing
+			}
+			changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+			if changed {
+				t.Errorf("%s: changed=true when incoming is empty and existing is %q", f.name, f.existing)
+			}
+			if got := f.getField(a); got != f.existing {
+				t.Errorf("%s: got %q, want preserved %q", f.name, got, f.existing)
+			}
+		})
+		t.Run(f.name+"/non-empty-incoming-overwrites", func(t *testing.T) {
+			a := &Artist{}
+			u := &MetadataUpdate{}
+			switch f.name {
+			case "type":
+				a.Type = f.existing
+				u.Type = f.incoming
+			case "gender":
+				a.Gender = f.existing
+				u.Gender = f.incoming
+			case "origin":
+				a.Origin = f.existing
+				u.Origin = f.incoming
+			case "disambiguation":
+				a.Disambiguation = f.existing
+				u.Disambiguation = f.incoming
+			case "years_active":
+				a.YearsActive = f.existing
+				u.YearsActive = f.incoming
+			}
+			changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+			if !changed {
+				t.Errorf("%s: expected change from %q to %q", f.name, f.existing, f.incoming)
+			}
+			if got := f.getField(a); got != f.incoming {
+				t.Errorf("%s: got %q, want %q", f.name, got, f.incoming)
+			}
+		})
+	}
+}
+
+func TestFieldPolicy_FillEmpty_DoesNotOverwrite(t *testing.T) {
+	t.Parallel()
+	// Provider IDs and biography in FillEmpty: existing non-empty values are never replaced.
+	a := &Artist{
+		MusicBrainzID: "mbid",
+		DiscogsID:     "discogs",
+		WikidataID:    "wikidata",
+		DeezerID:      "deezer",
+		SpotifyID:     "spotify",
+		Biography:     "existing",
+	}
+	u := &MetadataUpdate{
+		MusicBrainzID: "new-mbid",
+		DiscogsID:     "new-discogs",
+		WikidataID:    "new-wikidata",
+		DeezerID:      "new-deezer",
+		SpotifyID:     "new-spotify",
+		Biography:     "new-bio",
+	}
+	changed := ApplyMetadata(a, u, FillEmpty, MergeOptions{})
+	if changed {
+		t.Error("expected no change: all fields already populated")
+	}
+	if a.MusicBrainzID != "mbid" {
+		t.Errorf("MusicBrainzID = %q, want preserved", a.MusicBrainzID)
+	}
+	if a.Biography != "existing" {
+		t.Errorf("biography = %q, want preserved", a.Biography)
+	}
+}
+
+func TestFieldPolicy_SkipFields_NeverTouchedByFillEmpty(t *testing.T) {
+	t.Parallel()
+	// Name, SortName, and Disambiguation use modeSkip for FillEmpty.
+	a := &Artist{}
+	u := &MetadataUpdate{Name: "New", SortName: "New, The", Disambiguation: "UK"}
+	changed := ApplyMetadata(a, u, FillEmpty, MergeOptions{})
+	if changed {
+		t.Error("expected no change: skip fields must never be written by FillEmpty")
+	}
+	if a.Name != "" || a.SortName != "" || a.Disambiguation != "" {
+		t.Errorf("skip fields written: Name=%q SortName=%q Disambiguation=%q", a.Name, a.SortName, a.Disambiguation)
+	}
+}
+
+func TestFieldPolicy_SkipFields_WrittenBySnapshotRestore(t *testing.T) {
+	t.Parallel()
+	// The same fields that FillEmpty skips must be written unconditionally by SnapshotRestore.
+	a := &Artist{Name: "Old", SortName: "Old, The"}
+	u := &MetadataUpdate{Name: "New", SortName: "New, The", Disambiguation: "UK"}
+	changed := ApplyMetadata(a, u, SnapshotRestore, MergeOptions{})
+	if !changed {
+		t.Error("expected change: SnapshotRestore writes all fields unconditionally")
+	}
+	if a.Name != "New" {
+		t.Errorf("Name = %q, want %q", a.Name, "New")
+	}
+	if a.Disambiguation != "UK" {
+		t.Errorf("Disambiguation = %q, want %q", a.Disambiguation, "UK")
+	}
+}
+
 func TestApplyMetadata_LockedDateSurvivesFilterByType(t *testing.T) {
 	t.Parallel()
 	a := &Artist{Type: "group", Born: "1970", Died: "2010"}
