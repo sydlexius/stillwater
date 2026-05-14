@@ -1134,3 +1134,34 @@ func TestApplyMetadata_AttemptedFieldsNormalized(t *testing.T) {
 		t.Errorf("Biography = %q, want %q", a.Biography, "bio text")
 	}
 }
+
+func TestSnapshotRestore_PreservesNilVsEmptySlices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil to empty", func(t *testing.T) {
+		t.Parallel()
+		a := &Artist{Genres: nil}
+		u := &MetadataUpdate{Genres: []string{}}
+		if !ApplyMetadata(a, u, SnapshotRestore, MergeOptions{}) {
+			t.Fatal("expected change when restoring explicit empty slice over nil")
+		}
+		if a.Genres == nil {
+			t.Fatal("genres = nil, want explicit empty slice")
+		}
+		if len(a.Genres) != 0 {
+			t.Fatalf("genres len = %d, want 0", len(a.Genres))
+		}
+	})
+
+	t.Run("empty to nil", func(t *testing.T) {
+		t.Parallel()
+		a := &Artist{Genres: []string{}}
+		u := &MetadataUpdate{Genres: nil}
+		if !ApplyMetadata(a, u, SnapshotRestore, MergeOptions{}) {
+			t.Fatal("expected change when restoring nil over explicit empty slice")
+		}
+		if a.Genres != nil {
+			t.Fatalf("genres = %v, want nil", a.Genres)
+		}
+	})
+}
