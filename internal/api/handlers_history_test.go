@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -472,6 +473,76 @@ func TestHandleRevertHistory(t *testing.T) {
 	})
 }
 
+// TestHandleRevertHistory_HTMXActivityFragment verifies that an HTMX POST from
+// the activity feed returns an HTML fragment (200, Content-Type text/html).
+func TestHandleRevertHistory_HTMXActivityFragment(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "HTMX Activity Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/activity")
+	w := httptest.NewRecorder()
+
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html prefix", ct)
+	}
+}
+
+// TestHandleRevertHistory_HTMXArtistTabFragment verifies that an HTMX POST from
+// the artist history tab returns an HTML fragment (200, Content-Type text/html).
+func TestHandleRevertHistory_HTMXArtistTabFragment(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "HTMX Tab Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "tab bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/artists/"+a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html prefix", ct)
+	}
+}
+
 func TestHandleListGlobalHistory(t *testing.T) {
 	t.Parallel()
 	r, artistSvc, historySvc := testRouterWithHistory(t)
@@ -897,6 +968,135 @@ func TestHandleRevertHistory_ActivityShowingCounter_LoadMoreHint(t *testing.T) {
 	})
 }
 
+// TestValidateRevertable exercises the eligibility checks in isolation.
+// These rules must be enforced at the validate stage before any mutation.
+func TestValidateRevertable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		field   string
+		source  string
+		wantErr error
+	}{
+		{"trackable field, non-revert source", "biography", "manual", nil},
+		{"trackable field, provider source", "genres", "provider:musicbrainz", nil},
+		{"untrackable field", "unknown_field_xyz", "manual", errRevertNotTrackable},
+		{"revert source is rejected", "biography", "revert", errRevertOfRevert},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			change := &artist.MetadataChange{
+				Field:  tc.field,
+				Source: tc.source,
+			}
+			err := validateRevertable(change)
+			if tc.wantErr == nil && err != nil {
+				t.Errorf("validateRevertable() = %v, want nil", err)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Errorf("validateRevertable() = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestPerformRevert_ClearBranch verifies that performRevert calls ClearField
+// when change.OldValue is empty and records a new history entry with source
+// "revert". The returned revertChangeID must match the row written to the DB.
+func TestPerformRevert_ClearBranch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "PerformRevert Clear Artist")
+
+	// Set biography to non-empty so ClearField has something to clear.
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "some bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+
+	change := &artist.MetadataChange{
+		ArtistID: a.ID,
+		Field:    "biography",
+		OldValue: "", // triggers ClearField
+		NewValue: "some bio",
+		Source:   "manual",
+	}
+
+	revertChangeID, err := r.performRevert(context.Background(), change)
+	if err != nil {
+		t.Fatalf("performRevert: %v", err)
+	}
+	if revertChangeID == "" {
+		t.Fatal("revertChangeID is empty")
+	}
+
+	// The artist's biography should now be cleared.
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Biography != "" {
+		t.Errorf("Biography = %q, want empty after clear revert", updated.Biography)
+	}
+
+	// A history row with source "revert" and the pre-assigned ID must exist.
+	row, err := historySvc.GetByID(context.Background(), revertChangeID)
+	if err != nil {
+		t.Fatalf("GetByID(revert row): %v", err)
+	}
+	if row.Source != "revert" {
+		t.Errorf("row.Source = %q, want revert", row.Source)
+	}
+	if row.ID != revertChangeID {
+		t.Errorf("row.ID = %q, want %q", row.ID, revertChangeID)
+	}
+}
+
+// TestPerformRevert_UpdateBranch verifies that performRevert calls UpdateField
+// when change.OldValue is non-empty, restoring the old value.
+func TestPerformRevert_UpdateBranch(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "PerformRevert Update Artist")
+
+	change := &artist.MetadataChange{
+		ArtistID: a.ID,
+		Field:    "biography",
+		OldValue: "original bio", // triggers UpdateField
+		NewValue: "changed bio",
+		Source:   "manual",
+	}
+
+	revertChangeID, err := r.performRevert(context.Background(), change)
+	if err != nil {
+		t.Fatalf("performRevert: %v", err)
+	}
+
+	// The artist's biography should be restored to the old value.
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Biography != "original bio" {
+		t.Errorf("Biography = %q, want 'original bio'", updated.Biography)
+	}
+
+	// Verify the revert history row was recorded with the deterministic ID.
+	row, err := historySvc.GetByID(context.Background(), revertChangeID)
+	if err != nil {
+		t.Fatalf("GetByID(revert row): %v", err)
+	}
+	if row.Source != "revert" {
+		t.Errorf("row.Source = %q, want revert", row.Source)
+	}
+}
+
 // TestHandleRevertHistory_ArtistTabShowingCounter_LoadMoreHint covers the same
 // regression as the activity test but for the artist detail page's history
 // tab. The fallback path uses len(changes)-1 from a List(limit, 0) call which
@@ -1072,5 +1272,292 @@ func TestHandleRevertHistory_ActivityFromArtistPageRoute(t *testing.T) {
 	bodyArt := wArt.Body.String()
 	if !strings.Contains(bodyArt, `id="history-change-list"`) {
 		t.Errorf("artist-page route did not render history tab fragment\nbody: %s", bodyArt)
+	}
+}
+
+func TestParseFilterValues(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   []string
+		want []string
+	}{
+		{[]string{"manual", "+scan", "-provider:mb"}, []string{"manual", "scan"}},
+		{[]string{"", "  ", "+good"}, []string{"good"}},
+		{[]string{"-only-excludes"}, nil},
+		{[]string{}, nil},
+	}
+	for _, tc := range cases {
+		got := parseFilterValues(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("input %v: got %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("input %v index %d: got %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestSliceContains(t *testing.T) {
+	t.Parallel()
+	if !sliceContains([]string{"a", "b", "c"}, "b") {
+		t.Error("expected true for present element")
+	}
+	if sliceContains([]string{"a", "b", "c"}, "d") {
+		t.Error("expected false for absent element")
+	}
+	if sliceContains(nil, "a") {
+		t.Error("expected false for nil slice")
+	}
+}
+
+func TestIsPlainDate(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		s    string
+		want bool
+	}{
+		{"2024-01-15", true},
+		{"2024-1-15", false},  // too short
+		{"2024-01-1", false},  // too short
+		{"2024/01/15", false}, // wrong separator
+		{"20240115", false},   // no separators
+		{"abcd-ef-gh", false}, // non-digit body
+		{"", false},
+	}
+	for _, tc := range cases {
+		got := isPlainDate(tc.s)
+		if got != tc.want {
+			t.Errorf("isPlainDate(%q) = %v, want %v", tc.s, got, tc.want)
+		}
+	}
+}
+
+func TestParseTimeValue(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty returns zero", func(t *testing.T) {
+		if !parseTimeValue("", "from").IsZero() {
+			t.Error("expected zero time for empty input")
+		}
+	})
+
+	t.Run("unparsable returns zero", func(t *testing.T) {
+		if !parseTimeValue("not-a-date", "from").IsZero() {
+			t.Error("expected zero time for unparsable input")
+		}
+	})
+
+	t.Run("RFC3339 parsed correctly", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01T12:00:00Z", "from")
+		if got.IsZero() {
+			t.Error("expected non-zero time for RFC3339 input")
+		}
+	})
+
+	t.Run("plain date from is midnight UTC", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01", "from")
+		if got.Hour() != 0 || got.Minute() != 0 {
+			t.Errorf("from date: expected midnight UTC, got %v", got)
+		}
+	})
+
+	t.Run("plain date to is end-of-day UTC", func(t *testing.T) {
+		got := parseTimeValue("2024-06-01", "to")
+		if got.Hour() != 23 || got.Minute() != 59 {
+			t.Errorf("to date: expected end-of-day UTC, got %v", got)
+		}
+	})
+}
+
+func TestBuildGlobalFilterFromURL(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid URL returns empty filter", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("://not-a-url")
+		if f.ArtistID != "" || f.Offset != 0 {
+			t.Errorf("expected empty filter for invalid URL, got %+v", f)
+		}
+	})
+
+	t.Run("negative offset clamped to zero", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("http://localhost/activity?offset=-5")
+		if f.Offset != 0 {
+			t.Errorf("expected offset=0 for negative input, got %d", f.Offset)
+		}
+	})
+
+	t.Run("source prefix extracted", func(t *testing.T) {
+		f := buildGlobalFilterFromURL("http://localhost/activity?source=provider:*&artist_id=abc")
+		if f.ArtistID != "abc" {
+			t.Errorf("ArtistID = %q, want abc", f.ArtistID)
+		}
+		if len(f.SourcePrefixes) != 1 || f.SourcePrefixes[0] != "provider:" {
+			t.Errorf("SourcePrefixes = %v, want [provider:]", f.SourcePrefixes)
+		}
+	})
+}
+
+// TestHandleRevertHistory_MissingPathParam verifies that the handler writes a
+// 400 response when the "id" path parameter is absent (RequirePathParam fails).
+func TestHandleRevertHistory_MissingPathParam(t *testing.T) {
+	t.Parallel()
+	r, _, historySvc := testRouterWithHistory(t)
+	r.historyService = historySvc
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history//revert", nil)
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleRevertHistory_UntrackableField verifies that the handler returns
+// 400 when the change's field is not in the revertable field set.
+func TestHandleRevertHistory_UntrackableField(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Untrackable Field Artist")
+	addHistoryChange(t, historySvc, a.ID, "unknown_field_xyz", "old", "new", "manual")
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changes[0].ID+"/revert", nil)
+	req.SetPathValue("id", changes[0].ID)
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// TestHandleRevertHistory_ActivitySourceFilter verifies that when the active
+// activity feed filter restricts sources and excludes "revert", the handler
+// suppresses the rich HTMX fragment and writes the plain fallback instead.
+func TestHandleRevertHistory_ActivitySourceFilter(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Source Filter Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "filter bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	// HX-Current-URL carries source=manual; "revert" is excluded, so the rich
+	// fragment must be suppressed and the plain amber fallback written instead.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/activity?source=manual")
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `id="activity-entries"`) {
+		t.Errorf("expected fallback fragment, got rich activity fragment; body: %s", body)
+	}
+	if !strings.Contains(body, "border-amber") {
+		t.Errorf("expected fallback amber div in body: %s", body)
+	}
+}
+
+// TestHandleRevertHistory_ActivityDateRangeFilter verifies that when the
+// activity feed has a date-range upper bound in the past, the revert row
+// (created now) falls outside the window and the fallback fragment is written.
+func TestHandleRevertHistory_ActivityDateRangeFilter(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Date Range Artist")
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "range bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	// "to=2020-01-01" places the upper bound before now; the revert row is
+	// created at the current time and therefore falls outside the filter.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/activity?to=2020-01-01")
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `id="activity-entries"`) {
+		t.Errorf("expected fallback fragment, got rich activity fragment")
+	}
+}
+
+// TestHandleRevertHistory_NoopRevertFallback verifies the Warn-level fallback
+// branch: the revert mutation succeeds but the history service skips recording
+// (oldValue == newValue), so GetByID(revertChangeID) returns ErrChangeNotFound
+// and the handler falls through to the amber warning fragment.
+func TestHandleRevertHistory_NoopRevertFallback(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Noop Revert Artist")
+	// Record a change whose OldValue ("noop-bio") we will pre-load into the
+	// artist so the revert UpdateField call is a no-op.
+	addHistoryChange(t, historySvc, a.ID, "biography", "noop-bio", "current-bio", "manual")
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	// Set biography to "noop-bio" directly so UpdateField("biography","noop-bio")
+	// sees oldValue==newValue and skips history recording. revertChangeID is
+	// therefore not found by GetByID, leaving revertChange nil.
+	if _, err := r.db.ExecContext(context.Background(),
+		"UPDATE artists SET biography = ? WHERE id = ?", "noop-bio", a.ID); err != nil {
+		t.Fatalf("pre-loading biography: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+	req.SetPathValue("id", changeID)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Current-URL", "http://localhost:1973/artists/"+a.ID)
+	w := httptest.NewRecorder()
+	r.handleRevertHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `id="history-change-list"`) {
+		t.Errorf("expected fallback fragment, got rich artist-tab fragment; body: %s", body)
+	}
+	if !strings.Contains(body, "border-amber") {
+		t.Errorf("expected fallback amber div in body: %s", body)
 	}
 }
