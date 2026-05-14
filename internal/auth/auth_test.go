@@ -9,26 +9,14 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
-// setupTestService creates an in-memory database with migrations applied
-// and returns a new auth Service. The database is closed automatically
-// when the test completes.
+// setupTestService returns a new auth Service backed by a pre-migrated test
+// database. Delegates to newTestDB (testmain_test.go) so migration runs once
+// per package via TestMain rather than once per test.
 func setupTestService(t *testing.T) *Service {
 	t.Helper()
-
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	return NewService(db)
+	return NewService(newTestDB(t))
 }
 
 // createTestUser creates an admin user via Setup and returns the service.
@@ -107,13 +95,7 @@ func TestPrehashPassword_DifferentInputsDifferentOutputs(t *testing.T) {
 
 func TestNewService(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	svc := NewService(db)
+	svc := NewService(newTestDB(t))
 	if svc == nil {
 		t.Fatal("expected non-nil Service")
 	}

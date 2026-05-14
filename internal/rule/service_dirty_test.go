@@ -3,7 +3,6 @@ package rule
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
@@ -17,7 +16,8 @@ import (
 func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
-	ruleSvc := NewService(db)
+	clk := NewFakeClock(baseTestTime)
+	ruleSvc := NewService(db).WithClock(clk)
 	ctx := context.Background()
 
 	if err := ruleSvc.SeedDefaults(ctx); err != nil {
@@ -31,9 +31,9 @@ func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 		t.Fatalf("Create artist: %v", err)
 	}
 	// Stamp rules_evaluated_at strictly after the seed's updated_at so the
-	// artist starts clean.
-	time.Sleep(time.Second)
-	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, time.Now().UTC()); err != nil {
+	// artist starts clean. The fake clock advances by 1s each Now() call, so
+	// the evaluation timestamp is always later than the seed timestamp.
+	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, clk.Now()); err != nil {
 		t.Fatalf("MarkRulesEvaluated: %v", err)
 	}
 
@@ -67,7 +67,6 @@ func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 	} else {
 		r.AutomationMode = AutomationModeAuto
 	}
-	time.Sleep(time.Second)
 	if err := ruleSvc.Update(ctx, r); err != nil {
 		t.Fatalf("Update rule: %v", err)
 	}
@@ -89,7 +88,8 @@ func TestService_UpdateMakesPreviouslyEvaluatedArtistDirty(t *testing.T) {
 func TestService_DisablingRuleDoesNotMarkDirty(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
-	ruleSvc := NewService(db)
+	clk := NewFakeClock(baseTestTime)
+	ruleSvc := NewService(db).WithClock(clk)
 	ctx := context.Background()
 
 	if err := ruleSvc.SeedDefaults(ctx); err != nil {
@@ -102,8 +102,7 @@ func TestService_DisablingRuleDoesNotMarkDirty(t *testing.T) {
 	if err := artistSvc.Create(ctx, a); err != nil {
 		t.Fatalf("Create artist: %v", err)
 	}
-	time.Sleep(time.Second)
-	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, time.Now().UTC()); err != nil {
+	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, clk.Now()); err != nil {
 		t.Fatalf("MarkRulesEvaluated: %v", err)
 	}
 
@@ -118,7 +117,6 @@ func TestService_DisablingRuleDoesNotMarkDirty(t *testing.T) {
 		t.Skipf("RuleNFOExists default disabled; cannot exercise disable path")
 	}
 	r.Enabled = false
-	time.Sleep(time.Second)
 	if err := ruleSvc.Update(ctx, r); err != nil {
 		t.Fatalf("Update rule: %v", err)
 	}
@@ -149,7 +147,8 @@ func TestService_DisablingRuleDoesNotMarkDirty(t *testing.T) {
 func TestService_SeedDefaultsIdempotent(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
-	ruleSvc := NewService(db)
+	clk := NewFakeClock(baseTestTime)
+	ruleSvc := NewService(db).WithClock(clk)
 	ctx := context.Background()
 
 	a := &artist.Artist{
@@ -173,8 +172,9 @@ func TestService_SeedDefaultsIdempotent(t *testing.T) {
 	}
 
 	// Stamp the artist as fully evaluated so it falls out of the dirty set.
-	time.Sleep(time.Second)
-	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, time.Now().UTC()); err != nil {
+	// The fake clock advances by 1s each Now() call, ensuring the evaluation
+	// timestamp is strictly later than the seed timestamps.
+	if err := artistSvc.MarkRulesEvaluated(ctx, a.ID, clk.Now()); err != nil {
 		t.Fatalf("MarkRulesEvaluated: %v", err)
 	}
 	clean, err := artistSvc.ListDirtyIDs(ctx)
@@ -187,7 +187,6 @@ func TestService_SeedDefaultsIdempotent(t *testing.T) {
 
 	// Second seed: no rule is new, and the cosmetic refresh must not
 	// bump updated_at. A no-op seed must leave the artist clean.
-	time.Sleep(time.Second)
 	if err := ruleSvc.SeedDefaults(ctx); err != nil {
 		t.Fatalf("second SeedDefaults: %v", err)
 	}
