@@ -125,12 +125,13 @@ hooks:
 ## worktree: Create a sibling worktree with hooks wired and tracker entry appended
 ##   Usage: make worktree NAME=<slug> BRANCH=<branch> [ISSUE=<number>]
 ##   Example: make worktree NAME=m49.5-merge-policy BRANCH=refactor/m49.5-1395-merge-policy ISSUE=1395
-WORKTREES_MD := $(HOME)/.claude/projects/-Users-jesse-Developer-stillwater/memory/worktrees.md
+WORKTREES_MD ?= $(HOME)/.claude/projects/-Users-jesse-Developer-stillwater/memory/worktrees.md
 worktree:
 	@test -n "$(NAME)"   || (echo "error: NAME is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	@test -n "$(BRANCH)" || (echo "error: BRANCH is required (e.g. make worktree NAME=my-feature BRANCH=feat/my-feature)"; exit 1)
 	git worktree add ../stillwater-$(NAME) -b $(BRANCH)
 	git -C ../stillwater-$(NAME) config core.hooksPath .githooks
+	@mkdir -p "$(dir $(WORKTREES_MD))"
 	@printf "| stillwater-$(NAME) | $(BRANCH) | $(if $(ISSUE),#$(ISSUE),--) | In Progress |\n" >> "$(WORKTREES_MD)"
 	@echo "Worktree ../stillwater-$(NAME) ready on branch $(BRANCH). Hooks wired. Tracker updated."
 
