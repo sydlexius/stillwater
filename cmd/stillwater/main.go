@@ -728,8 +728,12 @@ func run() error {
 	// HTTP server has already stopped accepting new requests at this point, so
 	// no new webhook goroutines can be spawned. Existing ones are given the
 	// remainder of their 5-minute context window to finish; DrainWebhooks
-	// cancels that context and then waits.
-	if err := router.DrainWebhooks(context.Background()); err != nil {
+	// cancels that context and then waits. The 5-minute bound ensures shutdown
+	// cannot hang indefinitely if a worker is stuck in code that does not
+	// honor its own context.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancelDrain()
+	if err := router.DrainWebhooks(drainCtx); err != nil {
 		logger.Warn("webhook drain did not complete cleanly", "error", err)
 	}
 

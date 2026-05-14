@@ -487,6 +487,89 @@ func TestHandleJellyfinWebhook_HMAC_Invalid(t *testing.T) {
 	}
 }
 
+// TestVerifyInboundHMAC_DecryptFailure covers the security-critical branch
+// where a secret IS configured for the endpoint but its stored value cannot
+// be decrypted (corrupted ciphertext, wrong encryption key after a rotation,
+// truncated value, etc.). The handler must reject the request rather than
+// silently downgrading verification to "off" -- the latter let unverified
+// traffic through and is the bug CR flagged on #1517.
+func TestVerifyInboundHMAC_DecryptFailure(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	r.encryptor = enc
+
+	// Store garbage that is definitely not valid ciphertext under the
+	// expected settings key. Decrypt must fail; the handler must reject.
+	_, err = r.db.ExecContext(context.Background(),
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"webhook.inbound.lidarr.secret", "not-valid-ciphertext-garbage",
+		time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("inserting garbage secret: %v", err)
+	}
+
+	body := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(body, "anything"))
+
+	if err := r.verifyInboundHMAC(context.Background(), req, body, "webhook.inbound.lidarr.secret"); err == nil {
+		t.Fatal("expected error when stored secret cannot be decrypted; got nil")
+	}
+}
+
+// TestVerifyInboundHMAC_DBError covers the other security-critical branch:
+// the settings lookup itself fails (closed DB, table missing, etc.). This is
+// distinct from "no row" -- an unknown state must reject, not skip.
+func TestVerifyInboundHMAC_DBError(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	r.encryptor = enc
+
+	// Closing the DB makes every subsequent query return a driver error
+	// that is NOT sql.ErrNoRows, so loadEncryptedSetting must surface it
+	// rather than collapsing to "secret not configured".
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	body := []byte(`{"eventType":"Test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	req.Header.Set("X-Hub-Signature-256", testHMACSignature(body, "anything"))
+
+	if err := r.verifyInboundHMAC(context.Background(), req, body, "webhook.inbound.lidarr.secret"); err == nil {
+		t.Fatal("expected error when settings lookup fails; got nil")
+	}
+}
+
+// TestLoadEncryptedSetting_NoRow verifies that the legitimate "no row"
+// case returns (val=="", ok==false, err==nil) -- callers should skip the
+// dependent check, not reject.
+func TestLoadEncryptedSetting_NoRow(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	val, ok, err := r.loadEncryptedSetting(context.Background(), "no.such.key")
+	if err != nil {
+		t.Fatalf("expected nil error for missing row; got %v", err)
+	}
+	if ok {
+		t.Errorf("expected ok==false for missing row; got true")
+	}
+	if val != "" {
+		t.Errorf("expected empty value for missing row; got %q", val)
+	}
+}
+
 // testRouterWithHMACSecret returns a Router with a real encryptor and the given
 // HMAC secret stored encrypted in the settings table under settingsKey.
 func testRouterWithHMACSecret(t *testing.T, settingsKey, secret string) (*Router, *artist.Service) {

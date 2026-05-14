@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -61,7 +62,7 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 
 	// Process asynchronously with a bounded context derived from the
 	// webhook shutdown context so the goroutine is canceled on app shutdown.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
@@ -247,7 +248,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
@@ -394,7 +395,7 @@ func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
@@ -523,7 +524,16 @@ func (r *Router) verifyInboundHMAC(ctx context.Context, req *http.Request, body 
 		return nil
 	}
 
-	encryptedSecret, secretConfigured := r.loadEncryptedSetting(ctx, settingsKey)
+	encryptedSecret, secretConfigured, err := r.loadEncryptedSetting(ctx, settingsKey)
+	if err != nil {
+		// A query failure here is not "no secret configured" -- it's an
+		// unknown state. Falling through would let an attacker who can
+		// induce a DB hiccup bypass HMAC verification on a request that
+		// SHOULD have been gated. Reject loudly instead.
+		r.logger.Error("inbound webhook: settings lookup failed; rejecting",
+			"settings_key", settingsKey, "error", err)
+		return fmt.Errorf("loading HMAC secret: %w", err)
+	}
 	if !secretConfigured {
 		// Key absent or empty -- HMAC verification is not configured.
 		return nil
@@ -531,11 +541,13 @@ func (r *Router) verifyInboundHMAC(ctx context.Context, req *http.Request, body 
 
 	secret, err := r.encryptor.Decrypt(encryptedSecret)
 	if err != nil {
-		// Treat a corrupt/unreadable secret as "not configured" to avoid
-		// bricking the endpoint; log at warn so operators notice.
-		r.logger.Warn("inbound webhook: failed to decrypt HMAC secret, skipping verification",
+		// The operator HAS configured a secret, but we cannot read it --
+		// reject rather than letting unverified traffic through. The
+		// alternative ("skip and warn") meant a corrupted secret silently
+		// downgraded verification to off.
+		r.logger.Error("inbound webhook: failed to decrypt HMAC secret; rejecting",
 			"settings_key", settingsKey, "error", err)
-		return nil
+		return fmt.Errorf("decrypting HMAC secret: %w", err)
 	}
 
 	return verifyHMACSignature(req, body, secret)
@@ -572,12 +584,19 @@ func verifyHMACSignature(req *http.Request, body []byte, secret string) error {
 }
 
 // loadEncryptedSetting reads a settings-table value by key and returns it with
-// a boolean indicating whether the value was found and non-empty. The caller
-// is responsible for decrypting the returned value.
-func (r *Router) loadEncryptedSetting(ctx context.Context, key string) (string, bool) {
+// a boolean indicating whether the value was found and non-empty, plus an
+// error distinguishing "no row" (legitimately not configured -- caller
+// should skip the dependent check) from any other query failure (caller
+// should reject, not skip). Collapsing those two cases hid a class of bug
+// where a transient DB error silently downgraded HMAC verification to off.
+// The caller is responsible for decrypting the returned value.
+func (r *Router) loadEncryptedSetting(ctx context.Context, key string) (string, bool, error) {
 	var val string
 	if err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&val); err != nil {
-		return "", false
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("querying setting %q: %w", key, err)
 	}
-	return val, val != ""
+	return val, val != "", nil
 }
