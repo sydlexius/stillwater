@@ -166,7 +166,7 @@ var mergeStrFields = []strField{
 		name:  "origin",
 		get:   func(u *MetadataUpdate) string { return u.Origin },
 		dst:   func(a *Artist) *string { return &a.Origin },
-		modes: [4]fieldMode{modeNonEmpty, modeFillEmpty, modeUnconditional, modeUnconditional},
+		modes: [4]fieldMode{modeNonEmpty, modeFillEmpty, modeNonEmpty, modeUnconditional},
 	},
 	{
 		name:  "disambiguation",
@@ -326,11 +326,19 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 
 	attempted := make(map[string]bool, len(opts.AttemptedFields))
 	for _, f := range opts.AttemptedFields {
-		attempted[f] = true
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		attempted[key] = true
 	}
 	populated := make(map[string]bool, len(opts.PopulatedFields))
 	for _, f := range opts.PopulatedFields {
-		populated[f] = true
+		key := strings.ToLower(strings.TrimSpace(f))
+		if key == "" {
+			continue
+		}
+		populated[key] = true
 	}
 
 	changed := applyFields(a, u, strategy, locked, attempted, populated)
