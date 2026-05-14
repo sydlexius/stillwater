@@ -10,13 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -32,16 +30,7 @@ import (
 func newArtistFuzzRouter(t testing.TB) *Router {
 	t.Helper()
 
-	dbDir := t.TempDir()
-	dbPath := filepath.Join(dbDir, "fuzz.db")
-	db, err := database.Open(dbPath)
-	if err != nil {
-		t.Fatalf("opening fuzz db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrating fuzz db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	logger := slog.New(slog.NewTextHandler(discardWriter{}, &slog.HandlerOptions{Level: slog.LevelError}))
 

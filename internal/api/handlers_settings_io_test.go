@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,7 +16,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
-	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -35,17 +33,7 @@ import (
 func settingsIOTestDeps(t *testing.T) (*Router, *settingsio.Service, *sql.DB) {
 	t.Helper()
 
-	dbDir := t.TempDir()
-	dbPath := filepath.Join(dbDir, "test.db")
-
-	db, err := database.Open(dbPath)
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDB(t)
 
 	enc, _, err := encryption.NewEncryptor("")
 	if err != nil {
@@ -130,16 +118,7 @@ func seedUserPreferences(t *testing.T, db *sql.DB, username string, prefs map[st
 // a sql.DB so helper functions can seed data without going through the service.
 func setupTestDBForIO(t *testing.T) *sql.DB {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := database.Open(dbPath)
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return newTestDB(t)
 }
 
 // --- Export handler tests ---

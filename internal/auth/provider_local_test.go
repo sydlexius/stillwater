@@ -4,21 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 func TestLocalProviderAuthenticate(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
+	db := newTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
@@ -62,13 +52,7 @@ func TestLocalProviderAuthenticate(t *testing.T) {
 
 func TestLocalProviderType(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	provider := NewLocalProvider(db)
+	provider := NewLocalProvider(newTestDB(t))
 	if provider.Type() != "local" {
 		t.Errorf("Type() = %q, want %q", provider.Type(), "local")
 	}
@@ -76,13 +60,7 @@ func TestLocalProviderType(t *testing.T) {
 
 func TestLocalProviderAutoProvision(t *testing.T) {
 	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	provider := NewLocalProvider(db)
+	provider := NewLocalProvider(newTestDB(t))
 	if provider.CanAutoProvision(nil) {
 		t.Error("local provider should never auto-provision")
 	}

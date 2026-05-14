@@ -2,32 +2,42 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
-func setupHistoryTestDB(t *testing.T) *HistoryService {
+// setupHistoryTestDB opens a pre-migrated test database and returns the
+// HistoryService plus the underlying *sql.DB for direct SQL access (e.g.
+// seeding parent artist rows required by the FK on metadata_changes.artist_id).
+func setupHistoryTestDB(t *testing.T) (*HistoryService, *sql.DB) {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	db := newTestDB(t)
+	return NewHistoryService(db), db
+}
+
+// seedTestArtist inserts a minimal artists row so that history records can
+// reference it without violating the FK constraint on metadata_changes.artist_id.
+// Uses INSERT OR IGNORE so duplicate calls are idempotent.
+func seedTestArtist(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO artists (id, name, sort_name, path) VALUES (?, ?, ?, '')`,
+		id, id, id,
+	)
 	if err != nil {
-		t.Fatalf("opening test db: %v", err)
+		t.Fatalf("seedTestArtist(%q): %v", id, err)
 	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrating test db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return NewHistoryService(db)
 }
 
 func TestHistoryService_Record(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
 
 	artistID := "artist-001"
+	seedTestArtist(t, db, artistID)
 
 	t.Run("records a change successfully", func(t *testing.T) {
 		err := svc.Record(ctx, artistID, "biography", "old bio", "new bio", "manual")
@@ -85,6 +95,7 @@ func TestHistoryService_Record(t *testing.T) {
 
 	t.Run("records all source types", func(t *testing.T) {
 		artistID2 := "artist-002"
+		seedTestArtist(t, db, artistID2)
 		sources := []string{
 			"manual",
 			"provider:musicbrainz",
@@ -112,9 +123,10 @@ func TestHistoryService_Record(t *testing.T) {
 
 func TestHistoryService_List(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
 	artistID := "artist-pag"
+	seedTestArtist(t, db, artistID)
 
 	// Insert 15 changes with slight time separation to guarantee ordering.
 	for i := 0; i < 15; i++ {
@@ -225,6 +237,7 @@ func TestHistoryService_List(t *testing.T) {
 
 	t.Run("does not return changes for other artists", func(t *testing.T) {
 		otherID := "artist-other"
+		seedTestArtist(t, db, otherID)
 		if err := svc.Record(ctx, otherID, "biography", "", "value", "manual"); err != nil {
 			t.Fatalf("Record() for other artist: %v", err)
 		}
@@ -245,8 +258,9 @@ func TestHistoryService_List(t *testing.T) {
 
 func TestHistoryService_RecordPreservesTimestamp(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
+	seedTestArtist(t, db, "artist-ts")
 
 	before := time.Now().UTC().Truncate(time.Second)
 	if err := svc.Record(ctx, "artist-ts", "biography", "", "value", "manual"); err != nil {
@@ -269,8 +283,9 @@ func TestHistoryService_RecordPreservesTimestamp(t *testing.T) {
 
 func TestHistoryService_GetByID(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
+	seedTestArtist(t, db, "artist-get")
 
 	t.Run("returns recorded change", func(t *testing.T) {
 		if err := svc.Record(ctx, "artist-get", "biography", "old", "new", "manual"); err != nil {
@@ -318,7 +333,8 @@ func TestHistoryService_GetByID(t *testing.T) {
 // recent revert for field X" lookup that races against concurrent writers.
 func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
+	seedTestArtist(t, db, "artist-ctxid")
 	preID := "00000000-0000-4000-8000-000000000abc"
 
 	ctx := ContextWithHistoryID(context.Background(), preID)
@@ -356,9 +372,8 @@ func TestHistoryService_RecordUsesContextHistoryID(t *testing.T) {
 // against an accidental sort regression.
 func TestHistoryService_ListGlobalOrderRFC3339(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
-	db := svc.repo.(*sqliteHistoryRepo).db
 
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO artists (id, name, sort_name, path) VALUES (?, ?, ?, '')`,
@@ -408,11 +423,10 @@ func TestHistoryService_ListGlobalOrderRFC3339(t *testing.T) {
 
 func TestHistoryService_ListGlobal(t *testing.T) {
 	t.Parallel()
-	svc := setupHistoryTestDB(t)
+	svc, db := setupHistoryTestDB(t)
 	ctx := context.Background()
 
 	// Need artists in the database for the JOIN.
-	db := svc.repo.(*sqliteHistoryRepo).db
 	for _, a := range []struct{ id, name string }{
 		{"artist-a", "Alpha"},
 		{"artist-b", "Beta"},
