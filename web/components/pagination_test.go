@@ -12,10 +12,9 @@ func TestSafeBaseURL(t *testing.T) {
 		input string
 		want  string
 	}{
-		// Safe: relative paths starting with /
+		// Safe: relative paths starting with / (and not //)
 		{"/artists", "/artists"},
 		{"/reports/compliance", "/reports/compliance"},
-		{"//cdn.example.com/path", "//cdn.example.com/path"},
 
 		// Safe: absolute http/https URLs
 		{"http://example.com/page", "http://example.com/page"},
@@ -29,6 +28,14 @@ func TestSafeBaseURL(t *testing.T) {
 		{"vbscript:msgbox(1)", "/"},
 		{"ftp://attacker.example.com", "/"},
 		{"", "/"},
+		// Dangerous: protocol-relative URLs. Browsers resolve "//host/p" as
+		// cross-origin with the page's current scheme, so an attacker who
+		// can set BaseURL to "//attacker.tld/..." would otherwise drive
+		// pagination links to their own host. Reject the same way as any
+		// other dangerous scheme.
+		{"//attacker.tld/path", "/"},
+		{"//attacker.tld", "/"},
+		{"//cdn.example.com/path", "/"},
 	}
 
 	for _, tc := range cases {
@@ -153,6 +160,37 @@ func TestPageURLMaliciousBaseURL(t *testing.T) {
 		if !strings.HasPrefix(u, "/") {
 			t.Errorf("pageURL(%q) should start with /; got %q", base, u)
 		}
+	}
+}
+
+// TestPageURLPreservesPathStripsQueryFragment verifies that pageURL replaces
+// any prior `?` query and drops any prior `#` fragment from BaseURL, so the
+// pagination component's allowlist is authoritative and stale state cannot
+// leak into the generated link.
+func TestPageURLPreservesPathStripsQueryFragment(t *testing.T) {
+	// BaseURL with a prior query: pageURL must REPLACE the query, not append.
+	data := PaginationData{
+		CurrentPage: 1,
+		TotalPages:  3,
+		PageSize:    25,
+		BaseURL:     "/artists?leftover=1&another=stale",
+	}
+	got := data.pageURL(2)
+	if strings.Contains(got, "leftover=1") || strings.Contains(got, "another=stale") {
+		t.Errorf("pageURL leaked prior query: got %q", got)
+	}
+	if !strings.Contains(got, "page=2") {
+		t.Errorf("pageURL missing page=2: got %q", got)
+	}
+	if strings.Count(got, "?") != 1 {
+		t.Errorf("pageURL produced malformed URL with %d '?' chars: %q", strings.Count(got, "?"), got)
+	}
+
+	// BaseURL with a fragment: the fragment must be dropped.
+	data.BaseURL = "/artists#top"
+	got = data.pageURL(2)
+	if strings.Contains(got, "#") {
+		t.Errorf("pageURL did not strip fragment: got %q", got)
 	}
 }
 
