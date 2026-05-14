@@ -257,7 +257,7 @@ echo "=== Per-package coverage floor ==="
 #
 # coverage-floor.sh uses exit codes 0|1|2. Collapse non-zero to 1 here,
 # consistent with how patch-coverage.sh exits are handled above.
-if COVER_OUT="$COVER_OUT" bash "$SCRIPT_DIR/coverage-floor.sh" --cover "$COVER_OUT"; then
+if bash "$SCRIPT_DIR/coverage-floor.sh" --cover "$COVER_OUT"; then
   :
 else
   exit 1
