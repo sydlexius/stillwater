@@ -2532,3 +2532,302 @@ func TestExtractProviderIDsFromURLs_AcceptsValidQID(t *testing.T) {
 		t.Errorf("WikidataID = %q, want Q175044", meta.WikidataID)
 	}
 }
+
+func TestParseDiscogsURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{
+			name:   "plain numeric segment",
+			input:  "https://www.discogs.com/artist/24941",
+			wantID: "24941",
+			wantOK: true,
+		},
+		{
+			name:   "slugged segment extracts numeric prefix",
+			input:  "https://www.discogs.com/artist/24941-a-ha",
+			wantID: "24941",
+			wantOK: true,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:   "no slash in URL",
+			input:  "discogs24941",
+			wantOK: false,
+		},
+		{
+			name:   "trailing slash yields empty segment",
+			input:  "https://www.discogs.com/artist/",
+			wantOK: false,
+		},
+		{
+			name:   "non-numeric last segment",
+			input:  "https://www.discogs.com/artist/artist-name",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := parseDiscogsURL(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestParseWikidataURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{
+			name:   "well-formed Q-item",
+			input:  "https://www.wikidata.org/wiki/Q44190",
+			wantID: "Q44190",
+			wantOK: true,
+		},
+		{
+			name:   "Q-item with query string",
+			input:  "https://www.wikidata.org/wiki/Q44190?uselang=en",
+			wantID: "Q44190",
+			wantOK: true,
+		},
+		{
+			name:   "Q-item with fragment",
+			input:  "https://www.wikidata.org/wiki/Q44190#sitelinks",
+			wantID: "Q44190",
+			wantOK: true,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:   "wrong domain but valid path",
+			input:  "https://example.com/wiki/Q44190",
+			wantID: "Q44190",
+			wantOK: true,
+		},
+		{
+			name:   "malformed QID with letters",
+			input:  "https://www.wikidata.org/wiki/Qabc",
+			wantOK: false,
+		},
+		{
+			name:   "bare Q without digits",
+			input:  "https://www.wikidata.org/wiki/Q",
+			wantOK: false,
+		},
+		{
+			name:   "truncated path with no slash",
+			input:  "Q44190",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := parseWikidataURL(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestParseDeezerURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{
+			name:   "numeric artist segment",
+			input:  "https://www.deezer.com/artist/3106",
+			wantID: "3106",
+			wantOK: true,
+		},
+		{
+			name:   "numeric segment with trailing non-digit",
+			input:  "https://www.deezer.com/artist/3106-artist",
+			wantID: "3106",
+			wantOK: true,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:   "no slash",
+			input:  "3106",
+			wantOK: false,
+		},
+		{
+			name:   "trailing slash yields empty segment",
+			input:  "https://www.deezer.com/artist/",
+			wantOK: false,
+		},
+		{
+			name:   "non-numeric segment",
+			input:  "https://www.deezer.com/artist/name",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := parseDeezerURL(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestParseAllMusicURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{
+			name:   "plain mn-ID segment",
+			input:  "https://www.allmusic.com/artist/mn0000505828",
+			wantID: "mn0000505828",
+			wantOK: true,
+		},
+		{
+			name:   "slugged segment with mn-ID suffix",
+			input:  "https://www.allmusic.com/artist/dolly-parton-mn0000205560",
+			wantID: "mn0000205560",
+			wantOK: true,
+		},
+		{
+			name:   "query string is stripped before parsing",
+			input:  "https://www.allmusic.com/artist/mn0000505828?tab=biography",
+			wantID: "mn0000505828",
+			wantOK: true,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:   "slug containing mn but no valid ID",
+			input:  "https://www.allmusic.com/artist/amnesia-band",
+			wantOK: false,
+		},
+		{
+			name:   "truncated path with no slash",
+			input:  "mn0000505828",
+			wantOK: false,
+		},
+		{
+			name:   "mn prefix with wrong digit count",
+			input:  "https://www.allmusic.com/artist/mn00005",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := parseAllMusicURL(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestParseSpotifyURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{
+			name:   "clean artist URL",
+			input:  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
+			wantID: "4Z8W4fKeB5YxbusRsdQVPb",
+			wantOK: true,
+		},
+		{
+			name:   "trailing slash is stripped",
+			input:  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb/",
+			wantID: "4Z8W4fKeB5YxbusRsdQVPb",
+			wantOK: true,
+		},
+		{
+			name:   "query param is stripped",
+			input:  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb?si=abc123",
+			wantID: "4Z8W4fKeB5YxbusRsdQVPb",
+			wantOK: true,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			wantOK: false,
+		},
+		{
+			name:   "URL without /artist/ segment",
+			input:  "https://open.spotify.com/album/4Z8W4fKeB5YxbusRsdQVPb",
+			wantOK: false,
+		},
+		{
+			name:   "ID too short",
+			input:  "https://open.spotify.com/artist/tooshort",
+			wantOK: false,
+		},
+		{
+			name:   "ID contains invalid characters",
+			input:  "https://open.spotify.com/artist/not-a-valid-spotify!!",
+			wantOK: false,
+		},
+		{
+			name:   "no slash in input",
+			input:  "4Z8W4fKeB5YxbusRsdQVPb",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := parseSpotifyURL(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
