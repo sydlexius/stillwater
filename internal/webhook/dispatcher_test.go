@@ -262,3 +262,98 @@ func TestDispatcher_NoMatchingWebhooks(t *testing.T) {
 		Timestamp: time.Now().UTC(),
 	})
 }
+
+// TestDispatcher_Drain verifies that Drain waits for all in-flight delivery
+// goroutines to complete before returning. We spawn 10 fake webhook deliveries
+// via a mock HTTP server with a 50ms handler delay and confirm that Drain
+// returns nil (all goroutines finished) within a generous deadline.
+func TestDispatcher_Drain(t *testing.T) {
+	t.Parallel()
+	svc, logger := setupDispatcherTest(t)
+
+	const numWebhooks = 10
+	const handlerDelay = 50 * time.Millisecond
+
+	var received atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(handlerDelay)
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	for i := range numWebhooks {
+		wh := &Webhook{
+			Name:    "drain-test-" + string(rune('a'+i)),
+			URL:     srv.URL,
+			Type:    TypeGeneric,
+			Events:  []string{"scan.completed"},
+			Enabled: true,
+		}
+		if err := svc.Create(context.Background(), wh); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+	dispatcher.sleep = func(time.Duration) {} // skip retry backoff
+
+	dispatcher.HandleEvent(event.Event{
+		Type:      event.ScanCompleted,
+		Timestamp: time.Now().UTC(),
+	})
+
+	// Drain must complete before the context deadline. Use a generous 5s
+	// deadline (10 goroutines * 50ms handler + scheduling overhead).
+	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := dispatcher.Drain(drainCtx); err != nil {
+		t.Fatalf("Drain returned error: %v", err)
+	}
+
+	// All 10 deliveries must have completed.
+	if got := int(received.Load()); got != numWebhooks {
+		t.Errorf("received %d deliveries, want %d", got, numWebhooks)
+	}
+}
+
+// TestDispatcher_Drain_ContextCancel verifies that Drain returns ctx.Err()
+// when the context expires before all goroutines complete.
+func TestDispatcher_Drain_ContextCancel(t *testing.T) {
+	t.Parallel()
+	svc, logger := setupDispatcherTest(t)
+
+	// Server hangs for 500ms -- longer than our drain deadline.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	wh := &Webhook{
+		Name:    "drain-cancel-test",
+		URL:     srv.URL,
+		Type:    TypeGeneric,
+		Events:  []string{"scan.completed"},
+		Enabled: true,
+	}
+	if err := svc.Create(context.Background(), wh); err != nil {
+		t.Fatal(err)
+	}
+
+	dispatcher := NewDispatcherWithHTTPClient(svc, srv.Client(), logger)
+
+	dispatcher.HandleEvent(event.Event{
+		Type:      event.ScanCompleted,
+		Timestamp: time.Now().UTC(),
+	})
+
+	// Drain with a very short deadline -- should return context.DeadlineExceeded
+	// before the slow handler finishes.
+	drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	err := dispatcher.Drain(drainCtx)
+	if err == nil {
+		t.Fatal("expected Drain to return an error when context expires")
+	}
+}

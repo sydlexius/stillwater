@@ -723,6 +723,16 @@ func run() error {
 	// otherwise schedule a Run() into a draining scanner.
 	stop()
 
+	// Drain in-flight webhook deliveries before stopping the scanner so that
+	// goroutines spawned by HandleEvent can finish cleanly. A 10s deadline
+	// matches requestTimeout and prevents a misbehaving webhook target from
+	// blocking shutdown indefinitely.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer drainCancel()
+	if err := webhookDispatcher.Drain(drainCtx); err != nil {
+		logger.Warn("webhook drain timed out", slog.String("error", err.Error()))
+	}
+
 	// Now stop the scanner -- the listener layer has drained, so no new
 	// scan requests can race with the scanner's WaitGroup.
 	scannerService.Shutdown()

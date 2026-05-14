@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -293,7 +294,7 @@ func TestIsPrivateURL(t *testing.T) {
 
 func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
 	t.Parallel()
-	transport := ssrfSafeTransport()
+	transport := httpsafe.SafeTransport()
 	if transport.DialContext == nil {
 		t.Fatal("DialContext should be set")
 	}
@@ -311,7 +312,7 @@ func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
 
 func TestSSRFSafeTransport_BlocksPrivateIP(t *testing.T) {
 	t.Parallel()
-	transport := ssrfSafeTransport()
+	transport := httpsafe.SafeTransport()
 	client := &http.Client{Transport: transport}
 
 	// Attempt to connect to a loopback address -- should be rejected.
@@ -329,7 +330,7 @@ func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
 	// We cannot easily force that in a unit test (net.DefaultResolver is global),
 	// but we verify the guard exists by reading the function.
 	// Instead, test that a non-existent host returns an error (not a panic).
-	transport := ssrfSafeTransport()
+	transport := httpsafe.SafeTransport()
 	client := &http.Client{Transport: transport}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://this-host-does-not-exist-abc123xyz.invalid/test", nil)
 	resp, err := client.Do(req)

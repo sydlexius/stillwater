@@ -17,6 +17,7 @@ import (
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // register WebP decoder
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -28,10 +29,18 @@ type RemoteImageInfo struct {
 }
 
 // ProbeRemoteImage fetches a remote image URL and decodes its dimensions.
-// It also reads Content-Length from the response for file size.
+// It also reads Content-Length from the response for file size. The HTTP
+// client uses httpsafe.SafeClient to block SSRF targets (loopback, link-local,
+// RFC 1918 private addresses).
 func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	return ProbeRemoteImageWithClient(ctx, rawURL, httpsafe.SafeClient(10*time.Second))
+}
 
+// ProbeRemoteImageWithClient is the testable core of ProbeRemoteImage with an
+// injectable HTTP client. Production code should use ProbeRemoteImage; this
+// variant exists so that callers that already hold a test-safe *http.Client
+// (e.g. httptest.Server.Client()) can bypass the SSRF-safe transport in tests.
+func ProbeRemoteImageWithClient(ctx context.Context, rawURL string, client *http.Client) (*RemoteImageInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -55,7 +64,7 @@ func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, err
 		fileSize, _ = strconv.ParseInt(cl, 10, 64)
 	}
 
-	// Limit read to 5MB to prevent excessive memory usage for probing
+	// Limit read to 5MB to prevent excessive memory usage for probing.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
