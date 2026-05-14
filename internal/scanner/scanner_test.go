@@ -1359,3 +1359,165 @@ func TestScan_NoLockDataLeavesUnlocked(t *testing.T) {
 		})
 	}
 }
+
+// TestPreservePlaceholders verifies that preservePlaceholders fills in empty
+// placeholder values from the existing artist when the image file is present,
+// and leaves placeholders unchanged when the image file is absent.
+func TestPreservePlaceholders(t *testing.T) {
+	t.Parallel()
+
+	existing := &artist.Artist{
+		ThumbPlaceholder:  "data:image/jpeg;base64,THUMB",
+		FanartPlaceholder: "data:image/jpeg;base64,FANART",
+		LogoPlaceholder:   "data:image/png;base64,LOGO",
+		BannerPlaceholder: "data:image/jpeg;base64,BANNER",
+	}
+
+	t.Run("preserves when probe returned empty and file exists", func(t *testing.T) {
+		t.Parallel()
+		d := detectedFiles{
+			ThumbExists:  true,
+			FanartExists: true,
+			LogoExists:   true,
+			BannerExists: true,
+			// All placeholders empty -- simulates a transient decode failure.
+		}
+		preservePlaceholders(existing, &d)
+
+		if d.ThumbPlaceholder != existing.ThumbPlaceholder {
+			t.Errorf("ThumbPlaceholder = %q, want %q", d.ThumbPlaceholder, existing.ThumbPlaceholder)
+		}
+		if d.FanartPlaceholder != existing.FanartPlaceholder {
+			t.Errorf("FanartPlaceholder = %q, want %q", d.FanartPlaceholder, existing.FanartPlaceholder)
+		}
+		if d.LogoPlaceholder != existing.LogoPlaceholder {
+			t.Errorf("LogoPlaceholder = %q, want %q", d.LogoPlaceholder, existing.LogoPlaceholder)
+		}
+		if d.BannerPlaceholder != existing.BannerPlaceholder {
+			t.Errorf("BannerPlaceholder = %q, want %q", d.BannerPlaceholder, existing.BannerPlaceholder)
+		}
+	})
+
+	t.Run("does not fill when file is absent", func(t *testing.T) {
+		t.Parallel()
+		d := detectedFiles{
+			// No *Exists flags set; placeholders empty.
+		}
+		preservePlaceholders(existing, &d)
+
+		if d.ThumbPlaceholder != "" {
+			t.Errorf("ThumbPlaceholder = %q, want empty (no file)", d.ThumbPlaceholder)
+		}
+		if d.FanartPlaceholder != "" {
+			t.Errorf("FanartPlaceholder = %q, want empty (no file)", d.FanartPlaceholder)
+		}
+	})
+
+	t.Run("does not overwrite a freshly generated placeholder", func(t *testing.T) {
+		t.Parallel()
+		fresh := "data:image/jpeg;base64,FRESH"
+		d := detectedFiles{
+			ThumbExists:      true,
+			ThumbPlaceholder: fresh,
+		}
+		preservePlaceholders(existing, &d)
+
+		if d.ThumbPlaceholder != fresh {
+			t.Errorf("ThumbPlaceholder = %q, want %q (fresh placeholder must not be overwritten)", d.ThumbPlaceholder, fresh)
+		}
+	})
+}
+
+// TestPreserveDimensions verifies that preserveDimensions copies stored
+// dimensions into detected when a probe failure returns zero dimensions, and
+// leaves detected values untouched when a probe succeeded or when the existing
+// dimensions are also zero.
+func TestPreserveDimensions(t *testing.T) {
+	t.Parallel()
+
+	existing := &artist.Artist{
+		ThumbWidth:   500,
+		ThumbHeight:  500,
+		FanartWidth:  1920,
+		FanartHeight: 1080,
+		LogoWidth:    800,
+		LogoHeight:   310,
+		BannerWidth:  1000,
+		BannerHeight: 185,
+	}
+
+	t.Run("fills zero dimensions from existing when file exists and probe failed", func(t *testing.T) {
+		t.Parallel()
+		// All *Exists flags true (file present), all dims 0 (probe failed).
+		d := detectedFiles{
+			ThumbExists:  true,
+			FanartExists: true,
+			LogoExists:   true,
+			BannerExists: true,
+		}
+		preserveDimensions(existing, &d)
+
+		if d.ThumbWidth != 500 || d.ThumbHeight != 500 {
+			t.Errorf("thumb dims = %dx%d, want 500x500", d.ThumbWidth, d.ThumbHeight)
+		}
+		if d.FanartWidth != 1920 || d.FanartHeight != 1080 {
+			t.Errorf("fanart dims = %dx%d, want 1920x1080", d.FanartWidth, d.FanartHeight)
+		}
+		if d.LogoWidth != 800 || d.LogoHeight != 310 {
+			t.Errorf("logo dims = %dx%d, want 800x310", d.LogoWidth, d.LogoHeight)
+		}
+		if d.BannerWidth != 1000 || d.BannerHeight != 185 {
+			t.Errorf("banner dims = %dx%d, want 1000x185", d.BannerWidth, d.BannerHeight)
+		}
+	})
+
+	t.Run("does not overwrite a successful probe result", func(t *testing.T) {
+		t.Parallel()
+		d := detectedFiles{
+			ThumbExists: true,
+			ThumbWidth:  600,
+			ThumbHeight: 400,
+		}
+		preserveDimensions(existing, &d)
+
+		if d.ThumbWidth != 600 || d.ThumbHeight != 400 {
+			t.Errorf("thumb dims = %dx%d, want 600x400 (probe result must not be overwritten)", d.ThumbWidth, d.ThumbHeight)
+		}
+	})
+
+	t.Run("does not fill when existing dims are zero", func(t *testing.T) {
+		t.Parallel()
+		zeroed := &artist.Artist{} // all dims zero
+		d := detectedFiles{ThumbExists: true}
+		preserveDimensions(zeroed, &d)
+
+		if d.ThumbWidth != 0 || d.ThumbHeight != 0 {
+			t.Errorf("thumb dims = %dx%d, want 0x0 (no fallback when existing is also zero)", d.ThumbWidth, d.ThumbHeight)
+		}
+	})
+
+	t.Run("does not fill when file is absent", func(t *testing.T) {
+		t.Parallel()
+		// *Exists false means the file was deleted -- stale dims must not be copied.
+		d := detectedFiles{
+			ThumbExists:  false,
+			FanartExists: false,
+			LogoExists:   false,
+			BannerExists: false,
+		}
+		preserveDimensions(existing, &d)
+
+		if d.ThumbWidth != 0 || d.ThumbHeight != 0 {
+			t.Errorf("thumb dims = %dx%d, want 0x0 when file is absent", d.ThumbWidth, d.ThumbHeight)
+		}
+		if d.FanartWidth != 0 || d.FanartHeight != 0 {
+			t.Errorf("fanart dims = %dx%d, want 0x0 when file is absent", d.FanartWidth, d.FanartHeight)
+		}
+		if d.LogoWidth != 0 || d.LogoHeight != 0 {
+			t.Errorf("logo dims = %dx%d, want 0x0 when file is absent", d.LogoWidth, d.LogoHeight)
+		}
+		if d.BannerWidth != 0 || d.BannerHeight != 0 {
+			t.Errorf("banner dims = %dx%d, want 0x0 when file is absent", d.BannerWidth, d.BannerHeight)
+		}
+	})
+}
