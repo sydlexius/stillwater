@@ -75,30 +75,43 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	// Collect attributes: start with pre-stored attrs from WithAttrs,
-	// then append the record's own attrs.
+	// then append the record's own attrs. Each attribute is passed through
+	// RedactingReplaceAttr so that sensitive field values are scrubbed in
+	// the ring buffer (log viewer) as well as in the primary handler.
+	// addAttr recurses into slog.KindGroup so nested sensitive keys are
+	// redacted rather than stored verbatim.
 	attrs := make(map[string]any)
-	for _, a := range h.attrs {
+	var addAttr func(prefix string, a slog.Attr)
+	addAttr = func(prefix string, a slog.Attr) {
+		a.Value = a.Value.Resolve()
+		if a.Value.Kind() == slog.KindGroup {
+			next := a.Key
+			if prefix != "" {
+				next = prefix + "." + next
+			}
+			for _, ga := range a.Value.Group() {
+				addAttr(next, ga)
+			}
+			return
+		}
+		a = RedactingReplaceAttr(nil, a)
 		key := a.Key
-		if h.group != "" {
-			key = h.group + "." + key
+		if prefix != "" {
+			key = prefix + "." + key
 		}
 		if key == "component" {
 			entry.Component = a.Value.String()
-		} else {
-			attrs[key] = a.Value.Any()
+			return
 		}
+		attrs[key] = a.Value.Any()
+	}
+
+	for _, a := range h.attrs {
+		addAttr(h.group, a)
 	}
 
 	r.Attrs(func(a slog.Attr) bool {
-		key := a.Key
-		if h.group != "" {
-			key = h.group + "." + key
-		}
-		if key == "component" {
-			entry.Component = a.Value.String()
-		} else {
-			attrs[key] = a.Value.Any()
-		}
+		addAttr(h.group, a)
 		return true
 	})
 
