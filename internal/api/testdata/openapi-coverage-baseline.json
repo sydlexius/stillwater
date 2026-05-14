@@ -40,7 +40,6 @@
   "getScraperConfig",
   "getWebSearchProviders",
   "getWebhook",
-  "handleLidarrWebhook",
   "listAPITokens",
   "listAliases",
   "listFanart",
