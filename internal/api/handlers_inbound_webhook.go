@@ -16,9 +16,9 @@ import (
 // handleLidarrWebhook receives inbound webhook events from Lidarr.
 // POST /api/v1/webhooks/inbound/lidarr
 //
-//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context derived from webhookShutdownCtx; request returns before processing starts
 func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
-	// Limit request body to 1 MB
+	// Limit request body to 1 MB.
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
 	var payload webhook.LidarrPayload
@@ -37,12 +37,15 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 		"artist", artistNameFromPayload(payload),
 	)
 
-	// Respond immediately
+	// Respond immediately.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	// Process asynchronously with a bounded context.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Process asynchronously with a bounded context derived from the
+	// webhook shutdown context so the goroutine is canceled on app shutdown.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	r.webhookWg.Add(1)
 	go func() {
+		defer r.webhookWg.Done()
 		defer cancel()
 		defer func() {
 			if v := recover(); v != nil {
@@ -192,7 +195,7 @@ func artistNameFromPayload(p webhook.LidarrPayload) string {
 // handleEmbyWebhook receives inbound webhook events from Emby.
 // POST /api/v1/webhooks/inbound/emby
 //
-//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context derived from webhookShutdownCtx; request returns before processing starts
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
@@ -213,8 +216,10 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	r.webhookWg.Add(1)
 	go func() {
+		defer r.webhookWg.Done()
 		defer cancel()
 		defer func() {
 			if v := recover(); v != nil {
@@ -325,7 +330,7 @@ func (r *Router) handleEmbyLibraryScan(ctx context.Context) {
 // handleJellyfinWebhook receives inbound webhook events from the Jellyfin webhook plugin.
 // POST /api/v1/webhooks/inbound/jellyfin
 //
-//nolint:contextcheck // async webhook processing detaches via a fresh bounded context (see WithTimeout below); request returns before processing starts
+//nolint:contextcheck // async webhook processing detaches via a fresh bounded context derived from webhookShutdownCtx; request returns before processing starts
 func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
@@ -346,8 +351,10 @@ func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.webhookShutdownCtx), 5*time.Minute)
+	r.webhookWg.Add(1)
 	go func() {
+		defer r.webhookWg.Done()
 		defer cancel()
 		defer func() {
 			if v := recover(); v != nil {

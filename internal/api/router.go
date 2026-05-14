@@ -172,10 +172,21 @@ type Router struct {
 	// (#1185). Always non-nil after NewRouter when DB is provided so the
 	// foreign-files settings page never has to special-case a missing dep.
 	foreignRepo *foreign.Repository
+
+	// webhookWg tracks in-flight inbound webhook processing goroutines so
+	// DrainWebhooks can wait for them to finish before the DB is closed.
+	webhookWg sync.WaitGroup
+	// webhookShutdownCtx is canceled by DrainWebhooks to signal in-flight
+	// webhook goroutines that a shutdown is in progress. Goroutines derive
+	// their processing context from this so they stop work promptly when
+	// the application is going down.
+	webhookShutdownCtx    context.Context
+	webhookShutdownCancel context.CancelFunc
 }
 
 // NewRouter creates a new Router with all routes configured.
 func NewRouter(deps RouterDeps) *Router {
+	webhookCtx, webhookCancel := context.WithCancel(context.Background())
 	r := &Router{
 		authService:        deps.AuthService,
 		authRegistry:       deps.AuthRegistry,
@@ -228,6 +239,8 @@ func NewRouter(deps RouterDeps) *Router {
 		undoStore:             rule.NewUndoStore(),
 		i18nBundle:            deps.I18nBundle,
 		reIdentifyWizardStore: newReIdentifyWizardStore(),
+		webhookShutdownCtx:    webhookCtx,
+		webhookShutdownCancel: webhookCancel,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -273,6 +286,35 @@ func NewRouter(deps RouterDeps) *Router {
 	templates.SetBasePath(deps.BasePath)
 
 	return r
+}
+
+// DrainWebhooks signals in-flight inbound webhook goroutines to stop and waits
+// for them to finish. Call this after the HTTP server has drained (no new
+// inbound webhook requests can arrive) but before the database is closed, so
+// goroutines that are still processing can write their results.
+//
+// The provided ctx bounds the wait: if it is canceled before all goroutines
+// finish, DrainWebhooks returns immediately with ctx.Err() so the shutdown
+// sequence can continue. In practice, main.go passes the already-canceled
+// shutdown context; the 5-minute per-goroutine processing timeout is the
+// effective bound.
+func (r *Router) DrainWebhooks(ctx context.Context) error {
+	// Cancel the webhook-scoped context so goroutines that are still running
+	// know a shutdown is in progress and can stop early if possible.
+	r.webhookShutdownCancel()
+
+	done := make(chan struct{})
+	go func() {
+		r.webhookWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Handler returns the fully configured HTTP handler with middleware applied.

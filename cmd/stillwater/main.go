@@ -723,6 +723,15 @@ func run() error {
 	// otherwise schedule a Run() into a draining scanner.
 	stop()
 
+	// Drain in-flight inbound webhook goroutines before closing the DB. The
+	// HTTP server has already stopped accepting new requests at this point, so
+	// no new webhook goroutines can be spawned. Existing ones are given the
+	// remainder of their 5-minute context window to finish; DrainWebhooks
+	// cancels that context and then waits.
+	if err := router.DrainWebhooks(context.Background()); err != nil {
+		logger.Warn("webhook drain did not complete cleanly", "error", err)
+	}
+
 	// Now stop the scanner -- the listener layer has drained, so no new
 	// scan requests can race with the scanner's WaitGroup.
 	scannerService.Shutdown()
