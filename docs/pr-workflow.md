@@ -6,6 +6,33 @@ Run `bash scripts/pre-push-gate.sh` before anything else. It runs tests, OpenAPI
 
 Then run `/pr-review-toolkit:review-pr` for code review. Fix all critical/important findings before pushing.
 
+## Parallel pushes from sibling worktrees
+
+Multiple agents pushing concurrently from sibling worktrees (`../stillwater-<slug>/`) is supported. The gate path is fully per-worktree isolated:
+
+- `$SW_RUN_DIR` (which holds `cover.out` and `openapi-base.yaml`) keys off the worktree's basename plus a 12-char sha256 of its absolute path -- see `scripts/lib/run-paths.sh`. Two worktrees that share a basename across separate parent directories still get disjoint dirs.
+- The pre-push gate takes an atomic `mkdir`-based lock at `$SW_RUN_DIR/.gate-lock` to block same-worktree concurrent runs (PR #1481). Sibling worktrees take separate locks.
+- `golangci-lint`'s shared cache is safe under `allow-parallel-runners: true` in `.golangci.yml`.
+- Go's build cache (`$GOCACHE`) is documented concurrent-safe.
+
+What is **not** robust is the common invocation pattern that hides push failures:
+
+```bash
+git push -u origin "$branch" 2>&1 | tail -30   # AVOID
+```
+
+Without `set -o pipefail`, the pipeline returns `tail`'s exit code (always 0), masking a real `git push` failure -- transient SSH blip, remote ref rejection, hook abort, network drop. The visible output then looks identical to a quiet success, and the next step opens a PR against a branch that never reached the remote.
+
+Use `scripts/safe-push.sh` instead:
+
+```bash
+bash scripts/safe-push.sh                  # push current branch -u origin
+bash scripts/safe-push.sh "$branch"        # push named branch
+bash scripts/safe-push.sh "$branch" --force-with-lease   # extra flags forwarded
+```
+
+It writes the full push transcript to `$SW_RUN_DIR/safe-push.log`, queries `git ls-remote origin <branch>` after the push returns, and exits non-zero with a clear message if the remote SHA does not match the local HEAD. Catches silent failures that `cmd | tail` would have swallowed.
+
 ## Squash before first push
 
 Squash all development/fixup commits into clean, logical commits before the first push. Copilot's initial review covers the full diff present when the PR is first opened; incremental commits added after opening are not automatically re-reviewed (see Copilot review policy below).
