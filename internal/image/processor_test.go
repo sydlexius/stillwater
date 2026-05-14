@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -14,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 )
 
 // makeJPEG creates a JPEG-encoded image of the given dimensions.
@@ -349,7 +352,9 @@ func TestProbeRemoteImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	info, err := ProbeRemoteImage(context.Background(), ts.URL+"/test.jpg")
+	// Use the test server's own client (bypasses SSRF-safe transport) so the
+	// loopback test server address is allowed. Production callers use the safe client.
+	info, err := ProbeRemoteImageWithClient(context.Background(), ts.URL+"/test.jpg", ts.Client())
 	if err != nil {
 		t.Fatalf("ProbeRemoteImage: %v", err)
 	}
@@ -373,7 +378,7 @@ func TestProbeRemoteImage_UserAgent(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := ProbeRemoteImage(context.Background(), ts.URL+"/test.jpg")
+	_, err := ProbeRemoteImageWithClient(context.Background(), ts.URL+"/test.jpg", ts.Client())
 	if err != nil {
 		t.Fatalf("ProbeRemoteImage: %v", err)
 	}
@@ -389,9 +394,24 @@ func TestProbeRemoteImage_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := ProbeRemoteImage(context.Background(), ts.URL+"/missing.jpg")
+	_, err := ProbeRemoteImageWithClient(context.Background(), ts.URL+"/missing.jpg", ts.Client())
 	if err == nil {
 		t.Error("expected error for 404 response")
+	}
+}
+
+// TestProbeRemoteImage_SSRFBlocked verifies that ProbeRemoteImage rejects
+// attempts to probe link-local addresses (such as the AWS metadata endpoint),
+// closing the SSRF vector via the httpsafe transport. Asserts the specific
+// httpsafe.ErrPrivateAddress sentinel so a regression where SafeTransport is
+// removed (leaving the IP merely unreachable from CI) cannot silently pass.
+func TestProbeRemoteImage_SSRFBlocked(t *testing.T) {
+	t.Parallel()
+	// 169.254.169.254 is the AWS instance metadata address -- a canonical SSRF
+	// target. The httpsafe transport must reject it at the dial stage.
+	_, err := ProbeRemoteImage(context.Background(), "http://169.254.169.254/latest/meta-data/")
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("ProbeRemoteImage err = %v; want errors.Is(err, httpsafe.ErrPrivateAddress)", err)
 	}
 }
 

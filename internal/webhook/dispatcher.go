@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -27,13 +29,15 @@ type Dispatcher struct {
 	logger     *slog.Logger
 	sem        chan struct{} // semaphore to cap concurrent delivery goroutines
 	sleep      func(time.Duration)
+	wg         sync.WaitGroup // tracks in-flight delivery goroutines for graceful drain
 }
 
-// NewDispatcher creates a webhook dispatcher.
+// NewDispatcher creates a webhook dispatcher using the shared SSRF-safe HTTP
+// client from the httpsafe package (C1, C8).
 func NewDispatcher(service *Service, logger *slog.Logger) *Dispatcher {
 	return &Dispatcher{
 		service:    service,
-		httpClient: &http.Client{Timeout: requestTimeout},
+		httpClient: httpsafe.SafeClient(requestTimeout),
 		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
 		sem:        make(chan struct{}, maxConcurrentDeliveries),
 		sleep:      time.Sleep,
@@ -64,8 +68,10 @@ func (d *Dispatcher) HandleEvent(e event.Event) {
 
 	for i := range webhooks {
 		w := webhooks[i]
+		d.wg.Add(1)
 		d.sem <- struct{}{}
 		go func(w Webhook) {
+			defer d.wg.Done()
 			defer func() { <-d.sem }()
 			defer func() {
 				if rv := recover(); rv != nil {
@@ -79,6 +85,24 @@ func (d *Dispatcher) HandleEvent(e event.Event) {
 			}()
 			d.deliver(w, e)
 		}(w)
+	}
+}
+
+// Drain waits for all in-flight delivery goroutines to finish. It returns
+// ctx.Err() if the context expires before all goroutines complete, or nil on
+// clean shutdown. Callers should pass a context with a deadline so that a
+// misbehaving webhook target cannot block server shutdown indefinitely.
+func (d *Dispatcher) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		d.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
