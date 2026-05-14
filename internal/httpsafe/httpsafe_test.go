@@ -2,10 +2,12 @@ package httpsafe_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,78 +15,60 @@ import (
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 )
 
+// assertBlocked drives SafeTransport().DialContext for `addr` directly and
+// asserts the rejection path is the SSRF guard's `ErrPrivateAddress` -- not an
+// incidental timeout or connection refused. Going through `client.Do` would
+// accept any non-nil error, which masks regressions where SafeTransport is
+// removed and the URL simply happens to be unreachable in CI.
+func assertBlocked(t *testing.T, addr, label string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := httpsafe.SafeTransport().DialContext(ctx, "tcp", addr)
+	if conn != nil {
+		conn.Close()
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("DialContext(%q): err = %v; want errors.Is(err, ErrPrivateAddress) for %s", addr, err, label)
+	}
+}
+
 // TestSafeTransport_BlocksLoopback verifies that IPv4 loopback is rejected at
 // dial time, closing the SSRF vector for 127.x.x.x addresses.
 func TestSafeTransport_BlocksLoopback(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/test", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to 127.0.0.1 (loopback)")
-	}
+	assertBlocked(t, "127.0.0.1:1", "IPv4 loopback")
 }
 
 // TestSafeTransport_BlocksLoopbackIPv6 verifies that ::1 is rejected.
 func TestSafeTransport_BlocksLoopbackIPv6(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://[::1]:1/test", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to ::1 (IPv6 loopback)")
-	}
+	assertBlocked(t, "[::1]:1", "IPv6 loopback")
 }
 
 // TestSafeTransport_BlocksLinkLocal verifies that the AWS metadata address
 // 169.254.169.254 is rejected. This is a critical SSRF vector on cloud VMs.
 func TestSafeTransport_BlocksLinkLocal(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://169.254.169.254/latest/meta-data/", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to 169.254.169.254 (link-local)")
-	}
+	assertBlocked(t, "169.254.169.254:80", "link-local (AWS metadata)")
 }
 
 // TestSafeTransport_BlocksRFC1918_10 verifies the 10.0.0.0/8 range.
 func TestSafeTransport_BlocksRFC1918_10(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://10.0.0.1:80/test", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to 10.0.0.1 (RFC 1918)")
-	}
+	assertBlocked(t, "10.0.0.1:80", "RFC 1918 (10.0.0.0/8)")
 }
 
 // TestSafeTransport_BlocksRFC1918_172 verifies the 172.16.0.0/12 range.
 func TestSafeTransport_BlocksRFC1918_172(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://172.16.0.1:80/test", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to 172.16.0.1 (RFC 1918)")
-	}
+	assertBlocked(t, "172.16.0.1:80", "RFC 1918 (172.16.0.0/12)")
 }
 
 // TestSafeTransport_BlocksRFC1918_192 verifies the 192.168.0.0/16 range.
 func TestSafeTransport_BlocksRFC1918_192(t *testing.T) {
 	t.Parallel()
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://192.168.0.1:80/test", nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected error connecting to 192.168.0.1 (RFC 1918)")
-	}
+	assertBlocked(t, "192.168.0.1:80", "RFC 1918 (192.168.0.0/16)")
 }
 
 // TestSafeTransport_AllowsPublicIP verifies that a genuine public IP is allowed
@@ -154,13 +138,9 @@ func TestSafeTransport_DNSRebinding(t *testing.T) {
 	// The server URL uses 127.0.0.1. In a real DNS-rebinding attack the client
 	// would resolve a domain name to 127.0.0.1 at connection time. Our
 	// DialContext performs the resolve and must catch the loopback address.
-	client := httpsafe.SafeClient(5 * time.Second)
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
-	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected SSRF block: server is on 127.0.0.1 (loopback)")
-	}
+	// Strip the scheme to get the host:port form DialContext expects.
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	assertBlocked(t, addr, "test server on loopback (DNS rebinding scenario)")
 
 	// Simulate the DNS-rebinding scenario more explicitly: use a custom
 	// DialContext that tracks call count and varies the resolved IP. We cannot

@@ -7,11 +7,19 @@ package httpsafe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 )
+
+// ErrPrivateAddress is returned by SafeTransport's DialContext when a target
+// host resolves to a loopback, link-local, or RFC 1918 address. Exposed as a
+// sentinel so callers (especially tests) can distinguish the SSRF rejection
+// from incidental dial failures (timeouts, connection refused). Wrap with
+// `fmt.Errorf("...: %w", ErrPrivateAddress)` when adding context.
+var ErrPrivateAddress = errors.New("address is private or reserved")
 
 // SafeTransport returns a cloned *http.Transport with a custom DialContext that
 // rejects connections to loopback, link-local, and RFC 1918 private addresses.
@@ -28,6 +36,15 @@ func SafeTransport() *http.Transport {
 		base = &http.Transport{}
 	}
 	t := base.Clone()
+
+	// Strip ProxyFromEnvironment inherited from http.DefaultTransport. When
+	// Proxy is non-nil, DialContext is called with the PROXY's address as the
+	// first hop -- not the request's final host. The SSRF guard below would
+	// then validate the proxy (typically public) and let the proxy route
+	// requests to private targets, defeating the entire point of this
+	// transport. Operators who need an egress proxy must wire one explicitly
+	// after constructing SafeTransport; the default is "no proxy".
+	t.Proxy = nil
 
 	// Pool tuning (C8): increase per-host idle connections to better match
 	// real-world burst patterns and align with the DefaultMaxIdleConnsPerHost
@@ -56,7 +73,7 @@ func SafeTransport() *http.Transport {
 		var safe []net.IPAddr
 		for _, ip := range ips {
 			if isBlocked(ip.IP) {
-				return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
+				return nil, fmt.Errorf("resolved address %s: %w", ip.IP, ErrPrivateAddress)
 			}
 			safe = append(safe, ip)
 		}

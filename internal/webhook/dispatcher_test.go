@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -349,11 +350,13 @@ func TestDispatcher_Drain_ContextCancel(t *testing.T) {
 	})
 
 	// Drain with a very short deadline -- should return context.DeadlineExceeded
-	// before the slow handler finishes.
+	// before the slow handler finishes. Assert the specific sentinel rather
+	// than just `err != nil` so an unrelated regression (e.g. a programming
+	// error returning a different error) cannot satisfy the test.
 	drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	err := dispatcher.Drain(drainCtx)
-	if err == nil {
-		t.Fatal("expected Drain to return an error when context expires")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Drain err = %v; want context.DeadlineExceeded", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -14,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 )
 
 // makeJPEG creates a JPEG-encoded image of the given dimensions.
@@ -399,16 +402,17 @@ func TestProbeRemoteImage_NotFound(t *testing.T) {
 
 // TestProbeRemoteImage_SSRFBlocked verifies that ProbeRemoteImage rejects
 // attempts to probe link-local addresses (such as the AWS metadata endpoint),
-// closing the SSRF vector via the httpsafe transport.
+// closing the SSRF vector via the httpsafe transport. Asserts the specific
+// httpsafe.ErrPrivateAddress sentinel so a regression where SafeTransport is
+// removed (leaving the IP merely unreachable from CI) cannot silently pass.
 func TestProbeRemoteImage_SSRFBlocked(t *testing.T) {
 	t.Parallel()
 	// 169.254.169.254 is the AWS instance metadata address -- a canonical SSRF
 	// target. The httpsafe transport must reject it at the dial stage.
 	_, err := ProbeRemoteImage(context.Background(), "http://169.254.169.254/latest/meta-data/")
-	if err == nil {
-		t.Fatal("expected SSRF block for 169.254.169.254")
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("ProbeRemoteImage err = %v; want errors.Is(err, httpsafe.ErrPrivateAddress)", err)
 	}
-	t.Logf("correctly blocked: %v", err)
 }
 
 func TestFitDimensions(t *testing.T) {
