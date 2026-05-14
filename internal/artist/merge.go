@@ -162,12 +162,18 @@ var mergeStrFields = []strField{
 		dst:   func(a *Artist) *string { return &a.Gender },
 		modes: [4]fieldMode{modeNonEmpty, modeFillEmpty, modeUnconditional, modeUnconditional},
 	},
+	// Origin: non-empty overwrite in OverwriteAttempted, fill-empty in FillEmpty,
+	// non-empty overwrite in NFOImport (sparse NFOs must not clear existing origin),
+	// unconditional in SnapshotRestore.
 	{
 		name:  "origin",
 		get:   func(u *MetadataUpdate) string { return u.Origin },
 		dst:   func(a *Artist) *string { return &a.Origin },
 		modes: [4]fieldMode{modeNonEmpty, modeFillEmpty, modeNonEmpty, modeUnconditional},
 	},
+	// Disambiguation: non-empty overwrite in OverwriteAttempted; skipped in
+	// FillEmpty (avoid overwriting user-set disambiguation with provider noise);
+	// unconditional in NFOImport and SnapshotRestore.
 	{
 		name:  "disambiguation",
 		get:   func(u *MetadataUpdate) string { return u.Disambiguation },
@@ -221,8 +227,8 @@ var mergeStrFields = []strField{
 		dst:   func(a *Artist) *string { return &a.SpotifyID },
 		modes: [4]fieldMode{modeFillEmpty, modeFillEmpty, modeNonEmpty, modeUnconditional},
 	},
-	// YearsActive: non-empty overwrite across OverwriteAttempted and FillEmpty;
-	// unconditional for NFOImport and SnapshotRestore.
+	// YearsActive: non-empty overwrite in OverwriteAttempted; fill-empty in
+	// FillEmpty; unconditional for NFOImport and SnapshotRestore.
 	{
 		name:  "years_active",
 		get:   func(u *MetadataUpdate) string { return u.YearsActive },
@@ -534,7 +540,7 @@ func fillEmpty(dst *string, val string) bool {
 
 // setSlice unconditionally replaces *dst with val. Returns true if changed.
 func setSlice(dst *[]string, val []string) bool {
-	if slices.Equal(*dst, val) {
+	if slices.Equal(*dst, val) && ((*dst == nil) == (val == nil)) {
 		return false
 	}
 	*dst = val

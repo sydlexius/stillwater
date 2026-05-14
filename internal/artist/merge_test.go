@@ -1100,3 +1100,37 @@ func TestApplyMetadata_LockedDateSurvivesFilterByType(t *testing.T) {
 		t.Errorf("locked died was clobbered by merge or FilterDatesByType: got %q", a.Died)
 	}
 }
+
+func TestApplyMetadata_OutOfRangeStrategyIsNoOp(t *testing.T) {
+	t.Parallel()
+	a := &Artist{Name: "Before"}
+	u := &MetadataUpdate{Name: "After", Biography: "bio"}
+	changed := ApplyMetadata(a, u, MergeStrategy(-1), MergeOptions{})
+	if changed {
+		t.Error("out-of-range strategy should return false (no change)")
+	}
+	if a.Name != "Before" {
+		t.Errorf("artist was mutated by out-of-range strategy: Name = %q", a.Name)
+	}
+	changed = ApplyMetadata(a, u, MergeStrategy(999), MergeOptions{})
+	if changed {
+		t.Error("out-of-range strategy (high) should return false (no change)")
+	}
+}
+
+func TestApplyMetadata_AttemptedFieldsNormalized(t *testing.T) {
+	t.Parallel()
+	// Mixed-case and padded field names must match the same fields as canonical names.
+	a := &Artist{}
+	u := &MetadataUpdate{Biography: "bio text", Type: "person"}
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{" Biography ", "GENRES"},
+		PopulatedFields: []string{" Biography ", "GENRES"},
+	})
+	if !changed {
+		t.Error("expected change: mixed-case AttemptedFields should normalize to match table names")
+	}
+	if a.Biography != "bio text" {
+		t.Errorf("Biography = %q, want %q", a.Biography, "bio text")
+	}
+}
