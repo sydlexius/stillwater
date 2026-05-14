@@ -501,6 +501,28 @@ func TestImportProviderPriorities_CountsAndPersists(t *testing.T) {
 	if result.Priorities != 1 {
 		t.Errorf("Priorities count: got %d, want 1", result.Priorities)
 	}
+	fps, err := provSettings.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	foundBio := false
+	for _, fp := range fps {
+		if fp.Field != "biography" {
+			continue
+		}
+		foundBio = true
+		// GetPriorities appends defaults not in the stored list, so check that
+		// the imported providers appear first in the correct order.
+		if len(fp.Providers) < 2 ||
+			fp.Providers[0] != provider.NameMusicBrainz ||
+			fp.Providers[1] != provider.NameWikipedia {
+			t.Errorf("Providers prefix: got %v, want [%s %s] first", fp.Providers, provider.NameMusicBrainz, provider.NameWikipedia)
+		}
+		break
+	}
+	if !foundBio {
+		t.Fatal("biography priorities not found after import")
+	}
 }
 
 // TestImportProviderPriorities_DisabledPersisted verifies that a non-empty
@@ -569,10 +591,19 @@ func TestImportProviderPriorities_EmptyDisabledClears(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPriorities: %v", err)
 	}
+	foundBio := false
 	for _, fp := range fps {
-		if fp.Field == "biography" && len(fp.Disabled) > 0 {
+		if fp.Field != "biography" {
+			continue
+		}
+		foundBio = true
+		if len(fp.Disabled) > 0 {
 			t.Errorf("expected disabled list cleared, got %v", fp.Disabled)
 		}
+		break
+	}
+	if !foundBio {
+		t.Fatal("biography priorities not found after import")
 	}
 }
 
