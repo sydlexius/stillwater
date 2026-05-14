@@ -5,6 +5,150 @@ coverage:
         # Minimum patch coverage required -- fails CI if new lines are under-tested.
         # Generated template files (*_templ.go) are excluded via the ignore list below.
         target: 70%
+    project:
+      # Per-package floors mirror testdata/coverage-floor.json.
+      # Each entry sets the minimum total coverage for that package's source files.
+      # Update both files together when raising a floor with scripts/coverage-floor.sh --bump.
+      default:
+        # Catch-all for any package not listed below.
+        target: auto
+        threshold: 2%
+      api:
+        target: 58%
+        paths:
+          - internal/api
+      api_middleware:
+        target: 86%
+        paths:
+          - internal/api/middleware
+      artist:
+        target: 84%
+        paths:
+          - internal/artist
+      auth:
+        target: 65%
+        paths:
+          - internal/auth
+      backup:
+        target: 62%
+        paths:
+          - internal/backup
+      config:
+        target: 94%
+        paths:
+          - internal/config
+      conflict:
+        target: 79%
+        paths:
+          - internal/conflict
+      connection:
+        target: 83%
+        paths:
+          - internal/connection
+      database:
+        target: 75%
+        paths:
+          - internal/database
+      dbutil:
+        target: 100%
+        paths:
+          - internal/dbutil
+      encryption:
+        target: 86%
+        paths:
+          - internal/encryption
+      event:
+        target: 96%
+        paths:
+          - internal/event
+      filesystem:
+        target: 59%
+        paths:
+          - internal/filesystem
+      foreign:
+        target: 84%
+        paths:
+          - internal/foreign
+      i18n:
+        target: 70%
+        paths:
+          - internal/i18n
+      image:
+        target: 81%
+        paths:
+          - internal/image
+      imagebridge:
+        target: 75%
+        paths:
+          - internal/imagebridge
+      langpref:
+        target: 85%
+        paths:
+          - internal/langpref
+      library:
+        target: 82%
+        paths:
+          - internal/library
+      logging:
+        target: 85%
+        paths:
+          - internal/logging
+      maintenance:
+        target: 77%
+        paths:
+          - internal/maintenance
+      nfo:
+        target: 88%
+        paths:
+          - internal/nfo
+      platform:
+        target: 83%
+        paths:
+          - internal/platform
+      provider:
+        target: 84%
+        paths:
+          - internal/provider
+      publish:
+        target: 94%
+        paths:
+          - internal/publish
+      rule:
+        target: 75%
+        paths:
+          - internal/rule
+      scanner:
+        target: 82%
+        paths:
+          - internal/scanner
+      scraper:
+        target: 79%
+        paths:
+          - internal/scraper
+      server:
+        target: 91%
+        paths:
+          - internal/server
+      settingsio:
+        target: 82%
+        paths:
+          - internal/settingsio
+      updater:
+        target: 87%
+        paths:
+          - internal/updater
+      version:
+        target: 100%
+        paths:
+          - internal/version
+      watcher:
+        target: 69%
+        paths:
+          - internal/watcher
+      webhook:
+        target: 77%
+        paths:
+          - internal/webhook
 
 ignore:
   # Templ codegen output -- byte-for-byte compiler output, not hand-written.

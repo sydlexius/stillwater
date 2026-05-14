@@ -8,14 +8,17 @@
 #   - Morning UTC means failures appear early in the European/US workday.
 #
 # Discovery approach -- static matrix:
-#   The four fuzz targets are enumerated explicitly rather than via a
-#   runtime `grep | jq` dynamic approach. Reasons:
+#   All fuzz targets are enumerated explicitly rather than via a runtime
+#   `grep | jq` dynamic approach. Reasons:
 #     1. Dynamic enumeration requires a separate "discover" job, adding
-#        latency and complexity for four targets.
+#        latency and complexity.
 #     2. A static matrix is self-documenting and easy to review in CI.
-#     3. When M49 W3 lands new targets, adding a line is a one-line PR
-#        that goes through normal review -- intentional, not accidental.
-#   The trade-off is acceptable at the current target count (<10).
+#     3. When new fuzz targets are added, updating a matrix entry is an
+#        intentional one-line PR that goes through normal review -- not
+#        accidental drift.
+#   The drift-check job (below) detects when the codebase has more
+#   `func Fuzz*` definitions than the matrix has entries and fails CI,
+#   directing the developer to update the matrix.
 #
 # Cache strategy:
 #   - Key: "fuzz-corpus-<package>-<fuzz_func>-<hash of go.sum>"
@@ -56,6 +59,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Drift detection: fail if the number of `func Fuzz*` definitions in
+  # internal/ does not match the number of matrix entries in the fuzz job.
+  # When a developer adds a new fuzz target without updating this file, this
+  # job surfaces the gap before the next scheduled run goes silently stale.
+  #
+  # Matrix entry count is hard-coded (MATRIX_COUNT) and must be updated
+  # whenever a matrix entry is added or removed. The step below computes
+  # the live count from source and compares the two.
+  fuzz-drift-check:
+    name: Fuzz matrix drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check fuzz matrix is current
+        env:
+          # Update this number whenever a matrix entry is added or removed.
+          MATRIX_COUNT: "29"
+        run: |
+          live=$(grep -r "^func Fuzz" internal/ | wc -l | tr -d ' ')
+          echo "Live fuzz targets: ${live}"
+          echo "Matrix entry count: ${MATRIX_COUNT}"
+          if [ "${live}" != "${MATRIX_COUNT}" ]; then
+            echo ""
+            echo "FAIL: fuzz matrix is out of sync."
+            echo "  internal/ has ${live} Fuzz* functions but fuzz.yml matrix has ${MATRIX_COUNT} entries."
+            echo "  Add or remove matrix entries in .github/workflows/fuzz.yml to match,"
+            echo "  then update MATRIX_COUNT to ${live}."
+            exit 1
+          fi
+          echo "OK: matrix is current."
+
   fuzz:
     name: Fuzz (${{ matrix.fuzz_func }})
     runs-on: ubuntu-latest
@@ -69,20 +106,79 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - package: internal/nfo
-            fuzz_func: FuzzParse
-          - package: internal/nfo
-            fuzz_func: FuzzParseWriteRoundTrip
+          # internal/api (13 targets)
+          - package: internal/api
+            fuzz_func: FuzzHandleAddAlias
+          - package: internal/api
+            fuzz_func: FuzzHandleBulkAction
+          - package: internal/api
+            fuzz_func: FuzzHandleCreateConnection
+          - package: internal/api
+            fuzz_func: FuzzHandleFieldUpdate
+          - package: internal/api
+            fuzz_func: FuzzHandleImageFetch
+          - package: internal/api
+            fuzz_func: FuzzHandleLidarrArtistAdd
+          - package: internal/api
+            fuzz_func: FuzzHandleNFOConflictCheck
+          - package: internal/api
+            fuzz_func: FuzzHandleSetupFederated
+          - package: internal/api
+            fuzz_func: FuzzHandleSetupLocal
+          - package: internal/api
+            fuzz_func: FuzzHandleUpdateConnection
+          - package: internal/api
+            fuzz_func: FuzzInboundWebhookGeneric
+          - package: internal/api
+            fuzz_func: FuzzInboundWebhookJellyfin
+          - package: internal/api
+            fuzz_func: FuzzInboundWebhookLidarr
+          # internal/config (1 target)
+          - package: internal/config
+            fuzz_func: FuzzConfigLoad
+          # internal/encryption (1 target)
+          - package: internal/encryption
+            fuzz_func: FuzzEncryptionDecrypt
+          # internal/image (5 targets)
+          - package: internal/image
+            fuzz_func: FuzzDetectFormat
+          - package: internal/image
+            fuzz_func: FuzzExifMetaParse
+          - package: internal/image
+            fuzz_func: FuzzImageHashHexParse
           - package: internal/image
             fuzz_func: FuzzPerceptualHash
           - package: internal/image
             fuzz_func: FuzzPerceptualHashDeterminism
-          - package: internal/api
-            fuzz_func: FuzzHandleAddAlias
-          - package: internal/api
-            fuzz_func: FuzzHandleFieldUpdate
-          - package: internal/api
-            fuzz_func: FuzzHandleBulkAction
+          # internal/nfo (2 targets)
+          - package: internal/nfo
+            fuzz_func: FuzzParse
+          - package: internal/nfo
+            fuzz_func: FuzzParseWriteRoundTrip
+          # internal/provider/discogs (1 target)
+          # Note: the codebase defines FuzzDiscogsResponses, not FuzzProviderResponseDecoders_Discogs
+          - package: internal/provider/discogs
+            fuzz_func: FuzzDiscogsResponses
+          # internal/provider/musicbrainz (2 targets)
+          # Note: the codebase defines FuzzMusicBrainzResponses, not FuzzProviderResponseDecoders_MB
+          - package: internal/provider/musicbrainz
+            fuzz_func: FuzzMusicBrainzDiffSnapshot
+          - package: internal/provider/musicbrainz
+            fuzz_func: FuzzMusicBrainzResponses
+          # internal/provider/wikidata (1 target)
+          # Note: the codebase defines FuzzWikidataResponses, not FuzzProviderResponseDecoders_Wikidata
+          - package: internal/provider/wikidata
+            fuzz_func: FuzzWikidataResponses
+          # internal/provider/wikipedia (1 target)
+          # Note: the codebase defines FuzzWikipediaResponses, not FuzzProviderResponseDecoders_Wikipedia
+          - package: internal/provider/wikipedia
+            fuzz_func: FuzzWikipediaResponses
+          # internal/scraper (1 target)
+          - package: internal/scraper
+            fuzz_func: FuzzScraperConfigRoundTrip
+          # internal/settingsio (1 target)
+          - package: internal/settingsio
+            fuzz_func: FuzzImportEnvelope
 
     steps:
       - name: Checkout
