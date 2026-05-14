@@ -7,6 +7,21 @@ import (
 	"strings"
 )
 
+// safeBaseURL returns base if it starts with "/" (a relative path), or if it
+// has an http/https scheme. Any other value -- including javascript:, data:,
+// and vbscript: -- is replaced with "/" so pageURL never produces a link with
+// a dangerous scheme, regardless of how PaginationData.BaseURL is set.
+func safeBaseURL(base string) string {
+	if strings.HasPrefix(base, "/") {
+		return base
+	}
+	lower := strings.ToLower(base)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return base
+	}
+	return "/"
+}
+
 // PaginationData holds the state for pagination controls.
 type PaginationData struct {
 	CurrentPage    int
@@ -73,7 +88,7 @@ func (p PaginationData) pageURL(page int) string {
 		// expects on the server side.
 		v.Set("ids", strings.Join(p.IDs, ","))
 	}
-	return p.BaseURL + "?" + v.Encode()
+	return safeBaseURL(p.BaseURL) + "?" + v.Encode()
 }
 
 // LoadMore renders an append-style pagination button that fetches the next page
@@ -123,7 +138,7 @@ templ Pagination(data PaginationData) {
 			<div class="flex flex-1 justify-between sm:justify-end gap-2">
 				if data.CurrentPage > 1 {
 					<a
-						href={ templ.SafeURL(data.pageURL(data.CurrentPage - 1)) }
+						href={ templ.URL(data.pageURL(data.CurrentPage - 1)) }
 						hx-get={ data.pageURL(data.CurrentPage - 1) }
 						hx-target={ data.target() }
 						hx-swap="outerHTML"
@@ -134,7 +149,7 @@ templ Pagination(data PaginationData) {
 				}
 				if data.CurrentPage < data.TotalPages {
 					<a
-						href={ templ.SafeURL(data.pageURL(data.CurrentPage + 1)) }
+						href={ templ.URL(data.pageURL(data.CurrentPage + 1)) }
 						hx-get={ data.pageURL(data.CurrentPage + 1) }
 						hx-target={ data.target() }
 						hx-swap="outerHTML"
