@@ -76,7 +76,12 @@ fi
 echo "safe-push: pushing $branch ($local_sha) to origin" >&2
 push_status=0
 set -o pipefail
-if ! git push -u origin "$branch" "$@" 2>&1 | tee "$LOG" >&2; then
+# Capture git push's real exit code. `if ! cmd; then` would set $? to the
+# negated value (0) inside the then-block, masking the actual failure --
+# the exact silent-failure mode this wrapper exists to prevent.
+if git push -u origin "$branch" "$@" 2>&1 | tee "$LOG" >&2; then
+  push_status=0
+else
   push_status=$?
 fi
 set +o pipefail
