@@ -266,21 +266,25 @@ fi
 echo ""
 echo "=== Fuzz matrix drift check ==="
 # Verify that the static fuzz matrix in .github/workflows/fuzz.yml lists
-# every `func Fuzz*` defined in internal/. When a new fuzz target is added
-# without updating the matrix the drift-check CI job will catch it; this
-# local gate surfaces the same gap pre-push so it does not reach CI.
-#
-# MATRIX_COUNT must match the MATRIX_COUNT env var in fuzz.yml's
-# fuzz-drift-check job. Both numbers must be updated together.
-FUZZ_MATRIX_COUNT=29
-live_fuzz=$(grep -r "^func Fuzz" internal/ 2>/dev/null | wc -l | tr -d ' ')
-if [ "$live_fuzz" != "$FUZZ_MATRIX_COUNT" ]; then
-  echo "FAIL: fuzz matrix is out of sync."
-  echo "  internal/ has ${live_fuzz} Fuzz* functions but fuzz.yml matrix has ${FUZZ_MATRIX_COUNT} entries."
-  echo "  Update .github/workflows/fuzz.yml matrix and set FUZZ_MATRIX_COUNT=${live_fuzz} in this script."
+# every `func Fuzz*` defined in internal/. A set comparison (not a count)
+# catches rename/swap drift that preserves cardinality but breaks parity.
+live_fuzz_file="$SW_RUN_DIR/live-fuzz-targets.txt"
+matrix_fuzz_file="$SW_RUN_DIR/matrix-fuzz-targets.txt"
+
+grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ 2>/dev/null \
+  | awk '{print $2}' | sort -u > "$live_fuzz_file"
+grep -Eo 'fuzz_func:[[:space:]]*Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+  | awk '{print $2}' | sort -u > "$matrix_fuzz_file"
+
+missing=$(comm -23 "$live_fuzz_file" "$matrix_fuzz_file")
+extra=$(comm -13 "$live_fuzz_file" "$matrix_fuzz_file")
+if [ -n "$missing$extra" ]; then
+  echo "FAIL: fuzz matrix is out of sync with internal/ Fuzz* functions."
+  [ -n "$missing" ] && echo "  Missing in fuzz.yml matrix:" && echo "$missing" | sed 's/^/    /'
+  [ -n "$extra" ] && echo "  Extra in fuzz.yml matrix (no live target):" && echo "$extra" | sed 's/^/    /'
   exit 1
 fi
-echo "OK: ${live_fuzz} fuzz targets, matrix count matches."
+echo "OK: $(wc -l < "$live_fuzz_file" | tr -d ' ') fuzz targets, matrix set matches."
 
 echo ""
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
