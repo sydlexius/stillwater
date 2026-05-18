@@ -25,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/imagebridge"
 	"github.com/sydlexius/stillwater/internal/langpref"
@@ -238,7 +239,8 @@ func run() error {
 // loadConfig reads configuration from the environment and config file.
 // It also performs first-run scaffolding when SW_CONFIG_PATH is set.
 func (a *Application) loadConfig() error {
-	configPath, configPathSet := os.LookupEnv("SW_CONFIG_PATH")
+	rawConfigPath, configPathSet := os.LookupEnv("SW_CONFIG_PATH")
+	configPath := rawConfigPath
 	if configPath == "" {
 		configPath = "/config/config.toml"
 	}
@@ -247,14 +249,15 @@ func (a *Application) loadConfig() error {
 	// the file is missing so admins have a documented starting point. A failure
 	// here is non-fatal; in-code defaults plus env vars are sufficient to boot.
 	//
-	// Only scaffold when the operator has explicitly opted in via
+	// Only scaffold when the operator has explicitly opted in via a non-empty
 	// SW_CONFIG_PATH. Native binary installs that boot with only SW_DB_PATH
 	// and SW_MUSIC_PATH would otherwise log a "could not write scaffold"
 	// warning every startup just because the container default /config is
-	// unwritable on a host filesystem. The container image sets
-	// SW_CONFIG_PATH explicitly, so the Docker first-run experience is
-	// preserved.
-	if configPathSet && configPath != "" {
+	// unwritable on a host filesystem. An explicit SW_CONFIG_PATH="" must be
+	// treated the same as "not set" so the empty-string escape hatch is not
+	// surprising. The container image sets SW_CONFIG_PATH to a real path, so
+	// the Docker first-run experience is preserved.
+	if configPathSet && rawConfigPath != "" {
 		a.scaffolded, a.scaffoldErr = config.EnsureScaffold(configPath)
 	}
 
@@ -906,14 +909,20 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 	dataDir := filepath.Dir(cfg.Database.Path)
 	keyFile := filepath.Join(dataDir, "encryption.key")
 
-	// Try loading from file
+	// Try loading from file. A read error other than "file not found" must be
+	// fatal: silently falling through to key generation would orphan every
+	// previously-encrypted secret if the existing file is unreadable due to
+	// permissions, a filesystem fault, or transient IO failure.
 	data, err := os.ReadFile(keyFile) //nolint:gosec // G304: path derived from trusted config
-	if err == nil {
+	switch {
+	case err == nil:
 		key := strings.TrimSpace(string(data))
 		if key != "" {
 			logger.Debug("loaded encryption key from file", slog.String("path", keyFile))
 			return key, nil
 		}
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("reading encryption key file %s: %w", keyFile, err)
 	}
 
 	// Generate a new key
@@ -922,14 +931,16 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		return "", fmt.Errorf("generating encryption key: %w", err)
 	}
 
-	// Persist to file. Failure here is fatal: if the key is not written,
-	// the next startup generates a different key and makes every previously
-	// encrypted secret unrecoverable (provider API keys, connection API keys).
+	// Persist to file atomically. Failure here is fatal: if the key is not
+	// written, the next startup generates a different key and makes every
+	// previously encrypted secret unrecoverable (provider API keys, connection
+	// API keys). filesystem.WriteFileAtomic uses the tmp/bak/rename pattern so
+	// a crash or disk-full mid-write cannot leave a truncated key on disk.
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
 		return "", fmt.Errorf("creating data directory for encryption key: %w", err)
 	}
 
-	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil {
+	if err := filesystem.WriteFileAtomic(keyFile, []byte(key+"\n"), 0o600); err != nil {
 		return "", fmt.Errorf("saving encryption key to file %s: %w", keyFile, err)
 	}
 	logger.Warn("generated new encryption key -- back up this file",

@@ -45,11 +45,23 @@ func initLogging(t *testing.T, app *Application) func() {
 // --- loadConfig tests ---
 
 func TestLoadConfig_DefaultPath(t *testing.T) {
-	// Unset SW_CONFIG_PATH so that loadConfig falls back to the default
-	// path. The default (/config/config.toml) will not exist in CI, but
-	// config.Load is expected to succeed with defaults when the file is
-	// absent.
-	t.Setenv("SW_CONFIG_PATH", "")
+	// Unset SW_CONFIG_PATH entirely so loadConfig exercises the env-absent
+	// branch and falls back to the default path. t.Setenv("", "") would
+	// instead exercise the explicit-empty branch, which is a distinct code
+	// path now that empty values do not opt into scaffolding. The default
+	// (/config/config.toml) will not exist in CI, but config.Load is
+	// expected to succeed with defaults when the file is absent.
+	prev, hadPrev := os.LookupEnv("SW_CONFIG_PATH")
+	if err := os.Unsetenv("SW_CONFIG_PATH"); err != nil {
+		t.Fatalf("unsetting SW_CONFIG_PATH: %v", err)
+	}
+	t.Cleanup(func() {
+		if hadPrev {
+			_ = os.Setenv("SW_CONFIG_PATH", prev)
+		} else {
+			_ = os.Unsetenv("SW_CONFIG_PATH")
+		}
+	})
 	app := newApplication()
 	// config.Load returns defaults when file does not exist, so this must
 	// succeed even in a clean environment.
