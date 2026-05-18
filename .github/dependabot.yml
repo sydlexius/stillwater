@@ -35,6 +35,21 @@ updates:
       - docker
     open-pull-requests-limit: 5
 
+  # Bruno CLI is pinned via .github/bruno/package-lock.json and installed by
+  # the bruno-ci workflow with `npm ci`. Only direct dep is @usebruno/cli;
+  # transitives are locked by SHA-512 integrity in the lockfile.
+  - package-ecosystem: npm
+    directory: /.github/bruno
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - ci
+    open-pull-requests-limit: 3
+
   # Docs site uses pip-compile with --generate-hashes; Dependabot detects the
   # autogen header on requirements.txt and updates both .in and .txt together
   # for direct deps. Transitive security alerts in the lockfile (see #1437)
