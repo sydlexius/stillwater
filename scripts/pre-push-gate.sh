@@ -273,8 +273,8 @@ matrix_fuzz_file="$SW_RUN_DIR/matrix-fuzz-targets.txt"
 
 grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ 2>/dev/null \
   | awk '{print $2}' | sort -u > "$live_fuzz_file"
-grep -Eo 'fuzz_func:[[:space:]]*Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
-  | awk '{print $2}' | sort -u > "$matrix_fuzz_file"
+grep -Eo 'fuzz_func:[[:space:]]*"?Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+  | sed -E 's/.*(Fuzz[A-Za-z0-9_]+).*/\1/' | sort -u > "$matrix_fuzz_file"
 
 missing=$(comm -23 "$live_fuzz_file" "$matrix_fuzz_file")
 extra=$(comm -13 "$live_fuzz_file" "$matrix_fuzz_file")

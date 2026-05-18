@@ -76,22 +76,27 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Check fuzz matrix is current
-        env:
-          # Update this number whenever a matrix entry is added or removed.
-          MATRIX_COUNT: "29"
         run: |
-          live=$(grep -r "^func Fuzz" internal/ | wc -l | tr -d ' ')
-          echo "Live fuzz targets: ${live}"
-          echo "Matrix entry count: ${MATRIX_COUNT}"
-          if [ "${live}" != "${MATRIX_COUNT}" ]; then
+          live_file="$(mktemp)"
+          matrix_file="$(mktemp)"
+          trap 'rm -f "$live_file" "$matrix_file"' EXIT
+          grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
+            | awk '{print $2}' | sort -u > "$live_file"
+          grep -Eo 'fuzz_func:[[:space:]]*"?Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+            | sed -E 's/.*(Fuzz[A-Za-z0-9_]+).*/\1/' | sort -u > "$matrix_file"
+          echo "Live fuzz targets: $(wc -l < "$live_file" | tr -d ' ')"
+          echo "Matrix entry count: $(wc -l < "$matrix_file" | tr -d ' ')"
+          missing="$(comm -23 "$live_file" "$matrix_file")"
+          extra="$(comm -13 "$live_file" "$matrix_file")"
+          if [ -n "$missing$extra" ]; then
             echo ""
-            echo "FAIL: fuzz matrix is out of sync."
-            echo "  internal/ has ${live} Fuzz* functions but fuzz.yml matrix has ${MATRIX_COUNT} entries."
-            echo "  Add or remove matrix entries in .github/workflows/fuzz.yml to match,"
-            echo "  then update MATRIX_COUNT to ${live}."
+            echo "FAIL: fuzz matrix is out of sync with internal/ Fuzz* functions."
+            [ -n "$missing" ] && echo "  Missing in matrix:" && echo "$missing" | sed 's/^/    /'
+            [ -n "$extra" ] && echo "  Extra in matrix (no live target):" && echo "$extra" | sed 's/^/    /'
+            echo "  Update .github/workflows/fuzz.yml matrix to match."
             exit 1
           fi
-          echo "OK: matrix is current."
+          echo "OK: matrix set matches live fuzz targets."
 
   fuzz:
     name: Fuzz (${{ matrix.fuzz_func }})

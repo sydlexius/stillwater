@@ -240,7 +240,9 @@ if [ -n "$bump_pkgs" ]; then
           if (!/^[[:space:]]*[{]?[[:space:]]*$/ && !/^}$/) had_entry = 1
         }
       ' "$FLOOR_FILE")
-      printf '%s\n' "$updated" > "$FLOOR_FILE"
+      tmp_floor="${FLOOR_FILE}.tmp.$$"
+      printf '%s\n' "$updated" > "$tmp_floor"
+      mv "$tmp_floor" "$FLOOR_FILE"
     fi
   done
   echo "coverage-floor: floor file updated: $FLOOR_FILE"
