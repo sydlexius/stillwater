@@ -1,0 +1,184 @@
+# Scheduled mutation-testing workflow (pilot)
+#
+# Triggers: weekly cron on Monday 05:00 UTC + manual workflow_dispatch.
+#
+# Schedule choice (Monday 05:00 UTC):
+#   - Sits in the 40-minute gap between codeql.yml (04:17 UTC) and
+#     fuzz.yml (06:00 UTC) so the three weekly heavy jobs do not
+#     compete for ubuntu-latest capacity.
+#   - Morning UTC means failures appear early in the European/US workday.
+#
+# Scope -- pilot:
+#   internal/nfo/ ONLY (9 non-test files, ~1.5k LoC). Extending coverage
+#   to additional packages (notably internal/rule/) is intentionally
+#   deferred to a follow-up issue to be filed at milestone close so we
+#   can size runtime against real data first.
+#
+# Tool choice: github.com/avito-tech/go-mutesting (maintained fork of
+# zimmski/go-mutesting). The fork adds annotation-driven exclusions
+# (// mutator-disable-next-line, // mutator-disable-func,
+# // mutator-disable-regexp) and a YAML config file. We lean on the
+# CLI flags + config for pilot-scale noise tuning and leave source
+# annotations as a future option if specific call sites prove noisy.
+#
+# Noise tuning:
+#   - numbers/incrementer and numbers/decrementer are disabled via the
+#     --disable flag. They flip integer/float literals (e.g. 100 -> 101)
+#     which fires constantly inside constant blocks, default values, and
+#     buffer-size hints without indicating real test gaps.
+#   - exclude_dirs in mutation.config.yml drops generated mock packages
+#     (any internal/*/mocks/ directory and any *_mock.go file) so they
+#     do not skew the score. internal/nfo/ currently has none, but the
+#     filter is in place defensively for when the pilot scope widens.
+#   - Known unkillable mutants: the two time.Now() call sites in
+#     snapshot.go (Save) and writeback.go (WriteBackArtistNFOWithFieldMap)
+#     will always survive because a deterministic test suite cannot
+#     detect a mutated timestamp. They form the baseline noise floor
+#     for the pilot; if surviving mutants grow beyond that handful,
+#     the report is signaling a real test gap. Source annotations to
+#     formally exclude them were considered and deferred to the
+#     follow-up that expands scope beyond the pilot.
+#
+# Output:
+#   Surviving mutants are surfaced two ways and ONLY two ways:
+#     1. A markdown table in $GITHUB_STEP_SUMMARY (file, surviving count,
+#        score) for quick triage from the run page.
+#     2. The full go-mutesting log uploaded as an artifact for diff
+#        inspection (each FAIL entry prints the unified diff).
+#   No PR comments. This is a noisy signal by nature; comment spam would
+#   dilute reviewer attention. Surviving mutants are advisory, not a
+#   gate -- the workflow exits 0 regardless of mutation score so that
+#   the schedule keeps running and the trend stays visible.
+
+name: Mutation Testing
+
+on:
+  schedule:
+    - cron: '0 5 * * 1' # weekly, Monday 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutate:
+    name: Mutate internal/nfo
+    runs-on: ubuntu-latest
+    # 60-minute ceiling: ~1.5k LoC across 9 files times the avito-tech
+    # fork's per-mutation `go test ./internal/nfo` budget. The pilot
+    # currently finishes well under this on a warm cache; the ceiling
+    # exists so a regression that explodes mutation count gets killed
+    # rather than burning runner minutes.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install go-mutesting
+        # Pinned to @latest deliberately. The avito-tech fork is the
+        # active maintenance fork (the upstream zimmski/go-mutesting is
+        # archived); there are no semver tags to pin to. Dependabot's
+        # action-version automation does not cover `go install` lines,
+        # so we accept upstream drift here in exchange for picking up
+        # mutator fixes without manual SHA bumps.
+        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+
+      - name: Write go-mutesting config
+        # exclude_dirs is a path-prefix filter on the binary's
+        # target-walk. We list the two patterns we never want mutated:
+        # mock packages (internal/<x>/mocks/) and generated *_mock.go
+        # files. The list is defensive -- internal/nfo currently has
+        # neither -- so the pilot's noise floor stays stable if the
+        # scope later widens to packages that do generate mocks.
+        run: |
+          cat > mutation.config.yml <<'YAML'
+          skip_without_test: true
+          skip_with_build_tags: true
+          silent_mode: false
+          exclude_dirs:
+            - mocks
+            - _mock.go
+          YAML
+
+      - name: Run mutation testing
+        # --disable numbers/* drops the incrementer/decrementer
+        # mutators (see the noise-tuning notes in the workflow header).
+        # Output is captured to mutation.log so the parse-summary step
+        # below can extract surviving-mutant counts without re-running
+        # the (expensive) mutation pass. `|| true` is intentional --
+        # the binary exits 0 in normal operation even when mutants
+        # survive, but we belt-and-brace against a future exit-code
+        # change so the parse step always sees the log.
+        run: |
+          set -o pipefail
+          go-mutesting \
+            --config mutation.config.yml \
+            --disable 'numbers/*' \
+            ./internal/nfo/... \
+            2>&1 | tee mutation.log || true
+
+      - name: Build workflow summary
+        # Parse the captured log into a markdown table on the run page.
+        # go-mutesting writes one line per mutant with the shape:
+        #   PASS|FAIL "<tmpdir>/<path>/<file>.go.<N>" with checksum ...
+        # and a trailer:
+        #   The mutation score is X.YZ (P passed, F failed, S skipped, total is T)
+        #
+        # We collapse FAIL entries (= surviving mutants) by source file
+        # and append the overall score line verbatim. awk handles the
+        # accumulation; jq is unnecessary for line-oriented text.
+        if: always()
+        run: |
+          {
+            echo "# Mutation testing report"
+            echo
+            echo "Target: \`./internal/nfo/...\`"
+            echo
+            if [ ! -s mutation.log ]; then
+              echo "_No mutation.log produced -- check the previous step._"
+              exit 0
+            fi
+            score_line=$(grep -E '^The mutation score is' mutation.log | tail -n1 || true)
+            if [ -n "$score_line" ]; then
+              echo "**Score:** ${score_line}"
+              echo
+            fi
+            surviving=$(grep -c '^FAIL ' mutation.log || true)
+            echo "**Surviving mutants:** ${surviving:-0}"
+            echo
+            if [ "${surviving:-0}" -gt 0 ]; then
+              echo "## Surviving mutants by file"
+              echo
+              echo "| File | Surviving mutants |"
+              echo "| ---- | ----------------- |"
+              grep '^FAIL ' mutation.log \
+                | sed -E 's|^FAIL "[^"]*/(internal/nfo/[^"]+)\.go\.[0-9]+".*|\1.go|' \
+                | sort \
+                | uniq -c \
+                | awk '{printf "| %s | %d |\n", $2, $1}'
+              echo
+              echo "Full diffs for each surviving mutant are in the \`mutation-report\` artifact."
+            else
+              echo "_No surviving mutants -- the test suite killed every mutation._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation report
+        # Always upload so a clean run still produces a downloadable
+        # baseline -- useful for diffing trend lines week over week.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report
+          path: mutation.log
+          if-no-files-found: warn
+          retention-days: 90
