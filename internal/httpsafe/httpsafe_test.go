@@ -22,11 +22,16 @@ import (
 // removed and the URL simply happens to be unreachable in CI.
 func assertBlocked(t *testing.T, addr, label string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 500ms is generous: SafeTransport.DialContext runs the SSRF guard
+	// before any I/O, so a healthy implementation completes in microseconds.
+	// A wider budget masks regressions where the guard is bypassed and the
+	// dial actually attempts I/O against an unroutable address.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	conn, err := httpsafe.SafeTransport().DialContext(ctx, "tcp", addr)
 	if conn != nil {
 		conn.Close()
+		t.Fatalf("DialContext(%q): returned non-nil conn for %s; SSRF block must not open a socket", addr, label)
 	}
 	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
 		t.Fatalf("DialContext(%q): err = %v; want errors.Is(err, ErrPrivateAddress) for %s", addr, err, label)
@@ -69,6 +74,39 @@ func TestSafeTransport_BlocksRFC1918_172(t *testing.T) {
 func TestSafeTransport_BlocksRFC1918_192(t *testing.T) {
 	t.Parallel()
 	assertBlocked(t, "192.168.0.1:80", "RFC 1918 (192.168.0.0/16)")
+}
+
+// TestSafeTransport_BlocksCGNAT verifies the 100.64.0.0/10 CGNAT range
+// (RFC 6598). CGNAT space is widely deployed inside ISP networks and on
+// tunnel/VPN interfaces, and is not covered by Go's net.IP.IsPrivate helper,
+// so it requires an explicit prefix check in isBlocked.
+func TestSafeTransport_BlocksCGNAT(t *testing.T) {
+	t.Parallel()
+	assertBlocked(t, "100.64.0.1:80", "CGNAT (RFC 6598, 100.64.0.0/10)")
+}
+
+// TestSafeTransport_Blocks_RFC2544 verifies the 198.18.0.0/15 benchmark /
+// interconnect range (RFC 2544). Not covered by net.IP.IsPrivate; relies on
+// the explicit prefix check in isBlocked.
+func TestSafeTransport_Blocks_RFC2544(t *testing.T) {
+	t.Parallel()
+	assertBlocked(t, "198.18.0.1:80", "RFC 2544 benchmark (198.18.0.0/15)")
+}
+
+// TestSafeTransport_BlocksIPv6ULA verifies that an IPv6 unique local address
+// (fc00::/7) is rejected. ULA is already caught via net.IP.IsPrivate (Go 1.17+);
+// this test locks that behavior in so a future refactor cannot drop it.
+func TestSafeTransport_BlocksIPv6ULA(t *testing.T) {
+	t.Parallel()
+	assertBlocked(t, "[fc00::1]:80", "IPv6 ULA (fc00::/7)")
+}
+
+// TestSafeTransport_BlocksIPv6LinkLocal verifies that an IPv6 link-local
+// address (fe80::/10) is rejected. Caught via net.IP.IsLinkLocalUnicast; this
+// test locks that behavior in.
+func TestSafeTransport_BlocksIPv6LinkLocal(t *testing.T) {
+	t.Parallel()
+	assertBlocked(t, "[fe80::1]:80", "IPv6 link-local (fe80::/10)")
 }
 
 // TestSafeTransport_AllowsPublicIP verifies that a genuine public IP is allowed
