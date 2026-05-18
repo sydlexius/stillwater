@@ -99,8 +99,145 @@ func main() {
 	}
 }
 
+// Application holds all initialized state for a Stillwater server instance.
+// Fields are populated in sequence by the staged init phases and consumed by
+// the listener and background-worker phases.
+type Application struct {
+	// Phase: loadConfig
+	cfg         *config.Config
+	configPath  string
+	scaffolded  bool
+	scaffoldErr error
+
+	// Phase: setupLogging
+	logManager *logging.Manager
+	logger     *slog.Logger
+
+	// Phase: openStorage
+	db            *sql.DB
+	imageCacheDir string
+
+	// Phase: wireSecurity
+	encryptor *encryption.Encryptor
+
+	// Phase: buildServices
+	authService         *auth.Service
+	authRegistry        *auth.Registry
+	artistService       *artist.Service
+	historyService      *artist.HistoryService
+	libraryService      *library.Service
+	defaultLibID        string
+	platformService     *platform.Service
+	connectionService   *connection.Service
+	ruleService         *rule.Service
+	ruleEngine          *rule.Engine
+	ruleScheduler       *rule.Scheduler
+	ruleScheduleMinutes int
+	imageBridge         *imagebridge.Bridge
+	scannerService      *scanner.Service
+	rateLimiters        *provider.RateLimiterMap
+	providerSettings    *provider.SettingsService
+	providerRegistry    *provider.Registry
+	webSearchRegistry   *provider.WebSearchRegistry
+	orchestrator        *provider.Orchestrator
+	scraperService      *scraper.Service
+	nfoSnapshotService  *nfo.SnapshotService
+	nfoSettingsService  *nfo.NFOSettingsService
+	fsCheck             *rule.SharedFSCheck
+	expectedWrites      *watcher.ExpectedWrites
+	publisher           *publish.Publisher
+	pipeline            *rule.Pipeline
+	bulkService         *rule.BulkService
+	bulkExecutor        *rule.BulkExecutor
+	eventBus            *event.Bus
+	webhookService      *webhook.Service
+	webhookDispatcher   *webhook.Dispatcher
+	backupService       *backup.Service
+	maintenanceService  *maintenance.Service
+	settingsIOService   *settingsio.Service
+	updaterService      *updater.Service
+	probeCache          *watcher.ProbeCache
+	healthSub           *rule.HealthSubscriber
+	dirtySub            *rule.DirtySubscriber
+	i18nBundle          *i18n.Bundle
+	router              *api.Router
+
+	// Testing seams: override these via functional options before calling run phases.
+	encKeyResolver func(cfg *config.Config, logger *slog.Logger) (string, error)
+	dbOpener       func(path string) (*sql.DB, error)
+}
+
+// Option is a functional option for Application.
+type Option func(*Application)
+
+// WithEncKeyResolver overrides the encryption key resolver (used in tests).
+func WithEncKeyResolver(fn func(cfg *config.Config, logger *slog.Logger) (string, error)) Option {
+	return func(a *Application) { a.encKeyResolver = fn }
+}
+
+// WithDBOpener overrides the database opener (used in tests).
+func WithDBOpener(fn func(path string) (*sql.DB, error)) Option {
+	return func(a *Application) { a.dbOpener = fn }
+}
+
+// newApplication creates an Application with production defaults.
+func newApplication(opts ...Option) *Application {
+	a := &Application{
+		encKeyResolver: resolveEncryptionKey,
+		dbOpener:       database.Open,
+	}
+	for _, o := range opts {
+		o(a)
+	}
+	return a
+}
+
+// run is the top-level server lifecycle. It initializes all phases in order
+// and blocks until the server exits.
+//
+// Each defer is registered immediately after the phase that acquires the
+// resource, so cleanup fires even when a later phase fails. LIFO order:
+// scanner shutdown -> webhook drains -> listener stop -> eventBus.Stop ->
+// logManager.Close -> db.Close.
 func run() error {
-	// Load configuration
+	a := newApplication()
+
+	if err := a.loadConfig(); err != nil {
+		return err
+	}
+	if err := a.setupLogging(); err != nil {
+		return err
+	}
+	defer a.logManager.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	if err := a.openStorage(); err != nil {
+		return err
+	}
+	defer func() {
+		if err := a.db.Close(); err != nil {
+			a.logger.Error("closing database", "error", err)
+		}
+	}()
+
+	if err := a.wireSecurity(); err != nil {
+		return err
+	}
+	if err := a.buildServices(); err != nil {
+		return err
+	}
+	// eventBus.Start() is launched inside buildServices; register Stop here so
+	// cleanup fires if startListeners fails or returns early.
+	defer a.eventBus.Stop()
+
+	if err := a.startListeners(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// loadConfig reads configuration from the environment and config file.
+// It also performs first-run scaffolding when SW_CONFIG_PATH is set.
+func (a *Application) loadConfig() error {
 	configPath, configPathSet := os.LookupEnv("SW_CONFIG_PATH")
 	if configPath == "" {
 		configPath = "/config/config.toml"
@@ -117,79 +254,86 @@ func run() error {
 	// unwritable on a host filesystem. The container image sets
 	// SW_CONFIG_PATH explicitly, so the Docker first-run experience is
 	// preserved.
-	var (
-		scaffolded  bool
-		scaffoldErr error
-	)
 	if configPathSet && configPath != "" {
-		scaffolded, scaffoldErr = config.EnsureScaffold(configPath)
+		a.scaffolded, a.scaffoldErr = config.EnsureScaffold(configPath)
 	}
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	a.cfg = cfg
+	a.configPath = configPath
+	return nil
+}
 
-	// Set up structured logging via the logging Manager
+// setupLogging initializes the structured logging manager from the loaded
+// configuration. After this phase, a.logger and a.logManager are available.
+func (a *Application) setupLogging() error {
+	if a.cfg == nil {
+		return errors.New("setupLogging: loadConfig must run first")
+	}
 	logCfg := logging.Config{
-		Level:  cfg.Logging.Level,
-		Format: cfg.Logging.Format,
+		Level:  a.cfg.Logging.Level,
+		Format: a.cfg.Logging.Format,
 	}
 	logManager, logger := logging.NewManager(logCfg)
-	defer logManager.Close() //nolint:errcheck // Close error not actionable on cleanup
+	a.logManager = logManager
+	a.logger = logger
 	slog.SetDefault(logger)
 
 	// Warn (but do not abort) if the version ldflags injection is malformed.
-	// A bad Version string should not brick the binary; it simply means
-	// auto-update semver comparisons will fail gracefully downstream.
 	if err := version.Validate(); err != nil {
 		logger.Warn("version validation failed; auto-updater will be unable to compare versions. "+
 			"Run a release build via goreleaser, or check the -ldflags injection in the build pipeline",
 			"error", err)
 	}
 
-	if scaffoldErr != nil {
+	if a.scaffoldErr != nil {
 		logger.Warn("could not write first-run config scaffold",
-			"path", configPath, "error", scaffoldErr)
-	} else if scaffolded {
-		logger.Info("wrote first-run config scaffold",
-			"path", configPath)
+			"path", a.configPath, "error", a.scaffoldErr)
+	} else if a.scaffolded {
+		logger.Info("wrote first-run config scaffold", "path", a.configPath)
 	}
+	return nil
+}
 
-	// Open database
-	db, err := database.Open(cfg.Database.Path)
+// openStorage opens the SQLite database, enables foreign keys, runs migrations,
+// reloads logging settings from DB, and derives the image cache directory.
+func (a *Application) openStorage() error {
+	if a.logger == nil {
+		return errors.New("openStorage: setupLogging must run first")
+	}
+	db, err := a.dbOpener(a.cfg.Database.Path)
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			logger.Error("closing database", "error", err)
-		}
-	}()
+	a.db = db
 
-	// Issue #1078: turn on PRAGMA foreign_keys so the ON DELETE CASCADE
-	// declarations on artist_platform_ids, artist_images, rule_violations,
-	// etc. actually fire on artist / connection deletes.
+	// Issue #1078: enable PRAGMA foreign_keys so ON DELETE CASCADE fires.
 	if err := database.EnableForeignKeys(db); err != nil {
 		return fmt.Errorf("enabling foreign keys: %w", err)
 	}
-
-	// Run migrations
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}
+	a.logger.Info("database ready", slog.String("path", a.cfg.Database.Path))
 
-	logger.Info("database ready", slog.String("path", cfg.Database.Path))
+	// Reload logging settings from DB (overrides config file values if present).
+	loadDBLoggingConfig(db, a.logManager, a.logger)
 
-	// Reload logging settings from DB (overrides config file values if present)
-	loadDBLoggingConfig(db, logManager, logger)
+	// Derive the image cache directory once so the publisher, API router, and
+	// maintenance service all agree on where cached artist images live.
+	a.imageCacheDir = filepath.Join(filepath.Dir(a.cfg.Database.Path), "cache", "images")
+	return nil
+}
 
-	// Initialize library service and backfill default library
-	libraryService := library.NewService(db)
-	defaultLibID := backfillDefaultLibrary(context.Background(), libraryService, cfg.Music.LibraryPath, db, logger)
-
-	// Resolve encryption key: env var > file > generate new
-	encKey, err := resolveEncryptionKey(cfg, logger)
+// wireSecurity resolves the encryption key and constructs the encryptor.
+func (a *Application) wireSecurity() error {
+	if a.db == nil {
+		return errors.New("wireSecurity: openStorage must run first")
+	}
+	encKey, err := a.encKeyResolver(a.cfg, a.logger)
 	if err != nil {
 		return fmt.Errorf("resolving encryption key: %w", err)
 	}
@@ -197,249 +341,143 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating encryptor: %w", err)
 	}
+	a.encryptor = encryptor
+	return nil
+}
 
-	// Initialize services
-	authService := auth.NewService(db)
+// buildServices constructs all domain services and wires their dependencies.
+// This phase delegates to three cohesive sub-phases (wireAuth, wireProviders,
+// wireRuleEngine) before wiring event subscriptions and building the HTTP router.
+func (a *Application) buildServices() error {
+	if a.encryptor == nil {
+		return errors.New("buildServices: wireSecurity must run first")
+	}
+	db := a.db
+	cfg := a.cfg
+	logger := a.logger
+	ctx := context.Background()
 
-	// Build the auth provider registry from the stored auth.method setting.
-	// The local provider is always registered. Federated providers are added
-	// when their corresponding auth.method is configured and a server URL is set.
-	authRegistry := auth.NewRegistry()
-	authRegistry.Register(auth.NewLocalProvider(db))
-	{
-		authMethod := getDBStringSetting(db, context.Background(), "auth.method", "local")
-		authServerURL := getDBStringSetting(db, context.Background(), "auth.server_url", "")
-		if authServerURL != "" {
-			switch authMethod {
-			case "emby":
-				if p, err := auth.NewEmbyProvider(authServerURL, false, "admin", "operator"); err == nil {
-					authRegistry.Register(p)
-				} else {
-					logger.Warn("failed to create emby auth provider", "error", err)
-				}
-			case "jellyfin":
-				if p, err := auth.NewJellyfinProvider(authServerURL, false, "admin", "operator"); err == nil {
-					authRegistry.Register(p)
-				} else {
-					logger.Warn("failed to create jellyfin auth provider", "error", err)
-				}
-			}
-		}
+	if err := a.wireAuth(ctx); err != nil {
+		return err
+	}
+	if err := a.wireProviders(ctx); err != nil {
+		return err
+	}
+	if err := a.wireRuleEngine(ctx, logger); err != nil {
+		return err
 	}
 
-	artistService := artist.NewService(db)
-	historyService := artist.NewHistoryService(db)
-	artistService.SetHistoryService(historyService)
-	platformService := platform.NewService(db)
-	connectionService := connection.NewService(db, encryptor)
+	wireEventBus(a, logger)
+	wireInfraServices(a, db, cfg, logger)
+	applyPersistedBasePath(db, cfg, logger)
+	wireEventSubscriptions(a)
 
-	// Initialize rule engine. The logger is attached so rule-service
-	// diagnostics use the same destination as the rest of the app.
-	// Dirty-tracking for incremental Run Rules (#698) is implemented via
-	// a JOIN in artist.ListDirtyIDs against rules.updated_at, so the rule
-	// service does not need an artist service handle for that side-effect.
-	ruleService := rule.NewService(db).WithLogger(logger)
-	if err := ruleService.SeedDefaults(context.Background()); err != nil {
-		return fmt.Errorf("seeding default rules: %w", err)
+	logger.Info("starting stillwater",
+		slog.String("version", version.Version),
+		slog.String("commit", version.Commit),
+	)
+
+	// Probe filesystem notification support for each library path.
+	a.probeCache = watcher.NewProbeCache()
+	if probLibs, probErr := a.libraryService.List(ctx); probErr != nil {
+		logger.Error("listing libraries for probe", "error", probErr)
+	} else {
+		a.probeCache.ProbeAll(ctx, probLibs, logger)
 	}
-	ruleEngine := rule.NewEngine(ruleService, db, platformService, libraryService, logger)
-	ruleEngine.SetFSCache(rule.NewFSCache(0, 0, logger))
 
-	// Wire platform image bridge so the logo_padding rule can check and fix
-	// images for API-only artists that have no local filesystem path.
-	imageBridge := imagebridge.New(connectionService, artistService, logger)
-	ruleEngine.SetImageFetcher(imageBridge)
-	// Wired below after orchestrator is constructed; this keeps the rule
-	// engine usable during scanner init even though the language-preference
-	// rule will no-op until SetMetadataProvider is called.
+	resolveRuleSchedule(a, db, logger)
 
-	// Initialize scanner (depends on rule engine for health scoring)
-	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
-	scannerService.SetDefaultLibraryID(defaultLibID)
-	scannerService.SetLibraryLister(libraryService)
-
-	// Initialize provider infrastructure
-	rateLimiters := provider.NewRateLimiterMap()
-	providerSettings := provider.NewSettingsService(db, encryptor)
-	providerRegistry := provider.NewRegistry()
-
-	mb := musicbrainz.New(rateLimiters, logger)
-	baseURL, err := providerSettings.GetBaseURL(context.Background(), provider.NameMusicBrainz)
+	// --- i18n ---
+	i18nBundle, err := i18n.LoadEmbedded()
 	if err != nil {
-		logger.Warn("failed to load MusicBrainz mirror URL from database", "error", err)
-	} else if baseURL != "" {
-		mb.SetBaseURL(baseURL)
-		logger.Info("loaded MusicBrainz mirror URL", slog.String("base_url", baseURL))
+		return fmt.Errorf("loading i18n bundle: %w", err)
 	}
+	a.i18nBundle = i18nBundle
 
-	limit, err := providerSettings.GetRateLimit(context.Background(), provider.NameMusicBrainz)
-	if err != nil {
-		logger.Warn("failed to load MusicBrainz rate limit from database", "error", err)
-	} else if limit > 0 {
-		rateLimiters.SetLimit(provider.NameMusicBrainz, rate.Limit(limit))
-		logger.Info("loaded MusicBrainz custom rate limit", slog.Float64("req_per_sec", limit))
-	}
-	providerRegistry.Register(mb)
-	providerRegistry.Register(fanarttv.New(rateLimiters, providerSettings, logger))
-	providerRegistry.Register(audiodb.New(rateLimiters, providerSettings, logger))
-	providerRegistry.Register(discogs.New(rateLimiters, providerSettings, logger))
-	providerRegistry.Register(lastfm.New(rateLimiters, providerSettings, logger))
-	providerRegistry.Register(wikidata.New(rateLimiters, logger))
-	providerRegistry.Register(deezer.New(rateLimiters, logger))
-	providerRegistry.Register(wikipedia.New(rateLimiters, logger))
-	providerRegistry.Register(genius.New(rateLimiters, providerSettings, logger))
-	providerRegistry.Register(spotify.New(rateLimiters, providerSettings, logger))
-
-	webSearchRegistry := provider.NewWebSearchRegistry()
-	webSearchRegistry.Register(duckduckgo.New(rateLimiters, logger))
-
-	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
-
-	// Wire the orchestrator into the rule engine so the name_language_pref
-	// rule can fetch localized aliases for comparison and promotion.
-	ruleEngine.SetMetadataProvider(orchestrator)
-
-	// Initialize scraper configuration and executor
-	scraperService := scraper.NewService(db, logger)
-	if err := scraperService.SeedDefaults(context.Background()); err != nil {
-		return fmt.Errorf("seeding default scraper config: %w", err)
-	}
-	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, providerSettings, logger)
-	orchestrator.SetExecutor(scraperExecutor)
-
-	// Initialize NFO snapshot and settings services
-	nfoSnapshotService := nfo.NewSnapshotService(db)
-	nfoSettingsService := nfo.NewNFOSettingsService(db, logger)
-
-	// Initialize shared-filesystem check (used by fixers to skip writes on
-	// libraries whose directories are also managed by a platform connection).
-	fsCheck := rule.NewSharedFSCheck(libraryService, logger)
-
-	// Create expected-writes tracker. The HTTP router and rule fixers register
-	// paths they are about to write. The watcher service maintains this set
-	// (pruning stale entries). External-write detection logic will consume
-	// it when that filtering is enabled. Must be created before consumers.
-	expectedWrites := watcher.NewExpectedWrites()
-
-	// Derive the image cache directory once so the publisher, API router, and
-	// maintenance service all agree on where cached artist images live. If
-	// this convention ever becomes user-configurable, it only has to change
-	// here.
-	imageCacheDir := filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images")
-
-	// Create the publisher before the pipeline so it can be injected.
-	publisher := publish.New(publish.Deps{
-		ArtistService:      artistService,
-		ConnectionService:  connectionService,
-		LibraryService:     libraryService,
-		NFOSnapshotService: nfoSnapshotService,
-		NFOSettingsService: nfoSettingsService,
-		PlatformService:    platformService,
-		ExpectedWrites:     expectedWrites,
-		ImageCacheDir:      imageCacheDir,
+	// --- HTTP router ---
+	a.router = api.NewRouter(api.RouterDeps{
+		AuthService:        a.authService,
+		AuthRegistry:       a.authRegistry,
+		ArtistService:      a.artistService,
+		HistoryService:     a.historyService,
+		ScannerService:     a.scannerService,
+		PlatformService:    a.platformService,
+		ProviderSettings:   a.providerSettings,
+		ProviderRegistry:   a.providerRegistry,
+		WebSearchRegistry:  a.webSearchRegistry,
+		RateLimiters:       a.rateLimiters,
+		Orchestrator:       a.orchestrator,
+		RuleService:        a.ruleService,
+		RuleEngine:         a.ruleEngine,
+		Pipeline:           a.pipeline,
+		BulkService:        a.bulkService,
+		BulkExecutor:       a.bulkExecutor,
+		NFOSnapshotService: a.nfoSnapshotService,
+		NFOSettingsService: a.nfoSettingsService,
+		ConnectionService:  a.connectionService,
+		ScraperService:     a.scraperService,
+		LibraryService:     a.libraryService,
+		WebhookService:     a.webhookService,
+		WebhookDispatcher:  a.webhookDispatcher,
+		BackupService:      a.backupService,
+		LogManager:         a.logManager,
+		MaintenanceService: a.maintenanceService,
+		SettingsIOService:  a.settingsIOService,
+		UpdaterService:     a.updaterService,
+		ProbeCache:         a.probeCache,
+		ExpectedWrites:     a.expectedWrites,
+		EventBus:           a.eventBus,
+		DB:                 db,
 		Logger:             logger,
+		BasePath:           cfg.Server.BasePath,
+		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
+		TLSStatus:          buildTLSStatus(cfg),
+		HTTP3Port:          server.EffectiveHTTP3Port(cfg),
+		StaticFS:           static.FS,
+		ImageCacheDir:      a.imageCacheDir,
+		Publisher:          a.publisher,
+		RuleScheduler:      a.ruleScheduler,
+		I18nBundle:         a.i18nBundle,
+		Encryptor:          a.encryptor,
 	})
 
-	// Initialize fix pipeline (depends on orchestrator and snapshot service)
-	logoPaddingFixer := rule.NewLogoPaddingFixer(platformService, fsCheck, logger)
-	logoPaddingFixer.SetImageFetcher(imageBridge, ruleEngine.ConsumeAPIImage)
-	fixers := []rule.Fixer{
-		rule.NewNFOFixer(nfoSnapshotService, nfoSettingsService, fsCheck, expectedWrites),
-		rule.NewMetadataFixer(orchestrator, logger),
-		rule.NewNameLanguageFixer(orchestrator, logger),
-		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
-		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
-		logoPaddingFixer,
-		rule.NewDirectoryRenameFixer(fsCheck, logger),
-		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),
-	}
-	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, publisher, logger)
-	// Wire the history service so successful auto-fixes appear in the
-	// Recent Activity feed (issue #1106). Setter form keeps NewPipeline's
-	// signature stable for the wide set of test call sites.
-	pipeline.SetHistoryService(historyService)
+	return nil
+}
 
-	// Initialize bulk operations
-	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, expectedWrites, publisher, logger)
+// wireEventBus initializes the event bus and starts it. The corresponding
+// Stop is deferred in run() immediately after buildServices returns.
+func wireEventBus(a *Application, logger *slog.Logger) {
+	a.eventBus = event.NewBus(logger, 256)
+	go a.eventBus.Start()
+	a.webhookService = webhook.NewService(a.db)
+	a.webhookDispatcher = webhook.NewDispatcher(a.webhookService, logger)
+}
 
-	// Initialize event bus
-	eventBus := event.NewBus(logger, 256)
-	go eventBus.Start()
-	defer eventBus.Stop()
-
-	// Initialize webhook service and dispatcher
-	webhookService := webhook.NewService(db)
-	webhookDispatcher := webhook.NewDispatcher(webhookService, logger)
-
-	// Initialize backup service
+// wireInfraServices wires backup, maintenance, settingsIO, and updater
+// services that depend only on db and cfg.
+func wireInfraServices(a *Application, db *sql.DB, cfg *config.Config, logger *slog.Logger) {
 	backupDir := cfg.Backup.Path
 	if backupDir == "" {
 		backupDir = filepath.Join(filepath.Dir(cfg.Database.Path), "backups")
 	}
-	backupService := backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
+	a.backupService = backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
 	if dbRetention := getDBIntSetting(db, "backup_retention_count", 0); dbRetention > 0 {
-		backupService.SetRetention(dbRetention)
+		a.backupService.SetRetention(dbRetention)
 	}
 	if dbMaxAge := getDBIntSetting(db, "backup_max_age_days", -1); dbMaxAge >= 0 {
-		backupService.SetMaxAgeDays(dbMaxAge)
+		a.backupService.SetMaxAgeDays(dbMaxAge)
 	}
+	a.maintenanceService = maintenance.NewService(db, cfg.Database.Path, a.imageCacheDir, logger)
+	a.settingsIOService = settingsio.NewService(db, a.providerSettings, a.connectionService, a.platformService, a.webhookService).
+		WithRuleService(a.ruleService).
+		WithScraperService(a.scraperService)
+	a.updaterService = updater.NewService(db, logger)
+}
 
-	// Initialize maintenance service
-	maintenanceService := maintenance.NewService(db, cfg.Database.Path, imageCacheDir, logger)
-
-	// Initialize settings export/import service; attach rule and scraper services
-	// so their configurations are included in export/import payloads.
-	settingsIOService := settingsio.NewService(db, providerSettings, connectionService, platformService, webhookService).
-		WithRuleService(ruleService).
-		WithScraperService(scraperService)
-
-	// Initialize self-update service
-	updaterService := updater.NewService(db, logger)
-
-	// Apply persisted SW_BASE_PATH override from settings (#1005). The env
-	// var still wins: when SW_BASE_PATH is set, BasePathFromEnv is true and
-	// we leave the value alone so operator-managed deployments stay
-	// deterministic. Otherwise the saved override (if any) replaces the
-	// YAML/default value before the router is built; the HTTP mux is wired
-	// from this value at startup and cannot rebind on the fly, so the UI
-	// surfaces a "restart required" banner after a save.
-	if !cfg.Server.BasePathFromEnv {
-		if override := getDBStringSetting(db, context.Background(), "server.base_path", ""); override != "" {
-			normalized := strings.TrimRight(override, "/")
-			if normalized == "/" {
-				normalized = ""
-			}
-			// Validate before applying. The HTTP mux composes routes as
-			// basePath+"/api/v1/..." so a malformed override (missing
-			// leading "/") would poison every route pattern and the
-			// process would fail to start with an opaque mux error.
-			// Warn-and-ignore so a corrupt persisted value cannot lock
-			// operators out -- they can repair it via SW_BASE_PATH env or
-			// by editing the settings table directly.
-			//
-			// The persisted value reaches mux pattern composition without a
-			// second pass through the API handler's charset filter, so this
-			// loader must reject the same things directly: a missing leading
-			// "/", a leading "//" or "/\\" (CodeQL "bad redirect check" --
-			// schema-relative URLs and Windows-style separators that could
-			// be reflected back in router/redirect contexts), and any
-			// character outside the API-validated set. The empty string is
-			// the canonical "no override" sentinel and is allowed through.
-			if normalized != "" && !isValidPersistedBasePath(normalized) {
-				logger.Warn("ignoring invalid persisted base_path override",
-					"override", override,
-					"reason", "must start with single \"/\" and contain only letters, digits, hyphens, underscores, and slashes",
-				)
-			} else if normalized != cfg.Server.BasePath {
-				logger.Info("applying persisted base_path override",
-					"previous", cfg.Server.BasePath, "override", normalized)
-				cfg.Server.BasePath = normalized
-			}
-		}
-	}
-
-	// Subscribe dispatcher to all event types
+// wireEventSubscriptions connects the event bus to the webhook dispatcher,
+// scanner, bulk executor, FSCache invalidator, health subscriber, and dirty
+// subscriber. All services wired here must be initialized before this call.
+func wireEventSubscriptions(a *Application) {
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
 		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
@@ -448,156 +486,238 @@ func run() error {
 		event.JellyfinArtistUpdate, event.JellyfinLibraryScan,
 		event.FSDirCreated, event.FSDirRemoved, event.FSUnexpectedWrite,
 	} {
-		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)
+		a.eventBus.Subscribe(eventType, a.webhookDispatcher.HandleEvent)
 	}
-
-	// Wire event bus into scanner and bulk executor
-	scannerService.SetEventBus(eventBus)
-	bulkExecutor.SetEventBus(eventBus)
-
-	// Subscribe to filesystem events so the rule engine's FSCache is
-	// invalidated when directories are created or removed. The "path" field
-	// in the event data identifies the affected directory.
-	if fsCache := ruleEngine.FSCache(); fsCache != nil {
+	a.scannerService.SetEventBus(a.eventBus)
+	a.bulkExecutor.SetEventBus(a.eventBus)
+	if fsCache := a.ruleEngine.FSCache(); fsCache != nil {
 		for _, eventType := range []event.Type{event.FSDirCreated, event.FSDirRemoved, event.FSUnexpectedWrite} {
-			eventBus.Subscribe(eventType, func(ev event.Event) {
+			a.eventBus.Subscribe(eventType, func(ev event.Event) {
 				if p, ok := ev.Data["path"].(string); ok && p != "" {
 					fsCache.InvalidatePath(p)
 				}
 			})
 		}
 	}
+	a.healthSub = rule.NewHealthSubscriber(a.ruleEngine, a.artistService, a.logger)
+	a.eventBus.Subscribe(event.ArtistUpdated, a.healthSub.HandleEvent)
+	a.dirtySub = rule.NewDirtySubscriber(a.artistService, a.logger)
+	a.eventBus.Subscribe(event.ArtistUpdated, a.dirtySub.HandleEvent)
+}
 
-	// Health subscriber: re-evaluates per-artist health scores on mutations.
-	// Subscription is registered now; Start/Bootstrap are called after the
-	// shutdown context is created (below).
-	healthSub := rule.NewHealthSubscriber(ruleEngine, artistService, logger)
-	eventBus.Subscribe(event.ArtistUpdated, healthSub.HandleEvent)
-
-	// Dirty subscriber: marks artists dirty on mutations so the next
-	// incremental "Run Rules" pass re-evaluates only what changed (#698).
-	dirtySub := rule.NewDirtySubscriber(artistService, logger)
-	eventBus.Subscribe(event.ArtistUpdated, dirtySub.HandleEvent)
-
-	logger.Info("starting stillwater",
-		slog.String("version", version.Version),
-		slog.String("commit", version.Commit),
-	)
-
-	// Probe filesystem notification support for each library path.
-	probeCache := watcher.NewProbeCache()
-	{
-		probLibs, probErr := libraryService.List(context.Background())
-		if probErr != nil {
-			logger.Error("listing libraries for probe", "error", probErr)
-		} else {
-			probeCache.ProbeAll(context.Background(), probLibs, logger)
+// resolveRuleSchedule reads the rule schedule interval from the settings table,
+// migrating legacy hours-to-minutes entries, and initializes the scheduler when
+// the interval is at least 5 minutes.
+func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
+	ctx := context.Background()
+	a.ruleScheduleMinutes = getDBIntSetting(db, "rule_schedule.interval_minutes", 0)
+	if a.ruleScheduleMinutes == 0 {
+		if legacyHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
+			a.ruleScheduleMinutes = legacyHours * 60
+			_, _ = db.ExecContext(ctx,
+				`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+				 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+				"rule_schedule.interval_minutes", fmt.Sprintf("%d", a.ruleScheduleMinutes),
+				time.Now().UTC().Format(time.RFC3339))
+			_, _ = db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
+			logger.Info("migrated rule schedule from hours to minutes", "minutes", a.ruleScheduleMinutes)
 		}
 	}
+	if a.ruleScheduleMinutes >= 5 {
+		a.ruleScheduler = rule.NewScheduler(a.pipeline, a.ruleService, a.artistService, logger)
+		langprefRepo := langpref.NewRepository(db)
+		a.ruleScheduler.SetLangPrefProvider(langprefRepo.EffectiveForBackground)
+	} else if a.ruleScheduleMinutes > 0 && a.ruleScheduleMinutes < 5 {
+		logger.Warn("rule scheduler interval too short (minimum 5 minutes); scheduler not started",
+			"minutes", a.ruleScheduleMinutes)
+	}
+}
 
-	// Create rule scheduler before the router so it can be passed as a dependency.
-	// Start() is called later, after the router is fully initialized.
-	var ruleScheduler *rule.Scheduler
-	var ruleScheduleMinutes int
-	{
-		ruleScheduleMinutes = getDBIntSetting(db, "rule_schedule.interval_minutes", 0)
-		// Migrate legacy hours setting: if minutes key is absent, read hours and
-		// persist the converted value so the legacy key can be ignored going forward.
-		if ruleScheduleMinutes == 0 {
-			if legacyHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
-				ruleScheduleMinutes = legacyHours * 60
-				// Persist migrated value and remove legacy key.
-				_, _ = db.ExecContext(context.Background(),
-					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-					 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-					"rule_schedule.interval_minutes", fmt.Sprintf("%d", ruleScheduleMinutes),
-					time.Now().UTC().Format(time.RFC3339))
-				_, _ = db.ExecContext(context.Background(),
-					`DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
-				logger.Info("migrated rule schedule from hours to minutes",
-					"minutes", ruleScheduleMinutes)
+// wireAuth wires the authentication service, registry, and any external auth
+// provider configured in the settings table (emby / jellyfin).
+func (a *Application) wireAuth(ctx context.Context) error {
+	db := a.db
+	logger := a.logger
+	cfg := a.cfg
+
+	// --- Library ---
+	a.libraryService = library.NewService(db)
+	a.defaultLibID = backfillDefaultLibrary(ctx, a.libraryService, cfg.Music.LibraryPath, db, logger)
+
+	// --- Artist / History ---
+	a.artistService = artist.NewService(db)
+	a.historyService = artist.NewHistoryService(db)
+	a.artistService.SetHistoryService(a.historyService)
+
+	// --- Platform / Connection ---
+	a.platformService = platform.NewService(db)
+	a.connectionService = connection.NewService(db, a.encryptor)
+
+	// --- Auth ---
+	a.authService = auth.NewService(db)
+	a.authRegistry = auth.NewRegistry()
+	a.authRegistry.Register(auth.NewLocalProvider(db))
+	authMethod := getDBStringSetting(db, ctx, "auth.method", "local")
+	authServerURL := getDBStringSetting(db, ctx, "auth.server_url", "")
+	if authServerURL != "" {
+		switch authMethod {
+		case "emby":
+			if p, err := auth.NewEmbyProvider(authServerURL, false, "admin", "operator"); err == nil {
+				a.authRegistry.Register(p)
+			} else {
+				logger.Warn("failed to create emby auth provider", "error", err)
+			}
+		case "jellyfin":
+			if p, err := auth.NewJellyfinProvider(authServerURL, false, "admin", "operator"); err == nil {
+				a.authRegistry.Register(p)
+			} else {
+				logger.Warn("failed to create jellyfin auth provider", "error", err)
 			}
 		}
-		if ruleScheduleMinutes >= 5 {
-			ruleScheduler = rule.NewScheduler(pipeline, ruleService, artistService, logger)
-			// Supply language preferences to scheduled rule evaluations.
-			// The HTTP-scoped injector (Router.injectMetadataLanguages)
-			// cannot run here because there is no user session in scope;
-			// the langpref repository picks the primary administrator's
-			// preferences so language-aware rules (e.g. name_language_pref)
-			// evaluate against the operator's configuration on the
-			// scheduled path too. See issue #1136.
-			langprefRepo := langpref.NewRepository(db)
-			ruleScheduler.SetLangPrefProvider(langprefRepo.EffectiveForBackground)
-		} else if ruleScheduleMinutes > 0 && ruleScheduleMinutes < 5 {
-			logger.Warn("rule scheduler interval too short (minimum 5 minutes); scheduler not started",
-				"minutes", ruleScheduleMinutes)
-		}
 	}
+	return nil
+}
 
-	// Load i18n translation bundle (embedded at compile time).
-	i18nBundle, err := i18n.LoadEmbedded()
-	if err != nil {
-		return fmt.Errorf("loading i18n bundle: %w", err)
+// wireProviders wires the metadata provider registry (MusicBrainz, Fanart.tv,
+// and the remaining nine adapters), the web-search registry, the orchestrator,
+// and the scraper service that backs the orchestrator's executor.
+func (a *Application) wireProviders(ctx context.Context) error {
+	db := a.db
+	logger := a.logger
+
+	a.rateLimiters = provider.NewRateLimiterMap()
+	a.providerSettings = provider.NewSettingsService(db, a.encryptor)
+	a.providerRegistry = provider.NewRegistry()
+
+	mb := musicbrainz.New(a.rateLimiters, logger)
+	if baseURL, err := a.providerSettings.GetBaseURL(ctx, provider.NameMusicBrainz); err != nil {
+		logger.Warn("failed to load MusicBrainz mirror URL from database", "error", err)
+	} else if baseURL != "" {
+		mb.SetBaseURL(baseURL)
+		logger.Info("loaded MusicBrainz mirror URL", slog.String("base_url", baseURL))
 	}
+	if limit, err := a.providerSettings.GetRateLimit(ctx, provider.NameMusicBrainz); err != nil {
+		logger.Warn("failed to load MusicBrainz rate limit from database", "error", err)
+	} else if limit > 0 {
+		a.rateLimiters.SetLimit(provider.NameMusicBrainz, rate.Limit(limit))
+		logger.Info("loaded MusicBrainz custom rate limit", slog.Float64("req_per_sec", limit))
+	}
+	a.providerRegistry.Register(mb)
+	a.providerRegistry.Register(fanarttv.New(a.rateLimiters, a.providerSettings, logger))
+	a.providerRegistry.Register(audiodb.New(a.rateLimiters, a.providerSettings, logger))
+	a.providerRegistry.Register(discogs.New(a.rateLimiters, a.providerSettings, logger))
+	a.providerRegistry.Register(lastfm.New(a.rateLimiters, a.providerSettings, logger))
+	a.providerRegistry.Register(wikidata.New(a.rateLimiters, logger))
+	a.providerRegistry.Register(deezer.New(a.rateLimiters, logger))
+	a.providerRegistry.Register(wikipedia.New(a.rateLimiters, logger))
+	a.providerRegistry.Register(genius.New(a.rateLimiters, a.providerSettings, logger))
+	a.providerRegistry.Register(spotify.New(a.rateLimiters, a.providerSettings, logger))
 
-	// Set up HTTP router
-	router := api.NewRouter(api.RouterDeps{
-		AuthService:        authService,
-		AuthRegistry:       authRegistry,
-		ArtistService:      artistService,
-		HistoryService:     historyService,
-		ScannerService:     scannerService,
-		PlatformService:    platformService,
-		ProviderSettings:   providerSettings,
-		ProviderRegistry:   providerRegistry,
-		WebSearchRegistry:  webSearchRegistry,
-		RateLimiters:       rateLimiters,
-		Orchestrator:       orchestrator,
-		RuleService:        ruleService,
-		RuleEngine:         ruleEngine,
-		Pipeline:           pipeline,
-		BulkService:        bulkService,
-		BulkExecutor:       bulkExecutor,
-		NFOSnapshotService: nfoSnapshotService,
-		NFOSettingsService: nfoSettingsService,
-		ConnectionService:  connectionService,
-		ScraperService:     scraperService,
-		LibraryService:     libraryService,
-		WebhookService:     webhookService,
-		WebhookDispatcher:  webhookDispatcher,
-		BackupService:      backupService,
-		LogManager:         logManager,
-		MaintenanceService: maintenanceService,
-		SettingsIOService:  settingsIOService,
-		UpdaterService:     updaterService,
-		ProbeCache:         probeCache,
-		ExpectedWrites:     expectedWrites,
-		EventBus:           eventBus,
-		DB:                 db,
+	a.webSearchRegistry = provider.NewWebSearchRegistry()
+	a.webSearchRegistry.Register(duckduckgo.New(a.rateLimiters, logger))
+
+	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger)
+
+	// --- Scraper ---
+	a.scraperService = scraper.NewService(db, logger)
+	if err := a.scraperService.SeedDefaults(ctx); err != nil {
+		return fmt.Errorf("seeding default scraper config: %w", err)
+	}
+	scraperExecutor := scraper.NewExecutor(a.scraperService, a.providerRegistry, a.providerSettings, logger)
+	a.orchestrator.SetExecutor(scraperExecutor)
+
+	return nil
+}
+
+// wireRuleEngine wires the rule engine, fixers, pipeline, and bulk executor.
+// wireProviders must run before this sub-phase so that a.orchestrator and
+// a.platformService are available for fixer construction.
+func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) error {
+	db := a.db
+
+	// --- Rule engine ---
+	a.ruleService = rule.NewService(db).WithLogger(logger)
+	if err := a.ruleService.SeedDefaults(ctx); err != nil {
+		return fmt.Errorf("seeding default rules: %w", err)
+	}
+	a.ruleEngine = rule.NewEngine(a.ruleService, db, a.platformService, a.libraryService, logger)
+	a.ruleEngine.SetFSCache(rule.NewFSCache(0, 0, logger))
+	a.ruleEngine.SetMetadataProvider(a.orchestrator)
+
+	// Wire image bridge so logo_padding rule can check/fix API-only artists.
+	a.imageBridge = imagebridge.New(a.connectionService, a.artistService, logger)
+	a.ruleEngine.SetImageFetcher(a.imageBridge)
+
+	// --- Scanner ---
+	cfg := a.cfg
+	a.scannerService = scanner.NewService(a.artistService, a.ruleEngine, a.ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
+	a.scannerService.SetDefaultLibraryID(a.defaultLibID)
+	a.scannerService.SetLibraryLister(a.libraryService)
+
+	// --- NFO ---
+	a.nfoSnapshotService = nfo.NewSnapshotService(db)
+	a.nfoSettingsService = nfo.NewNFOSettingsService(db, logger)
+
+	// --- Rule fixers and pipeline ---
+	a.fsCheck = rule.NewSharedFSCheck(a.libraryService, logger)
+	a.expectedWrites = watcher.NewExpectedWrites()
+
+	a.publisher = publish.New(publish.Deps{
+		ArtistService:      a.artistService,
+		ConnectionService:  a.connectionService,
+		LibraryService:     a.libraryService,
+		NFOSnapshotService: a.nfoSnapshotService,
+		NFOSettingsService: a.nfoSettingsService,
+		PlatformService:    a.platformService,
+		ExpectedWrites:     a.expectedWrites,
+		ImageCacheDir:      a.imageCacheDir,
 		Logger:             logger,
-		BasePath:           cfg.Server.BasePath,
-		BasePathFromEnv:    cfg.Server.BasePathFromEnv,
-		TLSStatus:          buildTLSStatus(cfg),
-		HTTP3Port:          server.EffectiveHTTP3Port(cfg),
-		StaticFS:           static.FS,
-		ImageCacheDir:      imageCacheDir,
-		Publisher:          publisher,
-		RuleScheduler:      ruleScheduler,
-		I18nBundle:         i18nBundle,
-		Encryptor:          encryptor,
 	})
 
-	// Graceful shutdown
+	logoPaddingFixer := rule.NewLogoPaddingFixer(a.platformService, a.fsCheck, logger)
+	logoPaddingFixer.SetImageFetcher(a.imageBridge, a.ruleEngine.ConsumeAPIImage)
+	fixers := []rule.Fixer{
+		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites),
+		rule.NewMetadataFixer(a.orchestrator, logger),
+		rule.NewNameLanguageFixer(a.orchestrator, logger),
+		rule.NewImageFixer(a.orchestrator, a.platformService, a.fsCheck, logger),
+		rule.NewExtraneousImagesFixer(a.platformService, a.fsCheck, logger),
+		logoPaddingFixer,
+		rule.NewDirectoryRenameFixer(a.fsCheck, logger),
+		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
+	}
+	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
+	a.pipeline.SetHistoryService(a.historyService)
+
+	a.bulkService = rule.NewBulkService(db)
+	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
+
+	return nil
+}
+
+// startListeners starts all background workers and the HTTP listener, then
+// blocks until the server exits. It also performs the graceful shutdown
+// sequence including webhook draining and scanner shutdown.
+//
+// logManager.Close, eventBus.Stop, and db.Close are deferred in run() so
+// they fire even if this phase returns early.
+func (a *Application) startListeners() error {
+	if a.router == nil {
+		return errors.New("startListeners: buildServices must run first")
+	}
+	cfg := a.cfg
+	logger := a.logger
+	db := a.db
+
+	// Graceful shutdown signal handling.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start health subscriber background goroutine
-	go healthSub.Start(ctx)
-	defer healthSub.Stop()
+	// Health subscriber.
+	go a.healthSub.Start(ctx)
+	defer a.healthSub.Stop()
 
-	// Bootstrap stale health scores (zero-score artists) in the background
-	// after a short delay to avoid competing with startup I/O.
+	// Bootstrap stale health scores in the background after a short delay.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -606,22 +726,17 @@ func run() error {
 		}()
 		select {
 		case <-time.After(5 * time.Second):
-			healthSub.Bootstrap(ctx)
+			a.healthSub.Bootstrap(ctx)
 		case <-ctx.Done():
 		}
 	}()
 
-	// HTTP listener startup is delegated to internal/server so every
-	// configured listener (today the primary HTTP/HTTPS server; later the
-	// HTTP-to-HTTPS redirect, ACME, and HTTP/3 listeners) inherits the
-	// same timeouts and shutdown coordination.
-
-	// Start backup scheduler
+	// Backup scheduler.
 	if cfg.Backup.Enabled {
-		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
+		go a.backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
 	}
 
-	// Start maintenance scheduler (reads interval from DB settings, defaults to daily)
+	// Maintenance scheduler (interval from DB settings, defaults to daily).
 	{
 		maintEnabled := getDBBoolSetting(db, "db_maintenance.enabled", true)
 		maintHours := getDBIntSetting(db, "db_maintenance.interval_hours", 24)
@@ -629,35 +744,29 @@ func run() error {
 			maintHours = 24
 		}
 		if maintEnabled {
-			go maintenanceService.StartScheduler(ctx, time.Duration(maintHours)*time.Hour)
+			go a.maintenanceService.StartScheduler(ctx, time.Duration(maintHours)*time.Hour)
 		}
 	}
 
-	// Start proactive exists_flag consistency scanner (default: every 1 hour).
-	// Reads interval from settings; falls back to 1h to guard against restart loops.
-	// startupDelay gives DB migrations and health bootstrap a chance to settle
-	// before the scanner walks artist_images.
+	// Proactive exists_flag consistency scanner.
 	{
 		existsFlagHours := getDBIntSetting(db, "exists_flag_scan.interval_hours", 1)
 		if existsFlagHours <= 0 {
 			existsFlagHours = 1
 		}
-		go maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
+		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
 	}
 
-	// Start the foreign-file scanner (#1185). Runs on a multi-hour cadence
-	// (default 6h) because it walks every artist directory and reads each
-	// image's EXIF, which is not free; users can tune via the
-	// foreign_file_scan.interval_hours setting.
+	// Foreign-file scanner.
 	{
 		foreignHours := getDBIntSetting(db, "foreign_file_scan.interval_hours", 6)
 		if foreignHours <= 0 {
 			foreignHours = 6
 		}
-		go maintenanceService.StartForeignFileScanner(ctx, artistService, time.Duration(foreignHours)*time.Hour, 30*time.Second)
+		go a.maintenanceService.StartForeignFileScanner(ctx, a.artistService, time.Duration(foreignHours)*time.Hour, 30*time.Second)
 	}
 
-	// Start session cleanup goroutine
+	// Session cleanup.
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
@@ -666,32 +775,28 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := authService.CleanExpiredSessions(ctx); err != nil {
+				if err := a.authService.CleanExpiredSessions(ctx); err != nil {
 					logger.Error("session cleanup failed", "error", err)
 				}
 			}
 		}
 	}()
 
-	// Start rule evaluation scheduler (created earlier, before the router)
-	if ruleScheduler != nil {
-		go ruleScheduler.Start(ctx, time.Duration(ruleScheduleMinutes)*time.Minute)
+	// Rule scheduler.
+	if a.ruleScheduler != nil {
+		go a.ruleScheduler.Start(ctx, time.Duration(a.ruleScheduleMinutes)*time.Minute)
 	}
 
-	// Start updater background scheduler. The loop respects the persisted
-	// updater.enabled / updater.auto_check toggles on each tick, so an admin
-	// who toggles auto-check from the Settings UI sees the next tick honor
-	// the new value without a restart. The cadence is also reread per tick
-	// so changing check_interval_hours takes effect on the very next cycle.
-	go updaterService.StartScheduler(ctx)
+	// Updater background scheduler.
+	go a.updaterService.StartScheduler(ctx)
 
-	// Start filesystem watcher for libraries with fs_watch enabled
+	// Filesystem watcher for libraries with fs_watch enabled.
 	{
 		scanFn := func(ctx context.Context) error {
-			_, err := scannerService.Run(ctx)
+			_, err := a.scannerService.Run(ctx)
 			return err
 		}
-		watcherService := watcher.NewService(scanFn, libraryService, eventBus, logger, probeCache, expectedWrites)
+		watcherService := watcher.NewService(scanFn, a.libraryService, a.eventBus, logger, a.probeCache, a.expectedWrites)
 		go watcherService.Start(ctx)
 	}
 
@@ -700,28 +805,19 @@ func run() error {
 		slog.String("base_path", cfg.Server.BasePath),
 		slog.Bool("tls", cfg.Server.TLS.Enabled()),
 	}
-	// Surface tls_port only when split-port mode is active so the startup
-	// line is unambiguous about which port serves HTTPS. In collapse mode
-	// (TLS.Port == 0) the existing port field already names the bind.
 	if cfg.Server.TLS.Enabled() && cfg.Server.TLS.Port != 0 && cfg.Server.TLS.Port != cfg.Server.Port {
 		startAttrs = append(startAttrs, slog.Int("tls_port", cfg.Server.TLS.Port))
 	}
 	logger.Info("server starting", startAttrs...)
 
-	// RunListeners blocks until ctx is canceled or a listener fails. It
-	// drains in-flight requests under a 10s shared deadline before
-	// returning, so this is also the point at which we know it is safe to
-	// shut down the scanner -- no new Run() calls can arrive after
-	// listeners are down.
-	srvErr := server.RunListeners(ctx, cfg, router.Handler(ctx), logger)
+	// RunListeners blocks until ctx is canceled or a listener fails.
+	srvErr := server.RunListeners(ctx, cfg, a.router.Handler(ctx), logger)
 
 	logger.Info("shutting down")
 
-	// Cancel the shared ctx now so background goroutines (watcher, scheduled
-	// jobs) stop before the scanner shuts down. On the SIGTERM path stop()
-	// has already fired; on the listener-failure path RunListeners returns
-	// without ctx being canceled, and any goroutine still using ctx could
-	// otherwise schedule a Run() into a draining scanner.
+	// Cancel the shared ctx so background goroutines stop before the scanner
+	// shuts down. On the SIGTERM path stop() has already fired; on the
+	// listener-failure path RunListeners returns without ctx being canceled.
 	stop()
 
 	// Drain in-flight INBOUND webhook handlers first. Each handler can spawn
@@ -733,24 +829,71 @@ func run() error {
 	// stuck in non-context-aware code.
 	inboundDrainCtx, inboundDrainCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer inboundDrainCancel()
-	if err := router.DrainWebhooks(inboundDrainCtx); err != nil {
+	if err := a.router.DrainWebhooks(inboundDrainCtx); err != nil {
 		logger.Warn("webhook drain did not complete cleanly", "error", err)
 	}
 
-	// Now drain in-flight OUTBOUND webhook deliveries. A 10s deadline matches
+	// Drain in-flight OUTBOUND webhook deliveries. A 10s deadline matches
 	// requestTimeout and prevents a misbehaving external webhook target from
 	// blocking shutdown indefinitely.
 	outboundDrainCtx, outboundDrainCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer outboundDrainCancel()
-	if err := webhookDispatcher.Drain(outboundDrainCtx); err != nil {
+	if err := a.webhookDispatcher.Drain(outboundDrainCtx); err != nil {
 		logger.Warn("webhook drain timed out", slog.String("error", err.Error()))
 	}
 
-	// Now stop the scanner -- the listener layer has drained, so no new
-	// scan requests can race with the scanner's WaitGroup.
-	scannerService.Shutdown()
+	// Stop the scanner -- the listener layer has drained, so no new scan
+	// requests can race with the scanner's WaitGroup.
+	a.scannerService.Shutdown()
 
 	return srvErr
+}
+
+// applyPersistedBasePath reads the server.base_path override from the settings
+// table and applies it to cfg when the env var was not the source of truth
+// (cfg.Server.BasePathFromEnv == false). The HTTP mux is wired once at
+// startup and cannot rebind on the fly; a corrupt persisted value is
+// warn-and-ignored so operators are not locked out.
+func applyPersistedBasePath(db *sql.DB, cfg *config.Config, logger *slog.Logger) {
+	if cfg.Server.BasePathFromEnv {
+		return
+	}
+	override := getDBStringSetting(db, context.Background(), "server.base_path", "")
+	if override == "" {
+		return
+	}
+	normalized := strings.TrimRight(override, "/")
+	if normalized == "/" {
+		normalized = ""
+	}
+	// Validate before applying. The HTTP mux composes routes as
+	// basePath+"/api/v1/..." so a malformed override (missing
+	// leading "/") would poison every route pattern and the
+	// process would fail to start with an opaque mux error.
+	// Warn-and-ignore so a corrupt persisted value cannot lock
+	// operators out -- they can repair it via SW_BASE_PATH env or
+	// by editing the settings table directly.
+	//
+	// The persisted value reaches mux pattern composition without a
+	// second pass through the API handler's charset filter, so this
+	// loader must reject the same things directly: a missing leading
+	// "/", a leading "//" or "/\\" (CodeQL "bad redirect check" --
+	// schema-relative URLs and Windows-style separators that could
+	// be reflected back in router/redirect contexts), and any
+	// character outside the API-validated set. The empty string is
+	// the canonical "no override" sentinel and is allowed through.
+	if normalized != "" && !isValidPersistedBasePath(normalized) {
+		logger.Warn("ignoring invalid persisted base_path override",
+			"override", override,
+			"reason", "must start with single \"/\" and contain only letters, digits, hyphens, underscores, and slashes",
+		)
+		return
+	}
+	if normalized != cfg.Server.BasePath {
+		logger.Info("applying persisted base_path override",
+			"previous", cfg.Server.BasePath, "override", normalized)
+		cfg.Server.BasePath = normalized
+	}
 }
 
 // resolveEncryptionKey determines the encryption key to use.
@@ -779,20 +922,18 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 		return "", fmt.Errorf("generating encryption key: %w", err)
 	}
 
-	// Persist to file
+	// Persist to file. Failure here is fatal: if the key is not written,
+	// the next startup generates a different key and makes every previously
+	// encrypted secret unrecoverable (provider API keys, connection API keys).
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
-		logger.Warn("could not create data directory for encryption key",
-			slog.String("path", dataDir), slog.Any("error", err))
-		return key, nil
+		return "", fmt.Errorf("creating data directory for encryption key: %w", err)
 	}
 
 	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil {
-		logger.Warn("could not save encryption key to file",
-			slog.String("path", keyFile), slog.Any("error", err))
-	} else {
-		logger.Warn("generated new encryption key -- back up this file",
-			slog.String("path", keyFile))
+		return "", fmt.Errorf("saving encryption key to file %s: %w", keyFile, err)
 	}
+	logger.Warn("generated new encryption key -- back up this file",
+		slog.String("path", keyFile))
 
 	return key, nil
 }
