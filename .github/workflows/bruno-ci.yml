@@ -279,40 +279,41 @@ jobs:
               --disable-cookies \
               --output "${{ runner.temp }}/bruno-results/bruno-results.html" \
               --format html \
+              --reporter-json "${{ runner.temp }}/bruno-results/bruno-results.json" \
               -r \
               . | tee "${{ runner.temp }}/bruno.log"
 
       - name: Gate on transport health
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         env:
-          BRUNO_LOG: ${{ runner.temp }}/bruno.log
+          BRUNO_REPORT: ${{ runner.temp }}/bruno-results/bruno-results.json
+        run: |
+          set -euo pipefail
           # Belt-and-braces against the (rare) case where every request hits
           # a connection failure but Bruno still exits 0 -- e.g. all .bru
           # files were excluded by a filter. With the assertion gate active
           # the only realistic path to zero-transport-and-zero-failures is a
-          # misscoped run, so this stays at 100%.
-          MIN_TRANSPORT_PCT: 100
-        run: |
-          set -euo pipefail
-          # Bruno emits "Requests:    N passed, M failed, T total" per run; the
-          # final summary line is the one we want (it appears at end of stdout).
-          REQ_LINE=$(grep -E '^Requests: +[0-9]+ (passed|failed)' "${BRUNO_LOG}" | tail -1 || true)
-          if [ -z "${REQ_LINE}" ]; then
-            echo "Could not find Requests: summary line in Bruno output" >&2
-            tail -50 "${BRUNO_LOG}" || true
+          # misscoped run, so errorRequests must be zero.
+          if [ ! -s "${BRUNO_REPORT}" ]; then
+            echo "Bruno JSON report missing or empty: ${BRUNO_REPORT}" >&2
             exit 1
           fi
-          PASSED=$(echo "${REQ_LINE}" | sed -E 's/.*Requests: +([0-9]+) passed.*/\1/')
-          TOTAL=$(echo "${REQ_LINE}" | sed -E 's/.* ([0-9]+) total.*/\1/')
+          # Bruno 3.x writes an array of iteration objects; sum summary fields
+          # across iterations so the gate stays correct if --iterations >1
+          # is ever enabled. errorRequests = transport-level failures (no
+          # response received); totalRequests = transport-level attempts.
+          read -r TOTAL ERRORS < <(jq -r \
+            '([.[].summary.totalRequests] | add) as $t |
+             ([.[].summary.errorRequests] | add) as $e |
+             "\($t) \($e)"' "${BRUNO_REPORT}")
           if [ -z "${TOTAL}" ] || [ "${TOTAL}" = "0" ]; then
             echo "Bruno reported 0 total requests; treating as failure" >&2
-            tail -50 "${BRUNO_LOG}" || true
             exit 1
           fi
-          PCT=$(( PASSED * 100 / TOTAL ))
-          echo "Bruno transport: ${PASSED}/${TOTAL} requests reached server = ${PCT}% (threshold ${MIN_TRANSPORT_PCT}%)"
-          if [ "${PCT}" -lt "${MIN_TRANSPORT_PCT}" ]; then
-            echo "Transport pass rate ${PCT}% below ${MIN_TRANSPORT_PCT}% threshold -- failing" >&2
+          REACHED=$(( TOTAL - ERRORS ))
+          echo "Bruno transport: ${REACHED}/${TOTAL} requests reached server (errorRequests=${ERRORS})"
+          if [ "${ERRORS}" -ne 0 ]; then
+            echo "${ERRORS} transport-level errors -- failing" >&2
             exit 1
           fi
 
@@ -330,5 +331,5 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bruno-results
-          path: ${{ runner.temp }}/bruno-results/bruno-results.html
+          path: ${{ runner.temp }}/bruno-results/
           retention-days: 7
