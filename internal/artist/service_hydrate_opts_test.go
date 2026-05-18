@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 )
@@ -308,12 +309,34 @@ func TestGetMethods_HydrateOptsVariadic(t *testing.T) {
 	ctx := context.Background()
 	first := ids[0]
 
+	// Seed an MBID + provider-id row so the success-path branch of
+	// GetByMBID and GetByProviderID is also exercised, not just the
+	// nil-result fast-path. Both methods resolve through
+	// artist_provider_ids (provider='musicbrainz').
+	mbid := "11111111-2222-3333-4444-555555555555"
+	if _, err := svc.artists.(*sqliteArtistRepo).db.ExecContext(ctx,
+		`INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
+		 VALUES (?, 'musicbrainz', ?, datetime('now'))`, first, mbid); err != nil {
+		t.Fatalf("seeding mbid row: %v", err)
+	}
+
 	if a, err := svc.GetByID(ctx, first, HydrateOpts{}); err != nil || a == nil {
 		t.Errorf("GetByID(opts): err=%v a=%v", err, a)
 	}
-	if a, err := svc.GetByMBID(ctx, "mb-none", HydrateOpts{}); err == nil && a != nil {
+	// GetByMBID success path: returns the seeded artist; HydrateOpts{}
+	// means MusicBrainzID stays at zero value (no hydration ran).
+	if a, err := svc.GetByMBID(ctx, mbid, HydrateOpts{}); err != nil || a == nil || a.ID != first {
+		t.Errorf("GetByMBID(seeded): err=%v a=%+v", err, a)
+	}
+	// GetByMBID missing path: nil-result short-circuit before hydration.
+	if a, err := svc.GetByMBID(ctx, "00000000-0000-0000-0000-000000000000", HydrateOpts{}); err == nil && a != nil {
 		t.Errorf("GetByMBID(missing): expected nil/err; got %v", a)
 	}
+	// GetByProviderID success path: same seeded row.
+	if a, err := svc.GetByProviderID(ctx, "musicbrainz", mbid, HydrateOpts{}); err != nil || a == nil || a.ID != first {
+		t.Errorf("GetByProviderID(seeded): err=%v a=%+v", err, a)
+	}
+	// GetByProviderID missing path.
 	if a, err := svc.GetByProviderID(ctx, "musicbrainz", "none", HydrateOpts{}); err == nil && a != nil {
 		t.Errorf("GetByProviderID(missing): expected nil/err; got %v", a)
 	}
@@ -325,5 +348,29 @@ func TestGetMethods_HydrateOptsVariadic(t *testing.T) {
 	}
 	if a, err := svc.GetByPath(ctx, "/music/hyd/Alpha", HydrateOpts{}); err != nil || a == nil {
 		t.Errorf("GetByPath(opts): err=%v a=%v", err, a)
+	}
+}
+
+// TestGetByIDsBatch_OverLimit pins the bulk loader's MaxListIDs guard:
+// callers that exceed the cap get an explicit error instead of having
+// their request silently truncated, so a future caller that didn't
+// pre-chunk its input sees the cap rather than mysteriously losing
+// selections past the boundary.
+func TestGetByIDsBatch_OverLimit(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	tooMany := make([]string, MaxListIDs+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("id-%d", i)
+	}
+	got, err := svc.GetByIDsBatch(ctx, tooMany)
+	if err == nil {
+		t.Fatalf("expected error for >MaxListIDs input; got nil (result=%v)", got)
+	}
+	if got != nil {
+		t.Errorf("expected nil result on over-limit error; got %v", got)
 	}
 }

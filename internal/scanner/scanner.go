@@ -312,6 +312,17 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 	if preloaded != nil {
 		if hit, ok := preloaded[dirPath]; ok {
 			existing = hit
+		} else {
+			// Cache miss: the preload map can legitimately miss an
+			// existing artist (path-empty rows are excluded; a row
+			// added between preload and this iteration). Fall back to
+			// GetByPath so the lookup remains authoritative and we
+			// don't accidentally treat an existing artist as new.
+			got, err := s.artistService.GetByPath(ctx, dirPath)
+			if err != nil {
+				return fmt.Errorf("looking up artist by path: %w", err)
+			}
+			existing = got
 		}
 	} else {
 		got, err := s.artistService.GetByPath(ctx, dirPath)

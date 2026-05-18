@@ -1776,9 +1776,11 @@ func (s *Service) GetByIDsBatch(ctx context.Context, ids []string, opts ...Hydra
 	// Hard cap to match the Repository contract; SQLite's bound-parameter
 	// limit (default 32766) is well above MaxListIDs but the API-side cap
 	// (api.MaxBulkActionIDs) is sourced from MaxListIDs so staying inside
-	// it keeps the two surfaces in lockstep.
+	// it keeps the two surfaces in lockstep. Reject over-limit input
+	// explicitly so callers see the cap instead of having selections
+	// silently truncated past it.
 	if len(clean) > MaxListIDs {
-		clean = clean[:MaxListIDs]
+		return nil, fmt.Errorf("too many artist IDs: %d > %d", len(clean), MaxListIDs)
 	}
 	artists, err := s.artists.ListByIDs(ctx, clean)
 	if err != nil {
