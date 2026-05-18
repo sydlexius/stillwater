@@ -59,14 +59,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Drift detection: fail if the number of `func Fuzz*` definitions in
-  # internal/ does not match the number of matrix entries in the fuzz job.
-  # When a developer adds a new fuzz target without updating this file, this
-  # job surfaces the gap before the next scheduled run goes silently stale.
-  #
-  # Matrix entry count is hard-coded (MATRIX_COUNT) and must be updated
-  # whenever a matrix entry is added or removed. The step below computes
-  # the live count from source and compares the two.
+  # Drift detection: fail if the set of `func Fuzz*` definitions in internal/
+  # does not exactly match the set of `fuzz_func:` matrix entries below. The
+  # step compares sorted name sets (not counts), so rename/swap drift that
+  # preserves cardinality is also caught.
   fuzz-drift-check:
     name: Fuzz matrix drift check
     runs-on: ubuntu-latest
