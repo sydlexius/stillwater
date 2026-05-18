@@ -35,6 +35,7 @@ The table below is generated from the configuration definition; do not edit it b
 | `SW_MUSIC_PATH` | path | `/music` | Default music library path used as a starting point when no library has been added through the UI. |
 | `SW_PORT` | integer | `1973` | TCP port the HTTP server listens on. Numeric values outside 1-65535 are rejected at startup. |
 | `SW_SCANNER_EXCLUSIONS` | list (comma-separated) | `Various Artists, Various, VA, Soundtrack, OST` | Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed. |
+| `SW_SCANNER_MTIME_FAST_PATH` | boolean | `true` | When true the scanner reuses cached image flags for artist directories whose mtime has not advanced since the previous scan, eliminating the per-file stat + dimension probe loop. Set to false on filesystems with unreliable mtimes (some network shares, FUSE mounts, backup-restored trees) so every scan re-probes. |
 | `SW_SESSION_SECRET` | string | unset | Long random string used to sign session cookies. When unset Stillwater generates one on first run and persists it in the config directory. |
 | `SW_TLS_CERT_FILE` | string | unset | Path to a PEM-encoded TLS certificate. When set together with SW_TLS_KEY_FILE Stillwater serves HTTPS directly instead of plain HTTP. |
 | `SW_TLS_KEY_FILE` | string | unset | Path to the PEM-encoded private key for SW_TLS_CERT_FILE. Both files must be readable by the Stillwater process. |
