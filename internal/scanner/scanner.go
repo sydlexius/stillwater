@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,7 +54,10 @@ type Service struct {
 	// been touched since the previous scan. Set via SetMtimeFastPath
 	// (config-driven) so production gets the optimization by default and
 	// operators on filesystems with unreliable mtimes can disable it.
-	mtimeFastPath bool
+	// Stored as atomic.Bool because background scans read this flag from
+	// detectFilesWithFastPath while SetMtimeFastPath may be called from
+	// the config-reload path concurrently.
+	mtimeFastPath atomic.Bool
 
 	mu          sync.Mutex
 	currentScan *ScanResult
@@ -91,24 +95,25 @@ func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleServ
 		excMap[strings.ToLower(e)] = true
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{
+	s := &Service{
 		artistService:  artistService,
 		ruleEngine:     ruleEngine,
 		ruleService:    ruleService,
 		logger:         logger,
 		libraryPath:    libraryPath,
 		exclusions:     excMap,
-		mtimeFastPath:  true, // matches ScannerConfig.MtimeFastPath default
 		shutdownCtx:    ctx,
 		shutdownCancel: cancel,
 	}
+	s.mtimeFastPath.Store(true) // matches ScannerConfig.MtimeFastPath default
+	return s
 }
 
 // SetMtimeFastPath toggles the per-directory mtime-based fast path. Pass
 // false from startup wiring on filesystems that do not maintain stable
 // directory mtimes; otherwise leave it on the default-true value.
 func (s *Service) SetMtimeFastPath(enabled bool) {
-	s.mtimeFastPath = enabled
+	s.mtimeFastPath.Store(enabled)
 }
 
 // Shutdown cancels any in-progress background scans and waits for them to
@@ -814,7 +819,7 @@ type detectedFiles struct {
 // after a file mutation that bumps the directory mtime, or when the
 // fast path is disabled for an off-clock filesystem.
 func (s *Service) detectFilesWithFastPath(dirPath string, existing *artist.Artist) (detectedFiles, error) {
-	if !s.mtimeFastPath || existing == nil || existing.LastScannedAt == nil {
+	if !s.mtimeFastPath.Load() || existing == nil || existing.LastScannedAt == nil {
 		return detectFiles(dirPath, existing)
 	}
 	info, err := os.Stat(dirPath)

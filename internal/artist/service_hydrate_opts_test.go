@@ -82,6 +82,24 @@ func TestGetByIDsBatch_HappyPath(t *testing.T) {
 			t.Errorf("missing artist %s in result", id)
 		}
 	}
+	// Pointer-identity guard: every map entry must be a distinct *Artist.
+	// Catches a regression where the loop reuses a single backing variable
+	// and every map key ends up aliased to the last-seen iteration value.
+	seenPtrs := make(map[*Artist]string, len(got))
+	for id, a := range got {
+		if a == nil {
+			t.Errorf("nil *Artist for key %s", id)
+			continue
+		}
+		if existing, ok := seenPtrs[a]; ok {
+			t.Errorf("aliased pointer: keys %s and %s share the same *Artist (%p)", existing, id, a)
+			continue
+		}
+		seenPtrs[a] = id
+		if a.ID != id {
+			t.Errorf("map key %s points to artist with ID %s", id, a.ID)
+		}
+	}
 }
 
 // TestGetByIDsBatch_EmptyAndDuplicate covers the boundary paths: empty input
@@ -187,6 +205,22 @@ func TestPreloadArtistsByLibrary_HappyPath(t *testing.T) {
 	for i := range wantIDs {
 		if gotIDs[i] != wantIDs[i] {
 			t.Errorf("preload set mismatch at index %d: want %s got %s", i, wantIDs[i], gotIDs[i])
+		}
+	}
+	// Pointer-identity guard: every map entry must be a distinct *Artist.
+	seenPtrs := make(map[*Artist]string, len(got))
+	for path, a := range got {
+		if a == nil {
+			t.Errorf("nil *Artist for key %s", path)
+			continue
+		}
+		if existing, ok := seenPtrs[a]; ok {
+			t.Errorf("aliased pointer: paths %s and %s share the same *Artist (%p)", existing, path, a)
+			continue
+		}
+		seenPtrs[a] = path
+		if a.Path != path {
+			t.Errorf("map key %s points to artist with Path %s", path, a.Path)
 		}
 	}
 }

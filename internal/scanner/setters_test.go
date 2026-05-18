@@ -25,15 +25,15 @@ func TestSetters(t *testing.T) {
 	// SetMtimeFastPath: NewService defaults the flag to true; the setter
 	// must let an operator disable the fast-path for known-broken
 	// filesystems (the documented SW_SCANNER_MTIME_FAST_PATH=false path).
-	if !s.mtimeFastPath {
+	if !s.mtimeFastPath.Load() {
 		t.Errorf("NewService should default mtimeFastPath=true; got false")
 	}
 	s.SetMtimeFastPath(false)
-	if s.mtimeFastPath {
+	if s.mtimeFastPath.Load() {
 		t.Errorf("SetMtimeFastPath(false) should disable; still enabled")
 	}
 	s.SetMtimeFastPath(true)
-	if !s.mtimeFastPath {
+	if !s.mtimeFastPath.Load() {
 		t.Errorf("SetMtimeFastPath(true) should re-enable; still disabled")
 	}
 }

@@ -1789,10 +1789,12 @@ func (s *Service) GetByIDsBatch(ctx context.Context, ids []string, opts ...Hydra
 	}
 	result := make(map[string]*Artist, len(artists))
 	for i := range artists {
-		// Pin a stable pointer inside the slice; range-variable capture
-		// would yield N copies of the same loop variable's address.
-		a := artists[i]
-		result[a.ID] = &a
+		// Point directly into the slice so each map entry has a distinct,
+		// stable address. The previous `a := artists[i]; &a` form worked
+		// because each iteration declared a fresh `a` that escaped to the
+		// heap, but `&artists[i]` is idiomatic, avoids the per-row copy,
+		// and matches the pointer-identity guard in the batch tests.
+		result[artists[i].ID] = &artists[i]
 	}
 	return result, nil
 }
@@ -1820,11 +1822,10 @@ func (s *Service) PreloadArtistsByLibrary(ctx context.Context, libraryID string,
 	}
 	result := make(map[string]*Artist, len(artists))
 	for i := range artists {
-		a := artists[i]
-		if a.Path == "" {
+		if artists[i].Path == "" {
 			continue
 		}
-		result[a.Path] = &a
+		result[artists[i].Path] = &artists[i]
 	}
 	return result, nil
 }
