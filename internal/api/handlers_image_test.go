@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -2489,5 +2491,60 @@ func TestHandleImageUpload_FanartAppend_RerunsRules(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("RunForArtist was not invoked after successful fanart append")
+	}
+}
+
+// blockingRoundTripper blocks indefinitely unless its request's context is
+// canceled, in which case it returns the context error. It is the inverse of
+// stubRoundTripper: where stubRoundTripper proves the happy path, this one
+// proves that a caller-supplied context governs request lifetime. Without
+// http.NewRequestWithContext, a canceled caller ctx would have no effect on
+// the in-flight request and this transport would block until t.Fatal hit the
+// outer 1-second deadline.
+type blockingRoundTripper struct{}
+
+func (blockingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+// TestFetchImageFromURL_CancelledContext is the regression test for issue
+// #1412 D6: fetchImageFromURL must honor its ctx so that a disconnected
+// client releases the ssrfClient connection pool slot instead of leaving
+// the request in flight until the underlying timeout fires. Before the fix
+// the function used http.NewRequest with no ctx and the call site carried a
+// suppress-noctx lint exemption; after the fix it uses
+// http.NewRequestWithContext and propagates the caller's ctx into client.Do.
+//
+// The test calls fetchImageFromURL with an already-canceled ctx and asserts
+// that the call returns promptly (well under any production fetch timeout)
+// with an error chain that includes context.Canceled.
+func TestFetchImageFromURL_CancelledContext(t *testing.T) {
+	t.Parallel()
+
+	r := &Router{
+		ssrfClient: &http.Client{Transport: blockingRoundTripper{}},
+		logger:     slog.New(slog.DiscardHandler),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so client.Do sees a dead ctx immediately
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.fetchImageFromURL(ctx, "https://8.8.8.8/test.jpg")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("fetchImageFromURL returned nil error for canceled ctx; want context.Canceled")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v; want chain to include context.Canceled", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("fetchImageFromURL did not return within 1s after ctx cancellation; ctx is not being honored")
 	}
 }
