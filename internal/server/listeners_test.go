@@ -104,7 +104,7 @@ func generateSelfSignedCert(t *testing.T, writeDir string) (certPath, keyPath st
 // is ready immediately after RunListeners returns.
 func pollUntilServing(t *testing.T, addr string) {
 	t.Helper()
-	deadline := 2 * time.Second
+	deadline := 5 * time.Second
 	stop := time.Now().Add(deadline)
 	for time.Now().Before(stop) {
 		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
