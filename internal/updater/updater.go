@@ -809,11 +809,11 @@ func (s *Service) Apply(ctx context.Context) error {
 		return ErrAlreadyRunning
 	}
 
-	// Use a background context so the apply goroutine outlives the initiating
-	// HTTP request. The handler already detaches via context.WithoutCancel, but
-	// using context.Background() here makes the intent explicit at the service
-	// layer and avoids any inherited deadline or cancellation from the caller.
-	go s.runApply(context.Background(), "") //nolint:gosec,contextcheck // gosec G118 + contextcheck both fire on this line; apply goroutine intentionally outlives request context (handler already detaches via WithoutCancel)
+	// Pass ctx directly. The handler wraps req.Context() in context.WithoutCancel
+	// before calling Apply, so ctx carries request-scoped values (log/trace
+	// correlation) but has no deadline or cancellation signal. The goroutine
+	// therefore outlives the HTTP request while still inheriting those values.
+	go s.runApply(ctx, "")
 	return nil
 }
 
