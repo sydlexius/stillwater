@@ -235,14 +235,18 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			continue
 		}
 
-		// Pre-load every existing artist for this library in one query so
+		// Pre-load every existing artist for this library so
 		// processDirectory can look up the prior DB state from an in-
 		// memory map instead of issuing one GetByPath round-trip per
-		// directory entry (#1411). HydrateOpts{} (zero value) keeps the
-		// pre-load to a single artists-table query; processDirectory only
-		// reads core flag fields (NFOExists, Thumb*, Fanart*, Logo*,
-		// Banner*, IsExcluded, LastScannedAt, image placeholders /
-		// dimensions) which all live on the artists row.
+		// directory entry (#1411). HydrateOpts{Images: true} is required
+		// because Thumb*/Fanart*/Logo*/Banner* existence flags, low-res
+		// flags, placeholders, and dimensions are stored in the
+		// artist_images side table -- not on the artists row -- and the
+		// scanner relies on those fields in detectFilesWithFastPath and
+		// processExistingArtist. Cost: 2 queries per scanned library
+		// (artists + artist_images) instead of N round-trips per
+		// directory entry. ProviderIDs and PrimaryLibrary are still
+		// skipped: neither is read on the scan hot path.
 		var libraryArtists map[string]*artist.Artist
 		if target.libraryID != "" {
 			pre, preErr := s.artistService.PreloadArtistsByLibrary(ctx, target.libraryID, artist.HydrateOpts{Images: true})
