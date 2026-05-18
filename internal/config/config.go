@@ -117,6 +117,14 @@ type MusicConfig struct {
 type ScannerConfig struct {
 	Depth      int      `yaml:"depth" toml:"depth"`
 	Exclusions []string `yaml:"exclusions" toml:"exclusions" env:"SW_SCANNER_EXCLUSIONS" default:"Various Artists, Various, VA, Soundtrack, OST" desc:"Comma-separated artist directory names the scanner skips. Whitespace around each token is trimmed."`
+	// MtimeFastPath, when true, lets the scanner skip the per-file image
+	// stat + dimension probe loop for artist directories whose mtime has
+	// not advanced since the previous scan. Defaults to true; disable it
+	// (SW_SCANNER_MTIME_FAST_PATH=false) on filesystems that do not
+	// maintain stable directory mtimes -- some network shares, FUSE
+	// mounts, and any backup-restored tree where mtimes were not
+	// preserved fall into this category.
+	MtimeFastPath bool `yaml:"mtime_fast_path" toml:"mtime_fast_path" env:"SW_SCANNER_MTIME_FAST_PATH" default:"true" desc:"When true the scanner reuses cached image flags for artist directories whose mtime has not advanced since the previous scan, eliminating the per-file stat + dimension probe loop. Set to false on filesystems with unreliable mtimes (some network shares, FUSE mounts, backup-restored trees) so every scan re-probes."`
 }
 
 // BackupConfig holds database backup settings.
@@ -154,6 +162,12 @@ func Default() *Config {
 				"Various Artists", "Various", "VA",
 				"Soundtrack", "OST",
 			},
+			// Default-on; the fast-path is a no-op on the first scan
+			// (no prior LastScannedAt) and on directories that have
+			// been touched since the last scan, so the only behavioral
+			// difference is "second scan of an unchanged directory
+			// skips its inner ReadDir + image probe loop".
+			MtimeFastPath: true,
 		},
 		Backup: BackupConfig{
 			RetentionCount: 7,
@@ -232,6 +246,7 @@ const scaffoldTOML = `# Stillwater configuration
 [scanner]
 # depth = 1
 # exclusions = ["Various Artists", "Various", "VA", "Soundtrack", "OST"]
+# mtime_fast_path = true  # set to false on filesystems with unreliable mtimes
 
 [backup]
 # path = ""
@@ -476,6 +491,10 @@ func (c *Config) loadFromEnv() error {
 		// Music
 		{Key: "SW_MUSIC_PATH", Apply: setString(&c.Music.LibraryPath)},
 		{Key: "SW_SCANNER_EXCLUSIONS", Apply: setCSV(&c.Scanner.Exclusions)},
+		// SW_SCANNER_MTIME_FAST_PATH uses standard non-empty semantics so
+		// an unset variable leaves the default-on behavior intact; only
+		// an explicit "false" / "0" disables the fast path.
+		{Key: "SW_SCANNER_MTIME_FAST_PATH", Apply: setBool(&c.Scanner.MtimeFastPath)},
 		// Backup (lenient int; non-positive values are silently ignored)
 		{Key: "SW_BACKUP_PATH", Apply: setString(&c.Backup.Path)},
 		{Key: "SW_BACKUP_RETENTION", Apply: setIntPositive(&c.Backup.RetentionCount)},

@@ -334,6 +334,108 @@ func (r *sqliteArtistRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListRefsByLibrary returns lightweight (id, name, path) records for every
+// artist whose membership includes libraryID and whose path is non-empty.
+// Single-query equivalent of paginating the full List output when callers
+// only need basic identifying fields (e.g. the scanner's per-library
+// removal sweep, #1409). The returned slice's order is the natural row
+// order from SQLite; callers MUST NOT rely on a particular sort.
+func (r *sqliteArtistRepo) ListRefsByLibrary(ctx context.Context, libraryID string) ([]ArtistRef, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT a.id, a.name, a.path FROM artists a
+		JOIN artist_libraries al ON al.artist_id = a.id
+		WHERE al.library_id = ? AND a.path != ''`,
+		libraryID)
+	if err != nil {
+		return nil, fmt.Errorf("listing artist refs for library %s: %w", libraryID, err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var result []ArtistRef
+	for rows.Next() {
+		var ref ArtistRef
+		if err := rows.Scan(&ref.ID, &ref.Name, &ref.Path); err != nil {
+			return nil, fmt.Errorf("scanning artist ref: %w", err)
+		}
+		result = append(result, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist refs for library %s: %w", libraryID, err)
+	}
+	return result, nil
+}
+
+// ListByIDs returns the artist rows matching ids in a single query. Empty
+// input yields an empty slice with no DB hit. The IN-clause is built by
+// joining "?" literals so static-analysis tools can confirm no user input
+// flows into the SQL string; bound parameters carry every value. Order
+// of the returned rows is SQLite's natural order -- callers needing a
+// specific order should reconstruct it from a map keyed by ID.
+func (r *sqliteArtistRepo) ListByIDs(ctx context.Context, ids []string) ([]Artist, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	//nolint:gosec // G202: placeholders is a literal "?,?,..." string built by joining "?" literals; no user input.
+	query := `SELECT ` + artistColumns + ` FROM artists WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing artists by IDs: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	result := make([]Artist, 0, len(ids))
+	for rows.Next() {
+		a, err := scanArtist(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning artist row: %w", err)
+		}
+		result = append(result, *a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist rows: %w", err)
+	}
+	return result, nil
+}
+
+// ListByLibrary returns the full artist rows whose membership includes
+// libraryID. Single query equivalent of paginating List with LibraryID set.
+// Used by the scanner's per-directory pre-load (#1411) so processDirectory
+// can read existing artists out of an in-memory map keyed by path instead
+// of issuing N GetByPath round-trips. Membership is resolved through
+// artist_libraries; rows with no membership are excluded.
+func (r *sqliteArtistRepo) ListByLibrary(ctx context.Context, libraryID string) ([]Artist, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+artistColumns+` FROM artists
+		WHERE EXISTS (
+			SELECT 1 FROM artist_libraries al
+			WHERE al.artist_id = artists.id AND al.library_id = ?
+		)`,
+		libraryID)
+	if err != nil {
+		return nil, fmt.Errorf("listing artists for library %s: %w", libraryID, err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	var result []Artist
+	for rows.Next() {
+		a, err := scanArtist(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning artist row: %w", err)
+		}
+		result = append(result, *a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist rows for library %s: %w", libraryID, err)
+	}
+	return result, nil
+}
+
 // ListPathsByLibrary returns a map of artist ID to filesystem path for all
 // artists in the given library that have a non-empty path. Uses artist ID
 // as the key (not name) to avoid collisions when multiple artists share

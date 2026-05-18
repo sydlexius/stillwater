@@ -656,6 +656,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.scannerService = scanner.NewService(a.artistService, a.ruleEngine, a.ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 	a.scannerService.SetDefaultLibraryID(a.defaultLibID)
 	a.scannerService.SetLibraryLister(a.libraryService)
+	a.scannerService.SetMtimeFastPath(cfg.Scanner.MtimeFastPath)
 
 	// --- NFO ---
 	a.nfoSnapshotService = nfo.NewSnapshotService(db)

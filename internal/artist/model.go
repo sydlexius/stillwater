@@ -89,6 +89,18 @@ type Artist struct {
 	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
+// ArtistRef is the minimal artist record exposed by ListRefsByLibrary --
+// id, display name, filesystem path. Used by the scanner's per-library
+// removal sweep so the hot path can resolve "directory disappeared" by
+// scanning a single in-memory slice instead of paginating the full
+// hydrated artist list (#1409). Add fields here only when a caller of
+// ListRefsByLibrary needs them; the lightweight shape is the whole point.
+type ArtistRef struct {
+	ID   string
+	Name string
+	Path string
+}
+
 // DiscographyAlbum is the artist-domain representation of a single NFO
 // <album> entry. It mirrors nfo.DiscographyAlbum but lives in the artist
 // package so callers outside the nfo package can reference it without

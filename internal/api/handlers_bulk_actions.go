@@ -321,6 +321,22 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			connIdx = r.buildConnectionIndex(ctx)
 		}
 
+		// Pre-load every artist in a single batch query instead of issuing
+		// one GetByID per loop iteration (#1410). At MaxBulkActionIDs=1000
+		// the legacy path issued 1000 + 3000 hydrate round-trips; the
+		// batched form is 1 + 3 regardless of input size. ErrNotFound is
+		// represented by a missing map entry below so the original
+		// "not-found is a skip" outcome is preserved unchanged.
+		artistsByID, loadErr := r.artistService.GetByIDsBatch(ctx, ids)
+		if loadErr != nil {
+			// A batch-wide load failure is logged once and then every ID
+			// counts as Failed in the loop below so the progress totals
+			// stay consistent with the per-ID error path the loop already
+			// understands.
+			r.logger.Warn("bulk action: batch load failed", "action", action, "ids", len(ids), "error", loadErr)
+			artistsByID = map[string]*artist.Artist{}
+		}
+
 		for _, id := range ids {
 			// Cancellation check. Break out of the loop and flag the
 			// progress as canceled so the completion path surfaces a
@@ -329,17 +345,22 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			if ctx.Err() != nil {
 				break
 			}
-			a, err := r.artistService.GetByID(ctx, id)
-			if err != nil {
+			a, ok := artistsByID[id]
+			if !ok {
 				progress.mu.Lock()
 				progress.Processed++
-				if errors.Is(err, artist.ErrNotFound) {
-					progress.Skipped++
-				} else {
+				if loadErr != nil {
+					// Whole batch failed; surface every ID as Failed so
+					// the operator sees the real outcome instead of a
+					// silent "everything skipped" run.
 					progress.Failed++
+				} else {
+					// ID was in the request but absent from the result
+					// set: same semantics as the legacy GetByID returning
+					// artist.ErrNotFound (treat as Skipped).
+					progress.Skipped++
 				}
 				progress.mu.Unlock()
-				r.logger.Warn("bulk action: load artist failed", "action", action, "id", id, "error", err)
 				continue
 			}
 

@@ -78,6 +78,55 @@ var trackableFields = []string{
 	"years_active", "type", "gender", "origin",
 }
 
+// HydrateOpts selects which side-table hydrations a Get*/batch call should
+// perform. Fields default to false; the zero value yields "no hydration"
+// which is useful for callers that only need the core Artist row (path
+// existence, NFO presence, image-flag bookkeeping, etc.) and can save 3
+// per-artist round-trips by skipping the side tables.
+//
+// The historical Get* methods on Service hydrate every side table by default
+// for API back-compat. Pass a HydrateOpts value to opt into a leaner load:
+//
+//	a, err := svc.GetByID(ctx, id)                      // full hydration (default)
+//	a, err := svc.GetByID(ctx, id, artist.HydrateOpts{}) // no hydration
+//	a, err := svc.GetByID(ctx, id, artist.HydrateOpts{ProviderIDs: true})
+//
+// All-true is the legacy behavior; HydrateAll is a convenience preset for
+// callers that want to make the choice explicit.
+type HydrateOpts struct {
+	// ProviderIDs hydrates the artist_provider_ids side table into the
+	// Artist's MusicBrainzID, AudioDBID, DiscogsID, etc. fields.
+	ProviderIDs bool
+	// Images hydrates the artist_images side table into the Artist's
+	// ThumbExists, FanartExists, *Placeholder, *Width/Height fields.
+	Images bool
+	// PrimaryLibrary hydrates the M:N artist_libraries membership into
+	// Artist.LibraryID (earliest membership wins).
+	PrimaryLibrary bool
+}
+
+// HydrateAll is the back-compat preset that turns on every hydration.
+// The bare Get* methods (no opts) apply this preset implicitly so existing
+// callers do not need to be updated.
+var HydrateAll = HydrateOpts{
+	ProviderIDs:    true,
+	Images:         true,
+	PrimaryLibrary: true,
+}
+
+// resolveHydrateOpts returns the effective HydrateOpts for a Get*/batch call.
+// When no opts are supplied the caller gets HydrateAll (the legacy behavior
+// so existing callers do not need to be touched). When at least one opts
+// value is passed, only the first one is honored -- variadic is used purely
+// as a back-compat shim so optional opts can be added without breaking
+// existing callers.
+func resolveHydrateOpts(opts []HydrateOpts) HydrateOpts {
+	if len(opts) == 0 {
+		return HydrateAll
+	}
+	return opts[0]
+}
+
 // Service provides artist and band member data operations.
 type Service struct {
 	artists      Repository
@@ -319,98 +368,72 @@ func (s *Service) CountEligibleArtists(ctx context.Context) (int, error) {
 	return s.artists.CountEligibleArtists(ctx)
 }
 
-// GetByID retrieves an artist by primary key, including provider IDs and image metadata.
-func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
+// GetByID retrieves an artist by primary key. Without opts every side-table
+// hydration runs (provider IDs, images, primary library) for API back-compat.
+// Pass a HydrateOpts value to opt into a leaner load that skips one or more
+// side-table queries; see HydrateOpts.
+func (s *Service) GetByID(ctx context.Context, id string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.artists.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
-// GetByMBID retrieves an artist by MusicBrainz ID, including provider IDs and image metadata.
-func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
+// GetByMBID retrieves an artist by MusicBrainz ID. See GetByID for opts
+// semantics. Returns nil, nil when no artist matches.
+func (s *Service) GetByMBID(ctx context.Context, mbid string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.artists.GetByMBID(ctx, mbid)
 	if err != nil || a == nil {
 		return a, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
-// GetByProviderID retrieves an artist by a provider-specific ID, including all provider IDs
-// and image metadata.
-// Supported providers: "musicbrainz", "audiodb", "discogs", "wikidata", "deezer", "spotify".
-func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Artist, error) {
+// GetByProviderID retrieves an artist by a provider-specific ID. See GetByID
+// for opts semantics. Supported providers: "musicbrainz", "audiodb",
+// "discogs", "wikidata", "deezer", "spotify".
+func (s *Service) GetByProviderID(ctx context.Context, provider, id string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.providers.GetByProviderID(ctx, provider, id)
 	if err != nil || a == nil {
 		return a, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
 // GetByName retrieves an artist by case-insensitive exact name match,
-// without library scope. replacement for GetByNameAndLibrary.
+// without library scope. See GetByID for opts semantics.
 // Returns nil, nil when no match is found.
-func (s *Service) GetByName(ctx context.Context, name string) (*Artist, error) {
+func (s *Service) GetByName(ctx context.Context, name string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.artists.GetByName(ctx, name)
 	if err != nil || a == nil {
 		return a, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
 // FindByMBIDOrNameUnscoped tries MBID first, then case-insensitive name,
-// without library scope. replacement for FindByMBIDOrName,
-// used by connection populate paths to dedupe across all libraries.
+// without library scope. See GetByID for opts semantics.
+// Used by connection populate paths to dedupe across all libraries.
 // Returns nil, nil when no match is found.
-func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string) (*Artist, error) {
+func (s *Service) FindByMBIDOrNameUnscoped(ctx context.Context, mbid, name string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.artists.FindByMBIDOrNameUnscoped(ctx, mbid, name)
 	if err != nil || a == nil {
 		return a, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -453,22 +476,66 @@ func (s *Service) CountLibrariesForArtist(ctx context.Context, artistID string) 
 	return s.memberships.CountForArtist(ctx, artistID)
 }
 
-// GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
-func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
+// GetByPath retrieves an artist by filesystem path. See GetByID for opts
+// semantics.
+func (s *Service) GetByPath(ctx context.Context, path string, opts ...HydrateOpts) (*Artist, error) {
 	a, err := s.artists.GetByPath(ctx, path)
 	if err != nil || a == nil {
 		return a, err
 	}
-	if err := s.hydrateProviderIDs(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydrateImages(ctx, a); err != nil {
-		return nil, err
-	}
-	if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+	if err := s.applyHydration(ctx, a, resolveHydrateOpts(opts)); err != nil {
 		return nil, err
 	}
 	return a, nil
+}
+
+// applyHydration runs the selected side-table hydrations on a single Artist.
+// Each branch is a separate DB round-trip; the AC for HydrateOpts depends on
+// the zero value yielding exactly one query (the original Get* call) since
+// every branch here is gated.
+func (s *Service) applyHydration(ctx context.Context, a *Artist, opts HydrateOpts) error {
+	if opts.ProviderIDs {
+		if err := s.hydrateProviderIDs(ctx, a); err != nil {
+			return err
+		}
+	}
+	if opts.Images {
+		if err := s.hydrateImages(ctx, a); err != nil {
+			return err
+		}
+	}
+	if opts.PrimaryLibrary {
+		if err := s.hydratePrimaryLibrary(ctx, a); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyHydrationBatch runs the selected side-table hydrations on a slice of
+// Artists, using the *Batch hydrate helpers so each enabled branch issues
+// exactly one DB round-trip regardless of slice length. Mirrors the gating
+// logic in applyHydration.
+func (s *Service) applyHydrationBatch(ctx context.Context, artists []Artist, opts HydrateOpts) error {
+	if len(artists) == 0 {
+		return nil
+	}
+	if opts.ProviderIDs {
+		if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+			return err
+		}
+	}
+	if opts.Images {
+		if err := s.hydrateImagesBatch(ctx, artists); err != nil {
+			return err
+		}
+	}
+	if opts.PrimaryLibrary {
+		if err := s.hydratePrimaryLibrariesBatch(ctx, artists); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // List returns a paginated list of artists and the total count, with provider IDs
@@ -1659,6 +1726,107 @@ func (s *Service) NewestWriteTimesByArtistForLibrary(ctx context.Context, librar
 // artists in the given library that have a non-empty path.
 func (s *Service) ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
 	return s.artists.ListPathsByLibrary(ctx, libraryID)
+}
+
+// ListRefsByLibrary returns lightweight (id, name, path) records for every
+// artist in the given library with a non-empty path. Single-query helper
+// used by the scanner's per-library removal sweep (#1409) so detectRemoved
+// does not have to paginate the full hydrated artist list.
+func (s *Service) ListRefsByLibrary(ctx context.Context, libraryID string) ([]ArtistRef, error) {
+	return s.artists.ListRefsByLibrary(ctx, libraryID)
+}
+
+// GetByIDsBatch returns the artists matching the supplied IDs as a map keyed
+// by artist ID. Missing IDs are silently dropped (no error). The opts arg
+// controls side-table hydration with the same semantics as GetByID; without
+// opts every side-table is hydrated for back-compat. With HydrateOpts{} the
+// call issues exactly one query (the IN-clause SELECT).
+//
+// Inputs are validated and de-duplicated at the boundary:
+//   - Empty input yields an empty map with no DB round-trip.
+//   - Duplicate IDs collapse to a single lookup; the map keeps one entry.
+//   - The slice is capped at MaxListIDs as defense in depth; callers that
+//     could exceed the cap should pre-chunk their input.
+//
+// Used by the bulk-action handler (#1410) so a 50-ID kickoff issues at most
+// 4 queries (one core + three batched side tables when hydration is on)
+// instead of 50 GetByID round-trips.
+func (s *Service) GetByIDsBatch(ctx context.Context, ids []string, opts ...HydrateOpts) (map[string]*Artist, error) {
+	if len(ids) == 0 {
+		return map[string]*Artist{}, nil
+	}
+	// Dedupe + drop empties to keep the IN-clause tight and avoid double-
+	// hydration cost. Defense in depth: callers (e.g. handleBulkAction)
+	// already dedupe, but a future caller might not.
+	seen := make(map[string]struct{}, len(ids))
+	clean := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return map[string]*Artist{}, nil
+	}
+	// Hard cap to match the Repository contract; SQLite's bound-parameter
+	// limit (default 32766) is well above MaxListIDs but the API-side cap
+	// (api.MaxBulkActionIDs) is sourced from MaxListIDs so staying inside
+	// it keeps the two surfaces in lockstep.
+	if len(clean) > MaxListIDs {
+		clean = clean[:MaxListIDs]
+	}
+	artists, err := s.artists.ListByIDs(ctx, clean)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyHydrationBatch(ctx, artists, resolveHydrateOpts(opts)); err != nil {
+		return nil, err
+	}
+	result := make(map[string]*Artist, len(artists))
+	for i := range artists {
+		// Pin a stable pointer inside the slice; range-variable capture
+		// would yield N copies of the same loop variable's address.
+		a := artists[i]
+		result[a.ID] = &a
+	}
+	return result, nil
+}
+
+// PreloadArtistsByLibrary returns every artist in the given library as a map
+// keyed by filesystem path. Artists with an empty path are excluded so the
+// map shape matches what the scanner uses for membership lookups. Hydration
+// follows the same opts contract as GetByIDsBatch.
+//
+// Used by the scanner's processDirectory pre-load (#1411) so the per-
+// directory hot path can resolve "do we already know this artist?" by
+// reading from this map instead of issuing a GetByPath round-trip per
+// directory. With HydrateOpts{} the call issues exactly one query for an
+// arbitrarily large library.
+func (s *Service) PreloadArtistsByLibrary(ctx context.Context, libraryID string, opts ...HydrateOpts) (map[string]*Artist, error) {
+	if libraryID == "" {
+		return map[string]*Artist{}, nil
+	}
+	artists, err := s.artists.ListByLibrary(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyHydrationBatch(ctx, artists, resolveHydrateOpts(opts)); err != nil {
+		return nil, err
+	}
+	result := make(map[string]*Artist, len(artists))
+	for i := range artists {
+		a := artists[i]
+		if a.Path == "" {
+			continue
+		}
+		result[a.Path] = &a
+	}
+	return result, nil
 }
 
 // hydrateImages loads image metadata from the normalized table and applies

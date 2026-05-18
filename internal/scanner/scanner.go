@@ -48,6 +48,13 @@ type Service struct {
 	defaultLibraryID string
 	libraryLister    LibraryLister
 
+	// mtimeFastPath toggles the per-directory mtime check that skips the
+	// inner ReadDir + image probe loop when an artist directory has not
+	// been touched since the previous scan. Set via SetMtimeFastPath
+	// (config-driven) so production gets the optimization by default and
+	// operators on filesystems with unreliable mtimes can disable it.
+	mtimeFastPath bool
+
 	mu          sync.Mutex
 	currentScan *ScanResult
 
@@ -74,7 +81,10 @@ func (s *Service) SetLibraryLister(ll LibraryLister) {
 	s.libraryLister = ll
 }
 
-// NewService creates a scanner service.
+// NewService creates a scanner service. The mtime fast-path is enabled by
+// default so production deployments get the optimization without an
+// explicit setter call; callers that need to disable it (FUSE mounts,
+// restored backups with broken mtimes) toggle SetMtimeFastPath(false).
 func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleService *rule.Service, logger *slog.Logger, libraryPath string, exclusions []string) *Service {
 	excMap := make(map[string]bool, len(exclusions))
 	for _, e := range exclusions {
@@ -88,9 +98,17 @@ func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleServ
 		logger:         logger,
 		libraryPath:    libraryPath,
 		exclusions:     excMap,
+		mtimeFastPath:  true, // matches ScannerConfig.MtimeFastPath default
 		shutdownCtx:    ctx,
 		shutdownCancel: cancel,
 	}
+}
+
+// SetMtimeFastPath toggles the per-directory mtime-based fast path. Pass
+// false from startup wiring on filesystems that do not maintain stable
+// directory mtimes; otherwise leave it on the default-true value.
+func (s *Service) SetMtimeFastPath(enabled bool) {
+	s.mtimeFastPath = enabled
 }
 
 // Shutdown cancels any in-progress background scans and waits for them to
@@ -197,12 +215,13 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		return
 	}
 
-	// Collect discovered paths for removal detection
-	discoveredPaths := make(map[string]bool)
-	var allLibraryPaths []string
+	// Collect discovered paths per library for removal detection. Keyed
+	// by libraryID so detectRemoved can query only the artists belonging
+	// to each scanned library (#1409) instead of paginating the entire
+	// catalog.
+	discoveredByLibrary := make(map[string]map[string]bool, len(targets))
 
 	for _, target := range targets {
-		allLibraryPaths = append(allLibraryPaths, target.path)
 		s.logger.Info("scanning library", "path", target.path, "library_id", target.libraryID)
 
 		entries, err := os.ReadDir(target.path)
@@ -211,6 +230,29 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			continue
 		}
 
+		// Pre-load every existing artist for this library in one query so
+		// processDirectory can look up the prior DB state from an in-
+		// memory map instead of issuing one GetByPath round-trip per
+		// directory entry (#1411). HydrateOpts{} (zero value) keeps the
+		// pre-load to a single artists-table query; processDirectory only
+		// reads core flag fields (NFOExists, Thumb*, Fanart*, Logo*,
+		// Banner*, IsExcluded, LastScannedAt, image placeholders /
+		// dimensions) which all live on the artists row.
+		var libraryArtists map[string]*artist.Artist
+		if target.libraryID != "" {
+			pre, preErr := s.artistService.PreloadArtistsByLibrary(ctx, target.libraryID, artist.HydrateOpts{Images: true})
+			if preErr != nil {
+				// Falling back to the legacy GetByPath path costs one
+				// round-trip per directory but is still correct, so we
+				// log and continue rather than failing the scan.
+				s.logger.Warn("preloading artists for library",
+					"library_id", target.libraryID, "error", preErr)
+			} else {
+				libraryArtists = pre
+			}
+		}
+
+		discoveredPaths := make(map[string]bool, len(entries))
 		for _, entry := range entries {
 			if ctx.Err() != nil {
 				s.mu.Lock()
@@ -234,31 +276,47 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			dirPath := filepath.Join(target.path, entry.Name())
 			discoveredPaths[dirPath] = true
 
-			if err := s.processDirectory(ctx, dirPath, entry.Name(), target.libraryID, result); err != nil {
+			if err := s.processDirectory(ctx, dirPath, entry.Name(), target.libraryID, libraryArtists, result); err != nil {
 				s.logger.Warn("error processing directory",
 					"path", dirPath, "error", err)
 			}
 		}
+		discoveredByLibrary[target.libraryID] = discoveredPaths
 	}
 
-	// Detect removed artists
-	s.detectRemoved(ctx, discoveredPaths, allLibraryPaths, result)
+	// Detect removed artists. Per-library sweep so we issue one
+	// ListRefsByLibrary query per scanned library instead of paginating
+	// every artist in the catalog (#1409).
+	s.detectRemoved(ctx, discoveredByLibrary, result)
 
 	// Record health snapshot at end of scan
 	s.recordHealthSnapshot(ctx)
 }
 
-func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, result *ScanResult) error {
+func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, preloaded map[string]*artist.Artist, result *ScanResult) error {
 	excluded := s.exclusions[strings.ToLower(name)]
 
 	// Look up existing artist before detectFiles so we can skip expensive
-	// placeholder regeneration when one already exists.
-	existing, err := s.artistService.GetByPath(ctx, dirPath)
-	if err != nil {
-		return fmt.Errorf("looking up artist by path: %w", err)
+	// placeholder regeneration when one already exists. Prefer the
+	// pre-loaded path-keyed map populated once per library above; fall
+	// back to a per-directory GetByPath only on miss (new artist, or the
+	// pre-load failed and we are running degraded). This bounds the
+	// "do we already know this artist?" cost to one query per library
+	// instead of one per directory entry (#1411).
+	var existing *artist.Artist
+	if preloaded != nil {
+		if hit, ok := preloaded[dirPath]; ok {
+			existing = hit
+		}
+	} else {
+		got, err := s.artistService.GetByPath(ctx, dirPath)
+		if err != nil {
+			return fmt.Errorf("looking up artist by path: %w", err)
+		}
+		existing = got
 	}
 
-	detected, detectErr := detectFiles(dirPath, existing)
+	detected, detectErr := s.detectFilesWithFastPath(dirPath, existing)
 	if detectErr != nil {
 		s.logger.Warn("reading artist directory", "path", dirPath, "error", detectErr)
 		return nil // skip this directory entirely -- preserve existing DB state
@@ -585,8 +643,58 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 	}
 }
 
-// detectRemoved finds artists in the database whose paths no longer exist on disk.
-func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]bool, libraryPaths []string, result *ScanResult) {
+// detectRemoved finds artists in the database whose paths no longer exist
+// on disk. Iterates the per-library map produced by the scan loop above
+// and queries each library's membership with ListRefsByLibrary -- a
+// single lightweight query per scanned library, instead of paginating
+// the full hydrated artist catalog (#1409). When discoveredByLibrary has
+// N entries this issues exactly N queries (plus the per-artist Delete
+// call when a removal is actually needed).
+//
+// Legacy single-path mode (no LibraryLister + empty defaultLibraryID)
+// falls back to the paginated full-catalog sweep that the M:N era
+// inherited; without a libraryID to scope against, ListRefsByLibrary
+// would return zero rows and the removal pass would be a silent no-op.
+// Tests still depend on this fallback (TestScan_RemovedArtist), and the
+// legacy code path is hit only when an operator runs Stillwater without
+// a configured LibraryService, which is itself unusual.
+func (s *Service) detectRemoved(ctx context.Context, discoveredByLibrary map[string]map[string]bool, result *ScanResult) {
+	for libraryID, discoveredPaths := range discoveredByLibrary {
+		if ctx.Err() != nil {
+			return
+		}
+		if libraryID == "" {
+			s.detectRemovedLegacyFallback(ctx, discoveredPaths, result)
+			continue
+		}
+		refs, err := s.artistService.ListRefsByLibrary(ctx, libraryID)
+		if err != nil {
+			s.logger.Warn("listing artist refs for removal check",
+				"library_id", libraryID, "error", err)
+			continue
+		}
+		for _, ref := range refs {
+			if discoveredPaths[ref.Path] {
+				continue
+			}
+			if err := s.artistService.Delete(ctx, ref.ID); err != nil {
+				s.logger.Warn("failed to remove artist", "id", ref.ID, "error", err)
+				continue
+			}
+			s.mu.Lock()
+			result.RemovedArtists++
+			s.mu.Unlock()
+			s.logger.Debug("artist removed (directory gone)", "name", ref.Name, "path", ref.Path)
+		}
+	}
+}
+
+// detectRemovedLegacyFallback is the paginated full-catalog sweep used by
+// the legacy single-path mode (no LibraryLister). It performs path-prefix
+// matching against s.libraryPath so artists outside the scanned tree are
+// left alone. Kept here as a back-compat shim; production deployments use
+// the per-library path above.
+func (s *Service) detectRemovedLegacyFallback(ctx context.Context, discoveredPaths map[string]bool, result *ScanResult) {
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
@@ -614,26 +722,20 @@ func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]
 		allArtists = append(allArtists, more...)
 	}
 
+	libraryPath := s.libraryPath
 	for _, a := range allArtists {
 		if discoveredPaths[a.Path] {
 			continue
 		}
-		// Only remove artists whose path falls under a scanned library.
-		// Use filepath.Rel to avoid false positives (e.g. /music matching /music2).
-		underScannedLib := false
-		aPath := filepath.Clean(a.Path)
-		for _, lp := range libraryPaths {
-			rel, err := filepath.Rel(filepath.Clean(lp), aPath)
+		if libraryPath != "" {
+			aPath := filepath.Clean(a.Path)
+			rel, err := filepath.Rel(filepath.Clean(libraryPath), aPath)
 			if err != nil {
 				continue
 			}
-			if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				underScannedLib = true
-				break
+			if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
 			}
-		}
-		if !underScannedLib {
-			continue
 		}
 		if err := s.artistService.Delete(ctx, a.ID); err != nil {
 			s.logger.Warn("failed to remove artist", "id", a.ID, "error", err)
@@ -673,6 +775,168 @@ type detectedFiles struct {
 	BannerHeight      int
 }
 
+// detectFilesWithFastPath wraps detectFiles with a per-directory mtime
+// check (#1413). It is the scanner's entry point into file detection; the
+// behavior depends on whether the per-directory mtime indicates the
+// directory may have changed since the last scan:
+//
+//   - Fast path (mtime <= last scan, existing artist, fast-path enabled):
+//     calls detectFilesExistenceOnly. That helper still issues one
+//     os.ReadDir to learn which canonical filenames are on disk -- enough
+//     to set NFOExists, ThumbExists, FanartExists, FanartCount,
+//     LogoExists, BannerExists from disk reality. The expensive work is
+//     skipped: no os.Open, no image-header decode for dimensions, no full
+//     decode for perceptual-hash placeholder generation. Existing
+//     dimensions / low-res flags / placeholders are reused for image
+//     slots whose file is still present, and zeroed for slots whose file
+//     has disappeared (so persistNormalized removes the stale row).
+//
+//     Because existence is still probed from disk, the issue #1225
+//     contract -- "the registry must converge with disk on every visit"
+//     -- continues to hold: if hydrateImages reads an empty registry and
+//     sets existing.FanartExists=false but the file is still on disk,
+//     the fast path sees the file and sets detected.FanartExists=true,
+//     the mismatch lands in processExistingArtist's change branch, and
+//     Update -> persistNormalized rebuilds the row.
+//
+//   - Full path (any of: fast-path disabled, no existing artist, no
+//     prior LastScannedAt, mtime > last scan, future-dated mtime more
+//     than one minute ahead of "now", os.Stat failure): calls detectFiles
+//     which does the full per-image probe (dimensions + low-res +
+//     placeholder generation). The future-mtime guard absorbs ordinary
+//     clock drift while preventing a misbehaving filesystem from
+//     starving the per-image rescan indefinitely.
+//
+// The perf win is preserved: on a steady-state library where nothing
+// changes on disk, every recurring scan does one os.Stat + one
+// os.ReadDir per artist directory and zero image decodes. Image decodes
+// (dimension probe + placeholder generation) only run on first scan,
+// after a file mutation that bumps the directory mtime, or when the
+// fast path is disabled for an off-clock filesystem.
+func (s *Service) detectFilesWithFastPath(dirPath string, existing *artist.Artist) (detectedFiles, error) {
+	if !s.mtimeFastPath || existing == nil || existing.LastScannedAt == nil {
+		return detectFiles(dirPath, existing)
+	}
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		// Stat failure: fall through so detectFiles surfaces the real
+		// error (or recovers via ReadDir behavior). Don't swallow it
+		// here -- preserves the legacy diagnostic.
+		return detectFiles(dirPath, existing)
+	}
+	mtime := info.ModTime()
+	lastScan := *existing.LastScannedAt
+	// Defensive against future-dated mtimes: a filesystem with a broken
+	// clock (or a manually-touched directory) can produce mtimes after
+	// "now". Re-probe in that case so a stuck future timestamp cannot
+	// indefinitely starve the per-file rescan. One minute of slack
+	// absorbs ordinary clock drift without disabling the fast path.
+	if mtime.After(time.Now().Add(time.Minute)) {
+		return detectFiles(dirPath, existing)
+	}
+	if mtime.After(lastScan) {
+		return detectFiles(dirPath, existing)
+	}
+	// Directory unchanged since last scan: do the cheap existence-only
+	// probe and reuse stored dimensions / placeholders / low-res flags
+	// for slots whose file is still on disk.
+	return detectFilesExistenceOnly(dirPath, existing)
+}
+
+// detectFilesExistenceOnly probes an artist directory for which canonical
+// image / NFO filenames are present, without running the expensive
+// per-file image probe (dimension decode + perceptual-hash placeholder
+// generation). It is the cheap half of detectFiles; the fast path in
+// detectFilesWithFastPath uses it to honor the issue #1225 disk-vs-
+// registry convergence contract while still skipping the work that
+// dominates scan time on slow / networked filesystems.
+//
+// Field policy:
+//
+//   - *Exists, FanartCount: computed from the live os.ReadDir result.
+//     These match what detectFiles would compute.
+//   - *Width, *Height, *LowRes, *Placeholder: reused from `existing` for
+//     image slots whose file is still on disk. Zeroed when the file has
+//     disappeared so persistNormalized clears the stale row.
+//
+// `existing` must be non-nil; callers already guard on that in
+// detectFilesWithFastPath.
+func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detectedFiles, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return detectedFiles{}, fmt.Errorf("reading directory: %w", err)
+	}
+
+	files := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			files[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
+	var d detectedFiles
+	if _, ok := files["artist.nfo"]; ok {
+		d.NFOExists = true
+	}
+
+	for _, p := range thumbPatterns {
+		if _, ok := files[strings.ToLower(p)]; ok {
+			d.ThumbExists = true
+			d.ThumbWidth = existing.ThumbWidth
+			d.ThumbHeight = existing.ThumbHeight
+			d.ThumbLowRes = existing.ThumbLowRes
+			d.ThumbPlaceholder = existing.ThumbPlaceholder
+			break
+		}
+	}
+	for _, p := range fanartPatterns {
+		if actual, ok := files[strings.ToLower(p)]; ok {
+			d.FanartExists = true
+			d.FanartWidth = existing.FanartWidth
+			d.FanartHeight = existing.FanartHeight
+			d.FanartLowRes = existing.FanartLowRes
+			d.FanartPlaceholder = existing.FanartPlaceholder
+			// Count fanart variants from the same ReadDir result the
+			// full path uses via img.DiscoverFanart. Cheap: pure
+			// string-pattern matching against the already-built map.
+			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
+			if fanartErr != nil {
+				slog.Warn("discovering fanart variants during scan",
+					slog.String("dir", dirPath),
+					slog.String("error", fanartErr.Error()))
+			}
+			if len(fanartPaths) > 0 {
+				d.FanartCount = len(fanartPaths)
+			} else {
+				d.FanartCount = 1
+			}
+			break
+		}
+	}
+	for _, p := range logoPatterns {
+		if _, ok := files[strings.ToLower(p)]; ok {
+			d.LogoExists = true
+			d.LogoWidth = existing.LogoWidth
+			d.LogoHeight = existing.LogoHeight
+			d.LogoLowRes = existing.LogoLowRes
+			d.LogoPlaceholder = existing.LogoPlaceholder
+			break
+		}
+	}
+	for _, p := range bannerPatterns {
+		if _, ok := files[strings.ToLower(p)]; ok {
+			d.BannerExists = true
+			d.BannerWidth = existing.BannerWidth
+			d.BannerHeight = existing.BannerHeight
+			d.BannerLowRes = existing.BannerLowRes
+			d.BannerPlaceholder = existing.BannerPlaceholder
+			break
+		}
+	}
+
+	return d, nil
+}
+
 // detectFiles checks for the presence of known image and NFO files in an artist
 // directory and probes each found image for low-resolution status.
 // When existing is non-nil, its placeholders are reused to skip expensive
@@ -710,7 +974,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.ThumbExists = true
-			d.ThumbWidth, d.ThumbHeight, d.ThumbLowRes, d.ThumbPlaceholder = probeImageFile(fp, "thumb", existThumbPH)
+			d.ThumbWidth, d.ThumbHeight, d.ThumbLowRes, d.ThumbPlaceholder = probeImageFileFn(fp, "thumb", existThumbPH)
 			break
 		}
 	}
@@ -718,7 +982,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.FanartExists = true
-			d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFile(fp, "fanart", existFanartPH)
+			d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFileFn(fp, "fanart", existFanartPH)
 			// Count all fanart files (primary + numbered variants).
 			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
 			if fanartErr != nil {
@@ -738,7 +1002,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.LogoExists = true
-			d.LogoWidth, d.LogoHeight, d.LogoLowRes, d.LogoPlaceholder = probeImageFile(fp, "logo", existLogoPH)
+			d.LogoWidth, d.LogoHeight, d.LogoLowRes, d.LogoPlaceholder = probeImageFileFn(fp, "logo", existLogoPH)
 			break
 		}
 	}
@@ -746,13 +1010,18 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.BannerExists = true
-			d.BannerWidth, d.BannerHeight, d.BannerLowRes, d.BannerPlaceholder = probeImageFile(fp, "banner", existBannerPH)
+			d.BannerWidth, d.BannerHeight, d.BannerLowRes, d.BannerPlaceholder = probeImageFileFn(fp, "banner", existBannerPH)
 			break
 		}
 	}
 
 	return d, nil
 }
+
+// probeImageFileFn is the package-level seam through which detectFiles calls
+// probeImageFile. Tests swap it to count or short-circuit the expensive
+// image-probe work; production code never reassigns it.
+var probeImageFileFn = probeImageFile
 
 // probeImageFile opens a file once, probes dimensions for low-resolution
 // detection, and generates a placeholder. If existingPlaceholder is non-empty
