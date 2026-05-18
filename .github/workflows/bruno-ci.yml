@@ -263,11 +263,20 @@ jobs:
           # SIGKILL grace. set -o pipefail so the bru exit code survives the
           # pipe to tee.
           set -o pipefail
+          # --disable-cookies opts out of Bruno 3.x's per-collection cookie
+          # jar. Without it, Set-Cookie responses from earlier requests are
+          # stored and later merged into the request such that the explicit
+          # `Cookie: session={{sessionToken}}` header on subsequent .bru
+          # files loses its session= value -- authenticated POSTs then fall
+          # through authMw as anonymous and get 401. Bruno 1.22.0 did not
+          # have a cookie jar, so the tests were written against that
+          # behaviour; restoring it here keeps the collection contract.
           timeout --signal=TERM --kill-after=30s 300s \
             bru run \
               --env ci \
               --env-var "baseUrl=http://127.0.0.1:${PORT}" \
               --env-var "sessionToken=${SESSION_TOKEN}" \
+              --disable-cookies \
               --output "${{ runner.temp }}/bruno-results/bruno-results.html" \
               --format html \
               -r \
