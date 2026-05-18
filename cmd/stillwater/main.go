@@ -320,7 +320,7 @@ func (a *Application) openStorage() error {
 	a.logger.Info("database ready", slog.String("path", a.cfg.Database.Path))
 
 	// Reload logging settings from DB (overrides config file values if present).
-	loadDBLoggingConfig(db, a.logManager, a.logger)
+	loadDBLoggingConfig(context.Background(), db, a.logManager, a.logger)
 
 	// Derive the image cache directory once so the publisher, API router, and
 	// maintenance service all agree on where cached artist images live.
@@ -368,8 +368,8 @@ func (a *Application) buildServices() error {
 	}
 
 	wireEventBus(a, logger)
-	wireInfraServices(a, db, cfg, logger)
-	applyPersistedBasePath(db, cfg, logger)
+	wireInfraServices(ctx, a, db, cfg, logger)
+	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
 
 	logger.Info("starting stillwater",
@@ -455,16 +455,16 @@ func wireEventBus(a *Application, logger *slog.Logger) {
 
 // wireInfraServices wires backup, maintenance, settingsIO, and updater
 // services that depend only on db and cfg.
-func wireInfraServices(a *Application, db *sql.DB, cfg *config.Config, logger *slog.Logger) {
+func wireInfraServices(ctx context.Context, a *Application, db *sql.DB, cfg *config.Config, logger *slog.Logger) {
 	backupDir := cfg.Backup.Path
 	if backupDir == "" {
 		backupDir = filepath.Join(filepath.Dir(cfg.Database.Path), "backups")
 	}
 	a.backupService = backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
-	if dbRetention := getDBIntSetting(db, "backup_retention_count", 0); dbRetention > 0 {
+	if dbRetention := getDBIntSetting(ctx, db, "backup_retention_count", 0); dbRetention > 0 {
 		a.backupService.SetRetention(dbRetention)
 	}
-	if dbMaxAge := getDBIntSetting(db, "backup_max_age_days", -1); dbMaxAge >= 0 {
+	if dbMaxAge := getDBIntSetting(ctx, db, "backup_max_age_days", -1); dbMaxAge >= 0 {
 		a.backupService.SetMaxAgeDays(dbMaxAge)
 	}
 	a.maintenanceService = maintenance.NewService(db, cfg.Database.Path, a.imageCacheDir, logger)
@@ -510,9 +510,9 @@ func wireEventSubscriptions(a *Application) {
 // the interval is at least 5 minutes.
 func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
 	ctx := context.Background()
-	a.ruleScheduleMinutes = getDBIntSetting(db, "rule_schedule.interval_minutes", 0)
+	a.ruleScheduleMinutes = getDBIntSetting(ctx, db, "rule_schedule.interval_minutes", 0)
 	if a.ruleScheduleMinutes == 0 {
-		if legacyHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
+		if legacyHours := getDBIntSetting(ctx, db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
 			a.ruleScheduleMinutes = legacyHours * 60
 			_, _ = db.ExecContext(ctx,
 				`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -557,8 +557,8 @@ func (a *Application) wireAuth(ctx context.Context) error {
 	a.authService = auth.NewService(db)
 	a.authRegistry = auth.NewRegistry()
 	a.authRegistry.Register(auth.NewLocalProvider(db))
-	authMethod := getDBStringSetting(db, ctx, "auth.method", "local")
-	authServerURL := getDBStringSetting(db, ctx, "auth.server_url", "")
+	authMethod := getDBStringSetting(ctx, db, "auth.method", "local")
+	authServerURL := getDBStringSetting(ctx, db, "auth.server_url", "")
 	if authServerURL != "" {
 		switch authMethod {
 		case "emby":
@@ -738,8 +738,8 @@ func (a *Application) startListeners() error {
 
 	// Maintenance scheduler (interval from DB settings, defaults to daily).
 	{
-		maintEnabled := getDBBoolSetting(db, "db_maintenance.enabled", true)
-		maintHours := getDBIntSetting(db, "db_maintenance.interval_hours", 24)
+		maintEnabled := getDBBoolSetting(ctx, db, "db_maintenance.enabled", true)
+		maintHours := getDBIntSetting(ctx, db, "db_maintenance.interval_hours", 24)
 		if maintHours <= 0 {
 			maintHours = 24
 		}
@@ -750,7 +750,7 @@ func (a *Application) startListeners() error {
 
 	// Proactive exists_flag consistency scanner.
 	{
-		existsFlagHours := getDBIntSetting(db, "exists_flag_scan.interval_hours", 1)
+		existsFlagHours := getDBIntSetting(ctx, db, "exists_flag_scan.interval_hours", 1)
 		if existsFlagHours <= 0 {
 			existsFlagHours = 1
 		}
@@ -759,7 +759,7 @@ func (a *Application) startListeners() error {
 
 	// Foreign-file scanner.
 	{
-		foreignHours := getDBIntSetting(db, "foreign_file_scan.interval_hours", 6)
+		foreignHours := getDBIntSetting(ctx, db, "foreign_file_scan.interval_hours", 6)
 		if foreignHours <= 0 {
 			foreignHours = 6
 		}
@@ -854,11 +854,11 @@ func (a *Application) startListeners() error {
 // (cfg.Server.BasePathFromEnv == false). The HTTP mux is wired once at
 // startup and cannot rebind on the fly; a corrupt persisted value is
 // warn-and-ignored so operators are not locked out.
-func applyPersistedBasePath(db *sql.DB, cfg *config.Config, logger *slog.Logger) {
+func applyPersistedBasePath(ctx context.Context, db *sql.DB, cfg *config.Config, logger *slog.Logger) {
 	if cfg.Server.BasePathFromEnv {
 		return
 	}
-	override := getDBStringSetting(db, context.Background(), "server.base_path", "")
+	override := getDBStringSetting(ctx, db, "server.base_path", "")
 	if override == "" {
 		return
 	}
@@ -1191,14 +1191,13 @@ func backfillDefaultLibrary(ctx context.Context, libService *library.Service, mu
 
 // loadDBLoggingConfig reads logging settings from the DB and reconfigures the
 // log manager if any are present. Called once after migrations.
-func loadDBLoggingConfig(db *sql.DB, mgr *logging.Manager, logger *slog.Logger) {
-	ctx := context.Background()
-	level := getDBStringSetting(db, ctx, "logging.level", "")
-	format := getDBStringSetting(db, ctx, "logging.format", "")
-	filePath := getDBStringSetting(db, ctx, "logging.file_path", "")
-	fileMaxSize := getDBIntSetting(db, "logging.file_max_size_mb", 0)
-	fileMaxFiles := getDBIntSetting(db, "logging.file_max_files", 0)
-	fileMaxAge := getDBIntSetting(db, "logging.file_max_age_days", 0)
+func loadDBLoggingConfig(ctx context.Context, db *sql.DB, mgr *logging.Manager, logger *slog.Logger) {
+	level := getDBStringSetting(ctx, db, "logging.level", "")
+	format := getDBStringSetting(ctx, db, "logging.format", "")
+	filePath := getDBStringSetting(ctx, db, "logging.file_path", "")
+	fileMaxSize := getDBIntSetting(ctx, db, "logging.file_max_size_mb", 0)
+	fileMaxFiles := getDBIntSetting(ctx, db, "logging.file_max_files", 0)
+	fileMaxAge := getDBIntSetting(ctx, db, "logging.file_max_age_days", 0)
 	if level == "" && format == "" && filePath == "" && fileMaxSize <= 0 && fileMaxFiles <= 0 && fileMaxAge <= 0 {
 		return // no DB overrides
 	}
@@ -1260,7 +1259,7 @@ func logFilePathWritable(path string) error {
 }
 
 // getDBStringSetting reads a string setting directly from the database.
-func getDBStringSetting(db *sql.DB, ctx context.Context, key, fallback string) string {
+func getDBStringSetting(ctx context.Context, db *sql.DB, key, fallback string) string {
 	var v string
 	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
 	if err != nil || v == "" {
@@ -1270,9 +1269,9 @@ func getDBStringSetting(db *sql.DB, ctx context.Context, key, fallback string) s
 }
 
 // getDBBoolSetting reads a boolean setting directly from the database.
-func getDBBoolSetting(db *sql.DB, key string, fallback bool) bool {
+func getDBBoolSetting(ctx context.Context, db *sql.DB, key string, fallback bool) bool {
 	var v string
-	err := db.QueryRowContext(context.Background(), `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
 	if err != nil {
 		return fallback
 	}
@@ -1308,9 +1307,9 @@ func isValidPersistedBasePath(s string) bool {
 }
 
 // getDBIntSetting reads an integer setting directly from the database.
-func getDBIntSetting(db *sql.DB, key string, fallback int) int {
+func getDBIntSetting(ctx context.Context, db *sql.DB, key string, fallback int) int {
 	var v string
-	err := db.QueryRowContext(context.Background(), `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
 	if err != nil || v == "" {
 		return fallback
 	}

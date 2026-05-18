@@ -266,7 +266,7 @@ func TestApplyPersistedBasePath_EnvWins(t *testing.T) {
 		t.Fatalf("inserting test row: %v", err)
 	}
 	logger := slog.Default()
-	applyPersistedBasePath(db, cfg, logger)
+	applyPersistedBasePath(context.Background(), db, cfg, logger)
 	if cfg.Server.BasePath != "/original" {
 		t.Errorf("BasePath = %q; want %q", cfg.Server.BasePath, "/original")
 	}
@@ -282,7 +282,7 @@ func TestApplyPersistedBasePath_AppliesValidOverride(t *testing.T) {
 		t.Fatalf("inserting test row: %v", err)
 	}
 	logger := slog.Default()
-	applyPersistedBasePath(db, cfg, logger)
+	applyPersistedBasePath(context.Background(), db, cfg, logger)
 	if cfg.Server.BasePath != "/sw" {
 		t.Errorf("BasePath = %q; want %q", cfg.Server.BasePath, "/sw")
 	}
@@ -299,7 +299,7 @@ func TestApplyPersistedBasePath_RejectsInvalidOverride(t *testing.T) {
 		t.Fatalf("inserting test row: %v", err)
 	}
 	logger := slog.Default()
-	applyPersistedBasePath(db, cfg, logger)
+	applyPersistedBasePath(context.Background(), db, cfg, logger)
 	if cfg.Server.BasePath != "/original" {
 		t.Errorf("BasePath should remain %q after invalid override, got %q", "/original", cfg.Server.BasePath)
 	}
@@ -330,7 +330,7 @@ func TestIsValidPersistedBasePath(t *testing.T) {
 
 func TestGetDBStringSetting_FallbackOnMiss(t *testing.T) {
 	db := openTestDB(t)
-	got := getDBStringSetting(db, context.Background(), "nonexistent.key", "default")
+	got := getDBStringSetting(context.Background(), db, "nonexistent.key", "default")
 	if got != "default" {
 		t.Errorf("got %q; want %q", got, "default")
 	}
@@ -342,7 +342,7 @@ func TestGetDBStringSetting_ReturnsStoredValue(t *testing.T) {
 		`INSERT INTO settings (key, value, updated_at) VALUES ('test.key', 'hello', '2024-01-01T00:00:00Z')`); err != nil {
 		t.Fatalf("inserting test row: %v", err)
 	}
-	got := getDBStringSetting(db, context.Background(), "test.key", "fallback")
+	got := getDBStringSetting(context.Background(), db, "test.key", "fallback")
 	if got != "hello" {
 		t.Errorf("got %q; want %q", got, "hello")
 	}
@@ -355,7 +355,7 @@ func TestGetDBBoolSetting_TrueValues(t *testing.T) {
 			`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('b.key', ?, '2024-01-01T00:00:00Z')`, v); err != nil {
 			t.Fatalf("inserting bool test row for %q: %v", v, err)
 		}
-		if !getDBBoolSetting(db, "b.key", false) {
+		if !getDBBoolSetting(context.Background(), db, "b.key", false) {
 			t.Errorf("expected true for stored value %q", v)
 		}
 	}
@@ -370,7 +370,7 @@ func TestGetDBBoolSetting_FalseValues(t *testing.T) {
 			`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('b2.key', ?, '2024-01-01T00:00:00Z')`, v); err != nil {
 			t.Fatalf("inserting bool test row for %q: %v", v, err)
 		}
-		if getDBBoolSetting(db, "b2.key", true) {
+		if getDBBoolSetting(context.Background(), db, "b2.key", true) {
 			t.Errorf("expected false for stored value %q", v)
 		}
 	}
@@ -378,7 +378,7 @@ func TestGetDBBoolSetting_FalseValues(t *testing.T) {
 
 func TestGetDBBoolSetting_FallbackOnMiss(t *testing.T) {
 	db := openTestDB(t)
-	if getDBBoolSetting(db, "missing.bool", true) != true {
+	if getDBBoolSetting(context.Background(), db, "missing.bool", true) != true {
 		t.Error("expected fallback true")
 	}
 }
@@ -389,14 +389,14 @@ func TestGetDBIntSetting_ReturnsStoredValue(t *testing.T) {
 		`INSERT INTO settings (key, value, updated_at) VALUES ('int.key', '42', '2024-01-01T00:00:00Z')`); err != nil {
 		t.Fatalf("inserting test row: %v", err)
 	}
-	if got := getDBIntSetting(db, "int.key", 0); got != 42 {
+	if got := getDBIntSetting(context.Background(), db, "int.key", 0); got != 42 {
 		t.Errorf("got %d; want 42", got)
 	}
 }
 
 func TestGetDBIntSetting_FallbackOnMiss(t *testing.T) {
 	db := openTestDB(t)
-	if got := getDBIntSetting(db, "missing.int", 7); got != 7 {
+	if got := getDBIntSetting(context.Background(), db, "missing.int", 7); got != 7 {
 		t.Errorf("got %d; want 7", got)
 	}
 }
@@ -407,7 +407,7 @@ func TestGetDBIntSetting_FallbackOnNonNumeric(t *testing.T) {
 		`INSERT INTO settings (key, value, updated_at) VALUES ('bad.int', 'notanumber', '2024-01-01T00:00:00Z')`); err != nil {
 		t.Fatalf("inserting test row: %v", err)
 	}
-	if got := getDBIntSetting(db, "bad.int", 99); got != 99 {
+	if got := getDBIntSetting(context.Background(), db, "bad.int", 99); got != 99 {
 		t.Errorf("got %d; want fallback 99", got)
 	}
 }
