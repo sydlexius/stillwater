@@ -72,6 +72,7 @@ settings-general-platform-debug
 settings-general-platform-profile
 settings-general-symlinks
 settings-general-tls-status
+settings-general-tls-status-acme-experimental-badge
 settings-general-tls-status-active-acme
 settings-general-tls-status-active-acme-with-domain
 settings-general-tls-status-active-byo
