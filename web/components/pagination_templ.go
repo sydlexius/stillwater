@@ -15,6 +15,24 @@ import (
 	"strings"
 )
 
+// safeBaseURL returns base if it is a same-origin relative path or carries an
+// http/https scheme. A leading "/" is required, BUT "//" is rejected: browsers
+// resolve "//attacker.tld/path" as a protocol-relative cross-origin URL, which
+// would defeat this hardening boundary. Any other value -- including
+// javascript:, data:, vbscript:, and protocol-relative -- is replaced with "/"
+// so pageURL never produces a link with a dangerous scheme regardless of how
+// PaginationData.BaseURL is set.
+func safeBaseURL(base string) string {
+	if strings.HasPrefix(base, "/") && !strings.HasPrefix(base, "//") {
+		return base
+	}
+	lower := strings.ToLower(base)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return base
+	}
+	return "/"
+}
+
 // PaginationData holds the state for pagination controls.
 type PaginationData struct {
 	CurrentPage    int
@@ -81,7 +99,19 @@ func (p PaginationData) pageURL(page int) string {
 		// expects on the server side.
 		v.Set("ids", strings.Join(p.IDs, ","))
 	}
-	return p.BaseURL + "?" + v.Encode()
+	// Parse the base rather than concatenating: if BaseURL already carries
+	// "?" or "#", string concatenation would leak prior state into the
+	// pagination link and produce malformed URLs. RawQuery is REPLACED so
+	// the pagination component's query contract is authoritative; fragment
+	// is dropped because paging anchors don't carry meaning here.
+	base := safeBaseURL(p.BaseURL)
+	u, err := url.Parse(base)
+	if err != nil {
+		u = &url.URL{Path: "/"}
+	}
+	u.RawQuery = v.Encode()
+	u.Fragment = ""
+	return u.String()
 }
 
 // LoadMore renders an append-style pagination button that fetches the next page
@@ -118,7 +148,7 @@ func LoadMore(remaining, pageSize int, hxGet, hxTarget string) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(hxGet)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 90, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 120, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -131,7 +161,7 @@ func LoadMore(remaining, pageSize int, hxGet, hxTarget string) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(hxTarget)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 91, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 121, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -144,7 +174,7 @@ func LoadMore(remaining, pageSize int, hxGet, hxTarget string) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Load %d more of %d remaining items", min(pageSize, remaining), remaining))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 94, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 124, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -157,7 +187,7 @@ func LoadMore(remaining, pageSize int, hxGet, hxTarget string) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(min(pageSize, remaining)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 99, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 129, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -170,7 +200,7 @@ func LoadMore(remaining, pageSize int, hxGet, hxTarget string) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(remaining))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 99, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 129, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -214,7 +244,7 @@ func Pagination(data PaginationData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.CurrentPage))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 119, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 149, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -227,7 +257,7 @@ func Pagination(data PaginationData) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.TotalPages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 119, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 149, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -240,7 +270,7 @@ func Pagination(data PaginationData) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.TotalItems))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 120, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 150, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -256,9 +286,9 @@ func Pagination(data PaginationData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var11 templ.SafeURL
-				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.pageURL(data.CurrentPage - 1)))
+				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(data.pageURL(data.CurrentPage - 1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 126, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 156, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -271,7 +301,7 @@ func Pagination(data PaginationData) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.pageURL(data.CurrentPage - 1))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 127, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 157, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -284,7 +314,7 @@ func Pagination(data PaginationData) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(data.target())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 128, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 158, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -301,9 +331,9 @@ func Pagination(data PaginationData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 templ.SafeURL
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(data.pageURL(data.CurrentPage + 1)))
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(data.pageURL(data.CurrentPage + 1)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 137, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 167, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -316,7 +346,7 @@ func Pagination(data PaginationData) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(data.pageURL(data.CurrentPage + 1))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 138, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 168, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -329,7 +359,7 @@ func Pagination(data PaginationData) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(data.target())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 139, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/pagination.templ`, Line: 169, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
