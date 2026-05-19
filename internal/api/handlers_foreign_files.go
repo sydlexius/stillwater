@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -51,8 +54,8 @@ func (r *Router) loadForeignFilesView(ctx context.Context) (templates.ForeignFil
 		return view, err
 	}
 	view.Rows = make([]templates.ForeignFileRow, 0, len(entries))
-	for _, e := range entries {
-		view.Rows = append(view.Rows, foreignEntryToRow(e))
+	for i := range entries {
+		view.Rows = append(view.Rows, foreignEntryToRow(&entries[i]))
 	}
 	view.Count = len(view.Rows)
 	return view, nil
@@ -69,7 +72,8 @@ func (r *Router) loadForeignAllowlistView(ctx context.Context) (templates.Foreig
 		return view, err
 	}
 	view.Rows = make([]templates.ForeignAllowlistRow, 0, len(entries))
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		view.Rows = append(view.Rows, templates.ForeignAllowlistRow{
 			ID:         e.ID,
 			Scope:      string(e.Scope),
@@ -157,11 +161,18 @@ func (r *Router) handleForeignFileAllowlist(w http.ResponseWriter, req *http.Req
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading foreign-file row"})
 		return
 	}
+	hash, err := resolveForeignHash(&entry)
+	if err != nil {
+		r.logger.Error("resolving content hash for allowlist", "id", id, "path", entry.FilePath, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "resolving content hash"})
+		return
+	}
 	if err := r.foreignRepo.AddAllowlist(req.Context(), foreign.AllowlistEntry{
-		Scope:    foreign.ScopeArtist,
-		ArtistID: entry.ArtistID,
-		FileName: entry.FileName,
-		Note:     "added from foreign-files page",
+		Scope:       foreign.ScopeArtist,
+		ArtistID:    entry.ArtistID,
+		FileName:    entry.FileName,
+		ContentHash: hash,
+		Note:        "added from foreign-files page",
 	}); err != nil {
 		r.logger.Error("writing artist-scoped allowlist", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "writing allowlist"})
@@ -249,16 +260,25 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	seen := map[string]bool{}
-	for _, e := range entries {
-		key := strings.ToLower(e.FileName)
-		if seen[key] {
+	for i := range entries {
+		e := &entries[i]
+		hash, herr := resolveForeignHash(e)
+		if herr != nil {
+			// Skip-don't-clear: an unreadable file may be transient
+			// (perm flap, mid-write). Surface the failure so a chronic
+			// hash failure does not silently swallow every dismiss.
+			r.logger.Warn("dismiss content-hash resolve failed", "path", e.FilePath, "error", herr)
 			continue
 		}
-		seen[key] = true
+		if seen[hash] {
+			continue
+		}
+		seen[hash] = true
 		if err := r.foreignRepo.AddAllowlist(req.Context(), foreign.AllowlistEntry{
-			Scope:    foreign.ScopeGlobal,
-			FileName: e.FileName,
-			Note:     "bulk dismiss from banner",
+			Scope:       foreign.ScopeGlobal,
+			FileName:    e.FileName,
+			ContentHash: hash,
+			Note:        "bulk dismiss from banner",
 		}); err != nil {
 			// Skip the ledger delete on failure: clearing the row would hide
 			// the warning even though dismissal was not actually persisted,
@@ -380,7 +400,9 @@ func (r *Router) requireForeignAdmin(w http.ResponseWriter, req *http.Request) b
 }
 
 // foreignEntryToRow converts a domain entry to its template row shape.
-func foreignEntryToRow(e foreign.Entry) templates.ForeignFileRow {
+// Pointer receiver keeps copy cost minimal under gocritic's rangeValCopy
+// budget after Entry grew to include content_hash.
+func foreignEntryToRow(e *foreign.Entry) templates.ForeignFileRow {
 	return templates.ForeignFileRow{
 		ID:         e.ID,
 		ArtistID:   e.ArtistID,
@@ -390,4 +412,35 @@ func foreignEntryToRow(e foreign.Entry) templates.ForeignFileRow {
 		SizeBytes:  e.SizeBytes,
 		DetectedAt: e.DetectedAt.Format(time.RFC3339),
 	}
+}
+
+// resolveForeignHash returns the entry's stored content hash, or computes
+// it from disk when the row predates migration 008 and the column is empty.
+// Allowlist writes key on this value, so an empty hash would silently
+// produce duplicate rows under the partial-index WHERE clause and break
+// dedupe; rehashing on demand keeps the dismiss/allowlist paths correct
+// for legacy rows until the next scan refreshes the column. Pointer
+// receiver avoids the rangeValCopy lint hit on the dismiss loop.
+func resolveForeignHash(e *foreign.Entry) (string, error) {
+	if e.ContentHash != "" {
+		return e.ContentHash, nil
+	}
+	return hashFile(e.FilePath)
+}
+
+// hashFile streams the file at path through sha256 and returns the
+// lowercase hex digest. Mirrors the scanner's helper so the handler
+// package does not need to import internal/foreign just for the same
+// computation. Streaming avoids loading large files into memory.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from a server-managed ledger row, not user input
+	if err != nil {
+		return "", fmt.Errorf("hash open: %w", err)
+	}
+	defer f.Close() //nolint:errcheck // read-only handle
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hash read: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

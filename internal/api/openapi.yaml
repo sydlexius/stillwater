@@ -1636,20 +1636,30 @@ components:
         file_name:
           type: string
           description: Basename, e.g. "backdrop.jpg".
+        content_hash:
+          type: string
+          description: |
+            Lowercase hex sha256 of the file's bytes. Used as the dedupe
+            key for allowlisting so two files sharing a basename but with
+            different byte content can each be allowlisted independently.
+            Empty for rows recorded before migration 008; the scanner
+            backfills on the next pass.
         size_bytes:
           type: integer
           format: int64
         detected_at:
           type: string
           format: date-time
-      required: [id, artist_id, artist_name, file_path, file_name, size_bytes, detected_at]
+      required: [id, artist_id, artist_name, file_path, file_name, content_hash, size_bytes, detected_at]
 
     ForeignAllowlistEntry:
       type: object
       description: |
         One row in the foreign_file_allowlist table. scope=global matches
         every artist (artist_id is empty); scope=artist matches a specific
-        artist (artist_id required).
+        artist (artist_id required). Matching keys on content_hash so
+        identical byte sequences cannot be allowlisted twice in the same
+        scope; file_name is preserved for human readability in the UI.
       properties:
         id:
           type: string
@@ -1662,12 +1672,18 @@ components:
           type: string
         file_name:
           type: string
+        content_hash:
+          type: string
+          description: |
+            Lowercase hex sha256 of the allowlisted byte sequence; the
+            dedupe key. Empty only for legacy rows that have not yet been
+            rewritten by an allowlist mutation against the new schema.
         note:
           type: string
         created_at:
           type: string
           format: date-time
-      required: [id, scope, file_name, note, created_at]
+      required: [id, scope, file_name, content_hash, note, created_at]
 
 paths:
   /health:

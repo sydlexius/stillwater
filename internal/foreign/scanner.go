@@ -2,8 +2,11 @@ package foreign
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -207,7 +210,20 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		}
 		fullPath := filepath.Join(a.Path, name)
 
-		allowed, err := s.repo.IsAllowlisted(ctx, a.ID, name)
+		// Hash is computed before the allowlist check because the
+		// allowlist now keys on byte content rather than basename. If
+		// hashing fails (permission, partial write) we skip the file
+		// silently; re-detection on the next scan catches it once the
+		// file is readable.
+		hash, err := hashFile(fullPath)
+		if err != nil {
+			s.logger.Debug("hash file failed; skipping",
+				slog.String("path", fullPath),
+				slog.Any("error", err))
+			continue
+		}
+
+		allowed, err := s.repo.IsAllowlisted(ctx, a.ID, hash)
 		if err != nil {
 			s.logger.Warn("allowlist check failed; skipping file",
 				slog.String("artist_id", a.ID),
@@ -221,9 +237,6 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 
 		meta, err := img.ReadProvenance(fullPath)
 		if err != nil {
-			// Could not read the file (permission, partial write); skip
-			// silently rather than recording a noisy row. Re-detection on
-			// the next scan will catch it once the file is readable.
 			s.logger.Debug("read provenance failed; skipping",
 				slog.String("path", fullPath),
 				slog.Any("error", err))
@@ -239,11 +252,12 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 			size = info.Size()
 		}
 		entry := Entry{
-			ArtistID:   a.ID,
-			FilePath:   fullPath,
-			FileName:   name,
-			SizeBytes:  size,
-			DetectedAt: time.Now().UTC(),
+			ArtistID:    a.ID,
+			FilePath:    fullPath,
+			FileName:    name,
+			ContentHash: hash,
+			SizeBytes:   size,
+			DetectedAt:  time.Now().UTC(),
 		}
 		if err := s.repo.Upsert(ctx, entry); err != nil {
 			s.logger.Warn("upsert foreign-file entry",
@@ -266,13 +280,32 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		return recorded, 0, 0
 	}
 	cleared := 0
-	for _, ex := range existing {
+	for i := range existing {
+		ex := &existing[i]
 		if _, present := onDisk[ex.FileName]; present {
 			// Still on disk; only clear if it has gained provenance OR is
 			// now allowlisted. Both already filtered above (we would have
 			// continued before upserting), but the row may pre-date the
 			// fix, so re-evaluate here.
-			allowed, err := s.repo.IsAllowlisted(ctx, a.ID, ex.FileName)
+			//
+			// Allowlist matching keys on content_hash. Pre-008 rows may
+			// have an empty hash; backfill by rehashing on demand so the
+			// allowlist check has a key to compare against. The next
+			// upsert path (above) writes the hash back so subsequent
+			// scans skip the rehash.
+			hash := ex.ContentHash
+			if hash == "" {
+				h, herr := hashFile(ex.FilePath)
+				if herr != nil {
+					s.logger.Debug("rehash for reconcile failed; leaving row in place",
+						slog.String("artist_id", a.ID),
+						slog.String("file_path", ex.FilePath),
+						slog.Any("error", herr))
+					continue
+				}
+				hash = h
+			}
+			allowed, err := s.repo.IsAllowlisted(ctx, a.ID, hash)
 			if err != nil {
 				// Skip this row; leaving it in place is correct under the
 				// skip-don't-clear policy, but the failure must be visible
@@ -337,7 +370,7 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 // the listing predicate stays close to the only caller that needs it.
 func (s *Scanner) listForArtist(ctx context.Context, artistID string) ([]Entry, error) {
 	rows, err := s.repo.db.QueryContext(ctx,
-		`SELECT id, artist_id, file_path, file_name, size_bytes, detected_at
+		`SELECT id, artist_id, file_path, file_name, COALESCE(content_hash, ''), size_bytes, detected_at
 		   FROM foreign_files WHERE artist_id = ?`, artistID)
 	if err != nil {
 		return nil, fmt.Errorf("listing artist foreign files: %w", err)
@@ -347,7 +380,7 @@ func (s *Scanner) listForArtist(ctx context.Context, artistID string) ([]Entry, 
 	for rows.Next() {
 		var e Entry
 		var detected string
-		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.SizeBytes, &detected); err != nil {
+		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.ContentHash, &e.SizeBytes, &detected); err != nil {
 			return nil, fmt.Errorf("scanning artist foreign file row: %w", err)
 		}
 		// Mirror Repository.GetByID/List parsing so DetectedAt is populated
@@ -358,6 +391,24 @@ func (s *Scanner) listForArtist(ctx context.Context, artistID string) ([]Entry, 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// hashFile returns the lowercase hex sha256 of the file at path. Used by
+// the scanner to key allowlist matching on byte content rather than
+// basename, and by the handlers when an old ledger row predates migration
+// 008 and needs a hash computed on demand. Reading is streamed so very
+// large foreign files do not balloon scanner memory.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path) //nolint:gosec // G304: path is built from artist directory + DirEntry name, both server-controlled
+	if err != nil {
+		return "", fmt.Errorf("hash open: %w", err)
+	}
+	defer f.Close() //nolint:errcheck // read-only handle
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hash read: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // StartScheduler runs the scan on a fixed interval (after startupDelay) until

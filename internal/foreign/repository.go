@@ -27,6 +27,8 @@ var ErrNotFound = errors.New("foreign: not found")
 
 // Upsert records (or refreshes the detected_at on) a foreign-file entry.
 // Idempotent on (artist_id, file_path) so re-scans never duplicate rows.
+// content_hash may be empty for pre-008 rows; the scanner backfills it on
+// the next pass via this same upsert path.
 func (r *Repository) Upsert(ctx context.Context, e Entry) error {
 	if e.ArtistID == "" || e.FilePath == "" || e.FileName == "" {
 		return fmt.Errorf("foreign: upsert requires artist_id, file_path, file_name")
@@ -37,14 +39,19 @@ func (r *Repository) Upsert(ctx context.Context, e Entry) error {
 	if e.DetectedAt.IsZero() {
 		e.DetectedAt = time.Now().UTC()
 	}
+	var hashArg interface{}
+	if e.ContentHash != "" {
+		hashArg = e.ContentHash
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO foreign_files (id, artist_id, file_path, file_name, size_bytes, detected_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO foreign_files (id, artist_id, file_path, file_name, content_hash, size_bytes, detected_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, file_path) DO UPDATE SET
-			file_name   = excluded.file_name,
-			size_bytes  = excluded.size_bytes,
-			detected_at = excluded.detected_at`,
-		e.ID, e.ArtistID, e.FilePath, e.FileName, e.SizeBytes, e.DetectedAt.UTC().Format(time.RFC3339))
+			file_name    = excluded.file_name,
+			content_hash = excluded.content_hash,
+			size_bytes   = excluded.size_bytes,
+			detected_at  = excluded.detected_at`,
+		e.ID, e.ArtistID, e.FilePath, e.FileName, hashArg, e.SizeBytes, e.DetectedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("foreign: upsert: %w", err)
 	}
@@ -89,11 +96,12 @@ func (r *Repository) GetByID(ctx context.Context, id string) (Entry, error) {
 	var detected string
 	var artistName sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT f.id, f.artist_id, f.file_path, f.file_name, f.size_bytes, f.detected_at,
+		SELECT f.id, f.artist_id, f.file_path, f.file_name,
+		       COALESCE(f.content_hash, ''), f.size_bytes, f.detected_at,
 		       a.name
 		FROM foreign_files f
 		LEFT JOIN artists a ON a.id = f.artist_id
-		WHERE f.id = ?`, id).Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.SizeBytes, &detected, &artistName)
+		WHERE f.id = ?`, id).Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.ContentHash, &e.SizeBytes, &detected, &artistName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Entry{}, ErrNotFound
@@ -113,7 +121,8 @@ func (r *Repository) GetByID(ctx context.Context, id string) (Entry, error) {
 // by artist then file path so the UI rendering is stable across reloads.
 func (r *Repository) List(ctx context.Context) ([]Entry, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT f.id, f.artist_id, f.file_path, f.file_name, f.size_bytes, f.detected_at,
+		SELECT f.id, f.artist_id, f.file_path, f.file_name,
+		       COALESCE(f.content_hash, ''), f.size_bytes, f.detected_at,
 		       a.name
 		FROM foreign_files f
 		LEFT JOIN artists a ON a.id = f.artist_id
@@ -127,7 +136,7 @@ func (r *Repository) List(ctx context.Context) ([]Entry, error) {
 		var e Entry
 		var detected string
 		var artistName sql.NullString
-		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.SizeBytes, &detected, &artistName); err != nil {
+		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.ContentHash, &e.SizeBytes, &detected, &artistName); err != nil {
 			return nil, fmt.Errorf("foreign: scan list row: %w", err)
 		}
 		if t, perr := time.Parse(time.RFC3339, detected); perr == nil {
@@ -154,18 +163,22 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// IsAllowlisted reports whether (artistID, fileName) is suppressed from
-// re-detection by either an artist-scoped or global allowlist row. Both
-// scopes are checked in one query so this stays cheap inside the per-file
-// scanner loop.
-func (r *Repository) IsAllowlisted(ctx context.Context, artistID, fileName string) (bool, error) {
-	fileName = strings.ToLower(fileName)
+// IsAllowlisted reports whether (artistID, contentHash) is suppressed from
+// re-detection by either an artist-scoped or global allowlist row. Matching
+// is on byte content (sha256 hex) so two distinct files sharing a basename
+// no longer collide. An empty contentHash never matches; the scanner
+// rehashes on demand for pre-008 rows so the input is well-formed by the
+// time this is called.
+func (r *Repository) IsAllowlisted(ctx context.Context, artistID, contentHash string) (bool, error) {
+	if contentHash == "" {
+		return false, nil
+	}
 	var n int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM foreign_file_allowlist
-		WHERE LOWER(file_name) = ?
+		WHERE content_hash = ?
 		  AND (scope = 'global' OR (scope = 'artist' AND artist_id = ?))`,
-		fileName, artistID).Scan(&n)
+		contentHash, artistID).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("foreign: allowlist check: %w", err)
 	}
@@ -175,9 +188,14 @@ func (r *Repository) IsAllowlisted(ctx context.Context, artistID, fileName strin
 // AddAllowlist inserts an allowlist row. ArtistID must be non-empty when
 // scope is "artist" and empty when scope is "global"; the writer rejects
 // the inverse combinations to keep the partial unique indexes sound.
+// ContentHash is required: dedupe keys on it, so an empty hash would
+// silently produce duplicate rows under the partial-index WHERE clauses.
 func (r *Repository) AddAllowlist(ctx context.Context, e AllowlistEntry) error {
 	if e.FileName == "" {
 		return fmt.Errorf("foreign: allowlist requires file_name")
+	}
+	if e.ContentHash == "" {
+		return fmt.Errorf("foreign: allowlist requires content_hash")
 	}
 	switch e.Scope {
 	case ScopeGlobal:
@@ -202,9 +220,9 @@ func (r *Repository) AddAllowlist(ctx context.Context, e AllowlistEntry) error {
 		artistArg = e.ArtistID
 	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO foreign_file_allowlist (id, scope, artist_id, file_name, note, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		e.ID, string(e.Scope), artistArg, strings.ToLower(e.FileName), e.Note, e.CreatedAt.UTC().Format(time.RFC3339))
+		INSERT INTO foreign_file_allowlist (id, scope, artist_id, file_name, content_hash, note, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, string(e.Scope), artistArg, strings.ToLower(e.FileName), e.ContentHash, e.Note, e.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		// Treat unique-constraint failures as benign so callers (e.g. the
 		// banner Dismiss bulk action) can replay safely without surfacing
@@ -254,7 +272,8 @@ func (r *Repository) RemoveAllowlist(ctx context.Context, id string) error {
 // can render the artist name in the management page.
 func (r *Repository) ListAllowlist(ctx context.Context) ([]AllowlistEntry, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT al.id, al.scope, COALESCE(al.artist_id, ''), al.file_name, al.note, al.created_at,
+		SELECT al.id, al.scope, COALESCE(al.artist_id, ''), al.file_name,
+		       COALESCE(al.content_hash, ''), al.note, al.created_at,
 		       COALESCE(a.name, '')
 		FROM foreign_file_allowlist al
 		LEFT JOIN artists a ON a.id = al.artist_id
@@ -267,7 +286,7 @@ func (r *Repository) ListAllowlist(ctx context.Context) ([]AllowlistEntry, error
 	for rows.Next() {
 		var e AllowlistEntry
 		var scope, created string
-		if err := rows.Scan(&e.ID, &scope, &e.ArtistID, &e.FileName, &e.Note, &created, &e.ArtistName); err != nil {
+		if err := rows.Scan(&e.ID, &scope, &e.ArtistID, &e.FileName, &e.ContentHash, &e.Note, &created, &e.ArtistName); err != nil {
 			return nil, fmt.Errorf("foreign: scan allowlist row: %w", err)
 		}
 		e.Scope = AllowlistScope(scope)

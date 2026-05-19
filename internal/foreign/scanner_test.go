@@ -2,7 +2,9 @@ package foreign
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"os"
@@ -15,6 +17,15 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
+
+// sha256Hex returns the lowercase hex sha256 of b. Used by tests to
+// pre-compute the content hash that the scanner would compute at runtime,
+// so allowlist seeding can match the same hash the scanner derives from
+// the on-disk file.
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
 
 // stubArtistLister returns a fixed artist list to the scanner, paginated to
 // match the artist.ListParams interface used by Scanner.Scan.
@@ -38,7 +49,8 @@ func newTestDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	// Minimal schema needed by the tests: artists + foreign_files +
-	// foreign_file_allowlist mirrored from 001_initial_schema.sql.
+	// foreign_file_allowlist mirrored from 001_initial_schema.sql plus
+	// migration 008 (content_hash column + hash-keyed unique indexes).
 	stmts := []string{
 		`CREATE TABLE artists (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE foreign_files (
@@ -46,6 +58,7 @@ func newTestDB(t *testing.T) *sql.DB {
 			artist_id TEXT NOT NULL,
 			file_path TEXT NOT NULL,
 			file_name TEXT NOT NULL,
+			content_hash TEXT,
 			size_bytes INTEGER NOT NULL DEFAULT 0,
 			detected_at TEXT NOT NULL DEFAULT (datetime('now')),
 			UNIQUE(artist_id, file_path))`,
@@ -54,12 +67,15 @@ func newTestDB(t *testing.T) *sql.DB {
 			scope TEXT NOT NULL,
 			artist_id TEXT,
 			file_name TEXT NOT NULL,
+			content_hash TEXT,
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-		`CREATE UNIQUE INDEX idx_foreign_allowlist_global
-			ON foreign_file_allowlist(file_name) WHERE scope = 'global'`,
-		`CREATE UNIQUE INDEX idx_foreign_allowlist_artist
-			ON foreign_file_allowlist(artist_id, file_name) WHERE scope = 'artist'`,
+		`CREATE UNIQUE INDEX idx_foreign_allowlist_global_hash
+			ON foreign_file_allowlist(content_hash)
+			WHERE scope = 'global' AND content_hash IS NOT NULL`,
+		`CREATE UNIQUE INDEX idx_foreign_allowlist_artist_hash
+			ON foreign_file_allowlist(artist_id, content_hash)
+			WHERE scope = 'artist' AND content_hash IS NOT NULL`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -134,13 +150,14 @@ func TestScanner_RespectsAllowlist(t *testing.T) {
 	repo := NewRepository(db)
 
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "fanart.jpg"), []byte("not a real image"))
+	body := []byte("not a real image")
+	mustWrite(t, filepath.Join(dir, "fanart.jpg"), body)
 
 	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES (?, ?, ?)`, "a1", "Test Artist", dir); err != nil {
 		t.Fatalf("insert artist: %v", err)
 	}
 	if err := repo.AddAllowlist(context.Background(), AllowlistEntry{
-		Scope: ScopeGlobal, FileName: "fanart.jpg",
+		Scope: ScopeGlobal, FileName: "fanart.jpg", ContentHash: sha256Hex(body),
 	}); err != nil {
 		t.Fatalf("AddAllowlist: %v", err)
 	}
@@ -191,36 +208,50 @@ func TestRepository_AllowlistScopes(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewRepository(db)
 	ctx := context.Background()
+	hashA := sha256Hex([]byte("file-A bytes"))
 
 	// global rejects artist_id.
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeGlobal, ArtistID: "a1", FileName: "x.jpg"}); err == nil {
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeGlobal, ArtistID: "a1", FileName: "x.jpg", ContentHash: hashA}); err == nil {
 		t.Error("expected global+artist_id to be rejected")
 	}
 	// artist requires artist_id.
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, FileName: "x.jpg"}); err == nil {
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, FileName: "x.jpg", ContentHash: hashA}); err == nil {
 		t.Error("expected artist scope without artist_id to be rejected")
 	}
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "Backdrop.JPG"}); err != nil {
+	// content_hash is required.
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "x.jpg"}); err == nil {
+		t.Error("expected missing content_hash to be rejected")
+	}
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "Backdrop.JPG", ContentHash: hashA}); err != nil {
 		t.Fatalf("valid artist allowlist: %v", err)
 	}
-	allowed, err := repo.IsAllowlisted(ctx, "a1", "backdrop.jpg")
+	allowed, err := repo.IsAllowlisted(ctx, "a1", hashA)
 	if err != nil {
 		t.Fatalf("IsAllowlisted: %v", err)
 	}
 	if !allowed {
-		t.Errorf("expected case-insensitive match on file_name to be allowlisted")
+		t.Errorf("expected hash match to be allowlisted")
 	}
 	// Wrong artist must not match an artist-scoped row.
-	allowed, err = repo.IsAllowlisted(ctx, "other", "backdrop.jpg")
+	allowed, err = repo.IsAllowlisted(ctx, "other", hashA)
 	if err != nil {
 		t.Fatalf("IsAllowlisted other: %v", err)
 	}
 	if allowed {
 		t.Errorf("artist-scoped allowlist must not match a different artist")
 	}
+	// Empty hash never matches; the writer guarantees stored hashes are
+	// non-empty so this is the only way an unhashable lookup is answered.
+	allowed, err = repo.IsAllowlisted(ctx, "a1", "")
+	if err != nil {
+		t.Fatalf("IsAllowlisted empty: %v", err)
+	}
+	if allowed {
+		t.Errorf("empty hash must never match")
+	}
 	// Replaying the same allowlist row is a no-op (unique-constraint
 	// collisions are swallowed by the writer).
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "backdrop.jpg"}); err != nil {
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "backdrop.jpg", ContentHash: hashA}); err != nil {
 		t.Fatalf("idempotent allowlist insert: %v", err)
 	}
 }
@@ -292,10 +323,12 @@ func TestRepository_AllowlistList(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`); err != nil {
 		t.Fatalf("insert artist: %v", err)
 	}
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeGlobal, FileName: "fanart.jpg", Note: "stock"}); err != nil {
+	hashF := sha256Hex([]byte("fanart bytes"))
+	hashB := sha256Hex([]byte("backdrop bytes"))
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeGlobal, FileName: "fanart.jpg", ContentHash: hashF, Note: "stock"}); err != nil {
 		t.Fatalf("AddAllowlist: %v", err)
 	}
-	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "backdrop.jpg"}); err != nil {
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "backdrop.jpg", ContentHash: hashB}); err != nil {
 		t.Fatalf("AddAllowlist artist: %v", err)
 	}
 	rows, err := repo.ListAllowlist(ctx)
@@ -629,5 +662,106 @@ func TestScanner_ReconcileIsAllowlistedErrorPreservesRow(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Errorf("row must persist when IsAllowlisted errors; got %d rows", len(rows))
+	}
+}
+
+// TestScanner_HashDedupesDistinctFilesWithSameBasename is the headline
+// behavior the migration is here to support: two foreign files with the
+// same basename ("poster.jpg") in different artist directories produce
+// two distinct ledger rows because their byte content (and therefore
+// content_hash) differs.
+func TestScanner_HashDedupesDistinctFilesWithSameBasename(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	bytesA := []byte("artist-A poster bytes")
+	bytesB := []byte("artist-B poster bytes")
+	mustWrite(t, filepath.Join(dirA, "poster.jpg"), bytesA)
+	mustWrite(t, filepath.Join(dirB, "poster.jpg"), bytesB)
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','A',?), ('a2','B',?)`, dirA, dirB); err != nil {
+		t.Fatalf("insert artists: %v", err)
+	}
+	listing := stubArtistLister{artists: []artist.Artist{
+		{ID: "a1", Name: "A", Path: dirA},
+		{ID: "a2", Name: "B", Path: dirB},
+	}}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if err := scanner.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	got, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows for two distinct files with shared basename; got %d", len(got))
+	}
+	// Globally allowlist file A's bytes; only A should be suppressed.
+	if err := repo.AddAllowlist(context.Background(), AllowlistEntry{
+		Scope: ScopeGlobal, FileName: "poster.jpg", ContentHash: sha256Hex(bytesA),
+	}); err != nil {
+		t.Fatalf("AddAllowlist A: %v", err)
+	}
+	// Wipe the ledger so the next scan re-records only the still-unsuppressed file.
+	for _, e := range got {
+		if err := repo.DeleteByID(context.Background(), e.ID); err != nil {
+			t.Fatalf("clear ledger row %s: %v", e.ID, err)
+		}
+	}
+	if err := scanner.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan after allowlist: %v", err)
+	}
+	got, err = repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List after allowlist: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 row after allowlisting A's bytes; got %d", len(got))
+	}
+	if got[0].ArtistID != "a2" {
+		t.Errorf("expected the SURVIVOR to be artist B (different bytes); got artist_id=%q hash=%q",
+			got[0].ArtistID, got[0].ContentHash)
+	}
+}
+
+// TestScanner_BackfillsHashOnLegacyRow simulates a row recorded before
+// migration 008 (content_hash NULL) and asserts the next scan recomputes
+// the hash from disk and writes it back so subsequent reconcile passes
+// can use the indexed lookup.
+func TestScanner_BackfillsHashOnLegacyRow(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewRepository(db)
+	dir := t.TempDir()
+	body := []byte("legacy bytes")
+	target := filepath.Join(dir, "backdrop.jpg")
+	mustWrite(t, target, body)
+	if _, err := db.Exec(`INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir); err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	// Seed a pre-008 ledger row directly with a NULL content_hash so the
+	// scanner's backfill path is exercised.
+	if _, err := db.Exec(`INSERT INTO foreign_files
+		(id, artist_id, file_path, file_name, content_hash, size_bytes, detected_at)
+		VALUES (?, 'a1', ?, 'backdrop.jpg', NULL, ?, datetime('now'))`,
+		"legacy-row", target, len(body)); err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	listing := stubArtistLister{artists: []artist.Artist{{ID: "a1", Name: "x", Path: dir}}}
+	scanner := NewScanner(repo, listing, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if err := scanner.Scan(context.Background()); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	got, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 row after backfill scan; got %d", len(got))
+	}
+	want := sha256Hex(body)
+	if got[0].ContentHash != want {
+		t.Errorf("legacy row should be backfilled to sha256(file); got %q want %q",
+			got[0].ContentHash, want)
 	}
 }
