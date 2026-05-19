@@ -150,6 +150,7 @@ func indexOf(s, sub string) int {
 }
 
 func TestWarnTitle(t *testing.T) {
+	ctx := testCtx(t)
 	cases := map[string]string{
 		"image": "Image file writes paused",
 		"nfo":   "NFO file writes paused",
@@ -157,17 +158,18 @@ func TestWarnTitle(t *testing.T) {
 		"":      "Write-back conflict",
 	}
 	for axis, want := range cases {
-		if got := warnTitle(axis); got != want {
+		if got := warnTitle(ctx, axis); got != want {
 			t.Errorf("warnTitle(%q) = %q, want %q", axis, got, want)
 		}
 	}
 }
 
 func TestWarnSubtitle_UsesConnectionName(t *testing.T) {
+	ctx := testCtx(t)
 	v := ConflictBannerView{
 		Connections: []ConflictBannerConn{{Name: "Emby UAT", LibraryName: "Music"}},
 	}
-	got := warnSubtitle("image", v)
+	got := warnSubtitle(ctx, "image", v)
 	if got == "" || !contains(got, "Emby UAT") {
 		t.Errorf("subtitle should mention Emby UAT: %q", got)
 	}
@@ -177,7 +179,8 @@ func TestWarnSubtitle_UsesConnectionName(t *testing.T) {
 }
 
 func TestWarnSubtitle_FallsBackWhenNoConnections(t *testing.T) {
-	got := warnSubtitle("nfo", ConflictBannerView{})
+	ctx := testCtx(t)
+	got := warnSubtitle(ctx, "nfo", ConflictBannerView{})
 	if got == "" {
 		t.Error("empty fallback")
 	}
@@ -190,21 +193,44 @@ func TestWarnSubtitle_FallsBackWhenNoConnections(t *testing.T) {
 // regress to the " is saving artwork..." rendering that started the
 // warnSubtitle fix in round 1.
 func TestWarnSubtitle_FallsBackWhenConnectionIdentityBlank(t *testing.T) {
+	ctx := testCtx(t)
 	v := ConflictBannerView{
 		Connections: []ConflictBannerConn{{Name: "", Type: "", LibraryName: "Music"}},
 	}
-	got := warnSubtitle("image", v)
+	got := warnSubtitle(ctx, "image", v)
 	if !contains(got, "A connected server") {
 		t.Errorf("expected generic actor fallback, got %q", got)
 	}
 }
 
 func TestWarnAffected_PerAxis(t *testing.T) {
-	if warnAffected("image") == "" || warnAffected("nfo") == "" || warnAffected("both") == "" {
+	ctx := testCtx(t)
+	if warnAffected(ctx, "image") == "" || warnAffected(ctx, "nfo") == "" || warnAffected(ctx, "both") == "" {
 		t.Error("affected text should be populated for all axes")
 	}
-	if warnAffected("other") != "" {
+	if warnAffected(ctx, "other") != "" {
 		t.Error("unknown axis should return empty")
+	}
+}
+
+// TestSaverAxisLabel pins the localized pill text emitted by the offender
+// row in both the amber and round-trip banner variants. The empty-axis
+// branch must return "" so the templ switch can skip the span.
+func TestSaverAxisLabel(t *testing.T) {
+	ctx := testCtx(t)
+	cases := []struct {
+		image, nfo bool
+		want       string
+	}{
+		{true, true, "image + NFO saver"},
+		{true, false, "image saver"},
+		{false, true, "NFO saver"},
+		{false, false, ""},
+	}
+	for _, c := range cases {
+		if got := saverAxisLabel(ctx, c.image, c.nfo); got != c.want {
+			t.Errorf("saverAxisLabel(image=%v, nfo=%v) = %q, want %q", c.image, c.nfo, got, c.want)
+		}
 	}
 }
 

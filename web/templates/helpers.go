@@ -247,29 +247,29 @@ func tourStepsJSON(ctx context.Context) string {
 // warnTitle returns the state-specific headline used by the amber banner
 // variants. Copy mirrors the approved mockup so the three axes (image,
 // nfo, both) each read as a concrete action rather than a generic warning.
-func warnTitle(axis string) string {
+func warnTitle(ctx context.Context, axis string) string {
 	switch axis {
 	case "image":
-		return "Image file writes paused"
+		return t(ctx, "banner.warn.title.image")
 	case "nfo":
-		return "NFO file writes paused"
+		return t(ctx, "banner.warn.title.nfo")
 	case "both":
-		return "Image and NFO file writes paused"
+		return t(ctx, "banner.warn.title.both")
 	}
-	return "Write-back conflict"
+	return t(ctx, "banner.warn.title.default")
 }
 
 // warnSubtitle builds the body-text clause that explains which server is
 // causing the pause and, where available, which library.
-func warnSubtitle(axis string, v ConflictBannerView) string {
+func warnSubtitle(ctx context.Context, axis string, v ConflictBannerView) string {
 	if len(v.Connections) == 0 {
 		switch axis {
 		case "image":
-			return "a connected server is saving artwork files into the music library, which clobbers Stillwater's files."
+			return t(ctx, "banner.warn.subtitle.image_no_conn")
 		case "nfo":
-			return "a connected server has an NFO metadata saver enabled."
+			return t(ctx, "banner.warn.subtitle.nfo_no_conn")
 		}
-		return "a connected server is writing files back into the music library."
+		return t(ctx, "banner.warn.subtitle.default_no_conn")
 	}
 	c := v.Connections[0]
 	name := c.Name
@@ -279,23 +279,23 @@ func warnSubtitle(axis string, v ConflictBannerView) string {
 	if strings.TrimSpace(name) == "" {
 		// Last-resort label when both Name and Type are blank so the
 		// rendered subtitle never starts with " is saving...".
-		name = "A connected server"
+		name = t(ctx, "banner.warn.subtitle.fallback_name")
 	}
 	switch axis {
 	case "image":
 		if c.LibraryName != "" {
-			return name + " is saving artwork files into library \"" + c.LibraryName + "\", which clobbers Stillwater's files."
+			return tf(ctx, "banner.warn.subtitle.image_with_library", name, c.LibraryName)
 		}
-		return name + " is saving artwork files into the music library, which clobbers Stillwater's files."
+		return tf(ctx, "banner.warn.subtitle.image", name)
 	case "nfo":
 		if c.LibraryName != "" {
-			return name + " has an NFO metadata saver enabled on library \"" + c.LibraryName + "\"."
+			return tf(ctx, "banner.warn.subtitle.nfo_with_library", name, c.LibraryName)
 		}
-		return name + " has an NFO metadata saver enabled."
+		return tf(ctx, "banner.warn.subtitle.nfo", name)
 	case "both":
-		return name + " is saving both artwork and NFO files into the music library."
+		return tf(ctx, "banner.warn.subtitle.both", name)
 	}
-	return name + " is writing files back into the music library."
+	return tf(ctx, "banner.warn.subtitle.default", name)
 }
 
 // warnAffected returns the "Affected: ..." sub-line matching the mockup's
@@ -305,14 +305,30 @@ func warnSubtitle(axis string, v ConflictBannerView) string {
 // with 409. The earlier copy claimed "edits to existing artwork are still
 // allowed", which contradicted the gate -- gateImageWrite blocks crop and
 // fanart assign too.
-func warnAffected(axis string) string {
+func warnAffected(ctx context.Context, axis string) string {
 	switch axis {
 	case "image":
-		return "Affected: image upload, fetch, crop, fanart assign + batch fetch, rules, maintenance."
+		return t(ctx, "banner.warn.affected.image")
 	case "nfo":
-		return "Affected: NFO edits, generation, rules targeting NFO. Images unaffected."
+		return t(ctx, "banner.warn.affected.nfo")
 	case "both":
-		return "Affected: image fetch/edit/crop/assign, NFO generate/edit, rule fix-all, maintenance."
+		return t(ctx, "banner.warn.affected.both")
+	}
+	return ""
+}
+
+// saverAxisLabel returns the localized pill text for an offender's enabled
+// savers ("image + NFO saver", "image saver", "NFO saver"). Returns the
+// empty string when neither axis is on, which lets templ-level switches
+// skip emitting an empty span.
+func saverAxisLabel(ctx context.Context, image, nfo bool) string {
+	switch {
+	case image && nfo:
+		return t(ctx, "banner.saver.image_and_nfo")
+	case image:
+		return t(ctx, "banner.saver.image")
+	case nfo:
+		return t(ctx, "banner.saver.nfo")
 	}
 	return ""
 }
