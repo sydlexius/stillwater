@@ -622,6 +622,8 @@ func TestImageFixer_Fix_PostDownloadDimensionGate(t *testing.T) {
 	}
 
 	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
+	// httptest server is on 127.0.0.1 -- override SafeTransport for loopback.
+	f.httpClient = &http.Client{Timeout: fetchTimeout}
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie",
@@ -677,6 +679,8 @@ func TestImageFixer_Fix_ThumbSquare_ResolutionGate(t *testing.T) {
 	}
 
 	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
+	// httptest server is on 127.0.0.1 -- override SafeTransport for loopback.
+	f.httpClient = &http.Client{Timeout: fetchTimeout}
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie-sq",

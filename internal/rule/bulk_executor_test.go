@@ -92,10 +92,13 @@ func TestBulkExecutor_SaveBestImage_PlatformNaming(t *testing.T) {
 
 	// Construct a BulkExecutor with only the dependencies saveBestImage needs.
 	// bulkService, artistService, orchestrator, pipeline, and snapshotService
-	// are all nil because saveBestImage does not call them directly.
+	// are all nil because saveBestImage does not call them directly. The
+	// httpClient is a plain client because the httptest server binds to
+	// 127.0.0.1, which the default SSRF-safe transport blocks.
 	executor := &BulkExecutor{
 		platformService: platformSvc,
 		logger:          testLogger(),
+		httpClient:      &http.Client{Timeout: fetchTimeout},
 	}
 
 	saved := executor.saveBestImage(ctx, a, "fanart", fetchResult)

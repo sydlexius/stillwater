@@ -414,6 +414,9 @@ func TestImageFixer_Fix_SuccessfulDownloadAndSave(t *testing.T) {
 
 	dir := t.TempDir()
 	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
+	// httptest.NewServer binds to 127.0.0.1, which the default SSRF-safe
+	// transport blocks. Swap in a plain client so the loopback fetch succeeds.
+	f.httpClient = &http.Client{Timeout: fetchTimeout}
 	a := &artist.Artist{
 		Name:          "Save Success",
 		MusicBrainzID: "mbid-save",
@@ -466,6 +469,8 @@ func TestImageFixer_Fix_AllDownloadsFail(t *testing.T) {
 	}
 
 	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
+	// httptest server is on 127.0.0.1 -- bypass SafeTransport for this test.
+	f.httpClient = &http.Client{Timeout: fetchTimeout}
 	a := &artist.Artist{
 		Name:          "All Fail",
 		MusicBrainzID: "mbid-allfail",

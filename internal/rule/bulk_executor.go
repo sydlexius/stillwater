@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -31,6 +33,13 @@ type BulkExecutor struct {
 	publisher       *publish.Publisher
 	logger          *slog.Logger
 	eventBus        *event.Bus
+	// httpClient is the HTTP client used by saveBestImage to download image
+	// bytes from provider-supplied URLs. It defaults to an SSRF-safe client
+	// backed by httpsafe.SafeTransport so the bulk-fix pipeline cannot be
+	// coerced into fetching internal-network resources via a malicious or
+	// compromised provider response. Tests override this field with a plain
+	// *http.Client when exercising the loopback-bound httptest path.
+	httpClient *http.Client
 
 	mu        sync.Mutex
 	cancelFn  context.CancelFunc
@@ -54,6 +63,7 @@ func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, or
 		expectedWrites:  expectedWrites,
 		publisher:       publisher,
 		logger:          logger.With(slog.String("component", "bulk-executor")),
+		httpClient:      httpsafe.SafeClient(fetchTimeout),
 	}
 }
 
@@ -351,7 +361,7 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			Rule:    "",
 			Mode:    "auto",
 		}
-		saved, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
+		saved, err := SaveImageFromURL(ctx, e.httpClient, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
 		if err != nil {
 			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
