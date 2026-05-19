@@ -69,6 +69,8 @@ func (s *Service) SetDebounce(d time.Duration) {
 // Start blocks until ctx is canceled. It creates an fsnotify watcher,
 // watches library root directories, and dispatches events. If fsnotify
 // is unavailable, the service still runs with poll-only support.
+//
+//nolint:gocognit // Main event loop multiplexes fsnotify events, poll ticker, library config reload, and ctx.Done across a single select; each case has its own debounce, dedup, and dispatch logic and lifting cases into methods would still leave the select skeleton intact.
 func (s *Service) Start(ctx context.Context) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {

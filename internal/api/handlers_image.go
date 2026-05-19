@@ -94,6 +94,8 @@ var validContentTypes = map[string]bool{
 
 // handleImageUpload handles multipart file uploads for artist images.
 // POST /api/v1/artists/{id}/images/upload
+//
+//nolint:gocognit // Linear guard chain (auth, artist exists, image dir, multipart parse, type allowlist, file slot, content-type allowlist, size cap, pre-save geometry check) then either the fanart-append or primary-save branch with per-branch provenance, event emission, rule re-eval, and platform sync; the guard ordering is the API contract. The companion handleImageFetch (sub-issue) covers the duplicated branch shape; refactor tracked in #1552.
 func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -259,6 +261,8 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 
 // handleImageFetch fetches an image from a URL and saves it for the artist.
 // POST /api/v1/artists/{id}/images/fetch
+//
+//nolint:gocognit // URL-fetch image handler (cog 35): mirrors handleImageUpload's guard chain (auth, artist, image dir, validation, pre-save geometry, fanart-vs-primary save) with a URL fetch substituted for the multipart parse and an extra private-URL block; the cross-handler duplication is the structural smell driving cog and a shared image-receive helper would flatten both. Refactor tracked in #1552.
 func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -902,6 +906,8 @@ func sortImageResults(images []provider.ImageResult, sortBy string) {
 // After persisting, provenance metadata (phash, source, file format, mtime) is read from the
 // image file and recorded in the artist_images table.
 // When exists is false all flags and the placeholder are cleared.
+//
+//nolint:gocognit // Probes file existence then conditionally derives dimensions, low-res flag, placeholder, phash, source format, and mtime; each step's error handling is local to its concern and splitting would just shuffle the conditionals across helpers.
 func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
 	var lowRes bool
 	var placeholder string
@@ -1206,6 +1212,8 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 
 // handleDeleteImage deletes a local artist image file.
 // DELETE /api/v1/artists/{id}/images/{type}
+//
+//nolint:gocognit // Fanart delete is a distinct branch that walks every numbered variant before invoking platform-side delete; the regular-image branch uses #1161 strict-stat semantics so a transient stat error preserves the exists_flag. Each branch's response shape (HTMX preview-card vs JSON) is API contract.
 func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {

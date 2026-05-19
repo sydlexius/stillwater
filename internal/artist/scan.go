@@ -316,6 +316,8 @@ var legacyFilterSQL = map[string]string{
 }
 
 // buildWhereClause constructs WHERE conditions from list parameters.
+//
+//nolint:gocognit // SQL WHERE assembler: each filter field (IDs, search, locked, missing-image flags, status enum, library scope, source list) has bespoke placeholder shape and argument count; the if-ladder enforces the column-to-args correspondence the SQL parameter binding depends on.
 func buildWhereClause(params ListParams) (string, []any) {
 	var conditions []string
 	var args []any

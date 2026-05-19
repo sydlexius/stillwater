@@ -203,6 +203,8 @@ func normalizeSettingsSection(section string) string {
 
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
+//
+//nolint:gocognit // Top-level settings page aggregator: auth gate, platforms list, providers list, integrations, language prefs, update config, log config; each subsection has its own error branch with a degrade-or-bail decision and merging them would require shared error sentinels that obscure the per-section policy.
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {

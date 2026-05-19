@@ -588,6 +588,7 @@ func (r *Router) dedupeForImport(
 	return a, false
 }
 
+//nolint:gocognit // Paginated Emby fetch with per-artist upsert, conflict-with-manual-libraries detection, image-presence cache updates, and disambiguation when external MBID differs from local; the paginate loop's continuation conditions and per-artist outcome accounting must remain in sequence.
 func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
@@ -674,6 +675,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 	return nil
 }
 
+//nolint:gocognit // Paginated Jellyfin fetch with the same multi-state per-artist accounting as the Emby variant (upsert, conflict-with-manual, image cache, disambiguation); the Jellyfin response schema differs from Emby's so the two cannot share a code path without an adapter abstraction that would itself raise complexity.
 func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.Client, lib *library.Library, result *populateResult) error {
 	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
@@ -868,6 +870,8 @@ var platformToStillwaterType = map[string]string{
 // downloadPlatformImages downloads available images from a media platform for a single artist.
 // connType identifies the platform source (e.g. "emby", "jellyfin") for provenance metadata.
 // Errors are non-fatal: logged as warnings and skipped.
+//
+//nolint:gocognit // Platform image downloader (cog 60): walks the imageTag -> Stillwater image-type map, downloads each present tag with per-type cache-miss handling, saves with platform-naming patterns, records provenance, and finally walks the backdropTags slice with a parallel pipeline; a per-tag pipeline struct with a download-save-provenance method would preserve provenance attribution while flattening the cog score. Refactor tracked in #1546.
 func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, connType string, result *populateResult) {
 	dir := r.imageDir(a)
 	if dir == "" {

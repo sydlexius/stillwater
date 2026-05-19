@@ -171,6 +171,8 @@ func (s *Scanner) Scan(ctx context.Context) error {
 // scanArtist examines a single artist directory and reconciles the ledger
 // with on-disk reality. Returns (recorded, cleared, skipped) counts so the
 // caller can roll up Scan-level metrics.
+//
+//nolint:gocognit // Foreign-file reconciler (cog 50): reconciles on-disk files against the ledger with skip-don't-clear semantics (ambiguous reads -> skipped, not recorded/cleared, per the proactive-cron blast-radius safeguard). The bucket-selection ladder is essential to the safety policy but the per-file classification could split into a typed classifier helper to ease readability. Refactor tracked in #1549.
 func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, int) {
 	entries, err := os.ReadDir(a.Path)
 	if err != nil {

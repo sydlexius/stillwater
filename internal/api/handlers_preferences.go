@@ -355,6 +355,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 // handleGetPreferences returns all preferences for the authenticated user,
 // merged with defaults so every known key is always present.
 // GET /api/v1/preferences
+//
+//nolint:gocognit // Defaults merge then per-row overlay with per-key normalization (boolean coercion with app-level fallback for auto_fetch_images, page_size clamp, bg_opacity clamp, metadata_languages re-validation); each normalizer is keyed on a different preference family so the if-ladder is the dispatch and a generic normalizer would have to thread per-family parameters through.
 func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {

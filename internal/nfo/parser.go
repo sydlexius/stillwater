@@ -78,6 +78,8 @@ func Parse(r io.Reader) (*ArtistNFO, error) {
 
 // parseTokens walks the XML token stream, populating known fields and
 // capturing unknown elements as raw bytes.
+//
+//nolint:gocognit // xml.Decoder token-stream consumer: <artist> entry guard, per-token type switch over StartElement/EndElement, known-vs-unknown element dispatch, and invalid-XML-name skip path for elements the lenient decoder accepted but a strict re-serializer would reject. The token-loop shape is xml.Decoder's contract.
 func parseTokens(decoder *xml.Decoder, nfo *ArtistNFO) error {
 	var inArtist bool
 

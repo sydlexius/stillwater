@@ -129,6 +129,8 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 // administrator, and ErrLastAdmin if downgrading the last active administrator.
 // The checks and role update run inside a BEGIN IMMEDIATE transaction
 // to prevent concurrent downgrades from racing past the safeguards.
+//
+//nolint:gocognit // Txn-bound precondition chain: role enum gate, current-role query, no-op short-circuit, protected-user guard on downgrade, last-admin guard, then a constrained UPDATE that also recognizes the SQL trigger's "cannot change role of a protected user" error so the API returns ErrProtectedUser instead of a generic error. The guards are the security invariant; splitting them into helpers would only obscure ordering.
 func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) error {
 	if newRole != "administrator" && newRole != "operator" {
 		return fmt.Errorf("invalid role %q: must be administrator or operator", newRole)

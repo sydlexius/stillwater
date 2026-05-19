@@ -302,6 +302,8 @@ func (r *Router) handleBulkActionCancel(w http.ResponseWriter, _ *http.Request) 
 
 // runBulkAction executes the action for each artist ID in a detached goroutine.
 // Uses a mutex-protected progress struct so status polls see consistent state.
+//
+//nolint:gocognit // Action-dispatch worker: per-action branches (lock/unlock/delete/refresh) each have distinct prerequisites and outcome accounting, all wrapped in the same cancel-aware loop with mutex-protected progress; the dispatch must stay in one function for the cancel observer to see consistent state transitions.
 func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []string, progress *BulkActionProgress) {
 	// Detach from the request lifecycle but keep request-scoped values
 	// (user, logger, etc.). fix-all uses the same pattern. Wrap with a

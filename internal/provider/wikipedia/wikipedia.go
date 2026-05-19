@@ -101,6 +101,8 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 // English is appended as a fallback when not already present in the
 // preference list; if the user has explicitly placed "en" earlier, it
 // is tried in that position rather than last.
+//
+//nolint:gocognit // Resolves an ID to (title, QID), iterates user language preferences with English fallback, and at each language probes extracts, sitelinks, infobox, image, and disambiguation handling; the per-language fallthrough on empty content keeps the policy in one place rather than scattered helpers.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {

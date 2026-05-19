@@ -35,6 +35,8 @@ var conflictingExtensions = map[string][]string{
 //
 // The file being written (exact match on fileName) is skipped, since
 // WriteFileAtomic handles overwriting it.
+//
+//nolint:gocognit // Three-way per-entry classification (exact match, same-format-different-case, conflicting format) with case-sensitive-FS detection via os.SameFile; the matrix is the function's purpose and the rename-vs-delete decision per cell carries the case-mismatch-survives-write-failure guarantee documented in the function's contract.
 func CleanupConflictingFormats(dir string, fileName string, logger *slog.Logger) error {
 	ext := strings.ToLower(filepath.Ext(fileName))
 	base := strings.TrimSuffix(fileName, filepath.Ext(fileName))

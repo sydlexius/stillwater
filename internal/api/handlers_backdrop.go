@@ -505,6 +505,8 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 
 // handleFanartReorder reorders local fanart files according to a given permutation.
 // POST /api/v1/artists/{id}/images/fanart/reorder
+//
+//nolint:gocognit // Permutation validation (range-check, dup-check, length-match) interleaved with two-phase rename (stage to .tmp, then commit) and rollback-on-partial-failure; the rollback ordering only makes sense in the linear form.
 func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {

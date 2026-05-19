@@ -468,6 +468,8 @@ func (r *Router) handleFixAllStatus(w http.ResponseWriter, _ *http.Request) {
 //  2. Artist grouping: check each artist once, skip orphaned groups
 //  3. Rule caching: Pipeline caches rule lookups across the entire run
 //  4. Yield: sleep between artist groups to release the SQLite write lock
+//
+//nolint:gocognit // Three-phase fix-all worker: bulk-dismiss orphans, group violations by artist, then per-group existence check + per-violation FixViolation with mutex-protected progress updates and a yield between groups so HTTP handlers can take the SQLite write lock. The phases share progress state and refactoring would force a progress-aware iterator type just to satisfy gocognit.
 func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolation, scoped bool, progress *FixAllProgress) {
 	go func() {
 		// Detach from request lifecycle but preserve request-scoped values.

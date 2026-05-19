@@ -163,6 +163,8 @@ func (r *Router) handleGetConnectionConflictDetail(w http.ResponseWriter, req *h
 //
 // POST /api/v1/connections/{id}/stillwater-managed
 // Body: {"enabled": true|false}
+//
+//nolint:gocognit // Multi-source body decoder (JSON, form, query) feeding a strict-validation gate, followed by a per-connection serialization mutex, idempotency snapshot-shape consistency check, and apply/clear dispatch with a refresh that MUST run on every error path (the #1190 data-loss reproduction depends on the refresh ordering). The decoder ladder is the boundary the strict-validation policy guards.
 func (r *Router) handleSetStillwaterManaged(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {

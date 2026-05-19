@@ -19,6 +19,8 @@ import (
 // filename is written as a real file. Subsequent filenames are created as
 // relative symlinks pointing to the primary file. If symlink creation fails,
 // it falls back to a regular atomic write.
+//
+//nolint:gocognit // Format detection, logo PNG conversion, conflicting-format cleanup, primary write, and symlink-vs-copy fallback for the remaining names share state (dir, format, primary path) that would need to be threaded through 3+ helpers to split; the linear form here matches the file-on-disk semantics.
 func Save(dir string, imageType string, data []byte, fileNames []string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
 	if len(fileNames) == 0 {
 		return nil, fmt.Errorf("no filenames configured for image type %q", imageType)

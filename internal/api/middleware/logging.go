@@ -28,6 +28,8 @@ var quietExactSuffixes = []string{
 // basePath is prepended to quiet path patterns so sub-path deployments are
 // handled correctly. Successful requests on quiet paths are not logged;
 // error responses (>= 400) are still logged.
+//
+//nolint:gocognit // Quiet-path matching, status-class decision, scrubbed-param emission, and SSE/long-poll handling are all per-request branches the middleware must apply in order; splitting them into helpers would force re-passing the captured ResponseWriter/Request through wrapper structs without simplifying the control flow.
 func Logging(logger *slog.Logger, basePath string) func(http.Handler) http.Handler {
 	// Build the resolved quiet-path lists once at init.
 	quietPrefixes := make([]string, len(quietPrefixSuffixes))

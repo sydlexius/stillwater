@@ -421,6 +421,8 @@ func (r *Router) runBulkIdentify(ctx context.Context, artists []artist.Artist, p
 }
 
 // identifyArtist runs the 3-tier identification pipeline for a single artist.
+//
+//nolint:gocognit // 3-tier identification (connection match, exact MB query, search with disambiguation) requires that each tier's outcome decision -- match, ambiguous, skip, fall through -- be evaluated in order with tier-specific guards; the tier ordering is the function's purpose and cannot be flattened.
 func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *connectionIndex) identifyResult {
 	// Skip locked artists -- they should not be auto-modified.
 	if a.Locked {

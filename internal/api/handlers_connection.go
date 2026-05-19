@@ -449,6 +449,8 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 
 // handleTestConnection tests connectivity to a platform and updates its status.
 // POST /api/v1/connections/{id}/test
+//
+//nolint:gocognit // Per-connection-type test dispatch (cog 71): Emby/Jellyfin/Lidarr each with TLS, auth, capability, library-listing probes and a unified status-update + SSE-emit tail. The size warrants extracting per-type probe helpers behind a small interface while preserving per-failure error-message specificity for troubleshooting. Refactor tracked in #1544.
 func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {

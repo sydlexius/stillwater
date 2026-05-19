@@ -334,6 +334,7 @@ func (d *Detector) Invalidate() {
 	d.mu.Unlock()
 }
 
+//nolint:gocognit // Per-connection probe: TLS reachability, auth verification, library listing, capability flags, and conflict status (disabled, manage-files-off, server-unreachable) each map to a distinct ConnectionState transition; sequencing matters because later probes assume earlier ones succeeded.
 func (d *Detector) checkOne(ctx context.Context, c connection.Connection) ConnectionState {
 	state := ConnectionState{
 		ConnectionID:      c.ID,

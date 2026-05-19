@@ -85,6 +85,7 @@ func (e *BulkExecutor) Cancel() error {
 	return nil
 }
 
+//nolint:gocognit // Bulk worker drives per-artist progress through evaluate -> fix -> persist while watching context cancellation and accumulating counts; the loop body's status transitions and cancellation checkpoints share state (job pointer, counters, mu) that cannot be split without leaking the mutex into helpers.
 func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 	defer func() {
 		e.mu.Lock()

@@ -34,6 +34,8 @@ func (h *RingHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 // Handle converts a slog.Record to a LogEntry and writes it to the buffer.
+//
+//nolint:gocognit // slog.Record attribute walk requires a type switch over every supported slog.Kind (string, int64, uint64, float64, bool, duration, time, group, any) so each kind can be encoded to LogEntry's typed field; this is the slog contract, not application logic, and cannot be flattened.
 func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	entry := LogEntry{
 		Time:    r.Time,

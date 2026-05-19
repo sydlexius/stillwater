@@ -116,6 +116,8 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 // MusicBrainz URL) can be used when calling later providers.
 // When a ScraperExecutor is configured, delegates to it for scraper-config-driven
 // per-field fetching with fallback chains.
+//
+//nolint:gocognit // Per-field provider iteration in priority order with provider-ID enrichment carry-forward between fields; this is the legacy non-scraper path retained for callers that have no scraper config, and its semantics must match ScrapeAll's outcome on a parallel diagram.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	if o.executor != nil {
 		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
@@ -383,6 +385,7 @@ type providerResult struct {
 	imagesAttempted bool  // true whenever GetImages was actually invoked, regardless of outcome
 }
 
+//nolint:gocognit // Per-provider cached fetch with lookup-precedence ladder (provider ID > MBID > name), name-based retry only when MBID-not-found AND the provider implements NameLookupProvider, plus ErrNotFound-vs-transient distinction for both GetArtist and GetImages so stale data is cleared on a definitive miss but preserved on a transient failure. Near-identical to scraper.Executor.getProviderResult (cog 34 each); the consolidation is a peripheral concern but worth tracking; refactor tracked in #1554.
 func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {
 	mu.Lock()
 	if pr, ok := cache[name]; ok {

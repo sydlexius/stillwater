@@ -285,6 +285,8 @@ func collectUnlinkCandidates(ctx context.Context, tx *sql.Tx, libraryID string) 
 //
 // Order matters: the membership snapshot is taken BEFORE the library
 // delete fires the cascade.
+//
+//nolint:gocognit // Txn-bound multi-stage prune: snapshot membership pre-cascade, drop library, conditionally allow connection-orphan sweep based on sibling count, then per-candidate keep-or-prune decision driven by remaining memberships AND cross-connection mappings, plus the #1072 stale-mapping cleanup that the FK CASCADE never fires for. Each condition gates the next stage so the txn body cannot factor without sharing tx + sql.NullString state through helpers.
 func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

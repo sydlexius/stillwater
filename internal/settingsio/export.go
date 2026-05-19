@@ -234,6 +234,8 @@ func (s *Service) WithScraperService(ss *scraper.Service) *Service {
 // Export collects all settings data, encrypts it with the given passphrase,
 // and returns an Envelope. The passphrase is used with PBKDF2 to derive an
 // AES-256-GCM key, making exports portable across instances.
+//
+//nolint:gocognit // Export aggregates 11 distinct surface-area sections (KV settings, provider keys, naming, custom rules, scraper config, libraries with platform tokens, identify session, language prefs, watcher, update channel, webhooks) and each section has bespoke decryption and skip-if-empty handling; the linear sectioned form mirrors the envelope schema and is the version-history anchor for the export format.
 func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, error) {
 	payload := Payload{
 		Settings:     make(map[string]string),

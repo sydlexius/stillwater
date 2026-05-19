@@ -320,6 +320,8 @@ func (f *ImageFixer) CanFix(v *Violation) bool {
 func (f *ImageFixer) SupportsCandidateDiscovery() bool { return true }
 
 // Fix fetches the best available image from providers and saves it.
+//
+//nolint:gocognit // ImageFixer.Fix (cog 51): dispatches across manual discovery, auto-select-best, and auto-with-candidates modes; each mode has its own provider walk, candidate-list construction, and persistence path (FixResult vs Candidates field). Refactoring to per-mode method dispatch on a strategy type would clear the cog hot spot while keeping the per-mode persistence shape. Refactor tracked in #1548.
 func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
 		return &FixResult{
@@ -886,6 +888,8 @@ func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violati
 }
 
 // fixViaDisk handles the filesystem-based logo trim (original behavior).
+//
+//nolint:gocognit // Linear filesystem pipeline: case-insensitive logo discovery, trim with margin, dimension-unchanged short-circuit (avoid fix/reappear cycle), provenance preservation across the trimmed bytes, atomic save, then case-mismatched-duplicate cleanup. Each step depends on the previous output (path -> bytes -> trimmed -> dimensions -> save -> dedup) and the linearity is essential to the on-disk semantics.
 func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	entries, readErr := os.ReadDir(a.Path)
 	if readErr != nil {
