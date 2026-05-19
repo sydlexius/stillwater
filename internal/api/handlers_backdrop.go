@@ -859,7 +859,7 @@ func (r *Router) handleFanartSyncState(w http.ResponseWriter, req *http.Request)
 
 // buildSyncTooltip builds a human-readable tooltip for a fanart sync slot.
 func buildSyncTooltip(s fanartSyncSlot) string {
-	var parts []string
+	parts := make([]string, 0, len(s.Connections))
 	for _, c := range s.Connections {
 		status := "not synced"
 		if c.Synced {

@@ -147,7 +147,9 @@ func isNotFound(err error) bool {
 }
 
 func mapImages(resp *Response) []provider.ImageResult {
-	var results []provider.ImageResult
+	results := make([]provider.ImageResult, 0,
+		len(resp.ArtistThumb)+len(resp.ArtistBackground)+
+			len(resp.HDMusicLogo)+len(resp.MusicLogo)+len(resp.MusicBanner))
 	source := string(provider.NameFanartTV)
 
 	for _, img := range resp.ArtistThumb {

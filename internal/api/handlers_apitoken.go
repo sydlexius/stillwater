@@ -36,7 +36,9 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 		body.Scopes = "read"
 	}
 	callerRole := middleware.RoleFromContext(req.Context())
-	var normalizedScopes []string
+	// Cap at the comma count + 1 (max possible split entries); empty
+	// segments and invalid scopes shrink the final slice.
+	normalizedScopes := make([]string, 0, strings.Count(body.Scopes, ",")+1)
 	for _, s := range strings.Split(body.Scopes, ",") {
 		trimmed := strings.TrimSpace(s)
 		if trimmed == "" {

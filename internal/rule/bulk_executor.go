@@ -102,9 +102,12 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 		return
 	}
 
-	// Collect target artists: specific IDs if provided, otherwise all non-excluded
+	// Collect target artists: specific IDs if provided, otherwise all non-excluded.
+	// When ArtistIDs is set, cap at that length; per-row Get/exclusion may skip
+	// entries but never adds beyond it.
 	var artists []artist.Artist
 	if len(job.ArtistIDs) > 0 {
+		artists = make([]artist.Artist, 0, len(job.ArtistIDs))
 		for _, id := range job.ArtistIDs {
 			if ctx.Err() != nil {
 				e.finishJob(ctx, job, BulkStatusCanceled, "")

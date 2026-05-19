@@ -410,6 +410,8 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	}
 
 	// Build platform connection list for "View on Platform" links.
+	// Cap at len(pids); per-row connection fetches may error and skip,
+	// so final length can be smaller but never larger.
 	var connections []templates.ArtistDetailConnection
 	hasDebugConnection := false
 	if r.connectionService != nil {
@@ -417,6 +419,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		if pidErr != nil {
 			r.logger.Warn("listing platform IDs for detail page", "artist_id", id, "error", pidErr)
 		}
+		connections = make([]templates.ArtistDetailConnection, 0, len(pids))
 		for _, pid := range pids {
 			conn, connErr := r.connectionService.GetByID(req.Context(), pid.ConnectionID)
 			if connErr != nil {

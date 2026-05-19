@@ -20,6 +20,7 @@ linters:
     - nilerr
     - noctx
     - nolintlint
+    - prealloc
     - revive
     - sqlclosecheck
     - staticcheck
@@ -113,6 +114,18 @@ linters:
           # _fuzz_test.go; excluding them categorically keeps the
           # production sweep the signal-bearing part of the lint surface.
           - gocognit
+          # prealloc in tests is noise: fixture builders and table setups
+          # are written for readability, not allocator throughput, and the
+          # capacities are usually tiny constants. Production-side
+          # preallocation is where the perf win lives.
+          - prealloc
+      # cmd/gen-* are build-time documentation generators that run once
+      # per `make generate`. Allocation efficiency is not the point; the
+      # code is optimized for readability of the generator itself, and
+      # adding capacity hints to small build-step slices buys nothing.
+      - path: cmd/gen-.*/
+        linters:
+          - prealloc
       - text: "catalogue.*is a misspelling"
         linters:
           - misspell

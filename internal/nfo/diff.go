@@ -28,21 +28,23 @@ func Diff(old, newNFO *ArtistNFO) *DiffResult {
 		newVal string
 	}
 
-	comparisons := []comparison{
-		{"Name", getStr(old, func(n *ArtistNFO) string { return n.Name }), getStr(newNFO, func(n *ArtistNFO) string { return n.Name })},
-		{"Sort Name", getStr(old, func(n *ArtistNFO) string { return n.SortName }), getStr(newNFO, func(n *ArtistNFO) string { return n.SortName })},
-		{"Type", getStr(old, func(n *ArtistNFO) string { return n.Type }), getStr(newNFO, func(n *ArtistNFO) string { return n.Type })},
-		{"Gender", getStr(old, func(n *ArtistNFO) string { return n.Gender }), getStr(newNFO, func(n *ArtistNFO) string { return n.Gender })},
-		{"Disambiguation", getStr(old, func(n *ArtistNFO) string { return n.Disambiguation }), getStr(newNFO, func(n *ArtistNFO) string { return n.Disambiguation })},
-		{"MusicBrainz ID", getStr(old, func(n *ArtistNFO) string { return n.MusicBrainzArtistID }), getStr(newNFO, func(n *ArtistNFO) string { return n.MusicBrainzArtistID })},
-		{"AudioDB ID", getStr(old, func(n *ArtistNFO) string { return n.AudioDBArtistID }), getStr(newNFO, func(n *ArtistNFO) string { return n.AudioDBArtistID })},
-		{"Years Active", getStr(old, func(n *ArtistNFO) string { return n.YearsActive }), getStr(newNFO, func(n *ArtistNFO) string { return n.YearsActive })},
-		{"Born", getStr(old, func(n *ArtistNFO) string { return n.Born }), getStr(newNFO, func(n *ArtistNFO) string { return n.Born })},
-		{"Formed", getStr(old, func(n *ArtistNFO) string { return n.Formed }), getStr(newNFO, func(n *ArtistNFO) string { return n.Formed })},
-		{"Died", getStr(old, func(n *ArtistNFO) string { return n.Died }), getStr(newNFO, func(n *ArtistNFO) string { return n.Died })},
-		{"Disbanded", getStr(old, func(n *ArtistNFO) string { return n.Disbanded }), getStr(newNFO, func(n *ArtistNFO) string { return n.Disbanded })},
-		{"Biography", getStr(old, func(n *ArtistNFO) string { return n.Biography }), getStr(newNFO, func(n *ArtistNFO) string { return n.Biography })},
-	}
+	// Capacity 16 = 13 scalar fields + 3 slice-joined fields appended
+	// below (keep in sync if fields are added).
+	comparisons := append(make([]comparison, 0, 16),
+		comparison{"Name", getStr(old, func(n *ArtistNFO) string { return n.Name }), getStr(newNFO, func(n *ArtistNFO) string { return n.Name })},
+		comparison{"Sort Name", getStr(old, func(n *ArtistNFO) string { return n.SortName }), getStr(newNFO, func(n *ArtistNFO) string { return n.SortName })},
+		comparison{"Type", getStr(old, func(n *ArtistNFO) string { return n.Type }), getStr(newNFO, func(n *ArtistNFO) string { return n.Type })},
+		comparison{"Gender", getStr(old, func(n *ArtistNFO) string { return n.Gender }), getStr(newNFO, func(n *ArtistNFO) string { return n.Gender })},
+		comparison{"Disambiguation", getStr(old, func(n *ArtistNFO) string { return n.Disambiguation }), getStr(newNFO, func(n *ArtistNFO) string { return n.Disambiguation })},
+		comparison{"MusicBrainz ID", getStr(old, func(n *ArtistNFO) string { return n.MusicBrainzArtistID }), getStr(newNFO, func(n *ArtistNFO) string { return n.MusicBrainzArtistID })},
+		comparison{"AudioDB ID", getStr(old, func(n *ArtistNFO) string { return n.AudioDBArtistID }), getStr(newNFO, func(n *ArtistNFO) string { return n.AudioDBArtistID })},
+		comparison{"Years Active", getStr(old, func(n *ArtistNFO) string { return n.YearsActive }), getStr(newNFO, func(n *ArtistNFO) string { return n.YearsActive })},
+		comparison{"Born", getStr(old, func(n *ArtistNFO) string { return n.Born }), getStr(newNFO, func(n *ArtistNFO) string { return n.Born })},
+		comparison{"Formed", getStr(old, func(n *ArtistNFO) string { return n.Formed }), getStr(newNFO, func(n *ArtistNFO) string { return n.Formed })},
+		comparison{"Died", getStr(old, func(n *ArtistNFO) string { return n.Died }), getStr(newNFO, func(n *ArtistNFO) string { return n.Died })},
+		comparison{"Disbanded", getStr(old, func(n *ArtistNFO) string { return n.Disbanded }), getStr(newNFO, func(n *ArtistNFO) string { return n.Disbanded })},
+		comparison{"Biography", getStr(old, func(n *ArtistNFO) string { return n.Biography }), getStr(newNFO, func(n *ArtistNFO) string { return n.Biography })},
+	)
 
 	// Slice fields joined for display
 	comparisons = append(comparisons,
