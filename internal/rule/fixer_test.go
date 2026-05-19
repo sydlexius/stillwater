@@ -3,6 +3,7 @@ package rule
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -2532,5 +2534,35 @@ func TestPipeline_RunRule_RecordsAutoFixHistory(t *testing.T) {
 	}
 	if len(changes) == 0 {
 		t.Fatal("expected at least one rule_fix entry after RunRule, got none")
+	}
+}
+
+// TestNewImageFixer_HTTPClient_RejectsLoopback pins the SSRF-hardening
+// contract of the production ImageFixer constructor. Sibling regression test
+// to TestNewBulkExecutor_HTTPClient_RejectsLoopback (bulk_executor_test.go);
+// both guard against future changes that drop httpsafe.SafeClient from the
+// constructor and silently re-introduce the SSRF surface the rule engine
+// shipped with before PR #1563.
+func TestNewImageFixer_HTTPClient_RejectsLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Construct via the production constructor; nil params are safe here
+	// because NewImageFixer does not dereference them at construction time.
+	f := NewImageFixer(nil, nil, nil, testLogger())
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext: %v", err)
+	}
+	resp, err := f.httpClient.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatalf("expected SafeTransport to reject loopback URL %s, but request succeeded with status %d", srv.URL, resp.StatusCode)
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("expected ErrPrivateAddress from SafeTransport, got: %v", err)
 	}
 }

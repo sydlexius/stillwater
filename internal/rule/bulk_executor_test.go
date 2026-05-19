@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -128,5 +130,41 @@ func TestBulkExecutor_SaveBestImage_PlatformNaming(t *testing.T) {
 	// Confirm the artist's in-memory FanartExists flag was set.
 	if !a.FanartExists {
 		t.Error("a.FanartExists should be true after saveBestImage succeeds")
+	}
+}
+
+// TestNewBulkExecutor_HTTPClient_RejectsLoopback pins the SSRF-hardening
+// contract of the production BulkExecutor constructor. The other BulkExecutor
+// tests override e.httpClient with a plain client so httptest's 127.0.0.1
+// fixtures keep working; this test exercises the DEFAULT NewBulkExecutor
+// wiring against a loopback httptest server and asserts the request is
+// rejected by httpsafe.SafeTransport before the dial completes.
+//
+// If a future change to NewBulkExecutor drops the
+// httpsafe.SafeClient(fetchTimeout) initialiser, this test fails -- guarding
+// against the exact regression class that surfaced fixers.go:fetchImageURL
+// during PR #1558 review (split into PR #1563 / #1559).
+func TestNewBulkExecutor_HTTPClient_RejectsLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Construct via the production constructor. Most params are nil because
+	// we only exercise the httpClient field; NewBulkExecutor only dereferences
+	// the logger (via logger.With) during construction.
+	e := NewBulkExecutor(nil, nil, nil, nil, nil, nil, nil, nil, testLogger())
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext: %v", err)
+	}
+	resp, err := e.httpClient.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatalf("expected SafeTransport to reject loopback URL %s, but request succeeded with status %d", srv.URL, resp.StatusCode)
+	}
+	if !errors.Is(err, httpsafe.ErrPrivateAddress) {
+		t.Fatalf("expected ErrPrivateAddress from SafeTransport, got: %v", err)
 	}
 }
