@@ -93,12 +93,12 @@ jobs:
         run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
 
       - name: Write go-mutesting config
-        # exclude_dirs is a path-prefix filter on the binary's
-        # target-walk. We list the two patterns we never want mutated:
-        # mock packages (internal/<x>/mocks/) and generated *_mock.go
-        # files. The list is defensive -- internal/nfo currently has
-        # neither -- so the pilot's noise floor stays stable if the
-        # scope later widens to packages that do generate mocks.
+        # exclude_dirs is a path-prefix filter on the binary's target-walk.
+        # We only list `mocks` here because go-mutesting matches by path
+        # prefix, not by glob or suffix -- a `_mock.go` entry would never
+        # actually exclude any generated mock files. internal/nfo has no
+        # mocks today; the `mocks` entry is defensive for when the pilot
+        # widens to packages that do generate mocks.
         run: |
           cat > mutation.config.yml <<'YAML'
           skip_without_test: true
@@ -106,25 +106,29 @@ jobs:
           silent_mode: false
           exclude_dirs:
             - mocks
-            - _mock.go
           YAML
 
       - name: Run mutation testing
-        # --disable numbers/* drops the incrementer/decrementer
-        # mutators (see the noise-tuning notes in the workflow header).
-        # Output is captured to mutation.log so the parse-summary step
-        # below can extract surviving-mutant counts without re-running
-        # the (expensive) mutation pass. `|| true` is intentional --
-        # the binary exits 0 in normal operation even when mutants
-        # survive, but we belt-and-brace against a future exit-code
-        # change so the parse step always sees the log.
+        # --disable numbers/* drops the incrementer/decrementer mutators
+        # (see the noise-tuning notes in the workflow header). Output is
+        # captured to mutation.log so the parse-summary step below can
+        # extract surviving-mutant counts without re-running the
+        # (expensive) mutation pass.
+        #
+        # `continue-on-error: true` keeps the workflow non-gating: a real
+        # failure (tool crash, test infra error) marks the step red and
+        # the rest of the workflow still runs (summary + artifact upload).
+        # Using `continue-on-error` instead of a shell-level `|| true`
+        # preserves failure VISIBILITY -- a crash is loudly red in the UI
+        # rather than silently green.
+        continue-on-error: true
         run: |
           set -o pipefail
           go-mutesting \
             --config mutation.config.yml \
             --disable 'numbers/*' \
             ./internal/nfo/... \
-            2>&1 | tee mutation.log || true
+            2>&1 | tee mutation.log
 
       - name: Build workflow summary
         # Parse the captured log into a markdown table on the run page.
