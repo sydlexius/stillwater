@@ -14,6 +14,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// useLoopbackTestClient swaps the SafeClient-backed default for a plain
+// http.Client when tests need to reach an httptest.Server on 127.0.0.1.
+// SafeTransport blocks loopback by design.
+func useLoopbackTestClient(a *Adapter) {
+	a.client = &http.Client{Timeout: 10 * time.Second}
+}
+
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/" + name)
@@ -108,7 +115,7 @@ func TestGetArtist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
@@ -139,7 +146,7 @@ func TestGetArtistNotFound(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetArtist(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if err == nil {
@@ -156,7 +163,7 @@ func TestSearchReturnsNil(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, "http://localhost")
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	results, err := a.SearchArtist(context.Background(), "anything")
 	if err != nil {
@@ -176,7 +183,7 @@ func TestGetImagesBothP18AndP154(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.GetImages(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
@@ -221,7 +228,7 @@ func TestGetImagesP18Only(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
 	if err != nil {
@@ -247,7 +254,7 @@ func TestGetImagesP154Only(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.GetImages(context.Background(), "22222222-2222-2222-2222-222222222222")
 	if err != nil {
@@ -273,7 +280,7 @@ func TestGetImagesNoProperties(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetImages(context.Background(), "33333333-3333-3333-3333-333333333333")
 	if err == nil {
@@ -294,7 +301,7 @@ func TestGetImagesNotFoundMBID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetImages(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if err == nil {
@@ -361,7 +368,7 @@ func TestGetArtistInvalidMBID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, "http://localhost")
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetArtist(context.Background(), "not-a-uuid")
 	if err == nil {
@@ -392,7 +399,7 @@ func TestGetArtist_AcceptsQID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "Q175044")
 	if err != nil {
@@ -434,7 +441,7 @@ func TestGetArtist_AcceptsMBID_PreservesExistingPath(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
 	meta, err := a.GetArtist(context.Background(), mbid)
@@ -486,7 +493,7 @@ func TestGetImagesInvalidMBID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, "http://localhost", "http://localhost")
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetImages(context.Background(), "not-a-uuid")
 	if err == nil {
@@ -595,7 +602,7 @@ func TestGetArtist_LangPrefPassedToSPARQL(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja", "fr"})
 	_, err := a.GetArtist(ctx, "a74b1b7f-71a5-4011-9441-d0b5e4122711")
@@ -639,7 +646,7 @@ func TestGetImagesCommonsResolutionFailure(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
 	if err == nil {

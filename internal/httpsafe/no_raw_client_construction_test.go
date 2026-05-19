@@ -139,13 +139,14 @@ func TestNoRawHTTPClientConstruction(t *testing.T) {
 			continue
 		}
 		for i, file := range pkg.Syntax {
-			// pkg.GoFiles is parallel to pkg.Syntax. CompiledGoFiles
-			// may include generated files we do not care about; GoFiles
-			// is the source-of-truth source list.
-			if i >= len(pkg.GoFiles) {
+			// pkg.Syntax is parallel to pkg.CompiledGoFiles in
+			// golang.org/x/tools/go/packages -- using pkg.GoFiles here
+			// would silently misalign indices for packages with
+			// generated/cgo files.
+			if i >= len(pkg.CompiledGoFiles) {
 				continue
 			}
-			path := pkg.GoFiles[i]
+			path := pkg.CompiledGoFiles[i]
 			rel, relErr := filepath.Rel(repoRoot, path)
 			if relErr != nil {
 				rel = path

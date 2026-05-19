@@ -17,6 +17,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// useLoopbackTestClient swaps the SafeClient-backed default for a plain
+// http.Client when tests need to reach an httptest.Server on 127.0.0.1.
+// SafeTransport blocks loopback by design.
+func useLoopbackTestClient(a *Adapter) {
+	a.client = &http.Client{Timeout: 10 * time.Second}
+}
+
 func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsService) {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
@@ -81,7 +88,7 @@ func TestSearchArtist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	results, err := a.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
@@ -110,7 +117,7 @@ func TestSearchArtistFuzzyMatch(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	// Search for a misspelled name to prove scores are computed via
 	// NameSimilarity rather than hard-coded to 100.
@@ -136,7 +143,7 @@ func TestGetArtist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "3840")
 	if err != nil {
@@ -163,7 +170,7 @@ func TestGetImages(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.GetImages(context.Background(), "3840")
 	if err != nil {
@@ -233,7 +240,7 @@ func TestGetArtistByNameFallback(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	// Passing an artist name (non-numeric, non-UUID) should trigger name search.
 	meta, err := a.GetArtist(context.Background(), "Adele")
@@ -261,7 +268,7 @@ func TestGetArtistByNameNoResults(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.GetArtist(context.Background(), "NonexistentArtist")
 	if err == nil {
@@ -290,7 +297,7 @@ func TestGetArtistWithStyles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "3840")
 	if err != nil {

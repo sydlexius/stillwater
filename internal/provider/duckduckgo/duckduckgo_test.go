@@ -12,6 +12,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// useLoopbackTestClient swaps the SafeClient-backed default for a plain
+// http.Client when tests need to reach an httptest.Server on 127.0.0.1.
+// SafeTransport blocks loopback by design. Timeout matches the adapter
+// default so timeout-sensitive behavior is exercised consistently.
+func useLoopbackTestClient(a *Adapter) {
+	a.client = &http.Client{Timeout: 15 * time.Second}
+}
+
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/" + name)
@@ -45,7 +53,7 @@ func TestSearchImages(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err != nil {
@@ -95,7 +103,7 @@ func TestSearchImagesEmpty(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.SearchImages(context.Background(), "Unknown Artist", provider.ImageThumb)
 	if err != nil {
@@ -124,7 +132,7 @@ func TestSearchImagesServerError(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err == nil {
@@ -144,7 +152,7 @@ func TestSearchImagesVQDFailure(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	_, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err == nil {
@@ -157,7 +165,7 @@ func TestSearchImagesUnsupportedType(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, "http://localhost", "http://localhost")
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageType("unknown"))
 	if err != nil {
@@ -205,7 +213,7 @@ func TestVQDFallbackToHTML(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err != nil {
@@ -254,7 +262,7 @@ func TestSearchImagesContextCanceled(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
-	a.client = &http.Client{Timeout: 10 * time.Second}
+	useLoopbackTestClient(a)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
