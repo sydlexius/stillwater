@@ -1521,3 +1521,211 @@ func TestPreserveDimensions(t *testing.T) {
 		}
 	})
 }
+
+// withProbeImageFileFn swaps the package-level probeImageFileFn for the
+// duration of the test. Tests use it to count or short-circuit the
+// expensive per-file image probe (dimension decode + perceptual-hash
+// placeholder generation) that detectFiles runs.
+//
+// Not safe under t.Parallel since probeImageFileFn is a package-level
+// var; callers must run sequentially.
+func withProbeImageFileFn(t *testing.T, fn func(filePath, imageType, existingPlaceholder string) (int, int, bool, string)) {
+	t.Helper()
+	prev := probeImageFileFn
+	probeImageFileFn = fn
+	t.Cleanup(func() { probeImageFileFn = prev })
+}
+
+// forceLastScannedAtFuture pushes the artist's LastScannedAt forward by one
+// hour so the mtime fast-path is guaranteed to engage on the next scan
+// (mtime <= now < lastScannedAt). Without this, sub-second timing between
+// scan-1 finish and scan-2 stat would race the fast-path check, since the
+// DB stores last_scanned_at at second precision while filesystem mtime
+// carries nanoseconds.
+func forceLastScannedAtFuture(t *testing.T, db *sql.DB, artistID string) {
+	t.Helper()
+	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE artists SET last_scanned_at = ? WHERE id = ?`, future, artistID); err != nil {
+		t.Fatalf("forcing last_scanned_at future: %v", err)
+	}
+}
+
+// TestScan_FastPath_ReconcilesArtistImagesRegistry pins the #1225 contract
+// against the D7 mtime fast-path (#1413): even when the fast path engages
+// (mtime <= lastScannedAt), the registry must still converge with disk on
+// every visit. Earlier D7 drafts synthesized detected.FanartExists from
+// existing.FanartExists, which hydrateImages had already corrupted to
+// match the broken registry -- so detected == existing, no change branch
+// fired, and the registry stayed broken forever.
+//
+// This test forces the fast path to engage by pushing LastScannedAt into
+// the future after scan 1, so the legacy timing race (sub-second mtime
+// vs. second-precision lastScannedAt) cannot mask the bug.
+func TestScan_FastPath_ReconcilesArtistImagesRegistry(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "FastPath Reconcile", "fanart.jpg")
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "FastPath Reconcile"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if !a.FanartExists {
+		t.Fatal("FanartExists should be true after first scan with fanart.jpg present")
+	}
+
+	// Delete the registry row (simulating #1225 drift) and push
+	// LastScannedAt into the future so the next scan is guaranteed to
+	// take the fast path.
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM artist_images WHERE artist_id = ? AND image_type = 'fanart'`, a.ID); err != nil {
+		t.Fatalf("deleting fanart row: %v", err)
+	}
+	forceLastScannedAtFuture(t, db, a.ID)
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	imgs, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("getting images: %v", err)
+	}
+	hasFanart := false
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			hasFanart = true
+			break
+		}
+	}
+	if !hasFanart {
+		t.Fatalf("expected artist_images fanart row to be reconciled by the fast-path scan; the registry must converge with disk on every visit even when the mtime fast path is taken (issue #1225 + #1413)")
+	}
+}
+
+// TestScan_FastPath_SkipsExpensiveProbe asserts that the D7 fast path does
+// NOT invoke probeImageFile (the expensive image-header decode +
+// perceptual-hash placeholder generation) on an unchanged-mtime rescan.
+// This is the perf win the fast path exists to deliver; if the count is
+// non-zero after the second scan, the fast path is silently doing the
+// expensive work and the optimization is broken.
+//
+// The companion contract -- existence checks DO still run -- is pinned by
+// TestScan_FastPath_ReconcilesArtistImagesRegistry above and by
+// TestScan_FastPath_DetectsFileRemoval below.
+func TestScan_FastPath_SkipsExpensiveProbe(t *testing.T) {
+	// No t.Parallel: probeImageFileFn is a package-level var.
+	var calls int
+	withProbeImageFileFn(t, func(filePath, imageType, existingPlaceholder string) (int, int, bool, string) {
+		calls++
+		// Delegate to real implementation so scan 1 still produces a
+		// fully populated artist record.
+		return probeImageFile(filePath, imageType, existingPlaceholder)
+	})
+
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "FastPath Skip", "fanart.jpg")
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "FastPath Skip"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	scan1Calls := calls
+	if scan1Calls == 0 {
+		t.Fatal("scan 1 should have called probeImageFile at least once (sanity check on the test seam)")
+	}
+
+	// Force the fast path to engage on scan 2.
+	forceLastScannedAtFuture(t, db, a.ID)
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	if got := calls - scan1Calls; got != 0 {
+		t.Errorf("probeImageFile was called %d times during the fast-path rescan; want 0 (the perf win of D7 is that image decode + placeholder generation are skipped when mtime is unchanged)", got)
+	}
+}
+
+// TestScan_FastPath_DetectsFileRemoval pins that the fast path still
+// honors disk existence even when it skips the expensive probe. Removing
+// fanart.jpg between scans must flip FanartExists to false on the next
+// visit -- otherwise the fast path becomes a stale-data cache instead of
+// a perf optimization.
+//
+// Note: physically removing the file bumps the directory's mtime, so a
+// strict reading of "mtime fast path" would say this case is actually
+// served by the legacy detectFiles path. We explicitly push
+// LastScannedAt past the post-delete mtime so the fast path engages
+// nonetheless, which is the worst case for the contract.
+func TestScan_FastPath_DetectsFileRemoval(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+	dir := filepath.Join(libDir, "FastPath Remove")
+	createArtistDir(t, libDir, "FastPath Remove", "fanart.jpg")
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "FastPath Remove"))
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if !a.FanartExists {
+		t.Fatal("FanartExists should be true after first scan")
+	}
+
+	// Physically remove the fanart file (this bumps the dir mtime).
+	if err := os.Remove(filepath.Join(dir, "fanart.jpg")); err != nil {
+		t.Fatalf("removing fanart.jpg: %v", err)
+	}
+	// Push LastScannedAt past the new mtime so the fast path still
+	// engages despite the disk change. This is the contract-strict
+	// test: even when the mtime check would let stale data slip
+	// through, the existence probe inside the fast path must catch
+	// the removal.
+	forceLastScannedAtFuture(t, db, a.ID)
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a2, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "FastPath Remove"))
+	if a2 == nil {
+		t.Fatal("artist not found after second scan")
+	}
+	if a2.FanartExists {
+		t.Errorf("FanartExists = true after fanart.jpg removed; the fast path must still check disk existence, not just trust cached flags")
+	}
+
+	imgs, err := artistSvc.GetImagesForArtist(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("getting images: %v", err)
+	}
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex == 0 && img.Exists {
+			t.Errorf("artist_images still reports fanart exists=true after the file was removed; the fast path must converge with disk")
+		}
+	}
+}

@@ -42,6 +42,27 @@ type Repository interface {
 	// all artists in the given library that have a non-empty path.
 	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
 
+	// ListRefsByLibrary returns a lightweight (id, name, path) record for
+	// every artist whose membership includes the given library AND whose
+	// path is non-empty. Used by the scanner's detectRemoved path so a
+	// per-library removal sweep issues a single query instead of paginating
+	// the full artist list. Order is not guaranteed.
+	ListRefsByLibrary(ctx context.Context, libraryID string) ([]ArtistRef, error)
+
+	// ListByIDs returns the artist rows matching the given IDs in a single
+	// query. Order is not guaranteed; callers that need the original
+	// request order should reconstruct it from the returned slice's IDs.
+	// An empty slice argument yields an empty result with no DB round-trip.
+	// IDs filtered by this method use a bound IN-clause, so callers MUST
+	// cap the input to MaxListIDs before invoking it.
+	ListByIDs(ctx context.Context, ids []string) ([]Artist, error)
+
+	// ListByLibrary returns every artist whose membership includes the
+	// given library. Used by the scanner's processDirectory pre-load so
+	// the per-directory hot path can read from an in-memory map instead
+	// of issuing a GetByPath round-trip per directory.
+	ListByLibrary(ctx context.Context, libraryID string) ([]Artist, error)
+
 	// UpdateHealthScore sets only the health_score column for the given artist,
 	// avoiding a full row overwrite that could clobber concurrent mutations.
 	UpdateHealthScore(ctx context.Context, id string, score float64) error
