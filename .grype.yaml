@@ -24,3 +24,26 @@ ignore:
       type: apk
     review-by: "2026-06-09"
     reason: "Alpine 3.23 still on 1.68.0-r0; fix 1.68.1 not yet backported"
+
+  # curl 8.19.0-r0 -- no fix in Alpine 3.23-main as of 2026-05-19.
+  # v3.23 still carries 8.19.0-r0; fix is 8.20.0-r0 in edge-main only.
+  # Practical reachability is nil: curl ships in the runtime image only to
+  # back the Docker HEALTHCHECK, which probes a fixed localhost URL with
+  # no attacker-controllable input. Stillwater itself does not invoke curl.
+  # Upstream: https://security.alpinelinux.org/vuln/CVE-2026-5773
+  - vulnerability: CVE-2026-5773
+    package:
+      name: curl
+      type: apk
+    review-by: "2026-06-19"
+    reason: "Alpine 3.23 still on 8.19.0-r0; fix 8.20.0-r0 in edge-main only. Used only by Docker healthcheck."
+
+  # curl 8.19.0-r0 -- no fix in Alpine 3.23-main as of 2026-05-19.
+  # Same upstream-lag situation and reachability assessment as CVE-2026-5773.
+  # Upstream: https://security.alpinelinux.org/vuln/CVE-2026-6276
+  - vulnerability: CVE-2026-6276
+    package:
+      name: curl
+      type: apk
+    review-by: "2026-06-19"
+    reason: "Alpine 3.23 still on 8.19.0-r0; fix 8.20.0-r0 in edge-main only. Used only by Docker healthcheck."
