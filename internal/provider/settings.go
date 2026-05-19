@@ -312,7 +312,7 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
-		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata, NameGenius}},
+		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}},
 		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify, NameWikipedia}},
 		{Field: "styles", Providers: []ProviderName{NameDiscogs, NameAudioDB, NameLastFM, NameMusicBrainz}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB, NameLastFM}},

@@ -44,10 +44,11 @@ type FieldSource struct {
 }
 
 // fieldProviderExclusions lists providers that structurally cannot provide data
-// for specific fields. MusicBrainz, for example, does not return biography text
-// so the field is always empty when sourced from MusicBrainz.
+// for specific fields. MusicBrainz and Wikidata, for example, do not return
+// biography text so the field is always empty when sourced from either, even
+// if a user explicitly includes them in the biography priority list.
 var fieldProviderExclusions = map[string]map[ProviderName]bool{
-	"biography": {NameMusicBrainz: true},
+	"biography": {NameMusicBrainz: true, NameWikidata: true},
 }
 
 // IsExcludedForField returns true if a provider is structurally unable to

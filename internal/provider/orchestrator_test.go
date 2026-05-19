@@ -2831,3 +2831,35 @@ func TestParseSpotifyURL(t *testing.T) {
 		})
 	}
 }
+
+// TestIsExcludedForField_BiographyStructuralGuards pins the orchestrator-side
+// belt-and-suspenders defense for #1029: MusicBrainz and Wikidata are
+// structurally incapable of returning biography (neither's mapArtist populates
+// the field), so they MUST be excluded even if a user explicitly puts them in
+// the biography priority list via the Settings UI. A future refactor that
+// drops either name from fieldProviderExclusions reintroduces the wasted
+// fetch + misleading "attempted" telemetry symptoms.
+func TestIsExcludedForField_BiographyStructuralGuards(t *testing.T) {
+	cases := []struct {
+		field string
+		prov  ProviderName
+		want  bool
+	}{
+		{"biography", NameMusicBrainz, true},
+		{"biography", NameWikidata, true},
+		{"biography", NameWikipedia, false},
+		{"biography", NameLastFM, false},
+		{"biography", NameAudioDB, false},
+		{"biography", NameDiscogs, false},
+		{"biography", NameGenius, false},
+		{"members", NameWikidata, false},
+		{"genres", NameMusicBrainz, false},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.prov)+"/"+tc.field, func(t *testing.T) {
+			if got := IsExcludedForField(tc.field, tc.prov); got != tc.want {
+				t.Errorf("IsExcludedForField(%q, %q) = %v, want %v", tc.field, tc.prov, got, tc.want)
+			}
+		})
+	}
+}

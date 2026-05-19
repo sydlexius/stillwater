@@ -1137,3 +1137,144 @@ func TestMarkPre002Applied_FreshDBSkips(t *testing.T) {
 		t.Errorf("goose_db_version table count after fresh-DB shim = %d, want 0 (shim must not create the tracker)", n)
 	}
 }
+
+// TestMigration007_RemovesWikidataFromBiographyPriority covers the migration
+// shipped for issue #1029. The 001 seed lists wikidata as the fifth provider
+// in provider.priority.biography. Wikidata's mapArtist never populates the
+// Biography field, so the entry was a no-op that wasted a fetch slot and
+// surfaced misleading "attempted" telemetry.
+//
+// openMigratedDB runs every migration including 007, so on a fresh DB the
+// stored biography priority should already be Wikidata-free. We then seed a
+// pre-007 shape (wikidata present, plus a non-default entry that simulates
+// a user reorder) and re-run the migration's UPDATE to confirm:
+//   - wikidata is removed,
+//   - the surrounding entries keep their order,
+//   - the run is idempotent,
+//   - rows without wikidata are not rewritten.
+func TestMigration007_RemovesWikidataFromBiographyPriority(t *testing.T) {
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	// Fresh-install assertion: 001 seed -> 007 scrub, so the stored value
+	// must not include wikidata after Migrate.
+	var fresh string
+	if err := db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&fresh); err != nil {
+		t.Fatalf("reading fresh biography priority: %v", err)
+	}
+	if strings.Contains(fresh, "wikidata") {
+		t.Errorf("fresh biography priority still contains wikidata: %s", fresh)
+	}
+
+	// Re-seed a pre-007 row (wikidata present) and prove the UPDATE removes
+	// it without disturbing the other providers' order. Use REPLACE so the
+	// row is overwritten rather than producing a UNIQUE conflict on key.
+	preSeven := `["musicbrainz","lastfm","wikidata","audiodb","discogs"]`
+	if _, err := db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO settings (key, value) VALUES ('provider.priority.biography', ?)`,
+		preSeven); err != nil {
+		t.Fatalf("seeding pre-007 row: %v", err)
+	}
+
+	// Run the same UPDATE statement migration 007 ships with. Mirrors the
+	// migration-004 test pattern: assert on the SQL contract, not on goose
+	// replaying an already-applied migration.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE settings
+		SET value = (
+			SELECT json_group_array(j.value)
+			FROM json_each(settings.value) j
+			WHERE j.value != 'wikidata'
+		)
+		WHERE key = 'provider.priority.biography'
+		  AND EXISTS (
+			SELECT 1 FROM json_each(settings.value) WHERE value = 'wikidata'
+		  )
+	`); err != nil {
+		t.Fatalf("running migration 007 UPDATE: %v", err)
+	}
+
+	var scrubbed string
+	if err := db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&scrubbed); err != nil {
+		t.Fatalf("reading scrubbed row: %v", err)
+	}
+	want := `["musicbrainz","lastfm","audiodb","discogs"]`
+	if scrubbed != want {
+		t.Errorf("biography priority after scrub = %q, want %q (order around wikidata must survive)", scrubbed, want)
+	}
+
+	// Multi-wikidata corner case: a user reorder via Settings could put
+	// wikidata in multiple positions. Every occurrence must be stripped --
+	// json_each yields one row per element and json_group_array rebuilds
+	// from only the rows the filter kept.
+	multi := `["wikidata","musicbrainz","wikidata"]`
+	if _, err := db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO settings (key, value) VALUES ('provider.priority.biography', ?)`,
+		multi); err != nil {
+		t.Fatalf("seeding multi-wikidata row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		UPDATE settings
+		SET value = (
+			SELECT json_group_array(j.value)
+			FROM json_each(settings.value) j
+			WHERE j.value != 'wikidata'
+		)
+		WHERE key = 'provider.priority.biography'
+		  AND EXISTS (
+			SELECT 1 FROM json_each(settings.value) WHERE value = 'wikidata'
+		  )
+	`); err != nil {
+		t.Fatalf("running migration 007 UPDATE on multi-wikidata row: %v", err)
+	}
+	var multiScrubbed string
+	if err := db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'provider.priority.biography'`).Scan(&multiScrubbed); err != nil {
+		t.Fatalf("reading multi-scrubbed row: %v", err)
+	}
+	if multiScrubbed != `["musicbrainz"]` {
+		t.Errorf("multi-wikidata scrub = %q, want %q (every occurrence must be stripped)", multiScrubbed, `["musicbrainz"]`)
+	}
+
+	// Idempotent re-run on a row that no longer contains wikidata: the
+	// EXISTS guard must short-circuit the UPDATE so RowsAffected is 0.
+	// We do not check updated_at because the migration does not set it and
+	// SQLite does not auto-bump it without a trigger, so equality would
+	// hold whether the guard fired or not.
+	res, err := db.ExecContext(ctx, `
+		UPDATE settings
+		SET value = (
+			SELECT json_group_array(j.value)
+			FROM json_each(settings.value) j
+			WHERE j.value != 'wikidata'
+		)
+		WHERE key = 'provider.priority.biography'
+		  AND EXISTS (
+			SELECT 1 FROM json_each(settings.value) WHERE value = 'wikidata'
+		  )
+	`)
+	if err != nil {
+		t.Fatalf("idempotent re-run: %v", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		t.Fatalf("RowsAffected: %v", err)
+	}
+	if affected != 0 {
+		t.Errorf("idempotent re-run affected %d rows, want 0 (EXISTS guard must skip clean rows)", affected)
+	}
+
+	// Other fields whose default still includes Wikidata must be untouched
+	// by the migration. Use members (the canonical Wikidata-bearing field)
+	// to prove the WHERE key= filter is doing its job.
+	var members string
+	if err := db.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = 'provider.priority.members'`).Scan(&members); err != nil {
+		t.Fatalf("reading members priority: %v", err)
+	}
+	if !strings.Contains(members, "wikidata") {
+		t.Errorf("members priority lost wikidata: %s (migration must only touch biography)", members)
+	}
+}

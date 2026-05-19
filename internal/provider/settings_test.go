@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"database/sql"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1141,5 +1142,60 @@ func TestResetPrioritiesPreservesEnabledWebSearch(t *testing.T) {
 	}
 	if !stillEnabled {
 		t.Errorf("web search provider %s should remain enabled after reset", wsName)
+	}
+}
+
+// TestDefaultPriorities_BiographyExcludesWikidata pins #1029: Wikidata's
+// mapArtist never populates Biography, so it must not appear in the default
+// biography priority list. Other fields where Wikidata is a real data source
+// (members, formed, born, ...) keep it -- this test only locks down the
+// biography slot. Paired with migration 007 which scrubs existing installs.
+func TestDefaultPriorities_BiographyExcludesWikidata(t *testing.T) {
+	defaults := DefaultPriorities()
+
+	var bio FieldPriority
+	for _, p := range defaults {
+		if p.Field == "biography" {
+			bio = p
+			break
+		}
+	}
+	if len(bio.Providers) == 0 {
+		t.Fatal("biography field missing from DefaultPriorities()")
+	}
+	for _, p := range bio.Providers {
+		if p == NameWikidata {
+			t.Errorf("biography default contains %s; Wikidata cannot return biographies (see #1029)", NameWikidata)
+		}
+	}
+
+	// Pin the exact contents so a future refactor that renames or drops one
+	// of the remaining biography providers fails loudly instead of silently
+	// reordering the default chain.
+	wantBio := []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameGenius}
+	if !reflect.DeepEqual(bio.Providers, wantBio) {
+		t.Errorf("biography default = %v, want %v", bio.Providers, wantBio)
+	}
+
+	// Sanity: Wikidata must still appear in at least one fact-shaped field so
+	// this test fails loudly if a later refactor strips it everywhere.
+	factFields := map[string]bool{
+		"members": false, "formed": false, "born": false, "died": false,
+		"disbanded": false, "type": false, "gender": false, "origin": false,
+	}
+	for _, p := range defaults {
+		if _, ok := factFields[p.Field]; !ok {
+			continue
+		}
+		for _, prov := range p.Providers {
+			if prov == NameWikidata {
+				factFields[p.Field] = true
+			}
+		}
+	}
+	for field, present := range factFields {
+		if !present {
+			t.Errorf("Wikidata missing from %s default priority; #1029 only removes it from biography", field)
+		}
 	}
 }
