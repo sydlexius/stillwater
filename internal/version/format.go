@@ -96,7 +96,7 @@ func UserAgent(prefix, repoURL string) string {
 // canonicalVersion returns v with a leading "v" if it is not already present.
 // golang.org/x/mod/semver requires the "v" prefix.
 func canonicalVersion(v string) string {
-	if len(v) > 0 && v[0] != 'v' {
+	if v != "" && v[0] != 'v' {
 		return "v" + v
 	}
 	return v

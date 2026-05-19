@@ -76,7 +76,8 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	}
 
 	results := make([]provider.ArtistSearchResult, 0, len(resp.Artists))
-	for _, a := range resp.Artists {
+	for i := range resp.Artists {
+		a := &resp.Artists[i]
 		// Use the higher of the API's native score and our name similarity
 		// score. The API score reflects relevance factors beyond name matching
 		// (popularity, tag matches), while name similarity catches cases where
@@ -126,12 +127,12 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		return nil, err
 	}
 
-	var artist MBArtist
-	if err := json.Unmarshal(body, &artist); err != nil {
+	var mbArtist MBArtist
+	if err := json.Unmarshal(body, &mbArtist); err != nil {
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
-	meta := a.mapArtist(ctx, &artist)
+	meta := a.mapArtist(ctx, &mbArtist)
 
 	// Localize member names from each member's primary aliases when the user
 	// has set metadata language preferences. MusicBrainz omits aliases from
@@ -512,7 +513,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -809,8 +810,8 @@ func applyRelation(meta *provider.ArtistMetadata, rel MBRelation, seen map[strin
 // is shared with collectAndScoreAliases so "is person" relations cannot
 // duplicate an existing alias.
 func applyRelations(meta *provider.ArtistMetadata, mb *MBArtist, seen map[string]bool) {
-	for _, rel := range mb.Relations {
-		applyRelation(meta, rel, seen)
+	for i := range mb.Relations {
+		applyRelation(meta, mb.Relations[i], seen)
 	}
 }
 

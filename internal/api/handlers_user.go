@@ -338,8 +338,9 @@ func parseDuration(s string) (time.Duration, error) {
 // Pre-renders to a buffer so partial failures return a 500 instead of truncated HTML.
 func (r *Router) renderUserTableRows(w http.ResponseWriter, req *http.Request, users []auth.User) {
 	var buf bytes.Buffer
-	for _, u := range users {
-		if err := templates.UserTableRowFragment(u).Render(req.Context(), &buf); err != nil {
+	for i := range users {
+		u := &users[i]
+		if err := templates.UserTableRowFragment(*u).Render(req.Context(), &buf); err != nil {
 			r.logger.Error("rendering user table row", "user_id", u.ID, "error", err)
 			http.Error(w, "Failed to render user list", http.StatusInternalServerError)
 			return

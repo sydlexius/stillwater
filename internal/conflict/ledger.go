@@ -134,7 +134,8 @@ func (l Ledger) AnyImageConflict() bool {
 	if len(l.RoundTrips) > 0 {
 		return true
 	}
-	for _, c := range l.Connections {
+	for i := range l.Connections {
+		c := &l.Connections[i]
 		if !c.Enabled {
 			continue
 		}
@@ -158,7 +159,8 @@ func (l Ledger) AnyNFOConflict() bool {
 	if len(l.RoundTrips) > 0 {
 		return true
 	}
-	for _, c := range l.Connections {
+	for i := range l.Connections {
+		c := &l.Connections[i]
 		if !c.Enabled {
 			continue
 		}

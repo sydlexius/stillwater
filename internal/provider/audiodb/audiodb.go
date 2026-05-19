@@ -89,7 +89,8 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	}
 
 	results := make([]provider.ArtistSearchResult, 0, len(artists))
-	for _, art := range artists {
+	for i := range artists {
+		art := &artists[i]
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID:    art.IDArtist,
 			Name:          art.Artist,
@@ -229,7 +230,7 @@ func (a *Adapter) buildLookupURL(apiKey, mbid string) string {
 // fetchArtists performs an HTTP GET and parses the artist list from the response.
 // Premium keys are sent in the X-API-KEY header (v2); the free key is embedded in the URL (v1).
 func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string) ([]AudioDBArtist, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

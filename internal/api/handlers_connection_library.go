@@ -101,7 +101,8 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries from " + conn.Type})
 			return
 		}
-		for _, f := range folders {
+		for i := range folders {
+			f := &folders[i]
 			d := discoveredLibrary{ExternalID: f.ItemID, Name: f.Name}
 			existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
 			if lookupErr != nil {
@@ -121,7 +122,8 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries from " + conn.Type})
 			return
 		}
-		for _, f := range folders {
+		for i := range folders {
+			f := &folders[i]
 			d := discoveredLibrary{ExternalID: f.ItemID, Name: f.Name}
 			existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
 			if lookupErr != nil {
@@ -599,7 +601,8 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			return fmt.Errorf("fetching artists from emby: %w", err)
 		}
 
-		for _, item := range resp.Items {
+		for i := range resp.Items {
+			item := &resp.Items[i]
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
@@ -686,7 +689,8 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			return fmt.Errorf("fetching artists from jellyfin: %w", err)
 		}
 
-		for _, item := range resp.Items {
+		for i := range resp.Items {
+			item := &resp.Items[i]
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
@@ -1097,9 +1101,9 @@ func (r *Router) manualLibraries(ctx context.Context) []library.Library {
 		return nil
 	}
 	var manual []library.Library
-	for _, lib := range libs {
-		if lib.Source == library.SourceManual {
-			manual = append(manual, lib)
+	for i := range libs {
+		if libs[i].Source == library.SourceManual {
+			manual = append(manual, libs[i])
 		}
 	}
 	return manual
@@ -1250,7 +1254,8 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 			return updated, fmt.Errorf("fetching artists from emby: %w", err)
 		}
 
-		for _, item := range resp.Items {
+		for i := range resp.Items {
+			item := &resp.Items[i]
 			a := r.resolveAndBackfillPlatformID(ctx,
 				item.ProviderIDs.MusicBrainzArtist, item.Name,
 				lib.ConnectionID, item.ID, lib, manualLibs)
@@ -1300,7 +1305,8 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 			return updated, fmt.Errorf("fetching artists from jellyfin: %w", err)
 		}
 
-		for _, item := range resp.Items {
+		for i := range resp.Items {
+			item := &resp.Items[i]
 			a := r.resolveAndBackfillPlatformID(ctx,
 				item.ProviderIDs.MusicBrainzArtist, item.Name,
 				lib.ConnectionID, item.ID, lib, manualLibs)

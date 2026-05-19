@@ -65,9 +65,11 @@ import (
 )
 
 func main() {
-	// Handle subcommands before starting the server
+	// Handle subcommands before starting the server. The switch has only one
+	// case today but is shaped for adding future subcommands (reset-config,
+	// migrate-only, etc.) without rewriting the dispatch.
 	if len(os.Args) > 1 {
-		switch os.Args[1] {
+		switch os.Args[1] { //nolint:gocritic // singleCaseSwitch: shaped for future subcommand cases, see comment above
 		case "reset-credentials":
 			if err := resetCredentials(); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -1165,7 +1167,8 @@ func backfillDefaultLibrary(ctx context.Context, libService *library.Service, mu
 		// musicPath, and fall back to the first listed library.
 		var pathMatchID string
 		cleanedMusic := filepath.Clean(musicPath)
-		for _, lib := range libs {
+		for i := range libs {
+			lib := &libs[i]
 			if lib.Name == "Default" {
 				defaultID = lib.ID
 				break

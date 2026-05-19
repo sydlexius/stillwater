@@ -186,8 +186,8 @@ func (r *Router) setImageLock(w http.ResponseWriter, req *http.Request, locked b
 		return
 	}
 	found := false
-	for _, img := range images {
-		if img.ID == imageID {
+	for i := range images {
+		if images[i].ID == imageID {
 			found = true
 			break
 		}

@@ -138,11 +138,12 @@ func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request
 		if listErr != nil {
 			continue
 		}
-		for _, conn := range conns {
+		for i := range conns {
+			conn := &conns[i]
 			if !conn.Enabled {
 				continue
 			}
-			enabled, libName, _ := r.checkConnectionForNFOWriter(req.Context(), conn)
+			enabled, libName, _ := r.checkConnectionForNFOWriter(req.Context(), *conn)
 			if enabled {
 				check.ExternalWriter = conn.Type + ":" + conn.Name
 				if !check.HasConflict {
@@ -183,8 +184,8 @@ func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
 		libs, err := r.libraryService.List(req.Context())
 		if err == nil {
 			hasPath := false
-			for _, lib := range libs {
-				if lib.Path != "" {
+			for i := range libs {
+				if libs[i].Path != "" {
 					hasPath = true
 					break
 				}
@@ -209,12 +210,13 @@ func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
 
 	resp := ClobberCheckResponse{Risks: []ClobberRisk{}}
 
-	for _, conn := range conns {
+	for i := range conns {
+		conn := &conns[i]
 		if !conn.Enabled {
 			continue
 		}
 
-		enabled, libName, checkErr := r.checkConnectionForNFOWriter(req.Context(), conn)
+		enabled, libName, checkErr := r.checkConnectionForNFOWriter(req.Context(), *conn)
 
 		risk := ClobberRisk{
 			ConnectionID:   conn.ID,

@@ -236,7 +236,7 @@ func isSuppressConfirmKey(key string) bool {
 		return false
 	}
 	action := key[len(PrefSuppressConfirmPrefix):]
-	if len(action) == 0 {
+	if action == "" {
 		return false
 	}
 	for _, c := range action {

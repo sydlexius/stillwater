@@ -141,7 +141,8 @@ func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandi
 		return nil
 	}
 	out := make([]templates.WizardCandidateView, 0, len(step.Candidates))
-	for _, c := range step.Candidates {
+	for i := range step.Candidates {
+		c := &step.Candidates[i]
 		pct := 0
 		switch {
 		case c.AlbumComparison != nil:
@@ -622,9 +623,10 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 			candidates = r.enrichAndScoreTier2(ctx, results, localAlbums)
 		} else {
 			candidates = make([]ScoredCandidate, 0, len(results))
-			for _, res := range results {
+			for i := range results {
+				res := &results[i]
 				candidates = append(candidates, ScoredCandidate{
-					ArtistSearchResult: res,
+					ArtistSearchResult: *res,
 					Confidence:         float64(res.Score) / 200.0,
 					Reason:             "name match",
 				})

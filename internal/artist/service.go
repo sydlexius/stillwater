@@ -239,6 +239,8 @@ func NewServiceWithRepos(
 // Service via NewServiceWithRepos. Returning the interface types (not the
 // concrete sqlite structs) keeps the call site honest about what the Service
 // actually depends on.
+//
+//nolint:gocritic // tooManyResultsChecker: returns one entry per repo interface so tests can swap individual repos via NewServiceWithRepos; collapsing into a struct would force every test call site to thread fields.
 func NewDefaultRepos(db *sql.DB) (
 	Repository,
 	ProviderIDRepository,
@@ -900,7 +902,8 @@ func imageRegistryDrift(current, desired []ArtistImage) bool {
 	}
 	index := func(rows []ArtistImage) map[key]row {
 		out := make(map[key]row, len(rows))
-		for _, r := range rows {
+		for i := range rows {
+			r := &rows[i]
 			out[key{r.ImageType, r.SlotIndex}] = row{
 				exists:      r.Exists,
 				lowRes:      r.LowRes,
@@ -1277,10 +1280,10 @@ func (s *Service) RemoveLockedField(ctx context.Context, id, field string) error
 	if err != nil {
 		return err
 	}
-	target := strings.ToLower(strings.TrimSpace(field))
+	target := strings.TrimSpace(field)
 	kept := make([]string, 0, len(a.LockedFields))
 	for _, f := range a.LockedFields {
-		if strings.ToLower(f) == target {
+		if strings.EqualFold(f, target) {
 			continue
 		}
 		kept = append(kept, f)
@@ -1308,9 +1311,9 @@ func (s *Service) IsFieldLocked(a *Artist, field string) bool {
 	if a == nil {
 		return false
 	}
-	target := strings.ToLower(strings.TrimSpace(field))
+	target := strings.TrimSpace(field)
 	for _, f := range a.LockedFields {
-		if strings.ToLower(f) == target {
+		if strings.EqualFold(f, target) {
 			return true
 		}
 	}
@@ -1424,9 +1427,10 @@ func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) 
 func (s *Service) hydrateDuplicateGroups(ctx context.Context, groups []DuplicateGroup) error {
 	// Collect all unique artist IDs across every group.
 	seen := make(map[string]struct{})
-	for _, g := range groups {
-		for _, a := range g.Artists {
-			seen[a.ID] = struct{}{}
+	for gi := range groups {
+		g := &groups[gi]
+		for ai := range g.Artists {
+			seen[g.Artists[ai].ID] = struct{}{}
 		}
 	}
 	if len(seen) == 0 {
@@ -1866,7 +1870,8 @@ func (s *Service) hydrateImagesBatch(ctx context.Context, artists []Artist) erro
 // normalized ArtistImage slice.
 func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 	fanartCount := 0
-	for _, img := range imgs {
+	for i := range imgs {
+		img := &imgs[i]
 		switch img.ImageType {
 		case "thumb":
 			a.ThumbExists = img.Exists

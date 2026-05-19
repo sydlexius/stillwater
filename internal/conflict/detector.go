@@ -244,8 +244,8 @@ func (d *Detector) Refresh(ctx context.Context) Ledger {
 	}
 
 	states := make([]ConnectionState, 0, len(conns))
-	for _, c := range conns {
-		states = append(states, d.checkOne(ctx, c))
+	for i := range conns {
+		states = append(states, d.checkOne(ctx, conns[i]))
 	}
 	ledger := Ledger{
 		GeneratedAt: time.Now().UTC(),
@@ -290,7 +290,8 @@ func (d *Detector) Refresh(ctx context.Context) Ledger {
 func ledgerSignature(l Ledger) string {
 	var b strings.Builder
 	b.WriteString(l.BannerState())
-	for _, c := range l.Connections {
+	for i := range l.Connections {
+		c := &l.Connections[i]
 		b.WriteByte('|')
 		b.WriteString(c.ConnectionID)
 		b.WriteByte(':')
@@ -615,8 +616,8 @@ func (e embyPaths) MusicLibraryPaths(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, lib := range libs {
-		out = append(out, lib.Locations...)
+	for i := range libs {
+		out = append(out, libs[i].Locations...)
 	}
 	return out, nil
 }
@@ -629,8 +630,8 @@ func (j jellyfinPaths) MusicLibraryPaths(ctx context.Context) ([]string, error) 
 		return nil, err
 	}
 	var out []string
-	for _, lib := range libs {
-		out = append(out, lib.Locations...)
+	for i := range libs {
+		out = append(out, libs[i].Locations...)
 	}
 	return out, nil
 }

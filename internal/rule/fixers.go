@@ -1079,7 +1079,7 @@ func (f *LogoPaddingFixer) fixViaAPI(ctx context.Context, a *artist.Artist, v *V
 func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

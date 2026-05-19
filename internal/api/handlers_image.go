@@ -779,7 +779,7 @@ func isPrivateURL(ctx context.Context, rawURL string) bool {
 func (r *Router) fetchImageFromURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := r.ssrfClient
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -2016,27 +2016,27 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	}
 
 	var allSaved []string
-	var errors []string
+	var errMsgs []string
 	for _, u := range body.URLs {
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			errors = append(errors, fmt.Sprintf("invalid url: %s", u))
+			errMsgs = append(errMsgs, fmt.Sprintf("invalid url: %s", u))
 			continue
 		}
 		if isPrivateURL(req.Context(), u) {
-			errors = append(errors, fmt.Sprintf("private/reserved address: %s", u))
+			errMsgs = append(errMsgs, fmt.Sprintf("private/reserved address: %s", u))
 			continue
 		}
 		data, fetchErr := r.fetchImageFromURL(req.Context(), u)
 		if fetchErr != nil {
 			r.logger.Warn("fetching fanart image", "url", u, "error", fetchErr)
-			errors = append(errors, fmt.Sprintf("fetch failed: %s", u))
+			errMsgs = append(errMsgs, fmt.Sprintf("fetch failed: %s", u))
 			continue
 		}
 		batchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: u, Mode: "user"}
 		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, batchMeta)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)
-			errors = append(errors, fmt.Sprintf("save failed: %s", u))
+			errMsgs = append(errMsgs, fmt.Sprintf("save failed: %s", u))
 			continue
 		}
 		allSaved = append(allSaved, saved...)
@@ -2072,7 +2072,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
 		"saved":         allSaved,
-		"errors":        errors,
+		"errors":        errMsgs,
 		"count":         a.FanartCount,
 		"sync_warnings": syncWarnings,
 	})

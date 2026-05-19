@@ -332,8 +332,8 @@ func (s *Service) SetDockerForTest(isDocker bool) {
 // post-Apply UI surface without exercising the full runApply pipeline (which
 // would attempt to overwrite the test binary). Production code does NOT use
 // this; runApply alone calls markRestartRequired after a verified swap.
-func (s *Service) MarkRestartRequiredForTest(version string) {
-	s.markRestartRequired(version)
+func (s *Service) MarkRestartRequiredForTest(versionTag string) {
+	s.markRestartRequired(versionTag)
 }
 
 // MarkAutoAppliedForTest exposes the internal markAutoApplied write so
@@ -341,8 +341,8 @@ func (s *Service) MarkRestartRequiredForTest(version string) {
 // settings row without driving the full Apply pipeline. Production code
 // does NOT use this; the scheduler's applyAuto branch is the only caller
 // of markAutoApplied in the running service.
-func (s *Service) MarkAutoAppliedForTest(ctx context.Context, version string) error {
-	return s.markAutoApplied(ctx, version)
+func (s *Service) MarkAutoAppliedForTest(ctx context.Context, versionTag string) error {
+	return s.markAutoApplied(ctx, versionTag)
 }
 
 // detectDocker returns true when the process appears to be running inside a
@@ -977,11 +977,11 @@ var executablePath = os.Executable
 // version tag. Held under s.mu so a concurrent Status() reader sees both
 // fields update atomically; otherwise the UI could observe restartRequired=true
 // with pendingVersion still empty.
-func (s *Service) markRestartRequired(version string) {
+func (s *Service) markRestartRequired(versionTag string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.restartRequired = true
-	s.pendingVersion = version
+	s.pendingVersion = versionTag
 }
 
 // fetchReleases calls the GitHub Releases API for this repository. The page
@@ -991,7 +991,7 @@ func (s *Service) markRestartRequired(version string) {
 // this slice for the newest entry matching the requested channel.
 func (s *Service) fetchReleases(ctx context.Context) ([]githubRelease, error) {
 	const apiURL = "https://api.github.com/repos/sydlexius/stillwater/releases?per_page=100"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -1032,7 +1032,7 @@ func (s *Service) downloadBytes(ctx context.Context, rawURL string) ([]byte, err
 		return nil, fmt.Errorf("download URL must use https, got %q", parsed.Scheme)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -1502,7 +1502,7 @@ func (s *Service) applyAuto(candidateVersion string) error {
 // Written outside SetConfig because these fields are scheduler-owned
 // (not user-editable) and SetConfig's transaction semantics already
 // cover the user-facing knobs only.
-func (s *Service) markAutoApplied(ctx context.Context, version string) error {
+func (s *Service) markAutoApplied(ctx context.Context, versionTag string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1511,7 +1511,7 @@ func (s *Service) markAutoApplied(ctx context.Context, version string) error {
 	defer func() { _ = tx.Rollback() }()
 	for _, kv := range []struct{ k, v string }{
 		{SettingLastAutoApplied, now},
-		{SettingLastAutoAppliedVer, version},
+		{SettingLastAutoAppliedVer, versionTag},
 	} {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -1527,8 +1527,8 @@ func (s *Service) markAutoApplied(ctx context.Context, version string) error {
 // Idempotent: a tag already present is a no-op. The scheduler reads
 // SkippedVersions on every tick, so the next auto-apply candidate is
 // gated on the post-write list without restarting the scheduler.
-func (s *Service) AddSkippedVersion(ctx context.Context, version string) error {
-	if version == "" {
+func (s *Service) AddSkippedVersion(ctx context.Context, versionTag string) error {
+	if versionTag == "" {
 		return fmt.Errorf("version tag must be non-empty")
 	}
 	s.skippedVersionsMu.Lock()
@@ -1538,17 +1538,17 @@ func (s *Service) AddSkippedVersion(ctx context.Context, version string) error {
 		return fmt.Errorf("reading config: %w", err)
 	}
 	for _, v := range cfg.SkippedVersions {
-		if v == version {
+		if v == versionTag {
 			return nil
 		}
 	}
-	cfg.SkippedVersions = append(cfg.SkippedVersions, version)
+	cfg.SkippedVersions = append(cfg.SkippedVersions, versionTag)
 	return s.writeSkippedVersions(ctx, cfg.SkippedVersions)
 }
 
 // RemoveSkippedVersion removes a tag from the skip list. Idempotent:
 // removing a tag that is not present is a no-op.
-func (s *Service) RemoveSkippedVersion(ctx context.Context, version string) error {
+func (s *Service) RemoveSkippedVersion(ctx context.Context, versionTag string) error {
 	s.skippedVersionsMu.Lock()
 	defer s.skippedVersionsMu.Unlock()
 	cfg, err := s.GetConfig(ctx)
@@ -1557,7 +1557,7 @@ func (s *Service) RemoveSkippedVersion(ctx context.Context, version string) erro
 	}
 	out := make([]string, 0, len(cfg.SkippedVersions))
 	for _, v := range cfg.SkippedVersions {
-		if v != version {
+		if v != versionTag {
 			out = append(out, v)
 		}
 	}

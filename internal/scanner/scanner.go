@@ -199,7 +199,8 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		if err != nil {
 			s.logger.Error("listing libraries for scan", "error", err)
 		}
-		for _, lib := range libs {
+		for i := range libs {
+			lib := &libs[i]
 			if lib.Path == "" {
 				s.logger.Info("skipping pathless library (no path configured)", "library_id", lib.ID, "name", lib.Name)
 				continue
@@ -639,7 +640,8 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 	processed := 0
 
 	processPage := func(artists []artist.Artist) {
-		for _, a := range artists {
+		for i := range artists {
+			a := &artists[i]
 			if a.HealthScore >= 100.0 {
 				compliant++
 			}
@@ -756,7 +758,8 @@ func (s *Service) detectRemovedLegacyFallback(ctx context.Context, discoveredPat
 	}
 
 	libraryPath := s.libraryPath
-	for _, a := range allArtists {
+	for i := range allArtists {
+		a := &allArtists[i]
 		if discoveredPaths[a.Path] {
 			continue
 		}
@@ -969,8 +972,6 @@ func isCanonicalArtistFile(lower string) bool {
 //
 // `existing` must be non-nil; callers already guard on that in
 // detectFilesWithFastPath.
-//
-//nolint:gocognit // Per-slot pattern walk (thumb, fanart, logo, banner) with a per-slot field-copy from existing, an mtime fast-path bailout that re-signals to the full-probe path when any canonical file has been overwritten in place (POSIX directory mtime does not catch in-place rewrites -- the per-file stat is the gate), and the DiscoverFanart-driven count refresh for the fanart slot. The slot-by-slot expansion is essential to the field-copy correctness from the existing row.
 func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detectedFiles, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -1020,58 +1021,63 @@ func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detected
 	}
 
 	for _, p := range thumbPatterns {
-		if _, ok := files[strings.ToLower(p)]; ok {
-			d.ThumbExists = true
-			d.ThumbWidth = existing.ThumbWidth
-			d.ThumbHeight = existing.ThumbHeight
-			d.ThumbLowRes = existing.ThumbLowRes
-			d.ThumbPlaceholder = existing.ThumbPlaceholder
-			break
+		if _, ok := files[strings.ToLower(p)]; !ok {
+			continue
 		}
+		d.ThumbExists = true
+		d.ThumbWidth = existing.ThumbWidth
+		d.ThumbHeight = existing.ThumbHeight
+		d.ThumbLowRes = existing.ThumbLowRes
+		d.ThumbPlaceholder = existing.ThumbPlaceholder
+		break
 	}
 	for _, p := range fanartPatterns {
-		if actual, ok := files[strings.ToLower(p)]; ok {
-			d.FanartExists = true
-			d.FanartWidth = existing.FanartWidth
-			d.FanartHeight = existing.FanartHeight
-			d.FanartLowRes = existing.FanartLowRes
-			d.FanartPlaceholder = existing.FanartPlaceholder
-			// Count fanart variants from the same ReadDir result the
-			// full path uses via img.DiscoverFanart. Cheap: pure
-			// string-pattern matching against the already-built map.
-			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
-			if fanartErr != nil {
-				slog.Warn("discovering fanart variants during scan",
-					slog.String("dir", dirPath),
-					slog.String("error", fanartErr.Error()))
-			}
-			if len(fanartPaths) > 0 {
-				d.FanartCount = len(fanartPaths)
-			} else {
-				d.FanartCount = 1
-			}
-			break
+		actual, ok := files[strings.ToLower(p)]
+		if !ok {
+			continue
 		}
+		d.FanartExists = true
+		d.FanartWidth = existing.FanartWidth
+		d.FanartHeight = existing.FanartHeight
+		d.FanartLowRes = existing.FanartLowRes
+		d.FanartPlaceholder = existing.FanartPlaceholder
+		// Count fanart variants from the same ReadDir result the
+		// full path uses via img.DiscoverFanart. Cheap: pure
+		// string-pattern matching against the already-built map.
+		fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
+		if fanartErr != nil {
+			slog.Warn("discovering fanart variants during scan",
+				slog.String("dir", dirPath),
+				slog.String("error", fanartErr.Error()))
+		}
+		if len(fanartPaths) > 0 {
+			d.FanartCount = len(fanartPaths)
+		} else {
+			d.FanartCount = 1
+		}
+		break
 	}
 	for _, p := range logoPatterns {
-		if _, ok := files[strings.ToLower(p)]; ok {
-			d.LogoExists = true
-			d.LogoWidth = existing.LogoWidth
-			d.LogoHeight = existing.LogoHeight
-			d.LogoLowRes = existing.LogoLowRes
-			d.LogoPlaceholder = existing.LogoPlaceholder
-			break
+		if _, ok := files[strings.ToLower(p)]; !ok {
+			continue
 		}
+		d.LogoExists = true
+		d.LogoWidth = existing.LogoWidth
+		d.LogoHeight = existing.LogoHeight
+		d.LogoLowRes = existing.LogoLowRes
+		d.LogoPlaceholder = existing.LogoPlaceholder
+		break
 	}
 	for _, p := range bannerPatterns {
-		if _, ok := files[strings.ToLower(p)]; ok {
-			d.BannerExists = true
-			d.BannerWidth = existing.BannerWidth
-			d.BannerHeight = existing.BannerHeight
-			d.BannerLowRes = existing.BannerLowRes
-			d.BannerPlaceholder = existing.BannerPlaceholder
-			break
+		if _, ok := files[strings.ToLower(p)]; !ok {
+			continue
 		}
+		d.BannerExists = true
+		d.BannerWidth = existing.BannerWidth
+		d.BannerHeight = existing.BannerHeight
+		d.BannerLowRes = existing.BannerLowRes
+		d.BannerPlaceholder = existing.BannerPlaceholder
+		break
 	}
 
 	return d, nil
@@ -1119,24 +1125,26 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		}
 	}
 	for _, p := range fanartPatterns {
-		if actual, ok := files[strings.ToLower(p)]; ok {
-			fp := filepath.Join(dirPath, actual)
-			d.FanartExists = true
-			d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFileFn(fp, "fanart", existFanartPH)
-			// Count all fanart files (primary + numbered variants).
-			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
-			if fanartErr != nil {
-				slog.Warn("discovering fanart variants during scan",
-					slog.String("dir", dirPath),
-					slog.String("error", fanartErr.Error()))
-			}
-			if len(fanartPaths) > 0 {
-				d.FanartCount = len(fanartPaths)
-			} else {
-				d.FanartCount = 1
-			}
-			break
+		actual, ok := files[strings.ToLower(p)]
+		if !ok {
+			continue
 		}
+		fp := filepath.Join(dirPath, actual)
+		d.FanartExists = true
+		d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFileFn(fp, "fanart", existFanartPH)
+		// Count all fanart files (primary + numbered variants).
+		fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
+		if fanartErr != nil {
+			slog.Warn("discovering fanart variants during scan",
+				slog.String("dir", dirPath),
+				slog.String("error", fanartErr.Error()))
+		}
+		if len(fanartPaths) > 0 {
+			d.FanartCount = len(fanartPaths)
+		} else {
+			d.FanartCount = 1
+		}
+		break
 	}
 	for _, p := range logoPatterns {
 		if actual, ok := files[strings.ToLower(p)]; ok {

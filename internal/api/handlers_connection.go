@@ -72,8 +72,8 @@ func (r *Router) handleListConnections(w http.ResponseWriter, req *http.Request)
 	}
 
 	resp := make([]connectionResponse, len(conns))
-	for i, c := range conns {
-		resp[i] = toConnectionResponse(c)
+	for i := range conns {
+		resp[i] = toConnectionResponse(conns[i])
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -406,7 +406,8 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
-		for _, lib := range libs {
+		for i := range libs {
+			lib := &libs[i]
 			if deleteArtists {
 				if err := r.libraryService.DeleteWithArtists(req.Context(), lib.ID); err != nil {
 					r.logger.Error("deleting library with artists", "library_id", lib.ID, "error", err)

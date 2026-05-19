@@ -279,7 +279,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	// and check whether any local library (with a filesystem path) exists.
 	symlinkSupported := false
 	hasLocalLibrary := false
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if lib.Path != "" {
 			if !hasLocalLibrary {
 				hasLocalLibrary = true

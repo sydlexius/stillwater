@@ -41,7 +41,7 @@ func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, err
 // variant exists so that callers that already hold a test-safe *http.Client
 // (e.g. httptest.Server.Client()) can bypass the SSRF-safe transport in tests.
 func ProbeRemoteImageWithClient(ctx context.Context, rawURL string, client *http.Client) (*RemoteImageInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
