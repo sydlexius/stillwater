@@ -18,6 +18,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -270,7 +271,15 @@ type ImageFixer struct {
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
-	imageCache      sync.Map // keyed by MBID; value: *imageCacheEntry
+	// httpClient is the HTTP client used to download image bytes from
+	// provider-supplied URLs. It defaults to an SSRF-safe client backed by
+	// httpsafe.SafeTransport, which blocks loopback/private/link-local
+	// destinations so a malicious or compromised provider cannot coerce the
+	// rule engine into fetching internal-network resources. Tests that exercise
+	// the download path against httptest.NewServer (which binds to 127.0.0.1)
+	// must override this field with a plain *http.Client after construction.
+	httpClient *http.Client
+	imageCache sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
@@ -280,6 +289,7 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 		platformService: platformService,
 		fsCheck:         fsCheck,
 		logger:          logger,
+		httpClient:      httpsafe.SafeClient(fetchTimeout),
 	}
 }
 
@@ -449,7 +459,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 	// Try downloading candidates until one succeeds
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
 	for _, c := range candidates {
-		data, err := fetchImageURL(ctx, c.URL)
+		data, err := fetchImageURL(ctx, f.httpClient, c.URL)
 		if err != nil {
 			f.logger.Debug("image download failed", "url", c.URL, "error", err)
 			continue
@@ -579,8 +589,15 @@ func setImageFlag(a *artist.Artist, imageType string) {
 // When naming is non-nil, it overrides the platform-aware resolution (used by
 // the apply-candidate API handler which resolves naming at the call site).
 // Returns the list of saved filenames on success.
-func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, meta *img.ExifMeta, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
-	data, err := fetchImageURL(ctx, rawURL)
+//
+// The client parameter must be an SSRF-safe HTTP client (e.g.
+// httpsafe.SafeClient) in production paths. The rule engine threads its
+// BulkExecutor.httpClient through here, and the apply-candidate API handler
+// threads its Router.ssrfClient. Tests that exercise the download path against
+// an httptest server can pass a plain *http.Client because SafeTransport
+// blocks loopback destinations.
+func SaveImageFromURL(ctx context.Context, client *http.Client, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, meta *img.ExifMeta, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
+	data, err := fetchImageURL(ctx, client, rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("downloading image: %w", err)
 	}
@@ -1076,9 +1093,13 @@ func (f *LogoPaddingFixer) fixViaAPI(ctx context.Context, a *artist.Artist, v *V
 }
 
 // fetchImageURL downloads image data from a URL with timeout and size limits.
-func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: fetchTimeout}
-
+//
+// The client parameter is required and must be an SSRF-safe HTTP client (e.g.
+// httpsafe.SafeClient) for production callers; the function does not construct
+// its own client so that all outbound rule-engine fetches share the same
+// SSRF-protected transport. Tests may inject a plain *http.Client when
+// targeting httptest servers on the loopback interface.
+func fetchImageURL(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return nil, err

@@ -355,7 +355,7 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		Mode:    "manual",
 	}
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
-	saved, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger)
+	saved, err := rule.SaveImageFromURL(req.Context(), r.ssrfClient, a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger)
 	if err != nil {
 		r.logger.Error("applying image candidate", "artist_id", a.ID, "image_type", body.ImageType, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to apply image candidate")
