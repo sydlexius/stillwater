@@ -25,6 +25,9 @@ jobs:
         with:
           ref: main
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
@@ -44,15 +47,19 @@ jobs:
             type=raw,value=nightly
             type=raw,value=nightly-{{date 'YYYYMMDD'}}
 
-      # Nightly builds are amd64-only. Multi-arch releases are handled by
-      # GoReleaser in the release workflow using per-arch Dockerfiles.
+      # Nightly builds the same multi-arch matrix as stable (amd64 + arm64) so
+      # the :nightly tag is usable on the same hosts as :latest. arm64 is built
+      # under QEMU emulation, which is slower (~10min vs ~3min native) but keeps
+      # the workflow single-job. The release workflow uses GoReleaser with
+      # per-arch Dockerfiles instead, trading workflow setup for native speed
+      # where wall-clock matters.
       - name: Build and push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: .
           file: build/docker/Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
