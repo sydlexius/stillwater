@@ -80,7 +80,8 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	}
 
 	results := make([]provider.ArtistSearchResult, 0, len(resp.Data))
-	for _, r := range resp.Data {
+	for i := range resp.Data {
+		r := &resp.Data[i]
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID: strconv.Itoa(r.ID),
 			Name:       r.Name,
@@ -168,7 +169,7 @@ func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageRes
 
 // doRequest executes a GET request and returns the response body.
 func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

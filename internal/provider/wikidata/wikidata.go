@@ -160,7 +160,8 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	seen := make(map[string]bool)
 	var entries []imageEntry
 
-	for _, b := range bindings {
+	for i := range bindings {
+		b := &bindings[i]
 		if b.Image.Value != "" {
 			fn := extractCommonsFilename(b.Image.Value)
 			key := string(provider.ImageThumb) + ":" + fn
@@ -246,7 +247,7 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	}
 	reqURL := a.endpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -396,8 +397,8 @@ func mapArtist(mbid string, bindings []SPARQLBinding) *provider.ArtistMetadata {
 
 	// Collect unique genres from all bindings
 	seen := make(map[string]bool)
-	for _, b := range bindings {
-		genre := b.Genre.Value
+	for i := range bindings {
+		genre := bindings[i].Genre.Value
 		if genre != "" && !seen[genre] {
 			seen[genre] = true
 			meta.Genres = append(meta.Genres, genre)
@@ -470,7 +471,7 @@ func (a *Adapter) resolveCommonsURL(ctx context.Context, filename string) (*Comm
 	}
 	reqURL := a.commonsEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating commons request: %w", err)
 	}

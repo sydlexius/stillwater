@@ -139,9 +139,10 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 			if len(page) == 0 {
 				break
 			}
-			for _, a := range page {
+			for i := range page {
+				a := &page[i]
 				if !a.IsExcluded && !a.Locked {
-					artists = append(artists, a)
+					artists = append(artists, *a)
 				}
 			}
 			if len(page) < pageSize {
@@ -251,9 +252,9 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		if err != nil || len(results) == 0 {
 			return BulkItemSkipped, "no MBID and provider search found nothing"
 		}
-		for _, r := range results {
-			if r.MusicBrainzID != "" {
-				a.MusicBrainzID = r.MusicBrainzID
+		for i := range results {
+			if results[i].MusicBrainzID != "" {
+				a.MusicBrainzID = results[i].MusicBrainzID
 				_ = e.artistService.Update(ctx, a)
 				break
 			}

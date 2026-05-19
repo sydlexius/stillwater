@@ -314,7 +314,7 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		"format": {"json"},
 	}
 	wikiReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.actionEndpoint+"?"+params.Encode(), nil)
+		a.actionEndpoint+"?"+params.Encode(), http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -348,7 +348,7 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		"format": {"json"},
 	}
 	sparqlReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.wikidataEndpoint+"?"+sparqlQuery.Encode(), nil)
+		a.wikidataEndpoint+"?"+sparqlQuery.Encode(), http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		"format": {"json"},
 	}
 	entityReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		a.wikidataAPIEndpoint+"?"+entityParams.Encode(), nil)
+		a.wikidataAPIEndpoint+"?"+entityParams.Encode(), http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -500,7 +500,7 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, str
 	}
 	reqURL := a.wikidataEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -591,7 +591,7 @@ func (a *Adapter) resolveToLocalizedTitle(ctx context.Context, qid, lang string)
 	}
 	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -661,7 +661,7 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 	}
 	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -743,7 +743,7 @@ func (a *Adapter) fetchExtractFrom(ctx context.Context, endpoint, title string) 
 	}
 	reqURL := endpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -816,7 +816,7 @@ func (a *Adapter) fetchWikitext(ctx context.Context, title string) (string, erro
 	}
 	reqURL := a.actionEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,

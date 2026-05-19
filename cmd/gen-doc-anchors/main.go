@@ -191,7 +191,7 @@ func headingsToAnchors(path, docPath string) ([]string, error) {
 			continue
 		}
 		trimmed := strings.TrimLeft(line, "#")
-		if len(trimmed) == 0 || trimmed[0] != ' ' {
+		if trimmed == "" || trimmed[0] != ' ' {
 			// Not a heading (e.g. "#anchor" without trailing space).
 			continue
 		}

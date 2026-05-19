@@ -68,7 +68,7 @@ func CleanupConflictingFormats(dir string, fileName string, logger *slog.Logger)
 
 		entryExt := strings.ToLower(filepath.Ext(name))
 		entryBase := strings.TrimSuffix(name, filepath.Ext(name))
-		if strings.ToLower(entryBase) != lowerBase {
+		if !strings.EqualFold(entryBase, lowerBase) {
 			continue // different base name entirely
 		}
 

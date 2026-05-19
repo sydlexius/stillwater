@@ -177,7 +177,8 @@ func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Re
 	}
 
 	summaries := make([]librarySummary, 0, len(libs))
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		stats, err := r.artistService.GetHealthStats(ctx, lib.ID)
 		if err != nil {
 			r.logger.Error("querying health stats for library", "library", lib.Name, "error", err)
@@ -271,8 +272,8 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 
 	// Collect artist IDs for the batch violation lookup.
 	ids := make([]string, len(artists))
-	for i, a := range artists {
-		ids[i] = a.ID
+	for i := range artists {
+		ids[i] = artists[i].ID
 	}
 
 	violations, err := r.ruleService.GetViolationsForArtists(ctx, ids)
@@ -294,14 +295,15 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 	}
 
 	rows := make([]templates.ComplianceRow, len(artists))
-	for i, a := range artists {
+	for i := range artists {
+		a := &artists[i]
 		vs := violations[a.ID]
 		if vs == nil {
 			vs = make([]rule.Violation, 0)
 		}
 		counts := resultCounts[a.ID]
 		rows[i] = templates.ComplianceRow{
-			Artist:              a,
+			Artist:              *a,
 			HealthScore:         a.HealthScore,
 			Violations:          vs,
 			RulesPassedCount:    counts.Passed,
@@ -346,8 +348,8 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 
 	// Collect artist IDs and batch-load stored violations.
 	allIDs := make([]string, len(allArtists))
-	for i, a := range allArtists {
-		allIDs[i] = a.ID
+	for i := range allArtists {
+		allIDs[i] = allArtists[i].ID
 	}
 	violations, err := r.ruleService.GetViolationsForArtists(ctx, allIDs)
 	if err != nil {
@@ -362,8 +364,8 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 		r.logger.Warn("listing libraries for compliance export", "error", err)
 	}
 	libNames := make(map[string]string, len(libs))
-	for _, l := range libs {
-		libNames[l.ID] = l.Name
+	for i := range libs {
+		libNames[libs[i].ID] = libs[i].Name
 	}
 
 	w.Header().Set("Content-Type", "text/csv")
@@ -377,13 +379,15 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 		return
 	}
 
-	for _, a := range allArtists {
+	for i := range allArtists {
 		if ctx.Err() != nil {
 			break
 		}
+		a := &allArtists[i]
+		vs := violations[a.ID]
 		var violationNames []string
-		for _, v := range violations[a.ID] {
-			violationNames = append(violationNames, v.RuleName)
+		for j := range vs {
+			violationNames = append(violationNames, vs[j].RuleName)
 		}
 		libName := libNames[a.LibraryID]
 
@@ -419,11 +423,11 @@ func boolCSV(b bool) string {
 // start with formula-trigger characters (=, +, -, @) with a single quote so
 // spreadsheet applications treat them as plain text.
 func sanitizeCSV(s string) string {
-	if len(s) == 0 {
+	if s == "" {
 		return s
 	}
 	trimmed := strings.TrimLeft(s, " \t")
-	if len(trimmed) == 0 {
+	if trimmed == "" {
 		return s
 	}
 	switch trimmed[0] {
@@ -502,8 +506,8 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 
 	// Collect artist IDs and batch-load stored violations.
 	pageIDs := make([]string, len(artists))
-	for i, a := range artists {
-		pageIDs[i] = a.ID
+	for i := range artists {
+		pageIDs[i] = artists[i].ID
 	}
 	pageViolations, err := r.ruleService.GetViolationsForArtists(ctx, pageIDs)
 	if err != nil {
@@ -513,13 +517,14 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	rows := make([]templates.ComplianceRow, len(artists))
-	for i, a := range artists {
+	for i := range artists {
+		a := &artists[i]
 		vs := pageViolations[a.ID]
 		if vs == nil {
 			vs = make([]rule.Violation, 0)
 		}
 		rows[i] = templates.ComplianceRow{
-			Artist:      a,
+			Artist:      *a,
 			HealthScore: a.HealthScore,
 			Violations:  vs,
 		}
@@ -620,8 +625,8 @@ func (r *Router) handleReportMetadataCompleteness(w http.ResponseWriter, req *ht
 		if libs, err := r.libraryService.List(ctx); err != nil {
 			r.logger.Warn("listing libraries for metadata completeness", "error", err)
 		} else {
-			for _, lib := range libs {
-				libNames[lib.ID] = lib.Name
+			for i := range libs {
+				libNames[libs[i].ID] = libs[i].Name
 			}
 		}
 	}

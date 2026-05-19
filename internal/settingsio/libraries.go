@@ -82,7 +82,8 @@ func (s *Service) exportLibraries(ctx context.Context) ([]LibraryExport, error) 
 //nolint:gocognit // Per-library upsert with primary-key (name) lookup, secondary-key ((connection_id, external_id)) fallback for renamed peer libraries, and source-aware connection remap; skip-with-warning behavior preserves the disaster-recovery contract when individual rows cannot resolve. The skip vs error ladder mirrors importUserPreferences and is part of the import envelope's documented contract.
 func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	for _, le := range libs {
+	for i := range libs {
+		le := &libs[i]
 		if le.Name == "" {
 			// A blank name cannot satisfy the UNIQUE constraint and would
 			// collide on a second import. Skip with a warning rather than

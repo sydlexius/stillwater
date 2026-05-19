@@ -151,11 +151,12 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 			return nil, nil, fmt.Errorf("list libraries for peer resolution: %w", allErr)
 		}
 		libNames := make(map[string]string, len(allLibs))
-		for _, lib := range allLibs {
-			libNames[lib.ID] = lib.Name
+		for i := range allLibs {
+			libNames[allLibs[i].ID] = allLibs[i].Name
 		}
 
-		for _, lib := range sharedLibs {
+		for i := range sharedLibs {
+			lib := &sharedLibs[i]
 			// Resolve peer library IDs to a human-readable description.
 			overlapWith := resolvePeerDescription(lib.SharedFSPeerLibraryIDs, libNames)
 
@@ -193,7 +194,8 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 	checked := make(map[string]bool)
 	var warnings []connection.ImageFetcherWarning
 
-	for _, lib := range sharedLibs {
+	for i := range sharedLibs {
+		lib := &sharedLibs[i]
 		if lib.ConnectionID == "" || checked[lib.ConnectionID] {
 			continue
 		}

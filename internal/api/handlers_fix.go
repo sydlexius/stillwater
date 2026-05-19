@@ -398,14 +398,15 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 	// Only include open fixable violations; skip pending_choice (requires
 	// user candidate selection) and non-fixable violations.
 	var fixable []rule.RuleViolation
-	for _, v := range violations {
+	for i := range violations {
+		v := &violations[i]
 		if !v.Fixable || v.Status != rule.ViolationStatusOpen {
 			continue
 		}
 		if len(idSet) > 0 && !idSet[v.ID] {
 			continue
 		}
-		fixable = append(fixable, v)
+		fixable = append(fixable, *v)
 	}
 
 	if len(fixable) == 0 {
@@ -494,14 +495,15 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 		}
 		groupOrder := []string{}
 		byArtist := map[string]*artistGroup{}
-		for _, rv := range violations {
+		for i := range violations {
+			rv := &violations[i]
 			g, ok := byArtist[rv.ArtistID]
 			if !ok {
 				g = &artistGroup{artistID: rv.ArtistID}
 				byArtist[rv.ArtistID] = g
 				groupOrder = append(groupOrder, rv.ArtistID)
 			}
-			g.violations = append(g.violations, rv)
+			g.violations = append(g.violations, *rv)
 		}
 
 		// Phase 3: process artist groups with caching and yield.
@@ -512,7 +514,8 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 			_, aErr := r.artistService.GetByID(ctx, artistID)
 			if aErr != nil && errors.Is(aErr, artist.ErrNotFound) {
 				// Explicitly dismiss each violation for this deleted artist.
-				for _, rv := range g.violations {
+				for i := range g.violations {
+					rv := &g.violations[i]
 					if dErr := r.ruleService.DismissViolation(ctx, rv.ID); dErr != nil {
 						r.logger.Warn("fix-all: failed to dismiss orphan violation", "id", rv.ID, "error", dErr)
 					}
@@ -525,7 +528,8 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 			}
 
 			// Fix each violation for this artist.
-			for _, rv := range g.violations {
+			for i := range g.violations {
+				rv := &g.violations[i]
 				fr, fixErr := r.pipeline.FixViolation(ctx, rv.ID)
 
 				progress.mu.Lock()

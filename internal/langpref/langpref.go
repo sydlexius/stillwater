@@ -134,7 +134,7 @@ func EncodeJSON(tags []string) (string, error) {
 // language subtag must be 2-3 ASCII letters (ISO 639). Subsequent
 // subtags are 1-8 alphanumeric characters separated by hyphens.
 func isValidLanguageTag(s string) bool {
-	if len(s) == 0 || len(s) > MaxTagLength {
+	if s == "" || len(s) > MaxTagLength {
 		return false
 	}
 	parts := strings.Split(s, "-")
@@ -148,7 +148,7 @@ func isValidLanguageTag(s string) bool {
 		}
 	}
 	for _, p := range parts[1:] {
-		if len(p) == 0 || len(p) > 8 {
+		if p == "" || len(p) > 8 {
 			return false
 		}
 		for _, c := range p {

@@ -59,7 +59,7 @@ func CheckPathExists(path string) error {
 		// On Windows, prepending "/" to a drive-letter path (e.g.
 		// "C:\dir") produces "\C:\dir" after Clean. Trim the leading
 		// separator to restore the valid form.
-		if len(vol) == 2 && vol[1] == ':' && len(cleaned) > 0 {
+		if len(vol) == 2 && vol[1] == ':' && cleaned != "" {
 			cleaned = cleaned[1:]
 		}
 	}

@@ -111,7 +111,8 @@ func (r *Router) handleGetConnectionConflictDetail(w http.ResponseWriter, req *h
 	}
 	ledger := r.conflictDetector.Current(req.Context())
 	view := templates.ConnectionConflictDetailView{}
-	for _, c := range ledger.Connections {
+	for i := range ledger.Connections {
+		c := &ledger.Connections[i]
 		if c.ConnectionID != id {
 			continue
 		}
@@ -127,11 +128,11 @@ func (r *Router) handleGetConnectionConflictDetail(w http.ResponseWriter, req *h
 				limit = len(c.Paths)
 			}
 			summary := ""
-			for i := 0; i < limit; i++ {
-				if i > 0 {
+			for pi := 0; pi < limit; pi++ {
+				if pi > 0 {
 					summary += ", "
 				}
-				summary += c.Paths[i]
+				summary += c.Paths[pi]
 			}
 			if len(c.Paths) > limit {
 				summary += fmt.Sprintf(" (+%d more)", len(c.Paths)-limit)
@@ -539,7 +540,8 @@ func conflictBannerView(l conflict.Ledger) templates.ConflictBannerView {
 	view := templates.ConflictBannerView{
 		State: l.BannerState(),
 	}
-	for _, c := range l.Connections {
+	for i := range l.Connections {
+		c := &l.Connections[i]
 		if !c.Enabled || c.ManageServerFiles {
 			continue
 		}

@@ -199,7 +199,7 @@ func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, 
 		return nil, fmt.Errorf("item id is required")
 	}
 	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,LockData,LockedFields", url.QueryEscape(itemID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating fetch request: %w", err)
 	}
@@ -325,7 +325,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	}
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)
 	}

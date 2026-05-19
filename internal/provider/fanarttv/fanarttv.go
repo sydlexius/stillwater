@@ -76,7 +76,7 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	}
 
 	reqURL := fmt.Sprintf("%s/%s?api_key=%s", a.baseURL, mbid, apiKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

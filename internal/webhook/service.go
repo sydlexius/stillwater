@@ -93,13 +93,14 @@ func (s *Service) ListByEvent(ctx context.Context, eventType string) ([]Webhook,
 	}
 
 	var matched []Webhook
-	for _, w := range all {
+	for i := range all {
+		w := &all[i]
 		if !w.Enabled {
 			continue
 		}
 		for _, e := range w.Events {
 			if e == eventType {
-				matched = append(matched, w)
+				matched = append(matched, *w)
 				break
 			}
 		}

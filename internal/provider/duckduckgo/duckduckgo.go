@@ -147,7 +147,7 @@ func (a *Adapter) getVQDToken(ctx context.Context, query string) (string, error)
 func (a *Adapter) getVQDFromMainPage(ctx context.Context, query string) (string, error) {
 	params := url.Values{"q": {query}}
 	reqURL := a.baseURL + "/?" + params.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -228,7 +228,7 @@ func (a *Adapter) fetchImages(ctx context.Context, query, vqd string) ([]imageHi
 	}
 
 	reqURL := a.baseURL + "/i.js?" + params.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

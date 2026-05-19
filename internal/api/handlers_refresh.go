@@ -457,8 +457,8 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 // local albums are available.
 func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []templates.DisambiguationCandidate {
 	candidates := make([]templates.DisambiguationCandidate, len(results))
-	for i, res := range results {
-		candidates[i].Result = res
+	for i := range results {
+		candidates[i].Result = results[i]
 	}
 
 	if len(localAlbums) == 0 || r.providerRegistry == nil {
