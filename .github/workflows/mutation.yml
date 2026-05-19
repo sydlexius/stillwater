@@ -87,13 +87,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Install go-mutesting
-        # Pinned to @latest deliberately. The avito-tech fork is the
-        # active maintenance fork (the upstream zimmski/go-mutesting is
-        # archived); there are no semver tags to pin to. Dependabot's
-        # action-version automation does not cover `go install` lines,
-        # so we accept upstream drift here in exchange for picking up
-        # mutator fixes without manual SHA bumps.
-        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+        # Pinned by commit SHA (Scorecard Pinned-Dependencies). The SHA
+        # below is v2.3.1 on the avito-tech fork, which is the active
+        # maintenance fork (upstream zimmski/go-mutesting is archived).
+        # Bump manually when picking up new mutator fixes -- Dependabot's
+        # action-version automation does not cover `go install` lines.
+        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@48d0401f00fbfb9502adc2c5138497ad8ccfafb9 # v2.3.1
 
       - name: Write go-mutesting config
         # exclude_dirs is a path-prefix filter on the binary's target-walk.
