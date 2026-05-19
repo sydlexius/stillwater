@@ -87,7 +87,16 @@ func newTestAdapter(t *testing.T, baseURL string) *Adapter {
 	// Production uses the default limiter; see internal/provider/ratelimit.go.
 	limiter.SetLimit(provider.NameMusicBrainz, 1000)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return NewWithBaseURL(limiter, logger, baseURL)
+	a := NewWithBaseURL(limiter, logger, baseURL)
+	// Production wires a.client to httpsafe.SafeClient, which rejects the
+	// loopback (127.0.0.1) addresses that httptest.NewServer binds to by
+	// design. Tests override the client with a plain *http.Client so the
+	// httptest fixture is reachable; the production SSRF guard is exercised
+	// by internal/httpsafe's own test suite plus the AST regression guard
+	// in no_raw_client_construction_test.go (which allowlists this kind of
+	// post-construction override implicitly by skipping _test.go files).
+	a.client = &http.Client{Timeout: 10 * time.Second}
+	return a
 }
 
 func TestName(t *testing.T) {
@@ -390,6 +399,33 @@ func TestDefaultBaseURL(t *testing.T) {
 	if a.DefaultBaseURL() != "https://musicbrainz.org/ws/2" {
 		t.Errorf("unexpected default base URL: %s", a.DefaultBaseURL())
 	}
+}
+
+// TestSetHTTPClient verifies that SetHTTPClient replaces the adapter's
+// unexported client field. Same-package access lets the test read the
+// field directly; a behavioral test that drives a request through the
+// swapped client lives in handlers_provider_test.go (which is the
+// cross-package use case the setter was added for).
+func TestSetHTTPClient(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost")
+	custom := &http.Client{Timeout: 99 * time.Second}
+	a.SetHTTPClient(custom)
+	if a.client != custom {
+		t.Errorf("SetHTTPClient did not replace the client field")
+	}
+}
+
+// TestSetHTTPClientNilPanics verifies the documented nil-input panic.
+// A silent nil acceptance would crash inside doRequest with a nil
+// dereference far from the misconfiguration site.
+func TestSetHTTPClientNilPanics(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("SetHTTPClient(nil) did not panic")
+		}
+	}()
+	a.SetHTTPClient(nil)
 }
 
 func TestMirrorableSearchArtist(t *testing.T) {
@@ -1289,6 +1325,8 @@ func TestLocalizeMembers_RateLimiterIsInvoked(t *testing.T) {
 	limiter.SetLimit(provider.NameMusicBrainz, 1)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL)
+	// See newTestAdapter for why the SafeClient override is required.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
 	members := []provider.MemberInfo{

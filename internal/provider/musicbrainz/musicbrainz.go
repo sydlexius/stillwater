@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/tagclass"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -38,9 +39,7 @@ func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
 // NewWithBaseURL creates a MusicBrainz adapter with a custom base URL (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseURL string) *Adapter {
 	return &Adapter{
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		client:  httpsafe.SafeClient(10 * time.Second),
 		limiter: limiter,
 		logger:  logger.With(slog.String("provider", "musicbrainz")),
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -502,6 +501,25 @@ func (a *Adapter) BaseURL() string {
 // DefaultBaseURL returns the default MusicBrainz API base URL.
 func (a *Adapter) DefaultBaseURL() string {
 	return defaultBaseURL
+}
+
+// SetHTTPClient replaces the adapter's HTTP client. Intended for tests
+// that run against an httptest.NewServer loopback fixture, which
+// httpsafe.SafeClient (the production default) rejects by design.
+// Production callers should not need this; the constructor wires the
+// SafeClient automatically.
+//
+// Callers must call this before initiating requests, not concurrently
+// with them. doRequest reads a.client without a lock; matching that
+// here would add ceremony without benefit because the only legitimate
+// caller is single-threaded test setup. Panics on nil to surface the
+// misconfiguration at the wiring site rather than as a confusing nil
+// dereference deep inside doRequest.
+func (a *Adapter) SetHTTPClient(c *http.Client) {
+	if c == nil {
+		panic("musicbrainz.SetHTTPClient: client must not be nil")
+	}
+	a.client = c
 }
 
 // doRequest executes an HTTP GET with rate limiting and standard headers.

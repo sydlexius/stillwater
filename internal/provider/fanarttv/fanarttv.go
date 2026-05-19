@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -34,7 +35,7 @@ func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, l
 // NewWithBaseURL creates a Fanart.tv adapter with a custom base URL (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger, baseURL string) *Adapter {
 	return &Adapter{
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   httpsafe.SafeClient(10 * time.Second),
 		limiter:  limiter,
 		settings: settings,
 		logger:   logger.With(slog.String("provider", "fanarttv")),

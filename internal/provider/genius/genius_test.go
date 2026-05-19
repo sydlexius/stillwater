@@ -10,11 +10,19 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
 	_ "modernc.org/sqlite"
 )
+
+// useLoopbackTestClient swaps the SafeClient-backed default for a plain
+// http.Client when tests need to reach an httptest.Server on 127.0.0.1.
+// SafeTransport blocks loopback by design.
+func useLoopbackTestClient(a *Adapter) {
+	a.client = &http.Client{Timeout: 10 * time.Second}
+}
 
 func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsService) {
 	t.Helper()
@@ -83,6 +91,8 @@ func TestSearchArtist(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	results, err := a.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
@@ -111,6 +121,8 @@ func TestSearchArtistDeduplicates(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	results, err := a.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
@@ -128,6 +140,8 @@ func TestGetArtistByID(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "604")
 	if err != nil {
@@ -155,6 +169,8 @@ func TestGetArtistByName(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "Radiohead")
 	if err != nil {
@@ -178,6 +194,8 @@ func TestGetArtistNotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	_, err := a.GetArtist(context.Background(), "nonexistent")
 	if err == nil {
@@ -192,6 +210,8 @@ func TestGetArtistNotFound(t *testing.T) {
 func TestGetImagesReturnsNil(t *testing.T) {
 	limiter, settings := setupTest(t)
 	a := NewWithBaseURL(limiter, settings, testLogger(), "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	images, err := a.GetImages(context.Background(), "any")
 	if err != nil {
@@ -207,6 +227,8 @@ func TestTestConnection(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	if err := a.TestConnection(context.Background()); err != nil {
 		t.Fatalf("TestConnection: %v", err)
@@ -216,6 +238,8 @@ func TestTestConnection(t *testing.T) {
 func TestRequiresAuth(t *testing.T) {
 	limiter, settings := setupTest(t)
 	a := NewWithBaseURL(limiter, settings, testLogger(), "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	if !a.RequiresAuth() {
 		t.Error("expected RequiresAuth to return true")
@@ -247,6 +271,8 @@ func TestGetArtistUUIDReturnsNotFound(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	// A MusicBrainz UUID should be rejected immediately without making an API call.
 	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
@@ -296,6 +322,8 @@ func TestGetArtistByNameRejectsMismatch(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	// Searching "Adele" should not return Kim Kardashian's data.
 	_, err := a.GetArtist(context.Background(), "Adele")
@@ -329,6 +357,8 @@ func TestGetArtistByNameAcceptsCorrectMatch(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	meta, err := a.GetArtist(context.Background(), "Adele")
 	if err != nil {
@@ -352,6 +382,8 @@ func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	results, err := a.SearchArtist(context.Background(), "Adele")
 	if err != nil {
@@ -475,6 +507,8 @@ func TestAuthRequired(t *testing.T) {
 	settings := provider.NewSettingsService(db, enc)
 	// Do not set an API key -- should trigger ErrAuthRequired.
 	a := NewWithBaseURL(limiter, settings, testLogger(), "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	useLoopbackTestClient(a)
 
 	_, err = a.SearchArtist(context.Background(), "test")
 	if err == nil {

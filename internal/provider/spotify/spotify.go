@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -49,7 +50,7 @@ func New(limiter *provider.RateLimiterMap, settings SettingsProvider, logger *sl
 // NewWithBaseURL creates a Spotify adapter with custom URLs (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, settings SettingsProvider, logger *slog.Logger, baseURL, tokenURL string) *Adapter {
 	return &Adapter{
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   httpsafe.SafeClient(10 * time.Second),
 		limiter:  limiter,
 		settings: settings,
 		logger:   logger.With(slog.String("provider", "spotify")),

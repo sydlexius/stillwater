@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -62,6 +63,8 @@ func TestGetImages(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.GetImages(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
@@ -106,6 +109,8 @@ func TestGetImagesNotFound(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	_, err := a.GetImages(context.Background(), "nonexistent")
 	if err == nil {
@@ -133,6 +138,8 @@ func TestGetImagesNoKey(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	_, err = a.GetImages(context.Background(), "any-id")
 	if err == nil {
@@ -148,6 +155,8 @@ func TestSearchReturnsNil(t *testing.T) {
 	limiter, settings := setupTest(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	results, err := a.SearchArtist(context.Background(), "anything")
 	if err != nil {
@@ -162,6 +171,8 @@ func TestGetArtistReturnsNil(t *testing.T) {
 	limiter, settings := setupTest(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	meta, err := a.GetArtist(context.Background(), "anything")
 	if err != nil {

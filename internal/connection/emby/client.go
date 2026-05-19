@@ -29,6 +29,14 @@ type Client struct {
 }
 
 // New creates an Emby client with default HTTP settings.
+//
+// Uses a raw http.Client (not httpsafe.SafeClient) because Emby is a
+// user-configured media server that almost always lives on loopback
+// (127.0.0.1) or an RFC 1918 LAN address (192.168.x.x, 10.x.x.x) for
+// self-hosted deployments. The httpsafe.SafeTransport SSRF guard would
+// reject precisely those destinations, breaking the integration for
+// legitimate setups. The destination URL is supplied by the operator
+// via Settings, not by user-controlled provider input.
 func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
 	return NewWithHTTPClient(baseURL, apiKey, userID, &http.Client{Timeout: 10 * time.Second}, logger)
 }
@@ -285,6 +293,9 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 		deviceID, version.Version,
 	))
 
+	// Auth flow targets the same operator-supplied Emby server as the rest of
+	// the package (see New() for the LAN/loopback rationale). httpsafe would
+	// block these legitimate destinations.
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

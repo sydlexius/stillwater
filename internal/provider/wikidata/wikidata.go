@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -55,7 +56,7 @@ func NewWithEndpoint(limiter *provider.RateLimiterMap, logger *slog.Logger, endp
 // endpoints. Use this in tests that need to mock both APIs.
 func NewWithEndpoints(limiter *provider.RateLimiterMap, logger *slog.Logger, endpoint, commonsEndpoint string) *Adapter {
 	return &Adapter{
-		client:          &http.Client{Timeout: 15 * time.Second},
+		client:          httpsafe.SafeClient(15 * time.Second),
 		limiter:         limiter,
 		logger:          logger.With(slog.String("provider", "wikidata")),
 		endpoint:        endpoint,

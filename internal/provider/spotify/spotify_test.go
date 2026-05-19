@@ -93,7 +93,10 @@ func newTestAdapter(t *testing.T, baseURL, tokenURL string, keys map[provider.Pr
 	limiter := provider.NewRateLimiterMap()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	settings := &fakeSettings{keys: keys}
-	return NewWithBaseURL(limiter, settings, logger, baseURL, tokenURL)
+	a := NewWithBaseURL(limiter, settings, logger, baseURL, tokenURL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
+	return a
 }
 
 func TestName(t *testing.T) {
