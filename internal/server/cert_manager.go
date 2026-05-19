@@ -1,7 +1,7 @@
 // CertManager abstracts the source of TLS certificates so the listener
 // startup code does not branch on which ACME flavor (or BYO) is configured.
 // The autocert (Let's Encrypt / Buypass) implementation lives in this file;
-// a future ZeroSSL/lego implementation (#931) will satisfy the same
+// a future ZeroSSL/lego implementation (#1564) will satisfy the same
 // interface without touching listeners.go.
 //
 // The split is a textbook strategy pattern: the config layer picks an

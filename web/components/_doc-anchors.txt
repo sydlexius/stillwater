@@ -163,8 +163,9 @@ how-to/configure-provider-priorities#set-the-global-priority
 how-to/configure-provider-priorities#two-related-knobs
 how-to/configure-provider-priorities#what-changes-after-a-priority-edit
 how-to/configure-provider-priorities#what-to-put-where
-how-to/direct-tls-setup#acme-lets-encrypt-buypass
-how-to/direct-tls-setup#acme-zerossl-ip-san
+how-to/direct-tls-setup#acme-and-http-redirect
+how-to/direct-tls-setup#acme-lets-encrypt-experimental
+how-to/direct-tls-setup#acme-zerossl-ip-san-reserved
 how-to/direct-tls-setup#configure-stillwater
 how-to/direct-tls-setup#confirm
 how-to/direct-tls-setup#confirm-it-took-effect-settings-general-tls-status
@@ -177,7 +178,6 @@ how-to/direct-tls-setup#generate-a-self-signed-cert-local-testing
 how-to/direct-tls-setup#hsts
 how-to/direct-tls-setup#http-to-https-redirect-listener
 how-to/direct-tls-setup#http3-quic-http3-quic-firewall
-how-to/direct-tls-setup#whats-next-in-v11
 how-to/edit-artist#add-or-change-a-provider-id
 how-to/edit-artist#discard-accidental-edits
 how-to/edit-artist#edit-a-single-field
