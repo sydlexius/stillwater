@@ -11,8 +11,29 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"time"
 )
+
+// extraBlockedPrefixes covers reserved IPv4 ranges that Go's stdlib helpers
+// (net.IP.IsPrivate, IsLoopback, IsLinkLocalUnicast, IsLinkLocalMulticast,
+// IsUnspecified) do not flag but which should never be reachable from
+// outbound HTTP:
+//
+//   - 100.64.0.0/10  CGNAT shared address space (RFC 6598). Often used as a
+//     transit range inside ISP networks and on tunnel/VPN interfaces. Reaching
+//     it from an SSRF context is almost always unintended.
+//   - 198.18.0.0/15  RFC 2544 benchmark / interconnect range. Reserved for
+//     device-to-device testing and sometimes routed internally; treat as
+//     non-public.
+//
+// IPv6 ULA (fc00::/7) and link-local (fe80::/10) are already caught by
+// net.IP.IsPrivate and net.IP.IsLinkLocalUnicast respectively, so they do not
+// appear here -- they are exercised by the test suite for lock-in.
+var extraBlockedPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+}
 
 // ErrPrivateAddress is returned by SafeTransport's DialContext when a target
 // host resolves to a loopback, link-local, or RFC 1918 address. Exposed as a
@@ -108,11 +129,39 @@ func SafeClient(timeout time.Duration) *http.Client {
 
 // isBlocked returns true for IP addresses that must never be contacted from
 // outbound HTTP requests: loopback, link-local unicast, link-local multicast,
-// RFC 1918 private ranges, and the unspecified address.
+// RFC 1918 private ranges, the unspecified address, and the extra reserved
+// ranges in extraBlockedPrefixes (CGNAT, RFC 2544).
 func isBlocked(ip net.IP) bool {
-	return ip.IsLoopback() ||
+	if ip.IsLoopback() ||
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified()
+		ip.IsUnspecified() {
+		return true
+	}
+	// Convert the net.IP to a netip.Addr for prefix matching. AddrFromSlice
+	// accepts both 4-byte and 16-byte representations; we normalise to a 4-byte
+	// IPv4 form (via To4) when applicable so the IPv4 prefixes in
+	// extraBlockedPrefixes match correctly even when ip is a 4-in-6 mapped
+	// address.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		// Fail closed. The only documented callers pass net.IP values from
+		// the Go resolver, which always produces 4-byte or 16-byte slices.
+		// Reaching this branch means the input has a non-standard length
+		// (zero, 5-15, 17+) -- either a bug in the caller or a future
+		// non-resolver code path. We refuse to dial an address we cannot
+		// classify; safer to reject than to silently allow.
+		return true
+	}
+	addr = addr.Unmap()
+	for _, prefix := range extraBlockedPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
