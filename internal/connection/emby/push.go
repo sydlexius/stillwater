@@ -38,7 +38,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	// Styles and Moods map to TagItems (Emby uses {Name} objects, not flat
 	// strings). Disambiguation and YearsActive have no corresponding Emby
 	// fields and are omitted.
-	var items []tagItem
+	items := make([]tagItem, 0, len(data.Styles)+len(data.Moods))
 	for _, s := range data.Styles {
 		items = append(items, tagItem{Name: s})
 	}

@@ -184,8 +184,8 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		ORDER BY mc.created_at DESC, mc.id DESC
 		LIMIT ? OFFSET ?`
 
-	queryArgs := make([]any, len(args))
-	copy(queryArgs, args)
+	queryArgs := make([]any, 0, len(args)+2)
+	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, filter.Limit, filter.Offset)
 
 	rows, err := r.db.QueryContext(ctx, selectQ, queryArgs...)
