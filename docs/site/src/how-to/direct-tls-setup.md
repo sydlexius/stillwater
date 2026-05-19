@@ -1,5 +1,5 @@
 ---
-description: Serve Stillwater over HTTPS without a reverse proxy by supplying your own TLS certificate, with notes on cert generation, Docker healthcheck behavior, and ACME / HTTP/3 support arriving in v1.1.0.
+description: Serve Stillwater over HTTPS without a reverse proxy by supplying your own TLS certificate or letting Stillwater obtain one via ACME, with notes on cert generation, Docker healthcheck behavior, and HTTP/3 support.
 ---
 
 # Direct TLS setup
@@ -9,7 +9,7 @@ Stillwater can terminate TLS itself instead of relying on a fronting reverse pro
 When direct TLS is the wrong answer:
 
 - You already run a proxy (Caddy, SWAG, Traefik, Nginx) for the rest of your stack. Adding Stillwater to it is usually less work than maintaining a separate cert lifecycle for one app. See [Run Stillwater behind a reverse proxy](reverse-proxy.md).
-- You want automatic certificate management. v1.0 only supports bring-your-own (BYO) certificates; ACME-managed certs land in v1.1.
+- You want a production-validated automatic certificate path today. Stillwater's native ACME (Let's Encrypt) integration is currently marked **Experimental** in the TLS Status card pending end-to-end validation against a real public deployment. For production right now, prefer bring-your-own certificates -- or a reverse proxy with its own ACME client -- until the Experimental marker is removed.
 
 When direct TLS is the right answer:
 
@@ -67,7 +67,7 @@ Open Settings, scroll to the General tab. The TLS Status card shows one of three
 
 - **Inactive** -- plain HTTP, no cert configured.
 - **Active (BYO certificate)** -- direct TLS using the cert and key supplied via env vars or config file.
-- **Active (ACME, &lt;domain&gt;)** -- ACME-managed cert (arrives in v1.1).
+- **Active (ACME, &lt;domain&gt;)** -- ACME-managed cert. An amber **Experimental** chip and a short caveat appear next to this state until the ACME path has been validated end-to-end against a real public deployment.
 
 The card also lists the bound port so you can confirm whether you're in collapse mode (HTTPS on the original `SW_PORT`) or split-port mode (HTTPS on `SW_TLS_PORT`). When HTTP/3 is enabled, an additional `HTTP/3 on :<port>/UDP` row appears. The card is read-only; configure TLS via env vars or the config file.
 
@@ -79,21 +79,39 @@ Once Stillwater detects a TLS connection, it automatically sets a strict `Strict
 
 The container's healthcheck targets `localhost` over the configured protocol. When `SW_TLS_CERT_FILE` is set, the entrypoint exports `SW_HEALTH_URL` so the probe uses HTTPS on the right port. The probe runs with `curl -k` to skip cert verification -- this is intentional, because a localhost healthcheck against a self-signed cert would otherwise fail for the wrong reason. You do not need to set `SW_HEALTH_URL` yourself; setting `SW_TLS_CERT_FILE` is enough.
 
-## What's next in v1.1
+## ACME and HTTP redirect
 
-The TLS surface is built so the following land without further configuration churn:
+Beyond bring-your-own certificates, the TLS surface supports two related features that share the same listener stack. All three of these are configured via environment variables or `config.toml` / `config.yaml`; **there is no UI for TLS configuration** today, and the TLS Status card in Settings is read-only by design.
 
-### ACME (Let's Encrypt / Buypass)
+### ACME (Let's Encrypt) -- Experimental
 
-Added in v1.1.0; see issue [#930](https://github.com/sydlexius/stillwater/issues/930). Configure via `SW_ACME_DOMAIN`, `SW_ACME_EMAIL`, and `SW_ACME_CA`.
+Configure via `SW_ACME_DOMAIN`, `SW_ACME_EMAIL`, and `SW_ACME_CA`:
 
-### ACME (ZeroSSL, IP-SAN)
+```sh
+SW_ACME_DOMAIN=stillwater.example.com
+SW_ACME_EMAIL=admin@example.com
+# SW_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory   # optional: use the LE staging directory for testing
+```
 
-Added in v1.1.0; see issue [#931](https://github.com/sydlexius/stillwater/issues/931). Lets you obtain certificates for a public IP address rather than a DNS name.
+Or in `config.toml`:
+
+```toml
+[acme]
+domain    = "stillwater.example.com"
+email     = "admin@example.com"
+# ca      = "https://acme-staging-v02.api.letsencrypt.org/directory"
+# cache_dir = "/config/acme-cache"
+```
+
+The domain must resolve to this server and port 80 must be reachable from the public internet so the ACME challenge succeeds. The TLS Status card flags this path as **Experimental** with an amber chip and caveat until it has been validated end-to-end against a real public deployment -- prefer BYO certificates for production until that marker is removed.
+
+### ACME (ZeroSSL, IP-SAN) -- reserved
+
+The struct fields (`SW_ACME_EAB_KEY_ID`, `SW_ACME_EAB_MAC_KEY`, `SW_ACME_IP`) are stubbed for forward compatibility but the lego-based ZeroSSL / IP-SAN code path is not yet active. Setting these env vars has no effect today. Tracked in issue [#1564](https://github.com/sydlexius/stillwater/issues/1564).
 
 ### HTTP-to-HTTPS redirect listener
 
-Added in v1.1.0. Setting `SW_HTTP_REDIRECT_PORT=80` makes Stillwater bind a second plain-HTTP listener that 301-redirects every request to the HTTPS port. See the [HTTP-to-HTTPS redirect](http-redirect.md) how-to for setup details and reverse-proxy interactions.
+Setting `SW_HTTP_REDIRECT_PORT=80` makes Stillwater bind a second plain-HTTP listener that 301-redirects every request to the HTTPS port. See the [HTTP-to-HTTPS redirect](http-redirect.md) how-to for setup details and reverse-proxy interactions.
 
 ## HTTP/3 (QUIC) { #http3-quic-firewall }
 

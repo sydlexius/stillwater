@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 // EmbyProvider authenticates users against an Emby server.
@@ -57,7 +58,7 @@ func (p *EmbyProvider) Authenticate(ctx context.Context, creds Credentials) (*Id
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Emby-Authorization",
-		`MediaBrowser Client="Stillwater", Device="Server", DeviceId="stillwater", Version="1.0.0"`)
+		fmt.Sprintf(`MediaBrowser Client="Stillwater", Device="Server", DeviceId="stillwater", Version=%q`, version.Version))
 
 	resp, err := p.client.Do(req)
 	if err != nil {

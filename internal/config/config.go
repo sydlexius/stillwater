@@ -80,7 +80,7 @@ type HTTP3Config struct {
 // ACMEConfig holds Automatic Certificate Management Environment settings.
 // Domain/Email/CA/CacheDir drive the autocert (Let's Encrypt / Buypass via
 // golang.org/x/crypto/acme/autocert) path today. EabKeyID/EabMacKey/IP are
-// reserved for the ZeroSSL IP-SAN wiring (#931, lego); leaving them
+// reserved for the ZeroSSL IP-SAN wiring (#1564, lego); leaving them
 // populated but unread keeps the env-var loader and reference docs stable
 // across the milestone.
 type ACMEConfig struct {
@@ -220,14 +220,22 @@ const scaffoldTOML = `# Stillwater configuration
 # enabled = false
 # port = 0  # 0 reuses the effective HTTPS port (SW_TLS_PORT or SW_PORT).
 
-# Automatic Certificate Management Environment (ACME). Reserved for future
-# use; not yet active. Until the ACME path lands, configure direct TLS via
-# [server.tls] above (BYO certificate) or terminate at a fronting proxy.
+# Automatic Certificate Management Environment (ACME). Currently marked
+# Experimental in the Settings -> General TLS Status card pending end-to-end
+# validation against a real public deployment; prefer [server.tls] (BYO
+# certificate) above for production until that marker is removed. The
+# domain MUST resolve to this server and port 80 MUST be reachable from
+# the public internet for the ACME challenge to succeed. ACME and BYO TLS
+# are mutually exclusive -- set one or the other, not both.
+# See: https://sydlexius.github.io/stillwater/how-to/direct-tls-setup/
 # [acme]
 # domain = "stillwater.example.com"
 # email = "admin@example.com"
-# ca = "letsencrypt"
+# ca = "https://acme-v02.api.letsencrypt.org/directory"  # Let's Encrypt production (default). Use the staging URL while testing to avoid rate limits.
 # cache_dir = "/config/acme-cache"
+# eab_key_id  = ""  # Reserved for future use (ZeroSSL / IP-SAN); not yet active.
+# eab_mac_key = ""  # Reserved for future use (ZeroSSL / IP-SAN); not yet active.
+# ip          = ""  # Reserved for future use (IP-SAN certificate orders); not yet active.
 
 [database]
 # path = "/config/stillwater.db"

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/version"
 )
 
 // JellyfinProvider authenticates users against a Jellyfin server.
@@ -57,7 +58,7 @@ func (p *JellyfinProvider) Authenticate(ctx context.Context, creds Credentials) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization",
-		`MediaBrowser Client="Stillwater", Device="Server", DeviceId="stillwater", Version="1.0.0"`)
+		fmt.Sprintf(`MediaBrowser Client="Stillwater", Device="Server", DeviceId="stillwater", Version=%q`, version.Version))
 
 	resp, err := p.client.Do(req)
 	if err != nil {
