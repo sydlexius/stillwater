@@ -264,7 +264,8 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 	}
 
 	wanted := make(map[string]bool)
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if !lib.FSWatchEnabled() || lib.IsPathless() {
 			continue
 		}
@@ -358,7 +359,8 @@ func (s *Service) initPollSnapshots(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if !lib.FSPollEnabled() || lib.IsPathless() {
 			continue
 		}
@@ -390,7 +392,8 @@ func (s *Service) refreshPollPaths(ctx context.Context) {
 	}
 
 	wanted := make(map[string]int) // path -> interval
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if !lib.FSPollEnabled() || lib.IsPathless() {
 			continue
 		}

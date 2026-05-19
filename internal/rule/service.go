@@ -361,7 +361,8 @@ func (s *Service) WithLogger(logger *slog.Logger) *Service {
 // signal for the dirty-tracking query to schedule them on the next pass.
 func (s *Service) SeedDefaults(ctx context.Context) error {
 	now := s.clock.Now().Format(time.RFC3339)
-	for _, r := range defaultRules {
+	for i := range defaultRules {
+		r := &defaultRules[i]
 		autoMode := r.AutomationMode
 		if autoMode == "" {
 			autoMode = "auto"
@@ -1224,15 +1225,16 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 	var order []string
 	groups := make(map[string]*ViolationGroup)
 
-	for _, v := range violations {
-		key, label := keyFunc(v)
+	for i := range violations {
+		v := &violations[i]
+		key, label := keyFunc(*v)
 		g, exists := groups[key]
 		if !exists {
 			g = &ViolationGroup{Key: key, Label: label}
 			groups[key] = g
 			order = append(order, key)
 		}
-		g.Violations = append(g.Violations, v)
+		g.Violations = append(g.Violations, *v)
 		g.Count++
 	}
 

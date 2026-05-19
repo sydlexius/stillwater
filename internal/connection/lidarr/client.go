@@ -162,7 +162,7 @@ func (c *Client) DisableMetadataConsumer(ctx context.Context, configID int) erro
 func (c *Client) getMetadataProviderConfigs(ctx context.Context) ([]MetadataProviderConfig, error) {
 	const path = "/api/v1/config/metadataprovider"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -360,7 +360,7 @@ func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string)
 // model, so putMetadataConsumer can PUT back a lossless body without
 // dropping anything the peer cares about.
 func (c *Client) getMetadataConsumers(ctx context.Context) ([]map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, "/api/v1/metadata"), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, "/api/v1/metadata"), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

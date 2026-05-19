@@ -140,7 +140,8 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	}
 	defer upsertStmt.Close() //nolint:errcheck // Close error not actionable on cleanup
 
-	for _, img := range images {
+	for i := range images {
+		img := &images[i]
 		id := img.ID
 		if id == "" {
 			id = uuid.New().String()

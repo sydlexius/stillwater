@@ -78,7 +78,8 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 		}
 		rows := make([]exportRow, len(violations))
 		now := time.Now()
-		for i, v := range violations {
+		for i := range violations {
+			v := &violations[i]
 			rows[i] = exportRow{
 				ArtistName:  v.ArtistName,
 				LibraryName: v.LibraryName,
@@ -110,7 +111,8 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 	}
 
 	now := time.Now()
-	for _, v := range violations {
+	for i := range violations {
+		v := &violations[i]
 		if req.Context().Err() != nil {
 			break
 		}

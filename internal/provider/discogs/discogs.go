@@ -254,7 +254,7 @@ func (a *Adapter) getToken(ctx context.Context) (string, error) {
 }
 
 func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

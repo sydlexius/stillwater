@@ -182,8 +182,10 @@ func renderConfigurable(cfg rule.RuleConfig) string {
 	}
 
 	if cfg.ThresholdPercent > 0 {
-		params = append(params, fmt.Sprintf("Padding threshold (default %.0f%% of image area)", cfg.ThresholdPercent))
-		params = append(params, fmt.Sprintf("Trim margin (default %d px)", cfg.TrimMargin))
+		params = append(params,
+			fmt.Sprintf("Padding threshold (default %.0f%% of image area)", cfg.ThresholdPercent),
+			fmt.Sprintf("Trim margin (default %d px)", cfg.TrimMargin),
+		)
 	}
 
 	if cfg.MinCount > 0 {
@@ -223,8 +225,8 @@ func renderConfigurable(cfg rule.RuleConfig) string {
 func renderCatalogue(rules []rule.Rule) string {
 	// Partition rules by category, preserving registration order within each group.
 	byCategory := make(map[rule.RuleCategory][]rule.Rule)
-	for _, r := range rules {
-		byCategory[r.Category] = append(byCategory[r.Category], r)
+	for i := range rules {
+		byCategory[rules[i].Category] = append(byCategory[rules[i].Category], rules[i])
 	}
 
 	var b strings.Builder
@@ -234,7 +236,9 @@ func renderCatalogue(rules []rule.Rule) string {
 	b.WriteString("| Rule | Category | Default | Fixable |\n")
 	b.WriteString("|---|---|---|---|\n")
 	for _, cat := range categoryOrder {
-		for _, r := range byCategory[cat] {
+		catRules := byCategory[cat]
+		for i := range catRules {
+			r := &catRules[i]
 			entry := rule.CatalogueEntry(r.ID)
 			fixable := "Detection-only"
 			if entry.FixBehavior != "" {
@@ -247,7 +251,7 @@ func renderCatalogue(rules []rule.Rule) string {
 				r.Name,
 				nameToAnchor(r.Name),
 				categoryDisplayName(cat),
-				defaultState(r),
+				defaultState(*r),
 				fixable,
 			)
 		}
@@ -257,7 +261,9 @@ func renderCatalogue(rules []rule.Rule) string {
 
 	// --- Per-rule sections ---
 	for _, cat := range categoryOrder {
-		for _, r := range byCategory[cat] {
+		catRules := byCategory[cat]
+		for i := range catRules {
+			r := &catRules[i]
 			entry := rule.CatalogueEntry(r.ID)
 
 			b.WriteString("\n---\n\n")
@@ -269,7 +275,7 @@ func renderCatalogue(rules []rule.Rule) string {
 			b.WriteString("**Category:** ")
 			b.WriteString(categoryDisplayName(cat))
 			b.WriteString(" &middot; **Default:** ")
-			b.WriteString(defaultState(r))
+			b.WriteString(defaultState(*r))
 			b.WriteString(" &middot; **Severity:** ")
 			b.WriteString(r.Config.Severity)
 			if r.FilesystemDependent {

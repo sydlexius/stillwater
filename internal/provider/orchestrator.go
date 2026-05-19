@@ -22,7 +22,7 @@ var sensitiveParamRe = regexp.MustCompile(`(?i)(api_?key|token|secret|password|a
 // propagating malformed values like "Qabc" or "Qspecial:Random" through
 // providerIDs, which would otherwise drive a failed direct-entity SPARQL and
 // mask the MBID fallback.
-var wikidataQIDRe = regexp.MustCompile(`^Q[0-9]+$`)
+var wikidataQIDRe = regexp.MustCompile(`^Q\d+$`)
 
 // ScrubError removes sensitive query parameter values (API keys, tokens, passwords)
 // from error strings before they are written to logs. Provider errors may contain

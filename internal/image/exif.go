@@ -465,7 +465,9 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 	chunkType := []byte("tEXt")
 	_, _ = chunk.Write(chunkType)
 	_, _ = chunk.Write(payload)
-	crcData := append(chunkType, payload...)
+	crcData := make([]byte, 0, len(chunkType)+len(payload))
+	crcData = append(crcData, chunkType...)
+	crcData = append(crcData, payload...)
 	_ = binary.Write(&chunk, binary.BigEndian, crc32.ChecksumIEEE(crcData))
 
 	// Walk existing chunks. Insert our tEXt after IHDR, skip existing

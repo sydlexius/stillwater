@@ -121,7 +121,7 @@ func fieldLabel(ctx context.Context, field string) string {
 	if result == "field."+field {
 		parts := strings.Split(field, "_")
 		for i, p := range parts {
-			if len(p) > 0 {
+			if p != "" {
 				parts[i] = strings.ToUpper(p[:1]) + p[1:]
 			}
 		}
@@ -185,8 +185,8 @@ func hxValsJSONAny(pairs map[string]any) string {
 // mergeSliceValues combines current and provider slices, deduplicating
 // case-insensitively while preserving original casing. Returns a raw
 // comma-separated string suitable for passing to hxValsJSON.
-func mergeSliceValues(current, provider []string) string {
-	seen := make(map[string]bool, len(current)+len(provider))
+func mergeSliceValues(current, providerVals []string) string {
+	seen := make(map[string]bool, len(current)+len(providerVals))
 	var merged []string
 	for _, v := range current {
 		trimmed := strings.TrimSpace(v)
@@ -196,7 +196,7 @@ func mergeSliceValues(current, provider []string) string {
 			merged = append(merged, trimmed)
 		}
 	}
-	for _, v := range provider {
+	for _, v := range providerVals {
 		trimmed := strings.TrimSpace(v)
 		lower := strings.ToLower(trimmed)
 		if lower != "" && !seen[lower] {

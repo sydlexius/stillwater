@@ -69,12 +69,13 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 	}
 
 	var music []VirtualFolder
-	for _, f := range folders {
+	for i := range folders {
+		f := &folders[i]
 		ct := strings.TrimSpace(strings.ToLower(f.CollectionType))
 		include := ct == "music" || ct == ""
 		c.Logger.Debug("emby virtual folder discovered", "name", f.Name, "collection_type", f.CollectionType, "included_as_music", include)
 		if include {
-			music = append(music, f)
+			music = append(music, *f)
 		}
 	}
 	return music, nil
@@ -93,7 +94,8 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 		return false, "", fmt.Errorf("checking emby nfo saver settings: %w", err)
 	}
 
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		for _, saver := range lib.LibraryOptions.MetadataSavers {
 			if strings.Contains(strings.ToLower(saver), "nfo") {
 				return true, lib.Name, nil
@@ -121,7 +123,8 @@ func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherS
 	}
 
 	var results []ImageFetcherStatus
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		for _, opt := range lib.LibraryOptions.TypeOptions {
 			if !strings.EqualFold(opt.Type, "MusicArtist") {
 				continue
@@ -320,7 +323,8 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 	}
 
 	results := make([]LibrarySettingsStatus, 0, len(libs))
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		status := LibrarySettingsStatus{
 			LibraryID:      lib.ItemID,
 			LibraryName:    lib.Name,
@@ -361,8 +365,8 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	}
 
 	var target *VirtualFolder
-	for i, lib := range libs {
-		if lib.ItemID == libraryID {
+	for i := range libs {
+		if libs[i].ItemID == libraryID {
 			target = &libs[i]
 			break
 		}
@@ -512,7 +516,8 @@ func (c *Client) CheckImageSaverEnabled(ctx context.Context) (bool, string, erro
 	if err != nil {
 		return false, "", fmt.Errorf("checking emby image saver settings: %w", err)
 	}
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if lib.LibraryOptions.SaveLocalMetadata {
 			return true, lib.Name, nil
 		}
@@ -532,7 +537,8 @@ func (c *Client) SnapshotLibraryOptions(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("getting music libraries for snapshot: %w", err)
 	}
 	entries := make([]mediabrowser.LibrarySaverSnapshotEntry, 0, len(libs))
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		savers := lib.LibraryOptions.MetadataSavers
 		if savers == nil {
 			savers = []string{}

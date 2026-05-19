@@ -488,7 +488,9 @@ func collapseDuplicateArtists(ctx context.Context, db *sql.DB, logger *slog.Logg
 		return fmt.Errorf("finding name duplicates: %w", err)
 	}
 
-	allGroups := append(mbidGroups, nameGroups...)
+	allGroups := make([]collapseGroup, 0, len(mbidGroups)+len(nameGroups))
+	allGroups = append(allGroups, mbidGroups...)
+	allGroups = append(allGroups, nameGroups...)
 	if len(allGroups) == 0 {
 		return nil
 	}

@@ -49,7 +49,7 @@ func NewBase(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logge
 // Get performs a GET request and JSON-decodes the response body into result.
 // Returns an error if the status is not 200 OK.
 func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(b.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(b.BaseURL, path), http.NoBody)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
@@ -98,7 +98,7 @@ func (b *BaseClient) Post(ctx context.Context, path string, body io.Reader) erro
 // GetRaw performs a GET request and returns the raw response bytes and Content-Type header.
 // The success response body is capped at 25 MB.
 func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(b.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(b.BaseURL, path), http.NoBody)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating request: %w", err)
 	}

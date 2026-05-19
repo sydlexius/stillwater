@@ -350,7 +350,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 
 // executeRequest performs a single HTTP GET with the given bearer token.
 func (a *Adapter) executeRequest(ctx context.Context, reqURL, token string) ([]byte, int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, 0, err
 	}

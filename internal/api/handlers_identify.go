@@ -508,13 +508,14 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	// Multiple results or low score: queue only candidates with confidence >= 0.3
 	// to avoid flooding the review queue with low-confidence noise.
 	var reviewable []ScoredCandidate
-	for _, res := range results {
+	for i := range results {
+		res := &results[i]
 		confidence := float64(res.Score) / 200.0 // name-only tops at 0.5
 		if confidence < 0.3 {
 			continue
 		}
 		reviewable = append(reviewable, ScoredCandidate{
-			ArtistSearchResult: res,
+			ArtistSearchResult: *res,
 			Confidence:         confidence,
 			Reason:             "name match",
 		})
@@ -557,9 +558,10 @@ func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.Art
 
 	scored := make([]ScoredCandidate, len(results))
 	attempted := 0
-	for i, res := range results {
+	for i := range results {
+		res := &results[i]
 		scored[i] = ScoredCandidate{
-			ArtistSearchResult: res,
+			ArtistSearchResult: *res,
 			Reason:             "album comparison",
 		}
 
@@ -593,13 +595,14 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	// Count candidates meeting thresholds.
 	var above70 []ScoredCandidate
 	var above30 []ScoredCandidate
-	for _, s := range scored {
+	for i := range scored {
+		s := &scored[i]
 		if s.AlbumComparison != nil {
 			if s.AlbumComparison.MatchPercent >= 70 {
-				above70 = append(above70, s)
+				above70 = append(above70, *s)
 			}
 			if s.AlbumComparison.MatchPercent >= 30 {
-				above30 = append(above30, s)
+				above30 = append(above30, *s)
 			}
 		}
 	}
@@ -671,7 +674,8 @@ func (r *Router) buildConnectionIndex(ctx context.Context) *connectionIndex {
 		byName: make(map[string][]connEntry),
 	}
 
-	for _, lib := range libs {
+	for li := range libs {
+		lib := &libs[li]
 		// Only index connection libraries (non-manual sources).
 		if lib.Source == library.SourceManual {
 			continue
@@ -695,7 +699,8 @@ func (r *Router) buildConnectionIndex(ctx context.Context) *connectionIndex {
 				break
 			}
 
-			for _, a := range artists {
+			for ai := range artists {
+				a := &artists[ai]
 				if a.MusicBrainzID == "" {
 					continue
 				}
@@ -721,9 +726,9 @@ func (r *Router) buildConnectionIndex(ctx context.Context) *connectionIndex {
 // zero confidence (used when album enrichment is not possible).
 func convertToScoredCandidates(results []provider.ArtistSearchResult) []ScoredCandidate {
 	scored := make([]ScoredCandidate, len(results))
-	for i, res := range results {
+	for i := range results {
 		scored[i] = ScoredCandidate{
-			ArtistSearchResult: res,
+			ArtistSearchResult: results[i],
 			Confidence:         0,
 			Reason:             "no album data available",
 		}

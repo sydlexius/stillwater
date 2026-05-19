@@ -280,7 +280,8 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	if err != nil {
 		return nil, fmt.Errorf("listing connections: %w", err)
 	}
-	for _, c := range conns {
+	for i := range conns {
+		c := &conns[i]
 		payload.Connections = append(payload.Connections, ConnectionExport{
 			Name:                 c.Name,
 			Type:                 c.Type,
@@ -328,7 +329,8 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 		if err != nil {
 			return nil, fmt.Errorf("listing rules: %w", err)
 		}
-		for _, r := range rules {
+		for i := range rules {
+			r := &rules[i]
 			payload.Rules = append(payload.Rules, RuleExport{
 				ID:             r.ID,
 				Enabled:        r.Enabled,

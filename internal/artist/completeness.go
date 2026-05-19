@@ -192,13 +192,14 @@ func buildCompletenessReport(rows []CompletenessRow, lowest []LowestCompleteness
 	counts := make([]int, len(allFieldDefs))
 	totals := make([]int, len(allFieldDefs))
 
-	for _, row := range rows {
+	for ri := range rows {
+		row := &rows[ri]
 		for i, fd := range allFieldDefs {
 			if !fd.applicable(row.Type) {
 				continue
 			}
 			totals[i]++
-			if fd.present(row) {
+			if fd.present(*row) {
 				counts[i]++
 			}
 		}
@@ -250,13 +251,14 @@ func buildLibraryCoverage(rows []CompletenessRow, libNames map[string]string) []
 	order := make([]string, 0)
 	byLib := make(map[string]*libEntry)
 
-	for _, row := range rows {
+	for ri := range rows {
+		row := &rows[ri]
 		lid := row.LibraryID
 		if _, exists := byLib[lid]; !exists {
 			order = append(order, lid)
 			byLib[lid] = &libEntry{}
 		}
-		byLib[lid].rows = append(byLib[lid].rows, row)
+		byLib[lid].rows = append(byLib[lid].rows, *row)
 	}
 
 	// Only emit library_coverage when more than one library is present.

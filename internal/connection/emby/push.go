@@ -133,7 +133,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 func (c *Client) refreshItem(ctx context.Context, platformArtistID string) {
 	path := fmt.Sprintf("/Items/%s/Refresh", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		connection.BuildRequestURL(c.BaseURL, path+"?ReplaceAllMetadata=false&ReplaceAllImages=false"), nil)
+		connection.BuildRequestURL(c.BaseURL, path+"?ReplaceAllMetadata=false&ReplaceAllImages=false"), http.NoBody)
 	if err != nil {
 		c.Logger.Warn("creating emby refresh request", "artist_id", platformArtistID, "error", err)
 		return
@@ -241,7 +241,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	}
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), embyType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), http.NoBody)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)
 	}

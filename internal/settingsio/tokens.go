@@ -77,7 +77,8 @@ func (s *Service) exportAPITokens(ctx context.Context) ([]APITokenExport, error)
 //     the prior behavior for callers that prefer a quiet skip over a silent
 //     ownership change (e.g. prod->staging clones).
 func (s *Service) importAPITokens(ctx context.Context, tokens []APITokenExport, result *ImportResult, opts ImportOptions) error {
-	for _, te := range tokens {
+	for i := range tokens {
+		te := &tokens[i]
 		if te.TokenHash == "" {
 			// A blank hash cannot satisfy authentication and would collide
 			// on the UNIQUE constraint after one row. Skip with a warning

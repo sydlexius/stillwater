@@ -204,8 +204,8 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	var artistIDs []string
 	if len(artists) > 0 {
 		artistIDs = make([]string, len(artists))
-		for i, a := range artists {
-			artistIDs[i] = a.ID
+		for i := range artists {
+			artistIDs[i] = artists[i].ID
 		}
 	}
 
@@ -272,7 +272,8 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		// Build source info map for imported libraries (non-manual).
 		sources := make(map[string]templates.LibrarySourceInfo)
 		connNames := map[string]string{} // cache connection ID -> name
-		for _, lib := range libs {
+		for i := range libs {
+			lib := &libs[i]
 			if lib.Source == "" || lib.Source == "manual" {
 				continue
 			}

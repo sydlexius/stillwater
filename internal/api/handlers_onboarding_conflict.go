@@ -16,7 +16,8 @@ import (
 // count: with no qualifying peers there is nothing to probe and the step
 // would only display a meaningless "all clear" message.
 func hasQualifyingConflictConnection(conns []connection.Connection) bool {
-	for _, c := range conns {
+	for i := range conns {
+		c := &conns[i]
 		if !c.Enabled {
 			continue
 		}
@@ -112,7 +113,8 @@ func (r *Router) handlePostOnboardingConflictStep(w http.ResponseWriter, req *ht
 // transient peer outages during first-time setup.
 func aggregateProbeError(l conflict.Ledger) string {
 	var failed []string
-	for _, c := range l.Connections {
+	for i := range l.Connections {
+		c := &l.Connections[i]
 		if !c.Enabled {
 			continue
 		}

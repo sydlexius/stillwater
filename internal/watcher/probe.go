@@ -89,7 +89,8 @@ func ProbeFSNotify(path string, timeout time.Duration) bool {
 // ProbeAll probes all non-pathless libraries and populates the cache.
 // Called synchronously at startup before the watcher goroutine starts.
 func (pc *ProbeCache) ProbeAll(ctx context.Context, libs []library.Library, logger *slog.Logger) {
-	for _, lib := range libs {
+	for i := range libs {
+		lib := &libs[i]
 		if lib.IsPathless() {
 			continue
 		}

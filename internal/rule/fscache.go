@@ -359,19 +359,21 @@ func (e *Engine) getImageDimensionsCached(dirPath string, patterns []string) (in
 	lowerToActual := buildLowerToActual(entries)
 
 	for _, pattern := range patterns {
-		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
-			p := filepath.Join(dirPath, actual)
-			f, openErr := os.Open(p) //nolint:gosec // G304: path from trusted library root
-			if openErr != nil {
-				continue
-			}
-			w, h, dimErr := image.GetDimensions(f)
-			f.Close() //nolint:errcheck // Close error not actionable; explicit close where defer is not appropriate
-			if dimErr != nil {
-				continue
-			}
-			return w, h, nil
+		actual, ok := lowerToActual[strings.ToLower(pattern)]
+		if !ok {
+			continue
 		}
+		p := filepath.Join(dirPath, actual)
+		f, openErr := os.Open(p) //nolint:gosec // G304: path from trusted library root
+		if openErr != nil {
+			continue
+		}
+		w, h, dimErr := image.GetDimensions(f)
+		f.Close() //nolint:errcheck // Close error not actionable; explicit close where defer is not appropriate
+		if dimErr != nil {
+			continue
+		}
+		return w, h, nil
 	}
 
 	return 0, 0, fmt.Errorf("no matching image in %s", dirPath)

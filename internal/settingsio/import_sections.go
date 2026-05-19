@@ -94,20 +94,21 @@ func (s *Service) importConnections(ctx context.Context, conns []ConnectionExpor
 // are created with a new ID. IsActive is forced to false on create to prevent
 // multiple active profiles from being introduced during import.
 func (s *Service) importPlatformProfiles(ctx context.Context, profiles []platform.Profile, result *ImportResult) error {
-	for _, p := range profiles {
+	for i := range profiles {
+		p := &profiles[i]
 		existing, err := s.platformSvc.GetByName(ctx, p.Name)
 		if err != nil {
 			return fmt.Errorf("looking up platform profile %q: %w", p.Name, err)
 		}
 		if existing != nil {
 			p.ID = existing.ID
-			if err := s.platformSvc.Update(ctx, &p); err != nil {
+			if err := s.platformSvc.Update(ctx, p); err != nil {
 				return fmt.Errorf("updating platform profile %q: %w", p.Name, err)
 			}
 		} else {
 			p.ID = ""          // Let Create generate a new ID.
 			p.IsActive = false // Avoid creating multiple active profiles on import.
-			if err := s.platformSvc.Create(ctx, &p); err != nil {
+			if err := s.platformSvc.Create(ctx, p); err != nil {
 				return fmt.Errorf("creating platform profile %q: %w", p.Name, err)
 			}
 		}
@@ -120,19 +121,20 @@ func (s *Service) importPlatformProfiles(ctx context.Context, profiles []platfor
 // webhook is updated in place with its ID preserved; absent webhooks are
 // created with a new ID.
 func (s *Service) importWebhooks(ctx context.Context, webhooks []webhook.Webhook, result *ImportResult) error {
-	for _, w := range webhooks {
+	for i := range webhooks {
+		w := &webhooks[i]
 		existing, err := s.webhookSvc.GetByNameAndURL(ctx, w.Name, w.URL)
 		if err != nil {
 			return fmt.Errorf("looking up webhook %q: %w", w.Name, err)
 		}
 		if existing != nil {
 			w.ID = existing.ID
-			if err := s.webhookSvc.Update(ctx, &w); err != nil {
+			if err := s.webhookSvc.Update(ctx, w); err != nil {
 				return fmt.Errorf("updating webhook %q: %w", w.Name, err)
 			}
 		} else {
 			w.ID = "" // Let Create generate a new ID.
-			if err := s.webhookSvc.Create(ctx, &w); err != nil {
+			if err := s.webhookSvc.Create(ctx, w); err != nil {
 				return fmt.Errorf("creating webhook %q: %w", w.Name, err)
 			}
 		}
@@ -170,7 +172,8 @@ func (s *Service) importRules(ctx context.Context, rules []RuleExport, result *I
 	if s.ruleService == nil {
 		return nil
 	}
-	for _, re := range rules {
+	for i := range rules {
+		re := &rules[i]
 		if re.ID == "" {
 			continue
 		}
@@ -216,7 +219,8 @@ func (s *Service) importScraperPreferences(ctx context.Context, configs []Scrape
 	if s.scraperService == nil {
 		return nil
 	}
-	for _, sce := range configs {
+	for i := range configs {
+		sce := &configs[i]
 		if sce.Scope == "" {
 			continue
 		}

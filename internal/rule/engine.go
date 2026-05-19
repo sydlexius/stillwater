@@ -335,7 +335,8 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 		ArtistName: a.Name,
 	}
 
-	for _, r := range rules {
+	for i := range rules {
+		r := &rules[i]
 		if !r.Enabled {
 			continue
 		}

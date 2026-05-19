@@ -13,6 +13,7 @@ linters:
     - errorlint
     - exhaustive
     - gocognit
+    - gocritic
     - gosec
     - govet
     - misspell
@@ -49,6 +50,40 @@ linters:
       # refactor-worthy sites are filed under parent #1540 in M55.5.
       # nolintlint enforces that every suppression carries a reason.
       min-complexity: 30
+    gocritic:
+      # Enable the style and performance tag bundles. The diagnostic tag is
+      # intentionally omitted: every diagnostic check overlaps something
+      # govet or staticcheck already reports, and adding it produces
+      # duplicate findings without surfacing new bugs. The experimental and
+      # opinionated tags are off by default and stay off; experimental is
+      # noise, opinionated is taste.
+      enabled-tags:
+        - style
+        - performance
+      # Per-check overrides within the enabled tags. Rationale per entry:
+      #   unnamedResult      - we use unnamed returns idiomatically; naming
+      #                        every (T, error) for the linter buys nothing.
+      #   hugeParam          - value-vs-pointer is a deliberate API design
+      #                        choice, not a per-call-site sweep.
+      #   paramTypeCombine   - "func(a, b string)" vs "func(a string, b string)"
+      #                        is stylistic; readability sometimes wants the
+      #                        expanded form when args are unrelated.
+      #   ifElseChain        - switch-vs-if is a per-site readability call; the
+      #                        check fires on every >=3-arm if-else even when
+      #                        the conditions don't share a discriminant.
+      #   octalLiteral       - we use 0o-prefixed file modes; the check also
+      #                        objects to single-digit literals like 0.
+      #   commentedOutCode   - false-positives on `// Deprecated:` markers,
+      #                        which Go treats as a semantic lint signal
+      #                        rather than commented-out code. See
+      #                        feedback_deprecated_marker in project memory.
+      disabled-checks:
+        - unnamedResult
+        - hugeParam
+        - paramTypeCombine
+        - ifElseChain
+        - octalLiteral
+        - commentedOutCode
     gosec:
       excludes:
         - G104  # Unhandled errors (too noisy for http.Error calls)
@@ -119,6 +154,15 @@ linters:
           # capacities are usually tiny constants. Production-side
           # preallocation is where the perf win lives.
           - prealloc
+          # gocritic in tests is dominated by httpNoBody on
+          # httptest.NewRequest(..., nil) (sweep showed 474 sites, ~96% of
+          # the test-file findings). The check is valid in production where
+          # http.NoBody documents intent and avoids the nil-vs-empty
+          # ambiguity, but in test request builders the nil is unambiguous
+          # and the diff churn / readability cost is the same
+          # ceremony-without-value rationale that excludes gocognit and
+          # prealloc from _test.go.
+          - gocritic
       # cmd/gen-* are build-time documentation generators that run once
       # per `make generate`. Allocation efficiency is not the point; the
       # code is optimized for readability of the generator itself, and

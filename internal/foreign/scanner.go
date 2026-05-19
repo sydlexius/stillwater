@@ -101,15 +101,16 @@ func (s *Scanner) Scan(ctx context.Context) error {
 
 	scanned, recorded, cleared, skipped := 0, 0, 0, 0
 	process := func(artists []artist.Artist) {
-		for _, a := range artists {
+		for i := range artists {
 			if ctx.Err() != nil {
 				return
 			}
+			a := &artists[i]
 			if a.Path == "" {
 				skipped++
 				continue
 			}
-			rec, clr, sk := s.scanArtist(ctx, a)
+			rec, clr, sk := s.scanArtist(ctx, *a)
 			scanned++
 			recorded += rec
 			cleared += clr
