@@ -909,11 +909,28 @@ func isCanonicalArtistFile(lower string) bool {
 		}
 		// Numbered fanart variants ({base}{N}.{ext}) -- DiscoverFanart's
 		// counting walks these on the full path, so their mtime matters
-		// for the cached-FanartCount invariant.
+		// for the cached-FanartCount invariant. Require the suffix to be
+		// purely numeric so unrelated files like fanart-old.jpg or
+		// fanart_backup.png don't needlessly drop the directory out of
+		// the fast path; DiscoverFanart only recognizes the numeric form.
 		base := strings.TrimSuffix(p, filepath.Ext(p))
 		if strings.HasPrefix(lower, base) && lower != p {
 			ext := filepath.Ext(lower)
-			if ext == filepath.Ext(p) {
+			if ext != filepath.Ext(p) {
+				continue
+			}
+			suffix := strings.TrimSuffix(strings.TrimPrefix(lower, base), ext)
+			if suffix == "" {
+				continue
+			}
+			numeric := true
+			for _, ch := range suffix {
+				if ch < '0' || ch > '9' {
+					numeric = false
+					break
+				}
+			}
+			if numeric {
 				return true
 			}
 		}
