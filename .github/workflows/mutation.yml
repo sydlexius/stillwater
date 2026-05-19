@@ -26,10 +26,13 @@
 #     --disable flag. They flip integer/float literals (e.g. 100 -> 101)
 #     which fires constantly inside constant blocks, default values, and
 #     buffer-size hints without indicating real test gaps.
-#   - exclude_dirs in mutation.config.yml drops generated mock packages
-#     (any internal/*/mocks/ directory and any *_mock.go file) so they
-#     do not skew the score. internal/nfo/ currently has none, but the
-#     filter is in place defensively for when the pilot scope widens.
+#   - exclude_dirs in mutation.config.yml drops mock packages by path
+#     prefix `mocks` (e.g. internal/*/mocks/) so they do not skew the
+#     score. go-mutesting only does prefix matching here -- it does NOT
+#     support globs or filename suffixes -- so generated `*_mock.go`
+#     files outside a `mocks` directory would still be mutated. The
+#     filter is defensive for when the pilot widens to packages that
+#     emit a `mocks/` subdir; internal/nfo currently has none.
 #   - Known unkillable mutants: the two time.Now() call sites in
 #     snapshot.go (Save) and writeback.go (WriteBackArtistNFOWithFieldMap)
 #     will always survive because a deterministic test suite cannot
