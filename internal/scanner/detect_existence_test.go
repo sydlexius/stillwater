@@ -1,9 +1,11 @@
 package scanner
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
@@ -34,8 +36,13 @@ func TestDetectFilesExistenceOnly_AllPatterns(t *testing.T) {
 	writeTestFile(t, dir, "logo.png")
 	writeTestFile(t, dir, "banner.jpg")
 
+	// LastScannedAt is set far in the future so the per-file mtime check
+	// passes; the in-place rewrite case is covered separately by
+	// TestDetectFilesExistenceOnly_InPlaceFileRewrite.
+	future := time.Now().Add(time.Hour)
 	existing := &artist.Artist{
-		ThumbWidth: 1000, ThumbHeight: 1500, ThumbLowRes: false,
+		LastScannedAt: &future,
+		ThumbWidth:    1000, ThumbHeight: 1500, ThumbLowRes: false,
 		ThumbPlaceholder:  "thumb-placeholder",
 		FanartWidth:       1920,
 		FanartHeight:      1080,
@@ -84,8 +91,10 @@ func TestDetectFilesExistenceOnly_AllPatterns(t *testing.T) {
 func TestDetectFilesExistenceOnly_EmptyDir(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	future := time.Now().Add(time.Hour)
 	existing := &artist.Artist{
-		ThumbExists: true, FanartExists: true,
+		LastScannedAt: &future,
+		ThumbExists:   true, FanartExists: true,
 		ThumbPlaceholder: "stale-placeholder",
 	}
 	got, err := detectFilesExistenceOnly(dir, existing)
@@ -103,9 +112,60 @@ func TestDetectFilesExistenceOnly_EmptyDir(t *testing.T) {
 // underlying directory has been removed mid-scan.
 func TestDetectFilesExistenceOnly_ReadDirError(t *testing.T) {
 	t.Parallel()
-	got, err := detectFilesExistenceOnly("/this/path/does/not/exist/i/hope", &artist.Artist{})
+	future := time.Now().Add(time.Hour)
+	got, err := detectFilesExistenceOnly("/this/path/does/not/exist/i/hope", &artist.Artist{LastScannedAt: &future})
 	if err == nil {
 		t.Fatalf("expected error for missing dir; got %+v", got)
+	}
+}
+
+// TestDetectFilesExistenceOnly_InPlaceFileRewrite pins the POSIX-aware
+// per-file mtime check: when a canonical file (here, fanart.jpg) is
+// rewritten in place AFTER existing.LastScannedAt, the parent directory's
+// mtime does NOT advance on Linux/POSIX, so the directory-mtime gate
+// alone would miss the change. detectFilesExistenceOnly catches the
+// in-place rewrite by checking each canonical file's own mtime and
+// returns errFastPathFileTouched so the caller falls back to the full
+// detectFiles probe.
+func TestDetectFilesExistenceOnly_InPlaceFileRewrite(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTestFile(t, dir, "fanart.jpg")
+
+	// LastScannedAt is in the past; the file we just wrote has mtime
+	// "now", so it must be detected as a fresh in-place rewrite.
+	past := time.Now().Add(-time.Hour)
+	existing := &artist.Artist{LastScannedAt: &past}
+
+	_, err := detectFilesExistenceOnly(dir, existing)
+	if !errors.Is(err, errFastPathFileTouched) {
+		t.Fatalf("expected errFastPathFileTouched for file newer than LastScannedAt; got %v", err)
+	}
+}
+
+// TestDetectFilesExistenceOnly_FileMtimeBeforeLastScan covers the happy
+// path of the per-file mtime check: when every canonical file's mtime is
+// at or before LastScannedAt, the fast path proceeds with cached
+// dimensions and no error.
+func TestDetectFilesExistenceOnly_FileMtimeBeforeLastScan(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeTestFile(t, dir, "fanart.jpg")
+
+	// LastScannedAt is far in the future, so every file mtime is "before"
+	// the last scan and the fast path is applicable.
+	future := time.Now().Add(time.Hour)
+	existing := &artist.Artist{LastScannedAt: &future, FanartWidth: 1920, FanartHeight: 1080}
+
+	got, err := detectFilesExistenceOnly(dir, existing)
+	if err != nil {
+		t.Fatalf("detectFilesExistenceOnly: %v", err)
+	}
+	if !got.FanartExists {
+		t.Errorf("FanartExists should be true; got %+v", got)
+	}
+	if got.FanartWidth != 1920 || got.FanartHeight != 1080 {
+		t.Errorf("dimensions not reused from existing; got %+v", got)
 	}
 }
 
@@ -120,7 +180,8 @@ func TestDetectFilesExistenceOnly_MultipleFanart(t *testing.T) {
 	writeTestFile(t, dir, "fanart1.jpg") // DiscoverFanart format: {base}{N}, not {base}-{N}
 	writeTestFile(t, dir, "fanart2.jpg")
 
-	got, err := detectFilesExistenceOnly(dir, &artist.Artist{})
+	future := time.Now().Add(time.Hour)
+	got, err := detectFilesExistenceOnly(dir, &artist.Artist{LastScannedAt: &future})
 	if err != nil {
 		t.Fatalf("detectFilesExistenceOnly: %v", err)
 	}

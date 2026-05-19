@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -238,18 +239,29 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		// Pre-load every existing artist for this library so
 		// processDirectory can look up the prior DB state from an in-
 		// memory map instead of issuing one GetByPath round-trip per
-		// directory entry (#1411). HydrateOpts{Images: true} is required
-		// because Thumb*/Fanart*/Logo*/Banner* existence flags, low-res
-		// flags, placeholders, and dimensions are stored in the
-		// artist_images side table -- not on the artists row -- and the
-		// scanner relies on those fields in detectFilesWithFastPath and
-		// processExistingArtist. Cost: 2 queries per scanned library
-		// (artists + artist_images) instead of N round-trips per
-		// directory entry. ProviderIDs and PrimaryLibrary are still
-		// skipped: neither is read on the scan hot path.
+		// directory entry (#1411).
+		//
+		// Hydration choice:
+		//   Images:      required -- Thumb*/Fanart*/Logo*/Banner* fields
+		//                live on artist_images and the scanner reads
+		//                them in detectFilesWithFastPath and
+		//                processExistingArtist.
+		//   ProviderIDs: required -- preloaded artists flow into
+		//                Update() (via processExistingArtist), which
+		//                calls persistNormalized that re-inserts
+		//                artist_provider_ids from the in-memory struct.
+		//                Without hydration the struct's MBID / AudioDB /
+		//                Discogs / etc. fields are zero, so Update would
+		//                silently wipe the existing rows. Documented in
+		//                TestRenameDirectory_PreservesProviderIDs.
+		//   PrimaryLibrary: skipped -- persistNormalized does not write
+		//                back artist_libraries on Update, so leaving
+		//                LibraryID unhydrated is safe.
+		// Cost: 3 queries per scanned library (artists + artist_images
+		// + artist_provider_ids) instead of N round-trips per directory.
 		var libraryArtists map[string]*artist.Artist
 		if target.libraryID != "" {
-			pre, preErr := s.artistService.PreloadArtistsByLibrary(ctx, target.libraryID, artist.HydrateOpts{Images: true})
+			pre, preErr := s.artistService.PreloadArtistsByLibrary(ctx, target.libraryID, artist.HydrateOpts{Images: true, ProviderIDs: true})
 			if preErr != nil {
 				// Falling back to the legacy GetByPath path costs one
 				// round-trip per directory but is still correct, so we
@@ -859,8 +871,64 @@ func (s *Service) detectFilesWithFastPath(dirPath string, existing *artist.Artis
 	}
 	// Directory unchanged since last scan: do the cheap existence-only
 	// probe and reuse stored dimensions / placeholders / low-res flags
-	// for slots whose file is still on disk.
-	return detectFilesExistenceOnly(dirPath, existing)
+	// for slots whose file is still on disk. detectFilesExistenceOnly
+	// returns errFastPathFileTouched when a canonical file's own mtime
+	// is newer than lastScan -- on POSIX, overwriting a file in place
+	// does NOT update the parent directory's mtime, so we have to check
+	// each canonical file's mtime individually before trusting cached
+	// dimensions / placeholders.
+	d, err := detectFilesExistenceOnly(dirPath, existing)
+	if errors.Is(err, errFastPathFileTouched) {
+		return detectFiles(dirPath, existing)
+	}
+	return d, err
+}
+
+// errFastPathFileTouched signals that detectFilesExistenceOnly detected an
+// in-place rewrite of a canonical image / NFO file (file mtime advanced
+// past existing.LastScannedAt). The directory mtime won't reflect this on
+// POSIX, so detectFilesWithFastPath must fall back to detectFiles to
+// re-probe dimensions and placeholders.
+var errFastPathFileTouched = fmt.Errorf("fast path: canonical file mtime advanced; falling back to full probe")
+
+// isCanonicalArtistFile reports whether lower (a lowercase filename) matches
+// any pattern the scanner reads on the artist hot path: NFO, thumb/folder,
+// fanart (including numbered variants), logo, banner.
+func isCanonicalArtistFile(lower string) bool {
+	if lower == "artist.nfo" {
+		return true
+	}
+	for _, p := range thumbPatterns {
+		if lower == p {
+			return true
+		}
+	}
+	for _, p := range fanartPatterns {
+		if lower == p {
+			return true
+		}
+		// Numbered fanart variants ({base}{N}.{ext}) -- DiscoverFanart's
+		// counting walks these on the full path, so their mtime matters
+		// for the cached-FanartCount invariant.
+		base := strings.TrimSuffix(p, filepath.Ext(p))
+		if strings.HasPrefix(lower, base) && lower != p {
+			ext := filepath.Ext(lower)
+			if ext == filepath.Ext(p) {
+				return true
+			}
+		}
+	}
+	for _, p := range logoPatterns {
+		if lower == p {
+			return true
+		}
+	}
+	for _, p := range bannerPatterns {
+		if lower == p {
+			return true
+		}
+	}
+	return false
 }
 
 // detectFilesExistenceOnly probes an artist directory for which canonical
@@ -888,9 +956,39 @@ func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detected
 	}
 
 	files := make(map[string]string, len(entries))
+	// canonicalEntries indexes the DirEntry for each canonical filename we
+	// care about so we can stat each one's mtime without re-walking the
+	// directory. Required because POSIX does not update the parent
+	// directory's mtime when a file is overwritten in place, so the
+	// directory-mtime gate in detectFilesWithFastPath cannot detect an
+	// in-place rewrite of fanart.jpg / folder.jpg / etc. by itself.
+	canonicalEntries := make(map[string]os.DirEntry, 8)
 	for _, e := range entries {
-		if !e.IsDir() {
-			files[strings.ToLower(e.Name())] = e.Name()
+		if e.IsDir() {
+			continue
+		}
+		lower := strings.ToLower(e.Name())
+		files[lower] = e.Name()
+		if isCanonicalArtistFile(lower) {
+			canonicalEntries[lower] = e
+		}
+	}
+
+	// existing.LastScannedAt is guaranteed non-nil by the caller. Walk the
+	// canonical matches and verify each file's mtime has not advanced
+	// since the last scan. If any has, signal the caller to bail out and
+	// re-run the full detectFiles probe so dimensions and placeholders
+	// reflect the new content.
+	lastScan := *existing.LastScannedAt
+	for _, e := range canonicalEntries {
+		info, err := e.Info()
+		if err != nil {
+			// Stat racing with a delete is the common cause; treat it
+			// like an in-place change and re-probe.
+			return detectedFiles{}, errFastPathFileTouched
+		}
+		if info.ModTime().After(lastScan) {
+			return detectedFiles{}, errFastPathFileTouched
 		}
 	}
 
