@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -57,7 +58,10 @@ func newTestAdapter(t *testing.T, baseURL string) *Adapter {
 	t.Helper()
 	limiter := provider.NewRateLimiterMap()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return NewWithBaseURL(limiter, logger, baseURL)
+	a := NewWithBaseURL(limiter, logger, baseURL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
+	return a
 }
 
 func TestName(t *testing.T) {

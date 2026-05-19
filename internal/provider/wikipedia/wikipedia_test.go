@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -31,8 +32,11 @@ func newTestAdapter(t *testing.T, actionURL, sparqlURL, wikidataAPIURL string) *
 	if wikidataAPIURL == "" {
 		wikidataAPIURL = "http://unused-wdapi"
 	}
-	return NewWithEndpoints(provider.NewRateLimiterMap(), silentLogger(),
+	a := NewWithEndpoints(provider.NewRateLimiterMap(), silentLogger(),
 		actionURL, sparqlURL, wikidataAPIURL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 15 * time.Second}
+	return a
 }
 
 // --- SPARQL mock helpers ---

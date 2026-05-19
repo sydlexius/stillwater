@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -43,6 +44,8 @@ func TestSearchImages(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err != nil {
@@ -91,6 +94,8 @@ func TestSearchImagesEmpty(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.SearchImages(context.Background(), "Unknown Artist", provider.ImageThumb)
 	if err != nil {
@@ -118,6 +123,8 @@ func TestSearchImagesServerError(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	_, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err == nil {
@@ -136,6 +143,8 @@ func TestSearchImagesVQDFailure(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	_, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err == nil {
@@ -147,6 +156,8 @@ func TestSearchImagesUnsupportedType(t *testing.T) {
 	limiter := provider.NewRateLimiterMap()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, "http://localhost", "http://localhost")
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageType("unknown"))
 	if err != nil {
@@ -193,6 +204,8 @@ func TestVQDFallbackToHTML(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
 	if err != nil {
@@ -240,6 +253,8 @@ func TestSearchImagesContextCanceled(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, logger, srv.URL, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

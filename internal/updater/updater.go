@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -295,11 +296,9 @@ type Service struct {
 // NewService creates a new updater Service.
 func NewService(db *sql.DB, logger *slog.Logger) *Service {
 	return &Service{
-		db:     db,
-		logger: logger,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		db:           db,
+		logger:       logger,
+		httpClient:   httpsafe.SafeClient(30 * time.Second),
 		state:        StateIdle,
 		isDocker:     detectDocker(),
 		configChange: make(chan struct{}, 1),

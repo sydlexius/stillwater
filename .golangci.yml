@@ -37,6 +37,12 @@ linters:
       comparison: true
     exhaustive:
       default-signifies-exhaustive: true
+    # Raw &http.Client{...} construction in production code is forbidden by
+    # an AST-based regression test at
+    # internal/httpsafe/no_raw_client_construction_test.go. Forbidigo's
+    # regex matcher cannot reliably distinguish composite-literal
+    # construction from legitimate *http.Client type references, so the
+    # enforcement lives in the test suite rather than in golangci-lint.
     gocognit:
       # Threshold 30 is the gocognit default and the standard floor for
       # cognitive complexity in Go projects. Raising it would bury

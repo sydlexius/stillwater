@@ -21,6 +21,13 @@ type Client struct {
 }
 
 // New creates a Lidarr client with default HTTP settings.
+//
+// Uses a raw http.Client (not httpsafe.SafeClient) because Lidarr is a
+// user-configured *arr-stack service that typically runs alongside Stillwater
+// on loopback (127.0.0.1:8686) or an RFC 1918 LAN address. The
+// httpsafe.SafeTransport SSRF guard would reject those destinations,
+// breaking the integration for legitimate self-hosted setups. The destination
+// URL is operator-supplied via Settings, not user-controlled input.
 func New(baseURL, apiKey string, logger *slog.Logger) *Client {
 	return NewWithHTTPClient(baseURL, apiKey, &http.Client{Timeout: 10 * time.Second}, logger)
 }

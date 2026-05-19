@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -55,7 +56,7 @@ func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
 // NewWithBaseURL creates a DuckDuckGo adapter with custom base URLs (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseURL, htmlURL string) *Adapter {
 	return &Adapter{
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  httpsafe.SafeClient(15 * time.Second),
 		limiter: limiter,
 		logger:  logger.With(slog.String("provider", "duckduckgo")),
 		baseURL: strings.TrimRight(baseURL, "/"),

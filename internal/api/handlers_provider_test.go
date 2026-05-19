@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -30,7 +31,14 @@ func testRouterWithMirror(t *testing.T) *Router {
 	rateLimiters := provider.NewRateLimiterMap()
 	providerSettings := provider.NewSettingsService(db, enc)
 	registry := provider.NewRegistry()
-	registry.Register(musicbrainz.New(rateLimiters, logger))
+	// The musicbrainz adapter's default HTTP client is httpsafe.SafeClient,
+	// which blocks loopback addresses (127.0.0.1) -- exactly what
+	// httptest.NewServer binds to. Tests inject a plain *http.Client so the
+	// mirror auto-test path can reach the loopback fixture. Production
+	// wiring is unaffected.
+	mbAdapter := musicbrainz.New(rateLimiters, logger)
+	mbAdapter.SetHTTPClient(&http.Client{Timeout: 10 * time.Second})
+	registry.Register(mbAdapter)
 
 	return NewRouter(RouterDeps{
 		ProviderSettings: providerSettings,

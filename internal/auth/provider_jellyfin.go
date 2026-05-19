@@ -34,7 +34,13 @@ func NewJellyfinProvider(serverURL string, autoProvision bool, guardRail, defaul
 		autoProvision: autoProvision,
 		guardRail:     guardRail,
 		defaultRole:   defaultRole,
-		client:        &http.Client{Timeout: 10 * time.Second},
+		// Uses a raw http.Client (not httpsafe.SafeClient) because Jellyfin is a
+		// user-configured login backend that typically lives on loopback or an
+		// RFC 1918 LAN address for self-hosted deployments. The httpsafe SSRF
+		// guard would reject those destinations and break authentication for
+		// legitimate setups. The destination URL is operator-supplied (and
+		// validated via connection.ValidateBaseURL), not user-controlled input.
+		client: &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 

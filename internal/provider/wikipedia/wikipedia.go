@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -58,7 +59,7 @@ func NewWithEndpoints(
 	actionEndpoint, wikidataEndpoint, wikidataAPIEndpoint string,
 ) *Adapter {
 	return &Adapter{
-		client:              &http.Client{Timeout: 15 * time.Second},
+		client:              httpsafe.SafeClient(15 * time.Second),
 		limiter:             limiter,
 		logger:              logger.With(slog.String("provider", "wikipedia")),
 		actionEndpoint:      actionEndpoint,

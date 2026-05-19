@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -79,6 +80,8 @@ func TestSearchArtist(t *testing.T) {
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	results, err := a.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
@@ -106,6 +109,8 @@ func TestSearchArtistFuzzyMatch(t *testing.T) {
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	// Search for a misspelled name to prove scores are computed via
 	// NameSimilarity rather than hard-coded to 100.
@@ -130,6 +135,8 @@ func TestGetArtist(t *testing.T) {
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	meta, err := a.GetArtist(context.Background(), "3840")
 	if err != nil {
@@ -155,6 +162,8 @@ func TestGetImages(t *testing.T) {
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	images, err := a.GetImages(context.Background(), "3840")
 	if err != nil {
@@ -223,6 +232,8 @@ func TestGetArtistByNameFallback(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	// Passing an artist name (non-numeric, non-UUID) should trigger name search.
 	meta, err := a.GetArtist(context.Background(), "Adele")
@@ -249,6 +260,8 @@ func TestGetArtistByNameNoResults(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	_, err := a.GetArtist(context.Background(), "NonexistentArtist")
 	if err == nil {
@@ -276,6 +289,8 @@ func TestGetArtistWithStyles(t *testing.T) {
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
+	a.client = &http.Client{Timeout: 10 * time.Second}
 
 	meta, err := a.GetArtist(context.Background(), "3840")
 	if err != nil {

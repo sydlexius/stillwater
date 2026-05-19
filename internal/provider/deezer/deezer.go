@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -37,7 +38,7 @@ func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
 // NewWithBaseURL creates a Deezer adapter with a custom base URL (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseURL string) *Adapter {
 	return &Adapter{
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  httpsafe.SafeClient(10 * time.Second),
 		limiter: limiter,
 		logger:  logger.With(slog.String("provider", "deezer")),
 		baseURL: strings.TrimRight(baseURL, "/"),

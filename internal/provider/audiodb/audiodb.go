@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/httpsafe"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -38,7 +39,7 @@ type Adapter struct {
 // New creates a TheAudioDB adapter with the default base URLs.
 func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger) *Adapter {
 	return &Adapter{
-		client:    &http.Client{Timeout: 10 * time.Second},
+		client:    httpsafe.SafeClient(10 * time.Second),
 		limiter:   limiter,
 		settings:  settings,
 		logger:    logger.With(slog.String("provider", "audiodb")),
@@ -52,7 +53,7 @@ func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, l
 func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger, baseURL string) *Adapter {
 	base := strings.TrimRight(baseURL, "/")
 	return &Adapter{
-		client:    &http.Client{Timeout: 10 * time.Second},
+		client:    httpsafe.SafeClient(10 * time.Second),
 		limiter:   limiter,
 		settings:  settings,
 		logger:    logger.With(slog.String("provider", "audiodb")),
