@@ -242,5 +242,4 @@ jobs:
           file: build/docker/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
