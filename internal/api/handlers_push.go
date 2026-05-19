@@ -85,6 +85,8 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 
 // handlePushImages uploads artist images to an Emby/Jellyfin connection.
 // POST /api/v1/artists/{id}/push/images
+//
+//nolint:gocognit // Per-image-type upload: enumerate poster/banner/clearart/disc/fanart with per-type file-presence check, MIME detection, connection-dispatch (Emby vs Jellyfin client), and outcome accounting; the per-type branches share enough state that helpers would have 8+ parameters.
 func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {

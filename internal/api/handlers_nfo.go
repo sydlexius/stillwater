@@ -174,6 +174,8 @@ type ClobberCheckResponse struct {
 
 // handleClobberCheck checks all enabled connections for NFO/image writing configuration.
 // GET /api/v1/connections/clobber-check
+//
+//nolint:gocognit // Fast-path library-path gate (clobber risk is impossible when no library has a filesystem path), then per-connection NFO-writer probe with per-result risk aggregation; the HTMX-vs-JSON response shaping rebuilds the risk list into a template-friendly slice and that adapter has to live with the aggregation to share the filtered subset.
 func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
 	// If no library has a filesystem path, Stillwater cannot write NFO files,
 	// so there is no clobber risk regardless of server configuration.

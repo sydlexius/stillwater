@@ -247,6 +247,8 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 // RunRuleScoped evaluates a single rule against artists determined by scope.
 // Returns ArtistsTotal/ArtistsSkipped on the result so the UI can report
 // "evaluating 12 of 800 (788 unchanged)" for the incremental path.
+//
+//nolint:gocognit // Single-rule pipeline run (cog 74): progress reporting against ArtistsTotal, scope-aware artist walk, per-artist evaluate-fix-persist with deferred resolved-status writes (#983 ordering), automation-mode dispatch (manual vs auto), and result aggregation; identical control-flow structure to RunAllScoped but pinned to one rule for surgical user runs from the UI -- the duplication itself is the structural smell. Refactor tracked in #1543.
 func (p *Pipeline) RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error) {
 	result := &RunResult{Scope: scope.String()}
 
@@ -504,6 +506,8 @@ func (p *Pipeline) RunImageRulesForArtist(ctx context.Context, a *artist.Artist)
 // runForArtistFiltered is the shared body of RunForArtist and
 // RunImageRulesForArtist. An empty categoryFilter runs every violation;
 // a non-empty value runs only violations whose Category matches exactly.
+//
+//nolint:gocognit // Per-artist pipeline orchestrator (cog 79): iterates rules, evaluates each, batches resolved-status writes per #983, dispatches fix-or-discover by automation mode, persists artist mutations, recomputes health score, and emits SSE; the load-bearing #983 persist ordering is the main complexity driver and a refactor must preserve it. Refactor tracked in #1541.
 func (p *Pipeline) runForArtistFiltered(ctx context.Context, a *artist.Artist, categoryFilter string) (*RunResult, error) {
 	result := &RunResult{}
 
@@ -767,6 +771,8 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 // by scope (incremental or all). The result reports both the number of
 // artists processed and the total eligible count so progress UIs can show
 // "evaluating 12 of 800 (788 unchanged)".
+//
+//nolint:gocognit // Full-sweep pipeline (cog 77): rule registry walk, per-rule artist iteration with scope-aware source, evaluate-fix-persist + #983 deferred resolved-status writes, automation-mode dispatch, per-rule and global counters; the rule-major iteration order is required so that all violations of a given rule see a coherent before/after view of the artist within a single pipeline pass. Refactor tracked in #1542.
 func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult, error) {
 	result := &RunResult{Scope: scope.String()}
 
@@ -1023,6 +1029,8 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 //
 // processed counts artists fn was actually invoked on (regardless of return
 // value), since both successes and failures consumed pipeline work.
+//
+//nolint:gocognit // Scope walker (cog 45): dirty/all/single-artist scopes with per-scope source enumeration (ListDirtyIDs vs ListEligible vs single ID) and per-artist evaluated-mark policy gated on fn outcome; the markEvaluated bool flips meaning per scope, which is the structural smell driving the cog score. Refactor tracked in #1551.
 func (p *Pipeline) walkScopedArtists(ctx context.Context, scope RunScope, markEvaluated bool, fn func(a *artist.Artist) bool) (int, error) {
 	if scope == RunScopeIncremental {
 		ids, err := p.artistService.ListDirtyIDs(ctx)

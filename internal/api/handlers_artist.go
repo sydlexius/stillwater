@@ -150,6 +150,8 @@ func parseIDsParam(raw string) []string {
 
 // handleArtistsPage renders the artist list HTML page.
 // GET /artists
+//
+//nolint:gocognit // Artists page handler (cog 50): resolves auth, parses paging/sort/filter params, validates "show selected" IDs, queries the page slice + total counts + facet counts, then renders both full-page and HTMX-partial responses. The parse/query/render stages could move into named helpers reading from a shared request-context struct without reshuffling render-time fields. Refactor tracked in #1550.
 func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {

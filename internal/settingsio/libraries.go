@@ -78,6 +78,8 @@ func (s *Service) exportLibraries(ctx context.Context) ([]LibraryExport, error) 
 // importUserPreferences). Path validation is intentionally bypassed: the
 // target filesystem may not yet contain the directory at restore time, and
 // rejecting absent paths would defeat the disaster-recovery use case.
+//
+//nolint:gocognit // Per-library upsert with primary-key (name) lookup, secondary-key ((connection_id, external_id)) fallback for renamed peer libraries, and source-aware connection remap; skip-with-warning behavior preserves the disaster-recovery contract when individual rows cannot resolve. The skip vs error ladder mirrors importUserPreferences and is part of the import envelope's documented contract.
 func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, le := range libs {

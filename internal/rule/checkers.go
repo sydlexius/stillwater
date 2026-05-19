@@ -481,6 +481,8 @@ func (e *Engine) getLogoBoundsFromBytes(data []byte) (content, original goimage.
 // every evaluation. For API-only artists (no local path), the checker fetches
 // the logo through the platform image fetcher and caches the raw bytes only
 // when a violation is found, so the fixer can consume them.
+//
+//nolint:gocognit // Returned closure dispatches across three logo sources (local disk with mtime cache, API fetch when no local path, in-memory cached API bytes) and handoff to the fixer via cache; the source-selection ladder is the checker's purpose and cannot be flattened.
 func (e *Engine) makeLogoPaddingChecker() Checker {
 	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {

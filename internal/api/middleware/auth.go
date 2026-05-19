@@ -29,6 +29,8 @@ type AuthProvider interface {
 // OptionalAuth returns middleware that populates the user context if a valid
 // session exists but does not reject unauthenticated requests. Use this for
 // public pages that change behavior based on auth state.
+//
+//nolint:gocognit // Auth resolution descends three credential sources in order (API token by prefix, session cookie, no-credential pass-through) and each branch must capture user/role/scopes onto the request context only when the credential validates; flattening would force redundant validation calls.
 func OptionalAuth(authService AuthProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

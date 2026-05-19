@@ -162,6 +162,7 @@ func (s *Service) Status() *ScanResult {
 	return &snapshot
 }
 
+//nolint:gocognit // Scan worker: lock-protected status transitions, per-library file walk, cancellation checkpoints, error aggregation, progress publication, and completion sync; the lifecycle ordering (acquire -> walk -> publish -> release) and cancellation-aware control flow do not factor cleanly into helpers without sharing the result mutex across them.
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	defer s.scanWg.Done()
 	defer func() {
@@ -894,6 +895,8 @@ var errFastPathFileTouched = fmt.Errorf("fast path: canonical file mtime advance
 // isCanonicalArtistFile reports whether lower (a lowercase filename) matches
 // any pattern the scanner reads on the artist hot path: NFO, thumb/folder,
 // fanart (including numbered variants), logo, banner.
+//
+//nolint:gocognit // Pattern-family fan-out across NFO + thumb/fanart/logo/banner pattern slices plus the numbered-fanart variant check that requires the suffix to be purely numeric (DiscoverFanart only recognizes the numeric form so unrelated files like fanart-old.jpg must stay off the fast path). The hot-path predicate is called per directory entry during scans, so an allocation-free implementation matters more than a few cog points; refactor tracked in #1553.
 func isCanonicalArtistFile(lower string) bool {
 	if lower == "artist.nfo" {
 		return true
@@ -966,6 +969,8 @@ func isCanonicalArtistFile(lower string) bool {
 //
 // `existing` must be non-nil; callers already guard on that in
 // detectFilesWithFastPath.
+//
+//nolint:gocognit // Per-slot pattern walk (thumb, fanart, logo, banner) with a per-slot field-copy from existing, an mtime fast-path bailout that re-signals to the full-probe path when any canonical file has been overwritten in place (POSIX directory mtime does not catch in-place rewrites -- the per-file stat is the gate), and the DiscoverFanart-driven count refresh for the fanart slot. The slot-by-slot expansion is essential to the field-copy correctness from the existing row.
 func detectFilesExistenceOnly(dirPath string, existing *artist.Artist) (detectedFiles, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {

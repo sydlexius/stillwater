@@ -12,6 +12,7 @@ linters:
     - errcheck
     - errorlint
     - exhaustive
+    - gocognit
     - gosec
     - govet
     - misspell
@@ -34,6 +35,19 @@ linters:
       comparison: true
     exhaustive:
       default-signifies-exhaustive: true
+    gocognit:
+      # Threshold 30 is the gocognit default and the standard floor for
+      # cognitive complexity in Go projects. Raising it would bury
+      # findings the linter is meant to surface. Production functions
+      # over 30 are individually triaged: each has a function-specific
+      # //nolint:gocognit reason explaining why the complexity is
+      # essential at that site, or a reason ending with "refactor
+      # tracked under parent #1540 (sub-issue TBD)" when the function
+      # warrants a follow-up refactor. The two-axis triage (cog x path
+      # criticality) is documented in #1468; sub-issues for the
+      # refactor-worthy sites are filed under parent #1540 in M55.5.
+      # nolintlint enforces that every suppression carries a reason.
+      min-complexity: 30
     gosec:
       excludes:
         - G104  # Unhandled errors (too noisy for http.Error calls)
@@ -90,6 +104,15 @@ linters:
           - errcheck
           - noctx
           - contextcheck
+          # gocognit on tests would force rewriting table-driven cases,
+          # fixture builders, and integration scenarios into helper-heavy
+          # forms that obscure what the test is actually exercising. The
+          # same "ceremony without value" rationale that exempts gosec
+          # and errcheck from test files applies here. A substantial
+          # share of threshold-30 violations live in _test.go /
+          # _fuzz_test.go; excluding them categorically keeps the
+          # production sweep the signal-bearing part of the lint surface.
+          - gocognit
       - text: "catalogue.*is a misspelling"
         linters:
           - misspell

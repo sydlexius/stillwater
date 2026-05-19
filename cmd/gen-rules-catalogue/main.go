@@ -218,6 +218,8 @@ func renderConfigurable(cfg rule.RuleConfig) string {
 // renderCatalogue returns the full Markdown body to place between the
 // BEGIN/END markers. Rules are grouped in categoryOrder and within each
 // group ordered by their position in rules (registration order).
+//
+//nolint:gocognit // Markdown generator: emits per-category section headers and per-rule subsections with field-conditional rendering (description, severity, automation, frontmatter); splitting the conditionals would scatter the Markdown structure across helpers and obscure the rendered output's shape.
 func renderCatalogue(rules []rule.Rule) string {
 	// Partition rules by category, preserving registration order within each group.
 	byCategory := make(map[rule.RuleCategory][]rule.Rule)

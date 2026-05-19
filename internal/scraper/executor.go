@@ -50,6 +50,8 @@ func NewExecutor(service *Service, registry *provider.Registry, settings *provid
 // Settings > Providers (#1030). The scraper config still controls which fields
 // are enabled and supplies a backup fallback list for any provider absent from
 // the priority settings.
+//
+//nolint:gocognit // Top-level orchestrator: priority resolution, per-field scrape, provider-ID enrichment carry-forward between iterations, and per-field error aggregation; the carry-forward semantics across the per-field loop require sequential flow rather than parallel helpers.
 func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
 	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
 	// with IDs extracted from earlier providers' URL results.
@@ -224,6 +226,8 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 // For image fields, all providers in the chain are queried and their results are
 // aggregated so users can choose from multiple candidates. For text fields, the
 // first provider that returns data wins (priority order determines preference).
+//
+//nolint:gocognit // Image-field aggregation and text-field first-wins are two distinct provider-loop policies sharing setup (primary, fallback chain, cache, mu); the branching inside the loop expresses that policy split and refactoring would duplicate the chain-walk logic.
 func (e *Executor) scrapeField(
 	ctx context.Context,
 	mbid, name string,
@@ -324,6 +328,8 @@ type providerResult struct {
 }
 
 // getProviderResult fetches and caches results from a single provider.
+//
+//nolint:gocognit // Same per-provider lookup-precedence ladder and ErrNotFound-vs-transient distinction as provider.Orchestrator.getProviderResult (cog 34 each); kept as a near-duplicate so the scraper-aware path stays decoupled from the legacy orchestrator path during the executor migration. The consolidation belongs with the orchestrator twin; refactor tracked in #1554.
 func (e *Executor) getProviderResult(
 	ctx context.Context,
 	name provider.ProviderName,

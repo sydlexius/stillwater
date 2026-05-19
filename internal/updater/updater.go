@@ -420,6 +420,8 @@ func detectDocker() bool {
 //     still individually opt-in)
 //   - AutoCheck:          false
 //   - CheckIntervalHours: DefaultCheckIntervalHours (24h)
+//
+//nolint:gocognit // Loads ~10 distinct config keys with per-key parse, default-fallback, and validation policy (channel enum, interval clamp, bool coercion, skipped-versions JSON parse, optional fields); each key's recovery logic is independent and merging them under a generic loader would suppress meaningful defaults.
 func (s *Service) GetConfig(ctx context.Context) (Config, error) {
 	cfg := Config{
 		Channel:            ChannelStable,
@@ -1079,6 +1081,8 @@ func (s *Service) setState(st State, progress int, errMsg string) {
 // are not semver and would be rejected by semverRE/parseSemver. That path
 // filters to nightlyRE matches and picks the lexicographic max; the
 // fixed-width date suffix makes lex order agree with chronological order.
+//
+//nolint:gocognit // Channel-aware max selector: nightly is its own non-semver path (lex max on fixed-width date suffix), stable filters out both GitHub-flagged prereleases and tags with prerelease suffixes ("-rc.1"), prerelease accepts both. The full-scan-then-max strategy is required because GitHub returns releases in reverse-chronological order while backported releases (v1.9.9 after v2.0.0) would defeat a first-match strategy.
 func pickLatest(releases []githubRelease, ch Channel) *githubRelease {
 	if ch == ChannelNightly {
 		var best *githubRelease
@@ -1291,6 +1295,8 @@ func atomicReplaceFile(target string, newContent []byte) error {
 // selects on it alongside the timer, so a cadence change (24h to 1h) or
 // Enabled/AutoCheck/AutoUpdate toggle takes effect on the very next
 // scheduler iteration rather than waiting out the previous interval.
+//
+//nolint:gocognit // Select-loop multiplexer over ctx.Done, configChange pulse, and timer.C with a shared resetTimer closure that handles the Go time.Timer Stop-then-drain pattern. The configChange wakeup intentionally does NOT run a Check (the user may have just toggled AutoCheck off); the timer branch re-reads config after the network Check so an in-flight AutoUpdate toggle or SkippedVersions edit is honored before maybeAutoApply launches.
 func (s *Service) StartScheduler(ctx context.Context) {
 	// Initial read picks up the persisted interval. Fall back to the
 	// default on read error so a transient DB hiccup at startup does

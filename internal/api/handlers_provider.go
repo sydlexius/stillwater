@@ -30,6 +30,8 @@ func (r *Router) handleListProviders(w http.ResponseWriter, req *http.Request) {
 // By default, the key is tested before saving. If the test fails, an error is
 // returned with a "Save anyway" option (skip_test=true). Supports both JSON
 // body and form-encoded data (for HTMX forms).
+//
+//nolint:gocognit // Set-provider-key handler (cog 58): content-type-dependent input parsing (JSON vs form), provider-by-name dispatch for the test call, encrypted persistence with "save anyway" fallback, and HTMX-aware response shaping (full JSON vs partial render); the parse/test/persist/respond pipeline could be sliced into named stages while keeping the single-flight semantics. Refactor tracked in #1547.
 func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	if !isValidProviderName(name) {
@@ -505,6 +507,8 @@ func (r *Router) handleGetWebSearchProviders(w http.ResponseWriter, req *http.Re
 // When enabled, the provider is added to image field priority lists at lowest position.
 // When disabled, it is removed from all priority lists.
 // PUT /api/v1/providers/websearch/{name}/toggle
+//
+//nolint:gocognit // Web-search toggle (cog 61): walks every image-field priority list to insert-or-remove the provider, persists each modified list, and emits per-field SSE events; the per-field add/remove decision could move into a typed list-mutator while keeping the single-pass write semantics. Refactor tracked in #1545.
 func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 

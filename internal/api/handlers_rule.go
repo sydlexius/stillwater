@@ -223,6 +223,8 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 // Returns 202 Accepted immediately. Poll GET /api/v1/rules/run-all/status for progress
 // (shared status slot with run-all; 409 if either is already running).
 // POST /api/v1/rules/{id}/run
+//
+//nolint:gocognit // Rule existence + pipeline-configured + scope-parse guards, shared-slot conflict check, async goroutine with panic recovery, post-run violation-count computation gated by per-severity badge settings, and final mutex-protected status flip; the violation-count branch mirrors handleRunAllRules because both share the rule-run status slot, and refactoring requires the run-all variant to land at the same time; refactor tracked in #1555.
 func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	ruleID, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -360,6 +362,8 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 // handleRunArtistRules runs all enabled rules scoped to a single artist.
 // POST /api/v1/artists/{id}/run-rules
+//
+//nolint:gocognit // Each error path has both an HTMX inline-error fragment and a JSON response (artist-not-found, pipeline-nil, pipeline-failure); pulling the per-shape rendering into a helper would lose the per-error styling tokens and the contextual log messages, which is the bulk of the cog score.
 func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {

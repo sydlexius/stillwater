@@ -747,6 +747,8 @@ func buildTab(p panel, keys map[string]string) (docTab, error) {
 // buildSections groups the panel's keys by tier-2 namespace (the section ID)
 // and returns one docSection per group, preserving panel-source order for both
 // sections and their controls.
+//
+//nolint:gocognit // Two-level grouping with first-appearance ordering at both section and control granularity; the i18n key segmenter has to handle title/desc-only keys, control composite IDs, and orphaned keys in a single pass to preserve panel-source order, and splitting the segmentation rules would multiply map lookups.
 func buildSections(panelKeys []string, allKeys map[string]string) ([]docSection, error) {
 	type sectionAccum struct {
 		id          string

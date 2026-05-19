@@ -196,6 +196,8 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 // 0-based indices. Each file keeps its original extension. primaryName is the
 // base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
 // kodi controls the numbering convention (see FanartFilename).
+//
+//nolint:gocognit // Two-phase rename (stage to .tmp then commit to final name) with best-effort rollback in both phases; the rollback walks the already-mutated subset of files so the partial-failure recovery has to remain inline alongside the forward path.
 func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
 	if len(survivors) == 0 {
 		return nil

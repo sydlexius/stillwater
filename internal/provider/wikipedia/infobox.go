@@ -203,6 +203,8 @@ func fieldValue(fields map[string]string, aliases ...string) string {
 // parseListField extracts a list of items from a wikitext field value.
 // Handles: {{flatlist|...}}, {{hlist|...}}, {{plainlist|...}}, bullet lists,
 // <br /> separators, and comma-separated values.
+//
+//nolint:gocognit // Wikitext list parser: each separator format ({{flatlist}}, bullets, <br />, commas) has its own probing branch, and the cleanup pass (link unwrap, ref strip, html-entity decode, whitespace normalization) applies after detection; the format-detection ladder is the function's purpose.
 func parseListField(value string) []string {
 	// Strip ref tags and their content first.
 	value = stripRefs(value)
@@ -386,6 +388,8 @@ func resolveWikilinks(s string) string {
 
 // stripSimpleTemplates removes common inline templates like {{nowrap|text}},
 // {{small|text}}, {{lang|xx|text}}, keeping only the last pipe-delimited argument.
+//
+//nolint:gocognit // Template stripper walks the input per known template type, balancing nested {{...}} braces and respecting pipe-argument boundaries; the brace-balance + pipe-tracking state machine cannot be expressed without nested conditionals over the byte-level scan.
 func stripSimpleTemplates(s string) string {
 	simpleTemplates := []string{"nowrap", "small", "lang", "native name", "nihongo", "transl"}
 
