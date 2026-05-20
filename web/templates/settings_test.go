@@ -288,3 +288,56 @@ func findOpeningTagByID(t *testing.T, html, id string) string {
 	}
 	return html[openTagStart : openTagEnd+1]
 }
+
+// TestSettingsLibrariesTab_JSDataAttributesResolved guards against the
+// failure mode of #1302: i18n calls leaking inside <script> blocks as
+// literal `{ t(ctx, "...") }` text. The Libraries tab's JS reads four
+// data-* attributes on #settings-library-list, and the script must see
+// resolved strings rather than template syntax. The substring check on the
+// full rendered HTML catches the same class of bug anywhere in SettingsPage,
+// not just the four keys patched here.
+func TestSettingsLibrariesTab_JSDataAttributesResolved(t *testing.T) {
+	data := SettingsData{
+		ActiveTab: "libraries",
+		BasePath:  "/",
+	}
+	var buf bytes.Buffer
+	if err := SettingsPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := buf.String()
+
+	// Class-level regression guard for #1302: scan for literal `{ t(ctx,`
+	// anywhere in the rendered HTML. JS-comment lines (//-prefixed) are
+	// skipped because they legitimately discuss the bug pattern in inline
+	// developer documentation. Block-comment /* ... */ false positives are
+	// not handled; this codebase uses //-comments inside <script>.
+	for _, raw := range strings.Split(html, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(raw), "//") {
+			continue
+		}
+		if strings.Contains(raw, `{ t(ctx,`) {
+			t.Errorf("rendered HTML contains literal `{ t(ctx,` outside a JS comment: %q (regression of the class of bug fixed in #1302)", strings.TrimSpace(raw))
+		}
+	}
+
+	tag := findOpeningTagByID(t, html, "settings-library-list")
+	for _, attr := range []string{
+		"data-fs-mode-title",
+		"data-poll-interval-title",
+		"data-resync",
+		"data-scan",
+	} {
+		needle := attr + `="`
+		idx := strings.Index(tag, needle)
+		if idx == -1 {
+			t.Errorf("missing %s on #settings-library-list opening tag", attr)
+			continue
+		}
+		val := tag[idx+len(needle):]
+		end := strings.IndexByte(val, '"')
+		if end <= 0 {
+			t.Errorf("%s rendered with empty value", attr)
+		}
+	}
+}
