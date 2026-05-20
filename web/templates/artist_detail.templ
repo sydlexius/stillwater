@@ -1335,7 +1335,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 										if i > 0 {
 											{ ", " }
 										}
-										{ inst }
+										{ tInstrument(ctx, inst) }
 									}
 								</p>
 							}

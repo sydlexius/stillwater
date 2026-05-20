@@ -94,3 +94,17 @@ func languageBase(tag string) string {
 	}
 	return tag
 }
+
+// firstMetadataLang returns the primary-language subtag of the user's first
+// non-blank preferred metadata language from ctx. Blank or whitespace-only
+// entries are skipped so a stray empty preference does not mask a later valid
+// language. Returns an empty string when no usable preference is stored
+// (callers should treat this as "en" / no localization).
+func firstMetadataLang(ctx context.Context) string {
+	for _, raw := range MetadataLanguages(ctx) {
+		if lang := languageBase(strings.ToLower(strings.TrimSpace(raw))); lang != "" {
+			return lang
+		}
+	}
+	return ""
+}

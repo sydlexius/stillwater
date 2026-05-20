@@ -253,6 +253,101 @@ func TestBundleFallback_NoEnglish(t *testing.T) {
 	}
 }
 
+// TestFallbackChain_MissingKeyUsesEnglish verifies that when a non-English
+// locale file is loaded but does not contain a key, T() returns the English
+// value rather than the bare key string. This is the core behavior for
+// graceful degradation of partial translations.
+func TestFallbackChain_MissingKeyUsesEnglish(t *testing.T) {
+	dir := t.TempDir()
+	writeLocaleFile(t, dir, "en.json", `{"greeting": "Hello", "farewell": "Goodbye"}`)
+	// ja.json only translates "greeting", not "farewell".
+	writeLocaleFile(t, dir, "ja.json", `{"greeting": "こんにちは"}`)
+
+	bundle, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	ja := bundle.Translator("ja")
+	// "greeting" exists in ja.json -- should return the Japanese value.
+	if got := ja.T("greeting"); got != "こんにちは" {
+		t.Errorf("ja T(greeting) = %q, want Japanese form", got)
+	}
+	// "farewell" is absent from ja.json -- fallback chain should return English.
+	if got := ja.T("farewell"); got != "Goodbye" {
+		t.Errorf("ja T(farewell) = %q, want English fallback %q", got, "Goodbye")
+	}
+}
+
+// TestFallbackChain_BothMissingReturnsKey verifies that when a key is absent
+// from both the locale and the English fallback, T() returns the key itself.
+func TestFallbackChain_BothMissingReturnsKey(t *testing.T) {
+	dir := t.TempDir()
+	writeLocaleFile(t, dir, "en.json", `{"exists": "value"}`)
+	writeLocaleFile(t, dir, "ja.json", `{}`)
+
+	bundle, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	ja := bundle.Translator("ja")
+	if got := ja.T("missing.key"); got != "missing.key" {
+		t.Errorf("ja T(missing.key) = %q, want %q", got, "missing.key")
+	}
+}
+
+// TestFallbackChain_EnglishTranslatorNoFallback verifies that the English
+// translator itself has no fallback set (to avoid a cycle) and behaves
+// identically to the pre-fallback implementation.
+func TestFallbackChain_EnglishTranslatorNoFallback(t *testing.T) {
+	dir := t.TempDir()
+	writeLocaleFile(t, dir, "en.json", `{"key": "value"}`)
+	writeLocaleFile(t, dir, "fr.json", `{"key": "valeur"}`)
+
+	bundle, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	en := bundle.Translator("en")
+	// English translator should NOT have a fallback -- it IS the fallback.
+	if en.fallback != nil {
+		t.Error("English translator should not have a fallback set")
+	}
+	if got := en.T("key"); got != "value" {
+		t.Errorf("en T(key) = %q, want %q", got, "value")
+	}
+}
+
+// TestFallbackChain_LoadFS verifies that fallback wiring also applies when
+// locales are loaded via LoadFS (the embed.FS path used in production).
+func TestFallbackChain_LoadFS(t *testing.T) {
+	dir := t.TempDir()
+	writeLocaleFile(t, dir, "en.json", `{"instrument.bass": "Bass"}`)
+	writeLocaleFile(t, dir, "ja.json", `{"instrument.bass": "ベース"}`)
+
+	bundle, err := LoadFS(os.DirFS(dir))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	ja := bundle.Translator("ja")
+	// Key present in ja.json -- should return Japanese.
+	if got := ja.T("instrument.bass"); got != "ベース" {
+		t.Errorf("ja T(instrument.bass) = %q, want Japanese form", got)
+	}
+	// Key absent from both ja.json and en.json in this test -- key passthrough.
+	if got := ja.T("instrument.piano"); got != "instrument.piano" {
+		t.Errorf("ja T(instrument.piano) = %q, want key passthrough %q", got, "instrument.piano")
+	}
+	// Verify English translator independently.
+	en := bundle.Translator("en")
+	if got := en.T("instrument.bass"); got != "Bass" {
+		t.Errorf("en T(instrument.bass) = %q, want %q", got, "Bass")
+	}
+}
+
 // writeLocaleFile is a test helper that creates a locale JSON file.
 func writeLocaleFile(t *testing.T, dir, name, content string) {
 	t.Helper()

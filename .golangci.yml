@@ -179,6 +179,11 @@ linters:
       - text: "catalogue.*is a misspelling"
         linters:
           - misspell
+      # "chambre" is correct French (Musique de chambre = Chamber Music).
+      # The misspell linter sees it as a misspelling of the English "chamber".
+      - text: "chambre.*is a misspelling"
+        linters:
+          - misspell
       # contextcheck descends through the templ.Component interface boundary
       # and reports synthetic cascade findings at every handler that calls a
       # templ component. templ's runtime propagates ctx correctly via
