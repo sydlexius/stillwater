@@ -290,12 +290,11 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 							</li>
 						}
 						for _, rt := range v.RoundTrips {
+							// Single-key sentence lets translators control word order (Option A,
+							// M50 localization milestone). The three %s args are pre-styled HTML
+							// spans; roundTripOverlapHTML escapes names/path before embedding.
 							<li class="rounded bg-rose-950/40 px-3 py-1.5">
-								<span class="font-medium">{ rt.AName }</span>
-								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.connector_and") }</span>
-								<span class="font-medium">{ rt.BName }</span>
-								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.connector_share") }</span>
-								<code class="text-rose-50 bg-black/30 px-1 rounded">{ rt.Path }</code>
+								@templ.Raw(roundTripOverlapHTML(ctx, rt.AName, rt.BName, rt.Path, "text-rose-100", "text-rose-50 bg-black/30"))
 								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.tag") }</span>
 							</li>
 						}
@@ -394,7 +393,7 @@ templ OnboardingConflictBody(v OnboardingConflictView) {
 				<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
 				<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
 			</svg>
-			Re-check
+			{ t(ctx, "banner.onboarding.recheck") }
 		</button>
 	</div>
 }
@@ -404,9 +403,9 @@ templ onboardingConflictClean() {
 		<div class="flex items-start gap-3">
 			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-emerald-500 ring-4 ring-emerald-400/20 shrink-0" aria-hidden="true"></span>
 			<div>
-				<div class="text-sm font-medium text-emerald-900 dark:text-emerald-100">No conflicts detected.</div>
+				<div class="text-sm font-medium text-emerald-900 dark:text-emerald-100">{ t(ctx, "banner.onboarding.clean_title") }</div>
 				<p class="text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1">
-					Stillwater and your media servers will not duplicate files. You can continue.
+					{ t(ctx, "banner.onboarding.clean_body") }
 				</p>
 			</div>
 		</div>
@@ -418,8 +417,8 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 		<div class="flex items-start gap-3">
 			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
 			<div class="min-w-0 flex-1">
-				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{ obConflictWarnTitle(axis) }</div>
-				<p class="text-xs text-amber-800/90 dark:text-amber-200/90 mt-1">{ obConflictWarnBody(axis) }</p>
+				<div class="text-sm font-semibold text-amber-900 dark:text-amber-100">{ obConflictWarnTitle(ctx, axis) }</div>
+				<p class="text-xs text-amber-800/90 dark:text-amber-200/90 mt-1">{ obConflictWarnBody(ctx, axis) }</p>
 				if len(v.Connections) > 0 {
 					<ul class="mt-3 space-y-1.5" role="list">
 						for _, c := range v.Connections {
@@ -441,7 +440,7 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 										data-sw-error={ t(ctx, "settings.connections.manage_error") }
 										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
 									>
-										Let Stillwater manage
+										{ t(ctx, "banner.onboarding.warn_let_manage") }
 									</button>
 									// Secondary CTA for users who do not want Stillwater to flip
 									// the remote saver. Links to the connections section of the
@@ -461,7 +460,7 @@ templ onboardingConflictWarn(v ConflictBannerView, axis string) {
 					</ul>
 				}
 				<p class="text-xs text-amber-700/80 dark:text-amber-300/80 mt-2">
-					You can continue without resolving this. The dashboard will show the same warning until you fix it.
+					{ t(ctx, "banner.onboarding.warn_continue") }
 				</p>
 			</div>
 		</div>
@@ -473,19 +472,18 @@ templ onboardingConflictRoundTrip(v ConflictBannerView) {
 		<div class="flex items-start gap-3">
 			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-rose-500 ring-4 ring-rose-400/20 shrink-0" aria-hidden="true"></span>
 			<div class="min-w-0 flex-1">
-				<div class="text-sm font-semibold text-rose-900 dark:text-rose-100">Round-trip overlap detected.</div>
+				<div class="text-sm font-semibold text-rose-900 dark:text-rose-100">{ t(ctx, "banner.onboarding.round_trip_title") }</div>
 				<p class="text-xs text-rose-800/90 dark:text-rose-200/90 mt-1">
-					Two of your connections share the same library path. Anything Stillwater writes will round-trip through both servers and produce duplicate files within seconds. Resolve before continuing.
+					{ t(ctx, "banner.onboarding.round_trip_body") }
 				</p>
 				if len(v.RoundTrips) > 0 {
 					<ul class="mt-3 space-y-1.5 text-xs text-rose-900 dark:text-rose-100" role="list">
 						for _, rt := range v.RoundTrips {
+							// Single-key sentence lets translators control word order (Option A,
+							// M50 localization milestone). The three %s args are pre-styled HTML
+							// spans; roundTripOverlapHTML escapes names/path before embedding.
 							<li class="rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2">
-								<span class="font-medium">{ rt.AName }</span>
-								<span class="text-rose-700 dark:text-rose-300">{ t(ctx, "banner.round_trip.connector_and") }</span>
-								<span class="font-medium">{ rt.BName }</span>
-								<span class="text-rose-700 dark:text-rose-300">{ t(ctx, "banner.round_trip.connector_share") }</span>
-								<code class="bg-black/10 dark:bg-black/40 px-1 rounded">{ rt.Path }</code>
+								@templ.Raw(roundTripOverlapHTML(ctx, rt.AName, rt.BName, rt.Path, "text-rose-900 dark:text-rose-100", "bg-black/10 dark:bg-black/40"))
 							</li>
 						}
 					</ul>
@@ -511,7 +509,7 @@ templ onboardingConflictRoundTrip(v ConflictBannerView) {
 										data-sw-error={ t(ctx, "settings.connections.manage_error") }
 										hx-on:htmx:after-request={ onboardingManagedAfterRequest(c.ID) }
 									>
-										Let Stillwater manage
+										{ t(ctx, "banner.onboarding.warn_let_manage") }
 									</button>
 								</div>
 								<div id={ "ob-manage-error-" + c.ID } class="hidden basis-full text-xs text-rose-900 dark:text-rose-100 mt-1" role="alert" aria-live="polite"></div>
@@ -520,7 +518,7 @@ templ onboardingConflictRoundTrip(v ConflictBannerView) {
 					</ul>
 				}
 				<p class="text-xs text-rose-700 dark:text-rose-300 mt-2 font-medium">
-					Continue is disabled until this resolves. Re-check after flipping a toggle.
+					{ t(ctx, "banner.onboarding.round_trip_blocks_continue") }
 				</p>
 			</div>
 		</div>
@@ -532,10 +530,10 @@ templ onboardingConflictProbeError(msg string) {
 		<div class="flex items-start gap-3">
 			<span class="inline-block h-2 w-2 mt-2 rounded-full bg-amber-500 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
 			<div>
-				<div class="text-sm font-medium text-amber-900 dark:text-amber-100">Could not reach all of your servers to check.</div>
+				<div class="text-sm font-medium text-amber-900 dark:text-amber-100">{ t(ctx, "banner.onboarding.probe_error_title") }</div>
 				<p class="text-xs text-amber-800/80 dark:text-amber-200/80 mt-1">{ msg }</p>
 				<p class="text-xs text-amber-800/80 dark:text-amber-200/80 mt-2">
-					You can continue. The conflict banner on the dashboard will surface any issue once Stillwater can reach the server again.
+					{ t(ctx, "banner.onboarding.probe_error_body") }
 				</p>
 			</div>
 		</div>

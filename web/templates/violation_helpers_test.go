@@ -48,6 +48,7 @@ func TestFormatAge(t *testing.T) {
 }
 
 func TestFixButtonLabel(t *testing.T) {
+	ctx := testCtx(t)
 	tests := []struct {
 		ruleID string
 		want   string
@@ -65,7 +66,7 @@ func TestFixButtonLabel(t *testing.T) {
 		{"unrecognized_rule", "Fix"},
 	}
 	for _, tt := range tests {
-		got := fixButtonLabel(tt.ruleID)
+		got := fixButtonLabel(ctx, tt.ruleID)
 		if got != tt.want {
 			t.Errorf("fixButtonLabel(%q) = %q, want %q", tt.ruleID, got, tt.want)
 		}

@@ -145,6 +145,8 @@ templ Layout(title string, assets AssetPaths) {
 				<!-- Translated tour step strings consumed by tour.js -->
 				@tourI18nJSON()
 			}
+			<!-- Translated strings for the global toast/modal/undo infrastructure -->
+			@layoutI18nBlob()
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
 				// -- Toast Manager -----------------------------------------------
@@ -152,6 +154,29 @@ templ Layout(title string, assets AssetPaths) {
 				// count badge), a max of 3 visible toasts with queueing, and solid
 				// background styling.
 				(function() {
+					// Load translated strings from the JSON blob rendered by the server.
+					// Each string was produced by t(ctx, ...) at render time.
+					// Interpolated keys use Go %s/%d verbs; substitute in JS via
+					// str.replace('%s', value) or str.replace('%d', value).
+					var _i18nEl = document.getElementById('layout-i18n');
+					var i18n = {};
+					try { if (_i18nEl && _i18nEl.dataset.i18n) i18n = JSON.parse(_i18nEl.dataset.i18n); } catch (e) {}
+					// English fallbacks guard against a missing/malformed blob so the
+					// UI does not go completely silent when the parse fails.
+					i18n.grouped_aria    = i18n.grouped_aria    || 'Grouped notification count';
+					i18n.repeated_aria   = i18n.repeated_aria   || 'Notification repeated %d times';
+					i18n.dismiss_aria    = i18n.dismiss_aria    || 'Dismiss notification';
+					i18n.undo            = i18n.undo            || 'Undo';
+					i18n.undo_fix_aria   = i18n.undo_fix_aria   || 'Undo applied fix';
+					i18n.close_aria      = i18n.close_aria      || 'Close notification';
+					i18n.undoing         = i18n.undoing         || 'Undoing...';
+					i18n.http_status     = i18n.http_status     || 'HTTP %s';
+					i18n.fix_reverted    = i18n.fix_reverted    || 'Fix reverted';
+					i18n.undo_failed     = i18n.undo_failed     || 'Undo failed: %s';
+					i18n.request_failed  = i18n.request_failed  || 'Request failed: %s';
+					i18n.request_timeout = i18n.request_timeout || 'Request timed out. Please try again.';
+					i18n.unknown         = i18n.unknown         || 'Unknown error';
+					i18n.confirm         = i18n.confirm         || 'Confirm';
 					var MAX_VISIBLE = 3;
 					var GROUP_WINDOW_MS = 2000;
 
@@ -181,7 +206,7 @@ templ Layout(title string, assets AssetPaths) {
 						if (!entry.countEl) {
 							entry.countEl = document.createElement('span');
 							entry.countEl.className = 'inline-flex items-center justify-center ml-1.5 min-w-[20px] h-5 rounded-full px-1.5 text-xs font-semibold tabular-nums bg-white/20 text-current';
-							entry.countEl.setAttribute('aria-label', 'Grouped notification count');
+							entry.countEl.setAttribute('aria-label', i18n.grouped_aria);
 							// Insert count badge after the message span.
 							var msgSpan = entry.el.querySelector('span');
 							if (msgSpan && msgSpan.nextSibling) {
@@ -191,7 +216,7 @@ templ Layout(title string, assets AssetPaths) {
 							}
 						}
 						entry.countEl.textContent = entry.count;
-						entry.countEl.setAttribute('aria-label', 'Notification repeated ' + entry.count + ' times');
+						entry.countEl.setAttribute('aria-label', i18n.repeated_aria.replace('%d', entry.count));
 					}
 
 					function removeFromVisible(entry) {
@@ -264,7 +289,7 @@ templ Layout(title string, assets AssetPaths) {
 						btn.type = 'button';
 						btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100 shrink-0';
 						btn.textContent = '\u00d7';
-						btn.setAttribute('aria-label', 'Dismiss notification');
+						btn.setAttribute('aria-label', i18n.dismiss_aria);
 						toast.appendChild(span);
 						toast.appendChild(btn);
 						return toast;
@@ -363,14 +388,14 @@ templ Layout(title string, assets AssetPaths) {
 						var undoBtn = document.createElement('button');
 						undoBtn.type = 'button';
 						undoBtn.className = 'ml-auto rounded border border-blue-400/50 px-2 py-0.5 text-xs font-semibold hover:bg-white/10 transition-colors';
-						undoBtn.textContent = 'Undo';
-						undoBtn.setAttribute('aria-label', 'Undo applied fix');
+						undoBtn.textContent = i18n.undo;
+						undoBtn.setAttribute('aria-label', i18n.undo_fix_aria);
 
 						var closeBtn = document.createElement('button');
 						closeBtn.type = 'button';
 						closeBtn.className = 'font-bold opacity-70 hover:opacity-100 shrink-0';
 						closeBtn.textContent = '\u00d7';
-						closeBtn.setAttribute('aria-label', 'Close notification');
+						closeBtn.setAttribute('aria-label', i18n.close_aria);
 
 						toast.appendChild(msgSpan);
 						toast.appendChild(countSpan);
@@ -411,7 +436,7 @@ templ Layout(title string, assets AssetPaths) {
 
 						undoBtn.onclick = function() {
 							undoBtn.disabled = true;
-							undoBtn.textContent = 'Undoing...';
+							undoBtn.textContent = i18n.undoing;
 							var bpEl = document.querySelector('meta[name="htmx-base-path"]');
 							var bp = bpEl ? bpEl.content : '';
 							fetch(bp + '/api/v1/fix-undo/' + encodeURIComponent(undoID), {
@@ -420,14 +445,26 @@ templ Layout(title string, assets AssetPaths) {
 								credentials: 'same-origin'
 							}).then(function(resp) {
 								if (!resp.ok) {
-									return resp.json().then(function(d) {
-										throw new Error(d.error || 'HTTP ' + resp.status);
+									// Read the body as text first: a proxy or gateway may
+									// return HTML or an empty body on error, and resp.json()
+									// would then reject with a parser error that leaks into
+									// the toast. Try JSON, fall back to a localized message.
+									return resp.text().then(function(body) {
+										var msg = '';
+										if (body) {
+											try {
+												var d = JSON.parse(body);
+												if (d && typeof d.error === 'string' && d.error) msg = d.error;
+											} catch (e) {}
+										}
+										if (!msg) msg = i18n.http_status.replace('%s', resp.status);
+										throw new Error(msg);
 									});
 								}
 								return resp.json();
 							}).then(function() {
 								dismissNow();
-								if (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');
+								if (typeof showSuccessToast === 'function') showSuccessToast(i18n.fix_reverted);
 								// Reload the dashboard action queue so the reverted violation reappears.
 								// Preserve the current filter query string so the reload does not
 								// silently widen the view to an unfiltered queue.
@@ -437,7 +474,7 @@ templ Layout(title string, assets AssetPaths) {
 								}
 							}).catch(function(err) {
 								dismissNow();
-								if (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));
+								if (typeof showToast === 'function') showToast(i18n.undo_failed.replace('%s', err.message || i18n.unknown));
 							});
 						};
 
@@ -459,6 +496,10 @@ templ Layout(title string, assets AssetPaths) {
 						visible.push(entry);
 						container.appendChild(toast);
 					};
+					// Expose the i18n map so other inline scripts (htmx event
+					// listeners, confirm modal) can reuse the same translations
+					// without re-parsing the JSON blob.
+					window.swI18n = i18n;
 				})();
 			</script>
 			<script>
@@ -577,12 +618,15 @@ templ Layout(title string, assets AssetPaths) {
 						}
 					}
 					if (!msg) {
-						msg = 'Request failed: ' + (evt.detail.xhr.status || 'network error');
+						var i18n = window.swI18n || {};
+						var tpl = i18n.request_failed || 'Request failed: %s';
+						msg = tpl.replace('%s', evt.detail.xhr.status || 'network error');
 					}
 					showToast(msg);
 				});
 				document.body.addEventListener('htmx:timeout', function() {
-					showToast('Request timed out. Please try again.');
+					var i18n = window.swI18n || {};
+					showToast(i18n.request_timeout || 'Request timed out. Please try again.');
 				});
 				document.body.addEventListener('syncWarning', function(evt) {
 					// HTMX wraps non-object HX-Trigger payloads (including arrays) as { value: ... }.
@@ -724,9 +768,11 @@ templ Layout(title string, assets AssetPaths) {
 						pendingCallback = null;
 						pendingConfirmKey = null;
 						// Reset title and accept button to defaults.
-						if (m.title) m.title.textContent = 'Confirm';
+						var _i18n = window.swI18n || {};
+						var _confirm = _i18n.confirm || 'Confirm';
+						if (m.title) m.title.textContent = _confirm;
 						if (m.accept) {
-							m.accept.textContent = 'Confirm';
+							m.accept.textContent = _confirm;
 							m.accept.className = 'rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2';
 						}
 						// Return focus to the element that triggered the dialog.
@@ -889,6 +935,15 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.SSEJS }></script>
 		</body>
 	</html>
+}
+
+// layoutI18nBlob renders a hidden element with translated strings for the
+// global toast/modal/undo infrastructure. JS reads the data-i18n attribute
+// at startup so no English literals remain in the inline script block.
+// Placed immediately before the toast manager script so the blob is
+// available when that IIFE runs.
+templ layoutI18nBlob() {
+	<div id="layout-i18n" hidden data-i18n={ layoutI18nJSON(ctx) }></div>
 }
 
 // tourI18nJSON renders a hidden element with translated tour step strings.
