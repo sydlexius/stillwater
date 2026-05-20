@@ -306,10 +306,16 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 }
 
 // applyMemberRefresh upserts provider-returned members for an artist when the
-// provider both attempted the "members" field and returned a non-empty list.
-// An empty list is treated as incomplete data (MusicBrainz relation data is
-// often sparse), not an intentional clear. Existing members are left untouched
-// when the provider was not attempted or returned zero members.
+// provider both attempted the "members" field and either returned a non-empty
+// list or the result carries MembersAuthoritative=true (indicating the provider
+// asserted a complete roster that happens to be empty -- i.e., the artist has
+// no members -- so existing rows should be cleared).
+//
+// An empty list without MembersAuthoritative is treated as incomplete data
+// (MusicBrainz relation data is often sparse) and leaves existing members
+// untouched. Existing members are also left untouched when the provider did
+// not attempt the field at all, when metadata is nil, or when the field is
+// locked by the user.
 func (r *Router) applyMemberRefresh(ctx context.Context, artistID string, result *provider.FetchResult, locked []string) {
 	if result.Metadata == nil {
 		return
@@ -319,10 +325,13 @@ func (r *Router) applyMemberRefresh(ctx context.Context, artistID string, result
 			return
 		}
 	}
-	if slices.Contains(result.AttemptedFields, "members") && len(result.Metadata.Members) > 0 {
+	if slices.Contains(result.AttemptedFields, "members") && (len(result.Metadata.Members) > 0 || result.MembersAuthoritative) {
 		members := convertProviderMembers(artistID, result.Metadata.Members)
 		if err := r.artistService.UpsertMembers(ctx, artistID, members); err != nil {
-			r.logger.Warn("upserting members after refresh",
+			// A failed member upsert is a real persistence defect: the core
+			// metadata was already committed, but the member roster may now be
+			// stale. Log at Error (not Warn) so monitoring surfaces it.
+			r.logger.Error("upserting members after refresh",
 				"artist_id", artistID,
 				"error", err)
 		}

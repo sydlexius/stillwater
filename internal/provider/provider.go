@@ -121,7 +121,7 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 		NameWikipedia: {
 			Tier:            TierFree,
 			RateLimit:       &RateLimitInfo{RequestsPerSecond: 5},
-			SupportedFields: []string{"name", "biography", "years_active", "origin", "genres", "members"},
+			SupportedFields: []string{"name", "type", "biography", "born", "died", "years_active", "origin", "genres", "members"},
 		},
 		NameSpotify: {
 			Tier:            TierPaid,
@@ -261,6 +261,15 @@ type ArtistMetadata struct {
 	SimilarArtists []string          `json:"similar_artists,omitempty"`
 	Aliases        []string          `json:"aliases,omitempty"`
 	URLs           map[string]string `json:"urls,omitempty"`
+	// MembersAuthoritative is set when the provider can assert that its member
+	// list is complete: an empty Members slice then means "this artist has no
+	// members" rather than "data was unavailable". Currently set by
+	// MusicBrainz for confirmed individual artist types (Person, Character),
+	// where an empty member list is definitionally complete because individuals
+	// cannot have band members by definition. Group/Orchestra/Choir types leave
+	// it false because MusicBrainz relation data for ensembles can be sparse.
+	// The orchestrator propagates it to FetchResult.MembersAuthoritative.
+	MembersAuthoritative bool `json:"members_authoritative,omitempty"`
 }
 
 // MemberInfo is a band member as reported by a provider.

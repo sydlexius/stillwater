@@ -241,6 +241,7 @@ func (e *Executor) scrapeField(
 ) FieldResult {
 	queried := false
 	isImage := CategoryFor(field.Field) == CategoryImages
+	isMembers := field.Field == FieldMembers
 
 	// For image fields, track the first provider that contributed images
 	// so we can report it in the FieldResult, and all contributing
@@ -254,8 +255,9 @@ func (e *Executor) scrapeField(
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil {
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
-			// See imageFieldQueried for the marking rationale.
-			if !isImage || imageFieldQueried(pr) {
+			// See imageFieldQueried and membersFieldQueried for the rationale.
+			if (!isImage || imageFieldQueried(pr)) &&
+				(!isMembers || membersFieldQueried(pr, result)) {
 				queried = true
 			}
 			if applyFieldValue(field.Field, pr, result) {
@@ -282,8 +284,9 @@ func (e *Executor) scrapeField(
 		}
 
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
-		// See imageFieldQueried for the marking rationale.
-		if !isImage || imageFieldQueried(pr) {
+		// See imageFieldQueried and membersFieldQueried for the rationale.
+		if (!isImage || imageFieldQueried(pr)) &&
+			(!isMembers || membersFieldQueried(pr, result)) {
 			queried = true
 		}
 		if applyFieldValue(field.Field, pr, result) {
@@ -457,6 +460,27 @@ func (e *Executor) getProviderResult(
 // as attempted so that existing image data is preserved rather than cleared.
 func imageFieldQueried(pr *providerResult) bool {
 	return pr.imagesAttempted && pr.imageErr == nil
+}
+
+// membersFieldQueried reports whether the members field should be marked as
+// queried for this provider result. A provider that returned no members
+// without asserting completeness (sparse relation data) must not mark the
+// field as attempted, so existing member rows are preserved rather than
+// cleared. Marking is allowed only when the provider returned members OR
+// authoritatively asserted an empty roster; in the latter case the
+// authoritative signal is propagated to the merged result so downstream
+// consumers can distinguish an intentional clear from missing data.
+func membersFieldQueried(pr *providerResult, result *provider.FetchResult) bool {
+	if pr.meta == nil {
+		return false
+	}
+	if len(pr.meta.Members) == 0 && !pr.meta.MembersAuthoritative {
+		return false
+	}
+	if pr.meta.MembersAuthoritative {
+		result.MembersAuthoritative = true
+	}
+	return true
 }
 
 // fieldApplier copies one field from a provider's metadata into the merged

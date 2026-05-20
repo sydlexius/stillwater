@@ -78,6 +78,18 @@ type FetchResult struct {
 	// This is the mechanism for #952's graceful-fallback contract: an empty
 	// localized lookup must not clobber pre-existing data.
 	PopulatedFields []string `json:"populated_fields,omitempty"`
+	// MembersAuthoritative is true when the contributing provider can assert
+	// that its member list is complete. It distinguishes "provider
+	// authoritatively returned zero members" (an empty roster that should
+	// clear existing rows) from "provider returned zero due to sparse relation
+	// data" (an empty roster that should preserve existing rows).
+	// Currently set by MusicBrainz for confirmed individual artist types
+	// (Person, Character): an individual by definition has no band members,
+	// so an empty member list is definitionally complete and may safely clear
+	// stale rows. Group/Orchestra/Choir types never set it because MusicBrainz
+	// relation data for real bands can be sparse and an empty roster would
+	// represent missing data rather than an authoritative empty result.
+	MembersAuthoritative bool `json:"members_authoritative,omitempty"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -158,6 +170,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		// falsely re-credited here. Reset each iteration.
 		fieldPopulated := false
 		isImageField := isImageFieldName(pri.Field)
+		isMembersField := pri.Field == "members"
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
 				continue
@@ -186,6 +199,30 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			// image data is preserved rather than cleared.
 			if isImageField && (!pr.imagesAttempted || pr.imageErr != nil) {
 				continue
+			}
+
+			// For the members field, only mark as queried when the provider
+			// actually returned members OR authoritatively asserted an empty
+			// roster. A provider that returned zero members without asserting
+			// completeness (sparse relation data) must not mark the field as
+			// attempted, so existing member rows are preserved rather than
+			// cleared. This mirrors the image-field guard above.
+			//
+			// A nil meta result (transient error, timeout, 5xx) is treated
+			// identically to the ErrNotFound path in the scraper executor:
+			// the field is NOT marked as queried so existing member rows are
+			// preserved. This mirrors membersFieldQueried in executor.go, which
+			// also returns false for nil meta.
+			if isMembersField {
+				if pr.meta == nil {
+					continue
+				}
+				if len(pr.meta.Members) == 0 && !pr.meta.MembersAuthoritative {
+					continue
+				}
+				if pr.meta.MembersAuthoritative {
+					result.MembersAuthoritative = true
+				}
 			}
 
 			queried = true
@@ -831,6 +868,15 @@ type FieldProviderResult struct {
 	Members  []MemberInfo `json:"members,omitempty"`
 	HasData  bool         `json:"has_data"`
 	Error    string       `json:"error,omitempty"`
+	// Synthesized is true when Value was derived from other fields rather than
+	// returned directly by the provider. It applies to years_active, which the
+	// per-field fetch synthesizes from formed/disbanded or born/died when a
+	// provider computes the value instead of storing it (MusicBrainz) or its
+	// source lacks the literal key (Wikipedia infoboxes). The candidate is
+	// still attributed to the originating provider; this flag only records
+	// that the value is derived. The per-field providers UI renders
+	// synthesized and direct candidates identically.
+	Synthesized bool `json:"synthesized,omitempty"`
 }
 
 // FetchFieldFromProviders queries all configured providers for a given field
@@ -947,6 +993,17 @@ func extractFieldForComparison(fpr *FieldProviderResult, field string, meta *Art
 		if meta.YearsActive != "" {
 			fpr.Value = meta.YearsActive
 			fpr.HasData = true
+			break
+		}
+		// The provider returned no literal years_active. Some providers
+		// compute the value rather than store it (MusicBrainz) and some
+		// sources lack the key entirely (Wikipedia infoboxes without a
+		// "years_active" field), so synthesize a candidate from the same
+		// provider's formed/disbanded or born/died dates.
+		if synth, ok := SynthesizeYearsActive(meta); ok {
+			fpr.Value = synth
+			fpr.HasData = true
+			fpr.Synthesized = true
 		}
 	case "type":
 		if meta.Type != "" {
@@ -963,6 +1020,82 @@ func extractFieldForComparison(fpr *FieldProviderResult, field string, meta *Art
 			fpr.Value = meta.Origin
 			fpr.HasData = true
 		}
+	}
+}
+
+// SynthesizeYearsActive derives a years_active string from an artist's
+// formed/disbanded (groups) or born/died (individuals) dates. It returns the
+// synthesized value and true when synthesis succeeded, or "" and false when
+// the metadata does not support a confident answer.
+//
+// Group/orchestra/choir types synthesize "YYYY-YYYY" when both formed and
+// disbanded are known, or "YYYY-present" when only the formed date is known,
+// matching the Wikipedia infobox convention for still-active groups.
+//
+// Individuals are handled conservatively: a "born-died" range is synthesized
+// only when both dates are present. When only the birth date is known the
+// person's activity cannot be determined from metadata alone, so synthesis is
+// skipped rather than guessing a "YYYY-present" range.
+//
+// Callers must check meta.YearsActive themselves before calling: this helper
+// always synthesizes from the date fields and never reads YearsActive.
+func SynthesizeYearsActive(meta *ArtistMetadata) (string, bool) {
+	if meta == nil {
+		return "", false
+	}
+	if isGroupTypeValue(meta.Type) {
+		formed := yearFromDate(meta.Formed)
+		if formed == "" {
+			return "", false
+		}
+		if disbanded := yearFromDate(meta.Disbanded); disbanded != "" {
+			return formed + "-" + disbanded, true
+		}
+		return formed + "-present", true
+	}
+	// Individuals: only a fully bounded born-died range can be synthesized
+	// with confidence. A lone birth date says nothing about whether the
+	// artist is still active, so skip rather than guess.
+	born := yearFromDate(meta.Born)
+	died := yearFromDate(meta.Died)
+	if born != "" && died != "" {
+		return born + "-" + died, true
+	}
+	return "", false
+}
+
+// yearFromDate extracts the leading 4-digit year from a date string that may
+// be "YYYY", "YYYY-MM", or "YYYY-MM-DD". Returns "" for empty or short input,
+// and also returns "" when the leading 4 characters are not all ASCII digits
+// (e.g. "late 1980s" or "circa 1990" would otherwise produce garbage output).
+func yearFromDate(date string) string {
+	if len(date) < 4 {
+		return ""
+	}
+	prefix := date[:4]
+	for i := range len(prefix) {
+		if prefix[i] < '0' || prefix[i] > '9' {
+			return ""
+		}
+	}
+	return prefix
+}
+
+// isGroupTypeValue reports whether the normalized artist type string
+// represents an ensemble (group, orchestra, choir) rather than an individual.
+// The vocabulary mirrors the normalized values produced by provider adapters
+// (see musicbrainz.mapArtistType): "group", "orchestra", "choir".
+//
+// This is deliberately NOT the negation of isIndividualTypeValue (below): an
+// unknown or empty type is neither group nor individual. years_active synthesis
+// routes such artists through the individual (born/died) branch via
+// !isGroupTypeValue, so the two predicates are kept separate on purpose.
+func isGroupTypeValue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "group", "orchestra", "choir":
+		return true
+	default:
+		return false
 	}
 }
 

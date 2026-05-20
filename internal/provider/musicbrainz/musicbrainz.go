@@ -833,22 +833,16 @@ func applyRelations(meta *provider.ArtistMetadata, mb *MBArtist, seen map[string
 	}
 }
 
-// synthesizeYearsActive fills meta.YearsActive from formed/disbanded for
-// group-type artists when the provider did not supply one. Output uses
-// "YYYY-YYYY" or "YYYY-present"; partial dates are reduced to the year part.
-func synthesizeYearsActive(meta *provider.ArtistMetadata, mb *MBArtist) {
-	if meta.YearsActive != "" || !isGroupType(mb.Type) {
+// synthesizeYearsActive fills meta.YearsActive from formed/disbanded (groups)
+// or born/died (individuals) when MusicBrainz did not supply one. The
+// derivation logic is shared with the orchestrator's per-field fetch via
+// provider.SynthesizeYearsActive so both paths agree on the output format.
+func synthesizeYearsActive(meta *provider.ArtistMetadata) {
+	if meta.YearsActive != "" {
 		return
 	}
-	formedYear := yearFromDate(meta.Formed)
-	if formedYear == "" {
-		return
-	}
-	disbandedYear := yearFromDate(meta.Disbanded)
-	if disbandedYear != "" {
-		meta.YearsActive = formedYear + "-" + disbandedYear
-	} else {
-		meta.YearsActive = formedYear + "-present"
+	if synth, ok := provider.SynthesizeYearsActive(meta); ok {
+		meta.YearsActive = synth
 	}
 }
 
@@ -891,18 +885,24 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 	// when merging duplicates with different name variants.
 	meta.Members = deduplicateMembers(meta.Members, langPrefs)
 
-	synthesizeYearsActive(meta, mb)
+	synthesizeYearsActive(meta)
+
+	// Set MembersAuthoritative for confirmed individual artist types (Person,
+	// Character). An individual by definition has no band members, so an empty
+	// member list from a Person-type MusicBrainz result is authoritatively
+	// complete and may safely clear any stale band-member rows.
+	//
+	// Safety: we deliberately do NOT set the flag for Group, Orchestra, Choir,
+	// Other, or unknown types. A real band has Type="Group" and an empty member
+	// list from MusicBrainz usually reflects sparse relation coverage rather
+	// than a true empty roster, so we leave it false to avoid accidental data
+	// loss. The authoritative-clear path is only safe when the artist type
+	// itself rules out the possibility of members existing.
+	if mb.Type == "Person" || mb.Type == "Character" {
+		meta.MembersAuthoritative = true
+	}
 
 	return meta
-}
-
-// yearFromDate extracts the leading 4-digit year from a date string that may
-// be "YYYY", "YYYY-MM", or "YYYY-MM-DD". Returns "" for empty or short input.
-func yearFromDate(date string) string {
-	if len(date) < 4 {
-		return ""
-	}
-	return date[:4]
 }
 
 // isGroupType returns true for MusicBrainz types that represent ensembles
