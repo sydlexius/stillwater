@@ -58,29 +58,29 @@ type ConnectionConflictDetailView struct {
 // used inside the settings card. It intentionally does no CTA -- the
 // opt-in toggle lives one section above -- so the panel stays read-only.
 templ ConnectionConflictDetail(v ConnectionConflictDetailView) {
-	<div class="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Detected on this server</div>
+	<div class="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "banner.detail.heading") }</div>
 	if !v.Known {
-		<div class="text-xs text-gray-500 dark:text-gray-400 italic">Not yet checked. Test the connection to populate.</div>
+		<div class="text-xs text-gray-500 dark:text-gray-400 italic">{ t(ctx, "banner.detail.not_checked") }</div>
 	} else if v.CheckErr != "" {
-		<div class="text-xs text-red-600 dark:text-red-400">Check failed: { v.CheckErr }</div>
+		<div class="text-xs text-red-600 dark:text-red-400">{ tf(ctx, "banner.detail.check_failed", v.CheckErr) }</div>
 	} else {
 		<ul class="space-y-1 text-xs">
 			<li class="flex items-center justify-between">
-				<span class="text-gray-700 dark:text-gray-300">NFO file write-back</span>
+				<span class="text-gray-700 dark:text-gray-300">{ t(ctx, "banner.detail.nfo_writeback") }</span>
 				@conflictPill(v.NFOWriteback, v.ManageServerFiles)
 			</li>
 			<li class="flex items-center justify-between">
-				<span class="text-gray-700 dark:text-gray-300">Image file write-back</span>
+				<span class="text-gray-700 dark:text-gray-300">{ t(ctx, "banner.detail.image_writeback") }</span>
 				@conflictPill(v.ImageWriteback, v.ManageServerFiles)
 			</li>
 			if v.LibraryName != "" {
-				<li class="text-gray-500 dark:text-gray-400">Library: { v.LibraryName }</li>
+				<li class="text-gray-500 dark:text-gray-400">{ tf(ctx, "banner.detail.library", v.LibraryName) }</li>
 			}
 			if v.PathsSummary != "" {
-				<li class="text-gray-500 dark:text-gray-400">Paths: { v.PathsSummary }</li>
+				<li class="text-gray-500 dark:text-gray-400">{ tf(ctx, "banner.detail.paths", v.PathsSummary) }</li>
 			}
 			if v.ManageServerFiles {
-				<li class="text-emerald-700 dark:text-emerald-300">Stillwater is managing this server -- savers disabled.</li>
+				<li class="text-emerald-700 dark:text-emerald-300">{ t(ctx, "banner.detail.managed_note") }</li>
 			}
 		</ul>
 	}
@@ -88,11 +88,11 @@ templ ConnectionConflictDetail(v ConnectionConflictDetailView) {
 
 templ conflictPill(on, managed bool) {
 	if managed {
-		<span class="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5">managed</span>
+		<span class="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5">{ t(ctx, "banner.pill.managed") }</span>
 	} else if on {
-		<span class="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-0.5">enabled (write-back risk)</span>
+		<span class="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-0.5">{ t(ctx, "banner.pill.enabled") }</span>
 	} else {
-		<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5">off</span>
+		<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5">{ t(ctx, "banner.pill.off") }</span>
 	}
 }
 
@@ -156,7 +156,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 	<div
 		class="bg-gradient-to-r from-amber-900/60 to-yellow-700/50 dark:from-amber-900/60 dark:to-yellow-700/50 backdrop-blur-md border-b border-amber-300/30 px-6 py-3"
 		role="alert"
-		aria-label="Write-back conflict notice"
+		aria-label={ t(ctx, "banner.warn.aria_label") }
 		data-conflict-state={ v.State }
 	>
 		<div class="max-w-6xl mx-auto flex flex-col gap-3">
@@ -165,10 +165,10 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 					<span class="inline-block h-2 w-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
 					<div class="min-w-0">
 						<div class="font-semibold text-amber-100">
-							{ warnTitle(axis) }
-							<span class="font-normal text-amber-200/90"> -- { warnSubtitle(axis, v) }</span>
+							{ warnTitle(ctx, axis) }
+							<span class="font-normal text-amber-200/90">-- { warnSubtitle(ctx, axis, v) }</span>
 						</div>
-						<div class="text-xs text-amber-200/70 mt-0.5">{ warnAffected(axis) }</div>
+						<div class="text-xs text-amber-200/70 mt-0.5">{ warnAffected(ctx, axis) }</div>
 					</div>
 				</div>
 				<div class="flex items-center gap-2 shrink-0">
@@ -185,7 +185,7 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 							<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
 							<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
 						</svg>
-						Re-check
+						{ t(ctx, "banner.warn.recheck") }
 					</button>
 				</div>
 			</div>
@@ -214,14 +214,14 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 									hx-disabled-elt="this"
 									hx-indicator="this"
 									hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
-									title="Disable this server's savers and restore on opt-out"
+									title={ t(ctx, "banner.warn.manage_button_title") }
 								>
-									Let Stillwater manage
+									{ t(ctx, "banner.warn.manage_button") }
 								</button>
 								<a
 									href={ conflictConnectionHref(c.ID) }
 									class="text-xs text-amber-200 hover:text-amber-100 underline-offset-2 hover:underline"
-								>Open settings</a>
+								>{ t(ctx, "banner.warn.open_settings") }</a>
 							</div>
 						</li>
 					}
@@ -234,13 +234,8 @@ templ conflictBannerWarn(v ConflictBannerView, axis string) {
 // offenderAxisLabel renders a small "image", "NFO", or "image+NFO" pill so
 // users scanning the banner list can tell at a glance which saver is on.
 templ offenderAxisLabel(c ConflictBannerConn) {
-	switch {
-		case c.ImageWriteback && c.NFOWriteback:
-			<span class="inline-flex items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">image + NFO saver</span>
-		case c.ImageWriteback:
-			<span class="inline-flex items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">image saver</span>
-		case c.NFOWriteback:
-			<span class="inline-flex items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">NFO saver</span>
+	if label := saverAxisLabel(ctx, c.ImageWriteback, c.NFOWriteback); label != "" {
+		<span class="inline-flex items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-100">{ label }</span>
 	}
 }
 
@@ -252,7 +247,7 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 	<div
 		class="bg-gradient-to-r from-rose-900/60 to-amber-900/55 dark:from-rose-900/60 dark:to-amber-900/55 backdrop-blur-md border-b border-rose-300/25 px-6 py-3"
 		role="alert"
-		aria-label="Round-trip write hazard"
+		aria-label={ t(ctx, "banner.round_trip.aria_label") }
 		data-conflict-state={ v.State }
 	>
 		<div class="max-w-6xl mx-auto flex flex-wrap items-start gap-4">
@@ -260,9 +255,9 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 				<span class="inline-block h-2 w-2 mt-1.5 rounded-full bg-rose-400 ring-4 ring-rose-400/20 shrink-0" aria-hidden="true"></span>
 				<div class="min-w-0">
 					<div class="font-semibold text-rose-100">
-						Stillwater file writes are disabled.
+						{ t(ctx, "banner.round_trip.headline") }
 						<span class="font-normal text-rose-100/90">
-							Two or more enabled connections share the same library path, creating a round-trip conflict on the shared music folder. Any image or NFO Stillwater saves can be rewritten within seconds. API metadata push is unaffected.
+							{ t(ctx, "banner.round_trip.body") }
 						</span>
 					</div>
 					<ul class="flex flex-col gap-1.5 text-xs text-rose-100/90 mt-2" role="list">
@@ -271,13 +266,8 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 								<div class="flex items-center gap-2 min-w-0">
 									<a href={ conflictConnectionHref(c.ID) } class="font-medium underline-offset-2 hover:underline">{ c.Name }</a>
 									<span class="text-rose-200/70">({ c.Type })</span>
-									switch {
-										case c.ImageWriteback && c.NFOWriteback:
-											<span class="inline-flex items-center rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-100">image + NFO saver</span>
-										case c.ImageWriteback:
-											<span class="inline-flex items-center rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-100">image saver</span>
-										case c.NFOWriteback:
-											<span class="inline-flex items-center rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-100">NFO saver</span>
+									if label := saverAxisLabel(ctx, c.ImageWriteback, c.NFOWriteback); label != "" {
+										<span class="inline-flex items-center rounded-full bg-rose-400/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-100">{ label }</span>
 									}
 									if c.LibraryName != "" {
 										<span class="text-rose-200/70">-- "{ c.LibraryName }"</span>
@@ -291,27 +281,27 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 										hx-vals={ manageServerFilesPayload(true) }
 										hx-swap="none"
 										hx-on:htmx:after-request={ stillwaterManagedAfterRequest(c.ID) }
-										title="Disable this server's savers and restore on opt-out"
+										title={ t(ctx, "banner.warn.manage_button_title") }
 									>
-										Let Stillwater manage
+										{ t(ctx, "banner.warn.manage_button") }
 									</button>
-									<a href={ conflictConnectionHref(c.ID) } class="text-xs text-rose-200 hover:text-rose-100 underline-offset-2 hover:underline">Open settings</a>
+									<a href={ conflictConnectionHref(c.ID) } class="text-xs text-rose-200 hover:text-rose-100 underline-offset-2 hover:underline">{ t(ctx, "banner.warn.open_settings") }</a>
 								</div>
 							</li>
 						}
 						for _, rt := range v.RoundTrips {
 							<li class="rounded bg-rose-950/40 px-3 py-1.5">
 								<span class="font-medium">{ rt.AName }</span>
-								<span class="text-rose-200/80"> and </span>
+								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.connector_and") }</span>
 								<span class="font-medium">{ rt.BName }</span>
-								<span class="text-rose-200/80"> share </span>
+								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.connector_share") }</span>
 								<code class="text-rose-50 bg-black/30 px-1 rounded">{ rt.Path }</code>
-								<span class="text-rose-200/80"> (round-trip)</span>
+								<span class="text-rose-200/80">{ t(ctx, "banner.round_trip.tag") }</span>
 							</li>
 						}
 					</ul>
 					<div class="text-xs text-rose-100/70 mt-1.5">
-						Affected: image fetch/edit/crop/assign, NFO generate/edit, rule fix-all, maintenance.
+						{ t(ctx, "banner.round_trip.affected") }
 					</div>
 				</div>
 			</div>
@@ -329,13 +319,13 @@ templ conflictBannerRoundTripDanger(v ConflictBannerView) {
 						<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"></circle>
 						<path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
 					</svg>
-					Re-check now
+					{ t(ctx, "banner.round_trip.recheck") }
 				</button>
 				<a
 					href={ conflictSettingsConnectionsHref() }
 					class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 text-sm text-rose-100 text-center"
 				>
-					Review each connection
+					{ t(ctx, "banner.round_trip.review_link") }
 				</a>
 			</div>
 		</div>
@@ -492,9 +482,9 @@ templ onboardingConflictRoundTrip(v ConflictBannerView) {
 						for _, rt := range v.RoundTrips {
 							<li class="rounded bg-rose-100/70 dark:bg-rose-900/30 px-3 py-2">
 								<span class="font-medium">{ rt.AName }</span>
-								<span class="text-rose-700 dark:text-rose-300"> and </span>
+								<span class="text-rose-700 dark:text-rose-300">{ t(ctx, "banner.round_trip.connector_and") }</span>
 								<span class="font-medium">{ rt.BName }</span>
-								<span class="text-rose-700 dark:text-rose-300"> share </span>
+								<span class="text-rose-700 dark:text-rose-300">{ t(ctx, "banner.round_trip.connector_share") }</span>
 								<code class="bg-black/10 dark:bg-black/40 px-1 rounded">{ rt.Path }</code>
 							</li>
 						}
@@ -560,6 +550,7 @@ templ onboardingConflictProbeError(msg string) {
 // span, mirroring the data-sw-error pattern used in settings.templ;
 // without this, the round-trip state could leave Continue disabled with
 // no feedback when the toggle POST fails.
+
 script onboardingManagedAfterRequest(connID string) {
 	var errEl = document.getElementById("ob-manage-error-" + connID);
 	if (event.detail.successful) {
@@ -595,6 +586,7 @@ script onboardingManagedAfterRequest(connID string) {
 // both of which fire their own HTMX request with `?refresh=1` and so
 // cannot reuse triggerConflictRefresh (which dispatches oobeConflictRefresh
 // and would re-fetch from the cached detector instead of forcing a probe).
+
 script resetOnboardingConflictGate() {
 	var blockEl = document.getElementById("ob-conflict-block");
 	if (blockEl) blockEl.value = "1";
@@ -616,12 +608,12 @@ templ conflictBannerClean() {
 	>
 		<div class="max-w-6xl mx-auto flex items-center gap-3 text-sm">
 			<span class="inline-block h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20" aria-hidden="true"></span>
-			<span class="text-emerald-100 font-medium">All clear.</span>
-			<span class="text-emerald-100/80 flex-1">No conflict gating is active. No write-back or round-trip overlap detected.</span>
+			<span class="text-emerald-100 font-medium">{ t(ctx, "banner.clean.title") }</span>
+			<span class="text-emerald-100/80 flex-1">{ t(ctx, "banner.clean.body") }</span>
 			<button
 				type="button"
 				class="text-emerald-100/80 hover:text-white"
-				aria-label="Dismiss"
+				aria-label={ t(ctx, "banner.clean.dismiss_aria") }
 				onclick="(function(b){ try { sessionStorage.setItem('sw_conflict_clean_dismissed','1'); } catch (e) {} var el = b.closest('#sw-conflict-clean'); if (el) el.remove(); })(this)"
 			>
 				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
@@ -662,7 +654,7 @@ templ conflictBannerForeignFiles(v ConflictBannerView) {
 				<div class="min-w-0">
 					<div class="font-semibold text-slate-100">
 						Foreign image files detected
-						<span class="font-normal text-slate-200/90"> { foreignFilesSummary(v.ForeignFileCount) }</span>
+						<span class="font-normal text-slate-200/90">{ foreignFilesSummary(v.ForeignFileCount) }</span>
 					</div>
 					<div class="text-xs text-slate-200/70 mt-0.5">
 						These files match media-server naming patterns but do not carry Stillwater provenance. Review them on the foreign-files page or dismiss to allowlist all.
