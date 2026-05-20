@@ -42,6 +42,7 @@ const (
 	RuleBackdropMinCount      = "backdrop_min_count"
 	RuleLogoPadding           = "logo_padding"
 	RuleNameLanguagePref      = "name_language_pref"
+	RuleOriginMissing         = "origin_missing"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -233,6 +234,15 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning"},
+	},
+	{
+		ID:             RuleOriginMissing,
+		Name:           "Origin is populated",
+		Description:    "Flags artists with an empty origin field. Violations are fixed by fetching the origin (city, region, or country) from the configured provider priority list. Auto mode applies the highest-priority non-empty result; manual mode surfaces the violation so you can pick a provider value or edit it.",
+		Category:       RuleCategoryMetadata,
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "info"},
 	},
 }
 

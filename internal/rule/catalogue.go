@@ -32,7 +32,7 @@ type RuleCatalogueEntry struct {
 }
 
 // rulesCatalogue maps rule IDs to their documentation metadata.
-// Entries cover all 22 non-deprecated built-in rules.
+// Entries cover all 23 non-deprecated built-in rules.
 var rulesCatalogue = map[string]RuleCatalogueEntry{
 	RuleNFOExists: {
 		FixBehavior: "Generates an NFO from the artist's stored metadata and writes it to disk.",
@@ -258,6 +258,16 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"An artist where logo.png and banner.jpg were both fetched from the same provider image source and are visually identical despite different dimensions.",
 			"A library that was seeded by copying the fanart into every image slot as a placeholder before sourcing distinct artwork.",
 		},
+	},
+	RuleOriginMissing: {
+		FixBehavior: "Fetches the artist's origin from the configured provider priority list (Wikipedia, TheAudioDB, Wikidata, MusicBrainz) and saves the first non-empty value.",
+		Guards:      "The origin field records where an artist or group is from, displayed on artist detail pages and used for grouping and discovery. The rule fires when the origin field is empty. Different providers report origin at different granularity: MusicBrainz and Wikidata return a country, while Wikipedia and TheAudioDB often return a city or region. In auto mode the first non-empty value from the priority order is applied; in manual mode the violation is surfaced so you can compare provider values or enter your own.",
+		Examples: []string{
+			"An artist scanned from disk whose source NFO never carried an origin element.",
+			"An artist identified by name only, with no metadata fetch run for the origin field yet.",
+			"An artist imported from a media server API that does not expose an origin field.",
+		},
+		FixExample: "Before: origin is empty\nAfter:  origin = \"Mandeville, Louisiana\", fetched from a provider",
 	},
 }
 

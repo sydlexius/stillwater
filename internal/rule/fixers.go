@@ -31,6 +31,15 @@ type imageProvider interface {
 	FetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
 }
 
+// metadataOrchestrator is the subset of provider.Orchestrator used by
+// MetadataFixer. Defining it as an interface keeps the fixer testable with a
+// stub instead of requiring a full orchestrator and live provider chain.
+type metadataOrchestrator interface {
+	Search(ctx context.Context, name string) ([]provider.ArtistSearchResult, error)
+	FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
+	FetchFieldFromProviders(ctx context.Context, mbid, name, field string, providerIDs map[provider.ProviderName]string) ([]provider.FieldProviderResult, error)
+}
+
 // imageCacheEntry holds a cached FetchImages result (or error) for one MBID.
 type imageCacheEntry struct {
 	result *provider.FetchResult
@@ -128,9 +137,9 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 	}, nil
 }
 
-// MetadataFixer populates missing metadata (MBID, biography) from providers.
+// MetadataFixer populates missing metadata (MBID, biography, origin) from providers.
 type MetadataFixer struct {
-	orchestrator *provider.Orchestrator
+	orchestrator metadataOrchestrator
 	logger       *slog.Logger
 }
 
@@ -141,9 +150,11 @@ func NewMetadataFixer(orchestrator *provider.Orchestrator, logger *slog.Logger) 
 	return &MetadataFixer{orchestrator: orchestrator, logger: logger}
 }
 
-// CanFix returns true for nfo_has_mbid, bio_exists, and metadata_quality rules.
+// CanFix returns true for nfo_has_mbid, bio_exists, metadata_quality, and
+// origin_missing rules.
 func (f *MetadataFixer) CanFix(v *Violation) bool {
-	return v.RuleID == RuleNFOHasMBID || v.RuleID == RuleBioExists || v.RuleID == RuleMetadataQuality
+	return v.RuleID == RuleNFOHasMBID || v.RuleID == RuleBioExists ||
+		v.RuleID == RuleMetadataQuality || v.RuleID == RuleOriginMissing
 }
 
 // Fix searches providers and populates the missing metadata.
@@ -155,6 +166,8 @@ func (f *MetadataFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation)
 		return f.fixBio(ctx, a)
 	case RuleMetadataQuality:
 		return f.fixJunkBio(ctx, a)
+	case RuleOriginMissing:
+		return f.fixOrigin(ctx, a)
 	default:
 		return nil, fmt.Errorf("unsupported rule: %s", v.RuleID)
 	}
@@ -254,6 +267,51 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 		Fixed:   true,
 		Message: fmt.Sprintf("replaced junk biography for %s", a.Name),
 	}, nil
+}
+
+// fixOrigin populates a missing origin field by querying providers in priority
+// order for the "origin" field and applying the first non-empty value.
+//
+// FetchFieldFromProviders returns one result per configured provider in the
+// field's priority order (wikipedia, audiodb, wikidata, musicbrainz), so the
+// first result with data is the highest-priority non-empty value. This is the
+// same first-non-empty-wins behavior used for other single-value fields.
+func (f *MetadataFixer) fixOrigin(ctx context.Context, a *artist.Artist) (*FixResult, error) {
+	results, err := f.orchestrator.FetchFieldFromProviders(ctx, a.MusicBrainzID, a.Name, "origin", a.ProviderIDMap())
+	if err != nil {
+		return nil, fmt.Errorf("fetching origin from providers: %w", err)
+	}
+
+	value, source := firstNonEmptyFieldValue(results)
+	if value == "" {
+		return &FixResult{
+			RuleID:  RuleOriginMissing,
+			Fixed:   false,
+			Message: fmt.Sprintf("no origin found for %s", a.Name),
+		}, nil
+	}
+
+	a.Origin = value
+
+	return &FixResult{
+		RuleID:  RuleOriginMissing,
+		Fixed:   true,
+		Message: fmt.Sprintf("populated origin '%s' from %s for %s", value, source, a.Name),
+	}, nil
+}
+
+// firstNonEmptyFieldValue walks per-provider field results in priority order
+// and returns the first value with data, along with the provider that supplied
+// it. Returns empty strings when no provider returned a usable value.
+func firstNonEmptyFieldValue(results []provider.FieldProviderResult) (value, source string) {
+	for _, r := range results {
+		if r.HasData {
+			if trimmed := strings.TrimSpace(r.Value); trimmed != "" {
+				return trimmed, string(r.Provider)
+			}
+		}
+	}
+	return "", ""
 }
 
 // provenanceRecorder records image provenance data (phash, source, file format,

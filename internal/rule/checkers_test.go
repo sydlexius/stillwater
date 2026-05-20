@@ -176,6 +176,51 @@ func TestCheckBioExists(t *testing.T) {
 	}
 }
 
+func TestCheckOriginMissing(t *testing.T) {
+	tests := []struct {
+		name    string
+		origin  string
+		wantNil bool
+	}{
+		{
+			name:    "origin populated",
+			origin:  "Mandeville, Louisiana",
+			wantNil: true,
+		},
+		{
+			name:    "origin empty",
+			origin:  "",
+			wantNil: false,
+		},
+		{
+			name:    "origin whitespace only",
+			origin:  "   ",
+			wantNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := artist.Artist{Name: "Test", Origin: tt.origin}
+			v := checkOriginMissing(context.Background(), &a, RuleConfig{})
+			if (v == nil) != tt.wantNil {
+				t.Errorf("checkOriginMissing = %v, wantNil = %v", v, tt.wantNil)
+			}
+			if v != nil {
+				if v.RuleID != RuleOriginMissing {
+					t.Errorf("RuleID = %q, want %q", v.RuleID, RuleOriginMissing)
+				}
+				if !v.Fixable {
+					t.Error("origin_missing violation should be fixable")
+				}
+				if v.Category != "metadata" {
+					t.Errorf("Category = %q, want metadata", v.Category)
+				}
+			}
+		})
+	}
+}
+
 func TestCheckThumbSquare(t *testing.T) {
 	e := &Engine{logger: slog.Default()}
 	checker := e.makeThumbSquareChecker()
