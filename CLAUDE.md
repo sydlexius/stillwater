@@ -83,6 +83,25 @@ make docker-build   # Build Docker image
 make docker-run     # Start via docker compose
 ```
 
+## Running Long Tests
+
+A test run's output is a deterministic artifact: capture it once, grep it
+many times. Never re-run a long suite (race tests especially) just to
+re-filter the output. Pipe it to a file, then search the file:
+
+```bash
+. scripts/lib/run-paths.sh   # provides $SW_RUN_DIR (per-worktree, ephemeral)
+go test -race -count=1 ./internal/<pkg>/ 2>&1 | tee "$SW_RUN_DIR/race.log"
+grep -nE 'WARNING: DATA RACE|--- FAIL' "$SW_RUN_DIR/race.log"
+```
+
+Do not run the full `./...` race suite as a pre-PR check -- that is the
+pre-push gate's job and the pre-push git hook runs it automatically. The
+capture rule is for targeted runs while debugging. When dispatching a
+subagent that runs tests, paste this rule into its prompt; subagents do not
+load project memory. The `capture-race-test-output` hookify rule blocks
+uncaptured `go test -race` invocations.
+
 ## GitHub Issue Hints
 
 When working on a GitHub issue, look for these tags in the issue body:
