@@ -881,9 +881,7 @@ func (a *Adapter) mapArtist(ctx context.Context, mb *MBArtist) *provider.ArtistM
 
 	// Deduplicate members by MBID. When the same person appears multiple times
 	// (e.g., different active periods), merge their date ranges and instruments.
-	// Language preferences are passed so the preferred locale name is selected
-	// when merging duplicates with different name variants.
-	meta.Members = deduplicateMembers(meta.Members, langPrefs)
+	meta.Members = deduplicateMembers(meta.Members)
 
 	synthesizeYearsActive(meta)
 
@@ -987,17 +985,22 @@ func deduplicateStyles(styles, genres []string) []string {
 
 // deduplicateMembers merges duplicate member entries that share the same MBID.
 // When duplicates exist, their date ranges and instruments are combined into a
-// single entry. If langPrefs is non-empty, the preferred locale name is selected
-// when merging members with different name variants.
-func deduplicateMembers(members []provider.MemberInfo, langPrefs []string) []provider.MemberInfo {
+// single entry. The merged entry keeps the first canonical name seen for the
+// MBID.
+//
+// Note: MusicBrainz "member of band" relation stubs carry only "name" and
+// "sort-name" fields -- no alias or locale data is present in the response
+// (confirmed by live BUCK-TICK query with inc=aliases+artist-rels; see #1020).
+// Locale-aware name selection is therefore not possible at this stage and is
+// not attempted.
+func deduplicateMembers(members []provider.MemberInfo) []provider.MemberInfo {
 	if len(members) <= 1 {
 		return members
 	}
 
 	type mergedMember struct {
-		info      provider.MemberInfo
-		periods   [][2]string // pairs of [joined, left]
-		nameScore int         // best language preference score for the current name (-1 = unscored)
+		info    provider.MemberInfo
+		periods [][2]string // pairs of [joined, left]
 	}
 
 	// Track insertion order so the output is deterministic.
@@ -1016,37 +1019,15 @@ func deduplicateMembers(members []provider.MemberInfo, langPrefs []string) []pro
 		if !ok {
 			order = append(order, key)
 			byMBID[key] = &mergedMember{
-				info:      m,
-				periods:   [][2]string{{m.DateJoined, m.DateLeft}},
-				nameScore: -1,
+				info:    m,
+				periods: [][2]string{{m.DateJoined, m.DateLeft}},
 			}
 			continue
 		}
 
 		// Merge: combine date range and instruments from the duplicate.
+		// The first canonical name for this MBID is kept as-is.
 		existing.periods = append(existing.periods, [2]string{m.DateJoined, m.DateLeft})
-
-		// Select the preferred locale name when language preferences are set.
-		// Each duplicate member name is scored against the preference list and
-		// the best-scoring name wins. When scores are tied, the first name is kept.
-		if len(langPrefs) > 0 && m.Name != existing.info.Name {
-			// Score the incoming name. MusicBrainz member names do not carry an
-			// explicit locale, but the name itself may match a language preference
-			// if it was populated from a locale-specific alias. We use the MBID
-			// as a proxy -- the first entry keeps its score; the incoming entry
-			// is scored and compared.
-			if existing.nameScore < 0 {
-				// Score the existing name on first collision.
-				existing.nameScore = provider.MatchLanguagePreference(existing.info.Name, langPrefs)
-			}
-			incomingScore := provider.MatchLanguagePreference(m.Name, langPrefs)
-			// Lower non-negative score wins. If the existing has no match (-1)
-			// and the incoming does, the incoming wins.
-			if incomingScore >= 0 && (existing.nameScore < 0 || incomingScore < existing.nameScore) {
-				existing.info.Name = m.Name
-				existing.nameScore = incomingScore
-			}
-		}
 
 		// Merge instruments, avoiding duplicates.
 		instrSet := make(map[string]bool, len(existing.info.Instruments))
