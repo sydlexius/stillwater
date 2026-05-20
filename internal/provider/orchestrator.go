@@ -155,7 +155,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		Metadata: &ArtistMetadata{
 			URLs: make(map[string]string),
 		},
-		MetadataLocale: firstMetadataLang(ctx),
+		MetadataLocale: FirstMetadataLang(ctx),
 	}
 
 	// Ensure providerIDs is writable so EnrichProviderIDs can populate it

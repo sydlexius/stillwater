@@ -143,8 +143,8 @@ func TestFirstMetadataLang(t *testing.T) {
 			if tc.langs != nil {
 				ctx = WithMetadataLanguages(ctx, tc.langs)
 			}
-			if got := firstMetadataLang(ctx); got != tc.want {
-				t.Errorf("firstMetadataLang(%v) = %q, want %q", tc.langs, got, tc.want)
+			if got := FirstMetadataLang(ctx); got != tc.want {
+				t.Errorf("FirstMetadataLang(%v) = %q, want %q", tc.langs, got, tc.want)
 			}
 		})
 	}
