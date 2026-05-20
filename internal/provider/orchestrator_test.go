@@ -2863,3 +2863,393 @@ func TestIsExcludedForField_BiographyStructuralGuards(t *testing.T) {
 		})
 	}
 }
+
+// TestSynthesizeYearsActive covers the synthesis helper added for #1069.
+// The helper is shared between the MusicBrainz full-refresh path and the
+// per-field fetch pipeline (extractFieldForComparison) so both return
+// consistent values.
+func TestSynthesizeYearsActive(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		meta    *ArtistMetadata
+		want    string // expected synthesized value
+		wantOK  bool   // true when synthesis should succeed
+		comment string // why this outcome is expected
+	}{
+		{
+			// Groups with both formed and disbanded produce a closed "YYYY-YYYY" range.
+			name:    "group_formed_and_disbanded",
+			meta:    &ArtistMetadata{Type: "group", Formed: "1985-01-01", Disbanded: "2003-06-15"},
+			want:    "1985-2003",
+			wantOK:  true,
+			comment: "MB group with formed+disbanded -> closed range",
+		},
+		{
+			// Groups with only a formed date are assumed still active.
+			name:    "group_formed_only",
+			meta:    &ArtistMetadata{Type: "group", Formed: "1997"},
+			want:    "1997-present",
+			wantOK:  true,
+			comment: "MB group with formed only -> open-ended range",
+		},
+		{
+			// Orchestra type also uses the group synthesis path.
+			name:    "orchestra_formed_and_disbanded",
+			meta:    &ArtistMetadata{Type: "orchestra", Formed: "1900", Disbanded: "1950"},
+			want:    "1900-1950",
+			wantOK:  true,
+			comment: "orchestra treated as group type",
+		},
+		{
+			// Individuals with both born and died produce a bounded range.
+			name:    "individual_born_and_died",
+			meta:    &ArtistMetadata{Type: "person", Born: "1942-08-01", Died: "2018-03-14"},
+			want:    "1942-2018",
+			wantOK:  true,
+			comment: "individual with born+died -> bounded range",
+		},
+		{
+			// A living individual with only a birth date: we cannot know whether
+			// they are still active, so synthesis is deliberately skipped rather
+			// than guessing "YYYY-present". See issue #1069 acceptance criteria
+			// and the SynthesizeYearsActive doc comment.
+			name:    "individual_born_only_no_synthesis",
+			meta:    &ArtistMetadata{Type: "person", Born: "1959-10-03"},
+			want:    "",
+			wantOK:  false,
+			comment: "individual with born only must NOT synthesize (ambiguous activity status)",
+		},
+		{
+			// A group with no formed date cannot produce any range.
+			name:    "group_no_formed_date",
+			meta:    &ArtistMetadata{Type: "group", Disbanded: "2010"},
+			want:    "",
+			wantOK:  false,
+			comment: "group without formed date cannot synthesize",
+		},
+		{
+			// A type that is not a recognized group type and has no born+died.
+			name:    "unknown_type_no_dates",
+			meta:    &ArtistMetadata{Type: ""},
+			want:    "",
+			wantOK:  false,
+			comment: "empty type with no dates produces nothing",
+		},
+		{
+			// Nil metadata must not panic.
+			name:    "nil_metadata",
+			meta:    nil,
+			want:    "",
+			wantOK:  false,
+			comment: "nil metadata must return (empty, false) safely",
+		},
+		{
+			// Partial dates: only year portion is extracted ("YYYY-MM-DD" -> "YYYY").
+			name:    "group_partial_dates_year_extracted",
+			meta:    &ArtistMetadata{Type: "group", Formed: "1990-03-15", Disbanded: "2000-12-01"},
+			want:    "1990-2000",
+			wantOK:  true,
+			comment: "year-only extraction from full dates",
+		},
+		{
+			// Malformed date "late 1980s": yearFromDate validates that the leading
+			// 4 characters are all ASCII digits; "late" is not, so no synthesis.
+			// This is Finding 7: prevents garbage output like "late-present".
+			name:    "malformed_date_late_1980s",
+			meta:    &ArtistMetadata{Type: "group", Formed: "late 1980s"},
+			want:    "",
+			wantOK:  false,
+			comment: "malformed date 'late 1980s' must not synthesize (digit check)",
+		},
+		{
+			// Malformed date "circa 1990": same digit-validation path.
+			name:    "malformed_date_circa_1990",
+			meta:    &ArtistMetadata{Type: "group", Formed: "circa 1990"},
+			want:    "",
+			wantOK:  false,
+			comment: "malformed date 'circa 1990' must not synthesize (digit check)",
+		},
+		{
+			// Malformed date "19XX": placeholder digits fail the all-digit check
+			// because 'X' is not an ASCII digit.
+			name:    "malformed_date_19XX",
+			meta:    &ArtistMetadata{Type: "group", Formed: "19XX"},
+			want:    "",
+			wantOK:  false,
+			comment: "malformed date '19XX' must not synthesize (non-digit chars)",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture for parallel sub-test
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := SynthesizeYearsActive(tc.meta)
+			if ok != tc.wantOK {
+				t.Errorf("%s: ok = %v, want %v", tc.comment, ok, tc.wantOK)
+			}
+			if got != tc.want {
+				t.Errorf("%s: value = %q, want %q", tc.comment, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExtractFieldForComparison_YearsActiveSynthesis verifies that the per-field
+// fetch pipeline synthesizes years_active from formed/disbanded or born/died
+// when a provider returns metadata without a literal years_active value.
+// This is the core fix for #1069: providers like MusicBrainz that compute the
+// value at full-refresh time must also produce a candidate in the per-field path.
+func TestExtractFieldForComparison_YearsActiveSynthesis(t *testing.T) {
+	t.Parallel()
+
+	t.Run("literal_years_active_used_as_is", func(t *testing.T) {
+		// When the provider populates years_active directly, it must be returned
+		// unchanged and must NOT be marked synthesized.
+		fpr := &FieldProviderResult{}
+		extractFieldForComparison(fpr, "years_active", &ArtistMetadata{
+			YearsActive: "2000-2010",
+		})
+		if !fpr.HasData {
+			t.Error("expected HasData = true for literal years_active")
+		}
+		if fpr.Value != "2000-2010" {
+			t.Errorf("Value = %q, want %q", fpr.Value, "2000-2010")
+		}
+		if fpr.Synthesized {
+			t.Error("expected Synthesized = false for literal years_active")
+		}
+	})
+
+	t.Run("group_synthesized_from_formed_disbanded", func(t *testing.T) {
+		// A MusicBrainz result for a group has formed+disbanded but no literal
+		// years_active. The per-field pipeline must synthesize a candidate.
+		fpr := &FieldProviderResult{}
+		extractFieldForComparison(fpr, "years_active", &ArtistMetadata{
+			Type:      "group",
+			Formed:    "1985",
+			Disbanded: "2003",
+		})
+		if !fpr.HasData {
+			t.Error("expected HasData = true for group synthesis")
+		}
+		if fpr.Value != "1985-2003" {
+			t.Errorf("Value = %q, want %q", fpr.Value, "1985-2003")
+		}
+		if !fpr.Synthesized {
+			t.Error("expected Synthesized = true when value derived from formed/disbanded")
+		}
+	})
+
+	t.Run("wikipedia_infobox_missing_years_active_synthesized_from_formed", func(t *testing.T) {
+		// Wikipedia infoboxes often lack a literal years_active key but may have
+		// formed date. This simulates a Wikipedia result for a still-active group.
+		fpr := &FieldProviderResult{}
+		extractFieldForComparison(fpr, "years_active", &ArtistMetadata{
+			Type:   "group",
+			Formed: "1997",
+			// No Disbanded, no YearsActive -- infobox only had 'formed'.
+		})
+		if !fpr.HasData {
+			t.Error("expected HasData = true for Wikipedia synthesis from formed only")
+		}
+		if fpr.Value != "1997-present" {
+			t.Errorf("Value = %q, want %q", fpr.Value, "1997-present")
+		}
+		if !fpr.Synthesized {
+			t.Error("expected Synthesized = true")
+		}
+	})
+
+	t.Run("individual_born_only_no_synthesis", func(t *testing.T) {
+		// A solo artist (individual type) where only birth year is known.
+		// Synthesis must be skipped to avoid a spurious "YYYY-present" guess.
+		fpr := &FieldProviderResult{}
+		extractFieldForComparison(fpr, "years_active", &ArtistMetadata{
+			Type: "person",
+			Born: "1959-10-03",
+		})
+		if fpr.HasData {
+			t.Error("expected HasData = false for individual with born only")
+		}
+		if fpr.Value != "" {
+			t.Errorf("expected empty Value for individual born-only case, got %q", fpr.Value)
+		}
+	})
+
+	t.Run("empty_metadata_no_synthesis", func(t *testing.T) {
+		// No dates at all: nothing to synthesize.
+		fpr := &FieldProviderResult{}
+		extractFieldForComparison(fpr, "years_active", &ArtistMetadata{})
+		if fpr.HasData {
+			t.Error("expected HasData = false when no date fields present")
+		}
+	})
+}
+
+// TestFetchMetadata_MembersAuthoritative verifies that the orchestrator propagates
+// MembersAuthoritative from a provider's ArtistMetadata to the FetchResult, and
+// that it correctly guards AttemptedFields based on the authoritative flag.
+// This is the core behavior added for #1038.
+func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sparse_empty_does_not_mark_members_attempted", func(t *testing.T) {
+		// A provider returning empty members without the authoritative flag
+		// (e.g. MusicBrainz sparse relation data) must NOT add "members" to
+		// AttemptedFields. Downstream consumers must be able to preserve existing
+		// member rows rather than clearing them.
+		registry, settings := setupOrchestratorTest(t)
+		registry.Register(&mockProvider{
+			name: NameMusicBrainz,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				return &ArtistMetadata{
+					Name:                 "Sparse Band",
+					Members:              nil,   // no members returned
+					MembersAuthoritative: false, // sparse data
+				}, nil
+			},
+		})
+		if err := settings.SetPriority(context.Background(), "members", []ProviderName{NameMusicBrainz}); err != nil {
+			t.Fatalf("SetPriority: %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		orch := NewOrchestrator(registry, settings, logger)
+		result, err := orch.FetchMetadata(context.Background(), "mb-sparse", "Sparse Band", nil)
+		if err != nil {
+			t.Fatalf("FetchMetadata: %v", err)
+		}
+
+		for _, f := range result.AttemptedFields {
+			if f == "members" {
+				t.Error("members must NOT be in AttemptedFields when provider returned sparse-empty (non-authoritative)")
+				break
+			}
+		}
+		if result.MembersAuthoritative {
+			t.Error("MembersAuthoritative must be false when provider is non-authoritative")
+		}
+	})
+
+	t.Run("authoritative_empty_marks_members_attempted", func(t *testing.T) {
+		// A provider that asserts an empty roster authoritatively (e.g. the
+		// artist was re-identified as a solo act) must add "members" to
+		// AttemptedFields and set MembersAuthoritative=true so applyMemberRefresh
+		// can clear stale rows.
+		registry, settings := setupOrchestratorTest(t)
+		registry.Register(&mockProvider{
+			name: NameMusicBrainz,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				return &ArtistMetadata{
+					Name:                 "Solo Artist",
+					Members:              nil,  // empty roster
+					MembersAuthoritative: true, // this empty is authoritative
+				}, nil
+			},
+		})
+		if err := settings.SetPriority(context.Background(), "members", []ProviderName{NameMusicBrainz}); err != nil {
+			t.Fatalf("SetPriority: %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		orch := NewOrchestrator(registry, settings, logger)
+		result, err := orch.FetchMetadata(context.Background(), "mb-solo", "Solo Artist", nil)
+		if err != nil {
+			t.Fatalf("FetchMetadata: %v", err)
+		}
+
+		found := false
+		for _, f := range result.AttemptedFields {
+			if f == "members" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("members must be in AttemptedFields when provider asserted authoritative-empty")
+		}
+		if !result.MembersAuthoritative {
+			t.Error("MembersAuthoritative must be true when provider asserted authoritative-empty")
+		}
+	})
+
+	t.Run("non_empty_members_marks_attempted", func(t *testing.T) {
+		// A provider returning a real member list always marks the field as
+		// attempted regardless of the authoritative flag.
+		registry, settings := setupOrchestratorTest(t)
+		registry.Register(&mockProvider{
+			name: NameMusicBrainz,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				return &ArtistMetadata{
+					Name:    "Real Band",
+					Members: []MemberInfo{{Name: "Alice"}, {Name: "Bob"}},
+				}, nil
+			},
+		})
+		if err := settings.SetPriority(context.Background(), "members", []ProviderName{NameMusicBrainz}); err != nil {
+			t.Fatalf("SetPriority: %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		orch := NewOrchestrator(registry, settings, logger)
+		result, err := orch.FetchMetadata(context.Background(), "mb-band", "Real Band", nil)
+		if err != nil {
+			t.Fatalf("FetchMetadata: %v", err)
+		}
+
+		found := false
+		for _, f := range result.AttemptedFields {
+			if f == "members" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("members must be in AttemptedFields when provider returned real member data")
+		}
+		if len(result.Metadata.Members) != 2 {
+			t.Errorf("expected 2 members, got %d", len(result.Metadata.Members))
+		}
+	})
+
+	t.Run("provider_error_does_not_mark_members_attempted", func(t *testing.T) {
+		// Finding 6: a provider that returns a hard error (timeout, 5xx, etc.)
+		// must NOT mark "members" as attempted and must leave MembersAuthoritative
+		// false. The orchestrator skips the entire provider on pr.err != nil
+		// before reaching the members guard, so the field should not appear in
+		// AttemptedFields. Existing member rows must be preserved.
+		registry, settings := setupOrchestratorTest(t)
+		registry.Register(&mockProvider{
+			name: NameMusicBrainz,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				// Simulate a transient provider failure (timeout, 5xx, etc.).
+				return nil, fmt.Errorf("connection refused")
+			},
+		})
+		if err := settings.SetPriority(context.Background(), "members", []ProviderName{NameMusicBrainz}); err != nil {
+			t.Fatalf("SetPriority: %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		orch := NewOrchestrator(registry, settings, logger)
+		result, err := orch.FetchMetadata(context.Background(), "mb-error", "Error Artist", nil)
+		if err != nil {
+			t.Fatalf("FetchMetadata: %v", err)
+		}
+
+		// "members" must NOT appear in AttemptedFields after a provider error.
+		for _, f := range result.AttemptedFields {
+			if f == "members" {
+				t.Errorf("members must NOT be in AttemptedFields when provider errored, got %v", result.AttemptedFields)
+				break
+			}
+		}
+		// MembersAuthoritative must be false (provider did not contribute).
+		if result.MembersAuthoritative {
+			t.Error("MembersAuthoritative must be false when provider returned an error")
+		}
+	})
+}

@@ -432,3 +432,164 @@ func TestCleanYearsActive(t *testing.T) {
 		})
 	}
 }
+
+// --- #1069: birth_date / death_date extraction ---
+
+// TestParseInfobox_BornAndDied verifies that parseInfobox extracts birth_date
+// and death_date from an infobox and stores them in the Born and Died fields.
+// This data is used by GetArtist to enable years_active synthesis for deceased
+// solo artists whose infobox lacks a literal years_active key.
+func TestParseInfobox_BornAndDied(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		wikitext string
+		wantBorn string
+		wantDied string
+		comment  string
+	}{
+		{
+			// A deceased solo artist with a birth date template and a death date
+			// template. Both years should be extracted.
+			name: "born_and_died_templates",
+			wikitext: `{{Infobox musical artist
+| name        = Freddie Mercury
+| birth_date  = {{birth date|1946|9|5}}
+| death_date  = {{death date and age|1991|11|24|1946|9|5}}
+}}`,
+			wantBorn: "1946",
+			wantDied: "1991",
+			comment:  "birth_date + death_date templates must yield 4-digit years",
+		},
+		{
+			// A living solo artist with only a birth date. Died must be empty
+			// so synthesis is skipped (conservative per #1069 acceptance criterion 3).
+			name: "born_only_no_died",
+			wikitext: `{{Infobox musical artist
+| name       = Weird Al Yankovic
+| birth_date = {{birth date and age|1959|10|23}}
+}}`,
+			wantBorn: "1959",
+			wantDied: "",
+			comment:  "birth_date without death_date must leave Died empty",
+		},
+		{
+			// A band infobox with no birth_date/death_date keys at all.
+			// Both fields must be empty.
+			name: "no_birth_death_keys",
+			wikitext: `{{Infobox musical artist
+| name         = Radiohead
+| origin       = Abingdon, Oxfordshire, England
+| years_active = 1985-present
+| members      = {{flatlist|* Thom Yorke}}
+}}`,
+			wantBorn: "",
+			wantDied: "",
+			comment:  "band infobox without birth/death keys must leave both empty",
+		},
+		{
+			// Plain year strings without templates should also work.
+			name: "plain_year_strings",
+			wikitext: `{{Infobox person
+| name       = Test Person
+| birth_date = 1942
+| death_date = 2018
+}}`,
+			wantBorn: "1942",
+			wantDied: "2018",
+			comment:  "plain YYYY birth/death strings must parse correctly",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture for parallel sub-test
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			data := parseInfobox(tc.wikitext)
+			if tc.wantBorn == "" && tc.wantDied == "" {
+				// When both fields are expected empty, nil is also acceptable
+				// if the infobox has no other extractable data.
+				if data != nil {
+					if data.Born != "" {
+						t.Errorf("%s: Born = %q, want empty", tc.comment, data.Born)
+					}
+					if data.Died != "" {
+						t.Errorf("%s: Died = %q, want empty", tc.comment, data.Died)
+					}
+				}
+				return
+			}
+			if data == nil {
+				t.Fatalf("%s: parseInfobox returned nil", tc.comment)
+			}
+			if data.Born != tc.wantBorn {
+				t.Errorf("%s: Born = %q, want %q", tc.comment, data.Born, tc.wantBorn)
+			}
+			if data.Died != tc.wantDied {
+				t.Errorf("%s: Died = %q, want %q", tc.comment, data.Died, tc.wantDied)
+			}
+		})
+	}
+}
+
+// TestExtractYear verifies the extractYear helper that finds the first 4-digit
+// year in a raw Wikipedia infobox date value.
+func TestExtractYear(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		input   string
+		want    string
+		comment string
+	}{
+		{
+			name:    "birth_date_template",
+			input:   "{{birth date|1959|10|23}}",
+			want:    "1959",
+			comment: "{{birth date|Y|M|D}} must yield first 4-digit year",
+		},
+		{
+			name:    "death_date_and_age_template",
+			input:   "{{death date and age|1991|11|24|1946|9|5}}",
+			want:    "1991",
+			comment: "{{death date and age|Y|M|D|...}} must yield first year (death year)",
+		},
+		{
+			name:    "plain_year",
+			input:   "1942",
+			want:    "1942",
+			comment: "plain 4-digit year string must be returned unchanged",
+		},
+		{
+			name:    "year_with_month_day",
+			input:   "1942-08-01",
+			want:    "1942",
+			comment: "YYYY-MM-DD must yield YYYY portion",
+		},
+		{
+			name:    "empty_string",
+			input:   "",
+			want:    "",
+			comment: "empty string must return empty",
+		},
+		{
+			name:    "no_year_in_string",
+			input:   "unknown",
+			want:    "",
+			comment: "string with no 4-digit sequence must return empty",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture for parallel sub-test
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractYear(tc.input)
+			if got != tc.want {
+				t.Errorf("%s: extractYear(%q) = %q, want %q", tc.comment, tc.input, got, tc.want)
+			}
+		})
+	}
+}
