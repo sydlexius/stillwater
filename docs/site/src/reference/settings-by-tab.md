@@ -175,6 +175,12 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-connection-badge }
 - **Lock NFOs** -- When on, Stillwater stamps a lockdata flag into every NFO it writes for this library. This tells Emby and Jellyfin to refuse metadata refreshes for those artists so Stillwater's curated values are not overwritten by the platform's own scrapers. Off by default. Artists whose NFO already contains a lockdata flag (set by Stillwater or another tool) are automatically marked as locked at the artist level.
 {: #settings-libraries-libraries-lock-nfo-label }
+- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
+{: #settings-libraries-libraries-fs-mode-title }
+- **Re-sync Artists**
+{: #settings-libraries-libraries-resync }
+- **Scan Library**
+{: #settings-libraries-libraries-scan }
 - **Add Library**
 {: #settings-libraries-libraries-add }
 - **Library Name**
@@ -187,8 +193,6 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-type-regular }
 - **Classical** -- Treat the library as a classical collection. Stillwater applies composer-aware naming and folder conventions during scans and writes.
 {: #settings-libraries-libraries-type-classical }
-- **Filesystem monitoring mode** -- How Stillwater detects new or changed files in this library. Watching subscribes to native filesystem events; polling re-scans on a fixed interval.
-{: #settings-libraries-libraries-fs-mode-title }
 - **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
 {: #settings-libraries-libraries-fs-off }
 - **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.
@@ -199,10 +203,6 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-fs-both }
 - **Poll interval**
 {: #settings-libraries-libraries-poll-interval-title }
-- **Re-sync Artists**
-{: #settings-libraries-libraries-resync }
-- **Scan Library**
-{: #settings-libraries-libraries-scan }
 
 ## Automation  {#tab-automation}
 
