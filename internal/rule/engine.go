@@ -149,6 +149,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 			RuleArtistIDMismatch:      checkArtistIDMismatch,
 			RuleDirectoryNameMismatch: checkDirectoryNameMismatch,
 			RuleMetadataQuality:       checkMetadataQuality,
+			RuleOriginMissing:         checkOriginMissing,
 		},
 	}
 	// Register checkers that need the Engine's FSCache for cached filesystem

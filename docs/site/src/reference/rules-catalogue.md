@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 22 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 23 rules verified. -->
 
 # Rules catalogue
 
-Stillwater ships with 22 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 23 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
@@ -22,6 +22,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Directory name matches artist](#directory-name-matches-artist) | Metadata | Enabled, manual | Sometimes |
 | [Metadata quality](#metadata-quality) | Metadata | Enabled, manual | Yes |
 | [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Sometimes |
+| [Origin is populated](#origin-is-populated) | Metadata | Disabled, manual | Yes |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
@@ -218,6 +219,31 @@ After:  Name = "Shiina Ringo", SortName = "Ringo, Shiina"
 **Caveats:**
 
 - Only resolves when MusicBrainz returns a locale-specific alias; no change is made if no alias matches.
+
+---
+
+## Origin is populated
+
+**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** info
+
+Flags artists with an empty origin field. Violations are fixed by fetching the origin (city, region, or country) from the configured provider priority list. Auto mode applies the highest-priority non-empty result; manual mode surfaces the violation so you can pick a provider value or edit it.
+
+The origin field records where an artist or group is from, displayed on artist detail pages and used for grouping and discovery. The rule fires when the origin field is empty. Different providers report origin at different granularity: MusicBrainz and Wikidata return a country, while Wikipedia and TheAudioDB often return a city or region. In auto mode the first non-empty value from the priority order is applied; in manual mode the violation is surfaced so you can compare provider values or enter your own.
+
+**When this fires:**
+
+- An artist scanned from disk whose source NFO never carried an origin element.
+- An artist identified by name only, with no metadata fetch run for the origin field yet.
+- An artist imported from a media server API that does not expose an origin field.
+
+**What the fix does:** Fetches the artist's origin from the configured provider priority list (Wikipedia, TheAudioDB, Wikidata, MusicBrainz) and saves the first non-empty value.
+
+```
+Before: origin is empty
+After:  origin = "Mandeville, Louisiana", fetched from a provider
+```
+
+**Configurable:** Severity only.
 
 ---
 
