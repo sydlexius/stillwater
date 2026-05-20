@@ -969,7 +969,7 @@ func TestMapArtist_AlsoPerformsAs_DoesNotAddSelfName(t *testing.T) {
 // --- deduplicateMembers unit tests ---
 
 func TestDeduplicateMembers_EmptySlice(t *testing.T) {
-	result := deduplicateMembers(nil, nil)
+	result := deduplicateMembers(nil)
 	if result != nil {
 		t.Errorf("expected nil for nil input, got %v", result)
 	}
@@ -977,7 +977,7 @@ func TestDeduplicateMembers_EmptySlice(t *testing.T) {
 
 func TestDeduplicateMembers_SingleMember(t *testing.T) {
 	members := []provider.MemberInfo{{Name: "Solo", MBID: "m1"}}
-	result := deduplicateMembers(members, nil)
+	result := deduplicateMembers(members)
 	if len(result) != 1 || result[0].Name != "Solo" {
 		t.Errorf("expected single member unchanged, got %v", result)
 	}
@@ -989,7 +989,7 @@ func TestDeduplicateMembers_NoMBID(t *testing.T) {
 		{Name: "Unknown A"},
 		{Name: "Unknown B"},
 	}
-	result := deduplicateMembers(members, nil)
+	result := deduplicateMembers(members)
 	if len(result) != 2 {
 		t.Errorf("expected 2 members without MBIDs kept separate, got %d", len(result))
 	}
@@ -1013,7 +1013,7 @@ func TestDeduplicateMembers_NoMBIDIdenticalNameKeptSeparate(t *testing.T) {
 		},
 	}
 
-	result := deduplicateMembers(members, nil)
+	result := deduplicateMembers(members)
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 separate members, got %d", len(result))
@@ -1026,9 +1026,10 @@ func TestDeduplicateMembers_NoMBIDIdenticalNameKeptSeparate(t *testing.T) {
 	}
 }
 
-func TestDeduplicateMembers_LocalePreference(t *testing.T) {
+func TestDeduplicateMembers_DuplicateMBIDKeepsFirstName(t *testing.T) {
 	// Two entries for the same member (same MBID) with different name variants.
-	// When language preferences favor "ja", the Japanese name should be selected.
+	// MusicBrainz relation stubs carry no alias/locale data, so locale-aware
+	// selection is not possible. The first canonical name seen is kept (#1020).
 	members := []provider.MemberInfo{
 		{
 			Name:       "Taro Yamada",
@@ -1037,50 +1038,24 @@ func TestDeduplicateMembers_LocalePreference(t *testing.T) {
 			IsActive:   true,
 		},
 		{
-			Name:       "ja",
+			Name:       "Alternative Name",
 			MBID:       "aaa-bbb-ccc",
 			DateJoined: "2005",
 			IsActive:   false,
 		},
 	}
 
-	// With "ja" preference, the name "ja" scores 0 (exact match at index 0)
-	// while "Taro Yamada" scores -1 (no match). So "ja" wins.
-	langPrefs := []string{"ja"}
-	result := deduplicateMembers(members, langPrefs)
+	result := deduplicateMembers(members)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 member, got %d", len(result))
 	}
-	if result[0].Name != "ja" {
-		t.Errorf("expected locale-preferred name %q, got %q", "ja", result[0].Name)
+	if result[0].Name != "Taro Yamada" {
+		t.Errorf("expected first canonical name %q to be kept, got %q", "Taro Yamada", result[0].Name)
 	}
 	// Verify merge still works: should be active since first entry was active.
 	if !result[0].IsActive {
 		t.Error("expected merged member to be active")
-	}
-}
-
-func TestDeduplicateMembers_LocalePreference_NoPrefs(t *testing.T) {
-	// Without language preferences, the first name should be retained.
-	members := []provider.MemberInfo{
-		{
-			Name: "First Name",
-			MBID: "aaa-bbb-ccc",
-		},
-		{
-			Name: "Second Name",
-			MBID: "aaa-bbb-ccc",
-		},
-	}
-
-	result := deduplicateMembers(members, nil)
-
-	if len(result) != 1 {
-		t.Fatalf("expected 1 member, got %d", len(result))
-	}
-	if result[0].Name != "First Name" {
-		t.Errorf("expected first name to be retained, got %q", result[0].Name)
 	}
 }
 
