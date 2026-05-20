@@ -338,7 +338,7 @@ func TestLayoutI18nJSON(t *testing.T) {
 		"grouped_aria", "repeated_aria", "dismiss_aria", "undo",
 		"undo_fix_aria", "close_aria", "undoing", "http_status",
 		"fix_reverted", "undo_failed", "request_failed",
-		"request_timeout", "confirm",
+		"request_timeout", "unknown", "confirm",
 	}
 	for _, k := range wantKeys {
 		v, ok := m[k]
@@ -379,5 +379,15 @@ func TestRoundTripOverlapHTML(t *testing.T) {
 	}
 	if !strings.Contains(escaped, "&lt;script&gt;") {
 		t.Errorf("roundTripOverlapHTML output missing the escaped script tag: %s", escaped)
+	}
+
+	// Missing-key fallback: a context with no translator makes t() return the
+	// raw key. The formatter must still render the names, not %!(EXTRA ...).
+	fallback := roundTripOverlapHTML(context.Background(), "Emby", "Jellyfin", "/p", "c", "c")
+	if strings.Contains(fallback, "%!") {
+		t.Errorf("roundTripOverlapHTML leaked a format error on a missing key: %s", fallback)
+	}
+	if !strings.Contains(fallback, "Emby") || !strings.Contains(fallback, "Jellyfin") {
+		t.Errorf("roundTripOverlapHTML fallback dropped the connection names: %s", fallback)
 	}
 }

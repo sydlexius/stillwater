@@ -444,8 +444,20 @@ templ Layout(title string, assets AssetPaths) {
 								credentials: 'same-origin'
 							}).then(function(resp) {
 								if (!resp.ok) {
-									return resp.json().then(function(d) {
-										throw new Error(d.error || i18n.http_status.replace('%s', resp.status));
+									// Read the body as text first: a proxy or gateway may
+									// return HTML or an empty body on error, and resp.json()
+									// would then reject with a parser error that leaks into
+									// the toast. Try JSON, fall back to a localized message.
+									return resp.text().then(function(body) {
+										var msg = '';
+										if (body) {
+											try {
+												var d = JSON.parse(body);
+												if (d && typeof d.error === 'string' && d.error) msg = d.error;
+											} catch (e) {}
+										}
+										if (!msg) msg = i18n.http_status.replace('%s', resp.status);
+										throw new Error(msg);
 									});
 								}
 								return resp.json();
@@ -461,7 +473,7 @@ templ Layout(title string, assets AssetPaths) {
 								}
 							}).catch(function(err) {
 								dismissNow();
-								if (typeof showToast === 'function') showToast(i18n.undo_failed.replace('%s', err.message || 'Unknown error'));
+								if (typeof showToast === 'function') showToast(i18n.undo_failed.replace('%s', err.message || i18n.unknown));
 							});
 						};
 

@@ -12,8 +12,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
-// onboardingConflictRequest creates a POST request with an English i18n
-// translator in context. The handler does not consult the user ID, so no
+// onboardingConflictRequest creates a plain POST request for the onboarding
+// conflict-step endpoint. The handler does not consult the user ID, so no
 // auth context is needed. POST is required by the route registration.
 func onboardingConflictRequest(target string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, target, nil)

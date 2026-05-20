@@ -237,6 +237,7 @@ func layoutI18nJSON(ctx context.Context) string {
 		"undo_failed":     t(ctx, "notifications.undo_failed"),
 		"request_failed":  t(ctx, "errors.request_failed"),
 		"request_timeout": t(ctx, "errors.request_timeout"),
+		"unknown":         t(ctx, "errors.unknown"),
 		"confirm":         t(ctx, "common.confirm"),
 	}
 	b, err := json.Marshal(m)
@@ -695,5 +696,11 @@ func roundTripOverlapHTML(ctx context.Context, aName, bName, path, nameColorClas
 	codePath := fmt.Sprintf(`<code class="%s px-1 rounded">%s</code>`, pathColorClass, safePath)
 
 	tpl := t(ctx, "banner.round_trip.overlap")
+	if tpl == "banner.round_trip.overlap" {
+		// Missing-key fallback: t() returns the raw key when the active
+		// locale lacks the entry. Without this guard fmt.Sprintf would
+		// emit %!(EXTRA ...) noise. Mirrors the guard in tf().
+		tpl = "%s and %s share %s"
+	}
 	return fmt.Sprintf(tpl, spanA, spanB, codePath)
 }

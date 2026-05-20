@@ -548,6 +548,7 @@
   "errors.http_status": "HTTP %s",
   "errors.request_failed": "Request failed: %s",
   "errors.request_timeout": "Request timed out. Please try again.",
+  "errors.unknown": "Unknown error",
   "field.audiodb_id": "AudioDB ID",
   "field.backdrop": "Backdrop",
   "field.banner": "Banner",
