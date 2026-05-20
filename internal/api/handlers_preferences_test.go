@@ -66,11 +66,12 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefMetadataNameRomanization, "true", got)
 	}
 
-	// Verify the wire contract returns exactly 16 keys.
-	// Update this count when adding new preference keys to preferenceDefaults
-	// (or to the non-defaults set: page_size, bg_opacity, metadata_languages).
-	if len(prefs) != 16 {
-		t.Errorf("expected 16 keys, got %d", len(prefs))
+	// Verify the wire contract returns every default key plus the three
+	// non-default keys (page_size, bg_opacity, metadata_languages). Derived
+	// from preferenceDefaults so adding a new default key does not break this.
+	expected := len(preferenceDefaults) + 3
+	if len(prefs) != expected {
+		t.Errorf("expected %d keys, got %d", expected, len(prefs))
 	}
 }
 

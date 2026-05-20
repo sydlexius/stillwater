@@ -4624,10 +4624,11 @@ templ romanizationFallbackScript() {
 	<script>
 		(function () {
 			var romanizationSeq = 0;
-			var lastConfirmedRomanization = (function () {
-				var el = document.getElementById('pref-romanization-fallback-toggle');
-				return el ? (el.getAttribute('aria-checked') || 'true') : 'true';
-			}());
+			// Initialized lazily on the first click from the clicked control.
+			// The script is injected ahead of the toggle in the DOM, so reading
+			// the button at parse time would always miss it.
+			var lastConfirmedRomanization = null;
+			var romanizationPending = false;
 
 			function applyToggleState(btn, knob, isOn) {
 				btn.setAttribute('aria-checked', String(isOn));
@@ -4645,11 +4646,17 @@ templ romanizationFallbackScript() {
 			}
 
 			window.swToggleRomanizationFallback = function (btn) {
+				// Serialize: ignore clicks while a save is in flight.
+				if (romanizationPending) return;
 				var isOn = btn.getAttribute('aria-checked') === 'true';
+				if (lastConfirmedRomanization === null) {
+					lastConfirmedRomanization = String(isOn);
+				}
 				var newVal = !isOn;
 				var valStr = String(newVal);
 				var knob = btn.querySelector('span');
 				var seq = ++romanizationSeq;
+				romanizationPending = true;
 				var toastSaved = btn.getAttribute('data-toast-saved') || 'Romanization fallback preference saved';
 				var toastFailed = btn.getAttribute('data-toast-failed') || 'Failed to save romanization fallback preference';
 
@@ -4662,9 +4669,11 @@ templ romanizationFallbackScript() {
 
 				if (window.swPreferences) {
 					window.swPreferences.set('metadata_name_romanization_fallback', valStr).then(function (saved) {
+						if (saved === 'true' || saved === 'false') {
+							lastConfirmedRomanization = saved;
+						}
 						if (seq !== romanizationSeq) return;
 						if (saved === valStr) {
-							lastConfirmedRomanization = saved;
 							if (typeof window.showSuccessToast === 'function') {
 								showSuccessToast(toastSaved);
 							}
@@ -4680,7 +4689,15 @@ templ romanizationFallbackScript() {
 						if (typeof window.showToast === 'function') {
 							showToast(toastFailed);
 						}
+					}).finally(function () {
+						if (seq === romanizationSeq) romanizationPending = false;
 					});
+				} else {
+					rollback();
+					romanizationPending = false;
+					if (typeof window.showToast === 'function') {
+						showToast(toastFailed);
+					}
 				}
 			};
 		}());
