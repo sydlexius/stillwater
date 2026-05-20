@@ -71,13 +71,9 @@ jobs:
           cache: npm
           cache-dependency-path: .github/bruno/package-lock.json
 
-      - name: Install templ
-        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
-
       - name: Generate templ
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
-        run: templ generate
+        run: go tool templ generate
 
       - name: Install Tailwind CSS standalone binary
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'

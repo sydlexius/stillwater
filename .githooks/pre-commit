@@ -107,12 +107,8 @@ fi
 # --------------------------------------------------------------------------
 STAGED_TEMPL=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' || true)
 if [ -n "$STAGED_TEMPL" ]; then
-    if ! command -v templ &>/dev/null; then
-        # Fallback: pin to the version in go.mod to avoid supply-chain risk
-        TEMPL_CMD="go run github.com/a-h/templ/cmd/templ@v0.3.977"
-    else
-        TEMPL_CMD="templ"
-    fi
+    # Always use the version pinned in go.mod via the tool directive.
+    TEMPL_CMD="go tool templ"
 
     # Save current state of generated files, regenerate, compare
     TEMPL_GEN_FILES=$(git diff --cached --name-only -- '*_templ.go' || true)
@@ -129,7 +125,7 @@ if [ -n "$STAGED_TEMPL" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} templ: generated files are out of date:"
         echo "$DIRTY_TEMPL" | sed 's/^/  /'
         echo ""
-        echo "Run: templ generate && git add <generated files>"
+        echo "Run: go tool templ generate && git add <generated files>"
         exit 1
     fi
     pass "templ generate"
