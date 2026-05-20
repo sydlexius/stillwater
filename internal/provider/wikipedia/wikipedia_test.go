@@ -1043,3 +1043,149 @@ func isErrNotFound(err error, target **provider.ErrNotFound) bool {
 func isErrUnavailable(err error, target **provider.ErrProviderUnavailable) bool {
 	return errors.As(err, target)
 }
+
+// --- #1069: Wikipedia infobox birth/death date mapping and synthesis ---
+
+// TestGetArtist_DeceasedIndividual_BornDiedMapped verifies that GetArtist maps
+// infobox.Born and infobox.Died to ArtistMetadata.Born and .Died, sets
+// meta.Type="solo" for an individual infobox (birth/death present, no members),
+// and that the synthesized years_active would be produced correctly by
+// SynthesizeYearsActive for a deceased individual. This is the core fix for
+// #1069: a Wikipedia entry for a deceased solo artist whose infobox has
+// birth_date + death_date (but no years_active key) now produces a candidate
+// in the per-field fetch path.
+func TestGetArtist_DeceasedIndividual_BornDiedMapped(t *testing.T) {
+	t.Parallel()
+
+	// Infobox for a deceased solo artist with birth_date and death_date but
+	// no years_active key -- the scenario from #1069.
+	wikitext := `{{Infobox musical artist
+| name       = Freddie Mercury
+| birth_date = {{birth date|1946|9|5}}
+| death_date = {{death date and age|1991|11|24|1946|9|5}}
+| genres     = [[Rock music|Rock]]
+}}`
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Freddie_Mercury")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractAndWikitextServer(t, "Freddie Mercury",
+		"Freddie Mercury was a British singer and songwriter.", wikitext)
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "0383dadf-2a4e-4d10-a46a-e9e041da8eb3")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Born and Died must be populated from the infobox date templates.
+	if meta.Born != "1946" {
+		t.Errorf("Born = %q, want %q", meta.Born, "1946")
+	}
+	if meta.Died != "1991" {
+		t.Errorf("Died = %q, want %q", meta.Died, "1991")
+	}
+
+	// Type must be "solo" (individual with birth/death, no members in infobox).
+	if meta.Type != "solo" {
+		t.Errorf("Type = %q, want %q", meta.Type, "solo")
+	}
+
+	// With Born="1946" and Died="1991", SynthesizeYearsActive must produce
+	// "1946-1991". This is the synthesis that fires in the per-field fetch path.
+	got, ok := provider.SynthesizeYearsActive(meta)
+	if !ok {
+		t.Error("SynthesizeYearsActive returned ok=false; expected synthesis to succeed for deceased individual")
+	}
+	if got != "1946-1991" {
+		t.Errorf("SynthesizeYearsActive = %q, want %q", got, "1946-1991")
+	}
+}
+
+// TestGetArtist_LivingIndividual_NoSynthesis verifies that a living solo
+// artist (birth_date present but no death_date) does NOT produce a synthesized
+// years_active. This enforces #1069 acceptance criterion 3: synthesis for
+// individuals requires both born and died to be known.
+func TestGetArtist_LivingIndividual_NoSynthesis(t *testing.T) {
+	t.Parallel()
+
+	wikitext := `{{Infobox musical artist
+| name       = Weird Al Yankovic
+| birth_date = {{birth date and age|1959|10|23}}
+| genres     = [[Comedy music|Comedy]]
+}}`
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Weird_Al_Yankovic")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractAndWikitextServer(t, "Weird Al Yankovic",
+		"Weird Al Yankovic is an American singer-songwriter.", wikitext)
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "1bccf464-5083-4c30-ad0d-057448d11e49")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Born must be populated; Died must be empty (living artist).
+	if meta.Born != "1959" {
+		t.Errorf("Born = %q, want %q", meta.Born, "1959")
+	}
+	if meta.Died != "" {
+		t.Errorf("Died = %q, want empty for living artist", meta.Died)
+	}
+
+	// Type must be "solo".
+	if meta.Type != "solo" {
+		t.Errorf("Type = %q, want %q", meta.Type, "solo")
+	}
+
+	// Synthesis must NOT produce a years_active for a living individual --
+	// we cannot know whether they are still active without a death date.
+	_, ok := provider.SynthesizeYearsActive(meta)
+	if ok {
+		t.Error("SynthesizeYearsActive must return ok=false for living individual (born only, no died)")
+	}
+}
+
+// TestGetArtist_Band_TypeSetToGroup verifies that a band infobox (with members)
+// results in meta.Type="group". This ensures the synthesis path is not triggered
+// for groups (they rely on Formed/Disbanded, not Born/Died).
+func TestGetArtist_Band_TypeSetToGroup(t *testing.T) {
+	t.Parallel()
+
+	wikitext := `{{Infobox musical artist
+| name         = Test Band
+| origin       = London, England
+| years_active = 1985-present
+| members      = {{flatlist|* Alice * Bob}}
+}}`
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Test_Band")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractAndWikitextServer(t, "Test Band",
+		"Test Band is an English rock band.", wikitext)
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "some-band-mbid")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// A band infobox (members present) must set Type="group".
+	if meta.Type != "group" {
+		t.Errorf("Type = %q, want %q", meta.Type, "group")
+	}
+
+	// YearsActive must come directly from the infobox (no synthesis needed).
+	if meta.YearsActive != "1985-present" {
+		t.Errorf("YearsActive = %q, want %q", meta.YearsActive, "1985-present")
+	}
+}

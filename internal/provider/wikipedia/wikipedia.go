@@ -274,6 +274,36 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		meta.Genres = infobox.Genres
 	}
 
+	// Map birth/death dates so the years_active synthesis helper can derive a
+	// "YYYY-YYYY" range for deceased solo artists whose infobox lacks a
+	// literal years_active key. This is the primary fix for #1069: a Wikipedia
+	// individual with birth_date + death_date will produce a synthesized
+	// years_active in the per-field fetch path via SynthesizeYearsActive.
+	if infobox.Born != "" {
+		meta.Born = infobox.Born
+	}
+	if infobox.Died != "" {
+		meta.Died = infobox.Died
+	}
+
+	// Set meta.Type so SynthesizeYearsActive chooses the correct synthesis
+	// path (group vs individual). The vocabulary mirrors the normalized values
+	// produced by MusicBrainz's mapArtistType:
+	//   "group"  -> uses Formed/Disbanded
+	//   "solo"   -> uses Born/Died (individual)
+	//
+	// Heuristic: if the infobox has members (current or past), it describes a
+	// group; if it has birth/death dates (but no members), it describes a solo
+	// artist. When neither signal is present, leave Type empty so synthesis
+	// does not fire and produces no false positive.
+	hasMembers := len(infobox.Members) > 0 || len(infobox.PastMembers) > 0
+	hasBirthDeath := infobox.Born != "" || infobox.Died != ""
+	if hasMembers {
+		meta.Type = "group"
+	} else if hasBirthDeath {
+		meta.Type = "solo"
+	}
+
 	// Combine current and past members into the Members slice.
 	for _, memberName := range infobox.Members {
 		meta.Members = append(meta.Members, provider.MemberInfo{

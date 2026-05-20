@@ -1876,3 +1876,117 @@ func TestLocalizeMembers_PreservesNonMBIDMembers(t *testing.T) {
 		t.Errorf("expected user-added member name preserved, got %q", members[0].Name)
 	}
 }
+
+// --- #1038: MembersAuthoritative wiring ---
+
+// TestMapArtist_MembersAuthoritative verifies that mapArtist sets
+// MembersAuthoritative only for confirmed individual artist types (Person,
+// Character) and never for group types or unknown/empty types.
+//
+// Rationale: an individual artist cannot have band members by definition, so
+// an empty member list is authoritatively complete. A real band (Type="Group")
+// may have sparse relation data in MusicBrainz, so an empty list there means
+// "data unavailable", not "no members".
+func TestMapArtist_MembersAuthoritative(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		mbType   string
+		wantTrue bool
+		comment  string
+	}{
+		{
+			// Person type: individual artist, no members possible by definition.
+			// An empty member list is complete and authoritative.
+			name:     "person_type_is_authoritative",
+			mbType:   "Person",
+			wantTrue: true,
+			comment:  "Person type must set MembersAuthoritative=true",
+		},
+		{
+			// Character type: treated identically to Person for this purpose
+			// (e.g. a fictional artist identity). Empty roster is authoritative.
+			name:     "character_type_is_authoritative",
+			mbType:   "Character",
+			wantTrue: true,
+			comment:  "Character type must set MembersAuthoritative=true",
+		},
+		{
+			// Group type: real bands have members, but MusicBrainz relation data
+			// is often sparse. An empty list for a Group means data is unavailable,
+			// not that the band has no members.
+			name:     "group_type_is_not_authoritative",
+			mbType:   "Group",
+			wantTrue: false,
+			comment:  "Group type must NOT set MembersAuthoritative",
+		},
+		{
+			// Orchestra: same rationale as Group.
+			name:     "orchestra_type_is_not_authoritative",
+			mbType:   "Orchestra",
+			wantTrue: false,
+			comment:  "Orchestra type must NOT set MembersAuthoritative",
+		},
+		{
+			// Choir: same rationale as Group.
+			name:     "choir_type_is_not_authoritative",
+			mbType:   "Choir",
+			wantTrue: false,
+			comment:  "Choir type must NOT set MembersAuthoritative",
+		},
+		{
+			// Empty type: unknown, cannot assert completeness.
+			name:     "empty_type_is_not_authoritative",
+			mbType:   "",
+			wantTrue: false,
+			comment:  "Empty/unknown type must NOT set MembersAuthoritative",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture for parallel sub-test
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			a := newTestAdapter(t, "http://localhost:0")
+			mb := &MBArtist{
+				ID:   "test-mbid",
+				Name: "Test Artist",
+				Type: tc.mbType,
+			}
+			meta := a.mapArtist(context.Background(), mb)
+			if meta.MembersAuthoritative != tc.wantTrue {
+				t.Errorf("%s: MembersAuthoritative = %v, want %v", tc.comment, meta.MembersAuthoritative, tc.wantTrue)
+			}
+		})
+	}
+}
+
+// TestMapArtist_YearsActive_PersonBornAndDied verifies the synthesis path for a
+// Person-type artist with both lifespan begin and end dates. This is Finding 7:
+// an individual with a closed lifespan should produce a "YYYY-YYYY" years_active.
+// The test also confirms MembersAuthoritative is set for the Person type.
+func TestMapArtist_YearsActive_PersonBornAndDied(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t, "http://localhost:0")
+	mb := &MBArtist{
+		ID:   "person-born-died",
+		Name: "Deceased Solo Artist",
+		Type: "Person",
+		LifeSpan: MBLifeSpan{
+			Begin: "1942-08-01",
+			End:   "2018-03-14",
+			Ended: true,
+		},
+	}
+	meta := a.mapArtist(context.Background(), mb)
+
+	// A Person with begin + end dates should synthesize "YYYY-YYYY".
+	if meta.YearsActive != "1942-2018" {
+		t.Errorf("YearsActive = %q, want %q", meta.YearsActive, "1942-2018")
+	}
+	// Person type must also set MembersAuthoritative.
+	if !meta.MembersAuthoritative {
+		t.Error("Person type must set MembersAuthoritative=true")
+	}
+}

@@ -437,6 +437,34 @@ func TestApplyMemberRefresh(t *testing.T) {
 		}
 	})
 
+	t.Run("provider_error_fetch_result_preserves_members", func(t *testing.T) {
+		// Finding 6: when a provider returns an error (timeout, 5xx), the
+		// orchestrator produces a FetchResult with no AttemptedFields and
+		// MembersAuthoritative=false. applyMemberRefresh must leave existing
+		// member rows untouched. This ensures a transient upstream outage cannot
+		// silently clear an artist's member roster.
+		a := addTestArtist(t, artistSvc, "Provider Error Band")
+		seedMembers(t, a.ID)
+
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Fatalf("expected 2 seeded members, got %d", n)
+		}
+
+		// Simulate the FetchResult produced when every provider errors out:
+		// AttemptedFields is empty (no field was attempted), MembersAuthoritative
+		// is false, and Metadata.Members is nil.
+		result := &provider.FetchResult{
+			Metadata:             &provider.ArtistMetadata{Members: nil},
+			AttemptedFields:      nil,   // provider never attempted the field
+			MembersAuthoritative: false, // provider did not assert completeness
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
+
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Errorf("expected 2 members preserved after provider-error fetch result, got %d", n)
+		}
+	})
+
 	t.Run("upsert_error_logged_not_propagated", func(t *testing.T) {
 		// Use an isolated router so closing its DB does not affect other subtests.
 		rIsolated, svcIsolated := testRouter(t)
@@ -456,6 +484,57 @@ func TestApplyMemberRefresh(t *testing.T) {
 		}
 		rIsolated.applyMemberRefresh(context.Background(), a.ID, result, nil)
 		// No assertions beyond "did not panic" -- error is swallowed by design.
+	})
+
+	t.Run("authoritative_empty_clears_members", func(t *testing.T) {
+		// This is the core fix for #1038. When a provider asserts its empty
+		// member list is complete (MembersAuthoritative=true), applyMemberRefresh
+		// must clear existing rows rather than treating the empty result as
+		// incomplete data. The original guard (`len > 0`) blocked this path.
+		//
+		// Real-world scenario: a band entry is re-identified as a solo artist;
+		// the provider returns no members and marks the result authoritative so
+		// the stale band rows are removed.
+		a := addTestArtist(t, artistSvc, "Authoritative Empty Band")
+		seedMembers(t, a.ID)
+
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Fatalf("expected 2 seeded members, got %d", n)
+		}
+
+		// Provider attempted "members", returned empty list, BUT MembersAuthoritative=true.
+		// This must clear the stale rows.
+		result := &provider.FetchResult{
+			Metadata:             &provider.ArtistMetadata{Members: nil},
+			AttemptedFields:      []string{"members"},
+			MembersAuthoritative: true,
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
+
+		if n := countMembers(t, a.ID); n != 0 {
+			t.Errorf("expected 0 members after authoritative-empty clear, got %d", n)
+		}
+	})
+
+	t.Run("non_authoritative_empty_preserves_members", func(t *testing.T) {
+		// Complement of the above: an empty result WITHOUT MembersAuthoritative
+		// (sparse provider data) must leave existing rows untouched. This is
+		// the same assertion as members_attempted_empty_preserves but now
+		// explicitly verifies that MembersAuthoritative=false is the
+		// distinguishing signal, not just the absence of members.
+		a := addTestArtist(t, artistSvc, "Non-Authoritative Empty Band")
+		seedMembers(t, a.ID)
+
+		result := &provider.FetchResult{
+			Metadata:             &provider.ArtistMetadata{Members: nil},
+			AttemptedFields:      []string{"members"},
+			MembersAuthoritative: false, // sparse -- do not clear
+		}
+		r.applyMemberRefresh(context.Background(), a.ID, result, nil)
+
+		if n := countMembers(t, a.ID); n != 2 {
+			t.Errorf("expected 2 members preserved (non-authoritative empty), got %d", n)
+		}
 	})
 }
 

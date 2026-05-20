@@ -1221,3 +1221,76 @@ func TestApplyFieldValue_ImageFields(t *testing.T) {
 		})
 	}
 }
+
+// TestMembersFieldQueried covers the membersFieldQueried helper introduced
+// for #1038. The helper is the canonical gate that determines whether the
+// scraper executor marks "members" as attempted for a given provider result.
+// Finding 6: a nil-meta result (provider error) must NOT mark the field.
+func TestMembersFieldQueried(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name              string
+		pr                *providerResult // the provider result to test
+		wantQueried       bool            // expected return value
+		wantAuthoritative bool            // expected FetchResult.MembersAuthoritative after call
+		comment           string
+	}{
+		{
+			// Nil meta: provider returned an error (timeout, 5xx). The field must
+			// NOT be marked as queried (Finding 6) and MembersAuthoritative stays false.
+			name:              "nil_meta_not_queried",
+			pr:                &providerResult{meta: nil},
+			wantQueried:       false,
+			wantAuthoritative: false,
+			comment:           "nil meta (provider error) must return false",
+		},
+		{
+			// Sparse empty: provider returned metadata but no members and no
+			// authoritative flag. MusicBrainz sparse-relation data case.
+			name:              "sparse_empty_not_queried",
+			pr:                &providerResult{meta: &provider.ArtistMetadata{Members: nil, MembersAuthoritative: false}},
+			wantQueried:       false,
+			wantAuthoritative: false,
+			comment:           "sparse-empty (non-authoritative) must return false",
+		},
+		{
+			// Authoritative empty: provider asserted a complete empty roster.
+			// MembersAuthoritative must be propagated to the merged result and the
+			// field marked as queried so downstream can clear stale rows.
+			name:              "authoritative_empty_is_queried",
+			pr:                &providerResult{meta: &provider.ArtistMetadata{Members: nil, MembersAuthoritative: true}},
+			wantQueried:       true,
+			wantAuthoritative: true,
+			comment:           "authoritative-empty must return true and propagate flag",
+		},
+		{
+			// Non-empty members: real data always marks the field as queried.
+			name: "nonempty_members_is_queried",
+			pr: &providerResult{meta: &provider.ArtistMetadata{
+				Members: []provider.MemberInfo{{Name: "Alice"}},
+			}},
+			wantQueried:       true,
+			wantAuthoritative: false,
+			comment:           "non-empty member list must return true",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc // capture for parallel sub-test
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := &provider.FetchResult{
+				Metadata: &provider.ArtistMetadata{},
+			}
+			got := membersFieldQueried(tc.pr, result)
+			if got != tc.wantQueried {
+				t.Errorf("%s: membersFieldQueried = %v, want %v", tc.comment, got, tc.wantQueried)
+			}
+			if result.MembersAuthoritative != tc.wantAuthoritative {
+				t.Errorf("%s: FetchResult.MembersAuthoritative = %v, want %v",
+					tc.comment, result.MembersAuthoritative, tc.wantAuthoritative)
+			}
+		})
+	}
+}
