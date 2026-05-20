@@ -16,7 +16,7 @@ The table below is generated from the provider definitions in the codebase. Don'
 | Provider | Tier | Sign-up | Rate limit | Mirror | Metadata fields | Image types |
 |---|---|---|---|---|---|---|
 | MusicBrainz | Free | Not required | 1/sec | Yes | Name, Sort name, Type, Gender, Disambiguation, Origin, Born, Formed, Died, Disbanded, Years active, Genres, Styles, Moods, Members, Aliases | None |
-| Wikipedia | Free | Not required | 5/sec | No | Name, Biography, Years active, Origin, Genres, Members | None |
+| Wikipedia | Free | Not required | 5/sec | No | Name, Type, Biography, Born, Died, Years active, Origin, Genres, Members | None |
 | Fanart.tv | Free key | [Sign up](https://fanart.tv/get-an-api-key/) | 3/sec | No | Image only | thumb, fanart, logo, hdlogo, banner |
 | TheAudioDB | Freemium | [Sign up](https://www.theaudiodb.com/pricing) | 30/min | No | Name, Gender, Origin, Biography, Genres, Styles, Moods, Born, Formed, Died, Disbanded, Aliases | thumb, logo, widethumb, banner, fanart |
 | Discogs | Free key | [Sign up](https://www.discogs.com/settings/developers) | 1/sec, 1000/day | No | Name, Biography, Aliases, Members | thumb |

@@ -206,6 +206,24 @@ func checkBioExists(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violat
 	}
 }
 
+// checkOriginMissing flags artists whose origin field is empty. The origin
+// records where an artist or group is from (city, region, or country) and is
+// fixed by fetching it from the configured provider priority list.
+func checkOriginMissing(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+	if strings.TrimSpace(a.Origin) != "" {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleOriginMissing,
+		RuleName: "Origin is populated",
+		Category: "metadata",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %s has no origin", a.Name),
+		Fixable:  true,
+	}
+}
+
 // makeFanartMinResChecker returns a Checker closure that uses the Engine's
 // DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartMinResChecker() Checker {

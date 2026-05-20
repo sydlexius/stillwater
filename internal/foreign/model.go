@@ -16,15 +16,20 @@ import "time"
 
 // Entry is one foreign file detected in an artist directory. The record is
 // keyed by (artist_id, file_path) so re-detecting the same file is a no-op
-// at the DB layer (UPSERT in repository.go).
+// at the DB layer (UPSERT in repository.go). ContentHash is the lowercase
+// hex sha256 of the file's bytes; allowlist matching keys on it so two
+// distinct files sharing a basename like "poster.jpg" no longer collide.
+// Rows recorded before migration 008 may carry an empty hash and are
+// backfilled on the first post-migration scan.
 type Entry struct {
-	ID         string    `json:"id"`
-	ArtistID   string    `json:"artist_id"`
-	ArtistName string    `json:"artist_name,omitempty"`
-	FilePath   string    `json:"file_path"`
-	FileName   string    `json:"file_name"`
-	SizeBytes  int64     `json:"size_bytes"`
-	DetectedAt time.Time `json:"detected_at"`
+	ID          string    `json:"id"`
+	ArtistID    string    `json:"artist_id"`
+	ArtistName  string    `json:"artist_name,omitempty"`
+	FilePath    string    `json:"file_path"`
+	FileName    string    `json:"file_name"`
+	ContentHash string    `json:"content_hash"`
+	SizeBytes   int64     `json:"size_bytes"`
+	DetectedAt  time.Time `json:"detected_at"`
 }
 
 // AllowlistScope identifies whether an allowlist row matches every artist
@@ -40,15 +45,19 @@ const (
 // AllowlistEntry is one row of the permanent re-detection suppression list.
 // For ScopeGlobal entries ArtistID is empty and the row matches every
 // artist; for ScopeArtist entries ArtistID is required and the row matches
-// only that artist. FileName is the basename (e.g. "backdrop.jpg").
+// only that artist. ContentHash (lowercase hex sha256) is the dedupe key
+// so two distinct files sharing a basename can each be allowlisted
+// independently. FileName is preserved on the row for human readability in
+// the UI but does not participate in matching.
 type AllowlistEntry struct {
-	ID         string         `json:"id"`
-	Scope      AllowlistScope `json:"scope"`
-	ArtistID   string         `json:"artist_id,omitempty"`
-	ArtistName string         `json:"artist_name,omitempty"`
-	FileName   string         `json:"file_name"`
-	Note       string         `json:"note,omitempty"`
-	CreatedAt  time.Time      `json:"created_at"`
+	ID          string         `json:"id"`
+	Scope       AllowlistScope `json:"scope"`
+	ArtistID    string         `json:"artist_id,omitempty"`
+	ArtistName  string         `json:"artist_name,omitempty"`
+	FileName    string         `json:"file_name"`
+	ContentHash string         `json:"content_hash"`
+	Note        string         `json:"note,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 // Summary aggregates current foreign-file ledger counts for the banner. A

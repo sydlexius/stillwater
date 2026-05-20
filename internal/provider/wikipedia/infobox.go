@@ -13,6 +13,12 @@ type infoboxData struct {
 	Genres      []string
 	Members     []string
 	PastMembers []string
+	// Born and Died are extracted from birth_date / death_date infobox keys.
+	// They are used by GetArtist to populate ArtistMetadata.Born / .Died so
+	// that the years_active synthesis helper can derive a "YYYY-YYYY" range
+	// for deceased solo artists whose infobox lacks a literal years_active key.
+	Born string
+	Died string
 }
 
 // parseInfobox extracts structured data from a wikitext infobox template.
@@ -56,8 +62,18 @@ func parseInfobox(wikitext string) *infoboxData {
 		data.PastMembers = parseListField(v)
 	}
 
+	// Birth and death dates for solo artists. Wikipedia uses date templates
+	// such as {{birth date|1959|10|23}} or {{birth date and age|1959|10|23}};
+	// extractYear pulls the first 4-digit sequence from the cleaned text.
+	if v := fieldValue(fields, "birth_date"); v != "" {
+		data.Born = extractYear(v)
+	}
+	if v := fieldValue(fields, "death_date"); v != "" {
+		data.Died = extractYear(v)
+	}
+
 	// Return nil if nothing was extracted.
-	if data.Origin == "" && data.YearsActive == "" &&
+	if data.Origin == "" && data.YearsActive == "" && data.Born == "" && data.Died == "" &&
 		len(data.Genres) == 0 && len(data.Members) == 0 && len(data.PastMembers) == 0 {
 		return nil
 	}
@@ -613,6 +629,44 @@ func splitOnBR(s string) []string {
 		}
 	}
 	return parts
+}
+
+// extractYear finds the first 4-digit sequence in a raw infobox date value
+// that looks like a plausible year (leading digit is '1' or '2', covering
+// years 1000-2999). Wikipedia date values are often encoded as templates such
+// as "{{birth date|1959|10|23}}" or "{{birth date and age|1959|10|23}}";
+// because the year argument is the first numeric argument after the template
+// name, scanning the raw value for the first 4-digit run gives the year without
+// needing to fully parse the template structure. The function does NOT strip
+// markup before scanning: cleanMarkup would reduce "{{birth date|1959|10|23}}"
+// to "23" (keeping only the last pipe argument), discarding the year.
+func extractYear(raw string) string {
+	// Walk the raw string looking for a run of exactly 4 ASCII digits that
+	// starts with '1' or '2' (year range 1000-2999). We stop at the first match
+	// so that in "{{death date and age|1991|11|24|1946|9|5}}" we pick "1991"
+	// (the death year, which appears first) rather than "1946" (birth year).
+	for i := 0; i+4 <= len(raw); i++ {
+		if !isDigit(raw[i]) {
+			continue
+		}
+		// Measure the full digit run starting at i.
+		j := i
+		for j < len(raw) && isDigit(raw[j]) {
+			j++
+		}
+		run := raw[i:j]
+		if len(run) == 4 && (run[0] == '1' || run[0] == '2') {
+			return run
+		}
+		// Advance past the entire digit run to avoid re-scanning its tail.
+		i = j - 1
+	}
+	return ""
+}
+
+// isDigit reports whether b is an ASCII decimal digit.
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 // cleanYearsActive normalizes a years_active value.
