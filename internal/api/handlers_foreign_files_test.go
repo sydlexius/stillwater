@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,6 +19,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/foreign"
 )
+
+// sha256HexAPI returns the lowercase hex sha256 of b. Mirrors the
+// foreign-package test helper so handler tests can pre-compute the hash
+// they expect the scanner / resolver to derive from on-disk bytes.
+func sha256HexAPI(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
 
 // newTestRouterWithForeign builds a Router with an initialized foreign-file
 // repo backed by an in-memory SQLite. Auth is intentionally omitted -- the
@@ -40,6 +50,7 @@ func newTestRouterWithForeign(t *testing.T) (*Router, *sql.DB) {
 			artist_id TEXT NOT NULL,
 			file_path TEXT NOT NULL,
 			file_name TEXT NOT NULL,
+			content_hash TEXT,
 			size_bytes INTEGER NOT NULL DEFAULT 0,
 			detected_at TEXT NOT NULL DEFAULT (datetime('now')),
 			UNIQUE(artist_id, file_path))`,
@@ -48,10 +59,15 @@ func newTestRouterWithForeign(t *testing.T) (*Router, *sql.DB) {
 			scope TEXT NOT NULL,
 			artist_id TEXT,
 			file_name TEXT NOT NULL,
+			content_hash TEXT,
 			note TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-		`CREATE UNIQUE INDEX idx_foreign_allowlist_global ON foreign_file_allowlist(file_name) WHERE scope = 'global'`,
-		`CREATE UNIQUE INDEX idx_foreign_allowlist_artist ON foreign_file_allowlist(artist_id, file_name) WHERE scope = 'artist'`,
+		`CREATE UNIQUE INDEX idx_foreign_allowlist_global_hash
+			ON foreign_file_allowlist(content_hash)
+			WHERE scope = 'global' AND content_hash IS NOT NULL`,
+		`CREATE UNIQUE INDEX idx_foreign_allowlist_artist_hash
+			ON foreign_file_allowlist(artist_id, content_hash)
+			WHERE scope = 'artist' AND content_hash IS NOT NULL`,
 	} {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("schema: %v", err)
@@ -96,9 +112,15 @@ func TestHandleForeignFilesList(t *testing.T) {
 func TestHandleForeignFileAllowlist(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "backdrop.jpg")
+	body := []byte("allowlist target bytes")
+	if err := os.WriteFile(target, body, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha',?)`, dir)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+		ArtistID: "a1", FilePath: target, FileName: "backdrop.jpg", ContentHash: sha256HexAPI(body),
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -117,9 +139,9 @@ func TestHandleForeignFileAllowlist(t *testing.T) {
 	if count != 0 {
 		t.Errorf("ledger row should be cleared after allowlist; got %d", count)
 	}
-	allowed, _ := r.foreignRepo.IsAllowlisted(context.Background(), "a1", "backdrop.jpg")
+	allowed, _ := r.foreignRepo.IsAllowlisted(context.Background(), "a1", sha256HexAPI(body))
 	if !allowed {
-		t.Errorf("expected entry to be allowlisted")
+		t.Errorf("expected entry to be allowlisted by hash")
 	}
 
 	// 404 path: missing id.
@@ -170,7 +192,7 @@ func TestHandleForeignAllowlistRemove(t *testing.T) {
 	r, db := newTestRouterWithForeign(t)
 	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
-		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", ContentHash: sha256HexAPI([]byte("fanart")),
 	}); err != nil {
 		t.Fatalf("AddAllowlist: %v", err)
 	}
@@ -203,7 +225,7 @@ func TestHandleForeignAllowlistList(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
-		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", ContentHash: sha256HexAPI([]byte("fanart")),
 	}); err != nil {
 		t.Fatalf("AddAllowlist: %v", err)
 	}
@@ -247,10 +269,16 @@ func TestForeignSummaryForBanner(t *testing.T) {
 func TestHandleForeignFilesDismiss(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
+	dir := t.TempDir()
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir)
 	for _, fn := range []string{"backdrop.jpg", "fanart.jpg"} {
+		body := []byte("body-" + fn)
+		path := filepath.Join(dir, fn)
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			t.Fatalf("write %s: %v", fn, err)
+		}
 		if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-			ArtistID: "a1", FilePath: "/x/" + fn, FileName: fn,
+			ArtistID: "a1", FilePath: path, FileName: fn, ContentHash: sha256HexAPI(body),
 		}); err != nil {
 			t.Fatalf("seed %s: %v", fn, err)
 		}
@@ -374,20 +402,27 @@ func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
 func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha','/m/Aretha')`)
-	dir := t.TempDir()
-	target := filepath.Join(dir, "backdrop.jpg")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	bodyA := []byte("artist-A")
+	bodyB := []byte("artist-B")
+	targetA := filepath.Join(dirA, "backdrop.jpg")
+	targetB := filepath.Join(dirB, "backdrop.jpg")
+	if err := os.WriteFile(targetA, bodyA, 0o644); err != nil {
+		t.Fatalf("write A: %v", err)
 	}
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a2','Beth',?)`, dir)
+	if err := os.WriteFile(targetB, bodyB, 0o644); err != nil {
+		t.Fatalf("write B: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha',?)`, dirA)
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a2','Beth',?)`, dirB)
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-		ArtistID: "a1", FilePath: "/m/Aretha/backdrop.jpg", FileName: "backdrop.jpg",
+		ArtistID: "a1", FilePath: targetA, FileName: "backdrop.jpg", ContentHash: sha256HexAPI(bodyA),
 	}); err != nil {
 		t.Fatalf("seed allowlist target: %v", err)
 	}
 	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-		ArtistID: "a2", FilePath: target, FileName: "backdrop.jpg",
+		ArtistID: "a2", FilePath: targetB, FileName: "backdrop.jpg", ContentHash: sha256HexAPI(bodyB),
 	}); err != nil {
 		t.Fatalf("seed delete target: %v", err)
 	}
@@ -433,7 +468,7 @@ func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
 	t.Parallel()
 	r, _ := newTestRouterWithForeign(t)
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
-		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg",
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", ContentHash: sha256HexAPI([]byte("fanart")),
 	}); err != nil {
 		t.Fatalf("AddAllowlist: %v", err)
 	}
@@ -464,10 +499,16 @@ func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
 func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
 	t.Parallel()
 	r, db := newTestRouterWithForeign(t)
-	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x','/x')`)
+	dir := t.TempDir()
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','x',?)`, dir)
 	for _, fn := range []string{"backdrop.jpg", "fanart.jpg"} {
+		body := []byte("body-" + fn)
+		path := filepath.Join(dir, fn)
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			t.Fatalf("write %s: %v", fn, err)
+		}
 		if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
-			ArtistID: "a1", FilePath: "/x/" + fn, FileName: fn,
+			ArtistID: "a1", FilePath: path, FileName: fn, ContentHash: sha256HexAPI(body),
 		}); err != nil {
 			t.Fatalf("seed %s: %v", fn, err)
 		}
@@ -604,7 +645,7 @@ func TestLoadForeignAllowlistView(t *testing.T) {
 	}
 
 	if err := r.foreignRepo.AddAllowlist(context.Background(), foreign.AllowlistEntry{
-		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", Note: "stock",
+		Scope: foreign.ScopeGlobal, FileName: "fanart.jpg", ContentHash: sha256HexAPI([]byte("fanart")), Note: "stock",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -732,5 +773,108 @@ func TestHandleForeignFile_RenderListErrorAfterMutation(t *testing.T) {
 	// "load foreign-file row for allowlist" logger.Error branch.
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500; got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleForeignFilesDismiss_SameBasenameDistinctBytes is the headline
+// behavior the migration is here to support: bulk dismiss creates one
+// allowlist row PER distinct content hash, so two "poster.jpg" files in
+// different artist directories with different bytes do not collide on a
+// single global allowlist row.
+func TestHandleForeignFilesDismiss_SameBasenameDistinctBytes(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	bodyA := []byte("artist-A poster")
+	bodyB := []byte("artist-B poster")
+	pathA := filepath.Join(dirA, "poster.jpg")
+	pathB := filepath.Join(dirB, "poster.jpg")
+	if err := os.WriteFile(pathA, bodyA, 0o644); err != nil {
+		t.Fatalf("write A: %v", err)
+	}
+	if err := os.WriteFile(pathB, bodyB, 0o644); err != nil {
+		t.Fatalf("write B: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','A',?), ('a2','B',?)`, dirA, dirB)
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: pathA, FileName: "poster.jpg", ContentHash: sha256HexAPI(bodyA),
+	}); err != nil {
+		t.Fatalf("seed A: %v", err)
+	}
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a2", FilePath: pathB, FileName: "poster.jpg", ContentHash: sha256HexAPI(bodyB),
+	}); err != nil {
+		t.Fatalf("seed B: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesDismiss(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dismiss status: got %d", rec.Code)
+	}
+	rows, _ := r.foreignRepo.ListAllowlist(context.Background())
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 distinct global allowlist rows (one per content hash); got %d", len(rows))
+	}
+	// Each row should carry a distinct content_hash matching one of the
+	// seeded bodies. Sort-insensitive comparison via a set.
+	wantHashes := map[string]bool{sha256HexAPI(bodyA): true, sha256HexAPI(bodyB): true}
+	seenHashes := map[string]int{}
+	for _, row := range rows {
+		if !wantHashes[row.ContentHash] {
+			t.Errorf("unexpected content_hash %q on dismissed row", row.ContentHash)
+		}
+		seenHashes[row.ContentHash]++
+		if row.FileName != "poster.jpg" {
+			t.Errorf("expected file_name preserved as %q; got %q", "poster.jpg", row.FileName)
+		}
+	}
+	// Both distinct hashes must be persisted exactly once. The membership
+	// check above still passes if both rows accidentally reuse one hash;
+	// the per-hash count is what proves the bytes were keyed separately.
+	for want := range wantHashes {
+		if seenHashes[want] != 1 {
+			t.Errorf("content_hash %q persisted %d times; want exactly 1", want, seenHashes[want])
+		}
+	}
+}
+
+// TestResolveForeignHash_BackfillsFromDisk covers the on-demand rehash
+// path for pre-008 ledger rows whose content_hash column is empty. The
+// handler must recompute the digest from disk so the allowlist write
+// has a non-empty key.
+func TestResolveForeignHash_BackfillsFromDisk(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	body := []byte("backfill bytes")
+	target := filepath.Join(dir, "backdrop.jpg")
+	if err := os.WriteFile(target, body, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Legacy entry: ContentHash empty.
+	got, err := resolveForeignHash(&foreign.Entry{FilePath: target})
+	if err != nil {
+		t.Fatalf("resolveForeignHash: %v", err)
+	}
+	if got != sha256HexAPI(body) {
+		t.Errorf("backfilled hash = %q; want sha256(body)", got)
+	}
+	// Already-hashed entry: short-circuits without touching disk.
+	const sentinel = "sentinel-precomputed-hash"
+	got, err = resolveForeignHash(&foreign.Entry{FilePath: "/does/not/exist", ContentHash: sentinel})
+	if err != nil {
+		t.Fatalf("resolveForeignHash precomputed: %v", err)
+	}
+	if got != sentinel {
+		t.Errorf("expected stored hash to short-circuit; got %q", got)
+	}
+	// Legacy entry whose file is gone: the on-demand rehash must fail
+	// loudly rather than return an empty hash that would later produce a
+	// malformed allowlist row.
+	got, err = resolveForeignHash(&foreign.Entry{FilePath: filepath.Join(dir, "missing.jpg")})
+	if err == nil {
+		t.Errorf("expected error for empty hash with missing file; got hash %q", got)
 	}
 }
