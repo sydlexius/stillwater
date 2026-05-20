@@ -1206,6 +1206,7 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 			"bio":        "metadata",
 			"artist":     "metadata",
 			"name":       "metadata",
+			"origin":     "metadata",
 		}
 		for prefix, cat := range prefixMap {
 			if len(ruleID) >= len(prefix) && ruleID[:len(prefix)] == prefix {
