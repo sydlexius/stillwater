@@ -17,21 +17,22 @@ import (
 // Preference key constants. Use these instead of raw strings when referencing
 // preference keys in Go code to catch typos at compile time.
 const (
-	PrefTheme               = "theme"
-	PrefSidebarState        = "sidebar_state"
-	PrefContentWidth        = "content_width"
-	PrefFontFamily          = "font_family"
-	PrefFontSize            = "font_size"
-	PrefLetterSpacing       = "letter_spacing"
-	PrefThumbnailSize       = "thumbnail_size"
-	PrefReducedMotion       = "reduced_motion"
-	PrefLiteMode            = "lite_mode"
-	PrefLanguage            = "language"
-	PrefMetadataLanguages   = "metadata_languages"
-	PrefNotificationEnabled = "notification_enabled"
-	PrefAutoFetchImages     = "auto_fetch_images"
-	PrefBgOpacity           = "bg_opacity"
-	PrefPageSize            = "page_size"
+	PrefTheme                    = "theme"
+	PrefSidebarState             = "sidebar_state"
+	PrefContentWidth             = "content_width"
+	PrefFontFamily               = "font_family"
+	PrefFontSize                 = "font_size"
+	PrefLetterSpacing            = "letter_spacing"
+	PrefThumbnailSize            = "thumbnail_size"
+	PrefReducedMotion            = "reduced_motion"
+	PrefLiteMode                 = "lite_mode"
+	PrefLanguage                 = "language"
+	PrefMetadataLanguages        = "metadata_languages"
+	PrefMetadataNameRomanization = "metadata_name_romanization_fallback"
+	PrefNotificationEnabled      = "notification_enabled"
+	PrefAutoFetchImages          = "auto_fetch_images"
+	PrefBgOpacity                = "bg_opacity"
+	PrefPageSize                 = "page_size"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
@@ -54,18 +55,19 @@ type preferenceDef struct {
 
 // preferenceDefaults defines every supported preference key with its default and valid values.
 var preferenceDefaults = map[string]preferenceDef{
-	PrefTheme:               {defaultValue: "dark", allowedValues: []string{"dark", "light", "system"}},
-	PrefSidebarState:        {defaultValue: "full", allowedValues: []string{"full", "icon-only", "hidden"}},
-	PrefContentWidth:        {defaultValue: "narrow", allowedValues: []string{"narrow", "wide"}},
-	PrefFontFamily:          {defaultValue: "inter", allowedValues: []string{"system", "inter", "atkinson"}},
-	PrefFontSize:            {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
-	PrefLetterSpacing:       {defaultValue: "normal", allowedValues: []string{"normal", "wide", "extra-wide"}},
-	PrefThumbnailSize:       {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
-	PrefReducedMotion:       {defaultValue: "system", allowedValues: []string{"system", "on", "off"}},
-	PrefLiteMode:            {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
-	PrefLanguage:            {defaultValue: "en", allowedValues: []string{"en"}},
-	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
-	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
+	PrefTheme:                    {defaultValue: "dark", allowedValues: []string{"dark", "light", "system"}},
+	PrefSidebarState:             {defaultValue: "full", allowedValues: []string{"full", "icon-only", "hidden"}},
+	PrefContentWidth:             {defaultValue: "narrow", allowedValues: []string{"narrow", "wide"}},
+	PrefFontFamily:               {defaultValue: "inter", allowedValues: []string{"system", "inter", "atkinson"}},
+	PrefFontSize:                 {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
+	PrefLetterSpacing:            {defaultValue: "normal", allowedValues: []string{"normal", "wide", "extra-wide"}},
+	PrefThumbnailSize:            {defaultValue: "medium", allowedValues: []string{"small", "medium", "large"}},
+	PrefReducedMotion:            {defaultValue: "system", allowedValues: []string{"system", "on", "off"}},
+	PrefLiteMode:                 {defaultValue: "off", allowedValues: []string{"off", "on", "auto"}},
+	PrefLanguage:                 {defaultValue: "en", allowedValues: []string{"en"}},
+	PrefNotificationEnabled:      {defaultValue: "true", allowedValues: []string{"true", "false"}},
+	PrefAutoFetchImages:          {defaultValue: "false", allowedValues: []string{"true", "false"}},
+	PrefMetadataNameRomanization: {defaultValue: "true", allowedValues: []string{"true", "false"}},
 }
 
 func init() {
@@ -205,7 +207,9 @@ func parseMetadataLanguages(raw string) []string {
 
 // injectMetadataLanguages loads the user's metadata_languages preference from
 // the database and injects it into the context via provider.WithMetadataLanguages.
-// If the user has no stored preference, the default (["en"]) is used.
+// It also injects the metadata_name_romanization_fallback boolean preference via
+// provider.WithNameRomanizationFallback. If the user has no stored preference,
+// defaults are used (["en"] for languages, true for romanization fallback).
 // This allows all providers downstream to read language preferences from the context.
 func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	userID := middleware.UserIDFromContext(ctx)
@@ -225,7 +229,14 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 			"user_id", userID, "error", err)
 		langs = langpref.DefaultTags()
 	}
-	return provider.WithMetadataLanguages(ctx, langs)
+	ctx = provider.WithMetadataLanguages(ctx, langs)
+
+	// Inject the romanization fallback preference. Default is true (enabled)
+	// to match the existing shipped behavior for users who have not set it.
+	romanization := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true)
+	ctx = provider.WithNameRomanizationFallback(ctx, romanization)
+
+	return ctx
 }
 
 // isSuppressConfirmKey reports whether key is a valid per-action confirm

@@ -5820,6 +5820,15 @@ paths:
                     description: >
                       Whether to automatically search providers when opening
                       the image search panel.
+                  metadata_name_romanization_fallback:
+                    type: string
+                    enum: ["true", "false"]
+                    description: >
+                      When the top metadata language is Latin-script and
+                      MusicBrainz has no tagged alias in that language,
+                      whether to use the MB sort-name as a romanized display
+                      name for member artists (e.g. 青木達之 becomes
+                      Tatsuyuki Aoki). Defaults to "true".
                   bg_opacity:
                     type: string
                     pattern: "^(?:[2-9][0-9]|100)$"
@@ -5842,6 +5851,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - metadata_name_romanization_fallback
                   - bg_opacity
         "401":
           description: Not authenticated
@@ -5890,6 +5900,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - metadata_name_romanization_fallback
                   - bg_opacity
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
@@ -5960,6 +5971,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - metadata_name_romanization_fallback
                   - bg_opacity
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"

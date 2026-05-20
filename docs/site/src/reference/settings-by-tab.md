@@ -111,6 +111,8 @@ Set your preferred languages for artist names, biographies, aliases, and genre/s
 {: #settings-providers-metadata-languages-remove }
 - **Search languages**
 {: #settings-providers-metadata-languages-input-label }
+- **Use MB sort-name as a fallback for display names** -- When your top metadata language is Latin-script (English, German, French, etc.) and MusicBrainz does not have a tagged alias in that language, Stillwater can use MB's sort-name as the display name (e.g. 青木達之 becomes Tatsuyuki Aoki). Disable this if you want to see only the canonical name or curator-tagged aliases.
+{: #settings-providers-metadata-languages-romanization-fallback }
 
 ### Advanced  {#settings-providers-advanced}
 

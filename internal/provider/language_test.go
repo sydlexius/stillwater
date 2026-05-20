@@ -149,3 +149,23 @@ func TestFirstMetadataLang(t *testing.T) {
 		})
 	}
 }
+
+func TestNameRomanizationFallback(t *testing.T) {
+	// Unset context must return true (preserve existing shipped behavior).
+	ctx := context.Background()
+	if got := NameRomanizationFallback(ctx); !got {
+		t.Error("NameRomanizationFallback on unset ctx: expected true, got false")
+	}
+
+	// Explicit true.
+	ctx = WithNameRomanizationFallback(context.Background(), true)
+	if got := NameRomanizationFallback(ctx); !got {
+		t.Error("WithNameRomanizationFallback(true): expected true, got false")
+	}
+
+	// Explicit false.
+	ctx = WithNameRomanizationFallback(context.Background(), false)
+	if got := NameRomanizationFallback(ctx); got {
+		t.Error("WithNameRomanizationFallback(false): expected false, got true")
+	}
+}

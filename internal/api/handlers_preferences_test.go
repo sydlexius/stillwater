@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 func TestGetPreferences_ReturnsDefaults(t *testing.T) {
@@ -58,9 +59,19 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		t.Errorf("key %q: expected default %q, got %q", PrefBgOpacity, "65", got)
 	}
 
-	// Verify the wire contract returns exactly 15 keys.
-	if len(prefs) != 15 {
-		t.Errorf("expected 15 keys, got %d", len(prefs))
+	// Verify the romanization fallback preference is present with its default value.
+	if got, ok := prefs[PrefMetadataNameRomanization]; !ok {
+		t.Error("missing default key \"metadata_name_romanization_fallback\"")
+	} else if got != "true" {
+		t.Errorf("key %q: expected default %q, got %q", PrefMetadataNameRomanization, "true", got)
+	}
+
+	// Verify the wire contract returns every default key plus the three
+	// non-default keys (page_size, bg_opacity, metadata_languages). Derived
+	// from preferenceDefaults so adding a new default key does not break this.
+	expected := len(preferenceDefaults) + 3
+	if len(prefs) != expected {
+		t.Errorf("expected %d keys, got %d", expected, len(prefs))
 	}
 }
 
@@ -1228,5 +1239,146 @@ func TestUserPreferencesPage_UnauthenticatedRendersLogin(t *testing.T) {
 	}
 	if strings.Contains(body, `data-tab-panel="appearance"`) {
 		t.Error("expected login page, but preferences-page marker data-tab-panel=\"appearance\" was rendered")
+	}
+}
+
+// TestInjectMetadataLanguages_InjectsRomanizationFallback verifies that
+// injectMetadataLanguages reads the metadata_name_romanization_fallback
+// preference from the database and injects it into the context via
+// provider.WithNameRomanizationFallback. When no row is stored the getter
+// must return the default (true). When a row with "false" is stored the
+// getter must return false.
+func TestInjectMetadataLanguages_InjectsRomanizationFallback(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+	ctx := middleware.WithTestUserID(context.Background(), userID)
+
+	// Default (no stored preference): romanization fallback must default to true.
+	injected := r.injectMetadataLanguages(ctx)
+	if !provider.NameRomanizationFallback(injected) {
+		t.Error("default case: expected NameRomanizationFallback=true when no preference row exists")
+	}
+
+	// Store "false" and re-inject.
+	body := `{"value":"false"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT preference: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Re-inject and check that the false value is picked up.
+	injected = r.injectMetadataLanguages(ctx)
+	if provider.NameRomanizationFallback(injected) {
+		t.Error("after storing false: expected NameRomanizationFallback=false in context")
+	}
+}
+
+// TestUpdatePreference_RomanizationFallbackRoundtrip verifies that the
+// metadata_name_romanization_fallback preference can be written and read back
+// via the API.
+func TestUpdatePreference_RomanizationFallbackRoundtrip(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// Default GET must return "true".
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefMetadataNameRomanization, nil)
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET preference: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("default value: expected %q, got %q", "true", resp["value"])
+	}
+
+	// PUT "false".
+	body := `{"value":"false"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT preference: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET again -- must reflect the update.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefMetadataNameRomanization, nil)
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET preference after update: expected 200, got %d", w.Code)
+	}
+	// Decode into a fresh map: json.Decoder merges into a reused map, so a
+	// missing key would silently keep its prior value and mask a regression.
+	resp = map[string]string{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response after update: %v", err)
+	}
+	if resp["value"] != "false" {
+		t.Errorf("after update: expected %q, got %q", "false", resp["value"])
+	}
+
+	// PUT "true" explicitly -- an affirmative write must round-trip back, not
+	// just the default-when-unset path exercised above.
+	body = `{"value":"true"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT true: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefMetadataNameRomanization, nil)
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after PUT true: expected 200, got %d", w.Code)
+	}
+	resp = map[string]string{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response after PUT true: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("after PUT true: expected %q, got %q", "true", resp["value"])
+	}
+}
+
+// TestMetadataNameRomanizationPref_RejectsInvalidValue verifies the
+// metadata_name_romanization_fallback preference rejects anything outside its
+// {true, false} allowed set, mirroring TestAutoFetchImagesPref_RejectsInvalidValue.
+func TestMetadataNameRomanizationPref_RejectsInvalidValue(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, bad := range []string{"yes", "1", "on", "maybe", ""} {
+		t.Run("value_"+bad, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, bad)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+			req.SetPathValue("key", PrefMetadataNameRomanization)
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", bad, w.Code, w.Body.String())
+			}
+		})
 	}
 }

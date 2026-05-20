@@ -1795,6 +1795,74 @@ func TestLocalizeMembers_SortNameFallbackNotAppliedToLatinCanonical(t *testing.T
 	}
 }
 
+// TestLocalizeMembers_RomanizationFallbackDisabled verifies that when the
+// metadata_name_romanization_fallback preference is explicitly set to false the
+// sort-name romanization path in localizeMembers is skipped entirely, leaving
+// the canonical non-Latin name unchanged even when all other gating conditions
+// (non-Latin canonical, Latin sort-name, Latin-accepting top pref) would
+// normally trigger the promotion.
+func TestLocalizeMembers_RomanizationFallbackDisabled(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		// Return the member_aoki fixture: non-Latin canonical, Latin sort-name,
+		// no aliases -- this is the exact scenario that triggers the fallback
+		// when the preference is enabled.
+		w.Write(loadFixture(t, "member_aoki.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	// Top pref is "en" (Latin-accepting), romanization fallback explicitly disabled.
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+	ctx = provider.WithNameRomanizationFallback(ctx, false)
+
+	canonical := "青木達之" // 青木達之
+	members := []provider.MemberInfo{
+		{MBID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Name: canonical},
+	}
+
+	a.localizeMembers(ctx, members, []string{"en"}, newMemberAliasCache())
+
+	// The alias fetch still runs (no alias won), but the sort-name reversal
+	// must not fire because the preference gate blocks it.
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 alias fetch, got %d", got)
+	}
+	if members[0].Name != canonical {
+		t.Errorf("expected canonical preserved when romanization fallback disabled, got %q", members[0].Name)
+	}
+}
+
+// TestLocalizeMembers_RomanizationFallbackEnabledExplicitly verifies that
+// setting the preference to true explicitly (as opposed to the default
+// unset-means-true path) still fires the sort-name promotion. This tests
+// provider.WithNameRomanizationFallback(ctx, true) directly.
+func TestLocalizeMembers_RomanizationFallbackEnabledExplicitly(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(loadFixture(t, "member_aoki.json"))
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"en"})
+	ctx = provider.WithNameRomanizationFallback(ctx, true)
+
+	members := []provider.MemberInfo{
+		{MBID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", Name: "青木達之"},
+	}
+
+	a.localizeMembers(ctx, members, []string{"en"}, newMemberAliasCache())
+
+	if members[0].Name != "Tatsuyuki Aoki" {
+		t.Errorf("expected sort-name reversal with explicit true pref, got %q", members[0].Name)
+	}
+}
+
 // TestRomanizeFromSortName exercises the MusicBrainz sort-name reversal
 // helper. MB stores sort-name as "Family, Given"; display form is
 // "Given Family". Only well-formed two-part sort-names return ok=true;

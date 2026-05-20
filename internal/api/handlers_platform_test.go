@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
 
@@ -219,5 +221,38 @@ func TestUpdatePlatform_UseSymlinks_BuiltinRejected(t *testing.T) {
 	}
 	if resp["error"] == "" {
 		t.Error("expected error message in response")
+	}
+}
+
+// TestGetUserBoolPreference_RomanizationFallback verifies the read path that
+// the settings page handler uses to populate NameRomanizationFallback in
+// SettingsData. The test calls getUserBoolPreference directly so it does not
+// need the full suite of services wired up by handleSettingsPage.
+func TestGetUserBoolPreference_RomanizationFallback(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	// Default (no stored row): must return true.
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req = withUserCtx(req, userID)
+	ctx := middleware.WithTestRole(req.Context(), "administrator")
+	if got := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true); !got {
+		t.Error("default: expected getUserBoolPreference to return true when no row stored")
+	}
+
+	// Store "false" via the preference update handler.
+	prefBody := `{"value":"false"}`
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(prefBody))
+	putReq.SetPathValue("key", PrefMetadataNameRomanization)
+	putReq = withUserCtx(putReq, userID)
+	pw := httptest.NewRecorder()
+	r.handleUpdatePreference(pw, putReq)
+	if pw.Code != http.StatusOK {
+		t.Fatalf("PUT preference: expected 200, got %d: %s", pw.Code, pw.Body.String())
+	}
+
+	// getUserBoolPreference must now return false.
+	if got := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true); got {
+		t.Error("after storing false: expected getUserBoolPreference to return false")
 	}
 }

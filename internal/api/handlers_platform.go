@@ -409,6 +409,9 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		AuthProviders:           authProvidersData,
 		Updates:                 r.buildUpdatesTabData(req.Context()),
 	}
+	// Inject the romanization-fallback preference separately so that adding this
+	// field does not force gofmt to realign the entire struct literal above.
+	data.NameRomanizationFallback = r.getUserBoolPreference(req.Context(), PrefMetadataNameRomanization, true)
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
 

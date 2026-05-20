@@ -248,7 +248,7 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 		// stores the curator-canonical romanization in sort-name for
 		// non-Latin artists even when they do not carry an explicit en
 		// alias (the common case: most Japanese band rosters on MB).
-		// Gating (all six must hold; every one prevents a specific
+		// Gating (all seven must hold; every one prevents a specific
 		// false-positive promotion):
 		//   1. a top language preference must be set -- without one we
 		//      have no basis for choosing a script,
@@ -265,7 +265,10 @@ func (a *Adapter) localizeMembers(ctx context.Context, members []provider.Member
 		//      the reversal heuristic does not produce a Latin result, and
 		//   6. the top pref must accept Latin -- rules out ja, zh, ko, etc.
 		//      where the user explicitly asked for the non-Latin form.
-		if topPref != "" && lookup.sortName != "" {
+		//   7. the metadata_name_romanization_fallback preference must be
+		//      enabled (defaults to true when unset, so existing paths are
+		//      unaffected; users can opt out via the Providers settings tab).
+		if topPref != "" && lookup.sortName != "" && provider.NameRomanizationFallback(ctx) {
 			canonicalScript := provider.DominantScript(m.Name)
 			sortScript := provider.DominantScript(lookup.sortName)
 			if canonicalScript != provider.ScriptLatin &&

@@ -145,6 +145,7 @@ settings-providers-advanced
 settings-providers-metadata-languages
 settings-providers-metadata-languages-input-label
 settings-providers-metadata-languages-remove
+settings-providers-metadata-languages-romanization-fallback
 settings-providers-name-similarity
 settings-providers-name-similarity-label
 settings-providers-priorities

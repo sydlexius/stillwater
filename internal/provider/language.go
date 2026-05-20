@@ -10,6 +10,13 @@ import (
 // (e.g. ["en-GB", "en", "ja"]).
 type ctxKeyMetadataLanguages struct{}
 
+// ctxKeyNameRomanizationFallback is the context key for the
+// metadata_name_romanization_fallback user preference. When the stored value
+// is false the MusicBrainz sort-name romanization path in localizeMembers is
+// skipped entirely. The zero value (key absent) is treated as true so every
+// existing call path preserves the current shipped behavior.
+type ctxKeyNameRomanizationFallback struct{}
+
 // WithMetadataLanguages returns a child context carrying the user's ordered
 // metadata language preferences.
 func WithMetadataLanguages(ctx context.Context, langs []string) context.Context {
@@ -24,6 +31,27 @@ func WithMetadataLanguages(ctx context.Context, langs []string) context.Context 
 func MetadataLanguages(ctx context.Context) []string {
 	langs, _ := ctx.Value(ctxKeyMetadataLanguages{}).([]string)
 	return langs
+}
+
+// WithNameRomanizationFallback returns a child context carrying the
+// metadata_name_romanization_fallback preference. Pass false to suppress the
+// MB sort-name romanization path; pass true (or omit the call entirely) to
+// keep the current default behavior.
+func WithNameRomanizationFallback(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, ctxKeyNameRomanizationFallback{}, enabled)
+}
+
+// NameRomanizationFallback returns whether the MB sort-name romanization
+// fallback is enabled for the current request. Defaults to true when the key
+// is absent from the context so call paths that do not thread the preference
+// retain the existing shipped behavior.
+func NameRomanizationFallback(ctx context.Context) bool {
+	v, ok := ctx.Value(ctxKeyNameRomanizationFallback{}).(bool)
+	if !ok {
+		// Key absent -- treat as enabled (preserve existing behavior).
+		return true
+	}
+	return v
 }
 
 // MatchLanguagePreference scores a locale string against the user's ordered

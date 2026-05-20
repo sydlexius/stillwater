@@ -35,36 +35,37 @@ func profileEditable(p *platform.Profile) bool {
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
-	ActiveTab               string
-	Libraries               []library.Library
-	Profiles                []platform.Profile
-	ActiveProfile           *platform.Profile
-	ProviderKeys            []provider.ProviderKeyStatus
-	Priorities              []provider.FieldPriority
-	Connections             []connection.Connection
-	Webhooks                []webhook.Webhook
-	WebSearchProviders      []provider.WebSearchProviderStatus
-	ShowPlatformDebug       bool
-	Rules                   []rule.Rule
-	HasLocalLibrary         bool
-	BadgeEnabled            bool
-	BadgeSeverityError      bool
-	BadgeSeverityWarning    bool
-	BadgeSeverityInfo       bool
-	RuleScheduleMinutes     int
-	APITokens               []auth.APIToken
-	BackupRetention         int
-	BackupMaxAgeDays        int
-	SymlinkSupported        bool
-	CacheMaxSizeMB          string
-	NameSimilarityThreshold int
-	MetadataLanguages       []string      // Ordered BCP 47 tags for metadata language preference.
-	BasePath                string        // Current SW_BASE_PATH value (read-only display).
-	BasePathEnvOverride     bool          // True when the SW_BASE_PATH env var is set.
-	TLS                     TLSStatusData // Read-only summary of the running TLS listener configuration.
-	Users                   UsersTabData
-	AuthProviders           AuthProvidersData
-	Updates                 UpdatesTabData
+	ActiveTab                string
+	Libraries                []library.Library
+	Profiles                 []platform.Profile
+	ActiveProfile            *platform.Profile
+	ProviderKeys             []provider.ProviderKeyStatus
+	Priorities               []provider.FieldPriority
+	Connections              []connection.Connection
+	Webhooks                 []webhook.Webhook
+	WebSearchProviders       []provider.WebSearchProviderStatus
+	ShowPlatformDebug        bool
+	Rules                    []rule.Rule
+	HasLocalLibrary          bool
+	BadgeEnabled             bool
+	BadgeSeverityError       bool
+	BadgeSeverityWarning     bool
+	BadgeSeverityInfo        bool
+	RuleScheduleMinutes      int
+	APITokens                []auth.APIToken
+	BackupRetention          int
+	BackupMaxAgeDays         int
+	SymlinkSupported         bool
+	CacheMaxSizeMB           string
+	NameSimilarityThreshold  int
+	MetadataLanguages        []string      // Ordered BCP 47 tags for metadata language preference.
+	NameRomanizationFallback bool          // Whether the MB sort-name romanization fallback is enabled.
+	BasePath                 string        // Current SW_BASE_PATH value (read-only display).
+	BasePathEnvOverride      bool          // True when the SW_BASE_PATH env var is set.
+	TLS                      TLSStatusData // Read-only summary of the running TLS listener configuration.
+	Users                    UsersTabData
+	AuthProviders            AuthProvidersData
+	Updates                  UpdatesTabData
 }
 
 // TLSStatusData feeds the read-only TLS Status card in the Settings General
@@ -597,6 +598,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
 		@metadataLanguagesScript()
+		@romanizationFallbackScript()
 		@components.ContextHelpScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
@@ -1112,6 +1114,43 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										<!-- Autocomplete results rendered by JS -->
 									</div>
 								</div>
+							</div>
+							<!-- Romanization fallback toggle -->
+							<div class="flex items-start justify-between gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+								<div>
+									<div class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "settings.metadata_languages.romanization_fallback.label") }</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ t(ctx, "settings.metadata_languages.romanization_fallback.description") }</div>
+								</div>
+								{{
+									romanizationChecked := data.NameRomanizationFallback
+									romanizationAriaVal := "true"
+									if !romanizationChecked {
+										romanizationAriaVal = "false"
+									}
+								}}
+								<button
+									type="button"
+									id="pref-romanization-fallback-toggle"
+									class={
+										"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+										templ.KV("bg-blue-600", romanizationChecked),
+										templ.KV("bg-gray-200 dark:bg-gray-600", !romanizationChecked),
+									}
+									role="switch"
+									aria-checked={ romanizationAriaVal }
+									aria-label={ t(ctx, "settings.metadata_languages.romanization_fallback.label") }
+									data-toast-saved={ t(ctx, "settings.metadata_languages.romanization_fallback.toast_saved") }
+									data-toast-failed={ t(ctx, "settings.metadata_languages.romanization_fallback.toast_failed") }
+									onclick="swToggleRomanizationFallback(this)"
+								>
+									<span
+										class={
+											"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+											templ.KV("translate-x-5", romanizationChecked),
+											templ.KV("translate-x-0", !romanizationChecked),
+										}
+									></span>
+								</button>
 							</div>
 						</div>
 					</div>
@@ -4574,6 +4613,94 @@ templ metadataLanguagesScript() {
 
 			renderPills();
 		});
+	</script>
+}
+
+// romanizationFallbackScript renders the JS for the
+// metadata_name_romanization_fallback toggle on the Providers tab. The toggle
+// reads i18n strings from data-toast-* attributes on the button element so no
+// English is hardcoded in the script body.
+templ romanizationFallbackScript() {
+	<script>
+		(function () {
+			var romanizationSeq = 0;
+			// Initialized lazily on the first click from the clicked control.
+			// The script is injected ahead of the toggle in the DOM, so reading
+			// the button at parse time would always miss it.
+			var lastConfirmedRomanization = null;
+			var romanizationPending = false;
+
+			function applyToggleState(btn, knob, isOn) {
+				btn.setAttribute('aria-checked', String(isOn));
+				if (isOn) {
+					btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+					btn.classList.add('bg-blue-600');
+					knob.classList.remove('translate-x-0');
+					knob.classList.add('translate-x-5');
+				} else {
+					btn.classList.remove('bg-blue-600');
+					btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+					knob.classList.remove('translate-x-5');
+					knob.classList.add('translate-x-0');
+				}
+			}
+
+			window.swToggleRomanizationFallback = function (btn) {
+				// Serialize: ignore clicks while a save is in flight.
+				if (romanizationPending) return;
+				var isOn = btn.getAttribute('aria-checked') === 'true';
+				if (lastConfirmedRomanization === null) {
+					lastConfirmedRomanization = String(isOn);
+				}
+				var newVal = !isOn;
+				var valStr = String(newVal);
+				var knob = btn.querySelector('span');
+				var seq = ++romanizationSeq;
+				romanizationPending = true;
+				var toastSaved = btn.getAttribute('data-toast-saved') || 'Romanization fallback preference saved';
+				var toastFailed = btn.getAttribute('data-toast-failed') || 'Failed to save romanization fallback preference';
+
+				function rollback() {
+					applyToggleState(btn, knob, lastConfirmedRomanization === 'true');
+				}
+
+				// Optimistic UI update.
+				applyToggleState(btn, knob, newVal);
+
+				if (window.swPreferences) {
+					window.swPreferences.set('metadata_name_romanization_fallback', valStr).then(function (saved) {
+						if (saved === 'true' || saved === 'false') {
+							lastConfirmedRomanization = saved;
+						}
+						if (seq !== romanizationSeq) return;
+						if (saved === valStr) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast(toastSaved);
+							}
+						} else {
+							rollback();
+							if (typeof window.showToast === 'function') {
+								showToast(toastFailed);
+							}
+						}
+					}).catch(function () {
+						if (seq !== romanizationSeq) return;
+						rollback();
+						if (typeof window.showToast === 'function') {
+							showToast(toastFailed);
+						}
+					}).finally(function () {
+						if (seq === romanizationSeq) romanizationPending = false;
+					});
+				} else {
+					rollback();
+					romanizationPending = false;
+					if (typeof window.showToast === 'function') {
+						showToast(toastFailed);
+					}
+				}
+			};
+		}());
 	</script>
 }
 
