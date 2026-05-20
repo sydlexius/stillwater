@@ -1327,4 +1327,54 @@ func TestUpdatePreference_RomanizationFallbackRoundtrip(t *testing.T) {
 	if resp["value"] != "false" {
 		t.Errorf("after update: expected %q, got %q", "false", resp["value"])
 	}
+
+	// PUT "true" explicitly -- an affirmative write must round-trip back, not
+	// just the default-when-unset path exercised above.
+	body = `{"value":"true"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT true: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/"+PrefMetadataNameRomanization, nil)
+	req.SetPathValue("key", PrefMetadataNameRomanization)
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after PUT true: expected 200, got %d", w.Code)
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding GET response after PUT true: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("after PUT true: expected %q, got %q", "true", resp["value"])
+	}
+}
+
+// TestMetadataNameRomanizationPref_RejectsInvalidValue verifies the
+// metadata_name_romanization_fallback preference rejects anything outside its
+// {true, false} allowed set, mirroring TestAutoFetchImagesPref_RejectsInvalidValue.
+func TestMetadataNameRomanizationPref_RejectsInvalidValue(t *testing.T) {
+	t.Parallel()
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, bad := range []string{"yes", "1", "on", "maybe", ""} {
+		t.Run("value_"+bad, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, bad)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/"+PrefMetadataNameRomanization, strings.NewReader(body))
+			req.SetPathValue("key", PrefMetadataNameRomanization)
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", bad, w.Code, w.Body.String())
+			}
+		})
+	}
 }
