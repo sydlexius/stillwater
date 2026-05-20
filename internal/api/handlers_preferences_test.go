@@ -1321,6 +1321,9 @@ func TestUpdatePreference_RomanizationFallbackRoundtrip(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET preference after update: expected 200, got %d", w.Code)
 	}
+	// Decode into a fresh map: json.Decoder merges into a reused map, so a
+	// missing key would silently keep its prior value and mask a regression.
+	resp = map[string]string{}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding GET response after update: %v", err)
 	}
@@ -1348,6 +1351,7 @@ func TestUpdatePreference_RomanizationFallbackRoundtrip(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET after PUT true: expected 200, got %d", w.Code)
 	}
+	resp = map[string]string{}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding GET response after PUT true: %v", err)
 	}
