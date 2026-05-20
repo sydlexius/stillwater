@@ -91,6 +91,26 @@ func TestMetadataFixer_FixOrigin_NoData(t *testing.T) {
 	}
 }
 
+// TestMetadataFixer_FixOrigin_ProviderError verifies the fixer propagates a
+// FetchFieldFromProviders failure as an error, returns no FixResult, and leaves
+// the artist unmutated.
+func TestMetadataFixer_FixOrigin_ProviderError(t *testing.T) {
+	stub := &stubOriginOrchestrator{fieldErr: errors.New("provider failure")}
+	f := &MetadataFixer{orchestrator: stub, logger: testLogger()}
+
+	a := &artist.Artist{Name: "Test Artist", Origin: ""}
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleOriginMissing})
+	if err == nil {
+		t.Fatal("expected error when provider field fetch fails")
+	}
+	if fr != nil {
+		t.Fatalf("expected nil FixResult on error, got %+v", fr)
+	}
+	if a.Origin != "" {
+		t.Errorf("a.Origin = %q, want empty on error", a.Origin)
+	}
+}
+
 func TestFirstNonEmptyFieldValue(t *testing.T) {
 	tests := []struct {
 		name       string
