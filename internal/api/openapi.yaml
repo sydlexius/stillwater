@@ -10913,7 +10913,8 @@ paths:
         Adds an artist-scoped allowlist entry matching (entry.artist_id,
         resolved content_hash) and removes the ledger row; the hash is the
         stored value when present, otherwise hashed from file bytes for
-        legacy rows. The file remains on disk; future scans will not
+        legacy rows. file_name is display-only and not part of matching
+        semantics. The file remains on disk; future scans will not
         re-record it for that artist.
       operationId: allowlistForeignFile
       tags:
