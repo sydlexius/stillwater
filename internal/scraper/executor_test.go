@@ -927,7 +927,8 @@ func TestExecutorPriorityFallbackPreservesUnlistedProviders(t *testing.T) {
 		t.Fatalf("ScrapeAll: %v", err)
 	}
 
-	if len(result.Metadata.Genres) == 0 || result.Metadata.Genres[0] != "jazz" {
+	// "jazz" from the provider is canonicalized to "Jazz" by tagdict.
+	if len(result.Metadata.Genres) == 0 || result.Metadata.Genres[0] != "Jazz" {
 		t.Errorf("expected genres from Wikidata chain fallback, got %v", result.Metadata.Genres)
 	}
 
@@ -1063,7 +1064,7 @@ func TestApplyFieldValue_PerFieldTable(t *testing.T) {
 		{
 			field:    FieldGenres,
 			populate: func(m *provider.ArtistMetadata) { m.Genres = []string{"rock"} },
-			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Genres) == 1 && m.Genres[0] == "rock" },
+			readBack: func(m *provider.ArtistMetadata) bool { return len(m.Genres) == 1 && m.Genres[0] == "Rock" },
 		},
 		{
 			field:    FieldStyles,
@@ -1138,6 +1139,75 @@ func TestApplyFieldValue_PerFieldTable(t *testing.T) {
 				t.Fatalf("applyFieldValue(%s) with empty meta = true, want false", tc.field)
 			}
 		})
+	}
+}
+
+// TestApplyFieldValue_LocalizesGenres verifies that the executor path routes
+// genre tags through tagdict: tags are canonicalized always, and translated to
+// the result's metadata locale when one is set. This is the executor-path
+// counterpart to the legacy orchestrator's locale-aware tag merge (#1589).
+func TestApplyFieldValue_LocalizesGenres(t *testing.T) {
+	tests := []struct {
+		name   string
+		locale string
+		want   string
+	}{
+		{"japanese locale localizes", "ja", "ロック"},
+		{"empty locale canonicalizes only", "", "Rock"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := &providerResult{meta: &provider.ArtistMetadata{Genres: []string{"rock"}}}
+			result := &provider.FetchResult{
+				Metadata:       &provider.ArtistMetadata{},
+				MetadataLocale: tc.locale,
+			}
+			if !applyFieldValue(FieldGenres, pr, result) {
+				t.Fatalf("applyFieldValue(genres) = false, want true")
+			}
+			if len(result.Metadata.Genres) != 1 || result.Metadata.Genres[0] != tc.want {
+				t.Errorf("genres = %v, want [%s]", result.Metadata.Genres, tc.want)
+			}
+		})
+	}
+}
+
+// TestScrapeAll_LocalizesGenresFromMetadataLanguage verifies the full executor
+// path: ScrapeAll derives the metadata locale from the request context and
+// applies it to genre tags, so a ja preference yields localized genres (#1589).
+func TestScrapeAll_LocalizesGenresFromMetadataLanguage(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	registry.Register(&mockProvider{
+		name:    provider.NameMusicBrainz,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Genres: []string{"rock"}}, nil
+		},
+	})
+
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldGenres, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryMetadata, Providers: []provider.ProviderName{provider.NameMusicBrainz}},
+		},
+	}
+	if err := svc.SaveConfig(context.Background(), ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+	ctx := provider.WithMetadataLanguages(context.Background(), []string{"ja"})
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	if len(result.Metadata.Genres) != 1 || result.Metadata.Genres[0] != "ロック" {
+		t.Errorf("expected genres localized to ja [ロック], got %v", result.Metadata.Genres)
 	}
 }
 

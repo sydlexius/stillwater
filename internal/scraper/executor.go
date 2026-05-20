@@ -9,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
 
 // Executor performs per-field metadata scraping with fallback chain execution.
@@ -90,6 +91,9 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		Metadata: &provider.ArtistMetadata{
 			URLs: make(map[string]string),
 		},
+		// MetadataLocale drives locale-aware genre/style/mood handling in the
+		// fieldAppliers below, matching the legacy orchestrator path.
+		MetadataLocale: provider.FirstMetadataLang(ctx),
 	}
 
 	// Cache provider results to avoid duplicate API calls
@@ -498,25 +502,30 @@ var fieldAppliers = map[FieldName]fieldApplier{
 		r.Metadata.Biography = m.Biography
 		return true
 	},
+	// Genre/style/mood are routed through tagdict: tags are canonicalized to a
+	// consistent spelling and, when the user has a metadata-language preference
+	// (r.MetadataLocale), translated to that locale. An empty locale degrades to
+	// plain canonicalization. This mirrors the legacy orchestrator path so both
+	// fetch paths surface tags identically.
 	FieldGenres: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Genres) == 0 {
 			return false
 		}
-		r.Metadata.Genres = m.Genres
+		r.Metadata.Genres = tagdict.MergeAndDeduplicateLocale(nil, m.Genres, r.MetadataLocale)
 		return true
 	},
 	FieldStyles: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Styles) == 0 {
 			return false
 		}
-		r.Metadata.Styles = m.Styles
+		r.Metadata.Styles = tagdict.MergeAndDeduplicateLocale(nil, m.Styles, r.MetadataLocale)
 		return true
 	},
 	FieldMoods: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Moods) == 0 {
 			return false
 		}
-		r.Metadata.Moods = m.Moods
+		r.Metadata.Moods = tagdict.MergeAndDeduplicateLocale(nil, m.Moods, r.MetadataLocale)
 		return true
 	},
 	FieldMembers: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
