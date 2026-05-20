@@ -48,7 +48,7 @@ func (r *Repository) Upsert(ctx context.Context, e Entry) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, file_path) DO UPDATE SET
 			file_name    = excluded.file_name,
-			content_hash = excluded.content_hash,
+			content_hash = COALESCE(excluded.content_hash, foreign_files.content_hash),
 			size_bytes   = excluded.size_bytes,
 			detected_at  = excluded.detected_at`,
 		e.ID, e.ArtistID, e.FilePath, e.FileName, hashArg, e.SizeBytes, e.DetectedAt.UTC().Format(time.RFC3339))
@@ -222,7 +222,7 @@ func (r *Repository) AddAllowlist(ctx context.Context, e AllowlistEntry) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO foreign_file_allowlist (id, scope, artist_id, file_name, content_hash, note, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, string(e.Scope), artistArg, strings.ToLower(e.FileName), e.ContentHash, e.Note, e.CreatedAt.UTC().Format(time.RFC3339))
+		e.ID, string(e.Scope), artistArg, e.FileName, e.ContentHash, e.Note, e.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		// Treat unique-constraint failures as benign so callers (e.g. the
 		// banner Dismiss bulk action) can replay safely without surfacing

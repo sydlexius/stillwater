@@ -218,9 +218,12 @@ func TestRepository_AllowlistScopes(t *testing.T) {
 	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, FileName: "x.jpg", ContentHash: hashA}); err == nil {
 		t.Error("expected artist scope without artist_id to be rejected")
 	}
-	// content_hash is required.
+	// content_hash is required for both scopes.
 	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "x.jpg"}); err == nil {
 		t.Error("expected missing content_hash to be rejected")
+	}
+	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeGlobal, FileName: "x.jpg"}); err == nil {
+		t.Error("expected global scope without content_hash to be rejected")
 	}
 	if err := repo.AddAllowlist(ctx, AllowlistEntry{Scope: ScopeArtist, ArtistID: "a1", FileName: "Backdrop.JPG", ContentHash: hashA}); err != nil {
 		t.Fatalf("valid artist allowlist: %v", err)

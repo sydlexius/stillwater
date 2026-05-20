@@ -10866,10 +10866,11 @@ paths:
     post:
       summary: Bulk allowlist every active foreign file globally
       description: |
-        Inserts a global-scope allowlist row for every distinct file_name
+        Inserts a global-scope allowlist row for every distinct content_hash
         currently in the foreign_files ledger and clears the ledger.
-        Subsequent scans suppress those names across every artist. Returns
-        the re-rendered conflict banner so HTMX can swap it in place.
+        Subsequent scans suppress matching byte content across every artist
+        (file_name is display-only). Returns the re-rendered conflict banner
+        so HTMX can swap it in place.
       operationId: dismissForeignFiles
       tags:
         - Foreign Files
@@ -10909,7 +10910,7 @@ paths:
       summary: Allowlist a single ledger row (artist-scoped)
       description: |
         Adds an artist-scoped allowlist entry matching (entry.artist_id,
-        entry.file_name) and removes the ledger row. The file remains on
+        entry.content_hash) and removes the ledger row. The file remains on
         disk; future scans will not re-record it for that artist.
       operationId: allowlistForeignFile
       tags:
@@ -11058,7 +11059,8 @@ paths:
       summary: Remove an allowlist entry
       description: |
         Removes an allowlist row, re-enabling foreign-file detection for the
-        matching file_name (artist-scoped or global, depending on the row).
+        matching content_hash (artist-scoped or global, depending on the row).
+        file_name is not part of matching semantics.
       operationId: removeForeignFileAllowlist
       tags:
         - Foreign Files

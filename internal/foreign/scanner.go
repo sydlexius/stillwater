@@ -210,6 +210,22 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 		}
 		fullPath := filepath.Join(a.Path, name)
 
+		// Provenance is checked before hashing: a Stillwater-managed
+		// image is not foreign and never reaches the allowlist, so on a
+		// steady-state library this skips a full-file read for the
+		// common case.
+		meta, err := img.ReadProvenance(fullPath)
+		if err != nil {
+			s.logger.Debug("read provenance failed; skipping",
+				slog.String("path", fullPath),
+				slog.Any("error", err))
+			continue
+		}
+		if meta != nil {
+			// Has Stillwater provenance -- not foreign.
+			continue
+		}
+
 		// Hash is computed before the allowlist check because the
 		// allowlist now keys on byte content rather than basename. If
 		// hashing fails (permission, partial write) we skip the file
@@ -232,18 +248,6 @@ func (s *Scanner) scanArtist(ctx context.Context, a artist.Artist) (int, int, in
 			continue
 		}
 		if allowed {
-			continue
-		}
-
-		meta, err := img.ReadProvenance(fullPath)
-		if err != nil {
-			s.logger.Debug("read provenance failed; skipping",
-				slog.String("path", fullPath),
-				slog.Any("error", err))
-			continue
-		}
-		if meta != nil {
-			// Has Stillwater provenance -- not foreign.
 			continue
 		}
 
@@ -393,11 +397,11 @@ func (s *Scanner) listForArtist(ctx context.Context, artistID string) ([]Entry, 
 	return out, rows.Err()
 }
 
-// hashFile returns the lowercase hex sha256 of the file at path. Used by
-// the scanner to key allowlist matching on byte content rather than
-// basename, and by the handlers when an old ledger row predates migration
-// 008 and needs a hash computed on demand. Reading is streamed so very
-// large foreign files do not balloon scanner memory.
+// hashFile returns the lowercase hex sha256 of the file at path. The
+// scanner uses it to key allowlist matching on byte content rather than
+// basename, and to rehash legacy rows that predate migration 008 during
+// reconciliation. Reading is streamed so very large foreign files do not
+// balloon scanner memory.
 func hashFile(path string) (string, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: path is built from artist directory + DirEntry name, both server-controlled
 	if err != nil {

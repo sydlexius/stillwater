@@ -821,12 +821,22 @@ func TestHandleForeignFilesDismiss_SameBasenameDistinctBytes(t *testing.T) {
 	// Each row should carry a distinct content_hash matching one of the
 	// seeded bodies. Sort-insensitive comparison via a set.
 	wantHashes := map[string]bool{sha256HexAPI(bodyA): true, sha256HexAPI(bodyB): true}
+	seenHashes := map[string]int{}
 	for _, row := range rows {
 		if !wantHashes[row.ContentHash] {
 			t.Errorf("unexpected content_hash %q on dismissed row", row.ContentHash)
 		}
+		seenHashes[row.ContentHash]++
 		if row.FileName != "poster.jpg" {
 			t.Errorf("expected file_name preserved as %q; got %q", "poster.jpg", row.FileName)
+		}
+	}
+	// Both distinct hashes must be persisted exactly once. The membership
+	// check above still passes if both rows accidentally reuse one hash;
+	// the per-hash count is what proves the bytes were keyed separately.
+	for want := range wantHashes {
+		if seenHashes[want] != 1 {
+			t.Errorf("content_hash %q persisted %d times; want exactly 1", want, seenHashes[want])
 		}
 	}
 }
@@ -859,5 +869,12 @@ func TestResolveForeignHash_BackfillsFromDisk(t *testing.T) {
 	}
 	if got != sentinel {
 		t.Errorf("expected stored hash to short-circuit; got %q", got)
+	}
+	// Legacy entry whose file is gone: the on-demand rehash must fail
+	// loudly rather than return an empty hash that would later produce a
+	// malformed allowlist row.
+	got, err = resolveForeignHash(&foreign.Entry{FilePath: filepath.Join(dir, "missing.jpg")})
+	if err == nil {
+		t.Errorf("expected error for empty hash with missing file; got hash %q", got)
 	}
 }

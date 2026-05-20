@@ -270,21 +270,25 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 			r.logger.Warn("dismiss content-hash resolve failed", "path", e.FilePath, "error", herr)
 			continue
 		}
-		if seen[hash] {
-			continue
-		}
-		seen[hash] = true
-		if err := r.foreignRepo.AddAllowlist(req.Context(), foreign.AllowlistEntry{
-			Scope:       foreign.ScopeGlobal,
-			FileName:    e.FileName,
-			ContentHash: hash,
-			Note:        "bulk dismiss from banner",
-		}); err != nil {
-			// Skip the ledger delete on failure: clearing the row would hide
-			// the warning even though dismissal was not actually persisted,
-			// and the file would only re-appear on the next scan cycle.
-			r.logger.Warn("dismiss bulk allowlist failed for file", "file", e.FileName, "error", err)
-			continue
+		// AddAllowlist runs once per distinct hash, but DeleteByPath must
+		// run for every entry: two files with identical bytes share one
+		// allowlist row yet each keep their own ledger row. seen[hash] is
+		// set only after AddAllowlist succeeds so a failed write is
+		// retried on the next duplicate rather than silently skipped.
+		if !seen[hash] {
+			if err := r.foreignRepo.AddAllowlist(req.Context(), foreign.AllowlistEntry{
+				Scope:       foreign.ScopeGlobal,
+				FileName:    e.FileName,
+				ContentHash: hash,
+				Note:        "bulk dismiss from banner",
+			}); err != nil {
+				// Skip the ledger delete on failure: clearing the row would hide
+				// the warning even though dismissal was not actually persisted,
+				// and the file would only re-appear on the next scan cycle.
+				r.logger.Warn("dismiss bulk allowlist failed for file", "file", e.FileName, "error", err)
+				continue
+			}
+			seen[hash] = true
 		}
 		if err := r.foreignRepo.DeleteByPath(req.Context(), e.ArtistID, e.FilePath); err != nil && !errors.Is(err, foreign.ErrNotFound) {
 			// Error not Warn: the global allowlist write succeeded but the
