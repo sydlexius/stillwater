@@ -16,9 +16,27 @@ while IFS= read -r templ_file; do
 done <<< "$templ_changed"
 
 if [ -n "$missing" ]; then
-  echo "ERROR: .templ files changed but corresponding *_templ.go not regenerated. Run: templ generate"
+  echo "ERROR: .templ files changed but corresponding *_templ.go not regenerated. Run: go tool templ generate"
   echo "Missing regeneration for:"
   printf "%b" "$missing"
+  exit 1
+fi
+
+# Content freshness check: regenerate all *_templ.go in a clean state and fail
+# if anything differs. This catches stale content from a wrong-version templ
+# binary -- not just a missing file -- and ensures the committed output matches
+# the pinned version in go.mod.
+if ! go tool templ generate 2>/tmp/check-generated-templ.log; then
+  echo "ERROR: 'go tool templ generate' failed:"
+  cat /tmp/check-generated-templ.log
+  exit 1
+fi
+dirty_templ=$(git diff --name-only -- '*_templ.go' || true)
+if [ -n "$dirty_templ" ]; then
+  echo "ERROR: *_templ.go files are stale or were generated with a different templ version."
+  echo "Run: go tool templ generate && git add <generated files>"
+  echo "Stale files:"
+  echo "$dirty_templ" | sed 's/^/  /'
   exit 1
 fi
 

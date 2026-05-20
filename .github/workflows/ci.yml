@@ -56,11 +56,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
-
       - name: Generate templ
-        run: templ generate
+        run: go tool templ generate
 
       - name: Verify generated files are up-to-date
         run: |
@@ -68,7 +65,7 @@ jobs:
           if [ -n "$DIRTY" ]; then
             echo "Generated templ files are out of date:"
             echo "  ${DIRTY//$'\n'/$'\n'  }"
-            echo "Run 'templ generate' locally and commit the results."
+            echo "Run 'go tool templ generate' locally and commit the results."
             exit 1
           fi
 
@@ -201,11 +198,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
-
       - name: Generate templ
-        run: templ generate
+        run: go tool templ generate
 
       - name: Build binary
         run: |

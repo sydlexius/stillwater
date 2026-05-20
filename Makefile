@@ -60,11 +60,11 @@ hadolint:
 fmt:
 	gofmt -w .
 	goimports -w .
-	templ fmt .
+	go tool templ fmt .
 
 ## templ: Generate Go code from Templ templates
 templ:
-	templ generate
+	go tool templ generate
 
 ## tailwind: Build Tailwind CSS
 tailwind:
