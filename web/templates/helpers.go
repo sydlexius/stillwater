@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -217,6 +218,34 @@ func membersJSON(members []provider.MemberInfo) string {
 	return string(b)
 }
 
+// layoutI18nJSON builds a JSON object of translated strings used by the
+// global toast, modal, and undo infrastructure in layout.templ. The JS
+// reads the blob at startup so no English literals remain in the script block.
+// Interpolated strings use Go %s/%d format verbs; JS substitutes values via
+// str.replace('%s', value) or str.replace('%d', value).
+func layoutI18nJSON(ctx context.Context) string {
+	m := map[string]string{
+		"grouped_aria":    t(ctx, "notifications.grouped_aria"),
+		"repeated_aria":   t(ctx, "notifications.repeated_aria"),
+		"dismiss_aria":    t(ctx, "notifications.dismiss_aria"),
+		"undo":            t(ctx, "actions.undo"),
+		"undo_fix_aria":   t(ctx, "notifications.undo_fix_aria"),
+		"close_aria":      t(ctx, "notifications.close_aria"),
+		"undoing":         t(ctx, "actions.undoing"),
+		"http_status":     t(ctx, "errors.http_status"),
+		"fix_reverted":    t(ctx, "notifications.fix_reverted"),
+		"undo_failed":     t(ctx, "notifications.undo_failed"),
+		"request_failed":  t(ctx, "errors.request_failed"),
+		"request_timeout": t(ctx, "errors.request_timeout"),
+		"confirm":         t(ctx, "common.confirm"),
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
 // tourStepsJSON builds a JSON object of translated tour step titles and
 // descriptions. Called by tourI18nJSON in layout.templ so tour.js can
 // display localized popover text.
@@ -421,28 +450,28 @@ func obConflictBlockValue(blocking bool) string {
 
 // obConflictWarnTitle returns the OOBE-step heading for amber states.
 // Mirrors warnTitle but with first-time-setup phrasing per the issue spec.
-func obConflictWarnTitle(axis string) string {
+func obConflictWarnTitle(ctx context.Context, axis string) string {
 	switch axis {
 	case "image":
-		return "Server image saver is on."
+		return t(ctx, "banner.onboarding.warn_title_image")
 	case "nfo":
-		return "Server NFO writer is on."
+		return t(ctx, "banner.onboarding.warn_title_nfo")
 	default:
-		return "Server image and NFO writers are on."
+		return t(ctx, "banner.onboarding.warn_title_both")
 	}
 }
 
 // obConflictWarnBody returns the body copy for amber pre-flight states.
 // References fanart-style duplicate file names so the user understands the
 // failure mode without having to read the post-OOBE banner first.
-func obConflictWarnBody(axis string) string {
+func obConflictWarnBody(ctx context.Context, axis string) string {
 	switch axis {
 	case "image":
-		return "Stillwater can write artwork either way, but you will get duplicate files like backdrop1.jpg and fanart2.jpg alongside the names Stillwater chooses."
+		return t(ctx, "banner.onboarding.warn_body_image")
 	case "nfo":
-		return "Stillwater can write artist.nfo either way, but the server's metadata writer will overwrite Stillwater's edits within seconds, undoing your changes."
+		return t(ctx, "banner.onboarding.warn_body_nfo")
 	default:
-		return "Stillwater can manage artwork and NFOs, but the server's savers will produce duplicate files and overwrite Stillwater's edits within seconds."
+		return t(ctx, "banner.onboarding.warn_body_both")
 	}
 }
 
@@ -577,8 +606,9 @@ func hasMatchedAlbums(comp *artist.AlbumComparison) bool {
 }
 
 // joinMatchedNames returns a comma-separated string of matched album names
-// from the comparison, limited to the first 5 entries.
-func joinMatchedNames(comp *artist.AlbumComparison) string {
+// from the comparison, limited to the first 5 entries. The ctx parameter
+// is used to look up the translated " (+%d more)" suffix via the i18n system.
+func joinMatchedNames(ctx context.Context, comp *artist.AlbumComparison) string {
 	if comp == nil || len(comp.Matches) == 0 {
 		return ""
 	}
@@ -592,7 +622,7 @@ func joinMatchedNames(comp *artist.AlbumComparison) string {
 	}
 	result := strings.Join(names, ", ")
 	if len(comp.Matches) > 5 {
-		result += fmt.Sprintf(" (+%d more)", len(comp.Matches)-5)
+		result += tf(ctx, "common.plus_more", len(comp.Matches)-5)
 	}
 	return result
 }
@@ -641,4 +671,29 @@ func translationAfter(s, placeholder string) string {
 		return ""
 	}
 	return s[idx+len(placeholder):]
+}
+
+// roundTripOverlapHTML renders the round-trip overlap sentence as a single
+// HTML string where the connection names and path carry inline color styling.
+// Using a single translated key (banner.round_trip.overlap) gives translators
+// control over word order -- the three %s placeholders receive the pre-styled
+// HTML spans for nameA, nameB, and path. Each value is HTML-escaped before
+// embedding in the span so user-supplied strings cannot inject markup.
+// The returned string is intended for use with @templ.Raw() inside a <li>.
+//
+// Option A choice (M50 localization milestone): a single key with three %s
+// placeholders lets translators reorder the names and path for languages
+// where the English "X and Y share Z" structure is grammatically incorrect.
+func roundTripOverlapHTML(ctx context.Context, aName, bName, path, nameColorClass, pathColorClass string) string {
+	// Escape each user-supplied value before embedding in HTML attributes/content.
+	safeA := html.EscapeString(aName)
+	safeB := html.EscapeString(bName)
+	safePath := html.EscapeString(path)
+
+	spanA := fmt.Sprintf(`<span class="font-medium %s">%s</span>`, nameColorClass, safeA)
+	spanB := fmt.Sprintf(`<span class="font-medium %s">%s</span>`, nameColorClass, safeB)
+	codePath := fmt.Sprintf(`<code class="%s px-1 rounded">%s</code>`, pathColorClass, safePath)
+
+	tpl := t(ctx, "banner.round_trip.overlap")
+	return fmt.Sprintf(tpl, spanA, spanB, codePath)
 }

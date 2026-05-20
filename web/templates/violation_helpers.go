@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -38,25 +39,26 @@ func formatAge(t time.Time) string {
 }
 
 // fixButtonLabel maps a rule ID to a short action label for a Fix button.
-func fixButtonLabel(ruleID string) string {
+// The ctx parameter is used to look up the translated label via the i18n system.
+func fixButtonLabel(ctx context.Context, ruleID string) string {
 	switch ruleID {
 	case rule.RuleNFOExists:
-		return "Generate NFO"
+		return t(ctx, "rule.fix.generate_nfo")
 	case rule.RuleNFOHasMBID:
-		return "Fetch MBID"
+		return t(ctx, "rule.fix.fetch_mbid")
 	case rule.RuleBioExists:
-		return "Fetch biography"
+		return t(ctx, "rule.fix.fetch_biography")
 	case rule.RuleExtraneousImages:
-		return "Delete extraneous"
+		return t(ctx, "rule.fix.delete_extraneous")
 	case rule.RuleLogoPadding:
-		return "Trim logo"
+		return t(ctx, "rule.fix.trim_logo")
 	case rule.RuleDirectoryNameMismatch:
-		return "Rename directory"
+		return t(ctx, "rule.fix.rename_directory")
 	default:
 		if strings.Contains(ruleID, "thumb") || strings.Contains(ruleID, "fanart") ||
 			strings.Contains(ruleID, "logo") || strings.Contains(ruleID, "banner") {
-			return "Fetch best image"
+			return t(ctx, "rule.fix.fetch_best_image")
 		}
-		return "Fix"
+		return t(ctx, "rule.fix.default")
 	}
 }

@@ -9,16 +9,29 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
-// onboardingConflictRequest creates a POST request that the handler treats
-// as authenticated. The handler does not consult the user ID, so a bare
-// request is sufficient. POST is required by the route registration --
-// the endpoint mutates state (settings marker, detector invalidate) and
-// must remain CSRF-eligible.
+// onboardingConflictRequest creates a POST request with an English i18n
+// translator in context. The handler does not consult the user ID, so no
+// auth context is needed. POST is required by the route registration.
 func onboardingConflictRequest(target string) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, target, nil)
 	return req
+}
+
+// onboardingConflictRequestWithI18n wraps onboardingConflictRequest with an
+// English translator in the request context so template i18n lookups resolve
+// to real translations rather than raw key strings.
+func onboardingConflictRequestWithI18n(tb testing.TB, target string) *http.Request {
+	tb.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		tb.Fatalf("loading i18n bundle: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, target, nil)
+	ctx := i18n.WithTranslator(req.Context(), bundle.Translator("en"))
+	return req.WithContext(ctx)
 }
 
 func TestHasQualifyingConflictConnection(t *testing.T) {
@@ -56,7 +69,7 @@ func TestHandleGetOnboardingConflictStep_RendersCleanWhenDetectorMissing(t *test
 	// at "1". The clean body sets ob-conflict-block-state to "0" so the
 	// existing afterSwap sync clears the gate.
 	r := &Router{logger: testDiscardLogger()}
-	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
+	req := onboardingConflictRequestWithI18n(t, "/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
 	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusOK {
@@ -74,7 +87,7 @@ func TestHandleGetOnboardingConflictStep_RendersCleanWhenDetectorMissing(t *test
 func TestHandleGetOnboardingConflictStep_RendersCleanBody(t *testing.T) {
 	t.Parallel()
 	r := newConflictHarness(t, nil)
-	req := onboardingConflictRequest("/api/v1/onboarding/conflict-step")
+	req := onboardingConflictRequestWithI18n(t, "/api/v1/onboarding/conflict-step")
 	w := httptest.NewRecorder()
 	r.handlePostOnboardingConflictStep(w, req)
 	if w.Code != http.StatusOK {

@@ -18,7 +18,21 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/foreign"
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
+
+// withI18nCtx attaches an English i18n translator to a request so that
+// template i18n lookups resolve to real translations rather than raw key
+// strings. Used by tests that assert on user-facing copy in rendered HTML.
+func withI18nCtx(tb testing.TB, req *http.Request) *http.Request {
+	tb.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		tb.Fatalf("loading i18n bundle: %v", err)
+	}
+	ctx := i18n.WithTranslator(req.Context(), bundle.Translator("en"))
+	return req.WithContext(ctx)
+}
 
 // sha256HexAPI returns the lowercase hex sha256 of b. Mirrors the
 // foreign-package test helper so handler tests can pre-compute the hash
@@ -445,7 +459,7 @@ func TestHandleForeignFile_RenderRefreshedTable_AfterRowActions(t *testing.T) {
 	}
 
 	// Delete returns the refreshed table partial.
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-files/"+deleteID+"/file", nil)
+	req = withI18nCtx(t, httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-files/"+deleteID+"/file", nil))
 	req.SetPathValue("id", deleteID)
 	rec = httptest.NewRecorder()
 	r.handleForeignFileDelete(rec, req)
@@ -475,7 +489,7 @@ func TestHandleForeignAllowlistRemove_RendersRefreshedTable(t *testing.T) {
 	rows, _ := r.foreignRepo.ListAllowlist(context.Background())
 	id := rows[0].ID
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-file-allowlist/"+id, nil)
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodDelete, "/api/v1/foreign-file-allowlist/"+id, nil))
 	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
 	r.handleForeignAllowlistRemove(rec, req)
@@ -513,7 +527,7 @@ func TestHandleForeignFilesDismiss_RendersSurvivingRows(t *testing.T) {
 			t.Fatalf("seed %s: %v", fn, err)
 		}
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
+	req := withI18nCtx(t, httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil))
 	rec := httptest.NewRecorder()
 	r.handleForeignFilesDismiss(rec, req)
 	if rec.Code != http.StatusOK {

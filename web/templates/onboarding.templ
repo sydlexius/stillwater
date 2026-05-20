@@ -342,11 +342,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							hx-trigger="oobeConflictRefresh from:body"
 							hx-swap="innerHTML"
 							hx-target="#ob-conflict-body"
-								hx-on::response-error="onboardingConflictRequestFailed()"
-								hx-on::send-error="onboardingConflictRequestFailed()"
-								data-error-text={ t(ctx, "onboarding.conflict_check_failed") }
-								data-retry-text={ t(ctx, "onboarding.conflict_check_retry") }
-								data-checking-text={ t(ctx, "onboarding.conflict_checking") }
+							hx-on::response-error="onboardingConflictRequestFailed()"
+							hx-on::send-error="onboardingConflictRequestFailed()"
+							data-error-text={ t(ctx, "onboarding.conflict_check_failed") }
+							data-retry-text={ t(ctx, "onboarding.conflict_check_retry") }
+							data-checking-text={ t(ctx, "onboarding.conflict_checking") }
 						>
 							<div class="flex items-center justify-center gap-3 py-8 text-sm text-gray-500 dark:text-gray-400">
 								<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -115,7 +115,7 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 										{ tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
 									</span>
 									if hasMatchedAlbums(c.AlbumComparison) {
-										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(c.AlbumComparison) }</span>
+										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(ctx, c.AlbumComparison) }</span>
 									}
 								</div>
 							}

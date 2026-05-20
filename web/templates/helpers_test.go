@@ -2,6 +2,8 @@ package templates
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/i18n"
@@ -297,6 +299,7 @@ func TestObConflictBlockValue(t *testing.T) {
 }
 
 func TestObConflictWarnTitle(t *testing.T) {
+	ctx := testCtx(t)
 	cases := map[string]string{
 		"image":   "Server image saver is on.",
 		"nfo":     "Server NFO writer is on.",
@@ -304,17 +307,77 @@ func TestObConflictWarnTitle(t *testing.T) {
 		"unknown": "Server image and NFO writers are on.",
 	}
 	for axis, want := range cases {
-		if got := obConflictWarnTitle(axis); got != want {
+		if got := obConflictWarnTitle(ctx, axis); got != want {
 			t.Errorf("axis=%q: got %q, want %q", axis, got, want)
 		}
 	}
 }
 
 func TestObConflictWarnBody(t *testing.T) {
+	ctx := testCtx(t)
 	for _, axis := range []string{"image", "nfo", "both", "unknown"} {
-		got := obConflictWarnBody(axis)
+		got := obConflictWarnBody(ctx, axis)
 		if got == "" {
 			t.Errorf("axis=%q produced empty body", axis)
 		}
+	}
+}
+
+// TestLayoutI18nJSON verifies the layout i18n blob is valid JSON carrying
+// every key the layout.templ script block reads, each with a non-empty
+// translated value.
+func TestLayoutI18nJSON(t *testing.T) {
+	ctx := testCtx(t)
+
+	var m map[string]string
+	if err := json.Unmarshal([]byte(layoutI18nJSON(ctx)), &m); err != nil {
+		t.Fatalf("layoutI18nJSON did not produce valid JSON: %v", err)
+	}
+
+	wantKeys := []string{
+		"grouped_aria", "repeated_aria", "dismiss_aria", "undo",
+		"undo_fix_aria", "close_aria", "undoing", "http_status",
+		"fix_reverted", "undo_failed", "request_failed",
+		"request_timeout", "confirm",
+	}
+	for _, k := range wantKeys {
+		v, ok := m[k]
+		if !ok {
+			t.Errorf("layoutI18nJSON missing key %q", k)
+			continue
+		}
+		if strings.TrimSpace(v) == "" {
+			t.Errorf("layoutI18nJSON key %q has an empty value", k)
+		}
+	}
+	if len(m) != len(wantKeys) {
+		t.Errorf("layoutI18nJSON has %d keys, want %d", len(m), len(wantKeys))
+	}
+}
+
+// TestRoundTripOverlapHTML verifies the round-trip overlap sentence embeds
+// the styled name/path spans and HTML-escapes user-supplied values so they
+// cannot inject markup.
+func TestRoundTripOverlapHTML(t *testing.T) {
+	ctx := testCtx(t)
+
+	got := roundTripOverlapHTML(ctx, "Emby", "Jellyfin", "/music/Various", "text-rose-100", "bg-rose-50")
+	for _, want := range []string{
+		`<span class="font-medium text-rose-100">Emby</span>`,
+		`<span class="font-medium text-rose-100">Jellyfin</span>`,
+		`<code class="bg-rose-50 px-1 rounded">/music/Various</code>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("roundTripOverlapHTML output missing %q\ngot: %s", want, got)
+		}
+	}
+
+	// A user-supplied name containing markup must be HTML-escaped.
+	escaped := roundTripOverlapHTML(ctx, `<script>x</script>`, "B", "/p", "c", "c")
+	if strings.Contains(escaped, "<script>") {
+		t.Errorf("roundTripOverlapHTML did not escape an injected <script> tag: %s", escaped)
+	}
+	if !strings.Contains(escaped, "&lt;script&gt;") {
+		t.Errorf("roundTripOverlapHTML output missing the escaped script tag: %s", escaped)
 	}
 }
