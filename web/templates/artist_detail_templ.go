@@ -4181,9 +4181,9 @@ func MembersSection(artistID string, members []artist.BandMember, providers []st
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var246 string
-						templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(inst)
+						templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(tInstrument(ctx, inst))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1338, Col: 16}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 1338, Col: 34}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
 						if templ_7745c5c3_Err != nil {

@@ -25,3 +25,8 @@ intoto = "intoto"
 # "catalogue" is British English, used consistently in doc filenames and prose
 # (rules-catalogue.md, provider catalogue, etc.).
 catalogue = "catalogue"
+# "chambre" (from "Musique de chambre" = Chamber Music, the fr translation of
+# the Chamber Music genre tag) is correct French but accent-free, so typos
+# flags it as a misspelling of English "chamber". Other French display values
+# carry diacritics and are not flagged, so this is the only entry needed.
+chambre = "chambre"

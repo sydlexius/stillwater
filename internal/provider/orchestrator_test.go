@@ -114,12 +114,13 @@ func TestOrchestratorFallback(t *testing.T) {
 	}
 
 	// Genres should be accumulated from both providers (MusicBrainz first, then Last.fm).
-	// With tag aggregation, both "rock" (MusicBrainz) and "alternative" (Last.fm) are present.
+	// With tag aggregation, both "rock" (MusicBrainz, canonicalized to "Rock") and
+	// "alternative" (Last.fm) are present.
 	if len(result.Metadata.Genres) != 2 {
 		t.Errorf("expected 2 genres (aggregated), got: %v", result.Metadata.Genres)
 	}
-	if result.Metadata.Genres[0] != "rock" {
-		t.Errorf("expected rock first (MusicBrainz priority), got: %s", result.Metadata.Genres[0])
+	if result.Metadata.Genres[0] != "Rock" {
+		t.Errorf("expected Rock first (MusicBrainz priority, canonicalized), got: %s", result.Metadata.Genres[0])
 	}
 	if result.Metadata.Genres[1] != "alternative" {
 		t.Errorf("expected alternative second (Last.fm), got: %s", result.Metadata.Genres[1])

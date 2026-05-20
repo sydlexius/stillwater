@@ -71,7 +71,7 @@ If you only changed priorities for image fields, the metadata refresh won't move
 
 ### Metadata languages
 
-Under Settings > Providers > Metadata languages: a multi-select with autocomplete. Drives the "Artist name matches preferred language" rule and influences which alias MusicBrainz promotes when refreshing names. Set this to your preferred locale list (e.g., `en, ja, ko` for an English-first collection that should use original-language names where they exist).
+Under Settings > Providers > Metadata languages: a multi-select with autocomplete. Drives the "Artist name matches preferred language" rule, influences which alias MusicBrainz promotes when refreshing names, and selects the language for genre, style, and mood tags. When the same genre arrives from two providers in different languages, Stillwater keeps the form in your first listed language instead of storing both as separate tags. Set this to your preferred locale list (e.g., `en, ja, ko` for an English-first collection that should use original-language names where they exist).
 
 ### Name similarity threshold
 

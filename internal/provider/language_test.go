@@ -122,3 +122,30 @@ func TestLanguageBase(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstMetadataLang(t *testing.T) {
+	tests := []struct {
+		name  string
+		langs []string
+		want  string
+	}{
+		{"no preference", nil, ""},
+		{"single language", []string{"ja"}, "ja"},
+		{"region subtag stripped", []string{"ja-JP"}, "ja"},
+		{"lowercased", []string{"JA"}, "ja"},
+		{"blank first entry skipped", []string{"", "ja"}, "ja"},
+		{"whitespace first entry skipped", []string{"   ", "fr"}, "fr"},
+		{"all entries blank", []string{"", "  "}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tc.langs != nil {
+				ctx = WithMetadataLanguages(ctx, tc.langs)
+			}
+			if got := firstMetadataLang(ctx); got != tc.want {
+				t.Errorf("firstMetadataLang(%v) = %q, want %q", tc.langs, got, tc.want)
+			}
+		})
+	}
+}

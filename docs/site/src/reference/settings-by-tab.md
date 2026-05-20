@@ -105,7 +105,7 @@ For each metadata field (biography, genres, image URLs, and so on) Stillwater qu
 
 ### Metadata Language Preferences  {#settings-providers-metadata-languages}
 
-Set your preferred languages for artist names, biographies, and aliases. Providers will return content in the first available language from your list. Drag to reorder priority.
+Set your preferred languages for artist names, biographies, aliases, and genre/style/mood tags. Providers will return content in the first available language from your list. Drag to reorder priority.
 
 - **Remove**
 {: #settings-providers-metadata-languages-remove }

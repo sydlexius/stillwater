@@ -27,9 +27,13 @@ type contextKey string
 const translatorKey contextKey = "i18n.translator"
 
 // Translator holds loaded translation strings for a single locale.
+// When fallback is set, T and Tn consult it for keys absent from strings.
+// This is wired by Bundle loading so non-English locales gracefully degrade
+// to the English value rather than exposing the bare key.
 type Translator struct {
-	locale  string
-	strings map[string]string
+	locale   string
+	strings  map[string]string
+	fallback *Translator
 }
 
 // NewTranslator creates a Translator with the given locale and a defensive copy
@@ -51,12 +55,18 @@ func (t *Translator) Locale() string {
 	return t.locale
 }
 
-// T returns the translated string for the given key. If the key is not found,
-// the key itself is returned as a fallback so missing translations are visible
-// in the UI rather than silently blank.
+// T returns the translated string for the given key. Lookup order:
+//  1. This locale's string map.
+//  2. The fallback Translator (if set), applied recursively -- so a ja
+//     Translator falls back to en, which then falls back to the key.
+//  3. The key itself, so missing translations surface in the UI rather
+//     than silently going blank.
 func (t *Translator) T(key string) string {
 	if v, ok := t.strings[key]; ok {
 		return v
+	}
+	if t.fallback != nil {
+		return t.fallback.T(key)
 	}
 	return key
 }
@@ -137,6 +147,7 @@ func Load(localesDir string) (*Bundle, error) {
 		b.fallback = locales[0]
 	}
 
+	b.wireFallbacks()
 	return b, nil
 }
 
@@ -188,7 +199,28 @@ func LoadFS(fsys fs.FS) (*Bundle, error) {
 		b.fallback = locales[0]
 	}
 
+	b.wireFallbacks()
 	return b, nil
+}
+
+// wireFallbacks sets the fallback field on every non-fallback Translator so
+// that T() can chain to the fallback locale for keys absent from a translation.
+// This ensures non-English locales show the English value (not the bare key)
+// for any string that has not yet been translated.
+//
+// Called once at the end of Load and LoadFS, after b.fallback is resolved.
+func (b *Bundle) wireFallbacks() {
+	fb, ok := b.translators[b.fallback]
+	if !ok {
+		// No fallback translator loaded -- nothing to wire.
+		return
+	}
+	for locale, tr := range b.translators {
+		if locale == b.fallback {
+			continue
+		}
+		tr.fallback = fb
+	}
 }
 
 // LoadEmbedded loads the bundle from the compiled-in locale files. This is the

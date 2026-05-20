@@ -90,6 +90,11 @@ type FetchResult struct {
 	// relation data for real bands can be sparse and an empty roster would
 	// represent missing data rather than an authoritative empty result.
 	MembersAuthoritative bool `json:"members_authoritative,omitempty"`
+	// MetadataLocale is the BCP 47 primary-language subtag of the user's first
+	// preferred metadata language at the time of the fetch. It is set from the
+	// context's MetadataLanguages value and drives locale-aware tag deduplication
+	// in applyTagSliceField. An empty string means English-only dedup.
+	MetadataLocale string `json:"-"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -150,6 +155,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		Metadata: &ArtistMetadata{
 			URLs: make(map[string]string),
 		},
+		MetadataLocale: firstMetadataLang(ctx),
 	}
 
 	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
@@ -655,6 +661,10 @@ var tagSliceFieldAccessors = map[string]tagSliceFieldAccessor{
 // original switch arm, which entered its inner `if len(meta.X) > 0` and then
 // always returned). The field source is recorded only on first growth so the
 // highest-priority contributor stays first.
+//
+// When result.MetadataLocale is set, locale-aware deduplication is used so
+// that tags for the same concept in different languages (e.g. "Rock" from
+// MusicBrainz and "ロック" from Wikidata) collapse to a single preferred form.
 func applyTagSliceField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
 	acc, ok := tagSliceFieldAccessors[field]
 	if !ok {
@@ -667,7 +677,7 @@ func applyTagSliceField(result *FetchResult, field string, pr *providerResult, s
 	}
 	current := acc.get(result.Metadata)
 	before := len(current)
-	merged := tagdict.MergeAndDeduplicate(current, src)
+	merged := tagdict.MergeAndDeduplicateLocale(current, src, result.MetadataLocale)
 	acc.set(result.Metadata, merged)
 	grew := len(merged) > before
 	if grew && !hasFieldSource(result.Sources, field) {
