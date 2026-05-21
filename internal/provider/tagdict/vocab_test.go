@@ -205,6 +205,22 @@ func TestApplyVocabFilter_ExcludeAll(t *testing.T) {
 	}
 }
 
+// TestApplyVocabFilter_BlankTagSkipped verifies that a blank or whitespace-only
+// tag in the input is dropped rather than emitted, even when it matches no
+// exclude pattern.
+func TestApplyVocabFilter_BlankTagSkipped(t *testing.T) {
+	t.Parallel()
+	// A non-empty exclude list keeps the call off the fast path so the
+	// per-tag loop (and its blank-tag guard) runs.
+	cfg := &VocabConfig{Exclude: []string{"junk"}}
+	input := []string{"Rock", "", "   ", "Pop"}
+	got := ApplyVocabFilter(cfg, VocabFieldGenres, input)
+	want := []string{"Rock", "Pop"}
+	if !equalStrings(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 // TestWildcardMatch covers the wildcard matcher directly, including edge cases.
 func TestWildcardMatch(t *testing.T) {
 	t.Parallel()
@@ -303,5 +319,28 @@ func TestMetadataVocab_ContextRoundTrip(t *testing.T) {
 	got := MetadataVocab(ctx)
 	if got != cfg {
 		t.Fatal("MetadataVocab did not round-trip the stored config")
+	}
+}
+
+// TestMetadataVocab_NilContext verifies the helpers tolerate a nil context:
+// MetadataVocab returns nil rather than panicking, and WithMetadataVocab falls
+// back to context.Background() so the config still round-trips.
+func TestMetadataVocab_NilContext(t *testing.T) {
+	t.Parallel()
+
+	// A nil context.Context value -- both helpers guard against it explicitly.
+	var nilCtx context.Context
+
+	if got := MetadataVocab(nilCtx); got != nil {
+		t.Errorf("MetadataVocab(nil) = %v, want nil", got)
+	}
+
+	cfg := &VocabConfig{Exclude: []string{"junk"}, MaxGenres: 3}
+	ctx := WithMetadataVocab(nilCtx, cfg)
+	if ctx == nil {
+		t.Fatal("WithMetadataVocab(nil, cfg) returned a nil context")
+	}
+	if got := MetadataVocab(ctx); got != cfg {
+		t.Fatal("config did not round-trip through a nil-rooted context")
 	}
 }
