@@ -125,6 +125,21 @@ Minimum similarity score (0-100) required when matching artist names from search
 - **Name Similarity Threshold**
 {: #settings-providers-name-similarity-label }
 
+### Tag Sources  {#settings-providers-tag-sources}
+
+Filter genre, style, and mood tags written to artist metadata. Exclude patterns drop matching tags before they are saved; count caps limit how many tags of each type are kept.
+
+- **Exclude Patterns** -- One pattern per line, case-insensitive. An asterisk (*) is a wildcard that matches any run of characters. Blank lines are ignored.
+{: #settings-providers-tag-sources-exclude }
+- **Tag Count Caps** -- Set to 0 to allow an unlimited number of tags. When a cap is set, the highest-priority provider's tags fill the slots first.
+{: #settings-providers-tag-sources-caps }
+- **Max Genres**
+{: #settings-providers-tag-sources-caps-max-genres }
+- **Max Styles**
+{: #settings-providers-tag-sources-caps-max-styles }
+- **Max Moods**
+{: #settings-providers-tag-sources-caps-max-moods }
+
 ### Provider config  {#settings-providers-provider-config}
 
 - **Client ID** -- The OAuth application identifier issued by the provider when you registered an app. Paste it here so Stillwater can authenticate against the provider's API.

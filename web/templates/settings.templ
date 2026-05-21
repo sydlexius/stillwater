@@ -13,6 +13,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/webhook"
 	"github.com/sydlexius/stillwater/web/components"
@@ -58,11 +59,12 @@ type SettingsData struct {
 	SymlinkSupported         bool
 	CacheMaxSizeMB           string
 	NameSimilarityThreshold  int
-	MetadataLanguages        []string      // Ordered BCP 47 tags for metadata language preference.
-	NameRomanizationFallback bool          // Whether the MB sort-name romanization fallback is enabled.
-	BasePath                 string        // Current SW_BASE_PATH value (read-only display).
-	BasePathEnvOverride      bool          // True when the SW_BASE_PATH env var is set.
-	TLS                      TLSStatusData // Read-only summary of the running TLS listener configuration.
+	MetadataLanguages        []string             // Ordered BCP 47 tags for metadata language preference.
+	NameRomanizationFallback bool                 // Whether the MB sort-name romanization fallback is enabled.
+	VocabConfig              *tagdict.VocabConfig // Tag-filtering config for the Tag Sources card.
+	BasePath                 string               // Current SW_BASE_PATH value (read-only display).
+	BasePathEnvOverride      bool                 // True when the SW_BASE_PATH env var is set.
+	TLS                      TLSStatusData        // Read-only summary of the running TLS listener configuration.
 	Users                    UsersTabData
 	AuthProviders            AuthProvidersData
 	Updates                  UpdatesTabData
@@ -162,6 +164,43 @@ func (d SettingsData) metadataLanguagesJSON() string {
 		return `[]`
 	}
 	return string(b)
+}
+
+// vocabExcludePatternsText returns the exclude patterns as a newline-separated
+// string suitable for pre-filling the Tag Sources textarea. Returns an empty
+// string when no patterns are configured so the textarea renders blank.
+func (d SettingsData) vocabExcludePatternsText() string {
+	if d.VocabConfig == nil || len(d.VocabConfig.Exclude) == 0 {
+		return ""
+	}
+	return strings.Join(d.VocabConfig.Exclude, "\n")
+}
+
+// vocabMaxGenres returns the max_genres cap as a string for the number input.
+// Returns "0" when no config is set (no-op default).
+func (d SettingsData) vocabMaxGenres() string {
+	if d.VocabConfig == nil {
+		return "0"
+	}
+	return strconv.Itoa(d.VocabConfig.MaxGenres)
+}
+
+// vocabMaxStyles returns the max_styles cap as a string for the number input.
+// Returns "0" when no config is set (no-op default).
+func (d SettingsData) vocabMaxStyles() string {
+	if d.VocabConfig == nil {
+		return "0"
+	}
+	return strconv.Itoa(d.VocabConfig.MaxStyles)
+}
+
+// vocabMaxMoods returns the max_moods cap as a string for the number input.
+// Returns "0" when no config is set (no-op default).
+func (d SettingsData) vocabMaxMoods() string {
+	if d.VocabConfig == nil {
+		return "0"
+	}
+	return strconv.Itoa(d.VocabConfig.MaxMoods)
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -1199,6 +1238,125 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
 							</div>
 						</div>
+					</div>
+				</div>
+				<!-- Tag Sources card: exclude-pattern textarea + per-field count caps -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.tag_sources.title") }</h2>
+							@components.ContextHelp("help-tag-sources", t(ctx, "settings.tag_sources.title"), t(ctx, "settings.tag_sources.help"), "settings-providers-tag-sources")
+						</div>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							{ t(ctx, "settings.tag_sources.description") }
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<form
+							id="tag-sources-form"
+							hx-put="/api/v1/settings/vocab"
+							hx-encoding="application/x-www-form-urlencoded"
+							hx-target="#tag-sources-status"
+							hx-swap="innerHTML"
+						>
+							<div class="space-y-5">
+								<!-- Exclude patterns textarea -->
+								<div>
+									<div class="flex items-center gap-1 mb-1">
+										<label for="tag-sources-exclude" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+											{ t(ctx, "settings.tag_sources.exclude.label") }
+										</label>
+										@components.ContextHelp("help-tag-sources-exclude", t(ctx, "settings.tag_sources.exclude.label"), t(ctx, "settings.tag_sources.exclude.help"), "settings-providers-tag-sources-exclude")
+									</div>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+										{ t(ctx, "settings.tag_sources.exclude.description") }
+									</p>
+									<textarea
+										id="tag-sources-exclude"
+										name="exclude"
+										rows="5"
+										aria-label={ t(ctx, "settings.tag_sources.exclude.label") }
+										placeholder={ t(ctx, "settings.tag_sources.exclude.placeholder") }
+										class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+									>{ data.vocabExcludePatternsText() }</textarea>
+								</div>
+								<!-- Per-field count caps -->
+								<div>
+									<p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										{ t(ctx, "settings.tag_sources.caps.label") }
+									</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+										{ t(ctx, "settings.tag_sources.caps.description") }
+									</p>
+									<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+										<!-- Max genres -->
+										<div>
+											<label for="tag-sources-max-genres" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+												{ t(ctx, "settings.tag_sources.caps.max_genres") }
+											</label>
+											<input
+												type="number"
+												id="tag-sources-max-genres"
+												name="max_genres"
+												min="0"
+												step="1"
+												value={ data.vocabMaxGenres() }
+												aria-label={ t(ctx, "settings.tag_sources.caps.max_genres") }
+												class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+											/>
+										</div>
+										<!-- Max styles -->
+										<div>
+											<label for="tag-sources-max-styles" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+												{ t(ctx, "settings.tag_sources.caps.max_styles") }
+											</label>
+											<input
+												type="number"
+												id="tag-sources-max-styles"
+												name="max_styles"
+												min="0"
+												step="1"
+												value={ data.vocabMaxStyles() }
+												aria-label={ t(ctx, "settings.tag_sources.caps.max_styles") }
+												class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+											/>
+										</div>
+										<!-- Max moods -->
+										<div>
+											<label for="tag-sources-max-moods" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+												{ t(ctx, "settings.tag_sources.caps.max_moods") }
+											</label>
+											<input
+												type="number"
+												id="tag-sources-max-moods"
+												name="max_moods"
+												min="0"
+												step="1"
+												value={ data.vocabMaxMoods() }
+												aria-label={ t(ctx, "settings.tag_sources.caps.max_moods") }
+												class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+											/>
+										</div>
+									</div>
+								</div>
+								<!-- Save control and status -->
+								<div class="flex items-center gap-3 pt-1">
+									<button
+										type="submit"
+										class="text-sm px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									>
+										{ t(ctx, "actions.save") }
+									</button>
+									<span
+										id="tag-sources-status"
+										role="status"
+										aria-live="polite"
+										aria-atomic="true"
+										class="text-sm"
+									></span>
+								</div>
+							</div>
+						</form>
 					</div>
 				</div>
 			</div>
@@ -5180,6 +5338,14 @@ templ ProviderTestResult(status string, message string) {
 	} else {
 		<span class="text-red-600 dark:text-red-400">{ message }</span>
 	}
+}
+
+// VocabSaveResult renders the inline confirmation shown in the Tag Sources
+// form status span after a successful save. handlePutVocab renders this for
+// HTMX requests so the user sees a friendly message rather than the raw JSON
+// response body.
+templ VocabSaveResult() {
+	<span class="text-green-600 dark:text-green-400">{ t(ctx, "settings.tag_sources.saved") }</span>
 }
 
 // ProviderTestResultWithDot renders the test result plus an OOB swap to update

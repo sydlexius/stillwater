@@ -412,6 +412,11 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	// Inject the romanization-fallback preference separately so that adding this
 	// field does not force gofmt to realign the entire struct literal above.
 	data.NameRomanizationFallback = r.getUserBoolPreference(req.Context(), PrefMetadataNameRomanization, true)
+	// Load the metadata_vocab configuration so the Tag Sources card is
+	// pre-filled with the current exclude patterns and count caps. Degrades
+	// gracefully to the no-op default on any error (consistent with how
+	// loadVocabConfig works -- it never returns nil).
+	data.VocabConfig = r.loadVocabConfig(req.Context())
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
 

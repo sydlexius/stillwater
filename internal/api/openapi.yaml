@@ -5820,6 +5820,29 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/VocabConfig"
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                exclude:
+                  type: string
+                  description: >
+                    Newline-separated exclude patterns. Each non-blank line
+                    becomes one entry in the exclude list. Blank lines are
+                    ignored. The same case-insensitive wildcard (* glob) rules
+                    apply as for the JSON path.
+                max_genres:
+                  type: integer
+                  minimum: 0
+                  description: Maximum number of genre tags to keep (0 = unlimited).
+                max_styles:
+                  type: integer
+                  minimum: 0
+                  description: Maximum number of style tags to keep (0 = unlimited).
+                max_moods:
+                  type: integer
+                  minimum: 0
+                  description: Maximum number of mood tags to keep (0 = unlimited).
       responses:
         "200":
           description: Config updated
