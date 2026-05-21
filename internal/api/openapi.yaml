@@ -5823,6 +5823,7 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 exclude:
                   type: string

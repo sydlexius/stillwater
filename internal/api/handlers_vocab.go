@@ -81,45 +81,14 @@ func (r *Router) handlePutVocab(w http.ResponseWriter, req *http.Request) {
 	contentType := req.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
 		// Form-encoded path: the Settings page submits this via HTMX so the UI
-		// needs no JavaScript. The "exclude" field is a textarea where each
-		// non-blank line becomes one pattern. The three max-count fields are
-		// plain number inputs.
-		if err := req.ParseForm(); err != nil {
-			writeFormError(w, req, http.StatusBadRequest, "invalid form data")
+		// needs no JavaScript. parseVocabForm does the decoding; a non-empty
+		// message means the body was invalid.
+		parsed, formErr := parseVocabForm(req)
+		if formErr != "" {
+			writeFormError(w, req, http.StatusBadRequest, formErr)
 			return
 		}
-
-		// Split the textarea on newlines, trim each line, drop blank lines.
-		// Case is preserved at rest; pattern matching is case-insensitive at
-		// filter time, so the stored value is exactly what the user typed.
-		rawExclude := req.FormValue("exclude")
-		var patterns []string
-		for _, line := range strings.Split(rawExclude, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				patterns = append(patterns, line)
-			}
-		}
-		cfg.Exclude = patterns
-
-		// Parse the three integer cap fields; absent or empty values default to 0.
-		for _, f := range []struct {
-			name string
-			dest *int
-		}{
-			{"max_genres", &cfg.MaxGenres},
-			{"max_styles", &cfg.MaxStyles},
-			{"max_moods", &cfg.MaxMoods},
-		} {
-			if v := req.FormValue(f.name); v != "" {
-				n, err := strconv.Atoi(v)
-				if err != nil {
-					writeFormError(w, req, http.StatusBadRequest, f.name+" must be an integer")
-					return
-				}
-				*f.dest = n
-			}
-		}
+		cfg = parsed
 	} else {
 		// JSON path (default): decode with strict unknown-field rejection so
 		// typos like "excludes" (instead of "exclude") surface as errors rather
@@ -197,4 +166,54 @@ func (r *Router) handlePutVocab(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// parseVocabForm decodes an application/x-www-form-urlencoded request body into
+// a VocabConfig. It is the path used by the no-JavaScript Settings > Providers
+// Tag Sources form. The second return value is a non-empty, client-facing
+// message when the body is invalid; the caller surfaces it via writeFormError.
+func parseVocabForm(req *http.Request) (tagdict.VocabConfig, string) {
+	var cfg tagdict.VocabConfig
+
+	if err := req.ParseForm(); err != nil {
+		return cfg, "invalid form data"
+	}
+	// Reject unknown form fields so the form path matches the JSON path's
+	// strict-key contract. The CSRF token travels as an X-CSRF-Token header,
+	// not a form field, so the body holds only these four keys.
+	for key := range req.PostForm {
+		switch key {
+		case "exclude", "max_genres", "max_styles", "max_moods":
+		default:
+			return cfg, "invalid form data"
+		}
+	}
+
+	// The "exclude" textarea: each non-blank line is one pattern. Case is
+	// preserved at rest; matching is case-insensitive at filter time, so the
+	// stored value is exactly what the user typed.
+	for _, line := range strings.Split(req.FormValue("exclude"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			cfg.Exclude = append(cfg.Exclude, line)
+		}
+	}
+
+	// Parse the three integer cap fields; absent or empty values default to 0.
+	for _, f := range []struct {
+		name string
+		dest *int
+	}{
+		{"max_genres", &cfg.MaxGenres},
+		{"max_styles", &cfg.MaxStyles},
+		{"max_moods", &cfg.MaxMoods},
+	} {
+		if v := req.FormValue(f.name); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return cfg, f.name + " must be an integer"
+			}
+			*f.dest = n
+		}
+	}
+	return cfg, ""
 }

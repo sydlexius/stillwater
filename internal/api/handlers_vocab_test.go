@@ -439,3 +439,21 @@ func TestHandlePutVocab_FormEncoded_WhitespaceOnlyLineDropped(t *testing.T) {
 		t.Fatalf("a whitespace-only line should be dropped, expected 2 patterns, got %q", cfg.Exclude)
 	}
 }
+
+// TestHandlePutVocab_FormEncoded_UnknownFieldRejected verifies the form path
+// rejects an unknown form field with 400, matching the JSON path's strict-key
+// contract (and the openapi additionalProperties: false declaration).
+func TestHandlePutVocab_FormEncoded_UnknownFieldRejected(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab",
+		strings.NewReader("max_genres=2&bogus=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.handlePutVocab(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an unknown form field, got %d: %s", w.Code, w.Body.String())
+	}
+}
