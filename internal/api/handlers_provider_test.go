@@ -55,7 +55,7 @@ func TestHandleSetMirror(t *testing.T) {
 	// Start a local mirror server so the auto-test in the JSON path succeeds.
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"artists":[]}`))
+		w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
 	}))
 	defer mirrorSrv.Close()
 
@@ -150,7 +150,7 @@ func TestHandleSetMirrorTrailingSlash(t *testing.T) {
 	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"artists":[]}`))
+		w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
 	}))
 	defer mirrorSrv.Close()
 
@@ -192,7 +192,7 @@ func TestHandleSetMirrorDefaultRateLimit(t *testing.T) {
 	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"artists":[]}`))
+		w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
 	}))
 	defer mirrorSrv.Close()
 
@@ -225,7 +225,7 @@ func TestHandleSetMirrorRateLimitCap(t *testing.T) {
 	t.Parallel()
 	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"artists":[]}`))
+		w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
 	}))
 	defer mirrorSrv.Close()
 

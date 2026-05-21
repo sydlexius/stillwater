@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -29,6 +30,10 @@ type Adapter struct {
 	logger  *slog.Logger
 	mu      sync.RWMutex
 	baseURL string
+	// fallbackURL is the retry target when a configured mirror returns an
+	// unparsable body. It is set once at construction (to defaultBaseURL) and
+	// never mutated outside tests, so unlike baseURL it needs no mu guard.
+	fallbackURL string
 }
 
 // New creates a MusicBrainz adapter with the default base URL.
@@ -39,10 +44,11 @@ func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
 // NewWithBaseURL creates a MusicBrainz adapter with a custom base URL (for testing).
 func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseURL string) *Adapter {
 	return &Adapter{
-		client:  httpsafe.SafeClient(10 * time.Second),
-		limiter: limiter,
-		logger:  logger.With(slog.String("provider", "musicbrainz")),
-		baseURL: strings.TrimRight(baseURL, "/"),
+		client:      httpsafe.SafeClient(10 * time.Second),
+		limiter:     limiter,
+		logger:      logger.With(slog.String("provider", "musicbrainz")),
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		fallbackURL: defaultBaseURL,
 	}
 }
 
@@ -70,7 +76,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	}
 
 	var resp SearchResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := a.unmarshalWithFallback(ctx, base, "/artist?"+params.Encode(), body, &resp); err != nil {
 		return nil, fmt.Errorf("parsing search response: %w", err)
 	}
 
@@ -127,7 +133,7 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 	}
 
 	var mbArtist MBArtist
-	if err := json.Unmarshal(body, &mbArtist); err != nil {
+	if err := a.unmarshalWithFallback(ctx, base, "/artist/"+url.PathEscape(mbid)+"?"+params.Encode(), body, &mbArtist); err != nil {
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
@@ -373,7 +379,7 @@ func (a *Adapter) fetchMemberAliases(ctx context.Context, mbid string) (memberAl
 	}
 
 	var resp MBArtist
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := a.unmarshalWithFallback(ctx, base, "/artist/"+url.PathEscape(mbid)+"?"+params.Encode(), body, &resp); err != nil {
 		return memberAliasLookup{}, fmt.Errorf("parsing member alias response: %w", err)
 	}
 	return memberAliasLookup{aliases: resp.Aliases, sortName: resp.SortName}, nil
@@ -446,7 +452,7 @@ func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider
 		}
 
 		var resp MBReleaseGroupSearchResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
+		if err := a.unmarshalWithFallback(ctx, base, "/release-group?"+params.Encode(), body, &resp); err != nil {
 			return nil, fmt.Errorf("parsing release-group response: %w", err)
 		}
 
@@ -472,7 +478,14 @@ func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider
 	return results, nil
 }
 
-// TestConnection verifies connectivity to the MusicBrainz API.
+// TestConnection verifies connectivity to the MusicBrainz API and validates
+// that the endpoint returns well-formed JSON in the expected search response
+// shape. This catches a common mirror misconfiguration where the server
+// returns a 200 OK with an HTML error page instead of JSON. The existing
+// POST /api/v1/providers/{name}/test endpoint calls this method, so a parse
+// failure here flows directly to the Settings > Providers Test button UI --
+// no additional route is needed (enhancement 2: extending the test path is
+// preferred over adding a separate health endpoint).
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	params := url.Values{
 		"query": {"test"},
@@ -483,8 +496,28 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	base := a.baseURL
 	a.mu.RUnlock()
 	reqURL := base + "/artist?" + params.Encode()
-	_, err := a.doRequest(ctx, reqURL)
-	return err
+
+	body, err := a.doRequest(ctx, reqURL)
+	if err != nil {
+		return err
+	}
+
+	// Validate that the response body is well-formed JSON matching the search
+	// response shape. A mirror returning an HTML error page (e.g. a 404/503
+	// page proxied as 200 OK) would fail here with a descriptive error, whereas
+	// the previous implementation discarded the body and reported success.
+	var resp SearchResponse
+	if err := a.unmarshalResponse(base, body, &resp); err != nil {
+		return fmt.Errorf("endpoint returned non-JSON response (check mirror configuration): %w", err)
+	}
+	// Shape check: a genuine MusicBrainz ws/2 search response always carries a
+	// "created" timestamp. A bare JSON object served with HTTP 200 (a proxy
+	// health page, a JSON error body) unmarshals without error but is not a
+	// MusicBrainz endpoint, so reject it rather than report the mirror healthy.
+	if resp.Created == "" {
+		return fmt.Errorf("endpoint returned JSON that is not a MusicBrainz search response (check mirror configuration)")
+	}
+	return nil
 }
 
 // SetBaseURL updates the adapter's base URL for mirror support.
@@ -523,6 +556,100 @@ func (a *Adapter) SetHTTPClient(c *http.Client) {
 		panic("musicbrainz.SetHTTPClient: client must not be nil")
 	}
 	a.client = c
+}
+
+// setFallbackURL overrides the URL used when auto-fallback triggers on a
+// parse error. Only for use in tests; production code always falls back
+// to defaultBaseURL (set by the constructor). This must be called before
+// any requests are issued (no concurrency guard needed for test setup).
+func (a *Adapter) setFallbackURL(u string) {
+	a.fallbackURL = strings.TrimRight(u, "/")
+}
+
+// unmarshalResponse unmarshals body into dst. On failure it logs a WARN with
+// the configured base URL and a short body prefix to help operators diagnose
+// mirror misconfiguration (e.g. a server returning an HTML error page with
+// a 200 OK status). The base URL is included so the log entry identifies the
+// specific mirror endpoint that produced the unexpected response.
+func (a *Adapter) unmarshalResponse(base string, body []byte, dst any) error {
+	if err := json.Unmarshal(body, dst); err != nil {
+		// Surface up to 200 bytes of the body so the log can reveal an HTML
+		// snippet or other non-JSON content without flooding the log.
+		preview := body
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		a.logger.Warn("JSON parse failed; mirror may be returning non-JSON response",
+			slog.String("base_url", base),
+			slog.String("body_preview", string(preview)),
+			slog.Any("err", err))
+		return err
+	}
+	return nil
+}
+
+// unmarshalWithFallback attempts to unmarshal body into dst. When parsing
+// fails AND a mirror is configured (baseURL differs from fallbackURL), it
+// automatically retries the request against the fallback URL (normally the
+// official musicbrainz.org API) and unmarshals that response instead. A
+// network error from the mirror does NOT trigger fallback -- only a
+// successful HTTP 200 with an unparsable body does, because a timeout or
+// connection error signals a network problem rather than a mirror serving
+// bad content.
+//
+// The pathAndQuery argument is the path + query string used to reconstruct
+// the fallback URL (e.g. "/artist?query=test&fmt=json&limit=1").
+func (a *Adapter) unmarshalWithFallback(ctx context.Context, base, pathAndQuery string, body []byte, dst any) error {
+	// unmarshalResponse logs a WARN as a side effect, so call it exactly once
+	// per response body and reuse the captured error rather than re-running it.
+	parseErr := a.unmarshalResponse(base, body, dst)
+	if parseErr == nil {
+		return nil
+	}
+
+	// Parse error: fall back only when a distinct mirror is configured.
+	fallback := a.fallbackURL
+	if fallback == "" || base == fallback {
+		// No distinct fallback configured, or already using the fallback URL.
+		return parseErr
+	}
+
+	// Retry against the fallback URL, logging the switch so operators can
+	// tell why a request went to the official API instead of the mirror.
+	fallbackURL := fallback + pathAndQuery
+	a.logger.Warn("mirror returned non-JSON response; retrying against fallback URL",
+		slog.String("mirror_base_url", base),
+		slog.String("fallback_url", fallbackURL))
+
+	fallbackBody, err := a.doRequest(ctx, fallbackURL)
+	if err != nil {
+		// Fallback request itself failed. Log the fallback error so a double
+		// failure (broken mirror AND unreachable fallback) stays visible, but
+		// return the original parse error: the operator's actionable problem is
+		// the broken mirror, not "can't reach musicbrainz.org".
+		a.logger.Warn("fallback request also failed; returning original mirror parse error",
+			slog.String("fallback_url", fallbackURL),
+			slog.Any("err", err))
+		return parseErr
+	}
+
+	// Zero dst before decoding the fallback body. A failed mirror decode can
+	// leave dst partially populated (json.Unmarshal completes "as best it can"
+	// before erroring), and a fallback response that omits those fields would
+	// not overwrite the stale values. Zeroing guarantees dst holds only
+	// fallback data on success.
+	if v := reflect.ValueOf(dst); v.Kind() == reflect.Pointer && !v.IsNil() {
+		v.Elem().Set(reflect.Zero(v.Elem().Type()))
+	}
+
+	// unmarshalResponse logs a WARN for the fallback body if it also fails.
+	if err := a.unmarshalResponse(fallback, fallbackBody, dst); err != nil {
+		// Both the mirror and the fallback returned unparsable bodies. Surface
+		// the original mirror parse error as the actionable root cause: the
+		// configured mirror is the thing the operator can fix.
+		return parseErr
+	}
+	return nil
 }
 
 // doRequest executes an HTTP GET with rate limiting and standard headers.
