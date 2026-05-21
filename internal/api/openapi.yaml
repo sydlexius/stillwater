@@ -4050,6 +4050,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [provider, verbosity]
                 properties:
                   provider:
                     type: string
@@ -4100,6 +4101,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Invalid provider name, field, or verbosity value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /providers/{name}/key:
     put:

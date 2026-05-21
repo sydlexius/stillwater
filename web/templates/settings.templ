@@ -4885,7 +4885,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			@providerStatusDot(string(pk.Name), pk.Status, false)
 			<div>
 				<div class="flex items-center gap-2">
-					<span class="font-medium text-sm">{ pk.DisplayName }</span>
+					<span id={ "provider-name-" + string(pk.Name) } class="font-medium text-sm">{ pk.DisplayName }</span>
 					if pk.AccessTier != "" {
 						<span
 							class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tierBadgeClasses(pk.AccessTier) }
@@ -4957,7 +4957,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				<button
 					type="button"
 					class="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
-					aria-label={ "Configure " + pk.DisplayName }
+					aria-label={ t(ctx, "common.configure") + " " + pk.DisplayName }
 					aria-expanded="false"
 					aria-controls={ "config-panel-" + string(pk.Name) }
 					onclick={ toggleProviderConfig(string(pk.Name)) }
@@ -4967,13 +4967,13 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			}
 		</div>
 	</div>
-	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
+	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1" role="status" aria-live="polite" aria-atomic="true"></div>
 	if hasGear {
 		<div
 			id={ "config-panel-" + string(pk.Name) }
 			class="hidden mt-2 sm:ml-8"
 			role="region"
-			aria-label={ "Configure " + pk.DisplayName }
+			aria-label={ t(ctx, "common.configure") + " " + pk.DisplayName }
 		>
 			if pk.RequiresKey || pk.OptionalKey {
 				<div class="flex flex-col gap-2">
@@ -4985,6 +4985,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						}
 					</p>
 					<form
+						id={ "key-form-" + string(pk.Name) }
 						class="flex flex-col gap-2"
 						hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
 						hx-target={ "#provider-card-" + string(pk.Name) }
@@ -5250,7 +5251,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							</select>
 						</div>
 					}
-					<div id={ "verbosity-result-" + string(pk.Name) } class="text-xs mt-1"></div>
+					<div id={ "verbosity-result-" + string(pk.Name) } class="text-xs mt-1" role="status" aria-live="polite" aria-atomic="true"></div>
 				</div>
 			}
 		</div>
@@ -5315,6 +5316,10 @@ script toggleProviderConfig(providerName string) {
 						customFields.classList.add("hidden");
 					}
 				}
+			}
+			var keyForm = document.getElementById("key-form-" + providerName);
+			if (keyForm) {
+				keyForm.reset();
 			}
 		}
 		panel.classList.toggle("hidden");

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1230,9 +1231,9 @@ func TestGetArtist_Band_TypeSetToGroup(t *testing.T) {
 // exintroCaptureServer returns a test HTTP server that records whether the
 // exintro query parameter was present in the most recent request and always
 // returns a minimal but valid Wikipedia extract response.
-func exintroCaptureServer(t *testing.T) (*httptest.Server, *bool) {
+func exintroCaptureServer(t *testing.T) (*httptest.Server, *atomic.Bool) {
 	t.Helper()
-	var exintroPresent bool
+	var exintroPresent atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		action := r.URL.Query().Get("action")
 		switch action {
@@ -1243,7 +1244,7 @@ func exintroCaptureServer(t *testing.T) (*httptest.Server, *bool) {
 				json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
 				return
 			}
-			exintroPresent = r.URL.Query().Get("exintro") == "true"
+			exintroPresent.Store(r.URL.Query().Get("exintro") == "true")
 			resp := extractResponse{}
 			resp.Query.Pages = map[string]extractPage{
 				"1": {PageID: 1, Title: "Radiohead", Extract: "Test bio."},
@@ -1281,7 +1282,7 @@ func TestWikipediaAdapter_ExintroParameter_IntroDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if !*exintroPresent {
+	if !exintroPresent.Load() {
 		t.Error("expected exintro=true in Wikipedia API request for intro verbosity, but it was absent")
 	}
 }
@@ -1306,7 +1307,7 @@ func TestWikipediaAdapter_ExintroParameter_StoredIntro(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if !*exintroPresent {
+	if !exintroPresent.Load() {
 		t.Error("expected exintro=true in Wikipedia API request for intro verbosity")
 	}
 }
@@ -1331,7 +1332,7 @@ func TestWikipediaAdapter_ExintroParameter_Full(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if *exintroPresent {
+	if exintroPresent.Load() {
 		t.Error("expected exintro to be absent in Wikipedia API request for full verbosity")
 	}
 }
@@ -1354,7 +1355,7 @@ func TestWikipediaAdapter_ExintroParameter_NilSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if !*exintroPresent {
+	if !exintroPresent.Load() {
 		t.Error("expected exintro=true with nil settings (conservative fallback)")
 	}
 }

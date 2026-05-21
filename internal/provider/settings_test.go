@@ -1256,6 +1256,13 @@ func TestSetFieldVerbosity_InvalidValue(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid verbosity value, got nil")
 	}
+	got, getErr := svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if getErr != nil {
+		t.Fatalf("GetFieldVerbosity: %v", getErr)
+	}
+	if got != VerbosityIntro {
+		t.Errorf("verbosity changed after invalid set: got %q, want default %q", got, VerbosityIntro)
+	}
 }
 
 // TestSetFieldVerbosity_InvalidField verifies that SetFieldVerbosity rejects

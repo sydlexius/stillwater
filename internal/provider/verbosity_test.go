@@ -134,6 +134,7 @@ func TestFieldVerbosityCatalogue_SelfConsistent(t *testing.T) {
 				t.Errorf("%s/%s: no options", name, fv.Field)
 			}
 			seen := make(map[string]bool)
+			seenLabelKey := make(map[string]bool)
 			for _, o := range fv.Options {
 				if o.Value == "" {
 					t.Errorf("%s/%s: option with an empty Value", name, fv.Field)
@@ -145,6 +146,10 @@ func TestFieldVerbosityCatalogue_SelfConsistent(t *testing.T) {
 					t.Errorf("%s/%s: duplicate option Value %q", name, fv.Field, o.Value)
 				}
 				seen[o.Value] = true
+				if seenLabelKey[o.LabelKey] {
+					t.Errorf("%s/%s: duplicate option LabelKey %q", name, fv.Field, o.LabelKey)
+				}
+				seenLabelKey[o.LabelKey] = true
 			}
 		}
 	}

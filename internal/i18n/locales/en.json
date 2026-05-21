@@ -1722,7 +1722,7 @@
   "settings.provider_config.add_key": "Add API key",
   "settings.provider_config.update_key": "Update API key",
   "settings.provider_config.verbosity_biography": "Biography",
-  "settings.provider_config.verbosity_biography.description": "Controls how much of the Wikipedia article is fetched for the biography field. Intro only returns just the lead section (a concise summary). Full article returns the complete article text.",
+  "settings.provider_config.verbosity_biography.description": "Controls how much of the Wikipedia article is fetched for the biography field.",
   "settings.provider_config.verbosity_full": "Full article",
   "settings.provider_config.verbosity_full.description": "Fetch the complete Wikipedia article text for the biography field. The result may be lengthy for well-documented artists.",
   "settings.provider_config.verbosity_intro": "Intro only",
