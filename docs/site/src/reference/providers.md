@@ -102,4 +102,4 @@ Some providers can return a field at more than one level of detail. Open the gea
 |---|---|---|---|
 | Wikipedia | Biography | Intro only, Full article | Intro only |
 
-**Intro only** fetches just the introductory section of the Wikipedia article, a concise summary. **Full article** fetches the complete article text. The default is intro-only; a change takes effect the next time the artist is refreshed.
+**Intro only** fetches just the introductory section of the Wikipedia article, a concise summary. **Full article** fetches the complete article text. The default is Intro only; a change takes effect the next time the artist is refreshed.
