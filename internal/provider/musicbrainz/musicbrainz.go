@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -632,8 +633,23 @@ func (a *Adapter) unmarshalWithFallback(ctx context.Context, base, pathAndQuery 
 		return parseErr
 	}
 
-	// Use fallback base for the WARN log in case the fallback body also fails.
-	return a.unmarshalResponse(fallback, fallbackBody, dst)
+	// Zero dst before decoding the fallback body. A failed mirror decode can
+	// leave dst partially populated (json.Unmarshal completes "as best it can"
+	// before erroring), and a fallback response that omits those fields would
+	// not overwrite the stale values. Zeroing guarantees dst holds only
+	// fallback data on success.
+	if v := reflect.ValueOf(dst); v.Kind() == reflect.Pointer && !v.IsNil() {
+		v.Elem().Set(reflect.Zero(v.Elem().Type()))
+	}
+
+	// unmarshalResponse logs a WARN for the fallback body if it also fails.
+	if err := a.unmarshalResponse(fallback, fallbackBody, dst); err != nil {
+		// Both the mirror and the fallback returned unparsable bodies. Surface
+		// the original mirror parse error as the actionable root cause: the
+		// configured mirror is the thing the operator can fix.
+		return parseErr
+	}
+	return nil
 }
 
 // doRequest executes an HTTP GET with rate limiting and standard headers.

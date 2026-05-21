@@ -137,7 +137,7 @@ Minimum similarity score (0-100) required when matching artist names from search
 {: #settings-providers-provider-config-official }
 - **Beta** -- Send requests to the MusicBrainz beta server. The data set matches the official server, but the deployment runs preview code. Subject to the same one-request-per-second public rate limit.
 {: #settings-providers-provider-config-beta }
-- **Custom mirror** -- Point Stillwater at a self-hosted MusicBrainz mirror. Requests bypass the public rate limit so you can raise throughput, subject to whatever your mirror can sustain.
+- **Custom mirror** -- Point Stillwater at a self-hosted MusicBrainz mirror. Requests bypass the public rate limit so you can raise throughput, subject to whatever your mirror can sustain. If the mirror returns an invalid response (for example an HTML error page instead of JSON), Stillwater logs a warning and automatically retries that request against the official MusicBrainz API, so a misconfigured mirror degrades gracefully instead of silently losing metadata.
 {: #settings-providers-provider-config-custom-mirror }
 - **OAuth Credentials** -- Sub-section for OAuth application credentials used when a provider requires authenticated access. Fill in the Client ID and Client Secret issued by the provider.
 {: #settings-providers-provider-config-oauth-credentials }

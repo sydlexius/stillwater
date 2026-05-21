@@ -944,8 +944,18 @@ func TestSearchArtist_ParseErrorFallbackAlsoFails(t *testing.T) {
 	a, _ := newCaptureAdapter(t, mirror.URL)
 	a.setFallbackURL(badFallback.URL)
 
-	if _, err := a.SearchArtist(context.Background(), "test"); err == nil {
+	_, err := a.SearchArtist(context.Background(), "test")
+	if err == nil {
 		t.Fatal("SearchArtist should return the mirror parse error when the fallback is unreachable")
+	}
+	// The returned error must be the mirror JSON parse failure, not the
+	// fallback's network error: the operator's actionable problem is the
+	// broken mirror.
+	if !strings.Contains(err.Error(), "invalid character '<'") {
+		t.Fatalf("expected the mirror JSON parse error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), badFallback.URL) {
+		t.Fatalf("returned error leaked fallback-network detail, expected only the mirror parse error: %v", err)
 	}
 }
 
