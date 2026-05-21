@@ -819,6 +819,13 @@
     "covered": true
   },
   {
+    "operationId": "getVocabConfig",
+    "method": "GET",
+    "path": "/settings/vocab",
+    "handler": "handleGetVocab",
+    "covered": true
+  },
+  {
     "operationId": "getWebSearchProviders",
     "method": "GET",
     "path": "/providers/websearch",
@@ -1132,6 +1139,13 @@
     "path": "/artists/{id}/push",
     "handler": "handlePushMetadata",
     "covered": false
+  },
+  {
+    "operationId": "putVocabConfig",
+    "method": "PUT",
+    "path": "/settings/vocab",
+    "handler": "handlePutVocab",
+    "covered": true
   },
   {
     "operationId": "randomBackdrop",

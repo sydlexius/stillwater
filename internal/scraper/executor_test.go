@@ -12,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	_ "modernc.org/sqlite"
 )
 
@@ -1360,6 +1361,78 @@ func TestMembersFieldQueried(t *testing.T) {
 			if result.MembersAuthoritative != tc.wantAuthoritative {
 				t.Errorf("%s: FetchResult.MembersAuthoritative = %v, want %v",
 					tc.comment, result.MembersAuthoritative, tc.wantAuthoritative)
+			}
+		})
+	}
+}
+
+// TestFieldAppliers_VocabFilter verifies the scraper-executor tag-merge path
+// applies the user's vocab exclude filter and count cap for all three tag
+// fields (issue #1130). A refresh runs through this path, so this is the
+// executor half of the dual-path integration check (see issue #1589 for the
+// precedent where a provider feature wired into only one path silently never
+// ran).
+func TestFieldAppliers_VocabFilter(t *testing.T) {
+	fields := []struct {
+		name   FieldName
+		set    func(*provider.ArtistMetadata, []string)
+		get    func(*provider.ArtistMetadata) []string
+		setCap func(*tagdict.VocabConfig, int)
+	}{
+		{
+			FieldGenres,
+			func(m *provider.ArtistMetadata, v []string) { m.Genres = v },
+			func(m *provider.ArtistMetadata) []string { return m.Genres },
+			func(c *tagdict.VocabConfig, n int) { c.MaxGenres = n },
+		},
+		{
+			FieldStyles,
+			func(m *provider.ArtistMetadata, v []string) { m.Styles = v },
+			func(m *provider.ArtistMetadata) []string { return m.Styles },
+			func(c *tagdict.VocabConfig, n int) { c.MaxStyles = n },
+		},
+		{
+			FieldMoods,
+			func(m *provider.ArtistMetadata, v []string) { m.Moods = v },
+			func(m *provider.ArtistMetadata) []string { return m.Moods },
+			func(c *tagdict.VocabConfig, n int) { c.MaxMoods = n },
+		},
+	}
+
+	for _, f := range fields {
+		t.Run(string(f.name)+" exclude pattern drops matching tags", func(t *testing.T) {
+			m := &provider.ArtistMetadata{}
+			f.set(m, []string{"Rock", "junk tag", "Pop"})
+			r := &provider.FetchResult{
+				Metadata:         &provider.ArtistMetadata{},
+				MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
+			}
+			if !fieldAppliers[f.name](m, r) {
+				t.Fatalf("%s applier should report the field populated", f.name)
+			}
+			got := f.get(r.Metadata)
+			for _, g := range got {
+				if strings.Contains(strings.ToLower(g), "junk") {
+					t.Fatalf("%s: executor path did not apply the exclude filter: %v", f.name, got)
+				}
+			}
+			if len(got) != 2 {
+				t.Fatalf("%s: expected 2 tags after exclude, got %v", f.name, got)
+			}
+		})
+
+		t.Run(string(f.name)+" count cap truncates", func(t *testing.T) {
+			m := &provider.ArtistMetadata{}
+			f.set(m, []string{"Rock", "Pop", "Jazz", "Blues"})
+			cfg := &tagdict.VocabConfig{}
+			f.setCap(cfg, 2)
+			r := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}, MetadataVocabCfg: cfg}
+			if !fieldAppliers[f.name](m, r) {
+				t.Fatalf("%s applier should report the field populated", f.name)
+			}
+			got := f.get(r.Metadata)
+			if len(got) != 2 || got[0] != "Rock" || got[1] != "Pop" {
+				t.Fatalf("%s: count cap should keep exactly the first two tags [Rock Pop], got %v", f.name, got)
 			}
 		})
 	}

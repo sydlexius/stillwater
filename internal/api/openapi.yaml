@@ -30,6 +30,41 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    VocabConfig:
+      type: object
+      additionalProperties: false
+      description: >
+        User-configurable tag filtering for genre, style, and mood metadata.
+        An exclude list drops tags matching any pattern; per-field caps limit
+        how many tags are written. All fields default to a no-op (empty
+        exclude list, zero caps) so this configuration changes nothing until
+        the user sets it.
+      properties:
+        exclude:
+          type: array
+          description: >
+            Patterns matched case-insensitively against every genre, style,
+            and mood tag. A tag matching any pattern is dropped. "*" is a
+            wildcard matching any run of characters (for example "christian*"
+            matches "christian rock"). Regex is not supported.
+          items:
+            type: string
+          example: ["christian", "*-core", "seen live"]
+        max_genres:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Maximum number of genres to write. 0 means unlimited.
+        max_styles:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Maximum number of styles to write. 0 means unlimited.
+        max_moods:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Maximum number of moods to write. 0 means unlimited.
     EmbyJellyfinPlatformSettings:
       type: object
       required: [connection_type, libraries]
@@ -5738,6 +5773,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+
+  /settings/vocab:
+    get:
+      tags: [Settings]
+      summary: Get metadata vocabulary configuration
+      operationId: getVocabConfig
+      description: >
+        Returns the current metadata_vocab configuration: a case-insensitive
+        exclude pattern list and per-field tag count caps (max_genres,
+        max_styles, max_moods) for genres, styles, and moods. When the setting
+        has never been saved, the response is the default no-op config (empty
+        exclude list and zero caps).
+      responses:
+        "200":
+          description: Current vocab config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VocabConfig"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden (admin required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Settings]
+      summary: Update metadata vocabulary configuration
+      operationId: putVocabConfig
+      description: >
+        Replaces the full metadata_vocab configuration. The "exclude" pattern
+        list and each count cap (max_genres, max_styles, max_moods) are
+        optional and default to no-op values when omitted. Unknown top-level
+        keys are rejected, exclude patterns must be non-blank, and caps must
+        not be negative.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VocabConfig"
+      responses:
+        "200":
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden (admin required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /preferences:
     get:

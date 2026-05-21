@@ -95,6 +95,13 @@ type FetchResult struct {
 	// context's MetadataLanguages value and drives locale-aware tag deduplication
 	// in applyTagSliceField. An empty string means English-only dedup.
 	MetadataLocale string `json:"-"`
+	// MetadataVocabCfg holds the user's vocab filtering configuration at the
+	// time of the fetch. It is resolved once from the context's MetadataVocab
+	// value at FetchResult construction and passed to tagdict.ApplyVocabFilter
+	// after each tag-slice merge in applyTagSliceField. A nil value means no
+	// vocab filtering is applied. This mirrors the MetadataLocale field: a
+	// request-scoped value resolved from the context, not the context itself.
+	MetadataVocabCfg *tagdict.VocabConfig `json:"-"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -155,7 +162,8 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		Metadata: &ArtistMetadata{
 			URLs: make(map[string]string),
 		},
-		MetadataLocale: FirstMetadataLang(ctx),
+		MetadataLocale:   FirstMetadataLang(ctx),
+		MetadataVocabCfg: tagdict.MetadataVocab(ctx),
 	}
 
 	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
@@ -665,6 +673,13 @@ var tagSliceFieldAccessors = map[string]tagSliceFieldAccessor{
 // When result.MetadataLocale is set, locale-aware deduplication is used so
 // that tags for the same concept in different languages (e.g. "Rock" from
 // MusicBrainz and "ロック" from Wikidata) collapse to a single preferred form.
+//
+// The merged slice is additionally filtered through tagdict.ApplyVocabFilter,
+// which drops tags matching the user's exclude patterns and truncates to the
+// field's configured cap. This ensures tag filtering applies on every provider
+// merge in this path. When the config is nil (no setting stored) or the
+// exclude list is empty with no cap, the filter is a no-op and output is
+// identical to the pre-filter result.
 func applyTagSliceField(result *FetchResult, field string, pr *providerResult, source ProviderName) (populated, matched bool) {
 	acc, ok := tagSliceFieldAccessors[field]
 	if !ok {
@@ -678,6 +693,13 @@ func applyTagSliceField(result *FetchResult, field string, pr *providerResult, s
 	current := acc.get(result.Metadata)
 	before := len(current)
 	merged := tagdict.MergeAndDeduplicateLocale(current, src, result.MetadataLocale)
+
+	// Apply user tag filtering (exclude patterns + per-field count cap).
+	// Runs after locale-aware dedup so the filter operates on canonical tag
+	// forms. A nil config (the setting was never stored) is a no-op, so
+	// existing behavior is fully preserved when the setting is unset.
+	merged = tagdict.ApplyVocabFilter(result.MetadataVocabCfg, field, merged)
+
 	acc.set(result.Metadata, merged)
 	grew := len(merged) > before
 	if grew && !hasFieldSource(result.Sources, field) {
