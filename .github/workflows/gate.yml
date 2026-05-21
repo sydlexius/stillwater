@@ -1,0 +1,226 @@
+# Gate -- pre-push-gate.sh checks that have no CI equivalent in ci.yml.
+#
+# These checks are enforced by the local pre-push git hook. This workflow
+# closes the bypass: a PR pushed without the hook still fails required status
+# checks here before it can merge.
+#
+# Covers:
+#   1. Generated-file freshness: templ + all doc generators.
+#      The ci.yml lint job verifies *_templ.go but does NOT run the doc
+#      generators (gen-provider-matrix, gen-env-reference, gen-rules-catalogue,
+#      gen-settings-reference, gen-doc-anchors).
+#   2. Per-package coverage floor: enforces the one-way ratchet recorded in
+#      testdata/coverage-floor.json.  ci.yml uploads to codecov but never
+#      compares against the local floor file.
+#   3. Fuzz matrix drift: verifies fuzz.yml matrix matches live Fuzz* funcs.
+#      fuzz.yml runs the drift check only on a weekly schedule, not on PRs.
+#
+# Trigger design:
+#   Runs unconditionally on every push to main and every PR targeting main
+#   (no paths-filter gate on the workflow trigger).  GitHub treats a required
+#   status check as FAILED when the check is absent -- only when the check
+#   runs and exits 0 does it count as passing.  A paths-filter on the trigger
+#   itself would mean docs-only or script-only PRs skip the check entirely,
+#   which is the exact bypass this workflow closes.
+#
+#   dorny/paths-filter is used INSIDE each job only to skip expensive steps
+#   that demonstrably cannot change the outcome.  The job itself always runs
+#   and always emits a status.
+
+name: Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Generated-file freshness
+  #
+  # Runs make generate (templ + tailwind) and all doc generators, then fails
+  # on any uncommitted diff.  This catches:
+  #   - stale *_templ.go from a wrong-version templ binary
+  #   - stale provider matrix, env-var reference, rules catalogue, settings
+  #     reference, or doc-anchors file after source changes
+  #   - stale styles.css after input.css changes
+  #
+  # Always runs (no paths-filter guard) so the check is unconditionally
+  # present on every PR and cannot be silently absent.
+  # ---------------------------------------------------------------------------
+  generated-files:
+    name: Generated Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # SHA verified against live tag via:
+      #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Install Tailwind CSS standalone binary.
+      # Version and SHA must match build/docker/Dockerfile and bruno-ci.yml.
+      # To update: bump TAILWIND_VERSION, recompute SHA256 from the release page,
+      # and update all three locations together.
+      - name: Install Tailwind CSS
+        env:
+          TAILWIND_VERSION: v4.2.0
+          TAILWIND_SHA256: 8f65e2d21c675f1e8d265219979d17d10634c1f553a2f583265b7edb28726432
+        run: |
+          curl -fsSLO "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64"
+          echo "${TAILWIND_SHA256}  tailwindcss-linux-x64" | sha256sum -c -
+          chmod +x tailwindcss-linux-x64
+          sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+
+      - name: Regenerate templ
+        run: go tool templ generate
+
+      - name: Regenerate Tailwind CSS
+        run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
+
+      - name: Regenerate doc generators
+        run: |
+          go run ./cmd/gen-provider-matrix
+          go run ./cmd/gen-env-reference
+          go run ./cmd/gen-rules-catalogue
+          go run ./cmd/gen-settings-reference
+          go run ./cmd/gen-doc-anchors
+
+      - name: Fail on stale generated files
+        run: |
+          # Mark untracked files intent-to-add so a brand-new generated
+          # artifact (a first-time anchors file, a new matrix page) shows up
+          # in git diff -- a plain 'git diff' only reports tracked files.
+          git add -A -N
+          dirty=$(git diff --name-only)
+          if [ -n "$dirty" ]; then
+            echo "FAIL: committed generated files are stale."
+            echo ""
+            echo "Stale files:"
+            echo "$dirty" | awk '{print "  " $0}'
+            echo ""
+            echo "Fix: run 'make generate && make generate-docs' locally, then commit the results."
+            exit 1
+          fi
+          echo "OK: all generated files are current."
+
+  # ---------------------------------------------------------------------------
+  # Per-package coverage floor
+  #
+  # Replicates the '=== Per-package coverage floor ===' step in
+  # scripts/pre-push-gate.sh.  Runs go test to produce a coverage profile,
+  # then calls scripts/coverage-floor.sh to enforce the one-way ratchet
+  # recorded in testdata/coverage-floor.json.
+  #
+  # Uses dorny/paths-filter to skip the expensive test run on PRs that touch
+  # no Go source (e.g. docs-only or workflow-only changes).  The job itself
+  # always runs and always emits a terminal status -- skipping only means
+  # "no Go changed; floor cannot have dropped" which is always correct.
+  # ---------------------------------------------------------------------------
+  coverage-floor:
+    name: Coverage Floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'testdata/coverage-floor.json'
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        if: steps.filter.outputs.go == 'true'
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests and collect coverage profile
+        if: steps.filter.outputs.go == 'true'
+        run: |
+          go test -count=1 -covermode=atomic \
+            -coverprofile=coverage-floor.out \
+            ./internal/...
+
+      - name: Enforce per-package coverage floor
+        if: steps.filter.outputs.go == 'true'
+        run: bash scripts/coverage-floor.sh --cover coverage-floor.out
+
+      - name: Skip (no Go changes)
+        if: steps.filter.outputs.go != 'true'
+        run: echo "No Go source changes detected; coverage floor check skipped."
+
+  # ---------------------------------------------------------------------------
+  # Fuzz matrix drift
+  #
+  # Replicates the '=== Fuzz matrix drift check ===' step in
+  # scripts/pre-push-gate.sh.  fuzz.yml runs the same check but only on a
+  # weekly schedule, not on PRs.
+  #
+  # Uses dorny/paths-filter to limit the check to PRs that touch Go source
+  # or the fuzz workflow itself.  The job always runs and always emits a
+  # terminal status.
+  # ---------------------------------------------------------------------------
+  fuzz-matrix-drift:
+    name: Fuzz Matrix Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - '**/*.go'
+              - '.github/workflows/fuzz.yml'
+
+      - name: Check fuzz matrix is current
+        if: steps.filter.outputs.relevant == 'true'
+        run: |
+          live_file="$(mktemp)"
+          matrix_file="$(mktemp)"
+          trap 'rm -f "$live_file" "$matrix_file"' EXIT
+
+          grep -RhoE --include='*.go' '^func Fuzz[A-Za-z0-9_]+' internal/ \
+            | awk '{print $2}' | sort -u > "$live_file"
+          grep -Eo 'fuzz_func:[[:space:]]*"?Fuzz[A-Za-z0-9_]+' .github/workflows/fuzz.yml \
+            | sed -E 's/.*(Fuzz[A-Za-z0-9_]+).*/\1/' | sort -u > "$matrix_file"
+
+          missing=$(comm -23 "$live_file" "$matrix_file")
+          extra=$(comm -13 "$live_file" "$matrix_file")
+          if [ -n "$missing$extra" ]; then
+            echo "FAIL: fuzz matrix is out of sync with internal/ Fuzz* functions."
+            if [ -n "$missing" ]; then
+              echo "Missing in fuzz.yml matrix (add these):"
+              echo "$missing" | awk '{print "  " $0}'
+            fi
+            if [ -n "$extra" ]; then
+              echo "Extra in fuzz.yml matrix (no matching live target):"
+              echo "$extra" | awk '{print "  " $0}'
+            fi
+            exit 1
+          fi
+          echo "OK: $(wc -l < "$live_file" | tr -d ' ') fuzz targets, matrix set matches."
+
+      - name: Skip (no relevant changes)
+        if: steps.filter.outputs.relevant != 'true'
+        run: echo "No Go source or fuzz workflow changes; drift check skipped."
