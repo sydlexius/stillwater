@@ -42,7 +42,7 @@ Add one or more music library directories. For each library, you'll provide:
 - **Type.** `Regular` for all new libraries. Top-level directories are album artists: `/music/Pink Floyd/`, `/music/Radiohead/`, `/music/London Symphony Orchestra/`. The same convention covers pop, rock, classical, jazz, and everything else: orchestras, ensembles, and conductors all have their own MusicBrainz IDs and are treated the same as any other artist.
 
 !!! warning "Classical type (legacy, scheduled for removal in v1.3.0)"
-    The wizard still shows a `Classical` type option for backward compatibility. **Pick Regular instead.** The Classical type was originally meant to force composer-over-performer evaluation, but in practice the metadata fallback chain treats composers, performers, orchestras, and ensembles uniformly. The type is being retired in v1.3.0 (see issue [#1271](https://github.com/sydlexius/stillwater/issues/1271)). Existing Classical libraries will be auto-converted to Regular at upgrade time; an in-place "Convert to Regular" action is available before then.
+    The wizard no longer offers a `Classical` type option for new libraries. New libraries are always created as `Regular`. If you have existing Classical libraries, they will continue to work until v1.3.0; use the **Convert to Regular** action in **Settings &gt; Libraries** to migrate them. The Classical type is being retired in v1.3.0 (see issue [#1271](https://github.com/sydlexius/stillwater/issues/1271)).
 
 Stillwater validates that the path exists and is writable before letting you save.
 

@@ -84,6 +84,8 @@ settings-general-tls-status-listener-redirect
 settings-general-tls-status-listening-label
 settings-libraries-libraries
 settings-libraries-libraries-add
+settings-libraries-libraries-classical-convert-body
+settings-libraries-libraries-classical-legacy-badge
 settings-libraries-libraries-connection-badge
 settings-libraries-libraries-fs-both
 settings-libraries-libraries-fs-mode-title
@@ -97,7 +99,6 @@ settings-libraries-libraries-poll-interval-title
 settings-libraries-libraries-resync
 settings-libraries-libraries-scan
 settings-libraries-libraries-type
-settings-libraries-libraries-type-classical
 settings-libraries-libraries-type-regular
 settings-logs-log-settings
 settings-logs-log-settings-file-path

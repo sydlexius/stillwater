@@ -8,6 +8,16 @@ const (
 	TypeClassical = "classical"
 )
 
+// SunsetClassicalType is the planned removal date for the Classical library
+// type, expressed as an HTTP-date value for the Sunset response header
+// (RFC 8594). The date is a placeholder until v1.3.0 has a firm release date;
+// update this constant once the milestone is scheduled.
+//
+// This constant is intentionally used only for the Deprecation/Sunset headers
+// on POST /api/v1/libraries and PATCH /api/v1/libraries/{id} responses that
+// create or return a Classical library. Do not use it for any other purpose.
+const SunsetClassicalType = "Sun, 01 Jun 2025 00:00:00 GMT"
+
 // Library source constants.
 const (
 	SourceManual   = "manual"
@@ -59,6 +69,9 @@ func (lib Library) FSWatchEnabled() bool { return lib.FSWatch&FSModeWatch != 0 }
 
 // FSPollEnabled reports whether polling is enabled.
 func (lib Library) FSPollEnabled() bool { return lib.FSWatch&FSModePoll != 0 }
+
+// IsClassical reports whether the library uses the deprecated Classical type.
+func (lib Library) IsClassical() bool { return lib.Type == TypeClassical }
 
 // IsPathless reports whether the library has no filesystem path configured.
 // Pathless libraries support API-only operations; filesystem operations
