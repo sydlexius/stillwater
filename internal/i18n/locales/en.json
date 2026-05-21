@@ -1819,7 +1819,7 @@
   "settings.tag_sources.exclude.description": "One pattern per line, case-insensitive. An asterisk (*) is a wildcard that matches any run of characters. Blank lines are ignored.",
   "settings.tag_sources.exclude.help": "Each non-blank line is a pattern matched case-insensitively against genre, style, and mood tags. The asterisk (*) is a wildcard matching any run of characters. Matched tags are dropped before the NFO is written.",
   "settings.tag_sources.exclude.label": "Exclude Patterns",
-  "settings.tag_sources.exclude.placeholder": "e.g. christian*\n*core\nnoise",
+  "settings.tag_sources.exclude.placeholder": "e.g. seen live\n*core\nnoise",
   "settings.tag_sources.help": "Controls which genre, style, and mood tags reach your NFO files. Exclude patterns drop any tag matching the pattern (case-insensitive; * is a wildcard). Count caps limit the total number of tags written per field. Both filters run after provider merging, so they apply regardless of which provider supplied the tags.",
   "settings.tag_sources.saved": "Saved",
   "settings.tag_sources.title": "Tag Sources",

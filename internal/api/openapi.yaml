@@ -45,11 +45,11 @@ components:
           description: >
             Patterns matched case-insensitively against every genre, style,
             and mood tag. A tag matching any pattern is dropped. "*" is a
-            wildcard matching any run of characters (for example "christian*"
-            matches "christian rock"). Regex is not supported.
+            wildcard matching any run of characters (for example "seen*"
+            matches "seen live"). Regex is not supported.
           items:
             type: string
-          example: ["christian", "*-core", "seen live"]
+          example: ["seen live", "*-core"]
         max_genres:
           type: integer
           minimum: 0

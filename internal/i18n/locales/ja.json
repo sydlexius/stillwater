@@ -74,7 +74,7 @@
   "settings.tag_sources.exclude.description": "1行に1パターン。大文字小文字を区別しません。アスタリスク (*) は任意の文字列に一致するワイルドカードです。空白行は無視されます。",
   "settings.tag_sources.exclude.help": "空白でない各行は、ジャンル・スタイル・ムードタグと大文字小文字を区別せずにマッチングされるパターンです。アスタリスク（*）は任意の文字列に一致するワイルドカードです。一致したタグはNFOに書き込まれる前に除外されます。",
   "settings.tag_sources.exclude.label": "除外パターン",
-  "settings.tag_sources.exclude.placeholder": "例: christian*\n*core\nnoise",
+  "settings.tag_sources.exclude.placeholder": "例: seen live\n*core\nnoise",
   "settings.tag_sources.help": "NFOファイルに反映するジャンル・スタイル・ムードタグを制御します。除外パターンはパターンに一致するタグを削除します（大文字小文字を区別しない；*はワイルドカード）。上限はフィールドごとに書き込まれるタグの総数を制限します。両フィルターはプロバイダーのマージ後に実行されるため、どのプロバイダーがタグを提供したかに関わらず適用されます。",
   "settings.tag_sources.saved": "保存しました",
   "settings.tag_sources.title": "タグソース"

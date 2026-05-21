@@ -74,7 +74,7 @@
   "settings.tag_sources.exclude.description": "Un motif par ligne, insensible à la casse. Un astérisque (*) est un joker qui correspond à toute suite de caractères. Les lignes vides sont ignorées.",
   "settings.tag_sources.exclude.help": "Chaque ligne non vide est un motif comparé sans tenir compte de la casse aux tags de genre, style et ambiance. L'astérisque (*) est un joker correspondant à n'importe quelle suite de caractères. Les tags correspondants sont supprimés avant l'écriture du NFO.",
   "settings.tag_sources.exclude.label": "Motifs d'exclusion",
-  "settings.tag_sources.exclude.placeholder": "ex. christian*\n*core\nnoise",
+  "settings.tag_sources.exclude.placeholder": "ex. seen live\n*core\nnoise",
   "settings.tag_sources.help": "Contrôle les tags de genre, style et ambiance qui atteignent vos fichiers NFO. Les motifs d'exclusion suppriment tout tag correspondant au motif (insensible à la casse ; * est un joker). Les limites de nombre restreignent le nombre total de tags écrits par champ. Les deux filtres s'exécutent après la fusion des fournisseurs, de sorte qu'ils s'appliquent quel que soit le fournisseur qui a fourni les tags.",
   "settings.tag_sources.saved": "Enregistré",
   "settings.tag_sources.title": "Sources de tags"
