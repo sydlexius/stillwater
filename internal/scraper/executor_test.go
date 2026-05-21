@@ -1430,8 +1430,9 @@ func TestFieldAppliers_VocabFilter(t *testing.T) {
 			if !fieldAppliers[f.name](m, r) {
 				t.Fatalf("%s applier should report the field populated", f.name)
 			}
-			if got := f.get(r.Metadata); len(got) != 2 {
-				t.Fatalf("%s: executor path did not apply the count cap: %v", f.name, got)
+			got := f.get(r.Metadata)
+			if len(got) != 2 || got[0] != "Rock" || got[1] != "Pop" {
+				t.Fatalf("%s: count cap should keep exactly the first two tags [Rock Pop], got %v", f.name, got)
 			}
 		})
 	}
