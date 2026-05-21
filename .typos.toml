@@ -30,3 +30,9 @@ catalogue = "catalogue"
 # flags it as a misspelling of English "chamber". Other French display values
 # carry diacritics and are not flagged, so this is the only entry needed.
 chambre = "chambre"
+# "correspondant" / "correspondants" (= matching) and "limite" (= limit) are
+# correct French in the fr.json Tag Sources strings, but typos reads them as
+# misspelled English "correspondent" / "limit" and would rewrite them.
+correspondant = "correspondant"
+correspondants = "correspondants"
+limite = "limite"

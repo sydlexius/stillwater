@@ -164,6 +164,12 @@ settings-providers-provider-keys-key-configured
 settings-providers-provider-keys-key-required
 settings-providers-provider-keys-no-key-required
 settings-providers-provider-keys-premium-configured
+settings-providers-tag-sources
+settings-providers-tag-sources-caps
+settings-providers-tag-sources-caps-max-genres
+settings-providers-tag-sources-caps-max-moods
+settings-providers-tag-sources-caps-max-styles
+settings-providers-tag-sources-exclude
 settings-providers-web-search
 settings-rules-rule-schedule
 settings-rules-rules

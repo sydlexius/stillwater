@@ -193,6 +193,127 @@ func TestHandlePutVocab_EmptyBodyIsNoOp(t *testing.T) {
 	}
 }
 
+// TestHandlePutVocab_FormEncoded_RoundTrip verifies that the form-encoded PUT
+// path persists patterns and caps and that a subsequent GET returns the same
+// values. This is the code path used by the Settings > Providers > Tag Sources
+// HTMX form.
+func TestHandlePutVocab_FormEncoded_RoundTrip(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	// Submit the form the way an HTMX hx-put would: URL-encoded body with the
+	// exclude textarea content and three integer cap fields.
+	body := "exclude=christian%0A*core&max_genres=5&max_styles=0&max_moods=3"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("form PUT returned %d: %s", putW.Code, putW.Body.String())
+	}
+
+	// Verify the persisted config matches what was sent.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings/vocab", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetVocab(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET returned %d: %s", getW.Code, getW.Body.String())
+	}
+
+	var cfg tagdict.VocabConfig
+	if err := json.NewDecoder(getW.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if len(cfg.Exclude) != 2 || cfg.Exclude[0] != "christian" || cfg.Exclude[1] != "*core" {
+		t.Errorf("form PUT: unexpected exclude list: %v", cfg.Exclude)
+	}
+	if cfg.MaxGenres != 5 || cfg.MaxStyles != 0 || cfg.MaxMoods != 3 {
+		t.Errorf("form PUT: unexpected caps: g=%d s=%d m=%d", cfg.MaxGenres, cfg.MaxStyles, cfg.MaxMoods)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_BlankLinesIgnored verifies that blank lines
+// in the exclude textarea are stripped rather than persisted as blank patterns.
+// This is the expected behavior since blank patterns are meaningless, and the
+// form path strips them before validation so the request always succeeds when
+// only blank lines are present.
+func TestHandlePutVocab_FormEncoded_BlankLinesIgnored(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	// Two real patterns with a blank line in between (as a user might type).
+	body := "exclude=rock%0A%0A%0Apop&max_genres=0&max_styles=0&max_moods=0"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("form PUT returned %d: %s", putW.Code, putW.Body.String())
+	}
+
+	// Only the non-blank patterns should be persisted.
+	cfg := r.loadVocabConfig(context.Background())
+	if len(cfg.Exclude) != 2 {
+		t.Errorf("expected 2 patterns after stripping blanks, got %d: %v", len(cfg.Exclude), cfg.Exclude)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_NegativeCap verifies that a negative cap
+// value in a form PUT is rejected with 400.
+func TestHandlePutVocab_FormEncoded_NegativeCap(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	body := "exclude=&max_genres=-1&max_styles=0&max_moods=0"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+
+	if putW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for negative cap via form, got %d: %s", putW.Code, putW.Body.String())
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_EmptyFormIsNoOp verifies that submitting the
+// form with an empty exclude textarea and all caps at 0 stores the no-op
+// default config.
+func TestHandlePutVocab_FormEncoded_EmptyFormIsNoOp(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	body := "exclude=&max_genres=0&max_styles=0&max_moods=0"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty form, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	cfg := r.loadVocabConfig(context.Background())
+	if len(cfg.Exclude) != 0 || cfg.MaxGenres != 0 || cfg.MaxStyles != 0 || cfg.MaxMoods != 0 {
+		t.Errorf("empty form PUT should produce no-op config, got: %+v", cfg)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_NonIntegerCapRejected verifies that a
+// non-integer cap value in a form PUT is rejected with 400.
+func TestHandlePutVocab_FormEncoded_NonIntegerCapRejected(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	body := "exclude=&max_genres=abc&max_styles=0&max_moods=0"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+
+	if putW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-integer cap, got %d: %s", putW.Code, putW.Body.String())
+	}
+}
+
 // TestLoadVocabConfig_CorruptBlobDegrades verifies that a corrupt stored
 // metadata_vocab blob makes loadVocabConfig (the fetch-path loader) degrade to
 // the default no-op config rather than failing -- so a bad blob never breaks
@@ -216,5 +337,123 @@ func TestLoadVocabConfig_CorruptBlobDegrades(t *testing.T) {
 	}
 	if len(cfg.Exclude) != 0 || cfg.MaxGenres != 0 || cfg.MaxStyles != 0 || cfg.MaxMoods != 0 {
 		t.Errorf("expected the default no-op config for a corrupt blob, got %+v", cfg)
+	}
+}
+
+// TestHandlePutVocab_HTMXReturnsFragment verifies that an HTMX request gets an
+// HTML fragment (swapped into the Tag Sources form status span) rather than the
+// raw JSON body a plain API client receives.
+func TestHandlePutVocab_HTMXReturnsFragment(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(`{"max_genres":3}`))
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handlePutVocab(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<span") {
+		t.Errorf("HTMX response should be an HTML fragment, got: %s", body)
+	}
+	if strings.Contains(body, `"status"`) {
+		t.Errorf("HTMX response should not be the raw JSON body, got: %s", body)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_CRLF verifies the textarea split tolerates
+// CRLF line endings (browsers normalize <textarea> values to CRLF on submit).
+func TestHandlePutVocab_FormEncoded_CRLF(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab",
+		strings.NewReader("exclude=rock%0D%0Apop")) // rock\r\npop
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings/vocab", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetVocab(getW, getReq)
+	var cfg tagdict.VocabConfig
+	if err := json.NewDecoder(getW.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(cfg.Exclude) != 2 || cfg.Exclude[0] != "rock" || cfg.Exclude[1] != "pop" {
+		t.Fatalf("a CRLF body should yield [rock pop] with no stray CR, got %q", cfg.Exclude)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_HTMXFragment verifies the real production
+// path: a form-encoded body plus the HX-Request header returns the HTML
+// fragment (swapped into the form status span), not JSON.
+func TestHandlePutVocab_FormEncoded_HTMXFragment(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab",
+		strings.NewReader("max_genres=4"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.handlePutVocab(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "<span") {
+		t.Errorf("a form+HTMX request should get an HTML fragment, got: %s", w.Body.String())
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_WhitespaceOnlyLineDropped verifies that a
+// line of only spaces in the textarea is dropped, not stored and not rejected.
+func TestHandlePutVocab_FormEncoded_WhitespaceOnlyLineDropped(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab",
+		strings.NewReader("exclude=rock%0A%20%20%20%0Apop")) // "rock", "   ", "pop"
+	putReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	putW := httptest.NewRecorder()
+	r.handlePutVocab(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings/vocab", nil)
+	getW := httptest.NewRecorder()
+	r.handleGetVocab(getW, getReq)
+	var cfg tagdict.VocabConfig
+	if err := json.NewDecoder(getW.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(cfg.Exclude) != 2 {
+		t.Fatalf("a whitespace-only line should be dropped, expected 2 patterns, got %q", cfg.Exclude)
+	}
+}
+
+// TestHandlePutVocab_FormEncoded_UnknownFieldRejected verifies the form path
+// rejects an unknown form field with 400, matching the JSON path's strict-key
+// contract (and the openapi additionalProperties: false declaration).
+func TestHandlePutVocab_FormEncoded_UnknownFieldRejected(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab",
+		strings.NewReader("max_genres=2&bogus=1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.handlePutVocab(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an unknown form field, got %d: %s", w.Code, w.Body.String())
 	}
 }
