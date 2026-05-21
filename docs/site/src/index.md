@@ -55,7 +55,7 @@ Single binary or container. SQLite. No cloud, no telemetry, no account. Your lib
 - [Install Stillwater](getting-started/index.md): binary, Docker, or Docker Compose.
 - [Set up NFO writeback (preferred)](getting-started/first-run-oobe.md): point Stillwater at your music library.
 - [Connect a media server](getting-started/index.md#3-pick-a-delivery-mode): the API-push alternative for Emby or Jellyfin.
-- [Browse the API](api/index.html): every feature, scriptable.
+- [Browse the API](api/index.md): every feature, scriptable.
 
 ---
 

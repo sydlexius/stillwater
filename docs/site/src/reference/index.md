@@ -46,4 +46,4 @@ The map for "where do I find the exact list of X?" Each page is a deep enumerati
 
 The complete REST API specification is published separately and rendered from `api/openapi.yaml`. It covers every endpoint Stillwater exposes under `/api/v1/`, including request bodies, response shapes, and authentication. The Web UI consumes the same API via HTMX, so anything the UI can do can also be scripted.
 
-[Open the API reference &rarr;](../api/index.html){ .md-button }
+[Open the API reference &rarr;](../api/index.md){ .md-button }
