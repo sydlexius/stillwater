@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/langpref"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -211,6 +212,12 @@ func parseMetadataLanguages(raw string) []string {
 // provider.WithNameRomanizationFallback. If the user has no stored preference,
 // defaults are used (["en"] for languages, true for romanization fallback).
 // This allows all providers downstream to read language preferences from the context.
+//
+// It additionally loads the metadata_vocab setting (application-level, not
+// per-user) and injects it via tagdict.WithMetadataVocab so that both the
+// orchestrator and the scraper-executor can apply tag filtering without a
+// direct DB dependency. When the setting is absent the default config is
+// injected (empty exclude list, zero caps -- a no-op until the user sets it).
 func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	userID := middleware.UserIDFromContext(ctx)
 	if userID == "" {
@@ -236,7 +243,30 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	romanization := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true)
 	ctx = provider.WithNameRomanizationFallback(ctx, romanization)
 
+	// Inject the metadata_vocab setting so both the orchestrator and the
+	// scraper-executor can apply tag filtering without holding a DB reference.
+	// loadVocabConfig returns the default no-op config when the setting has not
+	// been persisted, preserving existing behavior exactly.
+	vocabCfg := r.loadVocabConfig(ctx)
+	ctx = tagdict.WithMetadataVocab(ctx, vocabCfg)
+
 	return ctx
+}
+
+// loadVocabConfig reads the metadata_vocab JSON blob from the settings table.
+// Returns the default no-op config when the setting is absent or cannot be
+// parsed, so callers always get a usable non-nil value.
+func (r *Router) loadVocabConfig(ctx context.Context) *tagdict.VocabConfig {
+	raw := r.getStringSetting(ctx, SettingMetadataVocab, "")
+	if raw == "" {
+		return tagdict.DefaultVocabConfig()
+	}
+	cfg, err := tagdict.ParseVocabConfig(raw)
+	if err != nil {
+		r.logger.Warn("parsing metadata_vocab setting, using default", "error", err)
+		return tagdict.DefaultVocabConfig()
+	}
+	return cfg
 }
 
 // isSuppressConfirmKey reports whether key is a valid per-action confirm

@@ -12,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	_ "modernc.org/sqlite"
 )
 
@@ -1363,4 +1364,44 @@ func TestMembersFieldQueried(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFieldAppliers_VocabFilter verifies the scraper-executor tag-merge path
+// applies the user's vocab exclude filter and count cap (issue #1130). A
+// refresh runs through this path, so this is the executor half of the dual-path
+// integration check (see issue #1589 for the precedent where a provider
+// feature wired into only one path silently never ran).
+func TestFieldAppliers_VocabFilter(t *testing.T) {
+	t.Run("exclude pattern drops matching tags", func(t *testing.T) {
+		m := &provider.ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}
+		r := &provider.FetchResult{
+			Metadata:         &provider.ArtistMetadata{},
+			MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
+		}
+		if !fieldAppliers[FieldGenres](m, r) {
+			t.Fatal("FieldGenres applier should report the field populated")
+		}
+		for _, g := range r.Metadata.Genres {
+			if strings.Contains(strings.ToLower(g), "junk") {
+				t.Fatalf("executor path did not apply the vocab exclude filter: %v", r.Metadata.Genres)
+			}
+		}
+		if len(r.Metadata.Genres) != 2 {
+			t.Fatalf("expected 2 genres after exclude, got %v", r.Metadata.Genres)
+		}
+	})
+
+	t.Run("count cap truncates", func(t *testing.T) {
+		m := &provider.ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}
+		r := &provider.FetchResult{
+			Metadata:         &provider.ArtistMetadata{},
+			MetadataVocabCfg: &tagdict.VocabConfig{MaxGenres: 2},
+		}
+		if !fieldAppliers[FieldGenres](m, r) {
+			t.Fatal("FieldGenres applier should report the field populated")
+		}
+		if len(r.Metadata.Genres) != 2 {
+			t.Fatalf("executor path did not apply the count cap: %v", r.Metadata.Genres)
+		}
+	})
 }

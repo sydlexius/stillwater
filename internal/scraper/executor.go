@@ -94,6 +94,10 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		// MetadataLocale drives locale-aware genre/style/mood handling in the
 		// fieldAppliers below, matching the legacy orchestrator path.
 		MetadataLocale: provider.FirstMetadataLang(ctx),
+		// MetadataVocabCfg is the user's vocab filtering configuration,
+		// resolved once from the context and applied after each tag-slice
+		// merge. Mirrors the MetadataLocale pattern; nil means no filtering.
+		MetadataVocabCfg: tagdict.MetadataVocab(ctx),
 	}
 
 	// Cache provider results to avoid duplicate API calls
@@ -507,25 +511,37 @@ var fieldAppliers = map[FieldName]fieldApplier{
 	// (r.MetadataLocale), translated to that locale. An empty locale degrades to
 	// plain canonicalization. This mirrors the legacy orchestrator path so both
 	// fetch paths surface tags identically.
+	//
+	// After the locale-aware dedup, each field additionally passes through
+	// tagdict.ApplyVocabFilter with the user's tag-filter config
+	// (r.MetadataVocabCfg): exclude patterns drop unwanted tags and a per-field
+	// cap limits the count. When the config is nil or default (empty exclude
+	// list, zero caps), this is a complete no-op.
 	FieldGenres: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Genres) == 0 {
 			return false
 		}
-		r.Metadata.Genres = tagdict.MergeAndDeduplicateLocale(nil, m.Genres, r.MetadataLocale)
+		merged := tagdict.MergeAndDeduplicateLocale(nil, m.Genres, r.MetadataLocale)
+		merged = tagdict.ApplyVocabFilter(r.MetadataVocabCfg, tagdict.VocabFieldGenres, merged)
+		r.Metadata.Genres = merged
 		return true
 	},
 	FieldStyles: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Styles) == 0 {
 			return false
 		}
-		r.Metadata.Styles = tagdict.MergeAndDeduplicateLocale(nil, m.Styles, r.MetadataLocale)
+		merged := tagdict.MergeAndDeduplicateLocale(nil, m.Styles, r.MetadataLocale)
+		merged = tagdict.ApplyVocabFilter(r.MetadataVocabCfg, tagdict.VocabFieldStyles, merged)
+		r.Metadata.Styles = merged
 		return true
 	},
 	FieldMoods: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {
 		if len(m.Moods) == 0 {
 			return false
 		}
-		r.Metadata.Moods = tagdict.MergeAndDeduplicateLocale(nil, m.Moods, r.MetadataLocale)
+		merged := tagdict.MergeAndDeduplicateLocale(nil, m.Moods, r.MetadataLocale)
+		merged = tagdict.ApplyVocabFilter(r.MetadataVocabCfg, tagdict.VocabFieldMoods, merged)
+		r.Metadata.Moods = merged
 		return true
 	},
 	FieldMembers: func(m *provider.ArtistMetadata, r *provider.FetchResult) bool {

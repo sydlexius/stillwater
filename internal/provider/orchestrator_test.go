@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	_ "modernc.org/sqlite"
 )
 
@@ -3251,6 +3253,45 @@ func TestFetchMetadata_MembersAuthoritative(t *testing.T) {
 		// MembersAuthoritative must be false (provider did not contribute).
 		if result.MembersAuthoritative {
 			t.Error("MembersAuthoritative must be false when provider returned an error")
+		}
+	})
+}
+
+// TestApplyTagSliceField_VocabFilter verifies the orchestrator tag-merge path
+// applies the user's vocab exclude filter and count cap (issue #1130). This is
+// the orchestrator half of the dual-path integration: a refresh runs through
+// the scraper-executor, but the orchestrator path must filter identically.
+func TestApplyTagSliceField_VocabFilter(t *testing.T) {
+	t.Run("exclude pattern drops matching tags", func(t *testing.T) {
+		result := &FetchResult{
+			Metadata:         &ArtistMetadata{},
+			MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
+		}
+		pr := &providerResult{meta: &ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}}
+
+		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
+
+		for _, g := range result.Metadata.Genres {
+			if strings.Contains(strings.ToLower(g), "junk") {
+				t.Fatalf("orchestrator path did not apply the vocab exclude filter: %v", result.Metadata.Genres)
+			}
+		}
+		if len(result.Metadata.Genres) != 2 {
+			t.Fatalf("expected 2 genres after exclude, got %v", result.Metadata.Genres)
+		}
+	})
+
+	t.Run("count cap truncates", func(t *testing.T) {
+		result := &FetchResult{
+			Metadata:         &ArtistMetadata{},
+			MetadataVocabCfg: &tagdict.VocabConfig{MaxGenres: 2},
+		}
+		pr := &providerResult{meta: &ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}}
+
+		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
+
+		if len(result.Metadata.Genres) != 2 {
+			t.Fatalf("orchestrator path did not apply the count cap: %v", result.Metadata.Genres)
 		}
 	})
 }
