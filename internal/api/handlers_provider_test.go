@@ -441,6 +441,174 @@ func TestHandleResetPriorities_DBError(t *testing.T) {
 	}
 }
 
+// TestHandleGetProviderConfig verifies that GET /providers/{name}/config
+// returns the current verbosity values for a provider that supports them,
+// and returns a sensible default when nothing has been stored.
+func TestHandleGetProviderConfig(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/wikipedia/config", nil)
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleGetProviderConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Provider  string            `json:"provider"`
+		Verbosity map[string]string `json:"verbosity"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Provider != "wikipedia" {
+		t.Errorf("provider = %q, want %q", resp.Provider, "wikipedia")
+	}
+	// Default must be intro (conservative).
+	if resp.Verbosity["biography"] != provider.VerbosityIntro {
+		t.Errorf("biography verbosity = %q, want %q", resp.Verbosity["biography"], provider.VerbosityIntro)
+	}
+}
+
+// TestHandleGetProviderConfig_InvalidProvider verifies that an unknown provider
+// name returns 400.
+func TestHandleGetProviderConfig_InvalidProvider(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/notreal/config", nil)
+	req.SetPathValue("name", "notreal")
+	w := httptest.NewRecorder()
+	r.handleGetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderConfig_HappyPath verifies that
+// PUT /providers/{name}/config with a valid JSON body persists the verbosity
+// setting and returns 200.
+func TestHandleSetProviderConfig_HappyPath(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	body := `{"verbosity_by_field":{"biography":"full"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Verify persistence.
+	val, err := r.providerSettings.GetFieldVerbosity(context.Background(), provider.NameWikipedia, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity: %v", err)
+	}
+	if val != provider.VerbosityFull {
+		t.Errorf("persisted verbosity = %q, want %q", val, provider.VerbosityFull)
+	}
+}
+
+// TestHandleSetProviderConfig_FormEncoded verifies that form-encoded data
+// (the HTMX path) is also accepted.
+func TestHandleSetProviderConfig_FormEncoded(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	body := "verbosity_biography=intro"
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderConfig_InvalidProvider verifies that an unknown provider
+// returns 400.
+func TestHandleSetProviderConfig_InvalidProvider(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	body := `{"verbosity_by_field":{"biography":"full"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/notreal/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "notreal")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderConfig_InvalidField verifies that an unknown field name
+// in the request body returns 400.
+func TestHandleSetProviderConfig_InvalidField(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	// "nosuchfield" is not a valid verbosity field for Wikipedia.
+	body := `{"verbosity_by_field":{"nosuchfield":"full"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderConfig_InvalidValue verifies that an unknown verbosity
+// value for a valid field returns 400.
+func TestHandleSetProviderConfig_InvalidValue(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	body := `{"verbosity_by_field":{"biography":"medium"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSetProviderConfig_NoVerbosityProvider verifies that providers
+// without verbosity options return 400.
+func TestHandleSetProviderConfig_NoVerbosityProvider(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	// MusicBrainz has no verbosity options in v1.
+	body := `{"verbosity_by_field":{"biography":"full"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "musicbrainz")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func providersEqual(a, b []provider.ProviderName) bool {
 	if len(a) != len(b) {
 		return false
@@ -451,4 +619,84 @@ func providersEqual(a, b []provider.ProviderName) bool {
 		}
 	}
 	return true
+}
+
+// TestHandleSetProviderConfig_EmptyBody verifies a request carrying no verbosity
+// values is rejected with 400, not silently accepted as a 200 no-op.
+func TestHandleSetProviderConfig_EmptyBody(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (an empty body must be rejected); body: %s",
+			w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// TestHandleSetProviderConfig_RoundTrip verifies a PUT through the handler is
+// reflected by a subsequent GET through the handler, covering the GET response
+// shape (not just direct SettingsService access).
+func TestHandleSetProviderConfig_RoundTrip(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config",
+		strings.NewReader(`{"verbosity_by_field":{"biography":"full"}}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.SetPathValue("name", "wikipedia")
+	putW := httptest.NewRecorder()
+	r.handleSetProviderConfig(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want 200; body: %s", putW.Code, putW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/providers/wikipedia/config", nil)
+	getReq.SetPathValue("name", "wikipedia")
+	getW := httptest.NewRecorder()
+	r.handleGetProviderConfig(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200; body: %s", getW.Code, getW.Body.String())
+	}
+	var resp struct {
+		Provider  string            `json:"provider"`
+		Verbosity map[string]string `json:"verbosity"`
+	}
+	if err := json.Unmarshal(getW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if resp.Verbosity["biography"] != provider.VerbosityFull {
+		t.Errorf("GET verbosity[biography] = %q, want %q", resp.Verbosity["biography"], provider.VerbosityFull)
+	}
+}
+
+// TestHandleSetProviderConfig_HTMXSuccessFragment verifies an HTMX request gets
+// an HTML success fragment, not a raw JSON body swapped into the page.
+func TestHandleSetProviderConfig_HTMXSuccessFragment(t *testing.T) {
+	t.Parallel()
+	r := testRouterWithMirror(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/wikipedia/config",
+		strings.NewReader("verbosity_biography=full"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("name", "wikipedia")
+	w := httptest.NewRecorder()
+	r.handleSetProviderConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<div") {
+		t.Errorf("an HTMX request should get an HTML fragment, got: %s", body)
+	}
+	if strings.Contains(body, `"status"`) {
+		t.Errorf("an HTMX response should not be the raw JSON body, got: %s", body)
+	}
 }

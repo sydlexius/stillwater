@@ -756,6 +756,13 @@
     "covered": false
   },
   {
+    "operationId": "getProviderConfig",
+    "method": "GET",
+    "path": "/providers/{name}/config",
+    "handler": "handleGetProviderConfig",
+    "covered": true
+  },
+  {
     "operationId": "getRulesStatus",
     "method": "GET",
     "path": "/rules/status",
@@ -1349,6 +1356,13 @@
     "path": "/providers/priorities",
     "handler": "handleSetPriorities",
     "covered": false
+  },
+  {
+    "operationId": "setProviderConfig",
+    "method": "PUT",
+    "path": "/providers/{name}/config",
+    "handler": "handleSetProviderConfig",
+    "covered": true
   },
   {
     "operationId": "setProviderKey",

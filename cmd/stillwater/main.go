@@ -614,7 +614,7 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	a.providerRegistry.Register(lastfm.New(a.rateLimiters, a.providerSettings, logger))
 	a.providerRegistry.Register(wikidata.New(a.rateLimiters, logger))
 	a.providerRegistry.Register(deezer.New(a.rateLimiters, logger))
-	a.providerRegistry.Register(wikipedia.New(a.rateLimiters, logger))
+	a.providerRegistry.Register(wikipedia.New(a.rateLimiters, a.providerSettings, logger))
 	a.providerRegistry.Register(genius.New(a.rateLimiters, a.providerSettings, logger))
 	a.providerRegistry.Register(spotify.New(a.rateLimiters, a.providerSettings, logger))
 

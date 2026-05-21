@@ -264,15 +264,15 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	if err != nil {
 		return nil, fmt.Errorf("listing provider keys: %w", err)
 	}
-	for _, ks := range keyStatuses {
-		if ks.Status == "unconfigured" {
+	for i := range keyStatuses {
+		if keyStatuses[i].Status == "unconfigured" {
 			continue
 		}
-		key, err := s.providerSettings.GetAPIKey(ctx, ks.Name)
+		key, err := s.providerSettings.GetAPIKey(ctx, keyStatuses[i].Name)
 		if err != nil || key == "" {
 			continue
 		}
-		payload.ProviderKeys[string(ks.Name)] = key
+		payload.ProviderKeys[string(keyStatuses[i].Name)] = key
 	}
 
 	// Collect connections with decrypted API keys

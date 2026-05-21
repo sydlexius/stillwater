@@ -1306,6 +1306,19 @@ func writeFormError(w http.ResponseWriter, req *http.Request, status int, messag
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+// writeFormSuccess sends a success response suitable for inline form display.
+// For HTMX requests, it returns a styled inline success-message fragment so the
+// user sees a confirmation rather than a raw JSON body swapped into the page.
+// For API requests, it returns JSON {"status":"ok"}.
+func writeFormSuccess(w http.ResponseWriter, req *http.Request, message string) {
+	if req.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = components.InlineMessage("success", message).Render(req.Context(), w)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

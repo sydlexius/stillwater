@@ -4863,6 +4863,7 @@ templ romanizationFallbackScript() {
 }
 
 templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
+	{{ hasGear := pk.RequiresKey || pk.OptionalKey || pk.SupportsBaseURL || len(pk.VerbosityOptions) > 0 }}
 	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 		<div class="flex items-center gap-3">
 			if logoSrcSet(string(pk.Name)) != "" {
@@ -4927,17 +4928,13 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						{ getKeyLinkText(ctx, pk.AccessTier) }
 					</a>
 				}
-				<button
-					type="button"
-					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick={ toggleKeyInput(string(pk.Name)) }
-				>
-					if pk.HasKey {
-						Update
-					} else {
-						Configure
-					}
-				</button>
+			}
+			if pk.SupportsBaseURL {
+				if mirrorStatusLabel(ctx, pk.Mirror) != "" {
+					<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+						{ mirrorStatusLabel(ctx, pk.Mirror) }
+					</span>
+				}
 			}
 			if pk.RequiresKey || pk.OptionalKey || pk.HasKey || pk.SupportsBaseURL {
 				<button
@@ -4956,254 +4953,306 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					</svg>
 				</button>
 			}
-			if pk.SupportsBaseURL {
-				if mirrorStatusLabel(ctx, pk.Mirror) != "" {
-					<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-						{ mirrorStatusLabel(ctx, pk.Mirror) }
-					</span>
-				}
+			if hasGear {
 				<button
 					type="button"
-					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick={ toggleProviderConfig(string(pk.Name)) }
+					class="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+					aria-label={ "Configure " + pk.DisplayName }
 					aria-expanded="false"
 					aria-controls={ "config-panel-" + string(pk.Name) }
+					onclick={ toggleProviderConfig(string(pk.Name)) }
 				>
-					Configure
+					@components.IconCog6Tooth("h-5 w-5")
 				</button>
 			}
 		</div>
 	</div>
-	if pk.RequiresKey || pk.OptionalKey {
-		<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
-			<form
-				class="flex flex-col gap-2"
-				hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
-				hx-target={ "#provider-card-" + string(pk.Name) }
-				hx-swap="innerHTML"
-				hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
-			>
-				if pk.Name == provider.NameSpotify {
-					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-						<input
-							type="text"
-							name="client_id"
-							placeholder={ t(ctx, "settings.provider_config.client_id") }
-							autocomplete="off"
-							data-1p-ignore
-							data-lpignore="true"
-							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-						<input
-							type="password"
-							name="client_secret"
-							placeholder={ t(ctx, "settings.provider_config.client_secret") }
-							autocomplete="off"
-							data-1p-ignore
-							data-lpignore="true"
-							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-					<p class="text-xs text-gray-500 dark:text-gray-400">
-						{ t(ctx, "settings.provider_keys.spotify_note_prefix") }
-						<a href="https://developer.spotify.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Spotify Developer</a> { t(ctx, "settings.provider_keys.spotify_note_suffix") }
-					</p>
-				} else {
-					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-						<input
-							type="text"
-							name="api_key"
-							if pk.OptionalKey {
-								placeholder={ t(ctx, "settings.provider_keys.premium_key_placeholder") }
-							} else {
-								placeholder={ t(ctx, "settings.provider_keys.key_placeholder") }
-							}
-							autocomplete="off"
-							data-1p-ignore
-							data-lpignore="true"
-							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-				}
-				<div class="flex gap-2">
-					<button
-						type="submit"
-						class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-					>
-						Save
-					</button>
-					<button
-						type="button"
-						class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						onclick={ toggleKeyInput(string(pk.Name)) }
-					>
-						Cancel
-					</button>
-				</div>
-			</form>
-		</div>
-		<div id={ "provider-save-result-" + string(pk.Name) } class="mt-1"></div>
-	}
 	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
-	if pk.SupportsBaseURL {
-		{{ serverType := mirrorServerType(pk.Mirror) }}
-		<div id={ "config-panel-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
-			<form
-				id={ "config-form-" + string(pk.Name) }
-				class="flex flex-col gap-3"
-			>
-				<fieldset>
-					<legend class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.provider_config.server") }</legend>
-					<div class="flex flex-col gap-1.5">
-						<label class="flex items-center gap-2 text-sm cursor-pointer">
-							<input
-								type="radio"
-								name="server_type"
-								value="official"
-								if serverType == "official" {
-									checked
-								}
-								class="text-blue-600 focus:ring-blue-500"
-								onchange={ handleServerSelection(string(pk.Name)) }
-							/>
-							<span>{ t(ctx, "settings.provider_config.official") }</span>
-							<span class="text-xs text-gray-400 dark:text-gray-500">musicbrainz.org (1 req/s)</span>
-						</label>
-						<label class="flex items-center gap-2 text-sm cursor-pointer">
-							<input
-								type="radio"
-								name="server_type"
-								value="beta"
-								if serverType == "beta" {
-									checked
-								}
-								class="text-blue-600 focus:ring-blue-500"
-								onchange={ handleServerSelection(string(pk.Name)) }
-							/>
-							<span>{ t(ctx, "settings.provider_config.beta") }</span>
-							<span class="text-xs text-gray-400 dark:text-gray-500">beta.musicbrainz.org (same data, 1 req/s)</span>
-						</label>
-						<label class="flex items-center gap-2 text-sm cursor-pointer">
-							<input
-								type="radio"
-								name="server_type"
-								value="custom"
-								if serverType == "custom" {
-									checked
-								}
-								class="text-blue-600 focus:ring-blue-500"
-								onchange={ handleServerSelection(string(pk.Name)) }
-							/>
-							<span>{ t(ctx, "settings.provider_config.custom_mirror") }</span>
-						</label>
-					</div>
-				</fieldset>
-				<div
-					id={ "custom-fields-" + string(pk.Name) }
-					class={
-						"flex flex-col gap-1.5 ml-6",
-						templ.KV("hidden", serverType != "custom"),
-					}
-				>
-					<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end">
-						<div class="flex-1">
-							<label for={ "custom-base-url-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
-								Base URL
-							</label>
-							<input
-								id={ "custom-base-url-" + string(pk.Name) }
-								type="url"
-								name="base_url"
-								placeholder="http://192.168.1.100:5000/ws/2"
-								if serverType == "custom" && pk.Mirror != nil {
-									value={ pk.Mirror.BaseURL }
-								}
-								if serverType == "custom" {
+	if hasGear {
+		<div
+			id={ "config-panel-" + string(pk.Name) }
+			class="hidden mt-2 sm:ml-8"
+			role="region"
+			aria-label={ "Configure " + pk.DisplayName }
+		>
+			if pk.RequiresKey || pk.OptionalKey {
+				<div class="flex flex-col gap-2">
+					<p class="text-xs font-medium text-gray-600 dark:text-gray-400">
+						if pk.HasKey {
+							{ t(ctx, "settings.provider_config.update_key") }
+						} else {
+							{ t(ctx, "settings.provider_config.add_key") }
+						}
+					</p>
+					<form
+						class="flex flex-col gap-2"
+						hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+						hx-target={ "#provider-card-" + string(pk.Name) }
+						hx-swap="innerHTML"
+					>
+						if pk.Name == provider.NameSpotify {
+							<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+								<input
+									type="text"
+									name="client_id"
+									placeholder={ t(ctx, "settings.provider_config.client_id") }
+									autocomplete="off"
+									data-1p-ignore
+									data-lpignore="true"
+									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 									required
-								}
-								autocomplete="off"
-								aria-describedby={ "custom-help-" + string(pk.Name) }
-								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
+								/>
+								<input
+									type="password"
+									name="client_secret"
+									placeholder={ t(ctx, "settings.provider_config.client_secret") }
+									autocomplete="off"
+									data-1p-ignore
+									data-lpignore="true"
+									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+									required
+								/>
+							</div>
+							<p class="text-xs text-gray-500 dark:text-gray-400">
+								{ t(ctx, "settings.provider_keys.spotify_note_prefix") }
+								<a href="https://developer.spotify.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Spotify Developer</a> { t(ctx, "settings.provider_keys.spotify_note_suffix") }
+							</p>
+						} else {
+							<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+								<input
+									type="text"
+									name="api_key"
+									if pk.OptionalKey {
+										placeholder={ t(ctx, "settings.provider_keys.premium_key_placeholder") }
+									} else {
+										placeholder={ t(ctx, "settings.provider_keys.key_placeholder") }
+									}
+									autocomplete="off"
+									data-1p-ignore
+									data-lpignore="true"
+									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+									required
+								/>
+							</div>
+						}
+						<div class="flex gap-2">
+							<button
+								type="submit"
+								class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+							>
+								Save
+							</button>
+							<button
+								type="button"
+								class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								onclick={ toggleProviderConfig(string(pk.Name)) }
+							>
+								Cancel
+							</button>
 						</div>
-						<div class="w-32">
-							<label for={ "custom-rate-limit-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
-								Rate (req/s)
+					</form>
+					<div id={ "provider-save-result-" + string(pk.Name) } class="mt-1"></div>
+				</div>
+			}
+			if pk.SupportsBaseURL {
+				{{ serverType := mirrorServerType(pk.Mirror) }}
+				if pk.RequiresKey || pk.OptionalKey {
+					<div class="border-t border-gray-100 dark:border-gray-700 my-3"></div>
+				}
+				<form
+					id={ "config-form-" + string(pk.Name) }
+					class="flex flex-col gap-3"
+				>
+					<fieldset>
+						<legend class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.provider_config.server") }</legend>
+						<div class="flex flex-col gap-1.5">
+							<label class="flex items-center gap-2 text-sm cursor-pointer">
+								<input
+									type="radio"
+									name="server_type"
+									value="official"
+									if serverType == "official" {
+										checked
+									}
+									class="text-blue-600 focus:ring-blue-500"
+									onchange={ handleServerSelection(string(pk.Name)) }
+								/>
+								<span>{ t(ctx, "settings.provider_config.official") }</span>
+								<span class="text-xs text-gray-400 dark:text-gray-500">musicbrainz.org (1 req/s)</span>
 							</label>
-							<input
-								id={ "custom-rate-limit-" + string(pk.Name) }
-								type="number"
-								name="rate_limit"
-								placeholder="10"
-								if serverType == "custom" && pk.Mirror != nil {
-									value={ fmt.Sprintf("%.0f", pk.Mirror.RateLimit) }
-								} else {
-									value="10"
+							<label class="flex items-center gap-2 text-sm cursor-pointer">
+								<input
+									type="radio"
+									name="server_type"
+									value="beta"
+									if serverType == "beta" {
+										checked
+									}
+									class="text-blue-600 focus:ring-blue-500"
+									onchange={ handleServerSelection(string(pk.Name)) }
+								/>
+								<span>{ t(ctx, "settings.provider_config.beta") }</span>
+								<span class="text-xs text-gray-400 dark:text-gray-500">beta.musicbrainz.org (same data, 1 req/s)</span>
+							</label>
+							<label class="flex items-center gap-2 text-sm cursor-pointer">
+								<input
+									type="radio"
+									name="server_type"
+									value="custom"
+									if serverType == "custom" {
+										checked
+									}
+									class="text-blue-600 focus:ring-blue-500"
+									onchange={ handleServerSelection(string(pk.Name)) }
+								/>
+								<span>{ t(ctx, "settings.provider_config.custom_mirror") }</span>
+							</label>
+						</div>
+					</fieldset>
+					<div
+						id={ "custom-fields-" + string(pk.Name) }
+						class={
+							"flex flex-col gap-1.5 ml-6",
+							templ.KV("hidden", serverType != "custom"),
+						}
+					>
+						<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end">
+							<div class="flex-1">
+								<label for={ "custom-base-url-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+									Base URL
+								</label>
+								<input
+									id={ "custom-base-url-" + string(pk.Name) }
+									type="url"
+									name="base_url"
+									placeholder="http://192.168.1.100:5000/ws/2"
+									if serverType == "custom" && pk.Mirror != nil {
+										value={ pk.Mirror.BaseURL }
+									}
+									if serverType == "custom" {
+										required
+									}
+									autocomplete="off"
+									aria-describedby={ "custom-help-" + string(pk.Name) }
+									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+							<div class="w-32">
+								<label for={ "custom-rate-limit-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+									Rate (req/s)
+								</label>
+								<input
+									id={ "custom-rate-limit-" + string(pk.Name) }
+									type="number"
+									name="rate_limit"
+									placeholder="10"
+									if serverType == "custom" && pk.Mirror != nil {
+										value={ fmt.Sprintf("%.0f", pk.Mirror.RateLimit) }
+									} else {
+										value="10"
+									}
+									min="1"
+									max="100"
+									step="1"
+									class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+						<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-400 dark:text-gray-500">
+							{ t(ctx, "settings.provider_config.custom_help") }
+						</p>
+					</div>
+					<div class="border-t border-gray-100 dark:border-gray-700 pt-3">
+						<div class="flex items-center gap-2">
+							<span class="text-xs font-medium text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
+							<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+								Coming soon
+							</span>
+						</div>
+						<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
+							{ t(ctx, "settings.provider_config.oauth_note") }
+						</p>
+						<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end opacity-50">
+							<div class="flex-1">
+								<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_id") }</label>
+								<input
+									type="text"
+									disabled
+									placeholder={ t(ctx, "settings.provider_config.register_placeholder") }
+									class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
+									aria-disabled="true"
+								/>
+							</div>
+							<div class="flex-1">
+								<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_secret") }</label>
+								<input
+									type="password"
+									disabled
+									placeholder={ t(ctx, "settings.provider_config.encrypted_placeholder") }
+									class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
+									aria-disabled="true"
+								/>
+							</div>
+						</div>
+					</div>
+					<div class="flex gap-2 pt-1">
+						<button
+							type="button"
+							class="text-sm px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+							onclick={ saveProviderConfig(string(pk.Name)) }
+						>
+							Save
+						</button>
+						<button
+							type="button"
+							class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							onclick={ toggleProviderConfig(string(pk.Name)) }
+						>
+							Cancel
+						</button>
+					</div>
+				</form>
+			}
+			if len(pk.VerbosityOptions) > 0 {
+				if pk.RequiresKey || pk.OptionalKey || pk.SupportsBaseURL {
+					<div class="border-t border-gray-100 dark:border-gray-700 my-3"></div>
+				}
+				<div class="flex flex-col gap-3">
+					<p class="text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "settings.provider_config.verbosity_section") }</p>
+					<p class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.verbosity_section.description") }</p>
+					for _, fv := range pk.VerbosityOptions {
+						{{ currentValue := pk.VerbosityValues[fv.Field] }}
+						<div class="flex flex-col gap-1">
+							<label
+								for={ "verbosity-" + string(pk.Name) + "-" + fv.Field }
+								class="text-xs font-medium text-gray-600 dark:text-gray-400"
+							>
+								{ t(ctx, fv.LabelKey) }
+							</label>
+							<select
+								id={ "verbosity-" + string(pk.Name) + "-" + fv.Field }
+								name={ "verbosity_" + fv.Field }
+								class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
+								hx-put={ "/api/v1/providers/" + string(pk.Name) + "/config" }
+								hx-trigger="change"
+								hx-target={ "#verbosity-result-" + string(pk.Name) }
+								hx-swap="innerHTML"
+								hx-include="this"
+							>
+								for _, opt := range fv.Options {
+									<option
+										value={ opt.Value }
+										if currentValue == opt.Value {
+											selected
+										}
+									>{ t(ctx, opt.LabelKey) }</option>
 								}
-								min="1"
-								max="100"
-								step="1"
-								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
+							</select>
 						</div>
-					</div>
-					<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-400 dark:text-gray-500">
-						{ t(ctx, "settings.provider_config.custom_help") }
-					</p>
+					}
+					<div id={ "verbosity-result-" + string(pk.Name) } class="text-xs mt-1"></div>
 				</div>
-				<div class="border-t border-gray-100 dark:border-gray-700 pt-3">
-					<div class="flex items-center gap-2">
-						<span class="text-xs font-medium text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
-						<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-							Coming soon
-						</span>
-					</div>
-					<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
-						{ t(ctx, "settings.provider_config.oauth_note") }
-					</p>
-					<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end opacity-50">
-						<div class="flex-1">
-							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_id") }</label>
-							<input
-								type="text"
-								disabled
-								placeholder={ t(ctx, "settings.provider_config.register_placeholder") }
-								class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
-								aria-disabled="true"
-							/>
-						</div>
-						<div class="flex-1">
-							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_secret") }</label>
-							<input
-								type="password"
-								disabled
-								placeholder={ t(ctx, "settings.provider_config.encrypted_placeholder") }
-								class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
-								aria-disabled="true"
-							/>
-						</div>
-					</div>
-				</div>
-				<div class="flex gap-2 pt-1">
-					<button
-						type="button"
-						class="text-sm px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-						onclick={ saveProviderConfig(string(pk.Name)) }
-					>
-						Save
-					</button>
-					<button
-						type="button"
-						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						onclick={ toggleProviderConfig(string(pk.Name)) }
-					>
-						Cancel
-					</button>
-				</div>
-			</form>
+			}
 		</div>
 	}
 }
@@ -5247,13 +5296,6 @@ script saveNameSimilarityThreshold() {
 		el.className = "text-sm text-red-500";
 		el.classList.remove("hidden");
 	});
-}
-
-script toggleKeyInput(providerName string) {
-	const el = document.getElementById("key-input-" + providerName);
-	if (el) {
-		el.classList.toggle("hidden");
-	}
 }
 
 script toggleProviderConfig(providerName string) {
