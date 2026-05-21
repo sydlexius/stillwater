@@ -1367,41 +1367,72 @@ func TestMembersFieldQueried(t *testing.T) {
 }
 
 // TestFieldAppliers_VocabFilter verifies the scraper-executor tag-merge path
-// applies the user's vocab exclude filter and count cap (issue #1130). A
-// refresh runs through this path, so this is the executor half of the dual-path
-// integration check (see issue #1589 for the precedent where a provider
-// feature wired into only one path silently never ran).
+// applies the user's vocab exclude filter and count cap for all three tag
+// fields (issue #1130). A refresh runs through this path, so this is the
+// executor half of the dual-path integration check (see issue #1589 for the
+// precedent where a provider feature wired into only one path silently never
+// ran).
 func TestFieldAppliers_VocabFilter(t *testing.T) {
-	t.Run("exclude pattern drops matching tags", func(t *testing.T) {
-		m := &provider.ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}
-		r := &provider.FetchResult{
-			Metadata:         &provider.ArtistMetadata{},
-			MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
-		}
-		if !fieldAppliers[FieldGenres](m, r) {
-			t.Fatal("FieldGenres applier should report the field populated")
-		}
-		for _, g := range r.Metadata.Genres {
-			if strings.Contains(strings.ToLower(g), "junk") {
-				t.Fatalf("executor path did not apply the vocab exclude filter: %v", r.Metadata.Genres)
-			}
-		}
-		if len(r.Metadata.Genres) != 2 {
-			t.Fatalf("expected 2 genres after exclude, got %v", r.Metadata.Genres)
-		}
-	})
+	fields := []struct {
+		name   FieldName
+		set    func(*provider.ArtistMetadata, []string)
+		get    func(*provider.ArtistMetadata) []string
+		setCap func(*tagdict.VocabConfig, int)
+	}{
+		{
+			FieldGenres,
+			func(m *provider.ArtistMetadata, v []string) { m.Genres = v },
+			func(m *provider.ArtistMetadata) []string { return m.Genres },
+			func(c *tagdict.VocabConfig, n int) { c.MaxGenres = n },
+		},
+		{
+			FieldStyles,
+			func(m *provider.ArtistMetadata, v []string) { m.Styles = v },
+			func(m *provider.ArtistMetadata) []string { return m.Styles },
+			func(c *tagdict.VocabConfig, n int) { c.MaxStyles = n },
+		},
+		{
+			FieldMoods,
+			func(m *provider.ArtistMetadata, v []string) { m.Moods = v },
+			func(m *provider.ArtistMetadata) []string { return m.Moods },
+			func(c *tagdict.VocabConfig, n int) { c.MaxMoods = n },
+		},
+	}
 
-	t.Run("count cap truncates", func(t *testing.T) {
-		m := &provider.ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}
-		r := &provider.FetchResult{
-			Metadata:         &provider.ArtistMetadata{},
-			MetadataVocabCfg: &tagdict.VocabConfig{MaxGenres: 2},
-		}
-		if !fieldAppliers[FieldGenres](m, r) {
-			t.Fatal("FieldGenres applier should report the field populated")
-		}
-		if len(r.Metadata.Genres) != 2 {
-			t.Fatalf("executor path did not apply the count cap: %v", r.Metadata.Genres)
-		}
-	})
+	for _, f := range fields {
+		t.Run(string(f.name)+" exclude pattern drops matching tags", func(t *testing.T) {
+			m := &provider.ArtistMetadata{}
+			f.set(m, []string{"Rock", "junk tag", "Pop"})
+			r := &provider.FetchResult{
+				Metadata:         &provider.ArtistMetadata{},
+				MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
+			}
+			if !fieldAppliers[f.name](m, r) {
+				t.Fatalf("%s applier should report the field populated", f.name)
+			}
+			got := f.get(r.Metadata)
+			for _, g := range got {
+				if strings.Contains(strings.ToLower(g), "junk") {
+					t.Fatalf("%s: executor path did not apply the exclude filter: %v", f.name, got)
+				}
+			}
+			if len(got) != 2 {
+				t.Fatalf("%s: expected 2 tags after exclude, got %v", f.name, got)
+			}
+		})
+
+		t.Run(string(f.name)+" count cap truncates", func(t *testing.T) {
+			m := &provider.ArtistMetadata{}
+			f.set(m, []string{"Rock", "Pop", "Jazz", "Blues"})
+			cfg := &tagdict.VocabConfig{}
+			f.setCap(cfg, 2)
+			r := &provider.FetchResult{Metadata: &provider.ArtistMetadata{}, MetadataVocabCfg: cfg}
+			if !fieldAppliers[f.name](m, r) {
+				t.Fatalf("%s applier should report the field populated", f.name)
+			}
+			if got := f.get(r.Metadata); len(got) != 2 {
+				t.Fatalf("%s: executor path did not apply the count cap: %v", f.name, got)
+			}
+		})
+	}
 }

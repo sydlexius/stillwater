@@ -32,6 +32,7 @@ components:
   schemas:
     VocabConfig:
       type: object
+      additionalProperties: false
       description: >
         User-configurable tag filtering for genre, style, and mood metadata.
         An exclude list drops tags matching any pattern; per-field caps limit
@@ -5779,11 +5780,11 @@ paths:
       summary: Get metadata vocabulary configuration
       operationId: getVocabConfig
       description: >
-        Returns the current metadata_vocab configuration, which controls
-        per-field allowlists, mapping rules, and optional strict-filter mode
-        for genres, styles, and moods. When the setting has never been saved,
-        the response is the default seed config (strict=false for all fields,
-        which is a no-op).
+        Returns the current metadata_vocab configuration: a case-insensitive
+        exclude pattern list and per-field tag count caps (max_genres,
+        max_styles, max_moods) for genres, styles, and moods. When the setting
+        has never been saved, the response is the default no-op config (empty
+        exclude list and zero caps).
       responses:
         "200":
           description: Current vocab config
@@ -5808,11 +5809,11 @@ paths:
       summary: Update metadata vocabulary configuration
       operationId: putVocabConfig
       description: >
-        Replaces the metadata_vocab configuration. All three field keys
-        (genres, styles, moods) are optional; absent fields default to the
-        zero value (strict=false, empty allowlist, no mappings). Unknown
-        top-level keys are rejected. Each mapping entry must have a non-empty
-        "from"; "to" may be empty (meaning "drop this tag").
+        Replaces the full metadata_vocab configuration. The "exclude" pattern
+        list and each count cap (max_genres, max_styles, max_moods) are
+        optional and default to no-op values when omitted. Unknown top-level
+        keys are rejected, exclude patterns must be non-blank, and caps must
+        not be negative.
       requestBody:
         required: true
         content:

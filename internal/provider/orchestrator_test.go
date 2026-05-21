@@ -3290,8 +3290,9 @@ func TestApplyTagSliceField_VocabFilter(t *testing.T) {
 
 		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
 
-		if len(result.Metadata.Genres) != 2 {
-			t.Fatalf("orchestrator path did not apply the count cap: %v", result.Metadata.Genres)
+		got := result.Metadata.Genres
+		if len(got) != 2 || got[0] != "Rock" || got[1] != "Pop" {
+			t.Fatalf("count cap should keep exactly the first two genres [Rock Pop], got %v", got)
 		}
 	})
 }

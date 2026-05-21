@@ -104,6 +104,22 @@ func TestHandlePutVocab_UnknownField(t *testing.T) {
 	}
 }
 
+// TestHandlePutVocab_TrailingJSON verifies that a body with a valid object
+// followed by trailing JSON is rejected with 400 (strict single-object decode).
+func TestHandlePutVocab_TrailingJSON(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	body := `{"max_genres":1}{"junk":1}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.handlePutVocab(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for trailing JSON after the first object, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestHandlePutVocab_InvalidJSON verifies that a malformed JSON body is
 // rejected with 400.
 func TestHandlePutVocab_InvalidJSON(t *testing.T) {

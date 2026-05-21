@@ -219,6 +219,13 @@ func parseMetadataLanguages(raw string) []string {
 // direct DB dependency. When the setting is absent the default config is
 // injected (empty exclude list, zero caps -- a no-op until the user sets it).
 func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
+	// Inject the metadata_vocab setting first, before the per-user early
+	// return below. metadata_vocab is an application-level setting, so it must
+	// reach every context -- including anonymous and background/system
+	// contexts (e.g. scheduled refreshes) that carry no user ID. loadVocabConfig
+	// returns the default no-op config when the setting has not been persisted.
+	ctx = tagdict.WithMetadataVocab(ctx, r.loadVocabConfig(ctx))
+
 	userID := middleware.UserIDFromContext(ctx)
 	if userID == "" {
 		return ctx
@@ -242,13 +249,6 @@ func (r *Router) injectMetadataLanguages(ctx context.Context) context.Context {
 	// to match the existing shipped behavior for users who have not set it.
 	romanization := r.getUserBoolPreference(ctx, PrefMetadataNameRomanization, true)
 	ctx = provider.WithNameRomanizationFallback(ctx, romanization)
-
-	// Inject the metadata_vocab setting so both the orchestrator and the
-	// scraper-executor can apply tag filtering without holding a DB reference.
-	// loadVocabConfig returns the default no-op config when the setting has not
-	// been persisted, preserving existing behavior exactly.
-	vocabCfg := r.loadVocabConfig(ctx)
-	ctx = tagdict.WithMetadataVocab(ctx, vocabCfg)
 
 	return ctx
 }

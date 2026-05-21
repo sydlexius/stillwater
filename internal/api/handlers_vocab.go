@@ -16,6 +16,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -80,6 +81,12 @@ func (r *Router) handlePutVocab(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	// Reject a body with trailing content after the first JSON object so a
+	// payload like `{}{"x":1}` cannot smuggle a second object past validation.
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
 
 	// Exclude patterns must be non-blank: a blank pattern is meaningless and a
 	// stray empty string is more likely a UI bug than intent.
@@ -109,6 +116,11 @@ func (r *Router) handlePutVocab(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Normalize Exclude to a non-nil slice so the persisted blob stores [] not
+	// null, matching the documented no-op shape and the GET response.
+	if cfg.Exclude == nil {
+		cfg.Exclude = []string{}
+	}
 	blob, err := json.Marshal(cfg)
 	if err != nil {
 		r.logger.Error("marshaling metadata_vocab config", "error", err)

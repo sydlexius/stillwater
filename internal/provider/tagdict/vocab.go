@@ -72,12 +72,19 @@ type ctxKeyMetadataVocab struct{}
 // fetch paths can resolve it without needing a direct dependency on the DB.
 // This mirrors the WithNameRomanizationFallback pattern in language.go.
 func WithMetadataVocab(ctx context.Context, cfg *VocabConfig) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return context.WithValue(ctx, ctxKeyMetadataVocab{}, cfg)
 }
 
 // MetadataVocab retrieves the VocabConfig from the context. Returns nil when
-// no config has been injected; ApplyVocabFilter treats nil as a no-op config.
+// no config has been injected (or ctx is nil); ApplyVocabFilter treats nil as
+// a no-op config.
 func MetadataVocab(ctx context.Context) *VocabConfig {
+	if ctx == nil {
+		return nil
+	}
 	cfg, _ := ctx.Value(ctxKeyMetadataVocab{}).(*VocabConfig)
 	return cfg
 }
