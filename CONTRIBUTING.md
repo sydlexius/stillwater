@@ -6,15 +6,16 @@ and pull requests, and where to ask questions.
 
 ## Code of conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By
+This project follows the [Contributor Covenant](https://github.com/sydlexius/stillwater/blob/main/CODE_OF_CONDUCT.md). By
 participating you agree to abide by its terms.
 
 ## Development environment
 
-See [docs/dev-setup.md](docs/dev-setup.md) for the full setup. Quick summary:
+See [Dev setup](https://github.com/sydlexius/stillwater/blob/main/docs/dev-setup.md) for the full setup. Quick summary:
 
 - Go 1.26 or newer
-- Node.js (for Tailwind CSS v4 and the templ toolchain)
+- Tailwind CSS standalone CLI (no Node.js required; see Dev setup for download
+  instructions)
 - `make build` produces a working binary; `make dev` enables hot reload
   via `air`
 
@@ -36,15 +37,15 @@ background workers).
 - No em-dashes in any output
 - Run `make fmt` before committing (Go and templ formatters)
 - Run `make lint` (`golangci-lint`) before opening a PR
-- Follow the patterns documented in [.golangci.yml](.golangci.yml) and the
+- Follow the patterns documented in [.golangci.yml](https://github.com/sydlexius/stillwater/blob/main/.golangci.yml) and the
   per-package guidance in `.github/instructions/`
 
-Style and conventions live in [CLAUDE.md](CLAUDE.md), which doubles as
+Style and conventions live in [CLAUDE.md](https://github.com/sydlexius/stillwater/blob/main/CLAUDE.md), which doubles as
 project-wide guidance for both human contributors and AI tools.
 
 ## Pull request workflow
 
-The full workflow is documented in [docs/pr-workflow.md](docs/pr-workflow.md).
+The full workflow is documented in [PR workflow](https://github.com/sydlexius/stillwater/blob/main/docs/pr-workflow.md).
 Short version:
 
 1. Branch from `main`. Never commit to `main` directly; branch protection

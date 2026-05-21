@@ -3,6 +3,17 @@ site_description: Self-hosted artist and composer metadata management for Emby, 
 site_url: https://sydlexius.github.io/stillwater/
 repo_url: https://github.com/sydlexius/stillwater
 repo_name: sydlexius/stillwater
+# edit_uri points at docs/site/src/ for most pages.
+# The Contributing section pages are thin stubs that include canonical files
+# via pymdownx.snippets. MkDocs does not support per-page edit_uri overrides,
+# so "Edit this page" on Contributing pages points at the stub, not the
+# canonical file. Canonical file locations for reference:
+#   contributing/index.md       -> CONTRIBUTING.md (repo root)
+#   contributing/dev-setup.md   -> docs/dev-setup.md
+#   contributing/architecture-decisions.md -> docs/architecture-decisions.md
+#   contributing/pr-workflow.md -> docs/pr-workflow.md
+#   contributing/worktrees.md   -> docs/worktrees.md
+#   contributing/milestone-protocol.md -> docs/milestone-protocol.md
 edit_uri: edit/main/docs/site/src/
 
 docs_dir: src
@@ -120,4 +131,11 @@ nav:
   - Troubleshooting:
       - troubleshooting/index.md
       - Platform authentication: troubleshooting/platform-auth.md
-  - API Reference: api/index.html
+  - Contributing:
+      - Overview: contributing/index.md
+      - Dev setup: contributing/dev-setup.md
+      - Architecture decisions: contributing/architecture-decisions.md
+      - PR workflow: contributing/pr-workflow.md
+      - Worktrees: contributing/worktrees.md
+      - Milestone protocol: contributing/milestone-protocol.md
+  - API Reference: api/index.md

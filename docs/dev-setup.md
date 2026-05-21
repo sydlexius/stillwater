@@ -8,7 +8,7 @@ Prerequisites and instructions for building Stillwater from source.
 |------|---------|---------|---------|
 | Go | 1.26.1+ | Compiler and runtime | https://go.dev/dl/ |
 | templ | latest | HTML template code generation | `go install github.com/a-h/templ/cmd/templ@latest` |
-| Tailwind CSS | v4.2.0 | CSS build (standalone CLI) | See below |
+| Tailwind CSS | see `ARG TAILWIND_VERSION` in [`build/docker/Dockerfile`](https://github.com/sydlexius/stillwater/blob/main/build/docker/Dockerfile) | CSS build (standalone CLI) | See below |
 | Git | any | Version control | https://git-scm.com/ |
 
 ### Optional Tools
@@ -22,27 +22,33 @@ Prerequisites and instructions for building Stillwater from source.
 
 ## Installing Tailwind CSS Standalone CLI
 
-The project uses the Tailwind CSS standalone CLI (no Node.js required). Download the correct binary for your platform from the GitHub releases page:
+The project uses the Tailwind CSS standalone CLI (no Node.js required).
+The canonical version is `ARG TAILWIND_VERSION` in
+[`build/docker/Dockerfile`](https://github.com/sydlexius/stillwater/blob/main/build/docker/Dockerfile).
+Download the matching binary for your platform from the GitHub releases page:
 
-https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.2.0
+https://github.com/tailwindlabs/tailwindcss/releases
+
+Replace `<VERSION>` in the commands below with the value of `TAILWIND_VERSION`
+from the Dockerfile (for example `v4.2.0`).
 
 **Linux:**
 ```bash
-curl -sLo tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/tailwindcss-linux-x64
+curl -sLo tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/<VERSION>/tailwindcss-linux-x64
 chmod +x tailwindcss
 sudo mv tailwindcss /usr/local/bin/
 ```
 
 **macOS (Apple Silicon):**
 ```bash
-curl -sLo tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/tailwindcss-macos-arm64
+curl -sLo tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/<VERSION>/tailwindcss-macos-arm64
 chmod +x tailwindcss
 sudo mv tailwindcss /usr/local/bin/
 ```
 
 **Windows:**
 ```powershell
-curl -Lo tailwindcss.exe https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.0/tailwindcss-windows-x64.exe
+curl -Lo tailwindcss.exe https://github.com/tailwindlabs/tailwindcss/releases/download/<VERSION>/tailwindcss-windows-x64.exe
 # Move to a directory on your PATH, or keep in the repo root (it is gitignored)
 ```
 
@@ -85,7 +91,7 @@ Equivalent Docker commands:
 
 ```bash
 make docker-build   # build Docker image
-make docker-run     # start via docker-compose.local.yml
+make docker-run     # start via docker-compose.yml
 ```
 
 ## Running Locally
@@ -195,22 +201,21 @@ go test -v -count=1 ./internal/image/...
 
 ## Environment Variables
 
+The full, generated reference for every `SW_` environment variable is on the
+published docs site:
+
+[Reference: Environment variables](https://sydlexius.github.io/stillwater/reference/environment-variables/)
+
+That page is generated from the configuration definition (`internal/config/config.go`)
+via `make generate-docs` and is always up to date. Do not maintain a separate
+table here.
+
+For the Docker container, two additional variables control file ownership:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SW_DB_PATH` | `/config/stillwater.db` | SQLite database file path (container default; `make run` overrides to `./data/stillwater.db`) |
-| `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
-| `SW_LOG_FORMAT` | `json` | Log format: json, text |
-| `SW_PORT` | `1973` | HTTP port |
-| `SW_BASE_PATH` | (empty) | URL prefix for reverse proxy (e.g., `/stillwater`) |
-| `SW_MUSIC_PATH` | `/music` | Music library root directory |
-| `SW_SESSION_SECRET` | (unused) | Reserved for future session cookie signing support; current sessions use a random server-stored token |
-| `SW_ENCRYPTION_KEY` | (auto-generated) | Base64-encoded AES-256 key for encrypting API keys at rest |
-| `SW_BACKUP_PATH` | (empty) | Database backup directory |
-| `SW_BACKUP_ENABLED` | `true` | Enable automatic database backups |
-| `SW_BACKUP_INTERVAL` | `24` | Hours between backups |
-| `SW_BACKUP_RETENTION` | `7` | Number of backups to keep |
-| `SW_SCANNER_EXCLUSIONS` | (empty) | Comma-separated artist names to skip during scan |
-| `PUID` / `PGID` | `99` / `100` | User/group ID for Docker container file ownership |
+| `PUID` | `99` | User ID the container process runs as. Set to your host UID to avoid permission issues on mounted volumes. |
+| `PGID` | `100` | Group ID the container process runs as. Set to your host GID. |
 
 ## Project Structure
 
@@ -240,8 +245,11 @@ Releases are automated with [GoReleaser](https://goreleaser.com/). Pushing a sem
 
 ### Tag and push
 
+Tags must be signed annotated tags (`-s`) to earn the GitHub Verified badge.
+This requires a GPG or SSH signing key configured in your git config.
+
 ```bash
-git tag -a v0.2.0 -m "Release v0.2.0"
+git tag -s v0.2.0 -m "Release v0.2.0"
 git push origin v0.2.0
 ```
 
