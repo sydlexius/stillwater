@@ -3,11 +3,13 @@ package musicbrainz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -651,6 +653,435 @@ func isErrNotFound(err error) bool {
 func isErrUnavailable(err error) bool {
 	var unavail *provider.ErrProviderUnavailable
 	return errors.As(err, &unavail)
+}
+
+// captureHandler is a minimal slog.Handler that records log entries so tests
+// can assert on log level and attributes without capturing stderr. All
+// instances sharing the same *captureState write to the same slice, so
+// assertions against the root handler see entries produced by child loggers
+// created via logger.With(...) (which calls WithAttrs internally).
+type captureState struct {
+	mu      sync.Mutex
+	entries []captureEntry
+}
+
+type captureEntry struct {
+	level slog.Level
+	msg   string
+	attrs []slog.Attr
+}
+
+type captureHandler struct {
+	state *captureState
+}
+
+func newCaptureState() (*captureHandler, *captureState) {
+	s := &captureState{}
+	return &captureHandler{state: s}, s
+}
+
+func (h *captureHandler) Enabled(_ context.Context, level slog.Level) bool { return true }
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	entry := captureEntry{level: r.Level, msg: r.Message}
+	r.Attrs(func(a slog.Attr) bool {
+		entry.attrs = append(entry.attrs, a)
+		return true
+	})
+	h.state.mu.Lock()
+	h.state.entries = append(h.state.entries, entry)
+	h.state.mu.Unlock()
+	return nil
+}
+
+// WithAttrs returns a child handler that shares the same captureState so
+// entries from logger.With(...) are visible to the original captureState.
+func (h *captureHandler) WithAttrs(_ []slog.Attr) slog.Handler {
+	return &captureHandler{state: h.state}
+}
+func (h *captureHandler) WithGroup(_ string) slog.Handler { return h }
+
+// hasWarn returns true when at least one captured entry is at WARN level and
+// contains the given substring in its message or attribute values.
+func (s *captureState) hasWarn(substring string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.level != slog.LevelWarn {
+			continue
+		}
+		if strings.Contains(e.msg, substring) {
+			return true
+		}
+		for _, a := range e.attrs {
+			if strings.Contains(fmt.Sprintf("%v", a.Value), substring) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// warnAttrValue returns the string value of the named attribute from the
+// first WARN entry whose message contains msgSubstr, and whether it was found.
+// Unlike hasWarn it pins a specific (message, attribute) pair so a test can
+// distinguish, for example, the parse-failure WARN from the fallback-retry WARN.
+func (s *captureState) warnAttrValue(msgSubstr, attrKey string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.level != slog.LevelWarn || !strings.Contains(e.msg, msgSubstr) {
+			continue
+		}
+		for _, a := range e.attrs {
+			if a.Key == attrKey {
+				return a.Value.String(), true
+			}
+		}
+	}
+	return "", false
+}
+
+// hasWarnAttr reports whether any WARN entry whose message contains msgSubstr
+// also carries an attribute attrKey whose value equals attrValue exactly.
+func (s *captureState) hasWarnAttr(msgSubstr, attrKey, attrValue string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.level != slog.LevelWarn || !strings.Contains(e.msg, msgSubstr) {
+			continue
+		}
+		for _, a := range e.attrs {
+			if a.Key == attrKey && a.Value.String() == attrValue {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// newCaptureAdapter creates an Adapter backed by a captureHandler logger.
+// The returned *captureState can be inspected for logged entries.
+func newCaptureAdapter(t *testing.T, baseURL string) (*Adapter, *captureState) {
+	t.Helper()
+	h, state := newCaptureState()
+	logger := slog.New(h)
+	limiter := provider.NewRateLimiterMap()
+	limiter.SetLimit(provider.NameMusicBrainz, 1000)
+	a := NewWithBaseURL(limiter, logger, baseURL)
+	a.client = &http.Client{Timeout: 10 * time.Second}
+	return a, state
+}
+
+// --- #1033: mirror health check and error visibility ---
+
+// TestTestConnection_HTMLResponse verifies that a 200 OK response with an
+// HTML body is detected as a failure. This is the core mirror bug: a broken
+// mirror returns an HTML error page with HTTP 200, which previously passed.
+func TestTestConnection_HTMLResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<!DOCTYPE html><html><body>404 Not Found</body></html>`))
+	}))
+	defer srv.Close()
+
+	a, _ := newCaptureAdapter(t, srv.URL)
+	err := a.TestConnection(context.Background())
+	if err == nil {
+		t.Fatal("TestConnection should return an error when server responds with HTML")
+	}
+	if !strings.Contains(err.Error(), "non-JSON") {
+		t.Errorf("error should mention non-JSON response, got: %v", err)
+	}
+}
+
+// TestTestConnection_ValidJSON verifies that a well-formed SearchResponse JSON
+// body does not return an error.
+func TestTestConnection_ValidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
+	}))
+	defer srv.Close()
+
+	a, _ := newCaptureAdapter(t, srv.URL)
+	if err := a.TestConnection(context.Background()); err != nil {
+		t.Fatalf("TestConnection should succeed for valid JSON: %v", err)
+	}
+}
+
+// TestUnmarshalResponse_WarnOnParseError verifies that a JSON parse failure
+// logs at WARN level and includes the base URL in the log entry. This covers
+// enhancement 3 (promote mirror parse errors to WARN).
+func TestUnmarshalResponse_WarnOnParseError(t *testing.T) {
+	a, cap := newCaptureAdapter(t, "http://mirror.example.com/ws/2")
+	body := []byte(`<!DOCTYPE html><html><body>Service Unavailable</body></html>`)
+	var resp SearchResponse
+	err := a.unmarshalResponse("http://mirror.example.com/ws/2", body, &resp)
+	if err == nil {
+		t.Fatal("unmarshalResponse should return error for HTML input")
+	}
+	if !cap.hasWarn("mirror.example.com") {
+		t.Error("expected WARN log entry containing the base URL")
+	}
+}
+
+// TestAutoFallback_ParseErrorTriggersFallback verifies that when the configured
+// mirror returns an HTML response, the adapter retries against the fallback
+// URL (enhancement 4). Two httptest.Servers are used: the broken mirror
+// (returns HTML) and the good "official" server (returns valid JSON). The
+// fallback URL is overridden via setFallbackURL so the test does not reach
+// the real musicbrainz.org.
+func TestAutoFallback_ParseErrorTriggersFallback(t *testing.T) {
+	// Good server: returns a valid SearchResponse.
+	goodSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"created":"2024-01-01T00:00:00.000Z","count":0,"offset":0,"artists":[]}`))
+	}))
+	defer goodSrv.Close()
+
+	// Broken mirror: returns HTML with HTTP 200.
+	brokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<html><body>Mirror Error</body></html>`))
+	}))
+	defer brokenSrv.Close()
+
+	a, cap := newCaptureAdapter(t, brokenSrv.URL)
+	// Override the fallback to point at the good server instead of musicbrainz.org.
+	a.setFallbackURL(goodSrv.URL)
+
+	_, err := a.SearchArtist(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("SearchArtist should succeed via fallback: %v", err)
+	}
+	// The adapter should have logged a WARN about retrying.
+	if !cap.hasWarn("fallback") {
+		t.Error("expected WARN log entry mentioning fallback retry")
+	}
+}
+
+// TestAutoFallback_NetworkTimeoutDoesNotFallback verifies that a network
+// timeout from the mirror does NOT trigger fallback -- only a successful 200
+// with unparsable body does.
+func TestAutoFallback_NetworkTimeoutDoesNotFallback(t *testing.T) {
+	// Good server: should never be reached.
+	var goodHit atomic.Bool
+	goodSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		goodHit.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"created":"","count":0,"offset":0,"artists":[]}`))
+	}))
+	defer goodSrv.Close()
+
+	// Broken server: immediately closes the connection to simulate a network error.
+	brokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hijack and close to simulate a connection drop.
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		conn, _, _ := hj.Hijack()
+		conn.Close()
+	}))
+	defer brokenSrv.Close()
+
+	a, cap := newCaptureAdapter(t, brokenSrv.URL)
+	a.setFallbackURL(goodSrv.URL)
+
+	_, err := a.SearchArtist(context.Background(), "test")
+	// The request must fail (network error from broken server).
+	if err == nil {
+		t.Fatal("expected error from network-level failure")
+	}
+	// The good server must NOT have been contacted.
+	if goodHit.Load() {
+		t.Error("good server was contacted, but fallback should not trigger on network error")
+	}
+	// No "fallback" WARN should appear -- the network error is reported by doRequest
+	// before the parse stage that triggers fallback.
+	if cap.hasWarn("fallback") {
+		t.Error("fallback WARN should not be logged for a network-level error")
+	}
+}
+
+// htmlServer returns an httptest.Server that responds 200 OK with an HTML
+// body for every request, simulating a misconfigured mirror.
+func htmlServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestSearchArtist_ParseErrorFallbackAlsoFails covers the case where the
+// configured mirror returns HTML and the fallback URL is unreachable: the
+// original mirror parse error is returned (not a fallback network error).
+// The HTML body is deliberately longer than 200 bytes to exercise the
+// body-preview truncation branch in unmarshalResponse.
+func TestSearchArtist_ParseErrorFallbackAlsoFails(t *testing.T) {
+	longHTML := "<!DOCTYPE html><html><body>" + strings.Repeat("mirror error ", 40) + "</body></html>"
+	mirror := htmlServer(t, longHTML)
+
+	// Fallback server drops the connection to simulate a network failure.
+	badFallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		conn, _, _ := hj.Hijack()
+		conn.Close()
+	}))
+	defer badFallback.Close()
+
+	a, _ := newCaptureAdapter(t, mirror.URL)
+	a.setFallbackURL(badFallback.URL)
+
+	if _, err := a.SearchArtist(context.Background(), "test"); err == nil {
+		t.Fatal("SearchArtist should return the mirror parse error when the fallback is unreachable")
+	}
+}
+
+// TestGetArtist_ParseErrorNoFallback covers GetArtist returning a parse error
+// when the configured base URL equals the fallback URL (no distinct mirror,
+// so no fallback retry is warranted).
+func TestGetArtist_ParseErrorNoFallback(t *testing.T) {
+	srv := htmlServer(t, `<html><body>not json</body></html>`)
+	a, _ := newCaptureAdapter(t, srv.URL)
+	a.setFallbackURL(srv.URL) // base == fallback: no fallback retry
+
+	if _, err := a.GetArtist(context.Background(), "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("GetArtist should return a parse error for an HTML response")
+	}
+}
+
+// TestFetchMemberAliases_ParseError covers the parse-error path of the
+// per-member alias lookup.
+func TestFetchMemberAliases_ParseError(t *testing.T) {
+	srv := htmlServer(t, `<html><body>not json</body></html>`)
+	a, _ := newCaptureAdapter(t, srv.URL)
+	a.setFallbackURL(srv.URL)
+
+	if _, err := a.fetchMemberAliases(context.Background(), "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("fetchMemberAliases should return a parse error for an HTML response")
+	}
+}
+
+// TestGetReleaseGroups_ParseError covers the parse-error path of the
+// release-group fetch.
+func TestGetReleaseGroups_ParseError(t *testing.T) {
+	srv := htmlServer(t, `<html><body>not json</body></html>`)
+	a, _ := newCaptureAdapter(t, srv.URL)
+	a.setFallbackURL(srv.URL)
+
+	if _, err := a.GetReleaseGroups(context.Background(), "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatal("GetReleaseGroups should return a parse error for an HTML response")
+	}
+}
+
+// TestTestConnection_ServerError covers TestConnection surfacing the doRequest
+// error when the endpoint responds with a non-2xx status (HTTP 503), distinct
+// from the non-JSON-body failure path.
+func TestTestConnection_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	a, _ := newCaptureAdapter(t, srv.URL)
+	if err := a.TestConnection(context.Background()); err == nil {
+		t.Fatal("TestConnection should return an error when the endpoint responds 503")
+	}
+}
+
+// TestTestConnection_ValidJSONWrongShape covers the shape check: a 200 OK
+// response whose body is well-formed JSON but is not a MusicBrainz search
+// response (no "created" field) must still be reported as a failure. This is
+// the false-positive the health check exists to prevent: a proxy health page
+// or a JSON error body would otherwise pass JSON-syntax validation.
+func TestTestConnection_ValidJSONWrongShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+	}))
+	defer srv.Close()
+
+	a, _ := newCaptureAdapter(t, srv.URL)
+	err := a.TestConnection(context.Background())
+	if err == nil {
+		t.Fatal("TestConnection should reject valid JSON that is not a MusicBrainz search response")
+	}
+	if !strings.Contains(err.Error(), "not a MusicBrainz search response") {
+		t.Errorf("error should mention the wrong-shape response, got: %v", err)
+	}
+}
+
+// TestUnmarshalResponse_EmptyBody covers a 200 OK response with an empty body
+// (a common proxy-truncation failure): json.Unmarshal reports "unexpected end
+// of JSON input", which unmarshalResponse must surface as an error.
+func TestUnmarshalResponse_EmptyBody(t *testing.T) {
+	a, _ := newCaptureAdapter(t, "http://mirror.example.com/ws/2")
+	var resp SearchResponse
+	if err := a.unmarshalResponse("http://mirror.example.com/ws/2", []byte{}, &resp); err == nil {
+		t.Fatal("unmarshalResponse should return an error for an empty body")
+	}
+}
+
+// TestUnmarshalResponse_TruncatesBodyPreview verifies the body_preview log
+// attribute is capped at 200 bytes for an oversized body and left intact for a
+// body at or under the limit.
+func TestUnmarshalResponse_TruncatesBodyPreview(t *testing.T) {
+	long := []byte(strings.Repeat("x", 500))
+	a, capLong := newCaptureAdapter(t, "http://mirror.example.com/ws/2")
+	var resp SearchResponse
+	_ = a.unmarshalResponse("http://mirror.example.com/ws/2", long, &resp)
+	preview, ok := capLong.warnAttrValue("JSON parse failed", "body_preview")
+	if !ok {
+		t.Fatal("expected a JSON-parse-failed WARN with a body_preview attribute")
+	}
+	if len(preview) != 200 {
+		t.Errorf("body_preview for a 500-byte body should be truncated to 200 bytes, got %d", len(preview))
+	}
+
+	short := []byte(strings.Repeat("y", 50))
+	a2, capShort := newCaptureAdapter(t, "http://mirror.example.com/ws/2")
+	_ = a2.unmarshalResponse("http://mirror.example.com/ws/2", short, &resp)
+	previewShort, ok := capShort.warnAttrValue("JSON parse failed", "body_preview")
+	if !ok {
+		t.Fatal("expected a JSON-parse-failed WARN for the short body")
+	}
+	if len(previewShort) != 50 {
+		t.Errorf("body_preview for a 50-byte body should be left intact, got %d", len(previewShort))
+	}
+}
+
+// TestAutoFallback_FallbackBodyAlsoUnparsable covers the case where both the
+// configured mirror and the fallback URL return HTML: SearchArtist returns an
+// error, and a parse-failure WARN is logged against the fallback URL (in
+// addition to the WARN against the mirror).
+func TestAutoFallback_FallbackBodyAlsoUnparsable(t *testing.T) {
+	mirror := htmlServer(t, `<html><body>mirror is broken</body></html>`)
+	fallback := htmlServer(t, `<html><body>fallback is also broken</body></html>`)
+
+	a, capState := newCaptureAdapter(t, mirror.URL)
+	a.setFallbackURL(fallback.URL)
+
+	if _, err := a.SearchArtist(context.Background(), "test"); err == nil {
+		t.Fatal("SearchArtist should return an error when both mirror and fallback return HTML")
+	}
+	if !capState.hasWarnAttr("JSON parse failed", "base_url", fallback.URL) {
+		t.Errorf("expected a parse-failure WARN against the fallback URL %q", fallback.URL)
+	}
+	if !capState.hasWarn("retrying against fallback") {
+		t.Error("expected a WARN noting the fallback retry")
+	}
 }
 
 // --- #973: YearsActive synthesis ---
