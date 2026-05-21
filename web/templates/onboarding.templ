@@ -1509,7 +1509,6 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (currentStep !== 0) {
 						goToStep(currentStep);
 					}
-					syncLibraryTypeHelpText();
 				}
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', obInit);

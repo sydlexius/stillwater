@@ -16,7 +16,7 @@ const (
 // This constant is intentionally used only for the Deprecation/Sunset headers
 // on POST /api/v1/libraries and PATCH /api/v1/libraries/{id} responses that
 // create or return a Classical library. Do not use it for any other purpose.
-const SunsetClassicalType = "Sun, 01 Jun 2025 00:00:00 GMT"
+const SunsetClassicalType = "Tue, 01 Sep 2026 00:00:00 GMT"
 
 // Library source constants.
 const (

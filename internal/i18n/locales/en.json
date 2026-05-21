@@ -1620,7 +1620,7 @@
   "settings.libraries.scan": "Scan Library",
   "settings.libraries.title": "Music Libraries",
   "settings.libraries.type": "Library Type",
-  "settings.libraries.type.help": "Regular libraries contain standard artist folders where the folder name is the performing artist. Classical libraries apply composer-aware naming and folder conventions during scans and writes, and rules can be configured to skip or evaluate them differently.",
+  "settings.libraries.type.help": "Regular is the default type for new libraries. Classical is a legacy type scheduled for removal in v1.3.0; existing Classical libraries continue to work, and you can migrate each one using Convert to Regular.",
   "settings.libraries.type_classical": "Classical (Legacy)",
   "settings.libraries.type_classical.description": "Legacy type scheduled for removal in v1.3.0. Existing Classical libraries continue to work; use Convert to Regular to migrate.",
   "settings.libraries.type_regular": "Regular",

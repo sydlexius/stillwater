@@ -591,6 +591,9 @@ func TestHandlePatchLibrary_ConvertToRegular(t *testing.T) {
 	if w.Result().Header.Get("Deprecation") != "" {
 		t.Error("Deprecation header should be absent after conversion to regular")
 	}
+	if w.Result().Header.Get("Sunset") != "" {
+		t.Error("Sunset header should be absent after conversion to regular")
+	}
 }
 
 // TestHandlePatchLibrary_DeprecationHeaders verifies that PATCH
@@ -619,8 +622,8 @@ func TestHandlePatchLibrary_DeprecationHeaders(t *testing.T) {
 	if w.Result().Header.Get("Deprecation") != "true" {
 		t.Errorf("Deprecation header = %q, want %q", w.Result().Header.Get("Deprecation"), "true")
 	}
-	if w.Result().Header.Get("Sunset") == "" {
-		t.Error("Sunset header should be set for a Classical library response")
+	if got := w.Result().Header.Get("Sunset"); got != library.SunsetClassicalType {
+		t.Errorf("Sunset header = %q, want %q", got, library.SunsetClassicalType)
 	}
 }
 
@@ -639,6 +642,44 @@ func TestHandlePatchLibrary_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
+// TestHandlePatchLibrary_MissingType verifies that PATCH returns 400 when
+// the type field is absent (JSON) or not supplied (form-encoded).
+func TestHandlePatchLibrary_MissingType(t *testing.T) {
+	t.Parallel()
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "MissingTypeLib", Path: dir, Type: library.TypeRegular}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		body        string
+		contentType string
+	}{
+		{"json empty object", `{}`, "application/json"},
+		{"json type null", `{"type":null}`, "application/json"},
+		{"form missing key", `name=irrelevant`, "application/x-www-form-urlencoded"},
+		{"form empty value", `type=`, "application/x-www-form-urlencoded"},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/libraries/"+lib.ID, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			req.SetPathValue("id", lib.ID)
+			w := httptest.NewRecorder()
+			r.handlePatchLibrary(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -662,8 +703,8 @@ func TestHandleCreateLibrary_ClassicalDeprecationHeaders(t *testing.T) {
 	if w.Result().Header.Get("Deprecation") != "true" {
 		t.Errorf("Deprecation header = %q, want %q", w.Result().Header.Get("Deprecation"), "true")
 	}
-	if w.Result().Header.Get("Sunset") == "" {
-		t.Error("Sunset header should be set for a Classical library creation response")
+	if got := w.Result().Header.Get("Sunset"); got != library.SunsetClassicalType {
+		t.Errorf("Sunset header = %q, want %q", got, library.SunsetClassicalType)
 	}
 }
 

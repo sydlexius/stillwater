@@ -1446,7 +1446,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								type="button"
 								id="settings-add-library-btn"
 								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden'); syncSettingsLibraryTypeHelp();"
+								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden');"
 							>
 								{ t(ctx, "settings.libraries.add") }
 							</button>
@@ -1497,11 +1497,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 											name="type"
 											aria-describedby="settings-library-type-help"
 											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-											onchange="syncSettingsLibraryTypeHelp()"
 										>
 											<option value="regular">{ t(ctx, "settings.libraries.type_regular") }</option>
 										</select>
-										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
+										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite">{ t(ctx, "settings.libraries.type.help") }</p>
 									</div>
 								</div>
 								<div class="flex gap-2">
@@ -3801,21 +3800,9 @@ script settingsAsyncLibOp(connID string, libID string, operation string) {
 
 templ settingsLibraryScript() {
 	<script>
-		function syncSettingsLibraryTypeHelp() {
-			// Classical is not offered for new libraries; only Regular is
-			// shown in the add form, so this function always sets the Regular
-			// description. The check is kept in case the select is present
-			// and gains values via future extension.
-			var typeSelect = document.querySelector('#settings-library-form select[name="type"]');
-			var helpElement = document.getElementById('settings-library-type-help');
-			if (typeSelect && helpElement) {
-				helpElement.textContent = 'Regular: Standard artist-centric library. Use this for most music collections.';
-			}
-		}
-
 		function onSettingsLibrarySaved() {
 			var form = document.getElementById("settings-library-form");
-			if (form) { form.reset(); form.classList.add("hidden"); syncSettingsLibraryTypeHelp(); }
+			if (form) { form.reset(); form.classList.add("hidden"); }
 			var btn = document.getElementById("settings-add-library-btn");
 			if (btn) btn.classList.remove("hidden");
 			refreshSettingsLibraryList();
@@ -3989,8 +3976,16 @@ templ settingsLibraryScript() {
 					var classicalBadge = lib.type === 'classical'
 						? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300" title="' + safeClassicalLegacyTooltip + '">' + safeClassicalLegacyBadge + '</span>'
 						: '';
+					// Use data-lib-id / data-lib-name attributes so the library
+					// name is HTML-escaped by the browser and never interpolated
+					// into an inline onclick string (avoids XSS via backslash
+					// or line-separator bypass of the quote-only escape).
+					// lib.id is a UUID so it has no HTML-special characters,
+					// but we escape it through the same path for consistency.
+					div.textContent = lib.id;
+					var safeLibId = div.innerHTML;
 					var convertBtn = lib.type === 'classical'
-						? '<button type="button" class="text-xs px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors" onclick="settingsConvertLibraryToRegular_click(&apos;' + lib.id + '&apos;, &apos;' + lib.name.replace(/'/g, "\\'") + '&apos;)">' + safeClassicalConvertLabel + '</button>'
+						? '<button type="button" class="text-xs px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors" data-lib-id="' + safeLibId + '" data-lib-name="' + safeName + '" onclick="settingsConvertLibraryToRegular_click(this.dataset.libId, this.dataset.libName)">' + safeClassicalConvertLabel + '</button>'
 						: '';
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
@@ -4245,8 +4240,10 @@ templ settingsLibraryScript() {
 		// settingsConvertLibraryToRegular_click shows a confirmation modal and,
 		// on confirm, PATCHes the library type to "regular". Updates the row in
 		// place on success; no full-page refresh needed.
+		// csrfToken() is defined in layout.templ's global script block and is
+		// available on every authenticated page; do not inline a separate regex.
 		function settingsConvertLibraryToRegular_click(id, name) {
-			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			var token = csrfToken();
 			var list = document.getElementById("settings-library-list");
 			var successMsg = (list && list.dataset.classicalConvertSuccess) || "Library converted to Regular";
 			var failedMsg = (list && list.dataset.classicalConvertFailed) || "Failed to convert library";
@@ -4263,7 +4260,7 @@ templ settingsLibraryScript() {
 					method: "PATCH",
 					headers: {
 						"Content-Type": "application/json",
-						"X-CSRF-Token": csrfToken
+						"X-CSRF-Token": token
 					},
 					body: JSON.stringify({type: "regular"})
 				}).then(function(res) {

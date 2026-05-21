@@ -6724,6 +6724,8 @@ paths:
           application/json:
             schema:
               type: object
+              required: [type]
+              additionalProperties: false
               properties:
                 type:
                   type: string
@@ -6735,6 +6737,8 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               type: object
+              required: [type]
+              additionalProperties: false
               properties:
                 type:
                   type: string
@@ -6742,6 +6746,22 @@ paths:
       responses:
         "200":
           description: Library updated
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                enum: ["true"]
+              description: >
+                Present when the returned library type is "classical".
+                Signals that the Classical type is deprecated and
+                scheduled for removal.
+            Sunset:
+              schema:
+                type: string
+              description: >
+                Present when the returned library type is "classical".
+                An HTTP-date value indicating the planned removal date
+                for the Classical library type.
           content:
             application/json:
               schema:

@@ -241,20 +241,32 @@ func (r *Router) handlePatchLibrary(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
-		raw := req.FormValue("type")
-		if raw != "" {
+		// Use ParseForm so we can distinguish a missing key from an empty
+		// value: req.FormValue silently returns "" for both.
+		if err := req.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
+			return
+		}
+		if _, present := req.PostForm["type"]; present {
+			raw := req.PostForm.Get("type")
 			body.Type = &raw
 		}
 	}
 
-	if body.Type != nil {
-		t := *body.Type
-		if t != library.TypeRegular && t != library.TypeClassical {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be 'regular' or 'classical'"})
-			return
-		}
-		existing.Type = t
+	if body.Type == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required"})
+		return
 	}
+	t := strings.TrimSpace(*body.Type)
+	if t == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required"})
+		return
+	}
+	if t != library.TypeRegular && t != library.TypeClassical {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be 'regular' or 'classical'"})
+		return
+	}
+	existing.Type = t
 
 	if err := r.libraryService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("patching library", "error", err)
