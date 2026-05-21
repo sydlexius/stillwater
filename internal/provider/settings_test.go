@@ -1199,3 +1199,127 @@ func TestDefaultPriorities_BiographyExcludesWikidata(t *testing.T) {
 		}
 	}
 }
+
+// TestSetFieldVerbosity_Persists verifies that a verbosity value is stored and
+// retrieved correctly, and that the default is returned when nothing is stored.
+func TestSetFieldVerbosity_Persists(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Before any value is stored, GetFieldVerbosity returns the catalogue default.
+	got, err := svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity (default): %v", err)
+	}
+	if got != VerbosityIntro {
+		t.Errorf("default verbosity = %q, want %q", got, VerbosityIntro)
+	}
+
+	// Store VerbosityFull and read it back.
+	if err := svc.SetFieldVerbosity(ctx, NameWikipedia, "biography", VerbosityFull); err != nil {
+		t.Fatalf("SetFieldVerbosity: %v", err)
+	}
+	got, err = svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity (after set): %v", err)
+	}
+	if got != VerbosityFull {
+		t.Errorf("stored verbosity = %q, want %q", got, VerbosityFull)
+	}
+
+	// Update back to intro.
+	if err := svc.SetFieldVerbosity(ctx, NameWikipedia, "biography", VerbosityIntro); err != nil {
+		t.Fatalf("SetFieldVerbosity (reset): %v", err)
+	}
+	got, err = svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity (after reset): %v", err)
+	}
+	if got != VerbosityIntro {
+		t.Errorf("reset verbosity = %q, want %q", got, VerbosityIntro)
+	}
+}
+
+// TestSetFieldVerbosity_InvalidValue verifies that SetFieldVerbosity rejects
+// unknown verbosity values without modifying the stored setting.
+func TestSetFieldVerbosity_InvalidValue(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	err := svc.SetFieldVerbosity(ctx, NameWikipedia, "biography", "medium")
+	if err == nil {
+		t.Error("expected error for invalid verbosity value, got nil")
+	}
+	got, getErr := svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if getErr != nil {
+		t.Fatalf("GetFieldVerbosity: %v", getErr)
+	}
+	if got != VerbosityIntro {
+		t.Errorf("verbosity changed after invalid set: got %q, want default %q", got, VerbosityIntro)
+	}
+}
+
+// TestSetFieldVerbosity_InvalidField verifies that SetFieldVerbosity rejects
+// unknown field names.
+func TestSetFieldVerbosity_InvalidField(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	err := svc.SetFieldVerbosity(ctx, NameWikipedia, "nonexistent_field", VerbosityFull)
+	if err == nil {
+		t.Error("expected error for unknown field, got nil")
+	}
+}
+
+// TestGetFieldVerbosity_NoOptionsProvider verifies that GetFieldVerbosity
+// returns an empty string for a provider that has no verbosity catalogue.
+func TestGetFieldVerbosity_NoOptionsProvider(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// MusicBrainz has no verbosity options -- should return empty string.
+	got, err := svc.GetFieldVerbosity(ctx, NameMusicBrainz, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity for provider without options: %v", err)
+	}
+	if got != "" {
+		t.Errorf("verbosity for provider without options = %q, want empty string", got)
+	}
+}
+
+// TestGetFieldVerbosity_CorruptStoredValue verifies a stored value that is not a
+// valid catalogue option is treated as unset: the catalogue default is returned.
+func TestGetFieldVerbosity_CorruptStoredValue(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Write a bogus value directly, bypassing SetFieldVerbosity's validation.
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?)",
+		"provider.wikipedia.field_verbosity.biography", "bogus"); err != nil {
+		t.Fatalf("seeding corrupt value: %v", err)
+	}
+
+	got, err := svc.GetFieldVerbosity(ctx, NameWikipedia, "biography")
+	if err != nil {
+		t.Fatalf("GetFieldVerbosity: %v", err)
+	}
+	if got != VerbosityIntro {
+		t.Errorf("verbosity for a corrupt stored value = %q, want the default %q", got, VerbosityIntro)
+	}
+}

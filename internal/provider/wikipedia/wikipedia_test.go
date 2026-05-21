@@ -2,6 +2,7 @@ package wikipedia
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -9,10 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
+	_ "modernc.org/sqlite"
 )
 
 func silentLogger() *slog.Logger {
@@ -23,6 +27,13 @@ func silentLogger() *slog.Logger {
 // Pass "" for any endpoint to use a dummy URL (for tests that don't hit that endpoint).
 func newTestAdapter(t *testing.T, actionURL, sparqlURL, wikidataAPIURL string) *Adapter {
 	t.Helper()
+	return newTestAdapterWithSettings(t, nil, actionURL, sparqlURL, wikidataAPIURL)
+}
+
+// newTestAdapterWithSettings creates an adapter with optional settings injection
+// for tests that exercise the field verbosity path.
+func newTestAdapterWithSettings(t *testing.T, settings *provider.SettingsService, actionURL, sparqlURL, wikidataAPIURL string) *Adapter {
+	t.Helper()
 	if actionURL == "" {
 		actionURL = "http://unused-action"
 	}
@@ -32,11 +43,36 @@ func newTestAdapter(t *testing.T, actionURL, sparqlURL, wikidataAPIURL string) *
 	if wikidataAPIURL == "" {
 		wikidataAPIURL = "http://unused-wdapi"
 	}
-	a := NewWithEndpoints(provider.NewRateLimiterMap(), silentLogger(),
+	a := NewWithEndpoints(provider.NewRateLimiterMap(), settings, silentLogger(),
 		actionURL, sparqlURL, wikidataAPIURL)
 	// Override the SafeClient-backed default (which rejects httptest's loopback) with a plain client.
 	a.client = &http.Client{Timeout: 15 * time.Second}
 	return a
+}
+
+// newSettingsService creates an in-memory settings service for verbosity tests.
+func newSettingsService(t *testing.T) *provider.SettingsService {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	_, err = db.ExecContext(context.Background(), `
+		CREATE TABLE IF NOT EXISTS settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)
+	`)
+	if err != nil {
+		t.Fatalf("creating settings table: %v", err)
+	}
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	return provider.NewSettingsService(db, enc)
 }
 
 // --- SPARQL mock helpers ---
@@ -537,21 +573,21 @@ func TestTestConnection(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	adapter := New(provider.NewRateLimiterMap(), nil, silentLogger())
 	if adapter.Name() != provider.NameWikipedia {
 		t.Errorf("Name() = %q, want %q", adapter.Name(), provider.NameWikipedia)
 	}
 }
 
 func TestRequiresAuth(t *testing.T) {
-	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	adapter := New(provider.NewRateLimiterMap(), nil, silentLogger())
 	if adapter.RequiresAuth() {
 		t.Error("RequiresAuth() should be false")
 	}
 }
 
 func TestSupportsNameLookup(t *testing.T) {
-	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	adapter := New(provider.NewRateLimiterMap(), nil, silentLogger())
 	if adapter.SupportsNameLookup() {
 		t.Error("SupportsNameLookup() should be false")
 	}
@@ -745,7 +781,7 @@ func TestGetArtist_EmptyPagesMap(t *testing.T) {
 }
 
 func TestSearchArtist_ReturnsNil(t *testing.T) {
-	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	adapter := New(provider.NewRateLimiterMap(), nil, silentLogger())
 	results, err := adapter.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
 		t.Errorf("SearchArtist: unexpected error %v", err)
@@ -756,7 +792,7 @@ func TestSearchArtist_ReturnsNil(t *testing.T) {
 }
 
 func TestGetImages_ReturnsNil(t *testing.T) {
-	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	adapter := New(provider.NewRateLimiterMap(), nil, silentLogger())
 	results, err := adapter.GetImages(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
 		t.Errorf("GetImages: unexpected error %v", err)
@@ -1187,5 +1223,139 @@ func TestGetArtist_Band_TypeSetToGroup(t *testing.T) {
 	// YearsActive must come directly from the infobox (no synthesis needed).
 	if meta.YearsActive != "1985-present" {
 		t.Errorf("YearsActive = %q, want %q", meta.YearsActive, "1985-present")
+	}
+}
+
+// --- Field verbosity tests ---
+
+// exintroCaptureServer returns a test HTTP server that records whether the
+// exintro query parameter was present in the most recent request and always
+// returns a minimal but valid Wikipedia extract response.
+func exintroCaptureServer(t *testing.T) (*httptest.Server, *atomic.Bool) {
+	t.Helper()
+	var exintroPresent atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("action")
+		switch action {
+		case "query":
+			meta := r.URL.Query().Get("meta")
+			if meta == "siteinfo" {
+				// TestConnection probe -- respond with minimal siteinfo.
+				json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}})
+				return
+			}
+			exintroPresent.Store(r.URL.Query().Get("exintro") == "true")
+			resp := extractResponse{}
+			resp.Query.Pages = map[string]extractPage{
+				"1": {PageID: 1, Title: "Radiohead", Extract: "Test bio."},
+			}
+			json.NewEncoder(w).Encode(resp)
+		case "parse":
+			resp := parseResponse{}
+			resp.Parse.Title = "Radiohead"
+			resp.Parse.PageID = 1
+			json.NewEncoder(w).Encode(resp)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &exintroPresent
+}
+
+// TestWikipediaAdapter_ExintroParameter_IntroDefault verifies that when no
+// verbosity is stored (or the default intro is stored), fetchExtractFrom
+// includes exintro=true in the Wikipedia API request.
+func TestWikipediaAdapter_ExintroParameter_IntroDefault(t *testing.T) {
+	t.Parallel()
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	actionSrv, exintroPresent := exintroCaptureServer(t)
+
+	settings := newSettingsService(t)
+	// Do not set any verbosity -- default should be intro.
+	adapter := newTestAdapterWithSettings(t, settings, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if !exintroPresent.Load() {
+		t.Error("expected exintro=true in Wikipedia API request for intro verbosity, but it was absent")
+	}
+}
+
+// TestWikipediaAdapter_ExintroParameter_StoredIntro verifies that exintro=true
+// is included when the verbosity is explicitly set to VerbosityIntro.
+func TestWikipediaAdapter_ExintroParameter_StoredIntro(t *testing.T) {
+	t.Parallel()
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	actionSrv, exintroPresent := exintroCaptureServer(t)
+
+	settings := newSettingsService(t)
+	if err := settings.SetFieldVerbosity(context.Background(), provider.NameWikipedia, "biography", provider.VerbosityIntro); err != nil {
+		t.Fatalf("SetFieldVerbosity: %v", err)
+	}
+	adapter := newTestAdapterWithSettings(t, settings, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if !exintroPresent.Load() {
+		t.Error("expected exintro=true in Wikipedia API request for intro verbosity")
+	}
+}
+
+// TestWikipediaAdapter_ExintroParameter_Full verifies that exintro is omitted
+// from the Wikipedia API request when verbosity is set to VerbosityFull.
+func TestWikipediaAdapter_ExintroParameter_Full(t *testing.T) {
+	t.Parallel()
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	actionSrv, exintroPresent := exintroCaptureServer(t)
+
+	settings := newSettingsService(t)
+	if err := settings.SetFieldVerbosity(context.Background(), provider.NameWikipedia, "biography", provider.VerbosityFull); err != nil {
+		t.Fatalf("SetFieldVerbosity: %v", err)
+	}
+	adapter := newTestAdapterWithSettings(t, settings, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if exintroPresent.Load() {
+		t.Error("expected exintro to be absent in Wikipedia API request for full verbosity")
+	}
+}
+
+// TestWikipediaAdapter_ExintroParameter_NilSettings verifies that a nil
+// settings service (used in unit tests and legacy wiring) falls back to
+// the conservative intro default.
+func TestWikipediaAdapter_ExintroParameter_NilSettings(t *testing.T) {
+	t.Parallel()
+
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	actionSrv, exintroPresent := exintroCaptureServer(t)
+
+	// nil settings -- adapter should behave conservatively (intro).
+	adapter := newTestAdapterWithSettings(t, nil, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if !exintroPresent.Load() {
+		t.Error("expected exintro=true with nil settings (conservative fallback)")
 	}
 }

@@ -202,6 +202,13 @@ type ProviderKeyStatus struct {
 	RateLimit       *RateLimitInfo `json:"rate_limit,omitempty"`
 	SupportsBaseURL bool           `json:"supports_base_url,omitempty"`
 	Mirror          *MirrorConfig  `json:"mirror,omitempty"`
+	// VerbosityOptions lists the field verbosity controls available for this
+	// provider (nil when none apply). Used by the settings UI to render the
+	// verbosity subsection in the gear panel.
+	VerbosityOptions []FieldVerbosity `json:"verbosity_options,omitempty"`
+	// VerbosityValues maps field name to the currently stored verbosity value.
+	// Missing entries mean the field uses its catalogue default.
+	VerbosityValues map[string]string `json:"verbosity_values,omitempty"`
 }
 
 // ListProviderKeyStatuses returns the key configuration status for all known providers.
@@ -263,9 +270,37 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 		if capInfo.SupportsBaseURL {
 			pks.Mirror = mirror
 		}
+		// Populate verbosity options and current stored values for providers
+		// that support field-level verbosity (v1: Wikipedia biography only).
+		verbOpts, verbValues, err := s.getVerbosityForStatus(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		pks.VerbosityOptions = verbOpts
+		pks.VerbosityValues = verbValues
 		statuses = append(statuses, pks)
 	}
 	return statuses, nil
+}
+
+// getVerbosityForStatus returns the verbosity option catalogue and current
+// stored values for a provider. Returns nil, nil, nil for providers that have
+// no verbosity controls. Extracted to keep ListProviderKeyStatuses within the
+// cognitive complexity budget.
+func (s *SettingsService) getVerbosityForStatus(ctx context.Context, name ProviderName) ([]FieldVerbosity, map[string]string, error) {
+	verbOpts := FieldVerbosityOptions(name)
+	if len(verbOpts) == 0 {
+		return nil, nil, nil
+	}
+	values := make(map[string]string, len(verbOpts))
+	for _, fv := range verbOpts {
+		v, err := s.GetFieldVerbosity(ctx, name, fv.Field)
+		if err != nil {
+			return nil, nil, err
+		}
+		values[fv.Field] = v
+	}
+	return verbOpts, values, nil
 }
 
 // providerRequiresKey returns whether a provider needs an API key.
@@ -683,6 +718,64 @@ func (s *SettingsService) DeleteRateLimit(ctx context.Context, name ProviderName
 	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
 	if err != nil {
 		return fmt.Errorf("deleting rate limit for %s: %w", name, err)
+	}
+	return nil
+}
+
+// fieldVerbositySettingKey returns the settings table key for a single
+// field's verbosity selection for a provider.
+// Format: "provider.<name>.field_verbosity.<field>"
+func fieldVerbositySettingKey(name ProviderName, field string) string {
+	return fmt.Sprintf("provider.%s.field_verbosity.%s", name, field)
+}
+
+// GetFieldVerbosity returns the stored verbosity value for a (provider, field)
+// pair. When no value is persisted it returns the catalogue default, preserving
+// existing behavior for new installs. A stored value that is no longer a valid
+// catalogue option (e.g. a catalogue change or a manual DB edit) is treated as
+// unset: the default is returned. Returns an empty string only when the
+// (provider, field) pair has no catalogue entry at all.
+func (s *SettingsService) GetFieldVerbosity(ctx context.Context, name ProviderName, field string) (string, error) {
+	fieldOpts := VerbosityOptionsForField(name, field)
+	if len(fieldOpts) == 0 {
+		// No catalogue entry: verbosity is not applicable for this field.
+		return "", nil
+	}
+	key := fieldVerbositySettingKey(name, field)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DefaultVerbosity(fieldOpts), nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading field verbosity for %s/%s: %w", name, field, err)
+	}
+	if !IsValidVerbosity(fieldOpts, value) {
+		// Corrupt or orphaned stored value; fall back to the default. Matches
+		// the silent-fallback pattern in GetNameSimilarityThreshold.
+		return DefaultVerbosity(fieldOpts), nil
+	}
+	return value, nil
+}
+
+// SetFieldVerbosity stores the verbosity selection for a (provider, field) pair.
+// Returns an error if the value is not in the catalogue for that field.
+func (s *SettingsService) SetFieldVerbosity(ctx context.Context, name ProviderName, field, value string) error {
+	// Validate against the catalogue.
+	fieldOpts := VerbosityOptionsForField(name, field)
+	if len(fieldOpts) == 0 {
+		return fmt.Errorf("no verbosity options for provider %s field %s", name, field)
+	}
+	if !IsValidVerbosity(fieldOpts, value) {
+		return fmt.Errorf("invalid verbosity value %q for provider %s field %s", value, name, field)
+	}
+	key := fieldVerbositySettingKey(name, field)
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, value, value,
+	)
+	if err != nil {
+		return fmt.Errorf("storing field verbosity for %s/%s: %w", name, field, err)
 	}
 	return nil
 }

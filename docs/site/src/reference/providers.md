@@ -92,3 +92,14 @@ If you're driving heavy bulk evaluation, two knobs help: increase library scope 
 | Change priority for a field | Settings > Providers > Priorities |
 | Override priority for one library | Settings > Libraries > (library) > Provider overrides |
 | Enable a web image search adapter | Settings > Providers > Web search providers |
+| Adjust how much Wikipedia biography text is fetched | Settings > Providers > (gear icon on the Wikipedia card) |
+
+## Field verbosity
+
+Some providers can return a field at more than one level of detail. Open the gear icon on a provider card in **Settings > Providers** to set it.
+
+| Provider | Field | Levels | Default |
+|---|---|---|---|
+| Wikipedia | Biography | Intro only, Full article | Intro only |
+
+**Intro only** fetches just the introductory section of the Wikipedia article, a concise summary. **Full article** fetches the complete article text. The default is Intro only; a change takes effect the next time the artist is refreshed.

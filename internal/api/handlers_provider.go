@@ -172,12 +172,12 @@ func (r *Router) renderProviderCard(w http.ResponseWriter, req *http.Request, na
 		writeError(w, req, http.StatusInternalServerError, "failed to list providers")
 		return
 	}
-	for _, s := range statuses {
-		if s.Name == name {
+	for i := range statuses {
+		if statuses[i].Name == name {
 			if isOOBE {
-				renderTempl(w, req, templates.OnboardingProviderCard(s))
+				renderTempl(w, req, templates.OnboardingProviderCard(statuses[i]))
 			} else {
-				renderTempl(w, req, templates.ProviderKeyCard(s))
+				renderTempl(w, req, templates.ProviderKeyCard(statuses[i]))
 			}
 			return
 		}
@@ -800,6 +800,113 @@ func (r *Router) handleDeleteMirror(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// handleGetProviderConfig returns the current field verbosity configuration for
+// a provider. The response includes a verbosity map keyed by field name.
+//
+// GET /api/v1/providers/{name}/config
+func (r *Router) handleGetProviderConfig(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	opts := provider.FieldVerbosityOptions(name)
+	values := make(map[string]string, len(opts))
+	for _, fv := range opts {
+		v, err := r.providerSettings.GetFieldVerbosity(req.Context(), name, fv.Field)
+		if err != nil {
+			r.logger.Error("reading field verbosity", "provider", name, "field", fv.Field, "error", err)
+			writeError(w, req, http.StatusInternalServerError, "failed to read configuration")
+			return
+		}
+		values[fv.Field] = v
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider":  string(name),
+		"verbosity": values,
+	})
+}
+
+// handleSetProviderConfig stores field verbosity selections for a provider.
+// Accepts form-encoded data (HTMX) or a JSON body. Form fields use the naming
+// convention "verbosity_{field}" (e.g. verbosity_biography=full). JSON body
+// uses the shape {"verbosity_by_field": {"biography": "full"}}.
+//
+// PUT /api/v1/providers/{name}/config
+func (r *Router) handleSetProviderConfig(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeFormError(w, req, http.StatusBadRequest, "Unknown provider.")
+		return
+	}
+
+	opts := provider.FieldVerbosityOptions(name)
+	if len(opts) == 0 {
+		writeFormError(w, req, http.StatusBadRequest, "This provider has no configurable field verbosity.")
+		return
+	}
+
+	// Parse the incoming verbosity values -- supports both form-encoded
+	// (from HTMX select onchange) and JSON (for API clients).
+	verbosity := make(map[string]string)
+	contentType := req.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		if err := req.ParseForm(); err != nil {
+			writeFormError(w, req, http.StatusBadRequest, "Invalid form data.")
+			return
+		}
+		// Each verbosity select is named "verbosity_{field}".
+		for _, fv := range opts {
+			if v := req.FormValue("verbosity_" + fv.Field); v != "" {
+				verbosity[fv.Field] = v
+			}
+		}
+	} else {
+		var body struct {
+			VerbosityByField map[string]string `json:"verbosity_by_field"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeFormError(w, req, http.StatusBadRequest, "Invalid request body.")
+			return
+		}
+		verbosity = body.VerbosityByField
+	}
+
+	if len(verbosity) == 0 {
+		writeFormError(w, req, http.StatusBadRequest, "No verbosity values provided.")
+		return
+	}
+
+	// Validate every (field, value) against the catalogue before persisting any
+	// of them, so that a failure inside the persist loop below is a genuine
+	// server error (500), not a client input error (400).
+	for field, value := range verbosity {
+		fieldOpts := provider.VerbosityOptionsForField(name, field)
+		if len(fieldOpts) == 0 {
+			writeFormError(w, req, http.StatusBadRequest, "Unknown verbosity field "+field+".")
+			return
+		}
+		if !provider.IsValidVerbosity(fieldOpts, value) {
+			writeFormError(w, req, http.StatusBadRequest, "Invalid verbosity value for field "+field+".")
+			return
+		}
+	}
+
+	// Persist each validated field value. An error here is a server-side
+	// failure (the values were already validated above).
+	for field, value := range verbosity {
+		if err := r.providerSettings.SetFieldVerbosity(req.Context(), name, field, value); err != nil {
+			r.logger.Error("storing field verbosity", "provider", name, "field", field, "error", err)
+			writeFormError(w, req, http.StatusInternalServerError, "Failed to save provider configuration.")
+			return
+		}
+	}
+
+	writeFormSuccess(w, req, "Provider configuration saved.")
 }
 
 // isValidProviderName checks if a provider name is one of the known providers.

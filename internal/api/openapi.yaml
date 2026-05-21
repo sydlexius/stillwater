@@ -4032,6 +4032,85 @@ paths:
                       type: object
                     description: List of configured providers.
 
+  /providers/{name}/config:
+    get:
+      tags: [Providers]
+      summary: Get provider field verbosity configuration
+      operationId: getProviderConfig
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current provider configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, verbosity]
+                properties:
+                  provider:
+                    type: string
+                    description: Provider name.
+                  verbosity:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    description: >
+                      Map of field name to current verbosity value
+                      (e.g. {"biography": "intro"}).
+    put:
+      tags: [Providers]
+      summary: Set provider field verbosity configuration
+      operationId: setProviderConfig
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verbosity_by_field:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: >
+                    Map of field name to verbosity value
+                    (e.g. {"biography": "full"}).
+              required: [verbosity_by_field]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+              description: >
+                Form fields named verbosity_{field} (e.g. verbosity_biography=full).
+      responses:
+        "200":
+          description: Configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Invalid provider name, field, or verbosity value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /providers/{name}/key:
     put:
       tags: [Providers]

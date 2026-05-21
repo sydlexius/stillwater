@@ -41,26 +41,32 @@ type Adapter struct {
 	client              *http.Client
 	limiter             *provider.RateLimiterMap
 	logger              *slog.Logger
-	actionEndpoint      string // MediaWiki Action API (extracts + wikitext)
-	wikidataEndpoint    string // SPARQL (MBID resolution)
-	wikidataAPIEndpoint string // Wikidata entity API (Q-ID sitelink resolution)
+	settings            *provider.SettingsService // nil-safe: nil means use defaults
+	actionEndpoint      string                    // MediaWiki Action API (extracts + wikitext)
+	wikidataEndpoint    string                    // SPARQL (MBID resolution)
+	wikidataAPIEndpoint string                    // Wikidata entity API (Q-ID sitelink resolution)
 }
 
 // New creates a Wikipedia adapter with default endpoints.
-func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
-	return NewWithEndpoints(limiter, logger,
+// settings is used to read field verbosity configuration; pass nil to use
+// catalogue defaults (conservative intro-only behavior).
+func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger) *Adapter {
+	return NewWithEndpoints(limiter, settings, logger,
 		defaultActionEndpoint, defaultWikidataEndpoint, defaultWikidataAPIEndpoint)
 }
 
 // NewWithEndpoints creates a Wikipedia adapter with custom endpoints (for testing).
+// settings may be nil; nil means always use the default (intro) verbosity.
 func NewWithEndpoints(
 	limiter *provider.RateLimiterMap,
+	settings *provider.SettingsService,
 	logger *slog.Logger,
 	actionEndpoint, wikidataEndpoint, wikidataAPIEndpoint string,
 ) *Adapter {
 	return &Adapter{
 		client:              httpsafe.SafeClient(15 * time.Second),
 		limiter:             limiter,
+		settings:            settings,
 		logger:              logger.With(slog.String("provider", "wikipedia")),
 		actionEndpoint:      actionEndpoint,
 		wikidataEndpoint:    wikidataEndpoint,
@@ -761,16 +767,34 @@ func (a *Adapter) actionEndpointForLang(lang string) string {
 	return a.actionEndpoint
 }
 
-// fetchExtractFrom fetches the article intro section from the given endpoint.
-// Returns the article display name and plain-text extract.
+// fetchExtractFrom fetches the Wikipedia article text from the given endpoint.
+// When the biography verbosity setting is VerbosityIntro (the default),
+// the request includes exintro=true so only the lead section is returned.
+// When set to VerbosityFull, exintro is omitted and the full article text
+// is returned. Existing behavior is preserved when settings is nil.
 func (a *Adapter) fetchExtractFrom(ctx context.Context, endpoint, title string) (string, string, error) {
+	// Determine whether to request the full article or just the intro.
+	// Default to intro (conservative) when settings is unavailable.
+	useIntro := true
+	if a.settings != nil {
+		verbosity, err := a.settings.GetFieldVerbosity(ctx, provider.NameWikipedia, "biography")
+		if err != nil {
+			// Non-fatal: log and fall back to the conservative default.
+			a.logger.Warn("reading biography verbosity setting", "error", err)
+		} else if verbosity == provider.VerbosityFull {
+			useIntro = false
+		}
+	}
+
 	params := url.Values{
 		"action":      {"query"},
 		"titles":      {title},
 		"prop":        {"extracts"},
 		"explaintext": {"true"},
-		"exintro":     {"true"},
 		"format":      {"json"},
+	}
+	if useIntro {
+		params.Set("exintro", "true")
 	}
 	reqURL := endpoint + "?" + params.Encode()
 

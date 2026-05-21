@@ -511,6 +511,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 
 	// Provider routes (key config requires admin; search/fetch are operator-accessible)
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(middleware.RequireAdmin(r.handleListProviders), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/providers/{name}/config", wrapAuth(middleware.RequireAdmin(r.handleGetProviderConfig), authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/config", wrapAuth(middleware.RequireAdmin(r.handleSetProviderConfig), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/key", wrapAuth(middleware.RequireAdmin(r.handleSetProviderKey), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/providers/{name}/key", wrapAuth(middleware.RequireAdmin(r.handleDeleteProviderKey), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/{name}/test", wrapAuth(middleware.RequireAdmin(r.handleTestProvider), authMw))
