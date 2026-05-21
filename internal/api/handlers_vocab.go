@@ -189,10 +189,18 @@ func parseVocabForm(req *http.Request) (tagdict.VocabConfig, string) {
 		}
 	}
 
+	// All reads use req.PostForm (the request body only), not req.FormValue,
+	// so a URL query parameter cannot inject a value past the strict-key check
+	// above. A key appearing more than once is rejected rather than silently
+	// collapsed to its first value.
+
 	// The "exclude" textarea: each non-blank line is one pattern. Case is
 	// preserved at rest; matching is case-insensitive at filter time, so the
 	// stored value is exactly what the user typed.
-	for _, line := range strings.Split(req.FormValue("exclude"), "\n") {
+	if len(req.PostForm["exclude"]) > 1 {
+		return cfg, "invalid form data"
+	}
+	for _, line := range strings.Split(req.PostForm.Get("exclude"), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			cfg.Exclude = append(cfg.Exclude, line)
 		}
@@ -207,7 +215,10 @@ func parseVocabForm(req *http.Request) (tagdict.VocabConfig, string) {
 		{"max_styles", &cfg.MaxStyles},
 		{"max_moods", &cfg.MaxMoods},
 	} {
-		if v := req.FormValue(f.name); v != "" {
+		if len(req.PostForm[f.name]) > 1 {
+			return cfg, "invalid form data"
+		}
+		if v := req.PostForm.Get(f.name); v != "" {
 			n, err := strconv.Atoi(v)
 			if err != nil {
 				return cfg, f.name + " must be an integer"
