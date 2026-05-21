@@ -142,6 +142,10 @@ Filter genre, style, and mood tags written to artist metadata. Exclude patterns 
 
 ### Provider config  {#settings-providers-provider-config}
 
+- **Update API key**
+{: #settings-providers-provider-config-update-key }
+- **Add API key**
+{: #settings-providers-provider-config-add-key }
 - **Client ID** -- The OAuth application identifier issued by the provider when you registered an app. Paste it here so Stillwater can authenticate against the provider's API.
 {: #settings-providers-provider-config-client-id }
 - **Client Secret** -- The OAuth application secret issued alongside the Client ID. Stored encrypted at rest. Treat it like a password and do not share it.
@@ -156,6 +160,8 @@ Filter genre, style, and mood tags written to artist metadata. Exclude patterns 
 {: #settings-providers-provider-config-custom-mirror }
 - **OAuth Credentials** -- Sub-section for OAuth application credentials used when a provider requires authenticated access. Fill in the Client ID and Client Secret issued by the provider.
 {: #settings-providers-provider-config-oauth-credentials }
+- **Field verbosity** -- Controls the level of detail fetched from the provider for specific metadata fields.
+{: #settings-providers-provider-config-verbosity-section }
 
 ## Connections  {#tab-connections}
 
