@@ -1289,7 +1289,7 @@ func TestMigration007_RemovesWikidataFromBiographyPriority(t *testing.T) {
 // This test exercises two contracts that a plain "FK ON" test would miss:
 //  1. ALL child tables listed in the migration are cleaned up (not just rule_violations).
 //  2. The cleanup phase runs with foreign keys OFF, matching the migration's
-//     production shape -- proving the explicit per-child-table DELETEs fire
+//     production shape -- proving the explicit per-child-table DELETE statements fire
 //     rather than relying on ON DELETE CASCADE.
 func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 	// NOTE: do NOT call openMigratedDB here. That helper runs EnableForeignKeys
@@ -1391,7 +1391,7 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		// artist from being an orphan (see the _orphan_artists query), so a true
 		// orphan can never own one. The migration still issues a DELETE against
 		// both tables for completeness; the cleanup phase below runs those two
-		// DELETEs as no-ops, so the full 13-table SQL surface is still exercised.
+		// DELETE statements as no-ops, so the full 13-table SQL surface is still exercised.
 		// Every other child table is seeded.
 		{
 			"artist_provider_ids",
@@ -1459,11 +1459,24 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		}
 	}
 
+	// Seed a scope='global' allowlist row (artist_id IS NULL) so the test
+	// also proves the migration does NOT over-delete global rows. The
+	// migration's `WHERE artist_id IN (...)` clause evaluates to NULL for a
+	// NULL artist_id, which is not TRUE, so the row must survive. Without
+	// this check, a buggy variant that dropped the IN clause and deleted by
+	// scope alone would still pass the rest of the suite.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO foreign_file_allowlist (id, scope, artist_id, file_name, created_at)
+		VALUES ('ffa-global', 'global', NULL, 'global.jpg', datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding global foreign_file_allowlist row: %v", err)
+	}
+
 	// Keep FK enforcement OFF for the cleanup phase. This is the critical contract:
 	// migration 009 runs before EnableForeignKeys, so ON DELETE CASCADE does NOT
 	// fire during the sweep. Each explicit DELETE must remove its rows independently.
 	// If the test ran with FK ON, a single "DELETE FROM artists" would cascade and
-	// the per-child-table DELETEs would be redundant, masking regressions.
+	// the per-child-table DELETE statements would be redundant, masking regressions.
 
 	// Build the orphan temp table (same query as migration 009).
 	if _, err := db.ExecContext(ctx, `
@@ -1591,6 +1604,19 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 	}
 	if rvLib != 1 {
 		t.Errorf("rule_violations for art-lib = %d, want 1 (survivor child rows must not be deleted)", rvLib)
+	}
+
+	// The global allowlist row (artist_id IS NULL) must survive: it has no
+	// artist_id, so the migration's WHERE artist_id IN (orphans) clause
+	// never matches it. A buggy migration that deleted global rows would
+	// fail here.
+	var globalRow int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM foreign_file_allowlist WHERE id = 'ffa-global'`).Scan(&globalRow); err != nil {
+		t.Fatalf("count global foreign_file_allowlist row: %v", err)
+	}
+	if globalRow != 1 {
+		t.Errorf("ffa-global count = %d, want 1 (global-scope allowlist rows must not be deleted by the migration)", globalRow)
 	}
 
 	// Idempotency: after the sweep, zero orphans remain.
