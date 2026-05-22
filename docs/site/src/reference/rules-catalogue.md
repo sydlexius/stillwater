@@ -23,6 +23,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Metadata quality](#metadata-quality) | Metadata | Enabled, manual | Yes |
 | [Artist name matches preferred language](#artist-name-matches-preferred-language) | Metadata | Disabled, manual | Sometimes |
 | [Origin is populated](#origin-is-populated) | Metadata | Disabled, manual | Yes |
+| [Discography is populated](#discography-is-populated) | Metadata | Disabled, manual | Sometimes |
 | [Thumbnail image exists](#thumbnail-image-exists) | Image | Enabled, auto | Yes |
 | [Thumbnail is square](#thumbnail-is-square) | Image | Enabled, auto | Yes |
 | [Thumbnail minimum resolution](#thumbnail-minimum-resolution) | Image | Enabled, auto | Yes |
@@ -244,6 +245,42 @@ After:  origin = "Mandeville, Louisiana", fetched from a provider
 ```
 
 **Configurable:** Severity only.
+
+---
+
+## Discography is populated
+
+**Category:** Metadata &middot; **Default:** Disabled, manual &middot; **Severity:** info &middot; **Filesystem-dependent:** Yes
+
+Flags artists whose artist.nfo has no album entries, or materially fewer than MusicBrainz lists. Violations are fixed by fetching release groups from MusicBrainz and merging them into the NFO; user-added albums are always preserved. Auto mode applies the merge automatically; manual mode surfaces the violation so you can review and fix it individually.
+
+Media servers and the artist detail page read the album list from the discography section of artist.nfo. An artist whose NFO carries no album entries shows an empty discography even when MusicBrainz has a full release history. The rule fires when the NFO has zero albums, or when its album count covers materially fewer release groups than MusicBrainz lists for the configured release types (below the coverage threshold, default 50%). The fix fetches release groups from MusicBrainz and merges them in without disturbing albums you added yourself.
+
+**When this fires:**
+
+- An artist scanned from disk whose NFO was generated before discography population existed and lists no albums.
+- An artist whose NFO has two early albums but MusicBrainz lists twelve, leaving the discography well below the coverage threshold.
+- An artist imported by name with a confirmed MusicBrainz ID but no album history fetched yet.
+
+**What the fix does:** Fetches the artist's release groups from MusicBrainz and merges them into the artist.nfo discography. User-added albums and hand-edited entries are always preserved; only release groups not already present are appended.
+
+```
+Before: artist.nfo has 0 <album> entries
+After:  artist.nfo has 12 <album> entries merged from MusicBrainz release groups
+```
+
+**Configurable:**
+
+- Coverage threshold (default 50% of MusicBrainz release groups)
+- Release-type filter (default: Album,EP)
+- Severity (default: info)
+
+**Caveats:**
+
+- Requires a local library path; skipped for pathless artists.
+- Requires a MusicBrainz ID; an artist without one cannot have its discography fetched.
+- Coverage detection makes one MusicBrainz request per artist. The rule is disabled by default so this cost is opt-in.
+- A corrupt artist.nfo is refused rather than overwritten, so hand-edited content is never lost.
 
 ---
 

@@ -49,6 +49,29 @@ func (f ReleaseTypeFilter) contains(primaryType string) bool {
 	return false
 }
 
+// Includes reports whether the filter accepts the given MusicBrainz primary
+// type. It is the exported form of contains, used by the discography_populated
+// rule checker to count release groups against the same filter the merge
+// applies. A nil or empty filter accepts every type.
+func (f ReleaseTypeFilter) Includes(primaryType string) bool {
+	return f.contains(primaryType)
+}
+
+// CountReleaseGroups returns the number of release groups whose PrimaryType
+// the filter accepts. The discography_populated checker uses this to measure
+// how much of an artist's discography MusicBrainz exposes for the configured
+// release types, so the coverage ratio matches what MergeDiscographyFromMBReleaseGroups
+// would actually merge.
+func (f ReleaseTypeFilter) CountReleaseGroups(groups []provider.ReleaseGroupInfo) int {
+	n := 0
+	for _, rg := range groups {
+		if f.contains(rg.PrimaryType) {
+			n++
+		}
+	}
+	return n
+}
+
 // MergeDiscographyResult summarizes what MergeDiscographyFromMBReleaseGroups
 // changed. The caller (handler or rule fixer) may surface these counts in the
 // response or a log message.

@@ -32,7 +32,7 @@ type RuleCatalogueEntry struct {
 }
 
 // rulesCatalogue maps rule IDs to their documentation metadata.
-// Entries cover all 23 non-deprecated built-in rules.
+// Entries cover all 24 non-deprecated built-in rules.
 var rulesCatalogue = map[string]RuleCatalogueEntry{
 	RuleNFOExists: {
 		FixBehavior: "Generates an NFO from the artist's stored metadata and writes it to disk.",
@@ -268,6 +268,23 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"An artist imported from a media server API that does not expose an origin field.",
 		},
 		FixExample: "Before: origin is empty\nAfter:  origin = \"Mandeville, Louisiana\", fetched from a provider",
+	},
+	RuleDiscographyPopulated: {
+		FixBehavior: "Fetches the artist's release groups from MusicBrainz and merges them into the artist.nfo discography. User-added albums and hand-edited entries are always preserved; only release groups not already present are appended.",
+		Conditional: true,
+		Caveats: []string{
+			"Requires a local library path; skipped for pathless artists.",
+			"Requires a MusicBrainz ID; an artist without one cannot have its discography fetched.",
+			"Coverage detection makes one MusicBrainz request per artist. The rule is disabled by default so this cost is opt-in.",
+			"A corrupt artist.nfo is refused rather than overwritten, so hand-edited content is never lost.",
+		},
+		Guards: "Media servers and the artist detail page read the album list from the discography section of artist.nfo. An artist whose NFO carries no album entries shows an empty discography even when MusicBrainz has a full release history. The rule fires when the NFO has zero albums, or when its album count covers materially fewer release groups than MusicBrainz lists for the configured release types (below the coverage threshold, default 50%). The fix fetches release groups from MusicBrainz and merges them in without disturbing albums you added yourself.",
+		Examples: []string{
+			"An artist scanned from disk whose NFO was generated before discography population existed and lists no albums.",
+			"An artist whose NFO has two early albums but MusicBrainz lists twelve, leaving the discography well below the coverage threshold.",
+			"An artist imported by name with a confirmed MusicBrainz ID but no album history fetched yet.",
+		},
+		FixExample: "Before: artist.nfo has 0 <album> entries\nAfter:  artist.nfo has 12 <album> entries merged from MusicBrainz release groups",
 	},
 }
 

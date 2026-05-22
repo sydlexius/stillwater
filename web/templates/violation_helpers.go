@@ -54,6 +54,8 @@ func fixButtonLabel(ctx context.Context, ruleID string) string {
 		return t(ctx, "rule.fix.trim_logo")
 	case rule.RuleDirectoryNameMismatch:
 		return t(ctx, "rule.fix.rename_directory")
+	case rule.RuleDiscographyPopulated:
+		return t(ctx, "rule.fix.populate_discography")
 	default:
 		if strings.Contains(ruleID, "thumb") || strings.Contains(ruleID, "fanart") ||
 			strings.Contains(ruleID, "logo") || strings.Contains(ruleID, "banner") {

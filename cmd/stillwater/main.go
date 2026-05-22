@@ -682,6 +682,15 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 
 	logoPaddingFixer := rule.NewLogoPaddingFixer(a.platformService, a.fsCheck, logger)
 	logoPaddingFixer.SetImageFetcher(a.imageBridge, a.ruleEngine.ConsumeAPIImage)
+
+	// Resolve the MusicBrainz release-group fetcher from the provider registry.
+	// The MB adapter implements provider.ReleaseGroupFetcher; the discography
+	// checker and fixer both need it. When MB is unregistered the rule degrades
+	// gracefully (checker flags only empty discographies; fixer reports a
+	// non-fatal "not available" result).
+	releaseGroupFetcher := resolveReleaseGroupFetcher(a.providerRegistry)
+	a.ruleEngine.SetReleaseGroupFetcher(releaseGroupFetcher)
+
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites),
 		rule.NewMetadataFixer(a.orchestrator, logger),
@@ -691,6 +700,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, logger),
 		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, logger),
+		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 	}
 	a.pipeline = rule.NewPipeline(a.ruleEngine, a.artistService, a.ruleService, fixers, a.publisher, logger)
 	a.pipeline.SetHistoryService(a.historyService)
@@ -699,6 +709,28 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.bulkExecutor = rule.NewBulkExecutor(a.bulkService, a.artistService, a.orchestrator, a.pipeline, a.nfoSnapshotService, a.platformService, a.expectedWrites, a.publisher, logger)
 
 	return nil
+}
+
+// resolveReleaseGroupFetcher returns the MusicBrainz adapter from the provider
+// registry when it implements provider.ReleaseGroupFetcher, or nil when the
+// adapter is unregistered or does not support release-group fetching. The
+// discography_populated checker and DiscographyFixer both accept a nil value
+// and degrade gracefully, so a nil return is not a fatal wiring error.
+func resolveReleaseGroupFetcher(registry *provider.Registry) provider.ReleaseGroupFetcher {
+	if registry == nil {
+		return nil
+	}
+	p := registry.Get(provider.NameMusicBrainz)
+	if p == nil {
+		return nil
+	}
+	// Type-assert via the interface so the MB concrete type is not imported
+	// here purely for this check.
+	fetcher, ok := p.(provider.ReleaseGroupFetcher)
+	if !ok {
+		return nil
+	}
+	return fetcher
 }
 
 // startListeners starts all background workers and the HTTP listener, then

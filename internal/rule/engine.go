@@ -24,6 +24,16 @@ type MetadataProvider interface {
 	FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
 }
 
+// ReleaseGroupFetcher abstracts fetching an artist's MusicBrainz release
+// groups (albums, EPs, singles) by MBID. It is satisfied by the MusicBrainz
+// provider adapter, which implements provider.ReleaseGroupFetcher with the
+// same method. The discography_populated checker and the DiscographyFixer
+// both use it. When nil the checker only flags artists with a completely
+// empty discography (no MusicBrainz round-trip is attempted).
+type ReleaseGroupFetcher interface {
+	GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error)
+}
+
 // ruleCacheTTL is how long the in-memory rule list cache is considered fresh.
 // A short TTL (5 s) eliminates the N+1 DB query pattern under concurrent load
 // while ensuring that rule changes propagate within a few seconds.
@@ -120,6 +130,12 @@ type Engine struct {
 	// remains stable in test or stripped-down environments.
 	metadataProvider MetadataProvider
 
+	// releaseGroupFetcher is used by the discography_populated checker to
+	// count an artist's MusicBrainz release groups when measuring NFO
+	// coverage. When nil the checker only flags an entirely empty
+	// discography and skips the coverage comparison.
+	releaseGroupFetcher ReleaseGroupFetcher
+
 	// apiImageCacheMu guards apiImageCache.
 	apiImageCacheMu sync.Mutex
 	// apiImageCache stores raw image bytes fetched via the platform API. This
@@ -167,6 +183,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleBackdropMinCount] = e.makeBackdropMinCountChecker()
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	e.checkers[RuleNameLanguagePref] = e.makeNameLanguagePrefChecker()
+	e.checkers[RuleDiscographyPopulated] = e.makeDiscographyChecker()
 	return e
 }
 
@@ -184,6 +201,21 @@ func (e *Engine) SetMetadataProvider(p MetadataProvider) {
 // alias lookup and promotion.
 func (e *Engine) MetadataProvider() MetadataProvider {
 	return e.metadataProvider
+}
+
+// SetReleaseGroupFetcher attaches a MusicBrainz release-group fetcher to the
+// engine. The discography_populated checker uses it to count an artist's
+// release groups when measuring how much of the discography the NFO covers.
+// Pass nil to disable coverage detection (the checker still flags artists
+// whose NFO has zero album entries).
+func (e *Engine) SetReleaseGroupFetcher(f ReleaseGroupFetcher) {
+	e.releaseGroupFetcher = f
+}
+
+// ReleaseGroupFetcher returns the engine's release-group fetcher, or nil if
+// none is configured.
+func (e *Engine) ReleaseGroupFetcher() ReleaseGroupFetcher {
+	return e.releaseGroupFetcher
 }
 
 // cachedRules returns the rule list from the in-memory cache when it is still

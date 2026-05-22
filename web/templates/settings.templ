@@ -366,7 +366,8 @@ func severityBadgeClasses(severity string) string {
 func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
-		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding":
+		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding",
+		"discography_populated":
 		return true
 	}
 	return false
@@ -387,6 +388,16 @@ func floatOrDefault(v, def float64) string {
 		val = def
 	}
 	return fmt.Sprintf("%g", val)
+}
+
+// stringOrDefault returns v for an HTML input value, falling back to def when v
+// is empty. Used for text-valued rule config fields (e.g. the discography
+// release-type filter) so a freshly seeded rule shows its default in the form.
+func stringOrDefault(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 // defaultMinWidth returns the default minimum width for a given rule.
@@ -6429,6 +6440,30 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 		}
+		if rl.ID == "discography_populated" {
+			<label class="block" title={ t(ctx, "rules.discography.coverage_threshold.help") }>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "rules.discography.coverage_threshold") }</span>
+				<input
+					type="number"
+					name="coverage_threshold"
+					step="5"
+					min="1"
+					max="100"
+					value={ floatOrDefault(rl.Config.CoverageThreshold, 50) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+			<label class="block col-span-full" title={ t(ctx, "rules.discography.release_types.help") }>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "rules.discography.release_types") }</span>
+				<input
+					type="text"
+					name="release_types"
+					placeholder="Album,EP"
+					value={ stringOrDefault(rl.Config.ReleaseTypes, "Album,EP") }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
 		<label class="block">
 			<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.severity_label") }</span>
 			<select
@@ -6715,9 +6750,17 @@ templ ruleToggleScript() {
 			var ruleID = form.dataset.ruleId;
 			var cfg = {};
 			var intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};
-			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {
+			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin', 'coverage_threshold'].forEach(function(f) {
 				var el = form.elements[f];
 				if (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);
+			});
+			// Text-valued config fields (e.g. the discography release-type filter)
+			// are forwarded as-is rather than parsed as numbers.
+			['release_types'].forEach(function(f) {
+				var el = form.elements[f];
+				if (!el) return;
+				var value = el.value.trim();
+				if (value !== '') cfg[f] = value;
 			});
 			var sev = form.elements['severity'];
 			if (sev) cfg['severity'] = sev.value;
