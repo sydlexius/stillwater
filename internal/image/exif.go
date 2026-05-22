@@ -322,12 +322,14 @@ func findTIFFDescription(tiff []byte) (string, error) {
 	}
 
 	// Verify magic number (42).
+	//nolint:gosec // G602 false positive: the len(tiff) < 8 guard above bounds tiff[2:4].
 	magic := bo.Uint16(tiff[2:4])
 	if magic != 42 {
 		return "", fmt.Errorf("bad TIFF magic: %d", magic)
 	}
 
 	// Read IFD0 offset.
+	//nolint:gosec // G602 false positive: the len(tiff) < 8 guard above bounds tiff[4:8].
 	ifdOffset := bo.Uint32(tiff[4:8])
 	if int(ifdOffset)+2 > len(tiff) {
 		return "", fmt.Errorf("IFD offset out of range")
