@@ -2352,9 +2352,14 @@ paths:
         - name: "filter_library_{id}"
           in: query
           description: >-
-            Per-library include/exclude filter. Replace {id} with a library ID.
-            Use +y to include only artists from that library, -y to exclude them.
-            Multiple filter_library_{id} params may be combined.
+            Per-library include/exclude filter. Replace {id} with a library ID;
+            an unset library is unconstrained. Two modes apply. When one or more
+            libraries use +y the filter is an exclusive whitelist: results are
+            restricted to artists whose library memberships fall entirely within
+            the included set, and any -y entries are ignored while whitelist
+            mode is active. When no library uses +y, each -y drops artists
+            belonging to that library. Multiple filter_library_{id} params may
+            be combined.
           schema:
             type: string
             enum: ["+y", "-y"]
