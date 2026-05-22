@@ -17,7 +17,7 @@ Each library has a few key properties:
 | Setting | What it controls |
 |---|---|
 | Path | The folder on disk Stillwater scans and writes into. Can be empty for API-only libraries (see "Pathless" below). |
-| Type | **Regular** for all new libraries. **Classical** is a legacy option scheduled for removal in v1.3.0 ([#1271](https://github.com/sydlexius/stillwater/issues/1271)); existing Classical libraries continue to work but behave identically to Regular ones in the default configuration. |
+| Type | **Regular**. The only library type as of v1.3.0. |
 | Source | **Manual**, **Emby**, **Jellyfin**, or **Lidarr**. Determines whether the library was added by hand or imported from a connected platform. |
 | Watch mode | Off, watch, poll, or both. Watches let Stillwater react to new artist directories without a manual scan. |
 | NFO lockdata | When on, every NFO Stillwater writes for an artist in this library asks platforms not to overwrite it. Off by default. |
@@ -25,8 +25,7 @@ Each library has a few key properties:
 
 ### Library types
 
-- **Regular** -- the default. One artist per directory; the directory name is treated as the artist name. Designed for typical music libraries -- one artist per top-level directory, the layout Emby, Jellyfin, Kodi, and Lidarr all expect. Use this for all new libraries.
-- **Classical** -- a legacy type, scheduled for removal in v1.3.0 ([#1271](https://github.com/sydlexius/stillwater/issues/1271)). The original intent was to treat composers as the headline entity, but in practice the metadata fallback chain treats composers, performers, orchestras, and ensembles uniformly. In the default configuration, Classical and Regular libraries behave identically. Existing Classical libraries continue to work; an in-place "Convert to Regular" action is available before the v1.3.0 removal lands.
+- **Regular** -- the only type as of v1.3.0. One artist per directory; the directory name is treated as the artist name. Designed for typical music libraries -- one artist per top-level directory, the layout Emby, Jellyfin, Kodi, and Lidarr all expect. Works equally well for pop, rock, jazz, classical, and any other genre: orchestras, ensembles, and conductors all have their own MusicBrainz IDs and are treated the same as any other artist.
 
 ### Library sources
 

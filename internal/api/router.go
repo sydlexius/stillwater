@@ -555,8 +555,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/run-all/status", wrapAuth(r.handleRunAllRulesStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/status", wrapAuth(r.handleRulesStatus, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleGetClassicalMode, authMw))
-	mux.HandleFunc("PUT "+bp+"/api/v1/rules/classical-mode", wrapAuth(middleware.RequireAdmin(r.handleSetClassicalMode), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/run-rules", wrapAuth(r.handleRunArtistRules, authMw))
 

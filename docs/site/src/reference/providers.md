@@ -36,7 +36,7 @@ For every field Stillwater can populate (name, biography, genres, thumb, fanart,
 3. Providers that structurally cannot supply the field (e.g., neither MusicBrainz nor Wikidata returns biography text) are skipped.
 4. The first provider that returns a usable value populates the field -- with one important caveat below.
 
-The lists are configured under **Settings > Providers > Priorities**. You can override the global list per library, so a classical-music library can prefer different sources than a regular library.
+The lists are configured under **Settings > Providers > Priorities**. You can override the global list per library, so a library of classical recordings can prefer different sources than one containing pop or rock artists.
 
 ## Per-field aggregation
 

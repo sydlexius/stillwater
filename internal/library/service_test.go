@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -160,7 +161,7 @@ func TestUpdate(t *testing.T) {
 
 	lib.Name = "Updated"
 	lib.Path = updatedDir
-	lib.Type = TypeClassical
+	lib.Type = TypeRegular
 	if err := svc.Update(ctx, lib); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -172,8 +173,8 @@ func TestUpdate(t *testing.T) {
 	if got.Name != "Updated" {
 		t.Errorf("Name = %q, want Updated", got.Name)
 	}
-	if got.Type != TypeClassical {
-		t.Errorf("Type = %q, want %q", got.Type, TypeClassical)
+	if got.Type != TypeRegular {
+		t.Errorf("Type = %q, want %q", got.Type, TypeRegular)
 	}
 }
 
@@ -707,6 +708,34 @@ func TestUpdate_DefaultsEmptySource(t *testing.T) {
 	}
 }
 
+// TestUpdate_RejectsClassical verifies that Update returns an error when
+// the library type is set to "classical", which was removed in v1.3.0.
+func TestUpdate_RejectsClassical(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Music", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lib.Type = "classical"
+	err := svc.Update(ctx, lib)
+	if err == nil {
+		t.Fatal("Update with type=classical: expected error, got nil")
+	}
+	// Lock the rejection contract: the message must name 'regular' as the
+	// required type so callers (and future migrations) can rely on it. A
+	// bare non-nil error would also satisfy the assertion above but would
+	// permit a silent rewording that breaks downstream message-matching.
+	if msg := err.Error(); !strings.Contains(msg, "regular") {
+		t.Errorf("Update error %q does not name the required type 'regular'", msg)
+	}
+}
+
 func TestIsSharedFS(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1120,14 +1149,14 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 
 	// Two libraries on the same connection.
 	musicDir := t.TempDir()
-	classicalDir := t.TempDir()
+	jazzDir := t.TempDir()
 	music := &Library{Name: "Music", Path: musicDir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-music", Source: SourceEmby}
-	classical := &Library{Name: "Classical", Path: classicalDir, Type: TypeClassical, ConnectionID: "conn-emby", ExternalID: "emby-classical", Source: SourceEmby}
+	jazz := &Library{Name: "Jazz", Path: jazzDir, Type: TypeRegular, ConnectionID: "conn-emby", ExternalID: "emby-jazz", Source: SourceEmby}
 	if err := svc.Create(ctx, music); err != nil {
 		t.Fatalf("Create music library: %v", err)
 	}
-	if err := svc.Create(ctx, classical); err != nil {
-		t.Fatalf("Create classical library: %v", err)
+	if err := svc.Create(ctx, jazz); err != nil {
+		t.Fatalf("Create jazz library: %v", err)
 	}
 
 	// Artist directly attached to the library being deleted.
@@ -1136,7 +1165,7 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 
 	// Artist with NULL library_id but a connection mapping. With only
 	// the music library on this connection, the old prune would delete
-	// this row. With the classical library still attached, the new
+	// this row. With the jazz library still attached, the new
 	// guard must preserve it.
 	seedArtist(t, db, "art-sibling-orphan", "SiblingOrphan", "")
 	seedPlatformID(t, db, "art-sibling-orphan", "conn-emby", "emby-orphan-1")
@@ -1155,7 +1184,7 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 		t.Errorf("attached artist count = %d, want 0", attached)
 	}
 
-	// The sibling-library orphan is preserved because the classical
+	// The sibling-library orphan is preserved because the jazz
 	// library still hangs off the connection.
 	var orphan int
 	if err := db.QueryRowContext(ctx,
@@ -1168,7 +1197,7 @@ func TestDeleteWithArtists_PrunePreservesSiblingLibraryArtists(t *testing.T) {
 
 	// Now delete the last library on the connection. Without siblings
 	// remaining, the prune is safe and the orphan must finally go.
-	if err := svc.DeleteWithArtists(ctx, classical.ID); err != nil {
+	if err := svc.DeleteWithArtists(ctx, jazz.ID); err != nil {
 		t.Fatalf("DeleteWithArtists last library: %v", err)
 	}
 	if err := db.QueryRowContext(ctx,
