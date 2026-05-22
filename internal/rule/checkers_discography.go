@@ -96,7 +96,7 @@ func (e *Engine) makeDiscographyChecker() Checker {
 			return &Violation{
 				RuleID:   RuleDiscographyPopulated,
 				RuleName: "Discography is populated",
-				Category: "nfo",
+				Category: string(RuleCategoryMetadata),
 				Severity: effectiveSeverity(cfg),
 				Message:  fmt.Sprintf("artist %s has no discography in artist.nfo", a.Name),
 				Fixable:  true,
@@ -136,7 +136,7 @@ func (e *Engine) makeDiscographyChecker() Checker {
 		return &Violation{
 			RuleID:   RuleDiscographyPopulated,
 			RuleName: "Discography is populated",
-			Category: "nfo",
+			Category: string(RuleCategoryMetadata),
 			Severity: effectiveSeverity(cfg),
 			Message: fmt.Sprintf(
 				"artist %s discography covers %d of %d MusicBrainz release groups (%.0f%%, below the %.0f%% threshold)",

@@ -366,7 +366,8 @@ func severityBadgeClasses(severity string) string {
 func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
-		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding":
+		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding",
+		"discography_populated":
 		return true
 	}
 	return false
@@ -6757,7 +6758,9 @@ templ ruleToggleScript() {
 			// are forwarded as-is rather than parsed as numbers.
 			['release_types'].forEach(function(f) {
 				var el = form.elements[f];
-				if (el && el.value !== '') cfg[f] = el.value;
+				if (!el) return;
+				var value = el.value.trim();
+				if (value !== '') cfg[f] = value;
 			});
 			var sev = form.elements['severity'];
 			if (sev) cfg['severity'] = sev.value;
