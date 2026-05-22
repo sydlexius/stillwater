@@ -243,6 +243,7 @@ func activeFilterCount(filters map[string]string) int {
 func filterChipLabel(ctx context.Context, key, state string) string {
 	var name string
 	switch key {
+	// Legacy / composite filters.
 	case "missing_meta":
 		name = t(ctx, "artists.filter.missing_metadata")
 	case "missing_images":
@@ -253,12 +254,61 @@ func filterChipLabel(ctx context.Context, key, state string) string {
 		name = t(ctx, "artists.filter.excluded")
 	case "locked":
 		name = t(ctx, "artists.filter.locked")
+	// Artist-type filters.
 	case "type_person":
 		name = t(ctx, "artists.filter.person")
 	case "type_group":
 		name = t(ctx, "artists.filter.group")
 	case "type_orchestra":
 		name = t(ctx, "artists.filter.orchestra")
+	// Metadata field presence filters.
+	case "has_biography":
+		name = t(ctx, "artists.filter.has_biography")
+	case "has_years_active":
+		name = t(ctx, "artists.filter.has_years_active")
+	case "has_formed":
+		name = t(ctx, "artists.filter.has_formed")
+	case "has_disbanded":
+		name = t(ctx, "artists.filter.has_disbanded")
+	case "has_born":
+		name = t(ctx, "artists.filter.has_born")
+	case "has_died":
+		name = t(ctx, "artists.filter.has_died")
+	case "has_gender":
+		name = t(ctx, "artists.filter.has_gender")
+	case "has_type":
+		name = t(ctx, "artists.filter.has_type")
+	case "has_country":
+		name = t(ctx, "artists.filter.has_country")
+	case "has_genres":
+		name = t(ctx, "artists.filter.has_genres")
+	case "has_styles":
+		name = t(ctx, "artists.filter.has_styles")
+	case "has_moods":
+		name = t(ctx, "artists.filter.has_moods")
+	case "has_members":
+		name = t(ctx, "artists.filter.has_members")
+	case "has_discography":
+		name = t(ctx, "artists.filter.has_discography")
+	// Per-image-type presence filters.
+	case "has_thumb":
+		name = t(ctx, "artists.filter.has_thumb")
+	case "has_fanart":
+		name = t(ctx, "artists.filter.has_fanart")
+	case "has_logo":
+		name = t(ctx, "artists.filter.has_logo")
+	case "has_banner":
+		name = t(ctx, "artists.filter.has_banner")
+	// Platform membership filters.
+	case "in_emby":
+		name = t(ctx, "artists.filter.in_emby")
+	case "in_jellyfin":
+		name = t(ctx, "artists.filter.in_jellyfin")
+	case "has_lidarr":
+		name = t(ctx, "artists.filter.has_lidarr")
+	// Rule violation filter.
+	case "has_violations":
+		name = t(ctx, "artists.filter.has_violations")
 	default:
 		if strings.HasPrefix(key, "library_") {
 			name = t(ctx, "artists.filter.library")
@@ -483,12 +533,38 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", t(ctx, "artists.filter.missing_metadata"), filterState(data.Filters, "missing_meta"))
 					@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", t(ctx, "artists.filter.missing_mbid"), filterState(data.Filters, "missing_mbid"))
 				}
+				@components.FilterSection(t(ctx, "artists.filter_section.metadata_fields")) {
+					@components.FilterItem("artist-filters-flyout", "filter_has_biography", "y", t(ctx, "artists.filter.has_biography"), filterState(data.Filters, "has_biography"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_years_active", "y", t(ctx, "artists.filter.has_years_active"), filterState(data.Filters, "has_years_active"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_formed", "y", t(ctx, "artists.filter.has_formed"), filterState(data.Filters, "has_formed"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_disbanded", "y", t(ctx, "artists.filter.has_disbanded"), filterState(data.Filters, "has_disbanded"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_born", "y", t(ctx, "artists.filter.has_born"), filterState(data.Filters, "has_born"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_died", "y", t(ctx, "artists.filter.has_died"), filterState(data.Filters, "has_died"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_gender", "y", t(ctx, "artists.filter.has_gender"), filterState(data.Filters, "has_gender"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_type", "y", t(ctx, "artists.filter.has_type"), filterState(data.Filters, "has_type"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_country", "y", t(ctx, "artists.filter.has_country"), filterState(data.Filters, "has_country"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_genres", "y", t(ctx, "artists.filter.has_genres"), filterState(data.Filters, "has_genres"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_styles", "y", t(ctx, "artists.filter.has_styles"), filterState(data.Filters, "has_styles"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_moods", "y", t(ctx, "artists.filter.has_moods"), filterState(data.Filters, "has_moods"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_members", "y", t(ctx, "artists.filter.has_members"), filterState(data.Filters, "has_members"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_discography", "y", t(ctx, "artists.filter.has_discography"), filterState(data.Filters, "has_discography"))
+				}
 				@components.FilterSection(t(ctx, "artists.filter_section.images")) {
 					@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", t(ctx, "artists.filter.missing_images"), filterState(data.Filters, "missing_images"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_thumb", "y", t(ctx, "artists.filter.has_thumb"), filterState(data.Filters, "has_thumb"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_fanart", "y", t(ctx, "artists.filter.has_fanart"), filterState(data.Filters, "has_fanart"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_logo", "y", t(ctx, "artists.filter.has_logo"), filterState(data.Filters, "has_logo"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_banner", "y", t(ctx, "artists.filter.has_banner"), filterState(data.Filters, "has_banner"))
+				}
+				@components.FilterSection(t(ctx, "artists.filter_section.platform")) {
+					@components.FilterItem("artist-filters-flyout", "filter_in_emby", "y", t(ctx, "artists.filter.in_emby"), filterState(data.Filters, "in_emby"))
+					@components.FilterItem("artist-filters-flyout", "filter_in_jellyfin", "y", t(ctx, "artists.filter.in_jellyfin"), filterState(data.Filters, "in_jellyfin"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_lidarr", "y", t(ctx, "artists.filter.has_lidarr"), filterState(data.Filters, "has_lidarr"))
 				}
 				@components.FilterSection(t(ctx, "artists.filter_section.status")) {
 					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", t(ctx, "artists.filter.excluded"), filterState(data.Filters, "excluded"))
 					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", t(ctx, "artists.filter.locked"), filterState(data.Filters, "locked"))
+					@components.FilterItem("artist-filters-flyout", "filter_has_violations", "y", t(ctx, "artists.filter.has_violations"), filterState(data.Filters, "has_violations"))
 				}
 				@components.FilterSection(t(ctx, "artists.filter_section.artist_type")) {
 					@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", t(ctx, "artists.filter.person"), filterState(data.Filters, "type_person"))

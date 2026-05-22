@@ -451,3 +451,273 @@ func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildWhereClause_MetadataFieldPresence verifies that each metadata-field
+// presence filter key produces the correct column predicate for both include
+// (has value) and exclude (lacks value) states, with no bound args. The
+// assertions check operator-level semantics (IS NOT NULL vs IS NULL) so an
+// include/exclude regression cannot pass on column-name presence alone.
+func TestBuildWhereClause_MetadataFieldPresence(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		key     string
+		wantCol string // column name that must appear in the predicate
+	}{
+		{"has_biography", "biography"},
+		{"has_years_active", "years_active"},
+		{"has_formed", "formed"},
+		{"has_disbanded", "disbanded"},
+		{"has_born", "born"},
+		{"has_died", "died"},
+		{"has_gender", "gender"},
+		{"has_type", "type"},
+		{"has_country", "origin"},
+		{"has_genres", "genres"},
+		{"has_styles", "styles"},
+		{"has_moods", "moods"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.key+"_include", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{tc.key: "include"}})
+			// include must assert the column has a value: IS NOT NULL.
+			if !strings.Contains(clause, tc.wantCol+" IS NOT NULL") {
+				t.Errorf("include: expected %q IS NOT NULL predicate, got %q", tc.wantCol, clause)
+			}
+			// It must not assert the inverse (a bare IS NULL on the column).
+			if strings.Contains(clause, tc.wantCol+" IS NULL") {
+				t.Errorf("include: clause must not assert %q IS NULL, got %q", tc.wantCol, clause)
+			}
+			// nonEmptyStringPredicate uses no bound args.
+			if len(args) != 0 {
+				t.Errorf("include: expected no args, got %v", args)
+			}
+		})
+		t.Run(tc.key+"_exclude", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{tc.key: "exclude"}})
+			// exclude must assert the column lacks a value: IS NULL.
+			if !strings.Contains(clause, tc.wantCol+" IS NULL") {
+				t.Errorf("exclude: expected %q IS NULL predicate, got %q", tc.wantCol, clause)
+			}
+			// It must not assert the include-side IS NOT NULL.
+			if strings.Contains(clause, "IS NOT NULL") {
+				t.Errorf("exclude: clause must not assert IS NOT NULL, got %q", clause)
+			}
+			if len(args) != 0 {
+				t.Errorf("exclude: expected no args, got %v", args)
+			}
+		})
+	}
+}
+
+// TestBuildWhereClause_HasMembers verifies the band_members EXISTS sub-select.
+func TestBuildWhereClause_HasMembers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("include", func(t *testing.T) {
+		t.Parallel()
+		clause, args := buildWhereClause(ListParams{Filters: map[string]string{"has_members": "include"}})
+		if !strings.Contains(clause, "EXISTS") {
+			t.Errorf("include: expected EXISTS, got %q", clause)
+		}
+		if !strings.Contains(clause, "band_members") {
+			t.Errorf("include: expected band_members table reference, got %q", clause)
+		}
+		if len(args) != 0 {
+			t.Errorf("include: expected no args, got %v", args)
+		}
+	})
+
+	t.Run("exclude", func(t *testing.T) {
+		t.Parallel()
+		clause, args := buildWhereClause(ListParams{Filters: map[string]string{"has_members": "exclude"}})
+		if !strings.Contains(clause, "NOT EXISTS") {
+			t.Errorf("exclude: expected NOT EXISTS, got %q", clause)
+		}
+		if !strings.Contains(clause, "band_members") {
+			t.Errorf("exclude: expected band_members table reference, got %q", clause)
+		}
+		if len(args) != 0 {
+			t.Errorf("exclude: expected no args, got %v", args)
+		}
+	})
+}
+
+// TestBuildWhereClause_HasDiscography verifies the discography filter maps to
+// nfo_exists (the DB-level proxy for an NFO file that may contain albums).
+func TestBuildWhereClause_HasDiscography(t *testing.T) {
+	t.Parallel()
+
+	t.Run("include", func(t *testing.T) {
+		t.Parallel()
+		clause, _ := buildWhereClause(ListParams{Filters: map[string]string{"has_discography": "include"}})
+		if !strings.Contains(clause, "nfo_exists = 1") {
+			t.Errorf("include: expected nfo_exists = 1, got %q", clause)
+		}
+	})
+
+	t.Run("exclude", func(t *testing.T) {
+		t.Parallel()
+		clause, _ := buildWhereClause(ListParams{Filters: map[string]string{"has_discography": "exclude"}})
+		if !strings.Contains(clause, "nfo_exists = 0") {
+			t.Errorf("exclude: expected nfo_exists = 0, got %q", clause)
+		}
+	})
+}
+
+// TestBuildWhereClause_PerImageTypeFilters verifies that each individual image
+// filter (has_thumb, has_fanart, has_logo, has_banner) produces an EXISTS or
+// NOT EXISTS sub-select against the artist_images table.
+func TestBuildWhereClause_PerImageTypeFilters(t *testing.T) {
+	t.Parallel()
+	imgTypes := []string{"has_thumb", "has_fanart", "has_logo", "has_banner"}
+	for _, key := range imgTypes {
+		key := key
+		imgType := key[len("has_"):]
+		t.Run(key+"_include", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{key: "include"}})
+			if !strings.Contains(clause, "EXISTS") {
+				t.Errorf("%s include: expected EXISTS, got %q", key, clause)
+			}
+			if !strings.Contains(clause, imgType) {
+				t.Errorf("%s include: expected image type %q in clause, got %q", key, imgType, clause)
+			}
+			if !strings.Contains(clause, "artist_images") {
+				t.Errorf("%s include: expected artist_images table reference, got %q", key, clause)
+			}
+			if len(args) != 0 {
+				t.Errorf("%s include: expected no args, got %v", key, args)
+			}
+		})
+		t.Run(key+"_exclude", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{key: "exclude"}})
+			if !strings.Contains(clause, "NOT EXISTS") {
+				t.Errorf("%s exclude: expected NOT EXISTS, got %q", key, clause)
+			}
+			if !strings.Contains(clause, imgType) {
+				t.Errorf("%s exclude: expected image type %q in clause, got %q", key, imgType, clause)
+			}
+			if len(args) != 0 {
+				t.Errorf("%s exclude: expected no args, got %v", key, args)
+			}
+		})
+	}
+}
+
+// TestBuildWhereClause_PlatformFilters verifies that in_emby, in_jellyfin, and
+// has_lidarr each produce a sub-select that joins artist_libraries -> libraries
+// -> connections and checks the correct connection type.
+func TestBuildWhereClause_PlatformFilters(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		key      string
+		connType string
+	}{
+		{"in_emby", "emby"},
+		{"in_jellyfin", "jellyfin"},
+		{"has_lidarr", "lidarr"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.key+"_include", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{tc.key: "include"}})
+			if !strings.Contains(clause, "EXISTS") {
+				t.Errorf("%s include: expected EXISTS, got %q", tc.key, clause)
+			}
+			if !strings.Contains(clause, tc.connType) {
+				t.Errorf("%s include: expected connection type %q in clause, got %q", tc.key, tc.connType, clause)
+			}
+			if !strings.Contains(clause, "connections") {
+				t.Errorf("%s include: expected connections table reference, got %q", tc.key, clause)
+			}
+			if len(args) != 0 {
+				t.Errorf("%s include: expected no args, got %v", tc.key, args)
+			}
+		})
+		t.Run(tc.key+"_exclude", func(t *testing.T) {
+			t.Parallel()
+			clause, args := buildWhereClause(ListParams{Filters: map[string]string{tc.key: "exclude"}})
+			if !strings.Contains(clause, "NOT EXISTS") {
+				t.Errorf("%s exclude: expected NOT EXISTS, got %q", tc.key, clause)
+			}
+			if !strings.Contains(clause, tc.connType) {
+				t.Errorf("%s exclude: expected connection type %q in clause, got %q", tc.key, tc.connType, clause)
+			}
+			if len(args) != 0 {
+				t.Errorf("%s exclude: expected no args, got %v", tc.key, args)
+			}
+		})
+	}
+}
+
+// TestBuildWhereClause_HasViolations verifies that the has_violations filter
+// checks the rule_violations table for open violations.
+func TestBuildWhereClause_HasViolations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("include", func(t *testing.T) {
+		t.Parallel()
+		clause, args := buildWhereClause(ListParams{Filters: map[string]string{"has_violations": "include"}})
+		if !strings.Contains(clause, "EXISTS") {
+			t.Errorf("include: expected EXISTS, got %q", clause)
+		}
+		if !strings.Contains(clause, "rule_violations") {
+			t.Errorf("include: expected rule_violations table reference, got %q", clause)
+		}
+		if !strings.Contains(clause, "status = 'open'") {
+			t.Errorf("include: expected status = 'open' predicate, got %q", clause)
+		}
+		if len(args) != 0 {
+			t.Errorf("include: expected no args, got %v", args)
+		}
+	})
+
+	t.Run("exclude", func(t *testing.T) {
+		t.Parallel()
+		clause, args := buildWhereClause(ListParams{Filters: map[string]string{"has_violations": "exclude"}})
+		if !strings.Contains(clause, "NOT EXISTS") {
+			t.Errorf("exclude: expected NOT EXISTS, got %q", clause)
+		}
+		if !strings.Contains(clause, "rule_violations") {
+			t.Errorf("exclude: expected rule_violations table reference, got %q", clause)
+		}
+		if len(args) != 0 {
+			t.Errorf("exclude: expected no args, got %v", args)
+		}
+	})
+}
+
+// TestBuildWhereClause_NewFilters_AllHavePredicates verifies that every key
+// added in issue #1125 is registered in artistFilterPredicates and that both
+// include and exclude states produce a non-empty WHERE clause. This is a
+// coverage guard: if a new key is added to parseFlyoutFilters but not wired
+// into the predicate map, the filter would silently be a no-op.
+func TestBuildWhereClause_NewFilters_AllHavePredicates(t *testing.T) {
+	t.Parallel()
+	newKeys := []string{
+		"has_biography", "has_years_active", "has_formed", "has_disbanded",
+		"has_born", "has_died", "has_gender", "has_type", "has_country",
+		"has_genres", "has_styles", "has_moods", "has_members", "has_discography",
+		"has_thumb", "has_fanart", "has_logo", "has_banner",
+		"in_emby", "in_jellyfin", "has_lidarr",
+		"has_violations",
+	}
+	for _, key := range newKeys {
+		key := key
+		for _, state := range []string{"include", "exclude"} {
+			state := state
+			t.Run(key+"_"+state, func(t *testing.T) {
+				t.Parallel()
+				clause, _ := buildWhereClause(ListParams{Filters: map[string]string{key: state}})
+				if clause == "" {
+					t.Errorf("key %q state %q: expected a non-empty WHERE clause, got empty (predicate missing or broken)", key, state)
+				}
+			})
+		}
+	}
+}

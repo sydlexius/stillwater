@@ -12,9 +12,18 @@ type ListParams struct {
 	HealthScoreMin int // 0-100, only applied when > 0
 	HealthScoreMax int // 0-100, only applied when > 0 and <= 100
 	// Filters holds flyout-driven multi-filter state. Keys are filter names
-	// and values are "include" or "exclude". Single-value keys: missing_meta,
-	// missing_images, missing_mbid, excluded, locked, type_person, type_group,
+	// and values are "include" or "exclude".
+	//
+	// Legacy / composite keys: missing_meta, missing_images, missing_mbid,
+	// excluded, locked. Artist-type keys: type_person, type_group,
 	// type_orchestra. Per-library keys: library_{id}.
+	//
+	// Metadata-presence keys: has_biography, has_years_active, has_formed,
+	// has_disbanded, has_born, has_died, has_gender, has_type, has_country,
+	// has_genres, has_styles, has_moods, has_members, has_discography.
+	// Image-presence keys: has_thumb, has_fanart, has_logo, has_banner.
+	// Platform-membership keys: in_emby, in_jellyfin, has_lidarr.
+	// Rule-violation key: has_violations.
 	Filters map[string]string
 	// IDs restricts the result set to a specific list of artist IDs. Used by
 	// the bulk-selection "Show selected" affordance (#1227): when the user

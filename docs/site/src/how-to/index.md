@@ -24,6 +24,14 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     [Read more](edit-artist.md)
 
+- __Filter the artists list__
+
+    ---
+
+    Narrow the Artists page with tri-state field, image, platform, and status filters.
+
+    [Read more](filter-artists.md)
+
 - __Refresh metadata__
 
     ---
