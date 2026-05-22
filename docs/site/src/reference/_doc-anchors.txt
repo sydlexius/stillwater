@@ -230,6 +230,14 @@ how-to/fetch-and-crop-images#skip-rule-violations-during-a-fetch
 how-to/fetch-and-crop-images#upload-from-your-computer
 how-to/fetch-and-crop-images#what-happens-after-a-successful-fetch
 how-to/fetch-and-crop-images#why-a-fetch-returned-no-images
+how-to/fetch-discography#before-you-start
+how-to/fetch-discography#concurrent-fetch-protection
+how-to/fetch-discography#fetch-discography
+how-to/fetch-discography#filtering-by-release-type
+how-to/fetch-discography#how-to-fetch
+how-to/fetch-discography#see-also
+how-to/fetch-discography#what-happens-to-the-nfo
+how-to/fetch-discography#what-stillwater-keeps-and-what-it-adds
 how-to/http-redirect#enabling-the-redirect-listener-http-redirect-enable
 how-to/http-redirect#http-to-https-redirect
 how-to/http-redirect#interaction-with-reverse-proxies-http-redirect-reverse-proxy

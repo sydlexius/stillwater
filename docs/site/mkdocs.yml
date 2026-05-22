@@ -113,6 +113,7 @@ nav:
       - Edit an artist: how-to/edit-artist.md
       - Refresh metadata: how-to/refresh-metadata.md
       - Fetch and crop images: how-to/fetch-and-crop-images.md
+      - Fetch discography: how-to/fetch-discography.md
       - Configure provider priorities: how-to/configure-provider-priorities.md
       - Enable and configure rules: how-to/enable-and-configure-rules.md
       - Export and import settings: how-to/export-import-settings.md

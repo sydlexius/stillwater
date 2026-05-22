@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -63,9 +66,250 @@ func (r *Router) handleArtistDiscographyTab(w http.ResponseWriter, req *http.Req
 	}
 
 	renderTempl(w, req, templates.ArtistDiscographyTab(templates.DiscographyTabData{
-		ArtistID: artistID,
-		Albums:   albums,
+		ArtistID:      artistID,
+		MusicBrainzID: a.MusicBrainzID,
+		Albums:        albums,
 	}))
+}
+
+// DiscographyFetchResult is the JSON response for POST /api/v1/artists/{id}/discography/fetch.
+type DiscographyFetchResult struct {
+	Added   int `json:"added"`
+	Kept    int `json:"kept"`
+	Skipped int `json:"skipped"`
+	Total   int `json:"total"`
+}
+
+// handleFetchDiscography fetches release groups from MusicBrainz for an artist,
+// merges them into the on-disk NFO, and writes the result atomically.
+//
+// POST /api/v1/artists/{id}/discography/fetch
+//
+// Query/body params:
+//   - include: comma-separated release types (default "Album,EP")
+//
+// Returns DiscographyFetchResult as JSON.
+func (r *Router) handleFetchDiscography(w http.ResponseWriter, req *http.Request) {
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		if errors.Is(err, artist.ErrNotFound) {
+			writeDiscographyJSONError(w, http.StatusNotFound, "artist not found")
+			return
+		}
+		r.logger.Error("loading artist for discography fetch", "artist_id", artistID, "error", err)
+		writeDiscographyJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if a.MusicBrainzID == "" {
+		writeDiscographyJSONError(w, http.StatusBadRequest,
+			"artist has no MusicBrainz ID; use Re-identify to link this artist to MusicBrainz first")
+		return
+	}
+
+	if a.Path == "" {
+		writeDiscographyJSONError(w, http.StatusBadRequest,
+			"artist has no filesystem path; discography cannot be written without a path")
+		return
+	}
+
+	// Atomic check-and-set: reject if a fetch for this artist is already
+	// running, otherwise claim the slot before the MusicBrainz round-trip so
+	// two interleaved read-modify-write cycles cannot race the NFO write.
+	r.discographyFetchMu.Lock()
+	if r.discographyFetchInFlight[artistID] {
+		r.discographyFetchMu.Unlock()
+		writeDiscographyJSONError(w, http.StatusConflict,
+			"a discography fetch for this artist is already in progress")
+		return
+	}
+	r.discographyFetchInFlight[artistID] = true
+	r.discographyFetchMu.Unlock()
+	defer func() {
+		r.discographyFetchMu.Lock()
+		delete(r.discographyFetchInFlight, artistID)
+		r.discographyFetchMu.Unlock()
+	}()
+
+	// Query parameter takes precedence; a JSON body is the fallback.
+	filter := nfo.ParseReleaseTypeFilter(resolveIncludeParam(req))
+
+	// Resolve the MB provider from the registry. The MB adapter implements
+	// provider.ReleaseGroupFetcher.
+	mbAdapter := r.resolveMBAdapter()
+	if mbAdapter == nil {
+		writeDiscographyJSONError(w, http.StatusServiceUnavailable,
+			"MusicBrainz provider is not available")
+		return
+	}
+
+	// Fetch release groups from MusicBrainz. The adapter respects the shared
+	// rate limiter so this call honors the 1 req/sec policy.
+	groups, err := mbAdapter.GetReleaseGroups(req.Context(), a.MusicBrainzID)
+	if err != nil {
+		r.logger.Warn("fetching release groups from MusicBrainz",
+			"artist_id", artistID,
+			"mbid", a.MusicBrainzID,
+			"error", err)
+		writeDiscographyJSONError(w, http.StatusBadGateway,
+			"MusicBrainz fetch failed")
+		return
+	}
+
+	// Parse the existing on-disk NFO so user-added entries are preserved.
+	nfoPath := filepath.Join(a.Path, "artist.nfo")
+	var existingNFO *nfo.ArtistNFO
+	parsed, parseErr := parseNFOFile(nfoPath)
+	switch {
+	case parseErr == nil:
+		existingNFO = parsed
+	case errors.Is(parseErr, os.ErrNotExist):
+		// No file yet: start from an empty NFO seeded from the DB artist.
+		existingNFO = nfo.FromArtist(a)
+	default:
+		// Corrupt or unreadable NFO: refuse to overwrite. Falling back and
+		// overwriting would silently destroy user-added <album> entries and
+		// any other hand-edited content. The operator must fix or remove the
+		// file before a fetch can proceed.
+		r.logger.Error("failed to parse existing artist.nfo for discography fetch",
+			"artist_id", artistID, "path", nfoPath, "error", parseErr)
+		writeDiscographyJSONError(w, http.StatusUnprocessableEntity,
+			"existing artist.nfo could not be parsed; fix or remove it before fetching")
+		return
+	}
+
+	// Merge the incoming release groups into the existing album list.
+	mergedAlbums, mergeResult := nfo.MergeDiscographyFromMBReleaseGroups(
+		existingNFO.Albums,
+		groups,
+		filter,
+	)
+
+	// Only write to disk when something actually changed.
+	if mergeResult.Added > 0 {
+		existingNFO.Albums = mergedAlbums
+
+		// Stamp provenance so external overwrites can be detected.
+		existingNFO.Stillwater = &nfo.StillwaterMeta{
+			Version: nfo.StillwaterVersion,
+			Written: time.Now().UTC().Format(time.RFC3339),
+		}
+
+		// Take a snapshot of the existing NFO before overwriting, so the
+		// user has a recovery path if the write produces unexpected output.
+		// Mirrors the pattern in WriteBackArtistNFOWithFieldMap: snapshot
+		// errors are logged at Warn but never block the write.
+		if r.nfoSnapshotService != nil {
+			if existing, readErr := os.ReadFile(filepath.Clean(nfoPath)); readErr == nil && len(existing) > 0 {
+				if _, snapErr := r.nfoSnapshotService.Save(req.Context(), artistID, string(existing)); snapErr != nil {
+					r.logger.Warn("NFO snapshot save failed before discography write",
+						"artist_id", artistID,
+						"path", nfoPath,
+						"error", snapErr)
+				}
+			}
+		}
+
+		if err := nfo.WriteNFOAtomic(nfoPath, existingNFO); err != nil {
+			r.logger.Error("writing NFO after discography fetch",
+				"artist_id", artistID,
+				"path", nfoPath,
+				"error", err)
+			writeDiscographyJSONError(w, http.StatusInternalServerError,
+				"failed to write NFO file")
+			return
+		}
+
+		r.logger.Info("discography fetched and written",
+			"artist_id", artistID,
+			"mbid", a.MusicBrainzID,
+			"added", mergeResult.Added,
+			"kept", mergeResult.Kept,
+			"total", mergeResult.Total)
+
+		// Notify SSE subscribers so event-driven clients refresh the artist
+		// view after the on-disk discography changes. Mirrors the post-write
+		// notification in the image handlers.
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": artistID},
+			})
+		}
+	}
+
+	result := DiscographyFetchResult{
+		Added:   mergeResult.Added,
+		Kept:    mergeResult.Kept,
+		Skipped: mergeResult.Skipped,
+		Total:   mergeResult.Total,
+	}
+
+	// HX-Request callers receive a re-rendered tab partial so the album list
+	// updates in place. The HTMX button uses hx-target="#discography-tab-content"
+	// + hx-swap="outerHTML", so this partial replaces the entire tab div.
+	// Non-HX callers (API / curl) receive the JSON DiscographyFetchResult so the
+	// OpenAPI contract is preserved.
+	if req.Header.Get("HX-Request") == "true" {
+		// Re-read the merged albums for the partial. When nothing was added the
+		// existingNFO albums are unchanged; when something was added the slice
+		// was already updated above. FetchAdded/FetchTotal wire the count into
+		// the "artist.discography.fetch.summary" i18n key rendered in the partial.
+		renderTempl(w, req, templates.ArtistDiscographyTab(templates.DiscographyTabData{
+			ArtistID:      artistID,
+			MusicBrainzID: a.MusicBrainzID,
+			Albums:        discographyFromNFO(existingNFO),
+			FetchAdded:    result.Added,
+			FetchTotal:    result.Total,
+		}))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// resolveIncludeParam returns the release-type "include" parameter for a
+// discography fetch. The query string takes precedence; a JSON request body
+// is consulted as a fallback only when no query value is present and the
+// Content-Type indicates JSON. A missing or malformed body yields "".
+func resolveIncludeParam(req *http.Request) string {
+	if q := req.URL.Query().Get("include"); q != "" {
+		return q
+	}
+	ct := req.Header.Get("Content-Type")
+	if ct == "application/json" || (len(ct) > 16 && ct[:16] == "application/json") {
+		var body struct {
+			Include string `json:"include"`
+		}
+		// Best-effort decode; a missing or invalid body must not fail the request.
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		return body.Include
+	}
+	return ""
+}
+
+// resolveMBAdapter returns the MusicBrainz adapter from the provider registry
+// when it implements provider.ReleaseGroupFetcher. Returns nil when unavailable.
+func (r *Router) resolveMBAdapter() provider.ReleaseGroupFetcher {
+	if r.providerRegistry == nil {
+		return nil
+	}
+	p := r.providerRegistry.Get(provider.NameMusicBrainz)
+	if p == nil {
+		return nil
+	}
+	// Cast via the interface rather than the concrete type so test stubs can
+	// also satisfy the contract without importing the musicbrainz package.
+	fetcher, ok := p.(provider.ReleaseGroupFetcher)
+	if !ok {
+		return nil
+	}
+	return fetcher
 }
 
 // discographyFromNFO maps NFO album entries into the artist-domain type used

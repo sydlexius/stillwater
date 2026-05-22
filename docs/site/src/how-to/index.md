@@ -40,6 +40,14 @@ Step-by-step procedures for the common operations. For background and *why*, see
 
     [Read more](fetch-and-crop-images.md)
 
+- __Fetch discography__
+
+    ---
+
+    Pull release groups from MusicBrainz and write them into the artist's NFO discography.
+
+    [Read more](fetch-discography.md)
+
 - __Configure provider priorities__
 
     ---

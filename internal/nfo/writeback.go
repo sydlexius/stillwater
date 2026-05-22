@@ -13,6 +13,29 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
+// WriteNFOAtomic serializes n to XML and writes it to path using the atomic
+// tmp/bak/rename pattern from filesystem.WriteFileAtomic. Unlike
+// WriteBackArtistNFO it operates directly on an ArtistNFO value -- the caller
+// owns all mutation (e.g. merging albums) before passing the final struct in.
+// No snapshot is taken; call WriteBackArtistNFO when snapshot tracking is
+// needed.
+func WriteNFOAtomic(path string, n *ArtistNFO) error {
+	if path == "" {
+		return fmt.Errorf("write nfo: path is empty")
+	}
+	if n == nil {
+		return fmt.Errorf("write nfo: nfo is nil")
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, n); err != nil {
+		return fmt.Errorf("serializing nfo: %w", err)
+	}
+	if err := filesystem.WriteFileAtomic(path, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("writing nfo file: %w", err)
+	}
+	return nil
+}
+
 // WriteBackArtistNFO writes the artist's current metadata to an artist.nfo file
 // using the default (Kodi-compatible) field mapping. If ss is non-nil and an
 // existing NFO file is present, a snapshot of the old content is saved before
