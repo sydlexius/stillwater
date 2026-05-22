@@ -175,6 +175,10 @@ func validatedOrderClause(params ListParams) string {
 	switch params.Sort {
 	case "sort_name":
 		col = "sort_name"
+	case "type":
+		col = "type"
+	case "origin":
+		col = "origin"
 	case "health_score":
 		col = "health_score"
 	case "updated_at":
@@ -188,7 +192,11 @@ func validatedOrderClause(params ListParams) string {
 	if params.Order == "desc" {
 		dir = "DESC"
 	}
-	return col + " " + dir
+	// Always include id as a tiebreaker for stable pagination when the primary
+	// sort column contains duplicate values (e.g. many artists with the same
+	// type or origin). The id column is the rowid alias in SQLite and is always
+	// unique, so it fully disambiguates ties without a secondary index.
+	return col + " " + dir + ", id ASC"
 }
 
 // filterPredicate maps an include/exclude state to a SQL fragment and its bound

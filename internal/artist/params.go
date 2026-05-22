@@ -106,7 +106,7 @@ func (p *ListParams) Validate() {
 		p.IDs = filtered
 	}
 	switch p.Sort {
-	case "name", "sort_name", "health_score", "updated_at", "created_at":
+	case "name", "sort_name", "type", "origin", "health_score", "updated_at", "created_at":
 		// valid
 	default:
 		p.Sort = "name"

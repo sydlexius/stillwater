@@ -2151,7 +2151,7 @@ paths:
             Empty defaults to "name".
           schema:
             type: string
-            enum: [name, sort_name, health_score, updated_at, created_at]
+            enum: [name, sort_name, type, origin, health_score, updated_at, created_at]
             default: name
         - name: order
           in: query
@@ -2480,7 +2480,7 @@ paths:
             Empty defaults to "name".
           schema:
             type: string
-            enum: [name, sort_name, health_score, updated_at, created_at]
+            enum: [name, sort_name, type, origin, health_score, updated_at, created_at]
             default: name
         - name: order
           in: query
@@ -5718,7 +5718,7 @@ paths:
             Empty defaults to "name".
           schema:
             type: string
-            enum: [name, sort_name, health_score, updated_at, created_at]
+            enum: [name, sort_name, type, origin, health_score, updated_at, created_at]
             default: name
         - name: order
           in: query
@@ -8454,7 +8454,7 @@ paths:
             Empty defaults to "name".
           schema:
             type: string
-            enum: [name, sort_name, health_score, updated_at, created_at]
+            enum: [name, sort_name, type, origin, health_score, updated_at, created_at]
             default: name
         - name: order
           in: query
