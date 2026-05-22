@@ -742,7 +742,17 @@ components:
         type:
           type: string
           enum: [regular, classical]
-          description: Library classification.
+          description: >
+            Library classification. The "classical" value is deprecated and
+            will be removed in v1.3.0. Use "regular" for all new libraries.
+            Responses that contain a Classical library carry
+            Deprecation: true and Sunset headers.
+          x-enum-descriptions:
+            regular: Standard artist-centric library. Use for all new libraries.
+            classical: >
+              Deprecated. Scheduled for removal in v1.3.0. Use "regular"
+              instead. Existing Classical libraries can be converted via
+              PATCH /api/v1/libraries/{id} with type=regular.
         source:
           type: string
           enum: [manual, emby, jellyfin, lidarr]
@@ -6693,6 +6703,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+    patch:
+      tags: [Libraries]
+      summary: Partially update library
+      description: >
+        Applies a partial update to an existing library. Only the fields
+        present in the request body are modified; omitted fields are
+        preserved. Currently supports the "type" field, which is used by
+        the Convert to Regular action for Classical libraries.
+      operationId: patchLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              additionalProperties: false
+              properties:
+                type:
+                  type: string
+                  enum: [regular, classical]
+                  description: >
+                    New library type. Set to "regular" to convert a
+                    Classical (legacy) library. Setting to "classical"
+                    will return Deprecation and Sunset headers.
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [type]
+              additionalProperties: false
+              properties:
+                type:
+                  type: string
+                  enum: [regular, classical]
+      responses:
+        "200":
+          description: Library updated
+          headers:
+            Deprecation:
+              schema:
+                type: string
+                enum: ["true"]
+              description: >
+                Present when the returned library type is "classical".
+                Signals that the Classical type is deprecated and
+                scheduled for removal.
+            Sunset:
+              schema:
+                type: string
+              description: >
+                Present when the returned library type is "classical".
+                An HTTP-date value indicating the planned removal date
+                for the Classical library type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Library not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /libraries/{libId}/operation/status:
     get:

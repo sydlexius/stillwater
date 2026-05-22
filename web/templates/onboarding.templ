@@ -214,20 +214,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
-									<div class="flex flex-col gap-1.5">
-										<label for="ob-library-type" class="sr-only">Library type</label>
-										<select
-											id="ob-library-type"
-											name="type"
-											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-											onchange="syncLibraryTypeHelpText()"
-											aria-describedby="ob-library-type-help"
-										>
-											<option value="regular">{ t(ctx, "onboarding.library_type_regular") }</option>
-											<option value="classical">{ t(ctx, "onboarding.library_type_classical") }</option>
-										</select>
-										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
-									</div>
+									// The type dropdown is hidden for new libraries; all new
+									// libraries default to "regular". The Classical type is
+									// legacy and not offered to new users (issue #1271 Phase A).
+									<input type="hidden" name="type" value="regular"/>
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "common.save") }</button>
@@ -891,22 +881,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}
 				}
 
-				function syncLibraryTypeHelpText() {
-					var selectEl = document.querySelector('#ob-library-form select[name="type"]');
-					var helpEl = document.getElementById('ob-library-type-help');
-					if (selectEl && helpEl) {
-						helpEl.textContent = selectEl.value === 'classical'
-							? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'
-							: 'Regular: Standard artist-centric library. Use this for most music collections.';
-					}
-				}
-
 				function onLibraryAfterRequest(event) {
 					var errorEl = document.getElementById('ob-library-error');
 					if (event.detail.successful) {
 						if (errorEl) errorEl.classList.add('hidden');
 						document.getElementById('ob-library-form').reset();
-						syncLibraryTypeHelpText();
 						document.getElementById('ob-library-form').classList.add('hidden');
 						document.getElementById('ob-add-library-btn').classList.remove('hidden');
 						refreshLibraryList();
@@ -1530,7 +1509,6 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (currentStep !== 0) {
 						goToStep(currentStep);
 					}
-					syncLibraryTypeHelpText();
 				}
 				if (document.readyState === 'loading') {
 					document.addEventListener('DOMContentLoaded', obInit);

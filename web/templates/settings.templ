@@ -1427,6 +1427,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							data-poll-interval-title={ t(ctx, "settings.libraries.poll_interval_title") }
 							data-resync={ t(ctx, "settings.libraries.resync") }
 							data-scan={ t(ctx, "settings.libraries.scan") }
+							data-classical-legacy-badge={ t(ctx, "settings.libraries.classical_legacy_badge") }
+							data-classical-legacy-tooltip={ t(ctx, "settings.libraries.classical_legacy_tooltip") }
+							data-classical-convert-body={ t(ctx, "settings.libraries.classical_convert_body") }
+							data-classical-convert-confirm={ t(ctx, "settings.libraries.classical_convert_confirm") }
+							data-classical-convert-success={ t(ctx, "settings.libraries.classical_convert_success") }
+							data-classical-convert-failed={ t(ctx, "settings.libraries.classical_convert_failed") }
 						>
 							for _, lib := range data.Libraries {
 								@settingsLibraryRow(lib)
@@ -1440,7 +1446,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								type="button"
 								id="settings-add-library-btn"
 								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden'); syncSettingsLibraryTypeHelp();"
+								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden');"
 							>
 								{ t(ctx, "settings.libraries.add") }
 							</button>
@@ -1483,17 +1489,18 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 											<label for="settings-library-type" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.libraries.type") }</label>
 											@components.ContextHelp("help-lib-add-type", t(ctx, "settings.libraries.type"), t(ctx, "settings.libraries.type.help"), "settings-libraries-libraries-type")
 										</div>
+										// The Classical option is not offered when adding new libraries.
+										// It is a legacy type scheduled for removal in v1.3.0. Use
+										// the Convert to Regular action on existing Classical libraries.
 										<select
 											id="settings-library-type"
 											name="type"
 											aria-describedby="settings-library-type-help"
 											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-											onchange="syncSettingsLibraryTypeHelp()"
 										>
 											<option value="regular">{ t(ctx, "settings.libraries.type_regular") }</option>
-											<option value="classical">{ t(ctx, "settings.libraries.type_classical") }</option>
 										</select>
-										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
+										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite">{ t(ctx, "settings.libraries.type.help") }</p>
 									</div>
 								</div>
 								<div class="flex gap-2">
@@ -3662,6 +3669,12 @@ templ settingsLibraryRow(lib library.Library) {
 			}
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
+				if lib.IsClassical() {
+					<span
+						class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+						title={ t(ctx, "settings.libraries.classical_legacy_tooltip") }
+					>{ t(ctx, "settings.libraries.classical_legacy_badge") }</span>
+				}
 				if lib.ConnectionID != "" {
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "settings.libraries.connection_badge") }</span>
 				}
@@ -3741,6 +3754,15 @@ templ settingsLibraryRow(lib library.Library) {
 					<span id={ "scan-label-" + lib.ID }>{ t(ctx, "settings.libraries.scan") }</span>
 				</button>
 			}
+			if lib.IsClassical() {
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+					onclick={ settingsConvertLibraryToRegular(lib.ID, lib.Name) }
+				>
+					{ t(ctx, "settings.libraries.classical_convert_confirm") }
+				</button>
+			}
 			<button
 				type="button"
 				class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
@@ -3750,6 +3772,10 @@ templ settingsLibraryRow(lib library.Library) {
 			</button>
 		</div>
 	</div>
+}
+
+script settingsConvertLibraryToRegular(id string, name string) {
+	settingsConvertLibraryToRegular_click(id, name);
 }
 
 script settingsUpdateFSMode(id string) {
@@ -3774,19 +3800,9 @@ script settingsAsyncLibOp(connID string, libID string, operation string) {
 
 templ settingsLibraryScript() {
 	<script>
-		function syncSettingsLibraryTypeHelp() {
-			var typeSelect = document.querySelector('#settings-library-form select[name="type"]');
-			var helpElement = document.getElementById('settings-library-type-help');
-			if (typeSelect && helpElement) {
-				helpElement.textContent = typeSelect.value === 'classical'
-					? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'
-					: 'Regular: Standard artist-centric library. Use this for most music collections.';
-			}
-		}
-
 		function onSettingsLibrarySaved() {
 			var form = document.getElementById("settings-library-form");
-			if (form) { form.reset(); form.classList.add("hidden"); syncSettingsLibraryTypeHelp(); }
+			if (form) { form.reset(); form.classList.add("hidden"); }
 			var btn = document.getElementById("settings-add-library-btn");
 			if (btn) btn.classList.remove("hidden");
 			refreshSettingsLibraryList();
@@ -3847,6 +3863,15 @@ templ settingsLibraryScript() {
 				var scanLabel = (list && list.dataset.scan) || "Scan Library";
 				_escDiv.textContent = scanLabel;
 				var safeScanLabel = _escDiv.innerHTML;
+				var classicalLegacyBadge = (list && list.dataset.classicalLegacyBadge) || "Legacy";
+				_escDiv.textContent = classicalLegacyBadge;
+				var safeClassicalLegacyBadge = _escDiv.innerHTML;
+				var classicalLegacyTooltip = (list && list.dataset.classicalLegacyTooltip) || "Classical is a legacy type scheduled for removal in v1.3.0.";
+				_escDiv.textContent = classicalLegacyTooltip;
+				var safeClassicalLegacyTooltip = _escDiv.innerHTML;
+				var classicalConvertLabel = (list && list.dataset.classicalConvertConfirm) || "Convert to Regular";
+				_escDiv.textContent = classicalConvertLabel;
+				var safeClassicalConvertLabel = _escDiv.innerHTML;
 				if (!libs || libs.length === 0) {
 					var emptyText = (list && list.dataset.empty) || "No libraries configured.";
 					_escDiv.textContent = emptyText;
@@ -3948,12 +3973,27 @@ templ settingsLibraryScript() {
 							+ spinnerSvg.replace('class="hidden', 'id="scan-spinner-' + lib.id + '" class="hidden')
 							+ '<span id="scan-label-' + lib.id + '">' + safeScanLabel + '</span></button>';
 					}
+					var classicalBadge = lib.type === 'classical'
+						? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300" title="' + safeClassicalLegacyTooltip + '">' + safeClassicalLegacyBadge + '</span>'
+						: '';
+					// Use data-lib-id / data-lib-name attributes so the library
+					// name is HTML-escaped by the browser and never interpolated
+					// into an inline onclick string (avoids XSS via backslash
+					// or line-separator bypass of the quote-only escape).
+					// lib.id is a UUID so it has no HTML-special characters,
+					// but we escape it through the same path for consistency.
+					div.textContent = lib.id;
+					var safeLibId = div.innerHTML;
+					var convertBtn = lib.type === 'classical'
+						? '<button type="button" class="text-xs px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors" data-lib-id="' + safeLibId + '" data-lib-name="' + safeName + '" onclick="settingsConvertLibraryToRegular_click(this.dataset.libId, this.dataset.libName)">' + safeClassicalConvertLabel + '</button>'
+						: '';
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
 						+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + safeName + '</div>'
 						+ pathLine
 						+ '<div class="flex items-center gap-1.5 mt-1">'
 						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + safeType + '</span>'
+						+ classicalBadge
 						+ connectionBadge
 						+ sourceBadge
 						+ '</div>'
@@ -3963,6 +4003,7 @@ templ settingsLibraryScript() {
 						+ lockNfo
 						+ populateBtn
 						+ scanBtn
+						+ convertBtn
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
 						+ 'Remove'
 						+ '</button>'
@@ -4194,6 +4235,49 @@ templ settingsLibraryScript() {
 			.catch(function() {
 				showConfirmDialog("Remove this library?", null, function() { doDelete(false); });
 			});
+		}
+
+		// settingsConvertLibraryToRegular_click shows a confirmation modal and,
+		// on confirm, PATCHes the library type to "regular". Updates the row in
+		// place on success; no full-page refresh needed.
+		// csrfToken() is defined in layout.templ's global script block and is
+		// available on every authenticated page; do not inline a separate regex.
+		function settingsConvertLibraryToRegular_click(id, name) {
+			var token = csrfToken();
+			var list = document.getElementById("settings-library-list");
+			var successMsg = (list && list.dataset.classicalConvertSuccess) || "Library converted to Regular";
+			var failedMsg = (list && list.dataset.classicalConvertFailed) || "Failed to convert library";
+			// Escape HTML in the library name for use in the modal message.
+			var _esc = document.createElement("div");
+			_esc.textContent = name;
+			var safeName = _esc.innerHTML;
+			var bodyHtml = '<p class="mb-2 font-medium">' + safeName + '</p>'
+				+ '<p class="text-sm text-gray-600 dark:text-gray-400">'
+				+ ((list && list.dataset.classicalConvertBody) || "This changes only the library classification. No files are moved, renamed, or deleted.")
+				+ '</p>';
+			showConfirmDialog(bodyHtml, null, function() {
+				fetch(bp + "/api/v1/libraries/" + id, {
+					method: "PATCH",
+					headers: {
+						"Content-Type": "application/json",
+						"X-CSRF-Token": token
+					},
+					body: JSON.stringify({type: "regular"})
+				}).then(function(res) {
+					if (res.ok) {
+						showSuccessToast(successMsg);
+						refreshSettingsLibraryList();
+					} else {
+						res.json().then(function(data) {
+							showToast((data && data.error) || failedMsg);
+						}).catch(function() {
+							showToast(failedMsg);
+						});
+					}
+				}).catch(function() {
+					showToast(failedMsg);
+				});
+			}, {html: true});
 		}
 	</script>
 }

@@ -556,6 +556,158 @@ func TestHandleUpdateLibrary_NFOLockData_Toggle(t *testing.T) {
 	}
 }
 
+// TestHandlePatchLibrary_ConvertToRegular verifies that PATCH
+// /api/v1/libraries/{id} with {"type":"regular"} converts a Classical library
+// to Regular and does NOT return Deprecation/Sunset headers for the converted
+// library.
+func TestHandlePatchLibrary_ConvertToRegular(t *testing.T) {
+	t.Parallel()
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Orchestra", Path: dir, Type: library.TypeClassical}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"type":"regular"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+
+	r.handlePatchLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var updated library.Library
+	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if updated.Type != library.TypeRegular {
+		t.Errorf("type = %q, want %q", updated.Type, library.TypeRegular)
+	}
+	// Converted library is now Regular; no deprecation headers expected.
+	if w.Result().Header.Get("Deprecation") != "" {
+		t.Error("Deprecation header should be absent after conversion to regular")
+	}
+	if w.Result().Header.Get("Sunset") != "" {
+		t.Error("Sunset header should be absent after conversion to regular")
+	}
+}
+
+// TestHandlePatchLibrary_DeprecationHeaders verifies that PATCH
+// /api/v1/libraries/{id} with type=classical emits Deprecation and Sunset
+// headers.
+func TestHandlePatchLibrary_DeprecationHeaders(t *testing.T) {
+	t.Parallel()
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "RegLib", Path: dir, Type: library.TypeRegular}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/libraries/"+lib.ID, strings.NewReader(`{"type":"classical"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+
+	r.handlePatchLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if w.Result().Header.Get("Deprecation") != "true" {
+		t.Errorf("Deprecation header = %q, want %q", w.Result().Header.Get("Deprecation"), "true")
+	}
+	if got := w.Result().Header.Get("Sunset"); got != library.SunsetClassicalType {
+		t.Errorf("Sunset header = %q, want %q", got, library.SunsetClassicalType)
+	}
+}
+
+// TestHandlePatchLibrary_NotFound verifies that PATCH returns 404 for
+// a non-existent library ID.
+func TestHandlePatchLibrary_NotFound(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithLibrary(t)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/libraries/nonexistent", strings.NewReader(`{"type":"regular"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+
+	r.handlePatchLibrary(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
+// TestHandlePatchLibrary_MissingType verifies that PATCH returns 400 when
+// the type field is absent (JSON) or not supplied (form-encoded).
+func TestHandlePatchLibrary_MissingType(t *testing.T) {
+	t.Parallel()
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "MissingTypeLib", Path: dir, Type: library.TypeRegular}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		body        string
+		contentType string
+	}{
+		{"json empty object", `{}`, "application/json"},
+		{"json type null", `{"type":null}`, "application/json"},
+		{"form missing key", `name=irrelevant`, "application/x-www-form-urlencoded"},
+		{"form empty value", `type=`, "application/x-www-form-urlencoded"},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/libraries/"+lib.ID, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", tc.contentType)
+			req.SetPathValue("id", lib.ID)
+			w := httptest.NewRecorder()
+			r.handlePatchLibrary(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestHandleCreateLibrary_ClassicalDeprecationHeaders verifies that POST
+// /api/v1/libraries with type=classical emits Deprecation and Sunset headers.
+func TestHandleCreateLibrary_ClassicalDeprecationHeaders(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	body := fmt.Sprintf(`{"name":"OldClassical","path":%q,"type":"classical"}`, dir)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleCreateLibrary(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	if w.Result().Header.Get("Deprecation") != "true" {
+		t.Errorf("Deprecation header = %q, want %q", w.Result().Header.Get("Deprecation"), "true")
+	}
+	if got := w.Result().Header.Get("Sunset"); got != library.SunsetClassicalType {
+		t.Errorf("Sunset header = %q, want %q", got, library.SunsetClassicalType)
+	}
+}
+
 // TestHandleUpdateLibrary_FormEncoded_NFOLockData covers the
 // application/x-www-form-urlencoded path for nfo_lock_data, which OpenAPI
 // documents alongside the JSON body. Regression coverage for the gap where

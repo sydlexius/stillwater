@@ -415,6 +415,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/libraries/{id}", wrapAuth(r.handleGetLibrary, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/libraries", wrapAuth(middleware.RequireAdmin(r.handleCreateLibrary), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/libraries/{id}", wrapAuth(middleware.RequireAdmin(r.handleUpdateLibrary), authMw))
+	mux.HandleFunc("PATCH "+bp+"/api/v1/libraries/{id}", wrapAuth(middleware.RequireAdmin(r.handlePatchLibrary), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/libraries/{id}", wrapAuth(middleware.RequireAdmin(r.handleDeleteLibrary), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/platforms", wrapAuth(r.handleListPlatforms, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleGetPlatform, authMw))

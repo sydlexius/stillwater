@@ -108,11 +108,16 @@ func (r *Router) handleCreateLibrary(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if lib.IsClassical() {
+		setClassicalDeprecationHeaders(w)
+	}
 	writeJSON(w, http.StatusCreated, lib)
 }
 
 // handleUpdateLibrary updates an existing library.
 // PUT /api/v1/libraries/{id}
+//
+//nolint:gocognit // Multi-field PATCH/form handler; each branch is a necessary tristate guard (JSON pointer vs form present/absent). Extracted as much as possible; further reduction would require a reflection-based mapper that is harder to read.
 func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	existing, err := r.libraryService.GetByID(req.Context(), id)
@@ -208,8 +213,81 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if existing.IsClassical() {
+		setClassicalDeprecationHeaders(w)
+	}
 	r.populateFSNotifySupportedPtr(existing)
 	writeJSON(w, http.StatusOK, existing)
+}
+
+// handlePatchLibrary applies a partial update to an existing library.
+// Unlike PUT, only the fields present in the request body are modified.
+// Currently supports: type (used by the Convert to Regular action).
+// PATCH /api/v1/libraries/{id}
+func (r *Router) handlePatchLibrary(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	existing, err := r.libraryService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "library not found"})
+		return
+	}
+
+	var body struct {
+		Type *string `json:"type"`
+	}
+	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+	} else {
+		// Use ParseForm so we can distinguish a missing key from an empty
+		// value: req.FormValue silently returns "" for both.
+		if err := req.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form body"})
+			return
+		}
+		if _, present := req.PostForm["type"]; present {
+			raw := req.PostForm.Get("type")
+			body.Type = &raw
+		}
+	}
+
+	if body.Type == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required"})
+		return
+	}
+	t := strings.TrimSpace(*body.Type)
+	if t == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required"})
+		return
+	}
+	if t != library.TypeRegular && t != library.TypeClassical {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be 'regular' or 'classical'"})
+		return
+	}
+	existing.Type = t
+
+	if err := r.libraryService.Update(req.Context(), existing); err != nil {
+		r.logger.Error("patching library", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	if existing.IsClassical() {
+		setClassicalDeprecationHeaders(w)
+	}
+	r.populateFSNotifySupportedPtr(existing)
+	writeJSON(w, http.StatusOK, existing)
+}
+
+// setClassicalDeprecationHeaders sets RFC 8594/9745 deprecation signaling
+// headers on a response that creates or returns a Classical library.
+// The Sunset date is stored in library.SunsetClassicalType; update that
+// constant once v1.3.0 has a firm release date.
+func setClassicalDeprecationHeaders(w http.ResponseWriter) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("Sunset", library.SunsetClassicalType)
 }
 
 // handleDeleteLibrary deletes a library. When ?deleteArtists=true is set, all
