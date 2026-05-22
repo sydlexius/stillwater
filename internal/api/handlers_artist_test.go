@@ -454,3 +454,48 @@ func TestParseFlyoutFilters_NewKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestParseFlyoutFilters_WhitelistNormalizesExcludes verifies the issue #1217
+// whitelist normalization: once any library is set to Include, every library
+// Exclude is dropped, so the render layer (pills, active-filter chips, the
+// active count) and the SQL layer agree on one effective filter set. Non-library
+// excludes and the library includes themselves are left untouched.
+func TestParseFlyoutFilters_WhitelistNormalizesExcludes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("library exclude dropped when a library include is present", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet,
+			"/artists?filter_library_aaa=%2By&filter_library_bbb=-y", nil)
+		got := parseFlyoutFilters(req)
+		if got["library_aaa"] != "include" {
+			t.Errorf("library_aaa: got %q, want %q", got["library_aaa"], "include")
+		}
+		if _, ok := got["library_bbb"]; ok {
+			t.Errorf("library_bbb: got %q, want it dropped in whitelist mode", got["library_bbb"])
+		}
+	})
+
+	t.Run("library excludes kept when no library include is present", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet,
+			"/artists?filter_library_aaa=-y&filter_library_bbb=-y", nil)
+		got := parseFlyoutFilters(req)
+		if got["library_aaa"] != "exclude" || got["library_bbb"] != "exclude" {
+			t.Errorf("exclude-only mode: got %v, want both library_aaa and library_bbb exclude", got)
+		}
+	})
+
+	t.Run("non-library excludes survive whitelist normalization", func(t *testing.T) {
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet,
+			"/artists?filter_library_aaa=%2By&filter_has_thumb=-y", nil)
+		got := parseFlyoutFilters(req)
+		if got["library_aaa"] != "include" {
+			t.Errorf("library_aaa: got %q, want %q", got["library_aaa"], "include")
+		}
+		if got["has_thumb"] != "exclude" {
+			t.Errorf("has_thumb: got %q, want %q (a non-library exclude must survive)", got["has_thumb"], "exclude")
+		}
+	})
+}

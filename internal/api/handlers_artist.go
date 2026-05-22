@@ -373,6 +373,26 @@ func parseFlyoutFilters(req *http.Request) map[string]string {
 		}
 	}
 
+	// Whitelist-mode normalization (issue #1217): once any library is set to
+	// Include, the per-library filter behaves as a whitelist and explicit
+	// library excludes are meaningless -- buildWhereClause ignores libExcludes
+	// in that mode. Drop them here so the render layer (pills, active-filter
+	// chips, the active count) and the SQL layer agree on one effective set.
+	libraryWhitelist := false
+	for key, state := range filters {
+		if state == "include" && strings.HasPrefix(key, "library_") {
+			libraryWhitelist = true
+			break
+		}
+	}
+	if libraryWhitelist {
+		for key, state := range filters {
+			if state == "exclude" && strings.HasPrefix(key, "library_") {
+				delete(filters, key)
+			}
+		}
+	}
+
 	if len(filters) == 0 {
 		return nil
 	}

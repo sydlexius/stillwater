@@ -190,7 +190,11 @@
 
       if (outOfScope) {
         item.setAttribute('data-filter-out-of-scope', 'true');
-        item.setAttribute('aria-label', libraryOutOfScopeAriaLabel(labelText));
+        // Prefer the server-rendered localized out-of-scope label; fall back to
+        // the English builtin only when the template did not emit one.
+        var localizedOOS = item.getAttribute('data-out-of-scope-aria');
+        item.setAttribute('aria-label',
+          localizedOOS ? localizedOOS : libraryOutOfScopeAriaLabel(labelText));
       } else {
         item.removeAttribute('data-filter-out-of-scope');
         item.setAttribute('aria-label', ariaLabel(state, labelText));
@@ -198,11 +202,11 @@
     });
   }
 
-  // libraryOutOfScopeAriaLabel returns the screen-reader label for a library
-  // pill that is out of scope (dimmed). Dimming is visual-only, so this label
-  // is the only signal a screen-reader user receives. The wording mirrors the
-  // i18n string artists.filter.library_out_of_scope; it is duplicated here
-  // because the JS has no access to the server-side i18n catalog.
+  // libraryOutOfScopeAriaLabel returns a fallback screen-reader label for a
+  // library pill that is out of scope (dimmed). refreshLibraryScope prefers the
+  // localized data-out-of-scope-aria attribute emitted by the template; this
+  // English wording (mirroring the i18n string artists.filter.library_out_of_scope)
+  // is used only when that attribute is absent.
   function libraryOutOfScopeAriaLabel(label) {
     return label + ' (out of scope; click to add to the included libraries)';
   }

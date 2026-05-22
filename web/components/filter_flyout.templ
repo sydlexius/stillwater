@@ -145,7 +145,10 @@ templ FilterItem(flyoutID, key, value, label, state string) {
 //
 // Parameters mirror FilterItem, plus:
 //   - outOfScope:      true when the pill should render dimmed
-//   - outOfScopeLabel: localized aria-label used when outOfScope is true
+//   - outOfScopeLabel: localized out-of-scope aria-label. Emitted as the
+//     data-out-of-scope-aria attribute on every library pill so the flyout JS
+//     can restore the localized label when it toggles scope dynamically, and
+//     used directly as the aria-label when outOfScope is true.
 templ FilterItemLibrary(flyoutID, key, value, label, state string, outOfScope bool, outOfScopeLabel string) {
 	<button
 		type="button"
@@ -155,6 +158,7 @@ templ FilterItemLibrary(flyoutID, key, value, label, state string, outOfScope bo
 		data-filter-value={ value }
 		data-filter-state={ state }
 		data-filter-section="library"
+		data-out-of-scope-aria={ outOfScopeLabel }
 		if outOfScope {
 			data-filter-out-of-scope="true"
 			aria-label={ outOfScopeLabel }

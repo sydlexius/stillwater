@@ -234,19 +234,6 @@ func libraryWhitelistActive(filters map[string]string) bool {
 	return false
 }
 
-// libraryPillState returns the effective render state for a per-library filter
-// pill. In whitelist mode (issue #1217) an explicit "exclude" is meaningless:
-// the whitelist SQL ignores explicit excludes. Normalizing it to "neutral" here
-// keeps the pill from rendering as a contradictory "exclude + out of scope"
-// pill; it renders instead as a plain out-of-scope neutral pill.
-func libraryPillState(filters map[string]string, libID string) string {
-	state := filterState(filters, "library_"+libID)
-	if state == "exclude" && libraryWhitelistActive(filters) {
-		return "neutral"
-	}
-	return state
-}
-
 // isFilterActive returns whether the artist list has any active filter.
 // Bulk selection is only available when a filter narrows the visible set; this
 // guards against users accidentally selecting the entire library.
@@ -600,7 +587,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if len(data.Libraries) > 1 {
 					@components.FilterSection(t(ctx, "artists.filter_section.library")) {
 						for _, lib := range data.Libraries {
-							{{ libState := libraryPillState(data.Filters, lib.ID) }}
+							{{ libState := filterState(data.Filters, "library_"+lib.ID) }}
 							{{ libLabel := libraryDropdownLabel(lib, data.LibrarySources) }}
 							// Whitelist mode (issue #1217): every library pill not
 							// set to Include is "out of scope" and rendered dimmed.
