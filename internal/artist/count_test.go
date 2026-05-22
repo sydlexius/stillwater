@@ -222,10 +222,14 @@ func TestCount_ConsistentWithList(t *testing.T) {
 
 // TestCount_WithLibraryFlyoutFilters covers the M:N membership EXISTS/NOT
 // EXISTS clauses emitted by buildWhereClause for the per-library include and
-// exclude flyout filters (Filters["library_<id>"] = include|exclude). After
-// the legacy library_id column was dropped in migration 004, these clauses
-// must filter via artist_libraries; this test pins the M:N behavior so it
-// cannot silently regress.
+// exclude flyout filters (Filters["library_<id>"] = include|exclude).
+//
+// Issue #1217 changed the meaning of "include": when at least one library is
+// set to Include, the filter is a WHITELIST -- results are restricted to
+// artists whose memberships fall ENTIRELY within the included set. An artist
+// also in some non-included library is dropped, even though it is in an
+// included library too. When no library is set to Include, the exclude-only
+// behavior is unchanged: each excluded library emits its own NOT EXISTS.
 func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 	t.Parallel()
 	db := setupTestDB(t)
@@ -235,10 +239,11 @@ func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 	seedLibraries(t, db, "lib-a", "lib-b", "lib-c")
 
 	// art-a only in lib-a; art-b only in lib-b; art-ab in BOTH lib-a + lib-b;
-	// art-c only in lib-c. Capture the generated IDs from Create so the
-	// membership rows reference the real artist row.
+	// art-c only in lib-c; art-none has zero memberships. Capture the
+	// generated IDs from Create so the membership rows reference the real
+	// artist row.
 	artistIDs := map[string]string{}
-	for _, name := range []string{"art-a", "art-b", "art-ab", "art-c"} {
+	for _, name := range []string{"art-a", "art-b", "art-ab", "art-c", "art-none"} {
 		a := testArtist(name, "/music/"+name)
 		if err := svc.Create(ctx, a); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
@@ -259,30 +264,49 @@ func TestCount_WithLibraryFlyoutFilters(t *testing.T) {
 		}
 	}
 
-	// Include lib-a OR lib-b: art-a, art-b, art-ab match (3).
+	// Whitelist {lib-a}: only artists whose memberships are entirely within
+	// {lib-a}. art-a qualifies; art-ab does not (it is also in lib-b).
+	includeA, err := svc.Count(ctx, CountParams{
+		Filters: map[string]string{"library_lib-a": "include"},
+	})
+	if err != nil {
+		t.Fatalf("Count include lib-a: %v", err)
+	}
+	if includeA != 1 {
+		t.Errorf("include lib-a count = %d, want 1 (art-a only)", includeA)
+	}
+
+	// Whitelist {lib-a, lib-b}: art-a, art-b, art-ab all qualify because each
+	// of their memberships is within the included set (3). art-c and art-none
+	// are excluded.
 	includeAB, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "include"},
 	})
 	if err != nil {
 		t.Fatalf("Count include lib-a + lib-b: %v", err)
 	}
+	// A count of 3 also confirms art-none (zero memberships) is not matched:
+	// the whitelist requires membership in at least one included library, so a
+	// wrongly-matched art-none would push this to 4.
 	if includeAB != 3 {
 		t.Errorf("include lib-a + lib-b count = %d, want 3", includeAB)
 	}
 
-	// Exclude lib-c: drop art-c, leaving 3.
+	// Exclude-only mode is unchanged. Exclude lib-c: drop art-c. art-none has
+	// no membership in lib-c so it passes through. Total = 4.
 	excludeC, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-c": "exclude"},
 	})
 	if err != nil {
 		t.Fatalf("Count exclude lib-c: %v", err)
 	}
-	if excludeC != 3 {
-		t.Errorf("exclude lib-c count = %d, want 3", excludeC)
+	if excludeC != 4 {
+		t.Errorf("exclude lib-c count = %d, want 4", excludeC)
 	}
 
-	// Include lib-a, exclude lib-b: only art-a (art-ab is in both, so the
-	// exclude clause drops it).
+	// Include lib-a, exclude lib-b: include is present, so whitelist mode is
+	// active and the explicit exclude is redundant. Whitelist {lib-a} keeps
+	// only art-a.
 	mixed, err := svc.Count(ctx, CountParams{
 		Filters: map[string]string{"library_lib-a": "include", "library_lib-b": "exclude"},
 	})

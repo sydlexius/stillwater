@@ -40,6 +40,25 @@ Exclude are exact opposites, so the two together account for every artist.
 - **Status** -- whether an artist has open rule violations.
 - **Artist Type** and **Library** -- narrow to a specific type or library.
 
+## The Library filter
+
+The Library section behaves differently from the other sections. As soon as you
+set at least one library to **Include**, the Library filter becomes a
+whitelist: the list shows only artists whose library memberships fall entirely
+within the libraries you included. An artist who is also in some other,
+non-included library is left out, even though it is in an included library too.
+This makes it a one-click way to see the artists exclusive to a library.
+
+While a whitelist is active, every library not set to Include is dimmed to show
+it is outside the current scope. A dimmed library is still clickable: click it
+to add that library to the included set and widen the whitelist. Dimmed
+libraries cycle between Any and Include only, because an Exclude is redundant
+once a whitelist is active.
+
+When no library is set to Include, the Library filter works like the other
+sections: each library you set to Exclude simply removes its artists, and
+libraries left at Any do not affect the list.
+
 ## Active filters and sharing a view
 
 The **Filters** button shows a count badge once one or more filters are active,

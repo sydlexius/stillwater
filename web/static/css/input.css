@@ -1520,6 +1520,22 @@ input:-webkit-autofill:focus {
   visibility: hidden;
 }
 
+/* Out-of-scope library pill (issue #1217): when the library filter is in
+   whitelist mode (at least one library set to Include), every library pill
+   NOT set to Include is dimmed to signal it is outside the active whitelist.
+   The pill stays clickable -- clicking it adds the library to the included
+   set. The dimming alone is the signal; there is no extra text or caption. */
+.sw-filter-item[data-filter-out-of-scope="true"] {
+  opacity: 0.32;
+}
+
+/* Restore full opacity on hover/focus so the out-of-scope pill is clearly
+   interactive when the user moves to click it. */
+.sw-filter-item[data-filter-out-of-scope="true"]:hover,
+.sw-filter-item[data-filter-out-of-scope="true"]:focus-visible {
+  opacity: 1;
+}
+
 /* -- Guided Tour (Driver.js overrides) ------------------------------------ */
 .sw-tour-popover {
   background: rgb(255, 255, 255) !important;
