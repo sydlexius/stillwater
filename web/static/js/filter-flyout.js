@@ -92,12 +92,16 @@
   // libraryWhitelistActive reports whether any library pill in the panel is
   // currently set to include (whitelist mode, issue #1217). In whitelist mode
   // every library pill cycles bi-state and non-include pills are out of scope.
-  function libraryWhitelistActive(flyoutID) {
+  // ignoreEl, when given, is skipped: cycleItem passes the pill being clicked
+  // so the pill's own current state does not decide its next transition (which
+  // would otherwise make exclude unreachable for the first/only library pill).
+  function libraryWhitelistActive(flyoutID, ignoreEl) {
     var panel = getPanel(flyoutID);
     if (!panel) return false;
     var libItems = panel.querySelectorAll('[data-filter-section="library"]');
     var active = false;
     Array.prototype.forEach.call(libItems, function (item) {
+      if (ignoreEl && item === ignoreEl) return;
       if (item.getAttribute('data-filter-state') === 'include') active = true;
     });
     return active;
@@ -107,10 +111,10 @@
   // Updates aria-label, icon text, and data-filter-state on the element.
   //
   // Library pills (issue #1217) follow a whitelist-aware cycle: while any
-  // library pill is set to include (whitelist mode), every library pill cycles
+  // OTHER library pill is set to include (whitelist mode), this pill cycles
   // bi-state only -- neutral <-> include -- because an exclude is ignored by
-  // the whitelist SQL. When no library is included the library pill keeps the
-  // full tri-state cycle.
+  // the whitelist SQL. When no other library is included the pill keeps the
+  // full tri-state cycle, so exclude stays reachable in exclude-only mode.
   function cycleItem(el) {
     var state = el.getAttribute('data-filter-state') || 'neutral';
     var label = el.querySelector('.sw-filter-item-label');
@@ -121,11 +125,13 @@
     var flyoutID = el.getAttribute('data-filter-flyout');
 
     var next;
-    if (library && libraryWhitelistActive(flyoutID)) {
-      // Whitelist mode: every library pill cycles bi-state (neutral <-> include).
-      // Exclude is unreachable while a whitelist is active -- the whitelist SQL
-      // ignores explicit excludes, and a pill must never be both "exclude" and
-      // "out of scope" (issue #1217).
+    if (library && libraryWhitelistActive(flyoutID, el)) {
+      // Whitelist mode: another library pill is already included, so this pill
+      // cycles bi-state (neutral <-> include). Exclude is unreachable while a
+      // whitelist is active -- the whitelist SQL ignores explicit excludes, and
+      // a pill must never be both "exclude" and "out of scope" (issue #1217).
+      // libraryWhitelistActive ignores el so the pill being clicked can still
+      // reach exclude when it is the only included library (exclude-only mode).
       next = (state === 'include') ? 'neutral' : 'include';
     } else {
       switch (state) {

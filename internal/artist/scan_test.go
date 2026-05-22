@@ -324,6 +324,17 @@ func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 	if len(args) != 4 {
 		t.Errorf("expected 4 library args (2 IDs bound twice), got %d: %v", len(args), args)
 	}
+	gotCounts := map[string]int{}
+	for _, a := range args {
+		s, ok := a.(string)
+		if !ok {
+			t.Fatalf("expected string arg, got %T (%v)", a, a)
+		}
+		gotCounts[s]++
+	}
+	if gotCounts["lib-a"] != 2 || gotCounts["lib-b"] != 2 || len(gotCounts) != 2 {
+		t.Errorf("expected lib-a/lib-b each bound twice, got %v", gotCounts)
+	}
 }
 
 // TestBuildWhereClause_LibraryFilter_Exclude verifies per-library NOT EXISTS clause.
