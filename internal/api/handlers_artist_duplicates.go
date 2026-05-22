@@ -67,6 +67,5 @@ func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup) templates.Art
 	}
 	return templates.ArtistDuplicatesPageView{
 		Groups: rows,
-		Count:  len(rows),
 	}
 }

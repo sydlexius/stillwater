@@ -464,16 +464,28 @@ func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID
 		// so normalizing name here could miss a collision against preloadedKeys
 		// that was built from previously-persisted artist names.
 		if k := artist.NormalizeIdentityKey(a.Name); k != "" {
-			if existingName, ok := preloadedKeys[k]; ok {
+			// processNewArtist runs concurrently across directories, and we
+			// now insert into preloadedKeys as well as read it, so the whole
+			// check-then-insert must hold s.mu. Inserting the new artist's
+			// key lets a later directory in the same scan collide against it;
+			// without this, two directories that are both new in one run
+			// would only be flagged if a previously-persisted artist matched.
+			s.mu.Lock()
+			existingName, isDuplicate := preloadedKeys[k]
+			if isDuplicate {
+				result.SuspectedDuplicates++
+			} else {
+				preloadedKeys[k] = a.Name
+			}
+			s.mu.Unlock()
+
+			if isDuplicate {
 				s.logger.Warn("suspected duplicate artist detected during scan",
 					"new_name", a.Name,
 					"new_path", dirPath,
 					"existing_name", existingName,
 					"key", k,
 				)
-				s.mu.Lock()
-				result.SuspectedDuplicates++
-				s.mu.Unlock()
 			}
 		}
 	}

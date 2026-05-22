@@ -24,7 +24,6 @@ type ArtistDuplicateGroupRow struct {
 // /settings/artist-duplicates.
 type ArtistDuplicatesPageView struct {
 	Groups []ArtistDuplicateGroupRow
-	Count  int // number of groups (len(Groups))
 }
 
 // ArtistDuplicatesPage renders the "Possible duplicate artists" list page.
@@ -48,7 +47,7 @@ templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 // ArtistDuplicatesPage.  Each group is an expandable card listing its members.
 templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 	<div id="artist-duplicates-table" class="space-y-4">
-		if view.Count == 0 {
+		if len(view.Groups) == 0 {
 			<div class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				{ t(ctx, "artist_duplicates.empty_state") }
 			</div>
