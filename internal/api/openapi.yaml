@@ -1668,6 +1668,13 @@ components:
         One row in the foreign_files ledger. A foreign file is an image whose
         basename matches a media-server naming pattern but whose EXIF
         ImageDescription does not carry the Stillwater provenance tag.
+
+        The list endpoint collapses multiple ledger rows that share the same
+        non-empty content_hash into a single entry (display-time dedup). The
+        representative entry is the row with the smallest id. Rows with an
+        empty content_hash (recorded before migration 008) are never collapsed.
+        duplicate_count reflects how many ledger rows share this file's hash;
+        a value of 1 means no duplicates exist.
       properties:
         id:
           type: string
@@ -1695,7 +1702,15 @@ components:
         detected_at:
           type: string
           format: date-time
-      required: [id, artist_id, artist_name, file_path, file_name, content_hash, size_bytes, detected_at]
+        duplicate_count:
+          type: integer
+          description: |
+            Number of ledger rows that share this file's content_hash (always
+            >= 1). A value greater than 1 means the same physical file is
+            referenced by multiple artist records or path spellings; the list
+            collapses them into this single entry. The UI shows a hint badge
+            when duplicate_count > 1.
+      required: [id, artist_id, artist_name, file_path, file_name, content_hash, size_bytes, detected_at, duplicate_count]
 
     ForeignAllowlistEntry:
       type: object
@@ -11435,11 +11450,17 @@ paths:
     get:
       summary: List detected foreign image files
       description: |
-        Returns every row in the foreign_files ledger, joined with the owning
-        artist name. Foreign files are images matching media-server naming
-        patterns ("backdrop*", "fanart*", "poster*", "logo*", "banner*",
-        "thumb*", "clearart*", "disc*", "landscape*") that lack Stillwater
-        EXIF provenance. Recorded by the periodic foreign-file scanner; never
+        Returns one entry per distinct file (by content_hash) from the
+        foreign_files ledger, joined with the owning artist name. Ledger rows
+        sharing the same non-empty content_hash are collapsed into one entry
+        (display-time dedup); the representative row is the one with the
+        smallest id. Rows with an empty content_hash (pre-migration-008) are
+        never collapsed.
+
+        Foreign files are images matching media-server naming patterns
+        ("backdrop*", "fanart*", "poster*", "logo*", "banner*", "thumb*",
+        "clearart*", "disc*", "landscape*") that lack Stillwater EXIF
+        provenance. Recorded by the periodic foreign-file scanner; never
         modified by this endpoint.
       operationId: listForeignFiles
       tags:

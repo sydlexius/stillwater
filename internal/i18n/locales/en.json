@@ -646,6 +646,8 @@
   "foreign_files.dismiss_confirm": "Allowlist every detected foreign file globally?",
   "foreign_files.dismiss_response_error": "Could not dismiss all foreign files. Refresh and try again.",
   "foreign_files.dismiss_send_error": "Network error dismissing foreign files. Try again.",
+  "foreign_files.duplicate_hint": "linked from multiple artists",
+  "foreign_files.duplicate_hint_tooltip": "This file is referenced by more than one artist record. One entry is shown. Allowlisting or deleting it acts on this artist only; other sibling rows remain until you dismiss them separately.",
   "foreign_files.empty_state": "No foreign image files detected. Stillwater scans your library on a fixed cadence; new entries will appear here automatically.",
   "foreign_files.manage_allowlist": "Manage allowlist",
   "foreign_files.page_title": "Foreign Files",

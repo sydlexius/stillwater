@@ -855,6 +855,100 @@ func TestHandleForeignFilesDismiss_SameBasenameDistinctBytes(t *testing.T) {
 	}
 }
 
+// TestHandleForeignFilesDismiss_SharedContentHash regression-protects the
+// choice to use ListRaw (un-collapsed) instead of the collapsed List in the
+// dismiss handler. It seeds two artist rows whose ledger entries share the
+// same content_hash -- the cross-artist shared-hash case. List would return
+// only one representative row; ListRaw returns both. After dismiss the ledger
+// must be fully empty (count == 0). A future refactor swapping ListRaw back
+// to List would currently pass every other handler test; this test catches it.
+func TestHandleForeignFilesDismiss_SharedContentHash(t *testing.T) {
+	t.Parallel()
+	r, db := newTestRouterWithForeign(t)
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	// Both artists share byte-for-byte identical content, producing one
+	// common content_hash. The physical files must exist on disk so that
+	// resolveForeignHash (called inside handleForeignFilesDismiss) can read
+	// and hash them when no pre-computed hash is stored on the entry.
+	sharedBody := []byte("shared-content-identical-bytes")
+	sharedHash := sha256HexAPI(sharedBody)
+	pathA := filepath.Join(dirA, "backdrop.jpg")
+	pathB := filepath.Join(dirB, "backdrop.jpg")
+	if err := os.WriteFile(pathA, sharedBody, 0o644); err != nil {
+		t.Fatalf("write A: %v", err)
+	}
+	if err := os.WriteFile(pathB, sharedBody, 0o644); err != nil {
+		t.Fatalf("write B: %v", err)
+	}
+
+	mustExec(t, db, `INSERT INTO artists (id, name, path) VALUES ('a1','Aretha',?), ('a2','Beth',?)`, dirA, dirB)
+
+	// Seed two ledger rows with the same content_hash -- one per artist.
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a1", FilePath: pathA, FileName: "backdrop.jpg", ContentHash: sharedHash,
+	}); err != nil {
+		t.Fatalf("seed a1: %v", err)
+	}
+	if err := r.foreignRepo.Upsert(context.Background(), foreign.Entry{
+		ArtistID: "a2", FilePath: pathB, FileName: "backdrop.jpg", ContentHash: sharedHash,
+	}); err != nil {
+		t.Fatalf("seed a2: %v", err)
+	}
+
+	// Confirm the precondition: List collapses the two rows to one (same
+	// hash), while the raw ledger really has two entries.
+	collapsed, err := r.foreignRepo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(collapsed) != 1 {
+		t.Fatalf("precondition: List should collapse two same-hash rows to 1; got %d", len(collapsed))
+	}
+	// Count uses the same collapsed grouping as List; query raw row count
+	// directly to confirm two physical ledger rows exist.
+	var rawCount int
+	if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM foreign_files`).Scan(&rawCount); err != nil {
+		t.Fatalf("raw count: %v", err)
+	}
+	if rawCount != 2 {
+		t.Fatalf("precondition: raw ledger should have 2 rows; got %d", rawCount)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
+	rec := httptest.NewRecorder()
+	r.handleForeignFilesDismiss(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dismiss should return 200; got %d", rec.Code)
+	}
+
+	// Both sibling ledger rows must be gone -- not just the representative
+	// one that List would have returned. Query the raw row count so this
+	// assertion is immune to any future changes in how Count aggregates.
+	var afterCount int
+	if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM foreign_files`).Scan(&afterCount); err != nil {
+		t.Fatalf("raw count after dismiss: %v", err)
+	}
+	if afterCount != 0 {
+		t.Errorf("ledger should be fully cleared after dismiss (both shared-hash rows); got %d raw rows", afterCount)
+	}
+
+	// Exactly one global allowlist row should exist for the shared hash.
+	rows, _ := r.foreignRepo.ListAllowlist(context.Background())
+	if len(rows) != 1 {
+		t.Errorf("expected 1 allowlist row for the shared content_hash; got %d", len(rows))
+	}
+	if len(rows) == 1 {
+		if rows[0].ContentHash != sharedHash {
+			t.Errorf("allowlist row content_hash = %q; want %q", rows[0].ContentHash, sharedHash)
+		}
+		if rows[0].Scope != foreign.ScopeGlobal {
+			t.Errorf("allowlist row scope = %q; want global", rows[0].Scope)
+		}
+	}
+}
+
 // TestResolveForeignHash_BackfillsFromDisk covers the on-demand rehash
 // path for pre-008 ledger rows whose content_hash column is empty. The
 // handler must recompute the digest from disk so the allowlist write

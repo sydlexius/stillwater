@@ -117,14 +117,50 @@ func (r *Repository) GetByID(ctx context.Context, id string) (Entry, error) {
 	return e, nil
 }
 
-// List returns every ledger row joined with the owning artist name, sorted
-// by artist then file path so the UI rendering is stable across reloads.
+// List returns one entry per distinct file (by content hash), collapsing
+// duplicate ledger rows that share the same non-empty content_hash into a
+// single representative entry. The representative is the row with the
+// smallest id (MIN(id) -- arbitrary but stable across scans). DuplicateCount
+// is set to the number of ledger rows that share the same content_hash; a
+// value of 1 means no duplicates exist for that file.
+//
+// Rows whose content_hash is empty (recorded before migration 008) are never
+// collapsed: each gets a unique grouping key equal to its own id, so two
+// pre-008 rows with empty hashes always produce two distinct entries.
+//
+// The ordering is by artist name then file path on the representative row, so
+// the list is stable across reloads.
 func (r *Repository) List(ctx context.Context) ([]Entry, error) {
+	// The grouping subquery builds a deduplication key (gkey) per row:
+	//   - for rows with a non-empty content_hash: gkey = content_hash
+	//     -> rows that represent the same physical file share a gkey and
+	//        collapse into one representative (MIN(id)).
+	//   - for rows with an empty/NULL content_hash: gkey = the row's own id
+	//     -> each pre-008 row gets a unique gkey and is never collapsed.
+	//
+	// rep_id = MIN(id) selects one representative row per group.
+	// dup_count = COUNT(*) is the number of ledger rows sharing that gkey.
+	//
+	// The outer query joins back to foreign_files on the representative id
+	// so every returned column (id, artist_id, file_path, …) is internally
+	// consistent -- the representative's artist and path are used for
+	// per-row delete/allowlist actions.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id, f.artist_id, f.file_path, f.file_name,
 		       COALESCE(f.content_hash, ''), f.size_bytes, f.detected_at,
-		       a.name
-		FROM foreign_files f
+		       a.name, g.dup_count
+		FROM (
+			SELECT
+				CASE WHEN COALESCE(content_hash, '') = ''
+				     THEN id
+				     ELSE content_hash
+				END AS gkey,
+				MIN(id)    AS rep_id,
+				COUNT(*)   AS dup_count
+			FROM foreign_files
+			GROUP BY gkey
+		) g
+		JOIN foreign_files f ON f.id = g.rep_id
 		LEFT JOIN artists a ON a.id = f.artist_id
 		ORDER BY a.name COLLATE NOCASE, f.file_path`)
 	if err != nil {
@@ -136,7 +172,8 @@ func (r *Repository) List(ctx context.Context) ([]Entry, error) {
 		var e Entry
 		var detected string
 		var artistName sql.NullString
-		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName, &e.ContentHash, &e.SizeBytes, &detected, &artistName); err != nil {
+		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName,
+			&e.ContentHash, &e.SizeBytes, &detected, &artistName, &e.DuplicateCount); err != nil {
 			return nil, fmt.Errorf("foreign: scan list row: %w", err)
 		}
 		if t, perr := time.Parse(time.RFC3339, detected); perr == nil {
@@ -153,11 +190,71 @@ func (r *Repository) List(ctx context.Context) ([]Entry, error) {
 	return out, nil
 }
 
-// Count returns the number of foreign-file ledger rows. Used by the banner
-// to decide whether to show the slate/blue warning.
+// ListRaw returns every ledger row without any content-hash deduplication,
+// one entry per (artist_id, file_path). DuplicateCount is always 1 on raw
+// entries; the field exists only for structural consistency with Entry.
+//
+// Use ListRaw in operations that must touch every sibling row -- for example
+// the bulk-dismiss handler, which must call DeleteByPath for every row so the
+// ledger is fully cleared even when multiple rows share the same content hash.
+func (r *Repository) ListRaw(ctx context.Context) ([]Entry, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT f.id, f.artist_id, f.file_path, f.file_name,
+		       COALESCE(f.content_hash, ''), f.size_bytes, f.detected_at,
+		       a.name
+		FROM foreign_files f
+		LEFT JOIN artists a ON a.id = f.artist_id
+		ORDER BY a.name COLLATE NOCASE, f.file_path`)
+	if err != nil {
+		return nil, fmt.Errorf("foreign: list raw: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		var detected string
+		var artistName sql.NullString
+		if err := rows.Scan(&e.ID, &e.ArtistID, &e.FilePath, &e.FileName,
+			&e.ContentHash, &e.SizeBytes, &detected, &artistName); err != nil {
+			return nil, fmt.Errorf("foreign: scan raw list row: %w", err)
+		}
+		if t, perr := time.Parse(time.RFC3339, detected); perr == nil {
+			e.DetectedAt = t
+		}
+		if artistName.Valid {
+			e.ArtistName = artistName.String
+		}
+		e.DuplicateCount = 1
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("foreign: iterate raw list rows: %w", err)
+	}
+	return out, nil
+}
+
+// Count returns the number of distinct foreign files (by content hash).
+// Matches the collapsing logic in List so the banner count equals the
+// number of entries the user sees in the table: two rows for the same
+// physical file count as one.
+//
+// Rows with an empty/NULL content_hash each count as one distinct file
+// (same treatment as in List -- they are never over-collapsed).
 func (r *Repository) Count(ctx context.Context) (int, error) {
+	// COUNT(*) over the same grouping subquery used in List, so the number
+	// is always the number of displayed rows, not the raw ledger row count.
 	var n int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM foreign_files`).Scan(&n); err != nil {
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT
+				CASE WHEN COALESCE(content_hash, '') = ''
+				     THEN id
+				     ELSE content_hash
+				END AS gkey
+			FROM foreign_files
+			GROUP BY gkey
+		)`).Scan(&n)
+	if err != nil {
 		return 0, fmt.Errorf("foreign: count: %w", err)
 	}
 	return n, nil

@@ -253,7 +253,13 @@ func (r *Router) handleForeignFilesDismiss(w http.ResponseWriter, req *http.Requ
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "foreign-file scanner not configured"})
 		return
 	}
-	entries, err := r.foreignRepo.List(req.Context())
+	// ListRaw returns every ledger row (un-collapsed) so the dismiss loop
+	// can call DeleteByPath for every (artist_id, file_path) pair. Using the
+	// collapsed List here would leave sibling rows behind: when two artists
+	// share the same content hash, List returns one representative row but
+	// the other row's ledger entry would survive and the banner would not
+	// clear until the next scan.
+	entries, err := r.foreignRepo.ListRaw(req.Context())
 	if err != nil {
 		r.logger.Error("listing foreign files for dismiss", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing foreign files"})
@@ -405,16 +411,17 @@ func (r *Router) requireForeignAdmin(w http.ResponseWriter, req *http.Request) b
 
 // foreignEntryToRow converts a domain entry to its template row shape.
 // Pointer receiver keeps copy cost minimal under gocritic's rangeValCopy
-// budget after Entry grew to include content_hash.
+// budget after Entry grew to include content_hash and DuplicateCount.
 func foreignEntryToRow(e *foreign.Entry) templates.ForeignFileRow {
 	return templates.ForeignFileRow{
-		ID:         e.ID,
-		ArtistID:   e.ArtistID,
-		ArtistName: e.ArtistName,
-		FilePath:   e.FilePath,
-		FileName:   e.FileName,
-		SizeBytes:  e.SizeBytes,
-		DetectedAt: e.DetectedAt.Format(time.RFC3339),
+		ID:             e.ID,
+		ArtistID:       e.ArtistID,
+		ArtistName:     e.ArtistName,
+		FilePath:       e.FilePath,
+		FileName:       e.FileName,
+		SizeBytes:      e.SizeBytes,
+		DetectedAt:     e.DetectedAt.Format(time.RFC3339),
+		DuplicateCount: e.DuplicateCount,
 	}
 }
 
