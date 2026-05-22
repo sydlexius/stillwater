@@ -94,7 +94,7 @@ Most metadata providers (Fanart.tv, Discogs, TheAudioDB, and others) require a f
 
 ### Web Image Search  {#settings-providers-web-search}
 
-Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web search providers (Bing, Brave, and similar) crawl the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
+Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
 
 ### Provider Priorities  {#settings-providers-priorities}
 
