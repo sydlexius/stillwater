@@ -6,5 +6,8 @@
   "license": "GPL-3.0",
   "dependencies": {
     "@usebruno/cli": "3.3.0"
+  },
+  "overrides": {
+    "uuid": "^14.0.0"
   }
 }
