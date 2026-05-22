@@ -172,6 +172,9 @@ func TestCollectProvenance_UnrecognizedExtension(t *testing.T) {
 	if got.FileFormat != "" {
 		t.Errorf("FileFormat = %q, want %q for unrecognized extension", got.FileFormat, "")
 	}
+	if !strings.Contains(logBuf.String(), "unrecognized image file extension") {
+		t.Errorf("expected a warning about the unrecognized extension, got log: %q", logBuf.String())
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -8,8 +8,9 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
-	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -252,103 +253,112 @@ func TestProbeRemoteImage_NoContentLength(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// injectPNGDescription -- PNG with a non-ImageDescription tEXt chunk
+// readPNGDescription -- tEXt chunk with a non-ImageDescription keyword
 // ---------------------------------------------------------------------------
 
-func TestReadPNGDescription_OtherTextChunk(t *testing.T) {
-	// Build a PNG that has a tEXt chunk with a different key -- readPNGDescription
-	// should skip it and return empty.
-	data := makePNG(t, 8, 8)
-
-	// Manually inject a tEXt chunk with key "Author" instead of "ImageDescription".
-	// We do this by building the raw chunk bytes and inserting them before IEND.
-	//
-	// Rather than manually building chunks, inject via injectPNGDescription using
-	// a different description that does NOT start with the stillwater prefix, then
-	// verify ReadProvenance returns nil (exercising the "non-Stillwater" path that
-	// already has coverage). Instead just use two-step injection to ensure
-	// readPNGDescription handles the replace-existing path.
-	first, err := injectPNGDescription(data, "other-tool:metadata")
-	if err != nil {
-		t.Fatalf("inject first: %v", err)
+// injectPNGTextChunk inserts a tEXt chunk with an arbitrary keyword directly
+// after the PNG's IHDR chunk. IHDR is always the first chunk and always 25
+// bytes (4-byte length + 4-byte type + 13-byte data + 4-byte CRC), so the
+// insertion point is fixed. It lets a test build a PNG whose only tEXt chunk
+// does not use the ImageDescription keyword.
+func injectPNGTextChunk(t *testing.T, data []byte, keyword, text string) []byte {
+	t.Helper()
+	const ihdrEnd = 8 + 25 // PNG signature + IHDR chunk
+	if len(data) < ihdrEnd {
+		t.Fatalf("png too short to contain IHDR: %d bytes", len(data))
 	}
 
-	got, err := readPNGDescription(first)
+	var payload bytes.Buffer
+	payload.WriteString(keyword)
+	payload.WriteByte(0x00)
+	payload.WriteString(text)
+	p := payload.Bytes()
+
+	chunkType := []byte("tEXt")
+	var chunk bytes.Buffer
+	if err := binary.Write(&chunk, binary.BigEndian, uint32(len(p))); err != nil {
+		t.Fatalf("write chunk length: %v", err)
+	}
+	chunk.Write(chunkType)
+	chunk.Write(p)
+	crc := crc32.ChecksumIEEE(append(append([]byte{}, chunkType...), p...))
+	if err := binary.Write(&chunk, binary.BigEndian, crc); err != nil {
+		t.Fatalf("write chunk crc: %v", err)
+	}
+
+	out := make([]byte, 0, len(data)+chunk.Len())
+	out = append(out, data[:ihdrEnd]...)
+	out = append(out, chunk.Bytes()...)
+	out = append(out, data[ihdrEnd:]...)
+	return out
+}
+
+func TestReadPNGDescription_SkipsNonImageDescriptionChunk(t *testing.T) {
+	// A PNG carrying a tEXt chunk whose keyword is not "ImageDescription":
+	// readPNGDescription must skip it and report no description.
+	data := makePNG(t, 8, 8)
+	withChunk := injectPNGTextChunk(t, data, "Author", "Jane Doe")
+
+	got, err := readPNGDescription(withChunk)
 	if err != nil {
 		t.Fatalf("readPNGDescription: %v", err)
 	}
-	// readPNGDescription extracts any ImageDescription tEXt chunk, not just Stillwater ones.
-	if got != "other-tool:metadata" {
-		t.Errorf("got %q, want %q", got, "other-tool:metadata")
+	if got != "" {
+		t.Errorf("got %q, want empty (a non-ImageDescription tEXt chunk must be skipped)", got)
 	}
 }
 
-// ---------------------------------------------------------------------------
-// injectPNGDescription -- payload too large guard (>MaxUint32)
-// This is a guard branch that cannot be reached in practice from test data,
-// so we document it as deliberately untested rather than produce a test that
-// would require allocating 4 GB in CI.
-// ---------------------------------------------------------------------------
-
-// TestInjectPNGDescription_MaxSizeGuardIsUntestable documents why the
-// "payload too large" check in injectPNGDescription is not covered: it requires
-// a description string larger than 4 GB, which is impractical in CI. The branch
+// Note: injectPNGDescription's "payload too large" guard (len(payload) >
+// math.MaxUint32) is not covered by a test. Triggering it requires a
+// description string larger than 4 GB, which is impractical in CI. The branch
 // is a safety guard, not a reachable production path.
-func TestInjectPNGDescription_MaxSizeGuardIsUntestable(_ *testing.T) {
-	// No assertions -- this is a documentation test only.
-}
 
 // ---------------------------------------------------------------------------
 // GeneratePlaceholder -- too many pixels path
 // ---------------------------------------------------------------------------
 
-func TestGeneratePlaceholder_TooManyPixels(t *testing.T) {
-	// Build a minimal PNG claiming to be 200000 x 200000 pixels in the IHDR
-	// without actually allocating that memory. The dimension check in
-	// GeneratePlaceholder fires before Decode, so we just need a valid header.
-	//
-	// Actually, image.DecodeConfig will decode the IHDR and see the dimensions,
-	// but image.Decode would fail. GeneratePlaceholder calls DecodeConfig first,
-	// so we need a PNG that has a valid IHDR with huge dimensions.
-	//
-	// Craft a raw PNG header with 200000x1 dims to exceed 100 megapixels.
-	// We do this by building real PNG bytes for a tiny image and patching
-	// the IHDR. But that approach would break the CRC. Instead we use Go's
-	// png encoder on a small image and verify the error message for the existing
-	// test (TestGeneratePlaceholder_TooLargeBytes already covers part of this).
-	//
-	// The safest approach: use a real 10001x10001 PNG. At 100 million pixels
-	// that's 10001*10001 = 100,020,001 > 100,000,000. A 1x1 PNG repeated is
-	// not enough -- we need the actual dimensions in the config. Use a
-	// specially crafted PNG with valid IHDR dims but tiny (1-row) pixel data
-	// that will fail to fully decode. This lets DecodeConfig succeed (dims
-	// reported from IHDR) and the pixel count check trigger.
-	//
-	// We'll construct a PNG using png.Encode with a tiny actual image but then
-	// patch the width bytes in the IHDR. Note: patching breaks the IHDR CRC,
-	// which makes image.DecodeConfig fail in newer Go. Skip if that's the case.
-
-	// Use a valid 10001x1 PNG as the simplest approach that exercises the
-	// pixel-overflow check without allocating excessive memory.
-	// 10001 * 10001 = 100,020,001 > maxPlaceholderPixels (100,000,000).
-	// Build it the honest way: encode a real (but narrow) image.
-	const bigW = 10001
-	const bigH = 10001
-
-	img := image.NewGray(image.Rect(0, 0, bigW, bigH))
+// minimalPNGHeader builds a PNG made of only the 8-byte signature and a valid
+// IHDR chunk declaring the given dimensions. image.DecodeConfig reads the
+// dimensions straight from IHDR, so GeneratePlaceholder's pixel-count guard
+// can be exercised without ever allocating a real image of that size.
+func minimalPNGHeader(t *testing.T, width, height uint32) []byte {
+	t.Helper()
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		t.Fatalf("encoding large PNG: %v", err)
-	}
+	buf.Write([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}) // PNG signature
 
-	result, err := GeneratePlaceholder(bytes.NewReader(buf.Bytes()), "thumb")
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], width)
+	binary.BigEndian.PutUint32(ihdr[4:8], height)
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 0 // color type: grayscale
+	// ihdr[10..12] (compression, filter, interlace) stay zero.
+
+	chunk := append([]byte("IHDR"), ihdr...)
+	if err := binary.Write(&buf, binary.BigEndian, uint32(len(ihdr))); err != nil {
+		t.Fatalf("write IHDR length: %v", err)
+	}
+	buf.Write(chunk)
+	if err := binary.Write(&buf, binary.BigEndian, crc32.ChecksumIEEE(chunk)); err != nil {
+		t.Fatalf("write IHDR crc: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestGeneratePlaceholder_TooManyPixels(t *testing.T) {
+	// 20000x20000 = 400 megapixels, well over the 100-megapixel cap.
+	// GeneratePlaceholder reads the dimensions from IHDR via DecodeConfig
+	// and rejects the image before decoding any pixel data, so this test
+	// never materializes a large buffer.
+	data := minimalPNGHeader(t, 20000, 20000)
+
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")
 	if err == nil {
-		t.Error("expected error for image exceeding max pixels")
+		t.Fatal("expected error for image exceeding the pixel cap")
 	}
 	if result != "" {
-		t.Errorf("expected empty result, got %q", result[:min(len(result), 30)])
+		t.Errorf("expected empty result, got %q", result)
 	}
-	if err != nil && !bytes.Contains([]byte(err.Error()), []byte("too many pixels")) {
+	if !bytes.Contains([]byte(err.Error()), []byte("too many pixels")) {
 		t.Errorf("error should mention 'too many pixels', got: %v", err)
 	}
 }
