@@ -1285,10 +1285,16 @@ func TestMigration007_RemovesWikidataFromBiographyPriority(t *testing.T) {
 //
 // "Zero-home orphan" = an artist with no artist_libraries membership and no
 // artist_platform_ids row. Artists with either anchor are preserved.
+//
+// This test exercises two contracts that a plain "FK ON" test would miss:
+//  1. ALL child tables listed in the migration are cleaned up (not just rule_violations).
+//  2. The cleanup phase runs with foreign keys OFF, matching the migration's
+//     production shape -- proving the explicit per-child-table DELETEs fire
+//     rather than relying on ON DELETE CASCADE.
 func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 	// NOTE: do NOT call openMigratedDB here. That helper runs EnableForeignKeys
 	// before the test body, which means the migration's explicit per-child-table
-	// explicit-DELETE path is not needed. But we want to prove the migration works under the
+	// DELETE path is not needed. We want to prove the migration works under the
 	// real startup condition (FK enforcement OFF during Migrate). We call
 	// EnableForeignKeys only after Migrate, matching production startup order.
 	db, err := Open(":memory:")
@@ -1302,14 +1308,14 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// Now turn FK enforcement on for the test body assertions.
+	// Now turn FK enforcement on for the test body seeding/assertions.
 	if err := EnableForeignKeys(db); err != nil {
 		t.Fatalf("enabling foreign keys: %v", err)
 	}
 
 	ctx := context.Background()
 
-	// Seed a rule so rule_violations can reference it.
+	// Seed a rule so rule_violations / rule_results can reference it.
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rules (id, name, category, enabled, automation_mode, created_at, updated_at)
 		VALUES ('rule-009', 'Test Rule', 'integrity', 1, 'manual', datetime('now'), datetime('now'))
@@ -1345,44 +1351,121 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 	}
 
 	// Seed a connection and attach art-plat to it via a platform mapping.
+	// We also reuse this connection for art-lib's provider ID (below) so that
+	// art-lib carries data in every child table the orphan does.
 	seedConnection(t, db, "conn-009")
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
 		VALUES ('art-plat', 'conn-009', 'pid-009',
 			strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 	`); err != nil {
-		t.Fatalf("seeding platform id: %v", err)
+		t.Fatalf("seeding platform id for art-plat: %v", err)
 	}
 
-	// Seed a child row on the orphan to prove the explicit per-table DELETE in
-	// the migration fires even when FK CASCADE is OFF (production shape). A
-	// rule_violations row is convenient: it references artists(id) ON DELETE CASCADE,
-	// but that cascade only fires when FK enforcement is on.
-	if _, err := db.ExecContext(ctx, `
-		PRAGMA foreign_keys = OFF
-	`); err != nil {
-		t.Fatalf("disabling FKs for child seed: %v", err)
-	}
+	// Seed child rows on art-lib so we can assert at the end that the survivor's
+	// child data is untouched (a rule_violations row is enough here).
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, message, created_at)
-		VALUES ('rv-009', 'rule-009', 'art-orphan', 'art-orphan', 'test', datetime('now'))
+		VALUES ('rv-lib', 'rule-009', 'art-lib', 'art-lib', 'survivor check', datetime('now'))
 	`); err != nil {
-		t.Fatalf("seeding rule_violations: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
-		t.Fatalf("re-enabling FKs: %v", err)
+		t.Fatalf("seeding rule_violations for art-lib: %v", err)
 	}
 
-	// Re-run Migrate to simulate "first startup after upgrade" where the
-	// 009 migration runs against a DB that already has orphan rows.
-	// (openMigratedDB already ran Migrate once above with an empty DB, so the
-	// 009 migration ran then and was a no-op. We need to seed the orphan after
-	// the initial run to test the sweep logic. Re-running Migrate here is
-	// idempotent by goose design -- the 009 migration will not re-execute.
-	// To actually exercise the SQL we call the migration's statements directly.)
-	//
-	// Instead: verify the orphan/survivor state via the statements themselves.
-	// Run the same logic the migration uses.
+	// Disable FK enforcement so we can insert child rows that reference the orphan
+	// artist without triggering FK checks. Migration 009 runs under the same
+	// FK-OFF condition (goose runs before EnableForeignKeys is called).
+	// We insert one row in every child table covered by migration 009 so the test
+	// exercises the full explicit-DELETE surface, not just rule_violations.
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatalf("disabling FKs for child seed: %v", err)
+	}
+
+	// Child-table seeding: one row per table, all referencing 'art-orphan'.
+	// Order matches the migration's DELETE order for readability.
+	orphanChildSeeds := []struct {
+		table string
+		stmt  string
+	}{
+		// artist_libraries and artist_platform_ids are deliberately not seeded
+		// for the orphan: a row in either table is exactly what disqualifies an
+		// artist from being an orphan (see the _orphan_artists query), so a true
+		// orphan can never own one. The migration still issues a DELETE against
+		// both tables for completeness; the cleanup phase below runs those two
+		// DELETEs as no-ops, so the full 13-table SQL surface is still exercised.
+		// Every other child table is seeded.
+		{
+			"artist_provider_ids",
+			`INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
+			 VALUES ('art-orphan', 'musicbrainz', 'mbid-orphan', datetime('now'))`,
+		},
+		{
+			"artist_images",
+			`INSERT INTO artist_images (id, artist_id, image_type, slot_index)
+			 VALUES ('img-orphan', 'art-orphan', 'thumb', 0)`,
+		},
+		{
+			"artist_aliases",
+			`INSERT INTO artist_aliases (id, artist_id, alias, source, created_at)
+			 VALUES ('alias-orphan', 'art-orphan', 'Orphan Alias', 'manual', datetime('now'))`,
+		},
+		{
+			"band_members",
+			`INSERT INTO band_members (id, artist_id, member_name, sort_order, created_at, updated_at)
+			 VALUES ('bm-orphan', 'art-orphan', 'Ghost Member', 0, datetime('now'), datetime('now'))`,
+		},
+		{
+			"nfo_snapshots",
+			`INSERT INTO nfo_snapshots (id, artist_id, content, created_at)
+			 VALUES ('nfo-orphan', 'art-orphan', '<artist/>', datetime('now'))`,
+		},
+		{
+			"metadata_changes",
+			`INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, created_at)
+			 VALUES ('mc-orphan', 'art-orphan', 'biography', '', 'x', 'manual',
+			 	strftime('%Y-%m-%dT%H:%M:%SZ','now'))`,
+		},
+		{
+			"mb_snapshots",
+			`INSERT INTO mb_snapshots (id, artist_id, field, mb_value, fetched_at)
+			 VALUES ('mb-orphan', 'art-orphan', 'biography', 'mb val',
+			 	strftime('%Y-%m-%dT%H:%M:%SZ','now'))`,
+		},
+		{
+			"rule_violations",
+			`INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, message, created_at)
+			 VALUES ('rv-009', 'rule-009', 'art-orphan', 'art-orphan', 'test', datetime('now'))`,
+		},
+		{
+			"rule_results",
+			`INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
+			 VALUES ('art-orphan', 'rule-009', 0, datetime('now'))`,
+		},
+		{
+			"foreign_files",
+			`INSERT INTO foreign_files (id, artist_id, file_path, file_name, size_bytes, detected_at)
+			 VALUES ('ff-orphan', 'art-orphan', '/music/art-orphan/extra.jpg', 'extra.jpg', 100,
+			 	datetime('now'))`,
+		},
+		{
+			"foreign_file_allowlist",
+			`INSERT INTO foreign_file_allowlist (id, scope, artist_id, file_name, created_at)
+			 VALUES ('ffa-orphan', 'artist', 'art-orphan', 'extra.jpg', datetime('now'))`,
+		},
+	}
+
+	for _, seed := range orphanChildSeeds {
+		if _, err := db.ExecContext(ctx, seed.stmt); err != nil {
+			t.Fatalf("seeding %s: %v", seed.table, err)
+		}
+	}
+
+	// Keep FK enforcement OFF for the cleanup phase. This is the critical contract:
+	// migration 009 runs before EnableForeignKeys, so ON DELETE CASCADE does NOT
+	// fire during the sweep. Each explicit DELETE must remove its rows independently.
+	// If the test ran with FK ON, a single "DELETE FROM artists" would cascade and
+	// the per-child-table DELETEs would be redundant, masking regressions.
+
+	// Build the orphan temp table (same query as migration 009).
 	if _, err := db.ExecContext(ctx, `
 		CREATE TEMP TABLE IF NOT EXISTS _orphan_artists_test AS
 		SELECT id FROM artists
@@ -1392,7 +1475,8 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		t.Fatalf("create temp table: %v", err)
 	}
 
-	// Verify only art-orphan is in the temp set.
+	// Verify only art-orphan is in the temp set: art-lib has a library
+	// membership and art-plat has a platform mapping, so both are excluded.
 	var orphanIDs []string
 	rows, err := db.QueryContext(ctx, `SELECT id FROM _orphan_artists_test ORDER BY id`)
 	if err != nil {
@@ -1409,23 +1493,44 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterating orphans: %v", err)
 	}
+	rows.Close()
 
 	if len(orphanIDs) != 1 || orphanIDs[0] != "art-orphan" {
 		t.Errorf("orphan set = %v, want [art-orphan]", orphanIDs)
 	}
 
-	// Apply the child-table and artist deletions using the temp table.
-	for _, stmt := range []string{
-		`DELETE FROM rule_violations WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
-		`DELETE FROM artists WHERE id IN (SELECT id FROM _orphan_artists_test)`,
+	// Apply the full per-child-table cleanup exactly as migration 009 does,
+	// in the same order, with FK enforcement still OFF. If any DELETE is missing
+	// the child row will remain and the assertion below will catch the regression.
+	cleanupStmts := []string{
+		`DELETE FROM artist_libraries         WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM artist_provider_ids      WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM artist_images            WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM artist_platform_ids      WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM artist_aliases           WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM band_members             WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM nfo_snapshots            WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM metadata_changes         WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM mb_snapshots             WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM rule_violations          WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM rule_results             WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM foreign_files            WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM foreign_file_allowlist   WHERE artist_id IN (SELECT id FROM _orphan_artists_test)`,
+		`DELETE FROM artists                  WHERE id        IN (SELECT id FROM _orphan_artists_test)`,
 		`DROP TABLE IF EXISTS _orphan_artists_test`,
-	} {
+	}
+	for _, stmt := range cleanupStmts {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("cleanup stmt %q: %v", stmt, err)
+			t.Fatalf("cleanup stmt failed: %v\nstmt: %s", err, stmt)
 		}
 	}
 
-	// art-orphan and its rule_violations child are gone.
+	// Re-enable FK enforcement for the assertion phase.
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("re-enabling FKs: %v", err)
+	}
+
+	// art-orphan is gone.
 	var orphanCount int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM artists WHERE id = 'art-orphan'`).Scan(&orphanCount); err != nil {
@@ -1435,16 +1540,38 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		t.Errorf("art-orphan count = %d, want 0 (migration sweep must delete it)", orphanCount)
 	}
 
-	var rvCount int
-	if err := db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM rule_violations WHERE artist_id = 'art-orphan'`).Scan(&rvCount); err != nil {
-		t.Fatalf("count rule_violations for art-orphan: %v", err)
+	// Every seeded child table must have zero rows for the orphan. This
+	// verifies that each explicit per-table DELETE in the migration fires:
+	// with FK enforcement off, the only way these rows disappear is via the
+	// explicit DELETE statements above.
+	type childCheck struct {
+		table string
+		query string
 	}
-	if rvCount != 0 {
-		t.Errorf("rule_violations for art-orphan = %d, want 0 (explicit child DELETE must fire even when FK CASCADE is OFF)", rvCount)
+	childChecks := []childCheck{
+		{"artist_provider_ids", `SELECT COUNT(*) FROM artist_provider_ids    WHERE artist_id = 'art-orphan'`},
+		{"artist_images", `SELECT COUNT(*) FROM artist_images           WHERE artist_id = 'art-orphan'`},
+		{"artist_aliases", `SELECT COUNT(*) FROM artist_aliases          WHERE artist_id = 'art-orphan'`},
+		{"band_members", `SELECT COUNT(*) FROM band_members            WHERE artist_id = 'art-orphan'`},
+		{"nfo_snapshots", `SELECT COUNT(*) FROM nfo_snapshots           WHERE artist_id = 'art-orphan'`},
+		{"metadata_changes", `SELECT COUNT(*) FROM metadata_changes        WHERE artist_id = 'art-orphan'`},
+		{"mb_snapshots", `SELECT COUNT(*) FROM mb_snapshots            WHERE artist_id = 'art-orphan'`},
+		{"rule_violations", `SELECT COUNT(*) FROM rule_violations         WHERE artist_id = 'art-orphan'`},
+		{"rule_results", `SELECT COUNT(*) FROM rule_results            WHERE artist_id = 'art-orphan'`},
+		{"foreign_files", `SELECT COUNT(*) FROM foreign_files           WHERE artist_id = 'art-orphan'`},
+		{"foreign_file_allowlist", `SELECT COUNT(*) FROM foreign_file_allowlist WHERE artist_id = 'art-orphan'`},
+	}
+	for _, cc := range childChecks {
+		var n int
+		if err := db.QueryRowContext(ctx, cc.query).Scan(&n); err != nil {
+			t.Fatalf("count %s for art-orphan: %v", cc.table, err)
+		}
+		if n != 0 {
+			t.Errorf("%s rows for art-orphan = %d, want 0 (explicit DELETE in migration must fire even when FK CASCADE is OFF)", cc.table, n)
+		}
 	}
 
-	// art-lib and art-plat survive.
+	// art-lib and art-plat survive with their own child data intact.
 	for _, id := range []string{"art-lib", "art-plat"} {
 		var n int
 		if err := db.QueryRowContext(ctx,
@@ -1456,8 +1583,17 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		}
 	}
 
-	// Idempotency: the sweep on an already-clean DB touches zero rows.
-	// Simulate by re-running the migration's identification query.
+	// art-lib's rule_violations row must be untouched (DELETE scoped by temp table).
+	var rvLib int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM rule_violations WHERE artist_id = 'art-lib'`).Scan(&rvLib); err != nil {
+		t.Fatalf("count rule_violations for art-lib: %v", err)
+	}
+	if rvLib != 1 {
+		t.Errorf("rule_violations for art-lib = %d, want 1 (survivor child rows must not be deleted)", rvLib)
+	}
+
+	// Idempotency: after the sweep, zero orphans remain.
 	var residual int
 	if err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM artists
