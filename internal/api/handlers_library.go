@@ -291,8 +291,10 @@ func setClassicalDeprecationHeaders(w http.ResponseWriter) {
 }
 
 // handleDeleteLibrary deletes a library. When ?deleteArtists=true is set, all
-// artists belonging to the library are also deleted; otherwise they are
-// dereferenced (library_id set to NULL).
+// artists belonging to the library are also deleted (including connection-orphan
+// artists and stale platform mappings). Without the flag, Service.Delete is
+// used: artists with another library home or a platform mapping are preserved;
+// true zero-home orphans (no memberships, no platform mappings) are pruned.
 // DELETE /api/v1/libraries/{id}
 func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")

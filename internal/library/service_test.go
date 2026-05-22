@@ -243,7 +243,7 @@ func TestDelete_WithArtists(t *testing.T) {
 		t.Fatalf("inserting artist_libraries: %v", err)
 	}
 
-	// Delete should succeed; CASCADE removes the membership row.
+	// Delete should succeed.
 	if err := svc.Delete(ctx, lib.ID); err != nil {
 		t.Fatalf("Delete returned error: %v", err)
 	}
@@ -253,20 +253,28 @@ func TestDelete_WithArtists(t *testing.T) {
 		t.Error("library should not exist after delete")
 	}
 
-	// Artist should still exist; membership row removed by FK CASCADE.
-	var name string
-	err = db.QueryRowContext(ctx,
-		`SELECT name FROM artists WHERE id = 'art-1'`).Scan(&name)
-	if err != nil {
-		t.Fatalf("querying artist: %v", err)
+	// Issue #1613: art-1 had only one membership (in the deleted library) and
+	// no platform mappings, so pruneStrictOrphans must have removed it. The old
+	// behavior was to preserve artists unconditionally; the new behavior deletes
+	// true zero-home orphans.
+	var artistCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-1'`).Scan(&artistCount); err != nil {
+		t.Fatalf("counting artist: %v", err)
 	}
+	if artistCount != 0 {
+		t.Errorf("zero-home orphan artist count = %d, want 0 (pruneStrictOrphans must delete it)", artistCount)
+	}
+
+	// Membership row is gone (either via FK CASCADE on the library delete,
+	// or via the prune before the artist delete).
 	var memberCount int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-1'`).Scan(&memberCount); err != nil {
 		t.Fatalf("counting memberships: %v", err)
 	}
 	if memberCount != 0 {
-		t.Errorf("memberships after library delete = %d, want 0 (cascade)", memberCount)
+		t.Errorf("memberships after library delete = %d, want 0", memberCount)
 	}
 }
 
@@ -1639,5 +1647,361 @@ func TestListByConnectionID_AndCountArtists(t *testing.T) {
 	}
 	if zeroCount != 0 {
 		t.Errorf("zeroCount = %d, want 0", zeroCount)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Issue #1613 -- pruneStrictOrphans / orphan GC in Service.Delete
+// -----------------------------------------------------------------------------
+
+// TestDelete_PrunesZeroHomeOrphan verifies the primary acceptance criterion:
+// when a library removal leaves an artist with zero artist_libraries memberships
+// AND zero artist_platform_ids rows, Service.Delete must delete that artist row
+// (and let its child rows cascade).
+func TestDelete_PrunesZeroHomeOrphan(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Music", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create library: %v", err)
+	}
+
+	// Artist belongs only to this library; no platform mappings.
+	seedArtist(t, db, "art-orphan", "Orphan", lib.ID)
+
+	// Sanity: artist is present before the delete.
+	var pre int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-orphan'`).Scan(&pre); err != nil {
+		t.Fatalf("pre-count: %v", err)
+	}
+	if pre != 1 {
+		t.Fatalf("pre-count = %d, want 1", pre)
+	}
+
+	if err := svc.Delete(ctx, lib.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Library is gone.
+	if _, err := svc.GetByID(ctx, lib.ID); err == nil {
+		t.Error("library should not exist after delete")
+	}
+
+	// Orphan artist must be gone.
+	var post int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-orphan'`).Scan(&post); err != nil {
+		t.Fatalf("post-count: %v", err)
+	}
+	if post != 0 {
+		t.Errorf("orphan artist count = %d, want 0 (pruneStrictOrphans must delete it)", post)
+	}
+
+	// Membership row is also gone (cascade or prune).
+	var mem int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-orphan'`).Scan(&mem); err != nil {
+		t.Fatalf("membership count: %v", err)
+	}
+	if mem != 0 {
+		t.Errorf("membership count = %d, want 0", mem)
+	}
+}
+
+// TestDelete_PreservesArtistWithSiblingLibrary verifies that an artist with a
+// membership in a second library is NOT pruned when the first library is deleted.
+func TestDelete_PreservesArtistWithSiblingLibrary(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	base := t.TempDir()
+	// Two distinct directories for the two libraries.
+	dir1 := filepath.Join(base, "lib1")
+	dir2 := filepath.Join(base, "lib2")
+	for _, d := range []string{dir1, dir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	lib1 := &Library{Name: "Lib One", Path: dir1, Type: TypeRegular}
+	lib2 := &Library{Name: "Lib Two", Path: dir2, Type: TypeRegular}
+	if err := svc.Create(ctx, lib1); err != nil {
+		t.Fatalf("Create lib1: %v", err)
+	}
+	if err := svc.Create(ctx, lib2); err != nil {
+		t.Fatalf("Create lib2: %v", err)
+	}
+
+	// Artist belongs to both libraries.
+	seedArtist(t, db, "art-multi", "Multi", lib1.ID)
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		 VALUES ('art-multi', ?, 'filesystem', datetime('now'))`,
+		lib2.ID); err != nil {
+		t.Fatalf("second membership: %v", err)
+	}
+
+	// Delete lib1: art-multi still has a membership in lib2 so it must survive.
+	if err := svc.Delete(ctx, lib1.ID); err != nil {
+		t.Fatalf("Delete lib1: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-multi'`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("artist count = %d, want 1 (sibling library membership must preserve the artist)", n)
+	}
+
+	// The lib2 membership must still be intact.
+	var lib2Mem int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-multi' AND library_id = ?`,
+		lib2.ID).Scan(&lib2Mem); err != nil {
+		t.Fatalf("lib2 membership count: %v", err)
+	}
+	if lib2Mem != 1 {
+		t.Errorf("lib2 membership = %d, want 1", lib2Mem)
+	}
+}
+
+// TestDelete_PreservesArtistWithPlatformMapping verifies that an artist with no
+// library memberships but a live artist_platform_ids row is NOT pruned. Service.Delete
+// is deliberately more conservative than DeleteWithArtists: a platform mapping is
+// a sufficient anchor to keep the artist.
+func TestDelete_PreservesArtistWithPlatformMapping(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	seedConnection(t, db, "conn-emby", "emby")
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Platform Test Lib", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create library: %v", err)
+	}
+
+	// Artist is in the library and has a platform mapping.
+	seedArtist(t, db, "art-mapped", "Mapped Artist", lib.ID)
+	seedPlatformID(t, db, "art-mapped", "conn-emby", "emby-art-mapped-1")
+
+	if err := svc.Delete(ctx, lib.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Artist survives because of the platform mapping.
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE id = 'art-mapped'`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("artist count = %d, want 1 (platform mapping must preserve the artist)", n)
+	}
+
+	// Platform mapping itself is still intact.
+	var pm int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = 'art-mapped'`).Scan(&pm); err != nil {
+		t.Fatalf("platform mapping count: %v", err)
+	}
+	if pm != 1 {
+		t.Errorf("platform mapping count = %d, want 1", pm)
+	}
+}
+
+// TestDelete_CancelledContext verifies that Service.Delete propagates a
+// BeginTx failure when the caller's context is already canceled. The
+// transactional rewrite introduced in issue #1613 changed Delete from a
+// single ExecContext call to a tx.BeginTx + work + tx.Commit sequence; this
+// test covers the BeginTx error-return branch.
+func TestDelete_CancelledContext(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+
+	// A pre-canceled context causes sql.DB.BeginTx to return immediately with
+	// context.Canceled before any SQL is executed.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.Delete(ctx, "irrelevant-id")
+	if err == nil {
+		t.Fatal("expected error when context is already canceled, got nil")
+	}
+}
+
+// TestDelete_PruneArtistDeleteFails exercises the error-propagation path in
+// pruneStrictOrphans when the DELETE FROM artists statement fails inside the
+// transaction. A BEFORE DELETE trigger on the artists table causes the DELETE
+// to raise a constraint error, which pruneStrictOrphans wraps and returns, and
+// which Delete returns without committing (the deferred Rollback fires).
+//
+// This is a SQL-level injection approach rather than a Go-interface mock: it
+// uses a standard SQLite trigger, not any test double or interface replacement.
+func TestDelete_PruneArtistDeleteFails(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Prune Error Lib", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create library: %v", err)
+	}
+
+	// Create a true zero-home orphan: one library membership, no platform mappings.
+	// After the library is deleted the candidate will have zero memberships and
+	// zero platform rows, so pruneStrictOrphans will try to DELETE the artist row.
+	seedArtist(t, db, "art-blocked", "Blocked Artist", lib.ID)
+
+	// Install a BEFORE DELETE trigger on artists that always raises ABORT.
+	// The trigger fires when pruneStrictOrphans tries to remove the orphan
+	// after the library row (and its cascade to artist_libraries) is gone.
+	// The library delete itself cascades to artist_libraries, not artists,
+	// so the trigger does not interfere with the library deletion step.
+	if _, err := db.ExecContext(ctx, `
+		CREATE TRIGGER block_artist_delete_test
+		BEFORE DELETE ON artists
+		BEGIN
+			SELECT RAISE(ABORT, 'artist delete blocked by test trigger');
+		END
+	`); err != nil {
+		t.Fatalf("creating delete-blocking trigger: %v", err)
+	}
+
+	err := svc.Delete(ctx, lib.ID)
+	if err == nil {
+		t.Fatal("expected error from pruneStrictOrphans when artist delete is blocked, got nil")
+	}
+
+	// The transaction was rolled back, so neither the library nor the
+	// artist_libraries membership was actually removed.
+	if _, err := svc.GetByID(ctx, lib.ID); err != nil {
+		t.Errorf("library should still exist after rollback: %v", err)
+	}
+
+	var memCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-blocked'`).Scan(&memCount); err != nil {
+		t.Fatalf("counting memberships after rollback: %v", err)
+	}
+	if memCount != 1 {
+		t.Errorf("membership count = %d, want 1 (rollback must have restored it)", memCount)
+	}
+}
+
+// TestDelete_MultipleOrphansAndPreserved verifies that pruneStrictOrphans
+// handles a library with more than one candidate artist in a single Delete call:
+// each candidate is evaluated independently and only true zero-home orphans
+// are removed. Artists with a surviving library membership or a platform mapping
+// are left untouched.
+func TestDelete_MultipleOrphansAndPreserved(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	if err := database.EnableForeignKeys(db); err != nil {
+		t.Fatalf("enabling foreign keys: %v", err)
+	}
+	svc := NewService(db)
+	ctx := context.Background()
+
+	base := t.TempDir()
+	targetDir := filepath.Join(base, "target")
+	siblingDir := filepath.Join(base, "sibling")
+	for _, d := range []string{targetDir, siblingDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	targetLib := &Library{Name: "Target", Path: targetDir, Type: TypeRegular}
+	siblingLib := &Library{Name: "Sibling", Path: siblingDir, Type: TypeRegular}
+	if err := svc.Create(ctx, targetLib); err != nil {
+		t.Fatalf("Create target: %v", err)
+	}
+	if err := svc.Create(ctx, siblingLib); err != nil {
+		t.Fatalf("Create sibling: %v", err)
+	}
+
+	seedConnection(t, db, "conn-test", "emby")
+
+	// art-orphan1 and art-orphan2: only in targetLib, no platform mappings.
+	// Both must be deleted by pruneStrictOrphans.
+	seedArtist(t, db, "art-orphan1", "Orphan One", targetLib.ID)
+	seedArtist(t, db, "art-orphan2", "Orphan Two", targetLib.ID)
+
+	// art-sibling: in targetLib AND siblingLib. Must survive because siblingLib
+	// membership survives the cascade.
+	seedArtist(t, db, "art-sibling", "Sibling Artist", targetLib.ID)
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO artist_libraries (artist_id, library_id, source, added_at)
+		 VALUES ('art-sibling', ?, 'filesystem', datetime('now'))`,
+		siblingLib.ID); err != nil {
+		t.Fatalf("second membership for art-sibling: %v", err)
+	}
+
+	// art-platform: in targetLib only but has a platform mapping. Must survive.
+	seedArtist(t, db, "art-platform", "Platform Artist", targetLib.ID)
+	seedPlatformID(t, db, "art-platform", "conn-test", "ext-platform-001")
+
+	if err := svc.Delete(ctx, targetLib.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Library is gone.
+	if _, err := svc.GetByID(ctx, targetLib.ID); err == nil {
+		t.Error("target library should not exist after delete")
+	}
+
+	check := func(id string, wantPresent bool) {
+		t.Helper()
+		var n int
+		if err := db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM artists WHERE id = ?`, id).Scan(&n); err != nil {
+			t.Fatalf("count artist %s: %v", id, err)
+		}
+		got := n > 0
+		if got != wantPresent {
+			t.Errorf("artist %s present = %v, want %v", id, got, wantPresent)
+		}
+	}
+	check("art-orphan1", false)
+	check("art-orphan2", false)
+	check("art-sibling", true)
+	check("art-platform", true)
+
+	// Sibling's surviving library membership is intact.
+	var sibMem int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = 'art-sibling' AND library_id = ?`,
+		siblingLib.ID).Scan(&sibMem); err != nil {
+		t.Fatalf("sibling membership count: %v", err)
+	}
+	if sibMem != 1 {
+		t.Errorf("sibling membership = %d, want 1", sibMem)
 	}
 }

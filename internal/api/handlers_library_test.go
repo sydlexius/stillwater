@@ -410,7 +410,12 @@ func TestHandleDeleteLibrary_Empty(t *testing.T) {
 	}
 }
 
-func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
+// TestHandleDeleteLibrary_PrunesZeroHomeOrphan covers issue #1613: when a
+// library is deleted without ?deleteArtists=true, an artist whose only
+// membership was in that library (zero remaining memberships, zero platform
+// mappings) must be garbage-collected. The old behavior was to preserve all
+// artists unconditionally; the new behavior prunes true zero-home orphans.
+func TestHandleDeleteLibrary_PrunesZeroHomeOrphan(t *testing.T) {
 	t.Parallel()
 	r, libSvc, artistSvc := testRouterWithLibrary(t)
 
@@ -435,13 +440,65 @@ func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// Verify the artist was dereferenced, not deleted.
-	updated, err := artistSvc.GetByID(context.Background(), a.ID)
-	if err != nil {
-		t.Fatalf("artist should still exist: %v", err)
+	// The artist had no other home (zero memberships, zero platform mappings);
+	// it must be pruned by Service.Delete. This is the fix for #1613.
+	_, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err == nil {
+		t.Error("zero-home orphan artist must be deleted when its only library is removed (issue #1613)")
 	}
-	if updated.LibraryID != "" {
-		t.Errorf("artist library_id = %q, want empty (dereferenced)", updated.LibraryID)
+}
+
+// TestHandleDeleteLibrary_WithArtists covers the sibling-library case: when a
+// library is deleted without ?deleteArtists=true, an artist with a remaining
+// membership in another library must survive.
+func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
+	t.Parallel()
+	r, libSvc, artistSvc := testRouterWithLibrary(t)
+	ctx := context.Background()
+
+	base := t.TempDir()
+	dir1 := filepath.Join(base, "lib1")
+	dir2 := filepath.Join(base, "lib2")
+	for _, d := range []string{dir1, dir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	lib1 := &library.Library{Name: "Music One", Path: dir1, Type: "regular"}
+	lib2 := &library.Library{Name: "Music Two", Path: dir2, Type: "regular"}
+	if err := libSvc.Create(ctx, lib1); err != nil {
+		t.Fatalf("creating lib1: %v", err)
+	}
+	if err := libSvc.Create(ctx, lib2); err != nil {
+		t.Fatalf("creating lib2: %v", err)
+	}
+
+	// Create the artist in lib1; it will gain a lib1 membership.
+	a := &artist.Artist{Name: "Multi Home Artist", Path: filepath.Join(dir1, "multi"), LibraryID: lib1.ID}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	// Add a second membership in lib2 directly.
+	if err := artistSvc.AddLibraryMembership(ctx, a.ID, lib2.ID, "filesystem"); err != nil {
+		t.Fatalf("adding lib2 membership: %v", err)
+	}
+
+	// Delete lib1 without ?deleteArtists=true; the artist still has lib2.
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/libraries/"+lib1.ID, nil)
+	req.SetPathValue("id", lib1.ID)
+	w := httptest.NewRecorder()
+
+	r.handleDeleteLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Artist survives because lib2 membership is still present.
+	_, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Errorf("artist with sibling-library membership must survive delete: %v", err)
 	}
 }
 
