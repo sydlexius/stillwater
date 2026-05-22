@@ -108,3 +108,16 @@ When watch mode is on, Stillwater triggers a scan automatically:
 - **A new subdirectory appears** in the library root -> the watcher debounces briefly (so a quick rename doesn't churn) and triggers a scan.
 - **A subdirectory disappears** -> after the debounce, the corresponding artist is removed.
 - **An artist directory's contents change** -> the watcher does *not* re-scan the artist's metadata; that requires a refresh. The watcher is structure-aware, not content-aware.
+
+## Possible duplicate artists
+
+During a filesystem scan, Stillwater compares each newly discovered artist's name against names already in the catalog. Names are normalized before comparison, so variations that differ only by punctuation style (curly vs. straight apostrophe), word separators (hyphen vs. underscore), or leading articles ("The Cure" vs. "Cure, The") are treated as the same name.
+
+When a collision is detected, the scan log records a warning and the scan result count includes the number of suspected duplicates found.
+
+To see which artist records were flagged, open **Settings > Possible duplicate artists** (direct URL: `/settings/artist-duplicates`). The page groups artists that appear to be the same entity. Each group shows the reason the match was made:
+
+- **MBID match** -- every member shares the same MusicBrainz artist ID. This is the higher-confidence signal.
+- **Name key match** -- the members' names normalize to the same value. Review these manually; an exact MusicBrainz ID match is not present.
+
+The page is read-only. Resolving duplicates requires choosing which artist record to keep and moving or removing the others on disk; a dedicated merge workflow is tracked separately.

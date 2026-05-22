@@ -459,10 +459,14 @@ func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID
 	// review.  The check runs after Create so the row is safely persisted
 	// even when a duplicate is detected.
 	if preloadedKeys != nil {
-		if k := artist.NormalizeIdentityKey(name); k != "" {
+		// Use the persisted a.Name rather than the raw directory-name variable:
+		// populateFromNFO may have updated a.Name from the NFO <title> element,
+		// so normalizing name here could miss a collision against preloadedKeys
+		// that was built from previously-persisted artist names.
+		if k := artist.NormalizeIdentityKey(a.Name); k != "" {
 			if existingName, ok := preloadedKeys[k]; ok {
 				s.logger.Warn("suspected duplicate artist detected during scan",
-					"new_name", name,
+					"new_name", a.Name,
 					"new_path", dirPath,
 					"existing_name", existingName,
 					"key", k,

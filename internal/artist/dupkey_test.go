@@ -336,8 +336,6 @@ func TestNormalizeIdentityKey_ACDC(t *testing.T) {
 	// "ac dc".  They are NOT equal by name key -- that is correct behavior.
 	// The MBID backstop handles the acdc/ac dc split.
 	if nospace == underscore {
-		t.Logf("note: ACDC and AC_DC share a key=%q (separator-fold makes them equal)", nospace)
-	} else {
-		t.Logf("ACDC key=%q differs from AC_DC key=%q (expected; MBID is the backstop)", nospace, underscore)
+		t.Errorf("ACDC key=%q unexpectedly equals AC_DC key=%q; want inequality so MBID remains the backstop", nospace, underscore)
 	}
 }

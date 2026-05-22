@@ -74,6 +74,9 @@ type artistRow struct {
 // db is the raw *sql.DB handle; use the artist repo's DB() accessor to obtain
 // it from the service layer without coupling detection to the Service struct.
 func DetectDuplicates(ctx context.Context, db *sql.DB) ([]NearDuplicateGroup, error) {
+	if db == nil {
+		return nil, fmt.Errorf("detecting duplicates: nil db")
+	}
 	rows, err := queryDuplicateCandidates(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("detecting duplicates: %w", err)
