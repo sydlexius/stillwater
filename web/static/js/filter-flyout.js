@@ -82,32 +82,139 @@
     }
   }
 
+  // isLibraryItem reports whether a FilterItem belongs to the per-library
+  // filter section (issue #1217). Library pills have whitelist-aware cycling
+  // and out-of-scope dimming; all other sections keep plain tri-state.
+  function isLibraryItem(el) {
+    return el.getAttribute('data-filter-section') === 'library';
+  }
+
+  // libraryWhitelistActive reports whether any library pill in the panel is
+  // currently set to include (whitelist mode, issue #1217). In whitelist mode
+  // every library pill cycles bi-state and non-include pills are out of scope.
+  // ignoreEl, when given, is skipped: cycleItem passes the pill being clicked
+  // so the pill's own current state does not decide its next transition (which
+  // would otherwise make exclude unreachable for the first/only library pill).
+  function libraryWhitelistActive(flyoutID, ignoreEl) {
+    var panel = getPanel(flyoutID);
+    if (!panel) return false;
+    var libItems = panel.querySelectorAll('[data-filter-section="library"]');
+    var active = false;
+    Array.prototype.forEach.call(libItems, function (item) {
+      if (ignoreEl && item === ignoreEl) return;
+      if (item.getAttribute('data-filter-state') === 'include') active = true;
+    });
+    return active;
+  }
+
   // cycleItem advances a FilterItem through neutral -> include -> exclude -> neutral.
   // Updates aria-label, icon text, and data-filter-state on the element.
+  //
+  // Library pills (issue #1217) follow a whitelist-aware cycle: while any
+  // OTHER library pill is set to include (whitelist mode), this pill cycles
+  // bi-state only -- neutral <-> include -- because an exclude is ignored by
+  // the whitelist SQL. When no other library is included the pill keeps the
+  // full tri-state cycle, so exclude stays reachable in exclude-only mode.
   function cycleItem(el) {
     var state = el.getAttribute('data-filter-state') || 'neutral';
     var label = el.querySelector('.sw-filter-item-label');
     var labelText = label ? label.textContent.trim() : '';
     var icon = el.querySelector('.sw-filter-item-icon');
 
+    var library = isLibraryItem(el);
+    var flyoutID = el.getAttribute('data-filter-flyout');
+
     var next;
-    switch (state) {
-      case 'neutral':  next = 'include'; break;
-      case 'include':  next = 'exclude'; break;
-      default:         next = 'neutral'; break;
+    if (library && libraryWhitelistActive(flyoutID, el)) {
+      // Whitelist mode: another library pill is already included, so this pill
+      // cycles bi-state (neutral <-> include). Exclude is unreachable while a
+      // whitelist is active -- the whitelist SQL ignores explicit excludes, and
+      // a pill must never be both "exclude" and "out of scope" (issue #1217).
+      // libraryWhitelistActive ignores el so the pill being clicked can still
+      // reach exclude when it is the only included library (exclude-only mode).
+      next = (state === 'include') ? 'neutral' : 'include';
+    } else {
+      switch (state) {
+        case 'neutral':  next = 'include'; break;
+        case 'include':  next = 'exclude'; break;
+        default:         next = 'neutral'; break;
+      }
     }
 
     el.setAttribute('data-filter-state', next);
-    el.setAttribute('aria-label', ariaLabel(next, labelText));
     if (icon) {
       icon.innerHTML = iconHTML(next);
     }
 
+    // For library pills, recompute the whole section's out-of-scope state
+    // (this pill plus all siblings) and refresh their aria-labels. For other
+    // pills just set the aria-label for the new state.
+    if (library && flyoutID) {
+      refreshLibraryScope(flyoutID);
+    } else {
+      el.setAttribute('aria-label', ariaLabel(next, labelText));
+    }
+
     // Update the active count badge in the footer.
-    var flyoutID = el.getAttribute('data-filter-flyout');
     if (flyoutID) {
       refreshActiveCount(flyoutID);
     }
+  }
+
+  // refreshLibraryScope recomputes whitelist mode for the library filter
+  // section and applies out-of-scope dimming + aria-labels to every library
+  // pill in the panel (issue #1217). Whitelist mode is active when at least
+  // one library pill is set to include; in that mode every non-include
+  // library pill is out of scope.
+  function refreshLibraryScope(flyoutID) {
+    var panel = getPanel(flyoutID);
+    if (!panel) return;
+
+    var libItems = panel.querySelectorAll('[data-filter-section="library"]');
+    if (libItems.length === 0) return;
+
+    // Whitelist mode: any library pill currently set to include.
+    var whitelist = false;
+    Array.prototype.forEach.call(libItems, function (item) {
+      if (item.getAttribute('data-filter-state') === 'include') whitelist = true;
+    });
+
+    Array.prototype.forEach.call(libItems, function (item) {
+      var state = item.getAttribute('data-filter-state') || 'neutral';
+      // Exclude is meaningless in whitelist mode (the whitelist SQL ignores
+      // explicit excludes). Normalize a stale exclude to neutral so a pill is
+      // never both "exclude" and "out of scope" (issue #1217).
+      if (whitelist && state === 'exclude') {
+        state = 'neutral';
+        item.setAttribute('data-filter-state', 'neutral');
+        var staleIcon = item.querySelector('.sw-filter-item-icon');
+        if (staleIcon) staleIcon.innerHTML = iconHTML('neutral');
+      }
+      var label = item.querySelector('.sw-filter-item-label');
+      var labelText = label ? label.textContent.trim() : '';
+      var outOfScope = whitelist && state !== 'include';
+
+      if (outOfScope) {
+        item.setAttribute('data-filter-out-of-scope', 'true');
+        // Prefer the server-rendered localized out-of-scope label; fall back to
+        // the English builtin only when the template did not emit one.
+        var localizedOOS = item.getAttribute('data-out-of-scope-aria');
+        item.setAttribute('aria-label',
+          localizedOOS ? localizedOOS : libraryOutOfScopeAriaLabel(labelText));
+      } else {
+        item.removeAttribute('data-filter-out-of-scope');
+        item.setAttribute('aria-label', ariaLabel(state, labelText));
+      }
+    });
+  }
+
+  // libraryOutOfScopeAriaLabel returns a fallback screen-reader label for a
+  // library pill that is out of scope (dimmed). refreshLibraryScope prefers the
+  // localized data-out-of-scope-aria attribute emitted by the template; this
+  // English wording (mirroring the i18n string artists.filter.library_out_of_scope)
+  // is used only when that attribute is absent.
+  function libraryOutOfScopeAriaLabel(label) {
+    return label + ' (out of scope; click to add to the included libraries)';
   }
 
   // ariaLabel returns the accessible label string for a given state + label.
@@ -272,6 +379,9 @@
         item.setAttribute('data-filter-state', 'neutral');
         item.setAttribute('aria-label', ariaLabel('neutral', labelText));
         if (icon) icon.innerHTML = '';
+        // Clearing all filters exits whitelist mode, so no library pill is
+        // out of scope any more (issue #1217).
+        item.removeAttribute('data-filter-out-of-scope');
       }
     );
 
@@ -326,6 +436,11 @@
         if (icon) icon.innerHTML = iconHTML(state);
       }
     );
+
+    // Apply whitelist out-of-scope dimming to library pills based on the
+    // states just read from the URL (issue #1217). This overrides the plain
+    // aria-label set above for any out-of-scope library pill.
+    refreshLibraryScope(id);
 
     refreshActiveCount(id);
   }

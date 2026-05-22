@@ -254,6 +254,7 @@
   "artists.filter.in_emby": "In Emby",
   "artists.filter.in_jellyfin": "In Jellyfin",
   "artists.filter.library": "Library",
+  "artists.filter.library_out_of_scope": "%s (out of scope; click to add to the included libraries)",
   "artists.filter.locked": "Locked",
   "artists.filter.missing_images": "Missing Images",
   "artists.filter.missing_mbid": "Missing MBID",

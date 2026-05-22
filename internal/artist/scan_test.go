@@ -302,7 +302,11 @@ func TestBuildWhereClause_TypeFilter_IncludeExclude(t *testing.T) {
 	}
 }
 
-// TestBuildWhereClause_LibraryFilter_Include verifies per-library EXISTS clause.
+// TestBuildWhereClause_LibraryFilter_Include verifies the whitelist-mode
+// clause emitted when at least one library is set to Include (issue #1217).
+// Whitelist mode emits BOTH an EXISTS (membership in an included library) and
+// a NOT EXISTS (no membership outside the included set), so the included IDs
+// are bound twice: once for the IN list, once for the NOT IN list.
 func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 	t.Parallel()
 	clause, args := buildWhereClause(ListParams{Filters: map[string]string{
@@ -312,8 +316,24 @@ func TestBuildWhereClause_LibraryFilter_Include(t *testing.T) {
 	if !strings.Contains(clause, "EXISTS") || !strings.Contains(clause, "artist_libraries") {
 		t.Errorf("expected EXISTS artist_libraries clause, got %q", clause)
 	}
-	if len(args) != 2 {
-		t.Errorf("expected 2 library args, got %d: %v", len(args), args)
+	if !strings.Contains(clause, "NOT EXISTS") || !strings.Contains(clause, "NOT IN") {
+		t.Errorf("expected whitelist NOT EXISTS ... NOT IN clause, got %q", clause)
+	}
+	// Two included libraries, each bound once for the IN list and once for
+	// the NOT IN list: 4 args total.
+	if len(args) != 4 {
+		t.Errorf("expected 4 library args (2 IDs bound twice), got %d: %v", len(args), args)
+	}
+	gotCounts := map[string]int{}
+	for _, a := range args {
+		s, ok := a.(string)
+		if !ok {
+			t.Fatalf("expected string arg, got %T (%v)", a, a)
+		}
+		gotCounts[s]++
+	}
+	if gotCounts["lib-a"] != 2 || gotCounts["lib-b"] != 2 || len(gotCounts) != 2 {
+		t.Errorf("expected lib-a/lib-b each bound twice, got %v", gotCounts)
 	}
 }
 

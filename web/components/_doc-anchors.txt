@@ -241,6 +241,7 @@ how-to/fetch-discography#what-stillwater-keeps-and-what-it-adds
 how-to/filter-artists#active-filters-and-sharing-a-view
 how-to/filter-artists#filter-the-artists-list
 how-to/filter-artists#open-the-flyout
+how-to/filter-artists#the-library-filter
 how-to/filter-artists#tri-state-filters
 how-to/filter-artists#what-you-can-filter-on
 how-to/http-redirect#enabling-the-redirect-listener-http-redirect-enable

@@ -127,6 +127,53 @@ templ FilterItem(flyoutID, key, value, label, state string) {
 	</button>
 }
 
+// FilterItemLibrary renders a FilterItem for the per-library filter section
+// (issue #1217). It behaves exactly like FilterItem, with two additions that
+// support the library-whitelist UX:
+//
+//   - When the library filter is in whitelist mode (at least one library set
+//     to Include), every library pill NOT set to Include is "out of scope":
+//     rendered dimmed via the data-filter-out-of-scope attribute. The pill
+//     stays clickable; clicking it adds the library to the included set.
+//   - Out-of-scope dimming is visual-only, so an out-of-scope pill uses a
+//     dedicated aria-label (outOfScopeLabel) so screen-reader users learn the
+//     pill is outside the active whitelist.
+//
+// data-filter-section="library" marks the pill so the JS cycle logic can
+// apply whitelist-aware behavior (bi-state cycling, sibling dimming) without
+// re-parsing the key prefix.
+//
+// Parameters mirror FilterItem, plus:
+//   - outOfScope:      true when the pill should render dimmed
+//   - outOfScopeLabel: localized out-of-scope aria-label. Emitted as the
+//     data-out-of-scope-aria attribute on every library pill so the flyout JS
+//     can restore the localized label when it toggles scope dynamically, and
+//     used directly as the aria-label when outOfScope is true.
+templ FilterItemLibrary(flyoutID, key, value, label, state string, outOfScope bool, outOfScopeLabel string) {
+	<button
+		type="button"
+		class="sw-filter-item"
+		data-filter-flyout={ flyoutID }
+		data-filter-key={ key }
+		data-filter-value={ value }
+		data-filter-state={ state }
+		data-filter-section="library"
+		data-out-of-scope-aria={ outOfScopeLabel }
+		if outOfScope {
+			data-filter-out-of-scope="true"
+			aria-label={ outOfScopeLabel }
+		} else {
+			aria-label={ filterItemAriaLabel(state, label) }
+		}
+		onclick="swFilterFlyout.cycleItem(this)"
+	>
+		<span class="sw-filter-item-icon" aria-hidden="true">
+			@filterItemIconSVG(state)
+		</span>
+		<span class="sw-filter-item-label">{ label }</span>
+	</button>
+}
+
 // filterItemAriaLabel returns the accessible label string for the current state.
 func filterItemAriaLabel(state, label string) string {
 	switch state {
