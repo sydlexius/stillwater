@@ -183,6 +183,47 @@ func TestHandleArtistMatchingIDs_CappedResult(t *testing.T) {
 	}
 }
 
+// TestHandleArtistMatchingIDs_IgnoresPagination locks the documented invariant
+// that page, page_size, and sort query params do not affect the returned
+// matching IDs: the endpoint always returns the full (capped) match set in a
+// stable order. A request carrying pagination/sort params must return exactly
+// the same IDs as one without them.
+func TestHandleArtistMatchingIDs_IgnoresPagination(t *testing.T) {
+	t.Parallel()
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	for _, name := range []string{"Radiohead", "Coldplay", "Portishead", "Blur"} {
+		a := &artist.Artist{Name: name, SortName: name}
+		if err := artistSvc.Create(ctx, a); err != nil {
+			t.Fatalf("creating artist %q: %v", name, err)
+		}
+	}
+
+	matchingIDs := func(query string) []string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/matching-ids"+query, nil)
+		w := httptest.NewRecorder()
+		r.handleArtistMatchingIDs(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 for query %q", w.Code, query)
+		}
+		var resp matchingIDsResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response for query %q: %v", query, err)
+		}
+		return resp.IDs
+	}
+
+	baseline := matchingIDs("")
+	// page/page_size/sort are not honored by this endpoint; passing them must
+	// not slice, reorder, or otherwise change the result.
+	withParams := matchingIDs("?page=2&page_size=1&sort=updated_at&order=desc")
+	if !slices.Equal(baseline, withParams) {
+		t.Errorf("ids changed when page/page_size/sort were supplied: baseline=%v, with-params=%v", baseline, withParams)
+	}
+}
+
 // TestHandleArtistMatchingIDs_ServiceError verifies that a 500 is returned
 // when the artist service returns an error (simulated by closing the DB).
 func TestHandleArtistMatchingIDs_ServiceError(t *testing.T) {
