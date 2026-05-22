@@ -21,15 +21,21 @@ import "time"
 // distinct files sharing a basename like "poster.jpg" no longer collide.
 // Rows recorded before migration 008 may carry an empty hash and are
 // backfilled on the first post-migration scan.
+//
+// DuplicateCount is set by Repository.List to indicate how many ledger rows
+// share this entry's content hash (always >=1; 1 means no duplicates).
+// Rows with an empty content hash are never collapsed and always have
+// DuplicateCount=1. Pre-008 rows therefore never over-collapse.
 type Entry struct {
-	ID          string    `json:"id"`
-	ArtistID    string    `json:"artist_id"`
-	ArtistName  string    `json:"artist_name,omitempty"`
-	FilePath    string    `json:"file_path"`
-	FileName    string    `json:"file_name"`
-	ContentHash string    `json:"content_hash"`
-	SizeBytes   int64     `json:"size_bytes"`
-	DetectedAt  time.Time `json:"detected_at"`
+	ID             string    `json:"id"`
+	ArtistID       string    `json:"artist_id"`
+	ArtistName     string    `json:"artist_name,omitempty"`
+	FilePath       string    `json:"file_path"`
+	FileName       string    `json:"file_name"`
+	ContentHash    string    `json:"content_hash"`
+	SizeBytes      int64     `json:"size_bytes"`
+	DetectedAt     time.Time `json:"detected_at"`
+	DuplicateCount int       `json:"duplicate_count"`
 }
 
 // AllowlistScope identifies whether an allowlist row matches every artist

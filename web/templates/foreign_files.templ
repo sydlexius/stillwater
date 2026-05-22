@@ -4,14 +4,20 @@ package templates
 // Constructed by the API handler from foreign.Entry; kept on the templates
 // side so the template never imports internal/foreign and the test surface
 // for rendering stays narrow.
+//
+// DuplicateCount is the number of ledger rows that share this file's content
+// hash (set by Repository.List). A value > 1 means the same physical file is
+// referenced by multiple artist records or path spellings; the table renders
+// a hint so the user understands why only one row is shown per distinct file.
 type ForeignFileRow struct {
-	ID         string
-	ArtistID   string
-	ArtistName string
-	FilePath   string
-	FileName   string
-	SizeBytes  int64
-	DetectedAt string
+	ID             string
+	ArtistID       string
+	ArtistName     string
+	FilePath       string
+	FileName       string
+	SizeBytes      int64
+	DetectedAt     string
+	DuplicateCount int
 }
 
 // ForeignFilesPageView is the view model for /settings/foreign-files. Count
@@ -83,7 +89,15 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
 					for _, r := range view.Rows {
 						<tr id={ "foreign-row-" + r.ID }>
-							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">{ r.ArtistName }</td>
+							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">
+								{ r.ArtistName }
+								if r.DuplicateCount > 1 {
+									<span
+										class="ml-1 inline-block rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+										title={ t(ctx, "foreign_files.duplicate_hint_tooltip") }
+									>{ t(ctx, "foreign_files.duplicate_hint") }</span>
+								}
+							</td>
 							<td class="px-4 py-2 font-mono text-xs text-gray-700 dark:text-gray-300" title={ r.FilePath }>{ r.FileName }</td>
 							<td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{ humanBytes(r.SizeBytes) }</td>
 							<td class="px-4 py-2 text-gray-600 dark:text-gray-400">{ r.DetectedAt }</td>

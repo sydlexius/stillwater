@@ -85,3 +85,17 @@ The conflict gate and [field locks](field-locks.md) protect against different th
 Both apply regardless of the other. A locked artist still benefits from the gate pausing writes when a platform is meddling. An unlocked artist still gets the gate's protection even though locks aren't set.
 
 For [rules](rules.md), the conflict gate is consulted before any fix that produces an image or NFO write. If the gate is active when a rule fixer runs, the write is deferred and the violation stays open rather than silently failing.
+
+## Foreign files
+
+When a connected media server writes an image file to an artist directory without a Stillwater provenance tag, Stillwater records it in the **foreign-files ledger**. Each entry appears in the Settings page under Foreign Files so you can review, allowlist, or delete it.
+
+### Deduplicated display
+
+The list collapses entries that share the same byte content into a single row. When the same physical file is linked to more than one artist record, one representative row appears with a **linked from N artists** badge. Allowlisting or deleting that row acts on the representative artist only; the sibling rows for the other artists remain in the ledger until you clear them with the **Dismiss (allowlist all)** button at the top of the page, which removes every entry globally in one pass.
+
+Entries recorded before a library rescan may not yet have a computed content fingerprint. Those entries are never collapsed and each appear as a separate row until the next scan computes their fingerprints.
+
+### Dismiss (allowlist all)
+
+The **Dismiss (allowlist all)** button at the top of the Foreign Files page adds every currently detected file to the global allowlist in a single operation, then clears the entire ledger. The allowlist suppresses future re-detection of those files on all subsequent scans. Individual allow or delete actions are available per row for more targeted control.
