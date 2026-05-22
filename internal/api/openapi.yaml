@@ -6774,9 +6774,13 @@ paths:
         parameter:
 
 
-        * `deleteArtists=true`: cascade-delete every artist that belonged to
-          the library, including connection-orphan artists and any stale
-          platform mappings.
+        * `deleteArtists=true`: among the artists that had explicit
+          membership in the removed library, delete every one that has no
+          remaining home -- no other library membership, and no platform
+          mapping on a connection other than the removed library's
+          connection (mappings on the same connection do not count, since
+          the library being removed was the only tie to that connection).
+          Artists that retain another home are preserved.
 
         * Omitted or `deleteArtists=false`: dereference the library and
           preserve artists that retain another anchor. An artist is preserved
@@ -6794,11 +6798,12 @@ paths:
         - name: deleteArtists
           in: query
           description: >-
-            When true, cascade-delete every artist that belonged to the
-            library. When false or omitted, the library is dereferenced and
-            artists are preserved if they have another library home or any
-            platform mapping; true zero-home orphans are pruned in the same
-            transaction.
+            When true, the artists that had membership in the removed library
+            are deleted if they have no other home (no other library
+            membership and no platform mapping on a different connection);
+            artists with another home are preserved. When false or omitted,
+            the library is dereferenced and only true zero-home orphans (no
+            memberships, no platform mappings) are pruned.
           schema:
             type: boolean
             default: false
