@@ -463,3 +463,78 @@ func TestWriteBackArtistNFO_Discography(t *testing.T) {
 		})
 	}
 }
+
+// --- WriteNFOAtomic ---
+
+func TestWriteNFOAtomic_Success(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "artist.nfo")
+	n := &ArtistNFO{
+		Name:                "Pixies",
+		MusicBrainzArtistID: "mbid-pixies",
+		Albums: []DiscographyAlbum{
+			{Title: "Surfer Rosa", Year: "1988", MusicBrainzReleaseGroupID: "rg-surfer"},
+			{Title: "Doolittle", Year: "1989"},
+		},
+	}
+
+	if err := WriteNFOAtomic(path, n); err != nil {
+		t.Fatalf("WriteNFOAtomic: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.Name != "Pixies" {
+		t.Errorf("Name = %q, want Pixies", parsed.Name)
+	}
+	if len(parsed.Albums) != 2 {
+		t.Fatalf("Albums count = %d, want 2; serialized: %s", len(parsed.Albums), data)
+	}
+	if parsed.Albums[0].Title != "Surfer Rosa" ||
+		parsed.Albums[0].MusicBrainzReleaseGroupID != "rg-surfer" {
+		t.Errorf("Albums[0] = %+v", parsed.Albums[0])
+	}
+}
+
+func TestWriteNFOAtomic_NilNFO(t *testing.T) {
+	err := WriteNFOAtomic(filepath.Join(t.TempDir(), "artist.nfo"), nil)
+	if err == nil {
+		t.Fatal("expected error for nil nfo, got nil")
+	}
+	if got := err.Error(); got != "write nfo: nfo is nil" {
+		t.Errorf("error = %q, want %q", got, "write nfo: nfo is nil")
+	}
+}
+
+func TestWriteNFOAtomic_EmptyPath(t *testing.T) {
+	err := WriteNFOAtomic("", &ArtistNFO{Name: "Pixies"})
+	if err == nil {
+		t.Fatal("expected error for empty path, got nil")
+	}
+	if got := err.Error(); got != "write nfo: path is empty" {
+		t.Errorf("error = %q, want %q", got, "write nfo: path is empty")
+	}
+}
+
+func TestWriteNFOAtomic_UnwritablePath(t *testing.T) {
+	// Use a regular file as a parent path component. WriteFileAtomic's
+	// MkdirAll cannot create a directory under a file, so WriteNFOAtomic
+	// must return a wrapped error.
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile blocker: %v", err)
+	}
+	err := WriteNFOAtomic(filepath.Join(blocker, "artist.nfo"), &ArtistNFO{Name: "Pixies"})
+	if err == nil {
+		t.Fatal("expected error writing under a non-directory path, got nil")
+	}
+	if !strings.Contains(err.Error(), "writing nfo file") {
+		t.Errorf("error = %q, want it to mention 'writing nfo file'", err.Error())
+	}
+}

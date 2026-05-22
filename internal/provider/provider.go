@@ -350,6 +350,10 @@ type WebImageProvider interface {
 
 // ReleaseGroupInfo represents a release group (album/EP/single) from a provider.
 type ReleaseGroupInfo struct {
+	// ID is the provider-specific identifier for the release group. For
+	// MusicBrainz this is the release-group MBID (UUID string). Empty for
+	// providers that do not assign persistent release-group IDs.
+	ID               string `json:"id,omitempty"`
 	Title            string `json:"title"`
 	PrimaryType      string `json:"primary_type,omitempty"`
 	FirstReleaseDate string `json:"first_release_date,omitempty"`

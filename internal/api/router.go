@@ -148,6 +148,14 @@ type Router struct {
 	identifyMu         sync.RWMutex
 	bulkActionProgress *BulkActionProgress
 	bulkActionMu       sync.RWMutex
+	// discographyFetchInFlight holds the artist IDs that currently have a
+	// discography fetch running. A concurrent fetch for the same artist is
+	// rejected with 409: the fetch is a read-modify-write of artist.nfo, so
+	// two interleaved cycles could each merge against the pre-fetch album
+	// list and the later write would silently drop the earlier fetch's
+	// additions. Guarded by discographyFetchMu.
+	discographyFetchInFlight map[string]bool
+	discographyFetchMu       sync.Mutex
 	// reIdentifyWizardStore backs the interactive re-identify review flow.
 	// Sessions are in-memory, TTL-bounded, and never persisted across
 	// restarts; the flow is an interactive user task so lossy restart
@@ -197,57 +205,58 @@ type Router struct {
 func NewRouter(deps RouterDeps) *Router {
 	webhookCtx, webhookCancel := context.WithCancel(context.Background())
 	r := &Router{
-		authService:           deps.AuthService,
-		authRegistry:          deps.AuthRegistry,
-		artistService:         deps.ArtistService,
-		historyService:        deps.HistoryService,
-		scannerService:        deps.ScannerService,
-		platformService:       deps.PlatformService,
-		providerSettings:      deps.ProviderSettings,
-		providerRegistry:      deps.ProviderRegistry,
-		webSearchRegistry:     deps.WebSearchRegistry,
-		rateLimiters:          deps.RateLimiters,
-		orchestrator:          deps.Orchestrator,
-		ruleService:           deps.RuleService,
-		ruleEngine:            deps.RuleEngine,
-		pipeline:              deps.Pipeline,
-		bulkService:           deps.BulkService,
-		bulkExecutor:          deps.BulkExecutor,
-		ruleScheduler:         deps.RuleScheduler,
-		nfoSnapshotService:    deps.NFOSnapshotService,
-		nfoSettingsService:    deps.NFOSettingsService,
-		connectionService:     deps.ConnectionService,
-		scraperService:        deps.ScraperService,
-		libraryService:        deps.LibraryService,
-		webhookService:        deps.WebhookService,
-		webhookDispatcher:     deps.WebhookDispatcher,
-		backupService:         deps.BackupService,
-		logManager:            deps.LogManager,
-		maintenanceService:    deps.MaintenanceService,
-		settingsIOService:     deps.SettingsIOService,
-		updaterService:        deps.UpdaterService,
-		probeCache:            deps.ProbeCache,
-		expectedWrites:        deps.ExpectedWrites,
-		eventBus:              deps.EventBus,
-		db:                    deps.DB,
-		logger:                deps.Logger,
-		basePath:              deps.BasePath,
-		basePathFromEnv:       deps.BasePathFromEnv,
-		tlsStatus:             deps.TLSStatus,
-		http3Port:             deps.HTTP3Port,
-		imageCacheDir:         deps.ImageCacheDir,
-		publisher:             deps.Publisher,
-		sseHub:                deps.SSEHub,
-		staticAssets:          NewStaticAssets(deps.StaticFS, deps.Logger),
-		ssrfClient:            httpsafe.SafeClient(fetchTimeout),
-		fileRemover:           osRemover{},
-		libraryOps:            make(map[string]*LibraryOpResult),
-		undoStore:             rule.NewUndoStore(),
-		i18nBundle:            deps.I18nBundle,
-		reIdentifyWizardStore: newReIdentifyWizardStore(),
-		webhookShutdownCtx:    webhookCtx,
-		webhookShutdownCancel: webhookCancel,
-		encryptor:             deps.Encryptor,
+		authService:              deps.AuthService,
+		authRegistry:             deps.AuthRegistry,
+		artistService:            deps.ArtistService,
+		historyService:           deps.HistoryService,
+		scannerService:           deps.ScannerService,
+		platformService:          deps.PlatformService,
+		providerSettings:         deps.ProviderSettings,
+		providerRegistry:         deps.ProviderRegistry,
+		webSearchRegistry:        deps.WebSearchRegistry,
+		rateLimiters:             deps.RateLimiters,
+		orchestrator:             deps.Orchestrator,
+		ruleService:              deps.RuleService,
+		ruleEngine:               deps.RuleEngine,
+		pipeline:                 deps.Pipeline,
+		bulkService:              deps.BulkService,
+		bulkExecutor:             deps.BulkExecutor,
+		ruleScheduler:            deps.RuleScheduler,
+		nfoSnapshotService:       deps.NFOSnapshotService,
+		nfoSettingsService:       deps.NFOSettingsService,
+		connectionService:        deps.ConnectionService,
+		scraperService:           deps.ScraperService,
+		libraryService:           deps.LibraryService,
+		webhookService:           deps.WebhookService,
+		webhookDispatcher:        deps.WebhookDispatcher,
+		backupService:            deps.BackupService,
+		logManager:               deps.LogManager,
+		maintenanceService:       deps.MaintenanceService,
+		settingsIOService:        deps.SettingsIOService,
+		updaterService:           deps.UpdaterService,
+		probeCache:               deps.ProbeCache,
+		expectedWrites:           deps.ExpectedWrites,
+		eventBus:                 deps.EventBus,
+		db:                       deps.DB,
+		logger:                   deps.Logger,
+		basePath:                 deps.BasePath,
+		basePathFromEnv:          deps.BasePathFromEnv,
+		tlsStatus:                deps.TLSStatus,
+		http3Port:                deps.HTTP3Port,
+		imageCacheDir:            deps.ImageCacheDir,
+		publisher:                deps.Publisher,
+		sseHub:                   deps.SSEHub,
+		staticAssets:             NewStaticAssets(deps.StaticFS, deps.Logger),
+		ssrfClient:               httpsafe.SafeClient(fetchTimeout),
+		fileRemover:              osRemover{},
+		libraryOps:               make(map[string]*LibraryOpResult),
+		discographyFetchInFlight: make(map[string]bool),
+		undoStore:                rule.NewUndoStore(),
+		i18nBundle:               deps.I18nBundle,
+		reIdentifyWizardStore:    newReIdentifyWizardStore(),
+		webhookShutdownCtx:       webhookCtx,
+		webhookShutdownCancel:    webhookCancel,
+		encryptor:                deps.Encryptor,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -611,6 +620,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/history/tab", wrapOptionalAuth(r.handleArtistHistoryTab, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/violations/tab", wrapOptionalAuth(r.handleArtistViolationsTab, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/discography/tab", wrapOptionalAuth(r.handleArtistDiscographyTab, optAuthMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/discography/fetch", wrapAuth(middleware.RequireAdmin(r.handleFetchDiscography), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/history/{id}/revert", wrapAuth(r.handleRevertHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/history", wrapAuth(r.handleListGlobalHistory, authMw))
 

@@ -9978,6 +9978,108 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  # --- Discography fetch ---
+
+  /artists/{id}/discography/fetch:
+    post:
+      tags: [Artists]
+      summary: Fetch discography from MusicBrainz
+      operationId: fetchArtistDiscography
+      description: >
+        Fetches release groups from MusicBrainz for the artist's MBID, merges
+        them into the on-disk artist.nfo, and writes the result atomically. The
+        merge preserves existing entries and user-added albums. Returns counts
+        of added, kept, skipped, and total release groups. Requires admin role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Artist ID.
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "Album,EP"
+            example: "Album,EP,Single"
+          description: >
+            Comma-separated list of MusicBrainz primary release types to include.
+            Valid values: Album, EP, Single, Compilation, Live, Soundtrack.
+            Defaults to "Album,EP" when omitted.
+      responses:
+        "200":
+          description: Fetch completed; returns counts for the merge operation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [added, kept, skipped, total]
+                properties:
+                  added:
+                    type: integer
+                    description: Number of new release groups written to the NFO.
+                  kept:
+                    type: integer
+                    description: Number of existing NFO entries matched and preserved.
+                  skipped:
+                    type: integer
+                    description: Number of release groups filtered out (wrong type) or already present.
+                  total:
+                    type: integer
+                    description: Total release groups returned by MusicBrainz before filtering.
+            text/html:
+              schema:
+                type: string
+                description: Re-rendered Discography tab partial returned to HTMX callers.
+        "400":
+          description: >
+            Bad request. Possible reasons: artist has no MusicBrainz ID, or
+            artist has no filesystem path.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A discography fetch for this artist is already in progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            Unprocessable entity. The existing artist.nfo could not be parsed
+            (malformed XML). Fix or remove the file before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error (artist load failure or NFO write failure).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: MusicBrainz request failed (bad gateway).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: MusicBrainz provider is not registered or unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- MusicBrainz contribution ---
 
   /artists/{id}/musicbrainz/diffs:

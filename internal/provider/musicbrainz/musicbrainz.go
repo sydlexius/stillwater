@@ -458,6 +458,7 @@ func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider
 
 		for _, rg := range resp.ReleaseGroups {
 			results = append(results, provider.ReleaseGroupInfo{
+				ID:               rg.ID,
 				Title:            rg.Title,
 				PrimaryType:      rg.PrimaryType,
 				FirstReleaseDate: rg.FirstReleaseDate,

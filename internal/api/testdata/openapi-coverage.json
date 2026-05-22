@@ -406,6 +406,13 @@
     "covered": true
   },
   {
+    "operationId": "fetchArtistDiscography",
+    "method": "POST",
+    "path": "/artists/{id}/discography/fetch",
+    "handler": "handleFetchDiscography",
+    "covered": true
+  },
+  {
     "operationId": "fetchImage",
     "method": "POST",
     "path": "/artists/{id}/images/fetch",

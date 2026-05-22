@@ -5,15 +5,66 @@ import "github.com/sydlexius/stillwater/internal/artist"
 // DiscographyTabData carries the artist's album entries into the Discography
 // tab template. Albums are expected to be in the order they appear in the NFO.
 type DiscographyTabData struct {
-	ArtistID string
-	Albums   []artist.DiscographyAlbum
+	ArtistID      string
+	MusicBrainzID string
+	Albums        []artist.DiscographyAlbum
+	// FetchAdded and FetchTotal are set after a successful HTMX fetch to render
+	// the count summary into #discography-fetch-msg. Both zero means no message.
+	FetchAdded int
+	FetchTotal int
 }
 
-// ArtistDiscographyTab renders the read-only discography list for the artist
-// detail page. The template is intentionally simple: a numbered list of
-// album title, year, and optional MusicBrainz release group link.
+// ArtistDiscographyTab renders the discography list for the artist detail page.
+// It includes a "Fetch discography" button that calls the fetch endpoint and
+// reloads the tab via HTMX on success.
 templ ArtistDiscographyTab(data DiscographyTabData) {
-	<div id="discography-tab-content" class="space-y-4">
+	<div
+		id="discography-tab-content"
+		class="space-y-4"
+	>
+		<div class="flex items-center justify-between">
+			<p
+				id="discography-fetch-msg"
+				role="status"
+				aria-live="polite"
+				class="text-xs text-gray-500 dark:text-gray-400"
+			>
+				if data.FetchAdded > 0 || data.FetchTotal > 0 {
+					{ tf(ctx, "artist.discography.fetch.summary", data.FetchAdded, data.FetchTotal) }
+				}
+			</p>
+			if data.MusicBrainzID != "" {
+				<button
+					type="button"
+					id="discography-fetch-btn"
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					hx-post={ "/api/v1/artists/" + data.ArtistID + "/discography/fetch" }
+					hx-target="#discography-tab-content"
+					hx-swap="outerHTML"
+					hx-indicator="#discography-fetch-spinner"
+					hx-on::before-request="document.getElementById('discography-fetch-btn').disabled=true"
+					hx-on::after-request="document.getElementById('discography-fetch-btn').disabled=false"
+				>
+					<span id="discography-fetch-spinner" class="htmx-indicator">
+						<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+					<span class="discography-fetch-label">{ t(ctx, "artist.discography.fetch") }</span>
+				</button>
+			} else {
+				<button
+					type="button"
+					disabled
+					title={ t(ctx, "artist.discography.fetch.needs_mbid") }
+					aria-label={ t(ctx, "artist.discography.fetch.needs_mbid") }
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white opacity-40 cursor-not-allowed"
+				>
+					{ t(ctx, "artist.discography.fetch") }
+				</button>
+			}
+		</div>
 		if len(data.Albums) == 0 {
 			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-4 text-center">
 				{ t(ctx, "discography.empty_state") }
