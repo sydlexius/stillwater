@@ -206,18 +206,99 @@ func (s *Service) ClearConnectionID(ctx context.Context, connectionID string) er
 	return nil
 }
 
-// Delete removes a library by ID. Artists are preserved; their membership
-// rows in artist_libraries cascade-delete via the FK. This is
-// the "unlink only" path, where the user wants to disconnect the library
-// but keep the artists (which may still be observed by other libraries).
+// Delete removes a library by ID and garbage-collects any artist that is left
+// with zero library memberships AND zero platform mappings after the removal.
+// Those artists have no home and no platform anchor: keeping them would
+// pollute artist lists, rule evaluation, and the foreign-file scanner
+// indefinitely.
+//
+// The operation is transactional:
+//  1. Snapshot the candidate artist IDs from artist_libraries (while the
+//     membership rows still exist).
+//  2. Delete the library row (CASCADE removes the membership rows).
+//  3. For each candidate, prune it only if it now has zero memberships and
+//     zero platform mappings -- i.e. it is a true zero-home orphan.
+//
+// Artists that still belong to another library, or that carry a platform
+// mapping (e.g. from an Emby/Jellyfin connection), are always preserved.
+// This is intentionally more conservative than DeleteWithArtists, which also
+// cleans up connection-scoped platform rows; the two paths are mutually
+// exclusive per request so there is no double-handling.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback after commit success is a no-op; on error path the original error is what callers act on
+
+	// Step 1: snapshot candidates before the CASCADE removes the rows.
+	candidateIDs, err := collectUnlinkCandidates(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+
+	// Step 2: delete the library. CASCADE removes artist_libraries rows.
+	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("deleting library: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("library not found: %s", id)
+	}
+
+	// Step 3: prune candidates that now have no home.
+	if err := pruneStrictOrphans(ctx, tx, candidateIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing delete: %w", err)
+	}
+	return nil
+}
+
+// pruneStrictOrphans deletes each artist in candidateIDs that has zero
+// remaining artist_libraries memberships AND zero artist_platform_ids rows.
+// Artists with any surviving home are skipped. Child rows (images, aliases,
+// rule results, etc.) cascade-delete via the ON DELETE CASCADE FK on artists.
+//
+// The per-candidate loop matches the style of DeleteWithArtists for
+// consistency and to make each decision independently auditable.
+func pruneStrictOrphans(ctx context.Context, tx *sql.Tx, candidateIDs []string) error {
+	for _, aid := range candidateIDs {
+		// Check whether any library membership survived the cascade.
+		var memberships int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM artist_libraries WHERE artist_id = ?`,
+			aid).Scan(&memberships); err != nil {
+			return fmt.Errorf("counting remaining memberships for %s: %w", aid, err)
+		}
+		if memberships > 0 {
+			// Artist still belongs to at least one other library; keep it.
+			continue
+		}
+
+		// Check whether any platform mapping exists (any connection).
+		var platformMappings int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM artist_platform_ids WHERE artist_id = ?`,
+			aid).Scan(&platformMappings); err != nil {
+			return fmt.Errorf("counting platform mappings for %s: %w", aid, err)
+		}
+		if platformMappings > 0 {
+			// Artist has a platform anchor (e.g. Emby/Jellyfin mapping);
+			// preserve it -- Delete is more conservative than DeleteWithArtists.
+			continue
+		}
+
+		// Zero memberships, zero platform mappings: true orphan. Delete it;
+		// ON DELETE CASCADE cleans its child rows (images, aliases, violations,
+		// foreign files, etc.).
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM artists WHERE id = ?`, aid); err != nil {
+			return fmt.Errorf("pruning orphan artist %s: %w", aid, err)
+		}
 	}
 	return nil
 }
