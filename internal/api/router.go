@@ -715,6 +715,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /settings/{section} redirect so the more-specific routes win.
 	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapAuth(r.handleForeignFilesPage, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapAuth(r.handleForeignAllowlistPage, authMw))
+	// Near-duplicate artist detection page (#1614). Registered before the
+	// catch-all so the specific path wins over the section redirect.
+	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapAuth(r.handleArtistDuplicatesPage, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/{section}", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query()
 		q.Set("tab", req.PathValue("section"))
