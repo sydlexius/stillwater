@@ -36,3 +36,7 @@ chambre = "chambre"
 correspondant = "correspondant"
 correspondants = "correspondants"
 limite = "limite"
+# "sur" (= on/over) is a common French preposition used in the fr.json
+# capped message ("{count} artistes sur {total} chargés"). typos flags it
+# as a misspelling of English "sure".
+sur = "sur"

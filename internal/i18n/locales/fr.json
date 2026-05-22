@@ -1,4 +1,8 @@
 {
+  "artists.bulk.select_all_matching": "Tout sélectionner ({total} correspondants)",
+  "artists.bulk.select_all_matching.aria": "Sélectionner les {total} artistes correspondant aux filtres actuels",
+  "artists.bulk.select_all_matching.capped": "{count} artistes sur {total} chargés (limite atteinte). Les actions s'appliqueront uniquement à ces {count} artistes.",
+  "artists.bulk.select_all_matching.failed": "Impossible de charger la liste complète. Veuillez réessayer.",
   "instrument.accordion": "Accordéon",
   "instrument.acoustic guitar": "Guitare acoustique",
   "instrument.alto saxophone": "Saxophone alto",

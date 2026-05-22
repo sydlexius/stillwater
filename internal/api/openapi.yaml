@@ -2700,6 +2700,71 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/matching-ids:
+    get:
+      tags: [Artists]
+      summary: List IDs of all matching artists
+      operationId: getArtistMatchingIDs
+      description: >-
+        Returns the IDs of every artist that satisfies the current filter state,
+        ordered by sort_name then id for a stable, deterministic sequence.
+        Results are capped at 1000 (MaxListIDs). When the true match count
+        exceeds the cap, `capped` is true and only the first 1000 IDs are
+        returned. Used by the "select all N matching" affordance on /artists so
+        the client can load the full cross-page selection without a server-side
+        select-all flag. Accepts the same filter query params as
+        GET /api/v1/artists; page, page_size, and sort are ignored.
+      parameters:
+        - name: search
+          in: query
+          description: Case-insensitive substring match on artist name
+          schema:
+            type: string
+        - name: filter
+          in: query
+          description: Legacy single-filter key (e.g. missing_meta, excluded)
+          schema:
+            type: string
+        - name: library_id
+          in: query
+          description: Restrict results to artists in this library
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Artist ID list with cap metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ids, total, capped]
+                properties:
+                  ids:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      type: string
+                    description: >-
+                      Artist IDs matching the current filters, ordered by
+                      sort_name then id. Contains at most 1000 entries.
+                  total:
+                    type: integer
+                    description: >-
+                      True total number of matching artists. May exceed
+                      len(ids) when capped is true.
+                  capped:
+                    type: boolean
+                    description: >-
+                      True when the true total exceeds the 1000-ID cap and the
+                      returned ids slice is truncated. Actions applied to the
+                      returned selection will not cover all matching artists.
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}:
     get:
       tags: [Artists]

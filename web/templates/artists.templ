@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -1113,6 +1114,34 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var i18nDeselectAllAria = bar.getAttribute('data-i18n-deselect-all') || 'Deselect all on page';
 						selectAll.setAttribute('aria-label', allChecked ? i18nDeselectAllAria : i18nSelectAllAria);
 					}
+					// "Select all N matching" affordance: show only when every
+					// visible row is checked AND the result spans more than one
+					// page (i.e. there are artists off-screen that could also be
+					// selected). Hide it when fewer than all visible rows are
+					// checked, when only one page exists, or when a bulk action
+					// is running.
+					var selectAllMatchingBtn = document.getElementById('bulk-select-all-matching');
+					if (selectAllMatchingBtn) {
+						var totalPages = parseInt(bar.getAttribute('data-total-pages') || '1', 10);
+						var totalMatching = parseInt(bar.getAttribute('data-total-matching') || '0', 10);
+						// Show if: all visible rows checked, more than one page, no
+						// bulk action running, and at least one visible row exists.
+						var showMatchingBtn = allChecked && totalPages > 1 && !bulkActionRunning && boxes.length > 0;
+						if (showMatchingBtn) {
+							// Update label and aria to reflect the true total.
+							var matchingTpl = bar.getAttribute('data-i18n-select-all-matching') || 'Select all {total} matching';
+							var matchingAria = bar.getAttribute('data-i18n-select-all-matching-aria') || 'Select all {total} artists matching the current filters';
+							selectAllMatchingBtn.textContent = matchingTpl.replace('{total}', String(totalMatching));
+							selectAllMatchingBtn.setAttribute('aria-label', matchingAria.replace('{total}', String(totalMatching)));
+							selectAllMatchingBtn.classList.remove('hidden');
+							selectAllMatchingBtn.classList.add('inline-flex');
+							selectAllMatchingBtn.disabled = false;
+						} else {
+							selectAllMatchingBtn.classList.add('hidden');
+							selectAllMatchingBtn.classList.remove('inline-flex');
+							selectAllMatchingBtn.disabled = true;
+						}
+					}
 				}
 
 				// Shift-click range selection: capture on click (before the
@@ -1394,6 +1423,75 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					}
 				});
 
+				// "Select all N matching" click handler: fetch the full cross-page
+				// ID list from GET /api/v1/artists/matching-ids using the same
+				// filter params currently in the URL, then load all returned IDs
+				// into the `selected` Set (up to MAX_BULK_SELECTION). Captures
+				// the scope token at the moment of the fetch so a filter change
+				// that races the response causes the stale result to be discarded.
+				document.body.addEventListener('click', function(ev) {
+					var t = ev.target;
+					if (!t || t.id !== 'bulk-select-all-matching') return;
+					t.disabled = true;
+
+					// Snapshot the scope token so we can detect a filter change
+					// that races the async fetch. Capture the current URL params
+					// to forward as query-string on the matching-ids request.
+					var scopeAtFetch = currentScopeToken();
+					var currentParams = new URLSearchParams(window.location.search);
+
+					// Build the matching-ids URL, forwarding all filter params
+					// that parseFlyoutFilters and handleArtistMatchingIDs understand.
+					var idsURL = _artistsBp + '/api/v1/artists/matching-ids';
+					var forwardKeys = ['search', 'filter', 'library_id'];
+					var fwd = new URLSearchParams();
+					currentParams.forEach(function(v, k) {
+						if (forwardKeys.indexOf(k) >= 0 || k.indexOf('filter_') === 0) {
+							fwd.set(k, v);
+						}
+					});
+					var qs = fwd.toString();
+					if (qs) idsURL += '?' + qs;
+
+					fetch(idsURL, {credentials: 'same-origin'})
+						.then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+						.then(function(data) {
+							// Discard the response if a filter change has happened since
+							// the fetch started (scope-token drift). The user is now
+							// looking at a different result set.
+							if (currentScopeToken() !== scopeAtFetch) { if (t) t.disabled = false; return; }
+
+							var bar = document.getElementById('bulk-action-bar');
+							if (!data || !Array.isArray(data.ids)) {
+								alert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');
+								if (t) t.disabled = false;
+								return;
+							}
+
+							// Load returned IDs into the selection, up to the hard cap.
+							selected.clear();
+							capWarned = false;
+							for (var i = 0; i < data.ids.length; i++) {
+								if (!tryAdd(data.ids[i])) break;
+							}
+
+							// Warn the user if the server returned a capped result.
+							if (data.capped) {
+								var cappedTpl = (bar && bar.getAttribute('data-i18n-select-all-matching-capped')) || 'Loaded {count} of {total} matching artists (limit reached). Actions will apply to these {count} only.';
+								alert(cappedTpl
+									.replace(/{count}/g, String(selected.size))
+									.replace('{total}', String(data.total)));
+							}
+
+							updateBar();
+						})
+						.catch(function() {
+							var bar = document.getElementById('bulk-action-bar');
+							alert((bar && bar.getAttribute('data-i18n-select-all-matching-failed')) || 'Could not load the full matching list. Please try again.');
+							if (t) t.disabled = false;
+						});
+				});
+
 				document.body.addEventListener('click', function(ev) {
 					var t = ev.target;
 					if (!t || t.id !== 'bulk-action-apply') return;
@@ -1634,6 +1732,12 @@ templ BulkActionBar(data ArtistListData) {
 		data-i18n-select-all={ t(ctx, "artists.bulk.select_all") }
 		data-i18n-deselect-all={ t(ctx, "artists.bulk.deselect_all") }
 		data-i18n-selection-cap={ t(ctx, "artists.bulk.selection_cap") }
+		data-i18n-select-all-matching={ t(ctx, "artists.bulk.select_all_matching") }
+		data-i18n-select-all-matching-aria={ t(ctx, "artists.bulk.select_all_matching.aria") }
+		data-i18n-select-all-matching-capped={ t(ctx, "artists.bulk.select_all_matching.capped") }
+		data-i18n-select-all-matching-failed={ t(ctx, "artists.bulk.select_all_matching.failed") }
+		data-total-matching={ strconv.Itoa(data.Pagination.TotalItems) }
+		data-total-pages={ strconv.Itoa(data.Pagination.TotalPages) }
 	>
 		<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
 			<input
@@ -1663,6 +1767,21 @@ templ BulkActionBar(data ArtistListData) {
 			disabled
 		>
 			{ t(ctx, "artists.bulk.show_selected") }
+		</button>
+		// "Select all N matching" affordance: appears only after the user
+		// has selected all visible rows on a multi-page result set. Clicking
+		// it fetches the full cross-page ID list from
+		// GET /api/v1/artists/matching-ids and loads it into the `selected`
+		// Set, replacing the page-scoped selection. Hidden until JS shows it.
+		// The button text and aria-label are updated dynamically by updateBar().
+		<button
+			id="bulk-select-all-matching"
+			type="button"
+			class="hidden ml-1 items-center rounded-md border border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+			aria-label={ t(ctx, "artists.bulk.select_all_matching.aria") }
+			disabled
+		>
+			{ t(ctx, "artists.bulk.select_all_matching") }
 		</button>
 		<div class="ml-auto inline-flex items-center gap-2">
 			// docAnchor intentionally empty: the most relevant docs page

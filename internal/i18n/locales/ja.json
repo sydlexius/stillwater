@@ -1,4 +1,8 @@
 {
+  "artists.bulk.select_all_matching": "一致する{total}件をすべて選択",
+  "artists.bulk.select_all_matching.aria": "現在のフィルターに一致する{total}件のアーティストをすべて選択",
+  "artists.bulk.select_all_matching.capped": "{total}件中{count}件を読み込みました（上限に達しました）。操作はこの{count}件にのみ適用されます。",
+  "artists.bulk.select_all_matching.failed": "一致するリストを読み込めませんでした。もう一度お試しください。",
   "instrument.accordion": "アコーディオン",
   "instrument.acoustic guitar": "アコースティックギター",
   "instrument.alto saxophone": "アルトサックス",

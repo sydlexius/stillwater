@@ -67,3 +67,20 @@ the page URL: bookmark the page, or copy the link, to return to or share the
 exact same filtered view.
 
 To clear everything, open the flyout and use **Clear all**.
+
+## Select every matching artist
+
+A filter usually narrows the list so you can act on the result as a group. To
+select more than one page of results at once:
+
+1. Use **Select all on page** to select every artist on the current page.
+2. When the filter matches more artists than fit on one page, a **Select all N
+   matching** button appears in the bulk action bar. Click it to extend the
+   selection to every artist the filter matches, across all pages.
+
+You can then run a bulk scan, metadata refresh, or image fetch on the whole
+matching set at once.
+
+The cross-page selection is capped at 1000 artists. If the filter matches more
+than that, Stillwater selects the first 1000 and tells you so, and any bulk
+action applies to those 1000 only. Narrow the filter further to reach the rest.
