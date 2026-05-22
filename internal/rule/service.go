@@ -43,6 +43,7 @@ const (
 	RuleLogoPadding           = "logo_padding"
 	RuleNameLanguagePref      = "name_language_pref"
 	RuleOriginMissing         = "origin_missing"
+	RuleDiscographyPopulated  = "discography_populated"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -244,6 +245,18 @@ var defaultRules = []Rule{
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "info"},
 	},
+	{
+		ID:             RuleDiscographyPopulated,
+		Name:           "Discography is populated",
+		Description:    "Flags artists whose artist.nfo has no album entries, or materially fewer than MusicBrainz lists. Violations are fixed by fetching release groups from MusicBrainz and merging them into the NFO; user-added albums are always preserved. Auto mode applies the merge automatically; manual mode surfaces the violation so you can review and fix it individually.",
+		Category:       RuleCategoryMetadata,
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		// CoverageThreshold defaults to 50%: an NFO covering fewer than half of
+		// the configured-type release groups MusicBrainz reports is flagged.
+		// ReleaseTypes defaults to "Album,EP" (nfo.DefaultReleaseTypeFilter).
+		Config: RuleConfig{Severity: "info", CoverageThreshold: 50, ReleaseTypes: "Album,EP"},
+	},
 }
 
 // filesystemRules is the set of rule IDs that are truly filesystem-only with
@@ -262,6 +275,10 @@ var defaultRules = []Rule{
 // paths that run when a.Path is empty, so they are no longer filesystem-only.
 var filesystemRules = map[string]bool{
 	RuleNFOExists: true, // NFO is a local file format with no API equivalent
+	// discography_populated reads <album> entries from the on-disk artist.nfo
+	// and writes merged release groups back to it. There is no DB or API
+	// equivalent for the NFO discography, so the rule needs a local path.
+	RuleDiscographyPopulated: true,
 }
 
 // IsFilesystemDependent reports whether a rule requires a local library with a

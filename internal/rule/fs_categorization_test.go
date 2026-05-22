@@ -9,9 +9,12 @@ import (
 // are categorized as filesystem-dependent. Rules that can be made API-compatible
 // are tracked in #725, #726, #727, #728.
 func TestIsFilesystemDependent(t *testing.T) {
-	// Only 1 rule is truly filesystem-only (NFO is a local file format).
+	// Truly filesystem-only rules. NFO is a local file format with no API
+	// equivalent; discography_populated reads and rewrites the on-disk NFO's
+	// <album> entries, which likewise have no DB or API equivalent.
 	fsRules := []string{
 		RuleNFOExists,
+		RuleDiscographyPopulated,
 	}
 	for _, id := range fsRules {
 		if !IsFilesystemDependent(id) {
@@ -59,7 +62,8 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 	// Build the expected set from the two explicit lists in TestIsFilesystemDependent.
 	categorized := map[string]bool{
 		// Filesystem-dependent rules.
-		RuleNFOExists: true,
+		RuleNFOExists:            true,
+		RuleDiscographyPopulated: true,
 		// API-compatible rules (includes rules with DB-based checker paths).
 		RuleExtraneousImages:      true,
 		RuleNFOHasMBID:            true,

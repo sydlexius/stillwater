@@ -196,6 +196,14 @@ func renderConfigurable(cfg rule.RuleConfig) string {
 		params = append(params, fmt.Sprintf("Article handling (default: %s)", cfg.ArticleMode))
 	}
 
+	if cfg.CoverageThreshold > 0 {
+		params = append(params, fmt.Sprintf("Coverage threshold (default %.0f%% of MusicBrainz release groups)", cfg.CoverageThreshold))
+	}
+
+	if cfg.ReleaseTypes != "" {
+		params = append(params, fmt.Sprintf("Release-type filter (default: %s)", cfg.ReleaseTypes))
+	}
+
 	if cfg.SelectBestCandidate {
 		params = append(params, "Auto-select best candidate")
 	}
