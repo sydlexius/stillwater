@@ -1729,3 +1729,74 @@ func TestScan_FastPath_DetectsFileRemoval(t *testing.T) {
 		}
 	}
 }
+
+// TestScan_NearDuplicateDetected covers the scanner-side near-duplicate check
+// introduced in #1614. When two directories in the same library normalize
+// (via artist.NormalizeIdentityKey) to the same identity key, the scanner must:
+//
+//   - increment ScanResult.SuspectedDuplicates (informational counter),
+//   - still create the new artist row (the check is non-blocking).
+//
+// The test uses "AC_DC" (scan 1) and "AC-DC" (scan 2) as the colliding pair.
+// NormalizeIdentityKey's separator-fold step (step 7) maps both hyphens and
+// underscores to a single space, so both names produce the key "ac dc".
+// The two directory names are also distinct to the filesystem (macOS APFS is
+// case-insensitive but underscore != hyphen), so both can coexist on disk.
+func TestScan_NearDuplicateDetected(t *testing.T) {
+	t.Parallel()
+	libDir := t.TempDir()
+
+	// Seed the library row first so AddDerivingSource (called by artist.Create
+	// during scan 1) can insert the artist_libraries membership row that
+	// PreloadArtistsByLibrary depends on during scan 2.
+	svc, artistSvc, db := setupScannerWithDB(t, libDir)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		 VALUES ('lib-dup', 'Dup Test', ?, 'regular', 'manual', datetime('now'), datetime('now'))`,
+		libDir); err != nil {
+		t.Fatalf("seeding library: %v", err)
+	}
+
+	svc.SetLibraryLister(&stubLibraryLister{
+		libs: []library.Library{
+			{ID: "lib-dup", Name: "Dup Test", Path: libDir, Type: library.TypeRegular},
+		},
+	})
+
+	// Scan 1: create "AC_DC" so it is persisted in the DB with the library
+	// membership row that will land it in the preload map during scan 2.
+	createArtistDir(t, libDir, "AC_DC")
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	existing, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "AC_DC"))
+	if existing == nil {
+		t.Fatal("expected AC_DC to be created in scan 1")
+	}
+
+	// Scan 2: add "AC-DC" whose name normalizes to the same key ("ac dc") as
+	// "AC_DC" via the separator-fold step in NormalizeIdentityKey.
+	createArtistDir(t, libDir, "AC-DC")
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	result2 := waitForScan(t, svc, 5*time.Second)
+
+	// The counter must be incremented for the collision.
+	if result2.SuspectedDuplicates != 1 {
+		t.Errorf("SuspectedDuplicates = %d, want 1", result2.SuspectedDuplicates)
+	}
+
+	// The new artist row must still have been created (the check is informational,
+	// not a gate -- the increment happens after Create).
+	duplicate, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "AC-DC"))
+	if duplicate == nil {
+		t.Error("expected AC-DC artist row to be created despite the duplicate flag")
+	}
+}

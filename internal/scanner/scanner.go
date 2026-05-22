@@ -262,6 +262,12 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		// Cost: 3 queries per scanned library (artists + artist_images
 		// + artist_provider_ids) instead of N round-trips per directory.
 		var libraryArtists map[string]*artist.Artist
+		// preloadedKeys maps normalized identity key -> existing artist name for
+		// all artists already in this library.  processNewArtist uses this to
+		// detect when a newly-created artist shares a key with an existing one
+		// and logs a Warn + increments ScanResult.SuspectedDuplicates.
+		// Built at preload time so the check is O(1) per new artist.
+		var preloadedKeys map[string]string
 		if target.libraryID != "" {
 			pre, preErr := s.artistService.PreloadArtistsByLibrary(ctx, target.libraryID, artist.HydrateOpts{Images: true, ProviderIDs: true})
 			if preErr != nil {
@@ -272,6 +278,22 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 					"library_id", target.libraryID, "error", preErr)
 			} else {
 				libraryArtists = pre
+				// Build the key map from the preloaded path-keyed map.
+				// Each preloaded artist has a non-empty path (path-empty
+				// rows are excluded by PreloadArtistsByLibrary).
+				preloadedKeys = make(map[string]string, len(pre))
+				for _, a := range pre {
+					if k := artist.NormalizeIdentityKey(a.Name); k != "" {
+						// Multiple existing artists can have the same key
+						// (the very condition we are detecting). We store
+						// at most one name per key here; the purpose is
+						// only to know "some existing artist has this key"
+						// so the exact name stored is informational.
+						if _, exists := preloadedKeys[k]; !exists {
+							preloadedKeys[k] = a.Name
+						}
+					}
+				}
 			}
 		}
 
@@ -299,7 +321,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			dirPath := filepath.Join(target.path, entry.Name())
 			discoveredPaths[dirPath] = true
 
-			if err := s.processDirectory(ctx, dirPath, entry.Name(), target.libraryID, libraryArtists, result); err != nil {
+			if err := s.processDirectory(ctx, dirPath, entry.Name(), target.libraryID, libraryArtists, preloadedKeys, result); err != nil {
 				s.logger.Warn("error processing directory",
 					"path", dirPath, "error", err)
 			}
@@ -316,7 +338,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	s.recordHealthSnapshot(ctx)
 }
 
-func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, preloaded map[string]*artist.Artist, result *ScanResult) error {
+func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, preloaded map[string]*artist.Artist, preloadedKeys map[string]string, result *ScanResult) error {
 	excluded := s.exclusions[strings.ToLower(name)]
 
 	// Look up existing artist before detectFiles so we can skip expensive
@@ -357,7 +379,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 	}
 
 	if existing == nil {
-		return s.processNewArtist(ctx, dirPath, name, libraryID, excluded, detected, result)
+		return s.processNewArtist(ctx, dirPath, name, libraryID, excluded, detected, preloadedKeys, result)
 	}
 	return s.processExistingArtist(ctx, dirPath, existing, excluded, detected, result)
 }
@@ -365,7 +387,13 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 // processNewArtist creates a new artist record for a directory not yet in the
 // database. It applies file detection results, parses NFO metadata if present,
 // and publishes an ArtistUpdated event.
-func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID string, excluded bool, detected detectedFiles, result *ScanResult) error {
+//
+// preloadedKeys maps normalized identity keys -> existing artist names for the
+// library.  When non-nil, processNewArtist checks whether the new artist's key
+// collides with an existing one and logs a Warn + increments
+// ScanResult.SuspectedDuplicates so operators know to review
+// /settings/artist-duplicates.  A nil map skips the check (degraded mode).
+func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID string, excluded bool, detected detectedFiles, preloadedKeys map[string]string, result *ScanResult) error {
 	a := &artist.Artist{
 		Name:              name,
 		SortName:          name,
@@ -423,6 +451,45 @@ func (s *Service) processNewArtist(ctx context.Context, dirPath, name, libraryID
 	result.NewArtists++
 	s.mu.Unlock()
 	s.logger.Debug("new artist discovered", "name", name, "path", dirPath)
+
+	// Near-duplicate check: if the new artist's normalized identity key
+	// matches a key already in the preloaded map, a near-duplicate pair
+	// exists in this library.  We cannot prevent the row from being created
+	// (each directory is a distinct path), but we can flag it for operator
+	// review.  The check runs after Create so the row is safely persisted
+	// even when a duplicate is detected.
+	if preloadedKeys != nil {
+		// Use the persisted a.Name rather than the raw directory-name variable:
+		// populateFromNFO may have updated a.Name from the NFO <title> element,
+		// so normalizing name here could miss a collision against preloadedKeys
+		// that was built from previously-persisted artist names.
+		if k := artist.NormalizeIdentityKey(a.Name); k != "" {
+			// processNewArtist runs concurrently across directories, and we
+			// now insert into preloadedKeys as well as read it, so the whole
+			// check-then-insert must hold s.mu. Inserting the new artist's
+			// key lets a later directory in the same scan collide against it;
+			// without this, two directories that are both new in one run
+			// would only be flagged if a previously-persisted artist matched.
+			s.mu.Lock()
+			existingName, isDuplicate := preloadedKeys[k]
+			if isDuplicate {
+				result.SuspectedDuplicates++
+			} else {
+				preloadedKeys[k] = a.Name
+			}
+			s.mu.Unlock()
+
+			if isDuplicate {
+				s.logger.Warn("suspected duplicate artist detected during scan",
+					"new_name", a.Name,
+					"new_path", dirPath,
+					"existing_name", existingName,
+					"key", k,
+				)
+			}
+		}
+	}
+
 	return nil
 }
 

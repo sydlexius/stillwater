@@ -292,6 +292,7 @@ how-to/run-scans#concurrent-scan-safety
 how-to/run-scans#imported-libraries
 how-to/run-scans#manual-libraries
 how-to/run-scans#monitor-an-in-progress-scan
+how-to/run-scans#possible-duplicate-artists
 how-to/run-scans#pull-from-a-connected-platform
 how-to/run-scans#run-a-manual-filesystem-scan
 how-to/run-scans#run-scans

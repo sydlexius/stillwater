@@ -1,0 +1,102 @@
+package templates
+
+// ArtistDuplicateMember is one artist record in a near-duplicate group.
+// Declared here (not in internal/artist) so the template never imports
+// the artist domain package -- the handler constructs these from the
+// detection results and passes them in.
+type ArtistDuplicateMember struct {
+	ID   string
+	Name string
+	Path string
+	MBID string // empty when no MusicBrainz ID is known
+}
+
+// ArtistDuplicateGroupRow is one near-duplicate group displayed in the table.
+type ArtistDuplicateGroupRow struct {
+	// Key is the normalized identity key (for name_key groups) or the shared
+	// MBID (for mbid groups).
+	Key     string
+	Reason  string // "name_key" or "mbid"
+	Members []ArtistDuplicateMember
+}
+
+// ArtistDuplicatesPageView is the full-page view model for
+// /settings/artist-duplicates.
+type ArtistDuplicatesPageView struct {
+	Groups []ArtistDuplicateGroupRow
+}
+
+// ArtistDuplicatesPage renders the "Possible duplicate artists" list page.
+// Read-only: displays detected groups with links to each artist detail page.
+// The filesystem-consolidating merge action is tracked separately in #1615.
+templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
+	@Layout(t(ctx, "artist_duplicates.page_title"), assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">{ t(ctx, "artist_duplicates.title") }</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "artist_duplicates.subtitle") }
+				</p>
+			</div>
+			@ArtistDuplicatesTable(assets, view)
+		</div>
+	}
+}
+
+// ArtistDuplicatesTable is the content section rendered inside
+// ArtistDuplicatesPage.  Each group is an expandable card listing its members.
+templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
+	<div id="artist-duplicates-table" class="space-y-4">
+		if len(view.Groups) == 0 {
+			<div class="sw-card rounded-lg px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "artist_duplicates.empty_state") }
+			</div>
+		} else {
+			for _, group := range view.Groups {
+				<div class="sw-card rounded-lg overflow-hidden">
+					<div class="px-4 py-3 flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50">
+						if group.Reason == "mbid" {
+							<span class="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
+								{ t(ctx, "artist_duplicates.reason_mbid") }
+							</span>
+						} else {
+							<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+								{ t(ctx, "artist_duplicates.reason_name_key") }
+							</span>
+						}
+						<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{ group.Key }</span>
+					</div>
+					<table class="min-w-full text-sm">
+						<thead class="bg-gray-50 dark:bg-gray-800/30">
+							<tr>
+								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_name") }</th>
+								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_path") }</th>
+								<th class="px-4 py-2 text-left font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "artist_duplicates.col_mbid") }</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+							for _, m := range group.Members {
+								<tr>
+									<td class="px-4 py-2">
+										<a
+											class="text-blue-600 dark:text-blue-400 hover:underline underline-offset-2"
+											href={ templ.SafeURL(assets.BasePath + "/artists/" + m.ID) }
+										>{ m.Name }</a>
+									</td>
+									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">{ m.Path }</td>
+									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">
+										if m.MBID != "" {
+											{ m.MBID }
+										} else {
+											<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.no_mbid") }</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	</div>
+}

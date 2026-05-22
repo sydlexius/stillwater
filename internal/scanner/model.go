@@ -12,5 +12,12 @@ type ScanResult struct {
 	UpdatedArtists   int        `json:"updated_artists"`
 	RemovedArtists   int        `json:"removed_artists"`
 	TotalDirectories int        `json:"total_directories"`
-	Error            string     `json:"error,omitempty"`
+	// SuspectedDuplicates counts newly-created artists whose normalized
+	// identity key collided with a key already seen in this scan's preloaded
+	// artist map.  A non-zero value indicates that the library contains
+	// near-duplicate directories and the operator should review
+	// /settings/artist-duplicates.  No persistent flag is stored; this is a
+	// per-scan informational counter only.
+	SuspectedDuplicates int    `json:"suspected_duplicates,omitempty"`
+	Error               string `json:"error,omitempty"`
 }
