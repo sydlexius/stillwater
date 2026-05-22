@@ -464,6 +464,198 @@ func TestWriteBackArtistNFO_Discography(t *testing.T) {
 	}
 }
 
+// TestWriteBackArtistNFO_PreservesOnDiskDiscography covers the #1616
+// data-loss regression. Discography (<album> entries) is NFO-only -- it is
+// never persisted to the database -- so an artist.Artist loaded from the DB
+// carries an empty Discography slice. Before the fix, a write-back over an
+// NFO that already had <album> entries would silently drop every one of
+// them. This test seeds an on-disk NFO with discography, writes back a
+// DB-style artist (empty Discography), and asserts the entries survive.
+func TestWriteBackArtistNFO_PreservesOnDiskDiscography(t *testing.T) {
+	dir := t.TempDir()
+
+	// Seed an existing on-disk NFO that already carries a discography.
+	seed := &ArtistNFO{
+		Name: "Old Name",
+		Albums: []DiscographyAlbum{
+			{Title: "Bleach", Year: "1989"},
+			{Title: "Nevermind", Year: "1991", MusicBrainzReleaseGroupID: "rg-nevermind"},
+			{Title: "In Utero", Year: "1993"},
+		},
+	}
+	if err := WriteNFOAtomic(filepath.Join(dir, "artist.nfo"), seed); err != nil {
+		t.Fatalf("seeding nfo: %v", err)
+	}
+
+	// A DB-loaded artist: metadata is present but Discography is empty,
+	// because the database has no discography column.
+	a := &artist.Artist{
+		ID:       "art-preserve",
+		Name:     "Nirvana",
+		SortName: "Nirvana",
+		Path:     dir,
+		// Discography intentionally left nil.
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+
+	// The metadata write-back should have applied.
+	if parsed.Name != "Nirvana" {
+		t.Errorf("Name = %q, want %q", parsed.Name, "Nirvana")
+	}
+
+	// The on-disk discography must survive the write-back.
+	if len(parsed.Albums) != len(seed.Albums) {
+		t.Fatalf("Albums count = %d, want %d; serialized:\n%s",
+			len(parsed.Albums), len(seed.Albums), string(data))
+	}
+	for i, want := range seed.Albums {
+		got := parsed.Albums[i]
+		if got.Title != want.Title || got.Year != want.Year ||
+			got.MusicBrainzReleaseGroupID != want.MusicBrainzReleaseGroupID {
+			t.Errorf("album[%d] = %+v, want %+v", i, got, want)
+		}
+	}
+}
+
+// TestWriteBackArtistNFO_NoDiscographyToPreserve verifies that when the
+// existing on-disk NFO has no <album> entries, the write-back still succeeds
+// and the output likewise has none -- no crash, no spurious entries.
+func TestWriteBackArtistNFO_NoDiscographyToPreserve(t *testing.T) {
+	dir := t.TempDir()
+
+	// Seed an existing NFO with metadata but no discography.
+	seed := &ArtistNFO{Name: "Old Name"}
+	if err := WriteNFOAtomic(filepath.Join(dir, "artist.nfo"), seed); err != nil {
+		t.Fatalf("seeding nfo: %v", err)
+	}
+
+	a := &artist.Artist{
+		ID:       "art-nodisco",
+		Name:     "Solo Act",
+		SortName: "Solo Act",
+		Path:     dir,
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+	if len(parsed.Albums) != 0 {
+		t.Errorf("Albums = %v, want none", parsed.Albums)
+	}
+}
+
+// TestWriteBackArtistNFO_UnparsableExistingNFO verifies that a corrupt or
+// otherwise unparsable existing NFO does not break the write-back. The fix
+// is best-effort: discography preservation is skipped, but the write itself
+// still succeeds and produces a valid NFO.
+func TestWriteBackArtistNFO_UnparsableExistingNFO(t *testing.T) {
+	dir := t.TempDir()
+
+	// Seed a file that is not valid NFO XML.
+	garbage := []byte("this is not xml at all <<< &&& >>>")
+	if err := os.WriteFile(filepath.Join(dir, "artist.nfo"), garbage, 0o644); err != nil {
+		t.Fatalf("seeding garbage nfo: %v", err)
+	}
+
+	a := &artist.Artist{
+		ID:       "art-corrupt",
+		Name:     "Recovered Artist",
+		SortName: "Recovered Artist",
+		Path:     dir,
+	}
+
+	// The write-back must not fail despite the unparsable existing file.
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO over unparsable NFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing rewritten nfo: %v", err)
+	}
+	if parsed.Name != "Recovered Artist" {
+		t.Errorf("Name = %q, want %q", parsed.Name, "Recovered Artist")
+	}
+	// No discography could be recovered from the garbage input.
+	if len(parsed.Albums) != 0 {
+		t.Errorf("Albums = %v, want none", parsed.Albums)
+	}
+}
+
+// TestWriteBackArtistNFO_ArtistDiscographyWinsOverOnDisk verifies that when
+// the in-memory artist itself carries discography (e.g. freshly scanned from
+// the same NFO), that value is used and is not silently replaced by a stale
+// on-disk parse.
+func TestWriteBackArtistNFO_ArtistDiscographyWinsOverOnDisk(t *testing.T) {
+	dir := t.TempDir()
+
+	// On-disk NFO has an outdated single-album discography.
+	seed := &ArtistNFO{
+		Name:   "Old Name",
+		Albums: []DiscographyAlbum{{Title: "Stale Album", Year: "1900"}},
+	}
+	if err := WriteNFOAtomic(filepath.Join(dir, "artist.nfo"), seed); err != nil {
+		t.Fatalf("seeding nfo: %v", err)
+	}
+
+	// The in-memory artist carries a fresher, different discography.
+	a := &artist.Artist{
+		ID:       "art-wins",
+		Name:     "Updated Artist",
+		SortName: "Updated Artist",
+		Path:     dir,
+		Discography: []artist.DiscographyAlbum{
+			{Title: "Fresh Album One", Year: "2020"},
+			{Title: "Fresh Album Two", Year: "2024", MusicBrainzReleaseGroupID: "rg-fresh"},
+		},
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+
+	if len(parsed.Albums) != 2 {
+		t.Fatalf("Albums count = %d, want 2; serialized:\n%s", len(parsed.Albums), string(data))
+	}
+	if parsed.Albums[0].Title != "Fresh Album One" || parsed.Albums[1].Title != "Fresh Album Two" {
+		t.Errorf("Albums = %+v, want the in-memory discography to win", parsed.Albums)
+	}
+}
+
 // --- WriteNFOAtomic ---
 
 func TestWriteNFOAtomic_Success(t *testing.T) {
@@ -536,5 +728,44 @@ func TestWriteNFOAtomic_UnwritablePath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "writing nfo file") {
 		t.Errorf("error = %q, want it to mention 'writing nfo file'", err.Error())
+	}
+}
+
+// TestWriteBackArtistNFO_UnreadableExistingNFO verifies the write-back
+// distinguishes a genuinely-absent NFO from one that exists but cannot be read.
+// Here the artist.nfo path is a directory, so os.ReadFile fails with a
+// non-os.ErrNotExist error: the new readErr branch logs a Warn instead of
+// treating the failure as a benign "no existing NFO". The write-back stays
+// best-effort and still completes (WriteFileAtomic moves the unreadable path
+// aside), but it cannot preserve discography it was unable to read.
+func TestWriteBackArtistNFO_UnreadableExistingNFO(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "artist.nfo")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatalf("mkdir artist.nfo: %v", err)
+	}
+
+	a := &artist.Artist{
+		ID:       "art-unreadable",
+		Name:     "Nirvana",
+		SortName: "Nirvana",
+		Path:     dir,
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO over an unreadable NFO path: %v", err)
+	}
+
+	// The path is now a regular NFO file carrying the artist metadata.
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("reading nfo after write-back: %v", err)
+	}
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+	if parsed.Name != "Nirvana" {
+		t.Errorf("Name = %q, want %q", parsed.Name, "Nirvana")
 	}
 }
