@@ -1704,6 +1704,7 @@ components:
           format: date-time
         duplicate_count:
           type: integer
+          minimum: 1
           description: |
             Number of ledger rows that share this file's content_hash (always
             >= 1). A value greater than 1 means the same physical file is

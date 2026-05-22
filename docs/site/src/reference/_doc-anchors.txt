@@ -22,7 +22,10 @@ core-concepts/auto-provisioning#what-happens-when-an-upstream-user-is-removed
 core-concepts/conflict-gate#banner-states
 core-concepts/conflict-gate#coalesce-and-the-detection-cache
 core-concepts/conflict-gate#conflict-gate
+core-concepts/conflict-gate#deduplicated-display
+core-concepts/conflict-gate#dismiss-allowlist-all
 core-concepts/conflict-gate#feature-toggles-on-connections
+core-concepts/conflict-gate#foreign-files
 core-concepts/conflict-gate#how-writes-are-gated
 core-concepts/conflict-gate#let-stillwater-manage-and-auto-re-disable
 core-concepts/conflict-gate#relationship-to-field-locks-and-rules

@@ -906,14 +906,15 @@ func TestHandleForeignFilesDismiss_SharedContentHash(t *testing.T) {
 	if len(collapsed) != 1 {
 		t.Fatalf("precondition: List should collapse two same-hash rows to 1; got %d", len(collapsed))
 	}
-	// Count uses the same collapsed grouping as List; query raw row count
-	// directly to confirm two physical ledger rows exist.
-	var rawCount int
-	if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM foreign_files`).Scan(&rawCount); err != nil {
-		t.Fatalf("raw count: %v", err)
+	// Confirm two physical ledger rows exist via the repo's uncollapsed path.
+	// Using ListRaw keeps this assertion at the repository contract level and
+	// also exercises ListRaw itself against the seeded data.
+	rawRows, err := r.foreignRepo.ListRaw(context.Background())
+	if err != nil {
+		t.Fatalf("ListRaw precondition: %v", err)
 	}
-	if rawCount != 2 {
-		t.Fatalf("precondition: raw ledger should have 2 rows; got %d", rawCount)
+	if len(rawRows) != 2 {
+		t.Fatalf("precondition: raw ledger should have 2 rows; got %d", len(rawRows))
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/foreign-files/dismiss", nil)
@@ -924,14 +925,14 @@ func TestHandleForeignFilesDismiss_SharedContentHash(t *testing.T) {
 	}
 
 	// Both sibling ledger rows must be gone -- not just the representative
-	// one that List would have returned. Query the raw row count so this
-	// assertion is immune to any future changes in how Count aggregates.
-	var afterCount int
-	if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM foreign_files`).Scan(&afterCount); err != nil {
-		t.Fatalf("raw count after dismiss: %v", err)
+	// one that List would have returned. ListRaw sees the un-collapsed ledger
+	// so this assertion is immune to future changes in how Count aggregates.
+	rawRowsAfter, err := r.foreignRepo.ListRaw(context.Background())
+	if err != nil {
+		t.Fatalf("ListRaw after dismiss: %v", err)
 	}
-	if afterCount != 0 {
-		t.Errorf("ledger should be fully cleared after dismiss (both shared-hash rows); got %d raw rows", afterCount)
+	if len(rawRowsAfter) != 0 {
+		t.Errorf("ledger should be fully cleared after dismiss (both shared-hash rows); got %d raw rows", len(rawRowsAfter))
 	}
 
 	// Exactly one global allowlist row should exist for the shared hash.

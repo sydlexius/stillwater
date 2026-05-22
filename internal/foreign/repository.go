@@ -114,6 +114,11 @@ func (r *Repository) GetByID(ctx context.Context, id string) (Entry, error) {
 	if artistName.Valid {
 		e.ArtistName = artistName.String
 	}
+	// GetByID returns a single-row lookup so there are no siblings to
+	// collapse; DuplicateCount is therefore always 1. This satisfies the
+	// documented invariant (always >= 1) even when the caller does not
+	// use the field.
+	e.DuplicateCount = 1
 	return e, nil
 }
 
