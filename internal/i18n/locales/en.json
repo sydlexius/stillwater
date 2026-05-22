@@ -2009,7 +2009,7 @@
   "settings.users.user": "User",
   "settings.users.user_accounts": "User accounts",
   "settings.users.user_accounts.description": "An account is anyone who has signed in successfully and exists in Stillwater's user table, regardless of which auth provider verified them. This table lists every active account; use the row controls to promote or demote a user's role or deactivate them.",
-  "settings.web_search.description": "Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web search providers (Bing, Brave, and similar) crawl the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.",
+  "settings.web_search.description": "Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalogue of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.",
   "settings.web_search.help": "Falls back to general-purpose web image search when authoritative providers (MusicBrainz, Fanart.tv, etc.) don't return an image. Useful for obscure artists; results vary in quality so review before saving.",
   "settings.web_search.title": "Web Image Search",
   "settings.webhooks.add": "Add Webhook",
