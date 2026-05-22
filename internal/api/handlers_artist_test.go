@@ -417,3 +417,40 @@ func TestArtistDetailPage_TabDebugFallback(t *testing.T) {
 		}
 	})
 }
+
+// TestParseFlyoutFilters_NewKeys verifies that every key added in issue #1125
+// is recognized by parseFlyoutFilters and that +y maps to "include" and -y
+// maps to "exclude". A key that is not in the allowlist would silently be
+// dropped from the returned map, making the filter a no-op at the DB layer.
+func TestParseFlyoutFilters_NewKeys(t *testing.T) {
+	t.Parallel()
+	newKeys := []string{
+		"has_biography", "has_years_active", "has_formed", "has_disbanded",
+		"has_born", "has_died", "has_gender", "has_type", "has_country",
+		"has_genres", "has_styles", "has_moods", "has_members", "has_discography",
+		"has_thumb", "has_fanart", "has_logo", "has_banner",
+		"in_emby", "in_jellyfin", "has_lidarr",
+		"has_violations",
+	}
+	for _, key := range newKeys {
+		key := key
+		t.Run(key+"_include", func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet,
+				"/artists?filter_"+key+"=%2By", nil)
+			got := parseFlyoutFilters(req)
+			if got[key] != "include" {
+				t.Errorf("parseFlyoutFilters(%q=+y): got %q, want %q", key, got[key], "include")
+			}
+		})
+		t.Run(key+"_exclude", func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet,
+				"/artists?filter_"+key+"=-y", nil)
+			got := parseFlyoutFilters(req)
+			if got[key] != "exclude" {
+				t.Errorf("parseFlyoutFilters(%q=-y): got %q, want %q", key, got[key], "exclude")
+			}
+		})
+	}
+}

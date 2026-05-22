@@ -2199,6 +2199,141 @@ paths:
           schema:
             type: string
             enum: ["+y", "-y"]
+        - name: filter_has_biography
+          in: query
+          description: Include (+y) artists with a biography, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_years_active
+          in: query
+          description: Include (+y) artists with years_active set, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_formed
+          in: query
+          description: Include (+y) artists with a formed date, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_disbanded
+          in: query
+          description: Include (+y) artists with a disbanded date, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_born
+          in: query
+          description: Include (+y) artists with a birth date, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_died
+          in: query
+          description: Include (+y) artists with a death date, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_gender
+          in: query
+          description: Include (+y) artists with gender set, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_type
+          in: query
+          description: Include (+y) artists with artist type set, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_country
+          in: query
+          description: Include (+y) artists with country of origin set, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_genres
+          in: query
+          description: Include (+y) artists with genres, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_styles
+          in: query
+          description: Include (+y) artists with styles, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_moods
+          in: query
+          description: Include (+y) artists with moods, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_members
+          in: query
+          description: Include (+y) artists with band members recorded, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_discography
+          in: query
+          description: >-
+            Include (+y) artists that have an NFO file (which may contain discography entries),
+            exclude (-y) those without. Discography entries are parsed from artist.nfo on demand
+            and are not persisted to the database; nfo_exists is the best available DB-level proxy.
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_thumb
+          in: query
+          description: Include (+y) artists with a thumb image, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_fanart
+          in: query
+          description: Include (+y) artists with fanart, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_logo
+          in: query
+          description: Include (+y) artists with a logo image, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_banner
+          in: query
+          description: Include (+y) artists with a banner image, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_in_emby
+          in: query
+          description: Include (+y) artists present in an Emby library, exclude (-y) those not present
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_in_jellyfin
+          in: query
+          description: Include (+y) artists present in a Jellyfin library, exclude (-y) those not present
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_lidarr
+          in: query
+          description: Include (+y) artists with a Lidarr mapping, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_has_violations
+          in: query
+          description: Include (+y) artists with open rule violations, exclude (-y) those without
+          schema:
+            type: string
+            enum: ["+y", "-y"]
         - name: library_id
           in: query
           description: Filter artists by library ID

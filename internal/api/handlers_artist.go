@@ -316,13 +316,31 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 // The flyout JS writes params in the form: filter_missing_meta=%2By (include)
 // or filter_missing_meta=-y (exclude). Single-value keys use exactly "+y" or
 // "-y". Per-library params use filter_library_{id}=+y / -y and are stored as
-// "library_{id}" -> "include"/"exclude". Recognized single-value keys are:
-// missing_meta, missing_images, missing_mbid, excluded, locked,
-// type_person, type_group, type_orchestra.
+// "library_{id}" -> "include"/"exclude". Recognized single-value keys span
+// legacy composite filters (missing_meta, missing_images, missing_mbid,
+// excluded, locked), artist-type filters (type_person, type_group,
+// type_orchestra), metadata-field presence (has_biography, has_years_active,
+// has_formed, has_disbanded, has_born, has_died, has_gender, has_type,
+// has_country, has_genres, has_styles, has_moods, has_members,
+// has_discography), image presence (has_thumb, has_fanart, has_logo,
+// has_banner), platform membership (in_emby, in_jellyfin, has_lidarr), and
+// rule status (has_violations). The full set is the keys slice below.
 func parseFlyoutFilters(req *http.Request) map[string]string {
 	keys := []string{
+		// Legacy / composite filters.
 		"missing_meta", "missing_images", "missing_mbid", "excluded", "locked",
+		// Artist type filters (aggregated into IN/NOT IN by buildWhereClause).
 		"type_person", "type_group", "type_orchestra",
+		// Metadata field presence filters.
+		"has_biography", "has_years_active", "has_formed", "has_disbanded",
+		"has_born", "has_died", "has_gender", "has_type", "has_country",
+		"has_genres", "has_styles", "has_moods", "has_members", "has_discography",
+		// Per-image-type presence filters.
+		"has_thumb", "has_fanart", "has_logo", "has_banner",
+		// Platform membership filters.
+		"in_emby", "in_jellyfin", "has_lidarr",
+		// Rule violation filter.
+		"has_violations",
 	}
 	filters := make(map[string]string)
 	for _, k := range keys {

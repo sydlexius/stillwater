@@ -231,6 +231,63 @@ func missingImagesPredicate(state string) (string, []any) {
 	return "", nil
 }
 
+// nonEmptyStringPredicate returns a filterPredicate that tests whether a TEXT
+// column in the artists table is non-empty (include) or empty (exclude).
+// "Empty" means NULL, the empty string ”, or the JSON empty-array literal '[]'
+// used by slice fields (genres, styles, moods).
+func nonEmptyStringPredicate(col string) filterPredicate {
+	return func(state string) (string, []any) {
+		switch state {
+		case "include":
+			// Has a meaningful value: not NULL, not empty string, not empty JSON array.
+			return "(" + col + " IS NOT NULL AND " + col + " <> '' AND " + col + " <> '[]')", nil
+		case "exclude":
+			// Lacks a value: NULL, empty string, or empty JSON array.
+			return "(" + col + " IS NULL OR " + col + " = '' OR " + col + " = '[]')", nil
+		}
+		return "", nil
+	}
+}
+
+// singleImagePredicate returns a filterPredicate for a single image type in the
+// artist_images table. include matches artists that have the image; exclude
+// matches artists that lack it.
+func singleImagePredicate(imageType string) filterPredicate {
+	return func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return imageExistsClause(imageType, true), nil
+		case "exclude":
+			return imageExistsClause(imageType, false), nil
+		}
+		return "", nil
+	}
+}
+
+// platformPresencePredicate returns a filterPredicate that tests whether an
+// artist has (include) or lacks (exclude) a library membership for a given
+// connection type. connectionType must be one of "emby", "jellyfin", or "lidarr".
+// The sub-select mirrors the join used by GetPresenceForArtists.
+func platformPresencePredicate(connectionType string) filterPredicate {
+	return func(state string) (string, []any) {
+		// artists.id -> artist_libraries -> libraries -> connections
+		// A NULL connection_id means filesystem; a non-NULL one maps to type.
+		existsSub := `EXISTS (
+			SELECT 1 FROM artist_libraries al
+			JOIN libraries l ON l.id = al.library_id
+			JOIN connections c ON c.id = l.connection_id
+			WHERE al.artist_id = artists.id AND c.type = '` + connectionType + `'
+		)`
+		switch state {
+		case "include":
+			return existsSub, nil
+		case "exclude":
+			return "NOT " + existsSub, nil
+		}
+		return "", nil
+	}
+}
+
 // artistFilterPredicates maps flyout filter keys to their predicate functions.
 // Keys here are the canonical names from ListParams.Filters. Each predicate
 // receives the filter state ("include" or "exclude") and returns the SQL
@@ -240,6 +297,11 @@ func missingImagesPredicate(state string) (string, []any) {
 // Type filters (type_person, type_group, type_orchestra) and library filters
 // (library_{id}) are NOT in this map; they aggregate across multiple keys and
 // are handled separately in buildWhereClause.
+//
+// Metadata-presence filters (has_biography, has_years_active, etc.) use
+// nonEmptyStringPredicate. Image-presence filters (has_thumb, has_fanart, etc.)
+// use singleImagePredicate. Platform-membership filters (in_emby, in_jellyfin,
+// has_lidarr) use platformPresencePredicate.
 var artistFilterPredicates = map[string]filterPredicate{
 	"missing_meta": func(state string) (string, []any) {
 		switch state {
@@ -278,6 +340,74 @@ var artistFilterPredicates = map[string]filterPredicate{
 			return "locked = 1", nil
 		case "exclude":
 			return "locked = 0", nil
+		}
+		return "", nil
+	},
+
+	// -- Metadata field presence filters --
+	// Each filter uses include="has value" / exclude="missing value" semantics.
+	// "has" means non-NULL and non-empty (and non-'[]' for slice fields).
+
+	"has_biography":    nonEmptyStringPredicate("biography"),
+	"has_years_active": nonEmptyStringPredicate("years_active"),
+	"has_formed":       nonEmptyStringPredicate("formed"),
+	"has_disbanded":    nonEmptyStringPredicate("disbanded"),
+	"has_born":         nonEmptyStringPredicate("born"),
+	"has_died":         nonEmptyStringPredicate("died"),
+	"has_gender":       nonEmptyStringPredicate("gender"),
+	"has_type":         nonEmptyStringPredicate("type"),
+	"has_country":      nonEmptyStringPredicate("origin"),
+	"has_genres":       nonEmptyStringPredicate("genres"),
+	"has_styles":       nonEmptyStringPredicate("styles"),
+	"has_moods":        nonEmptyStringPredicate("moods"),
+	// has_members checks band_members table for at least one row for this artist.
+	"has_members": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "EXISTS (SELECT 1 FROM band_members WHERE artist_id = artists.id)", nil
+		case "exclude":
+			return "NOT EXISTS (SELECT 1 FROM band_members WHERE artist_id = artists.id)", nil
+		}
+		return "", nil
+	},
+	// has_discography uses nfo_exists as the DB-level proxy: a discography is
+	// parsed from the artist.nfo on demand and is not persisted to the database.
+	// An artist with nfo_exists=1 may have album entries; one with nfo_exists=0
+	// cannot. This is the best available filter without adding a new DB column.
+	"has_discography": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "nfo_exists = 1", nil
+		case "exclude":
+			return "nfo_exists = 0", nil
+		}
+		return "", nil
+	},
+
+	// -- Per-image-type presence filters --
+	// Each filter independently checks the artist_images table for that type.
+
+	"has_thumb":  singleImagePredicate("thumb"),
+	"has_fanart": singleImagePredicate("fanart"),
+	"has_logo":   singleImagePredicate("logo"),
+	"has_banner": singleImagePredicate("banner"),
+
+	// -- Platform membership filters --
+	// Each filter checks whether the artist belongs to at least one library
+	// connected via that platform type.
+
+	"in_emby":     platformPresencePredicate("emby"),
+	"in_jellyfin": platformPresencePredicate("jellyfin"),
+	"has_lidarr":  platformPresencePredicate("lidarr"),
+
+	// -- Rule violation filter --
+	// has_violations checks for at least one open, non-dismissed rule violation.
+	"has_violations": func(state string) (string, []any) {
+		switch state {
+		case "include":
+			return "EXISTS (SELECT 1 FROM rule_violations WHERE artist_id = artists.id AND status = 'open')", nil
+		case "exclude":
+			return "NOT EXISTS (SELECT 1 FROM rule_violations WHERE artist_id = artists.id AND status = 'open')", nil
 		}
 		return "", nil
 	},
