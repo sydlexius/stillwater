@@ -103,6 +103,16 @@ type Repository interface {
 	// artists in the catalog -- the denominator for incremental Run Rules
 	// progress reporting.
 	CountEligibleArtists(ctx context.Context) (int, error)
+
+	// ListIDs returns the IDs of all artists matching the given filters,
+	// ordered by sort_name then id for a stable, deterministic sequence.
+	// Results are capped at MaxListIDs via a LIMIT clause. A separate
+	// COUNT(*) query provides the true total match count, so callers can
+	// detect overflow even when the ID slice is truncated (total > len(ids)
+	// means capped is true). Used by the "select all matching" affordance
+	// on /artists so the client can load the full cross-page selection
+	// without a server-side "select-all mode" flag.
+	ListIDs(ctx context.Context, params CountParams) (ids []string, total int, err error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.

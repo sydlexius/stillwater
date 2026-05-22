@@ -394,6 +394,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/badge", wrapAuth(r.handleArtistsBadge, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))
+	// Grouped with the other literal /artists/* routes.
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/matching-ids", wrapAuth(r.handleArtistMatchingIDs, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))

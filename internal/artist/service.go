@@ -566,6 +566,20 @@ func (s *Service) Count(ctx context.Context, params CountParams) (int, error) {
 	return s.artists.Count(ctx, params)
 }
 
+// ListIDs returns the IDs of all artists matching the given filters, capped at
+// MaxListIDs. The second return value is the true total count; the third
+// indicates whether the result was capped. Use this for the "select all
+// matching" affordance so the client can load the full cross-page selection
+// without a server-side "select-all mode" flag.
+func (s *Service) ListIDs(ctx context.Context, params CountParams) (ids []string, total int, capped bool, err error) {
+	ids, total, err = s.artists.ListIDs(ctx, params)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	capped = total > MaxListIDs
+	return ids, total, capped, nil
+}
+
 // Update modifies an existing artist and persists its provider IDs and image metadata.
 // Note: if provider or image persistence fails after the artist row is updated,
 // we cannot rollback the artist update (the old data is already overwritten).

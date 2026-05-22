@@ -455,6 +455,13 @@
     "covered": false
   },
   {
+    "operationId": "getArtistMatchingIDs",
+    "method": "GET",
+    "path": "/artists/matching-ids",
+    "handler": "handleArtistMatchingIDs",
+    "covered": true
+  },
+  {
     "operationId": "getArtistMusicBrainzDiffs",
     "method": "GET",
     "path": "/artists/{id}/musicbrainz/diffs",

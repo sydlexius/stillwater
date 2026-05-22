@@ -240,6 +240,53 @@ func (r *sqliteArtistRepo) Count(ctx context.Context, params CountParams) (int, 
 	return total, nil
 }
 
+// ListIDs returns the IDs of all artists that match the given filters,
+// ordered by sort_name, id for a stable sequence. A separate COUNT(*) query
+// provides the true total (so the UI can show "500 matching" even when the
+// ID list is capped). When there are more than MaxListIDs matches, only the
+// first MaxListIDs IDs are returned and capped is true.
+func (r *sqliteArtistRepo) ListIDs(ctx context.Context, params CountParams) ([]string, int, error) {
+	// Convert to ListParams so buildWhereClause can be reused. Page/PageSize
+	// values are irrelevant because this query does not paginate.
+	lp := params.toListParams()
+	lp.Validate()
+
+	where, args := buildWhereClause(lp)
+
+	// Fetch the true total count first.
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM artists"+where, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting artists for ListIDs: %w", err)
+	}
+
+	// Request MaxListIDs IDs ordered stably by sort_name, then id as the
+	// tiebreaker. The ORDER BY mirrors the standard artist list sort so
+	// selection order feels consistent with what the user sees on-screen.
+	//nolint:gosec // ORDER BY clause is hard-coded, not user-supplied.
+	query := "SELECT id FROM artists" + where + " ORDER BY sort_name, id LIMIT ?"
+	args = append(args, MaxListIDs)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing artist IDs: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // Close error not actionable on cleanup
+
+	ids := make([]string, 0, MaxListIDs)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, 0, fmt.Errorf("scanning artist ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating artist ID rows: %w", err)
+	}
+
+	return ids, total, nil
+}
+
 func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	a.UpdatedAt = time.Now().UTC()
 

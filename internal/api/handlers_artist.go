@@ -399,6 +399,46 @@ func parseFlyoutFilters(req *http.Request) map[string]string {
 	return filters
 }
 
+// handleArtistMatchingIDs returns the IDs of all artists that match the
+// current filter state. Used by the "select all N matching" affordance on
+// /artists so the client can load the full cross-page selection without a
+// server-side "select-all mode" flag.
+//
+// GET /api/v1/artists/matching-ids
+//
+// Accepts the same filter query params as GET /api/v1/artists (search,
+// filter, library_id, filter_*). Page, page_size, and sort are ignored.
+// Returns:
+//
+//	{
+//	  "ids":   ["id1", "id2", ...],  // up to MaxListIDs entries
+//	  "total": 1234,                 // true match count (may exceed len(ids))
+//	  "capped": true                 // true when total > MaxListIDs
+//	}
+func (r *Router) handleArtistMatchingIDs(w http.ResponseWriter, req *http.Request) {
+	// Parse the same filter params as handleArtistsPage, but without
+	// page/page_size/sort since we return the full (capped) ID list.
+	params := artist.CountParams{
+		Search:    req.URL.Query().Get("search"),
+		Filter:    req.URL.Query().Get("filter"),
+		LibraryID: req.URL.Query().Get("library_id"),
+		Filters:   parseFlyoutFilters(req),
+	}
+
+	ids, total, capped, err := r.artistService.ListIDs(req.Context(), params)
+	if err != nil {
+		r.logger.Error("listing artist IDs for matching-ids", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ids":    ids,
+		"total":  total,
+		"capped": capped,
+	})
+}
+
 // handleArtistDetailPage renders the artist detail HTML page.
 // GET /artists/{id}
 func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request) {
