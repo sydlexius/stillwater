@@ -2730,20 +2730,6 @@ paths:
           description: Restrict results to artists in this library
           schema:
             type: string
-        - name: health_score_min
-          in: query
-          description: Minimum health score (0-100)
-          schema:
-            type: integer
-            minimum: 0
-            maximum: 100
-        - name: health_score_max
-          in: query
-          description: Maximum health score (0-100)
-          schema:
-            type: integer
-            minimum: 0
-            maximum: 100
       responses:
         "200":
           description: Artist ID list with cap metadata
@@ -2755,6 +2741,7 @@ paths:
                 properties:
                   ids:
                     type: array
+                    maxItems: 1000
                     items:
                       type: string
                     description: >-

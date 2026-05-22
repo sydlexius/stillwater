@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -109,11 +110,13 @@ func TestListIDs_WithSearchFilter(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	created := make(map[string]string) // name -> id
 	for _, name := range []string{"Radiohead", "Coldplay", "Radio Moscow"} {
 		a := testArtist(name, "/music/"+name)
 		if err := svc.Create(ctx, a); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
+		created[name] = a.ID
 	}
 
 	ids, total, capped, err := svc.ListIDs(ctx, CountParams{Search: "Radio"})
@@ -126,8 +129,11 @@ func TestListIDs_WithSearchFilter(t *testing.T) {
 	if capped {
 		t.Error("capped = true on small filtered result")
 	}
-	if len(ids) != 2 {
-		t.Errorf("len(ids) = %d, want 2", len(ids))
+	// Assert the exact matching IDs in sort_name order: "Radio Moscow" sorts
+	// before "Radiohead" (space < 'h'), and "Coldplay" must be excluded.
+	want := []string{created["Radio Moscow"], created["Radiohead"]}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("ids = %v, want %v (search=Radio)", ids, want)
 	}
 }
 
@@ -261,5 +267,34 @@ func TestListIDs_ExactlyAtCap(t *testing.T) {
 	}
 	if len(ids) != MaxListIDs {
 		t.Errorf("len(ids) = %d, want MaxListIDs (%d)", len(ids), MaxListIDs)
+	}
+}
+
+// TestListIDs_RepoError verifies that a repository-layer error is propagated by
+// Service.ListIDs and that no partial result leaks out. The error is induced by
+// closing the database before the query runs.
+func TestListIDs_RepoError(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Close the DB so the underlying COUNT/SELECT fails.
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	ids, total, capped, err := svc.ListIDs(ctx, CountParams{})
+	if err == nil {
+		t.Fatal("ListIDs error = nil, want an error after the DB is closed")
+	}
+	if ids != nil {
+		t.Errorf("ids = %v, want nil on error", ids)
+	}
+	if total != 0 {
+		t.Errorf("total = %d, want 0 on error", total)
+	}
+	if capped {
+		t.Error("capped = true, want false on error")
 	}
 }
