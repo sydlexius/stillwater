@@ -434,6 +434,12 @@ func TestLibraryDropdownLabel(t *testing.T) {
 			want:    "Music (Jellyfin UAT)",
 		},
 		{
+			name:    "imported library with empty connection name keeps bare label",
+			lib:     lib("l1", "Music"),
+			sources: srcWith("l1", ""),
+			want:    "Music",
+		},
+		{
 			name:    "library name already ending in suffix is not doubled (#1617)",
 			lib:     lib("l1", "Music (Jellyfin UAT)"),
 			sources: srcWith("l1", "Jellyfin UAT"),
