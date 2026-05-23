@@ -677,9 +677,9 @@ func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
-		{ArtistID: "a1", ArtistName: "A One", Decision: ""},
+		{ArtistID: "a1", ArtistName: "A One", Decision: wizardDecisionNone},
 		{ArtistID: "a2", ArtistName: "A Two", Decision: wizardDecisionAccepted},
-		{ArtistID: "a3", ArtistName: "A Three", Decision: ""},
+		{ArtistID: "a3", ArtistName: "A Three", Decision: wizardDecisionNone},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
