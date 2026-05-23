@@ -174,16 +174,24 @@ func artistPlatformPresence(id string, m map[string]artist.PlatformPresence) art
 }
 
 // libraryDropdownLabel returns the display label for a library in the dropdown.
-// For imported libraries it appends the connection name in parentheses.
+// For imported libraries it appends the connection name in parentheses, unless
+// the library name already ends with that same parenthetical (which would
+// otherwise double the connection-name suffix). An empty ConnectionName on an
+// otherwise-imported source falls back to the bare library name rather than
+// rendering an empty " ()" parenthetical.
 func libraryDropdownLabel(lib library.Library, sources map[string]LibrarySourceInfo) string {
 	if sources == nil {
 		return lib.Name
 	}
 	info, ok := sources[lib.ID]
-	if !ok || info.Source == "" {
+	if !ok || info.Source == "" || info.ConnectionName == "" {
 		return lib.Name
 	}
-	return lib.Name + " (" + info.ConnectionName + ")"
+	suffix := " (" + info.ConnectionName + ")"
+	if strings.HasSuffix(lib.Name, suffix) {
+		return lib.Name
+	}
+	return lib.Name + suffix
 }
 
 // sortLabel returns a short display label for the sort field.

@@ -4407,9 +4407,22 @@ templ metadataLanguagesScript() {
 			var uiLocales = (Array.isArray(navigator.languages) && navigator.languages.length > 0)
 				? navigator.languages.slice()
 				: [navigator.language || 'en'];
-			var langDisplayNames = (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function')
-				? new Intl.DisplayNames(uiLocales, { type: 'language', fallback: 'code' })
-				: null;
+			// Filter out empty strings and the literal "undefined" so the
+			// Intl.DisplayNames constructor does not throw RangeError on bad
+			// browser-supplied locale arrays (#1618).
+			uiLocales = uiLocales.filter(function (tag) {
+				return typeof tag === 'string' && tag !== '' && tag !== 'undefined';
+			});
+			if (uiLocales.length === 0) uiLocales = ['en'];
+
+			var langDisplayNames = null;
+			if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+				try {
+					langDisplayNames = new Intl.DisplayNames(uiLocales, { type: 'language', fallback: 'code' });
+				} catch (_) {
+					langDisplayNames = null;
+				}
+			}
 
 			function langName(code) {
 				if (!langDisplayNames) return code;
