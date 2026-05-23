@@ -6,10 +6,32 @@ import (
 )
 
 func TestWizardRetryURL(t *testing.T) {
-	got := wizardRetryURL("sess-abc", 3)
-	want := "/api/v1/artists/re-identify/wizard/sess-abc/step/3/retry"
-	if got != want {
-		t.Errorf("wizardRetryURL = %q, want %q", got, want)
+	tests := []struct {
+		name      string
+		sessionID string
+		index     int
+		want      string
+	}{
+		{
+			name:      "typical session and step",
+			sessionID: "sess-abc",
+			index:     3,
+			want:      "/api/v1/artists/re-identify/wizard/sess-abc/step/3/retry",
+		},
+		{
+			name:      "first step",
+			sessionID: "sess-xyz",
+			index:     0,
+			want:      "/api/v1/artists/re-identify/wizard/sess-xyz/step/0/retry",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wizardRetryURL(tt.sessionID, tt.index)
+			if got != tt.want {
+				t.Errorf("wizardRetryURL = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

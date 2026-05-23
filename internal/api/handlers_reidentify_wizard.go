@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/provider"
 	templates "github.com/sydlexius/stillwater/web/templates"
 )
@@ -369,7 +370,7 @@ func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Req
 
 	sess.mu.Lock()
 	step := sess.Steps[idx]
-	data := buildWizardStepData(sess, step, idx, total)
+	data := buildWizardStepData(req.Context(), sess, step, idx, total)
 	// Only surface the start-time skipped list on the initial full-page
 	// landing. Subsequent HTMX swaps replace just #wizard-body so showing
 	// the banner there would be inert; suppress it on intra-wizard
@@ -391,7 +392,7 @@ func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Req
 // renders the error banner instead of the ambiguous "no candidates" line;
 // Ready steps populate Candidates via the existing projection. Caller must
 // hold sess.mu.
-func buildWizardStepData(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, idx, total int) templates.ReIdentifyWizardStepData {
+func buildWizardStepData(ctx context.Context, sess *reIdentifyWizardSession, step *reIdentifyWizardStep, idx, total int) templates.ReIdentifyWizardStepData {
 	data := templates.ReIdentifyWizardStepData{
 		SessionID:  sess.ID,
 		Index:      idx,
@@ -406,10 +407,10 @@ func buildWizardStepData(sess *reIdentifyWizardSession, step *reIdentifyWizardSt
 		if data.ErrMsg == "" {
 			// Defensive fallback: a future code path that flips state to
 			// Failed without populating errMsg would otherwise render the
-			// banner heading with no body text. Mirror the canonical
-			// sanitized message that ensureWizardCandidates writes on
-			// fetch failure today so the banner always carries usable copy.
-			data.ErrMsg = "candidate lookup failed; retry or skip this artist"
+			// banner heading with no body text. The translated copy
+			// matches what ensureWizardCandidates writes on fetch failure
+			// today; localizing it keeps non-English locales consistent.
+			data.ErrMsg = i18n.TFromCtx(ctx).T("artists.bulk.reidentify.wizard.error.fallback")
 		}
 	}
 	return data
@@ -527,7 +528,7 @@ func (r *Router) handleReIdentifyWizardRetry(w http.ResponseWriter, req *http.Re
 
 	sess.mu.Lock()
 	total := len(sess.Steps)
-	data := buildWizardStepData(sess, step, idx, total)
+	data := buildWizardStepData(req.Context(), sess, step, idx, total)
 	sess.mu.Unlock()
 	renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 }
@@ -702,7 +703,7 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 		go r.ensureWizardCandidates(bgCtx, sess, next+1)
 		sess.mu.Lock()
 		step := sess.Steps[next]
-		data := buildWizardStepData(sess, step, next, total)
+		data := buildWizardStepData(req.Context(), sess, step, next, total)
 		sess.mu.Unlock()
 		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 		return
