@@ -19,6 +19,28 @@ type ReIdentifyWizardStepData struct {
 	ArtistID   string
 	ArtistName string
 	Candidates any
+	// Errored is true when the most recent provider lookup for this step
+	// failed terminally. The template renders a distinct error banner with
+	// a Retry control instead of the ambiguous "no candidates" message.
+	Errored bool
+	// ErrMsg is the sanitized, client-safe message stored when Errored is
+	// set. It never contains raw provider error text; the handler maps
+	// underlying errors to a short hint before exposing them here.
+	ErrMsg string
+	// SkippedAtStart names artists that the start endpoint dropped before
+	// the session was created (missing record, load failure). Non-empty
+	// only on the initial full-page render so the banner appears once
+	// when the user lands on the wizard and does not persist across HTMX
+	// step swaps.
+	SkippedAtStart []SkippedArtistView
+}
+
+// SkippedArtistView is the flat view of a dropped artist exposed to the
+// wizard template. Reason is one of "not_found" or "load_error"; the
+// template chooses a localized message per reason.
+type SkippedArtistView struct {
+	ID     string
+	Reason string
 }
 
 // ReIdentifyWizardDoneData is the completion summary shown after the last
@@ -41,11 +63,39 @@ templ ReIdentifyWizardPage(assets AssetPaths, data ReIdentifyWizardStepData) {
 				<h1 class="text-2xl font-bold">{ t(ctx, "artists.bulk.reidentify.wizard.title") }</h1>
 				@components.ContextHelp("help-reidentify-wizard-overview", t(ctx, "artists.bulk.reidentify.wizard.help.overview.label"), t(ctx, "artists.bulk.reidentify.wizard.help.overview"), "how-to/refresh-metadata#when-you-get-the-disambiguation-prompt")
 			</div>
+			if len(data.SkippedAtStart) > 0 {
+				@reIdentifyWizardSkippedBanner(data.SkippedAtStart)
+			}
 			<div id="wizard-body">
 				@ReIdentifyWizardStep(data)
 			</div>
 		</div>
 	}
+}
+
+// reIdentifyWizardSkippedBanner surfaces artists the start endpoint had to
+// drop. The user might have requested 50 artists and the wizard is only
+// stepping through 47; without this banner the missing 3 vanish silently.
+// Rendered once at page load, not on subsequent HTMX step swaps.
+templ reIdentifyWizardSkippedBanner(skipped []SkippedArtistView) {
+	<div
+		class="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200 px-4 py-3 text-sm"
+		role="status"
+	>
+		<div class="font-medium">
+			{ tn(ctx, "artists.bulk.reidentify.wizard.skipped_banner", len(skipped)) }
+		</div>
+		<ul class="mt-2 list-disc list-inside space-y-0.5">
+			for _, s := range skipped {
+				<li class="font-mono text-xs">
+					{ s.ID }
+					<span class="ml-2 font-sans not-italic text-amber-800 dark:text-amber-300">
+						{ wizardSkippedReasonLabel(ctx, s.Reason) }
+					</span>
+				</li>
+			}
+		</ul>
+	</div>
 }
 
 // ReIdentifyWizardPageDone is the full-page equivalent of the done fragment
@@ -152,9 +202,14 @@ templ ReIdentifyWizardStep(data ReIdentifyWizardStepData) {
 
 // reIdentifyWizardCandidates renders the candidate list for the current step.
 // When Candidates is nil (pre-fetch has not landed) an inline spinner is
-// shown; an empty slice prints an explicit no-results message.
+// shown; an empty slice prints an explicit no-results message. An Errored
+// step short-circuits before either branch with a dedicated banner and a
+// Retry control so the user can distinguish "lookup failed" from "lookup
+// succeeded but returned nothing".
 templ reIdentifyWizardCandidates(data ReIdentifyWizardStepData) {
-	if wizardCandidatesNil(data.Candidates) {
+	if data.Errored {
+		@reIdentifyWizardErrorBanner(data)
+	} else if wizardCandidatesNil(data.Candidates) {
 		<div
 			class="flex items-center gap-2 text-sm text-gray-500"
 			hx-get={ wizardStepURL(data.SessionID, data.Index) }
@@ -214,6 +269,38 @@ templ reIdentifyWizardCandidates(data ReIdentifyWizardStepData) {
 			}
 		</ul>
 	}
+}
+
+// reIdentifyWizardErrorBanner is rendered in place of the candidate list
+// when the most recent provider lookup for this step failed. ErrMsg is the
+// server-sanitized hint stored on the step; never the raw provider error
+// string. The Retry button POSTs to the per-step retry endpoint, which
+// clears the failed state and re-issues the lookup before rendering the
+// step body back into #wizard-body.
+templ reIdentifyWizardErrorBanner(data ReIdentifyWizardStepData) {
+	<div
+		class="rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-200 px-4 py-3 text-sm space-y-2"
+		role="alert"
+	>
+		<div class="font-medium">{ t(ctx, "artists.bulk.reidentify.wizard.error.heading") }</div>
+		if data.ErrMsg != "" {
+			<p class="text-xs">{ data.ErrMsg }</p>
+		}
+		<button
+			type="button"
+			class="inline-flex items-center gap-1 rounded border border-red-400 bg-white dark:bg-red-900/40 px-3 py-1.5 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/60 [&.htmx-request]:opacity-60 [&.htmx-request]:cursor-wait"
+			hx-post={ wizardRetryURL(data.SessionID, data.Index) }
+			hx-target="#wizard-body"
+			hx-swap="innerHTML"
+			hx-disabled-elt="this"
+		>
+			<svg class="hidden [.htmx-request_&]:inline-block h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+			</svg>
+			{ t(ctx, "artists.bulk.reidentify.wizard.error.retry") }
+		</button>
+	</div>
 }
 
 // ReIdentifyWizardDone renders the terminal summary.

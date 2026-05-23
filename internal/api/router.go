@@ -600,6 +600,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/accept", wrapAuth(r.handleReIdentifyWizardAccept, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/skip", wrapAuth(r.handleReIdentifyWizardSkip, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/decline", wrapAuth(r.handleReIdentifyWizardDecline, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/step/{idx}/retry", wrapAuth(r.handleReIdentifyWizardRetry, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/re-identify/wizard/{sid}/save-exit", wrapAuth(r.handleReIdentifyWizardSaveExit, authMw))
 
 	// SSE event stream

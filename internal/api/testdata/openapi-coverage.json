@@ -1267,6 +1267,13 @@
     "covered": false
   },
   {
+    "operationId": "retryReIdentifyWizardStep",
+    "method": "POST",
+    "path": "/artists/re-identify/wizard/{sid}/step/{idx}/retry",
+    "handler": "handleReIdentifyWizardRetry",
+    "covered": true
+  },
+  {
     "operationId": "revertHistory",
     "method": "POST",
     "path": "/history/{id}/revert",

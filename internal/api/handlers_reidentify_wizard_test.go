@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -368,6 +369,141 @@ func TestHandleReIdentifyWizardStart_Success(t *testing.T) {
 	if sid != "" && r.reIdentifyWizardStore.get(sid) == nil {
 		t.Errorf("store missing session %q returned in response", sid)
 	}
+}
+
+// TestHandleReIdentifyWizardStart_ReportsSkippedIDs verifies the start
+// endpoint surfaces the IDs it had to drop, with a coarse reason class so
+// the UI can render distinct copy for "stale ID" vs "backend failure". The
+// previous behavior silently swallowed these in the per-ID loop.
+func TestHandleReIdentifyWizardStart_ReportsSkippedIDs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("not_found_reason_for_missing_artist", func(t *testing.T) {
+		t.Parallel()
+		r, _, artistSvc := testRouterWithIdentify(t)
+		// One real artist plus one ID the service has never seen. The
+		// missing ID must surface as a skipped_errors entry with the
+		// not_found reason; the wizard still starts with one step.
+		real := &artist.Artist{ID: "skipReal1", Name: "Real Artist"}
+		if err := artistSvc.Create(context.Background(), real); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		body := strings.NewReader(`{"ids":["` + real.ID + `","ghostArtistXYZ"]}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.handleReIdentifyWizardStart(w, req)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			SessionID     string                `json:"session_id"`
+			Total         int                   `json:"total"`
+			Index         int                   `json:"index"`
+			SkippedIDs    []string              `json:"skipped_ids"`
+			SkippedErrors []SkippedWizardArtist `json:"skipped_errors"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Total != 1 {
+			t.Errorf("total = %d, want 1 (one valid artist after the skip)", resp.Total)
+		}
+		if len(resp.SkippedIDs) != 1 || resp.SkippedIDs[0] != "ghostArtistXYZ" {
+			t.Errorf("skipped_ids = %v, want [ghostArtistXYZ]", resp.SkippedIDs)
+		}
+		if len(resp.SkippedErrors) != 1 ||
+			resp.SkippedErrors[0].ID != "ghostArtistXYZ" ||
+			resp.SkippedErrors[0].Reason != skippedReasonNotFound {
+			t.Errorf("skipped_errors = %+v, want one entry {ghostArtistXYZ, not_found}", resp.SkippedErrors)
+		}
+	})
+
+	t.Run("load_error_reason_for_backend_failure", func(t *testing.T) {
+		t.Parallel()
+		// Drive the generic-error branch by closing the underlying DB
+		// after seeding the artist: GetByID then returns a wrapped
+		// sql.ErrConnDone-class error, which is not ErrNotFound. This
+		// exercises the load_error reason class without standing up a
+		// hand-rolled repository fake.
+		r, _, artistSvc := testRouterWithIdentify(t)
+		dead := &artist.Artist{ID: "deadArtist1", Name: "Dead Artist"}
+		if err := artistSvc.Create(context.Background(), dead); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := r.db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+		body := strings.NewReader(`{"ids":["` + dead.ID + `"]}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.handleReIdentifyWizardStart(w, req)
+		// Every ID failed to load so the handler still returns its
+		// "no valid artists" 400. The handler-level branch is the
+		// existing behavior; the unit-level test below asserts the
+		// per-ID classification reaches the skipped slice.
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 when all IDs fail to load", w.Code)
+		}
+	})
+
+	t.Run("load_error_classified_in_builder", func(t *testing.T) {
+		t.Parallel()
+		// Unit-level assertion: calling the extracted builder with a
+		// closed DB must classify the failure as load_error rather
+		// than not_found, so a future re-shuffle of the handler can't
+		// regress the reason mapping without failing this test.
+		r, _, artistSvc := testRouterWithIdentify(t)
+		brokenID := "brokenArtist1"
+		if err := artistSvc.Create(context.Background(), &artist.Artist{ID: brokenID, Name: "Broken"}); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := r.db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+		steps, skipped, badID := r.buildWizardStartSteps(context.Background(), []string{brokenID})
+		if badID {
+			t.Fatal("badID = true; ID is well-formed")
+		}
+		if len(steps) != 0 {
+			t.Errorf("steps = %d, want 0 when GetByID fails", len(steps))
+		}
+		if len(skipped) != 1 || skipped[0].ID != brokenID || skipped[0].Reason != skippedReasonLoadError {
+			t.Errorf("skipped = %+v, want one {brokenArtist1, load_error}", skipped)
+		}
+	})
+
+	t.Run("empty_skip_serializes_as_array_not_null", func(t *testing.T) {
+		t.Parallel()
+		// The OpenAPI start-response schema declares skipped_ids and
+		// skipped_errors as required arrays. A nil Go slice marshals to
+		// JSON null, which would break the contract. Lock in that the
+		// happy path (no IDs dropped) still serializes [] for both.
+		r, _, artistSvc := testRouterWithIdentify(t)
+		real := &artist.Artist{ID: "allGoodArtist1", Name: "All Good"}
+		if err := artistSvc.Create(context.Background(), real); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		body := strings.NewReader(`{"ids":["` + real.ID + `"]}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/re-identify/wizard", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.handleReIdentifyWizardStart(w, req)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+		}
+		// Assert against the raw JSON so a future struct-level coalesce
+		// to []SkippedWizardArtist{} on decode cannot hide a nil being
+		// emitted on the wire.
+		raw := w.Body.String()
+		if !strings.Contains(raw, `"skipped_ids":[]`) {
+			t.Errorf("skipped_ids must serialize as []; body was: %s", raw)
+		}
+		if !strings.Contains(raw, `"skipped_errors":[]`) {
+			t.Errorf("skipped_errors must serialize as []; body was: %s", raw)
+		}
+	})
 }
 
 func TestHandleReIdentifyWizardStep_NotFound(t *testing.T) {
@@ -874,4 +1010,136 @@ func TestHandleBulkAction_ReIdentifyAliasNormalization(t *testing.T) {
 	if resp["action"] != "re_identify_auto" {
 		t.Errorf("action = %v, want re_identify_auto", resp["action"])
 	}
+}
+
+// TestWizardErroredStepRendersBanner verifies the template surfaces a step
+// in the wizardStepFailed state with the dedicated error banner and a Retry
+// control, rather than the ambiguous "no candidates" message. Renders the
+// templ component directly with Errored=true so the assertion does not
+// depend on orchestrator wiring or HTTP plumbing.
+func TestWizardErroredStepRendersBanner(t *testing.T) {
+	t.Parallel()
+	data := templates.ReIdentifyWizardStepData{
+		SessionID:  "sid-test",
+		Index:      0,
+		Total:      1,
+		ArtistID:   "a1",
+		ArtistName: "Test Artist",
+		Errored:    true,
+		ErrMsg:     "Candidate lookup failed; retry or skip this artist",
+	}
+	var buf bytes.Buffer
+	if err := templates.ReIdentifyWizardStep(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	// The error banner uses role=alert so screen readers and tests can
+	// locate it unambiguously; assert on that contract rather than the
+	// underlying Tailwind class soup so a future restyle does not break
+	// the test.
+	if !strings.Contains(out, `role="alert"`) {
+		t.Errorf("rendered output missing role=alert banner; got:\n%s", out)
+	}
+	if !strings.Contains(out, data.ErrMsg) {
+		t.Errorf("rendered output missing sanitized ErrMsg %q", data.ErrMsg)
+	}
+	if !strings.Contains(out, "Could not load candidates") {
+		t.Errorf("rendered output missing localized error heading; got:\n%s", out)
+	}
+	// The Retry control posts to the new per-step retry endpoint; assert
+	// the URL so a renamed route is caught here, not at runtime.
+	if !strings.Contains(out, "/api/v1/artists/re-identify/wizard/sid-test/step/0/retry") {
+		t.Errorf("rendered output missing retry POST URL; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Retry") {
+		t.Errorf("rendered output missing Retry button label; got:\n%s", out)
+	}
+	// The errored render path must NOT also fall through to the "no
+	// candidates" or "loading" branches, which would produce a confusing
+	// mixed UI. Search for the canonical strings from those branches.
+	if strings.Contains(out, "No candidates found for this artist.") {
+		t.Errorf("errored render leaked the no-candidates message; got:\n%s", out)
+	}
+	if strings.Contains(out, "Searching providers for candidates...") {
+		t.Errorf("errored render leaked the loading spinner copy; got:\n%s", out)
+	}
+}
+
+// TestHandleReIdentifyWizardRetry covers the new retry endpoint. The step
+// is seeded with Failed state; orchestrator is nil so the retry deliberately
+// fails again (no real provider in this test rig). The endpoint must still
+// 200 and return a rendered fragment that surfaces the error banner so the
+// user can see the retry didn't fix it.
+func TestHandleReIdentifyWizardRetry(t *testing.T) {
+	t.Parallel()
+	t.Run("rerenders_error_banner_when_retry_fails", func(t *testing.T) {
+		t.Parallel()
+		r, _, _ := testRouterWithIdentify(t)
+		sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{
+			ArtistID:   "ra1",
+			ArtistName: "Retry Artist",
+		}})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		// Seed Failed state directly so the test exercises the retry path
+		// without first having to invoke ensureWizardCandidates.
+		sess.mu.Lock()
+		sess.Steps[0].state = wizardStepFailed
+		sess.Steps[0].errMsg = "prior error"
+		sess.mu.Unlock()
+
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/v1/artists/re-identify/wizard/"+sess.ID+"/step/0/retry", nil)
+		req.SetPathValue("sid", sess.ID)
+		req.SetPathValue("idx", "0")
+		// Make it an HTMX request so renderTempl emits the fragment
+		// rather than the full page wrapper.
+		req.Header.Set("HX-Request", "true")
+		req.Header.Set("Accept-Language", "en")
+		w := httptest.NewRecorder()
+		r.handleReIdentifyWizardRetry(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `role="alert"`) {
+			t.Errorf("retry response missing error banner; got:\n%s", body)
+		}
+		// The prior errMsg must have been replaced by the standard
+		// sanitized message after the retry's own failure.
+		if strings.Contains(body, "prior error") {
+			t.Errorf("retry response leaked prior errMsg; got:\n%s", body)
+		}
+
+		// State on the session is now Failed again with the standard
+		// sanitized message (orchestrator nil so retry could not
+		// succeed). Asserting on the session, not the body, locks in
+		// the contract independent of template churn.
+		sess.mu.Lock()
+		got := sess.Steps[0]
+		state := got.state
+		msg := got.errMsg
+		sess.mu.Unlock()
+		if state != wizardStepFailed {
+			t.Errorf("state after retry = %d, want wizardStepFailed", state)
+		}
+		if msg == "prior error" || msg == "" {
+			t.Errorf("errMsg after retry = %q, want the standard sanitized message", msg)
+		}
+	})
+
+	t.Run("session_not_found", func(t *testing.T) {
+		t.Parallel()
+		r, _, _ := testRouterWithIdentify(t)
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/v1/artists/re-identify/wizard/missing/step/0/retry", nil)
+		req.SetPathValue("sid", "missing")
+		req.SetPathValue("idx", "0")
+		w := httptest.NewRecorder()
+		r.handleReIdentifyWizardRetry(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", w.Code)
+		}
+	})
 }

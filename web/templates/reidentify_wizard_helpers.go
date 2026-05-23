@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 )
@@ -82,9 +83,32 @@ func wizardSaveExitURL(sessionID string) string {
 	return "/api/v1/artists/re-identify/wizard/" + sessionID + "/save-exit"
 }
 
+// wizardRetryURL is the POST URL that clears a step's failed lookup state
+// and re-issues the provider search. POST (rather than reusing the GET step
+// URL) keeps the request semantically a state mutation, which keeps it in
+// the same CSRF + idempotency lane as the existing accept / skip / decline
+// actions and prevents browsers from auto-retrying it on transient errors.
+func wizardRetryURL(sessionID string, index int) string {
+	return "/api/v1/artists/re-identify/wizard/" + sessionID + "/step/" + itoa(index) + "/retry"
+}
+
 // itoa delegates to strconv.Itoa. Kept as a package-private alias so the
 // wizard URL-assembly helpers stay compact and can move to a bytes/builder
 // approach later without touching call sites.
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// wizardSkippedReasonLabel maps a SkippedArtistView.Reason class onto a
+// localized human-readable phrase. Unknown reasons fall through to a
+// generic skipped message rather than leaking the raw reason token.
+func wizardSkippedReasonLabel(ctx context.Context, reason string) string {
+	switch reason {
+	case "not_found":
+		return t(ctx, "artists.bulk.reidentify.wizard.skipped_reason.not_found")
+	case "load_error":
+		return t(ctx, "artists.bulk.reidentify.wizard.skipped_reason.load_error")
+	default:
+		return t(ctx, "artists.bulk.reidentify.wizard.skipped_reason.unknown")
+	}
 }
