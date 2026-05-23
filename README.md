@@ -7,76 +7,26 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/sydlexius/stillwater)](go.mod)
 
-Stillwater is a self-hosted web application for managing artist and composer metadata and images for Emby, Jellyfin, and Kodi media servers. It reads and writes NFO files and handles artist artwork, letting you keep your music library metadata clean and consistent from a single interface.
+Stillwater is a self-hosted web app for keeping your music library's artist
+and composer metadata clean and consistent. It reads and writes NFO files,
+manages artwork, and pulls metadata from MusicBrainz and Fanart.tv — all
+from one web UI that works alongside Emby, Jellyfin, and Kodi.
 
-**Project site:** <https://sydlexius.github.io/stillwater/>
+**Full documentation:** <https://sydlexius.github.io/stillwater/>
 
 ## Features
 
-- Browse and edit artist and composer NFO metadata files
-- Fetch, crop, and organize artist images
+- Browse and edit artist and composer NFO metadata from one place
+- Fetch, crop, and organize artist artwork
 - Pull metadata from MusicBrainz and Fanart.tv
-- Works with Emby, Jellyfin, and Kodi
-- Web UI for browsing and managing your library
-- REST API at `/api/v1/` for automation and integration
-- Session-based authentication
-- Webhook notifications for external integrations
+- Works alongside Emby, Jellyfin, and Kodi
+- Web UI plus a REST API at `/api/v1/` for automation and integration
+- Session-based authentication and webhook notifications
 
-## Requirements
-
-Stillwater can run via Docker or as a standalone binary on Linux, macOS, or Windows. Docker Compose is optional but recommended for Docker installs.
-
-## Installation
-
-### Binary
-
-Download the latest release for your platform from the [Releases](https://github.com/sydlexius/stillwater/releases) page:
-
-```bash
-# Linux (amd64)
-curl -Lo stillwater.tar.gz https://github.com/sydlexius/stillwater/releases/latest/download/stillwater_$(curl -s https://api.github.com/repos/sydlexius/stillwater/releases/latest | grep tag_name | cut -d '"' -f4 | tr -d v)_linux_amd64.tar.gz
-tar xzf stillwater.tar.gz
-chmod +x stillwater
-
-# Run
-SW_DB_PATH=./data/stillwater.db SW_MUSIC_PATH=/path/to/music ./stillwater
-```
-
-Or install directly with Go:
-
-```bash
-go install github.com/sydlexius/stillwater/cmd/stillwater@latest
-```
-
-Static assets (CSS, JavaScript, fonts, images) are embedded in the binary. No additional files are required.
-
-#### Nightly builds
-
-A dated nightly release (`nightly-YYYYMMDD`) is published from `main` every day there are new commits. These builds are intended for testers and are available for manual download only; in-app updater support for a nightly channel is tracked in #1111. Nightly builds are not recommended for production use.
-
-### Docker Run
-
-Pull and run the image with a single command:
-
-```bash
-docker run -d \
-  --name stillwater \
-  -p 1973:1973 \
-  -e PUID=99 \
-  -e PGID=100 \
-  -v stillwater-data:/config \
-  -v /path/to/your/music:/music:rw \
-  --restart unless-stopped \
-  ghcr.io/sydlexius/stillwater:latest
-```
-
-The image is published to the GitHub Container Registry at `ghcr.io/sydlexius/stillwater`.
-
-### Docker Compose
-
-Create a `docker-compose.yml` file with the following content, adjusting the volume path for your music library:
+## Quick start
 
 ```yaml
+# docker-compose.yml
 services:
   stillwater:
     image: ghcr.io/sydlexius/stillwater:latest
@@ -86,10 +36,6 @@ services:
     environment:
       - PUID=99
       - PGID=100
-      - SW_LOG_LEVEL=info
-      - SW_LOG_FORMAT=json
-      # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
-      # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
     volumes:
       - stillwater-data:/config
       - /path/to/your/music:/music:rw
@@ -99,102 +45,32 @@ volumes:
   stillwater-data:
 ```
 
-Start the container:
-
 ```bash
 docker compose up -d
 ```
 
-Once running, open your browser and go to `http://your-server-ip:1973`.
+Then open <http://localhost:1973>.
 
-### Environment Variables
+Looking for a different install path, configuration knobs, or details on
+how Stillwater plays with media-server NFO write-back? It's all on the
+**[project site](https://sydlexius.github.io/stillwater/)** — install
+guides (Docker, binary, Unraid Community Applications, reverse proxy),
+environment-variable reference, encryption-key handling, the
+round-trip-conflict gate, and the full OpenAPI reference.
 
-| Variable | Description | Default |
-|---|---|---|
-| `PUID` | User ID for file permission mapping | `99` |
-| `PGID` | Group ID for file permission mapping | `100` |
-| `SW_LOG_LEVEL` | Log verbosity: `info`, `debug`, `warn`, `error` | `info` |
-| `SW_LOG_FORMAT` | Log format: `json` or `text` | `json` |
-| `SW_ENCRYPTION_KEY` | Key used to encrypt stored secrets. Auto-generated on first run if not set. Set this explicitly to ensure the same key persists across container recreations. | auto-generated |
-| `SW_BASE_PATH` | Base path prefix for subfolder reverse proxy deployments, for example `/stillwater` | (none) |
-| `SW_PORT` | Port the HTTP server listens on | `1973` |
-| `SW_MUSIC_PATH` | Path to the music library inside the container | `/music` |
-
-## Write-Back and Round-Trip Conflicts with Connected Servers
-
-Emby, Jellyfin, and Lidarr can each be configured to "save artwork into media folders" or write NFO files to disk. When Stillwater writes a file into the shared library directory and then pushes metadata via the server's API, the server may re-persist that same content to disk under its own filename convention, producing duplicate files (for example `backdrop.jpg` and `backdrop1.jpg` side by side).
-
-Stillwater detects this configuration on every enabled connection and gates its own file writes when a conflict is present:
-
-- A persistent top banner explains which server has the write-back enabled and on which axis (artwork or NFO).
-- Write endpoints return HTTP 409 with a structured payload identifying the axis and the contributing connections.
-- Each connection card in **Settings** includes a "Detected on this server" panel showing the current peer state and a toggle labelled **Let Stillwater manage artwork and NFO files on this server**. Enabling the toggle asks Stillwater to patch the peer's library options to disable its savers; the prior configuration is snapshotted and restored automatically if you turn the toggle off or remove the connection.
-- Overlapping library paths between two or more enabled connections are treated as a round-trip hazard and gate writes on both axes, even if only one peer currently has a saver enabled.
-
-Use `GET /api/v1/conflicts?refresh=1` to force an immediate re-check, or click **Re-check** on the banner. Details on each endpoint are in `internal/api/openapi.yaml`.
-
-## Reverse Proxy
-
-### SWAG
-
-Ready-to-use SWAG reverse proxy configuration samples are included in the repository under `build/swag/`:
-
-- `stillwater.subdomain.conf.sample` - For subdomain deployments, for example `https://stillwater.yourdomain.com`
-- `stillwater.subfolder.conf.sample` - For subfolder deployments, for example `https://yourdomain.com/stillwater`
-
-For subfolder deployments, set the `SW_BASE_PATH` environment variable to match the path prefix, for example:
-
-```bash
-SW_BASE_PATH=/stillwater
-```
-
-## Unraid
-
-### Installing via Community Applications
-
-1. Open the **Apps** tab in the Unraid web UI (requires the Community Applications plugin).
-2. Search for **Stillwater** and click **Install**.
-3. Review the template fields described below and adjust values for your setup.
-4. Click **Apply** to pull the image and start the container.
-
-If the app does not appear in search results yet, you can install it manually:
-
-1. Go to **Docker** > **Add Container** > **Template repositories**.
-2. Add `https://github.com/sydlexius/unraid-templates`.
-3. Click **Save** and then click the **Stillwater** template.
-
-### Template fields
-
-| Field | Description | Default |
-|---|---|---|
-| **Web UI Port** | Host port mapped to the Stillwater web interface. | `1973` |
-| **Config/Database** | Host path for persistent application data (database, backups, config). | (auto-detected) |
-| **Music Library** | Host path to your music library. This maps to `/music` inside the container and must be readable and writable by Stillwater. | (required) |
-| **PUID** | User ID Stillwater runs as. Use the ID of the user that owns your music files to avoid permission issues. | `99` (nobody) |
-| **PGID** | Group ID Stillwater runs as. | `100` (users) |
-| **Encryption Key** | AES-256 key used to encrypt API secrets stored in the database. Auto-generated on first run when left blank. | (auto-generated) |
-| **Log Level** | Log verbosity: `info`, `debug`, `warn`, or `error`. | `info` |
-| **Log Format** | Log output format: `json` or `text`. | `json` |
-| **Base Path** | URL prefix for subfolder reverse proxy deployments, for example `/stillwater`. Leave blank for root deployments. | (none) |
-
-### Persisting the encryption key
-
-When `SW_ENCRYPTION_KEY` is left blank, Stillwater generates a random key on first start and stores it in `/config/encryption.key` inside the container (which maps to your **Config/Database** path on the host). The key is reloaded automatically on restart as long as that path is preserved.
-
-If you ever recreate the container with a new appdata path or delete the appdata folder, set `SW_ENCRYPTION_KEY` explicitly in the template to a fixed value so your stored API keys remain decryptable. You can find the auto-generated value in the existing `encryption.key` file before making changes.
-
-## Documentation
-
-Full user-facing documentation lives at the project site,
-<https://sydlexius.github.io/stillwater/>, including installation, getting
-started, how-to guides, troubleshooting, and the full API reference rendered
-from `internal/api/openapi.yaml`.
+Binary downloads live on the
+[Releases](https://github.com/sydlexius/stillwater/releases) page.
+Nightly builds (`nightly-YYYYMMDD`) ship from `main` each day there are
+new commits — see the
+[self-update guide](https://sydlexius.github.io/stillwater/how-to/self-update/)
+for the nightly channel.
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
-environment setup, code style, and pull-request workflow. Participants are
-expected to follow the project [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+dev environment setup, code style, and pull-request workflow. Participants
+are expected to follow the project
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
