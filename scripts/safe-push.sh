@@ -16,7 +16,7 @@
 #
 # This wrapper:
 #   1. Resolves the local HEAD and the branch (or current symbolic-ref).
-#   2. Runs `git push` with full output captured to $SW_RUN_DIR/safe-push.log
+#   2. Runs `git push` with full output captured to <git-dir>/safe-push.log
 #      and mirrored to stderr so the caller can stream it.
 #   3. After push returns, queries `git ls-remote origin <branch>` and
 #      verifies the remote SHA matches local HEAD.
@@ -35,10 +35,18 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-. "$SCRIPT_DIR/lib/run-paths.sh"
-
-LOG="$SW_RUN_DIR/safe-push.log"
+# Repo-agnostic log location. `git rev-parse --git-dir` resolves correctly
+# for the main worktree (.git), linked worktrees (.git/worktrees/<name>),
+# and submodules. Previously sourced lib/run-paths.sh for $SW_RUN_DIR --
+# dropped so this wrapper has no project-specific dependency and can be
+# kept in sync with the repo-agnostic gist copy at
+# ~/.claude/scripts/safe-push.sh.
+git_dir=$(git rev-parse --git-dir 2>/dev/null || true)
+if [ -z "$git_dir" ]; then
+  echo "safe-push: not inside a git repository" >&2
+  exit 2
+fi
+LOG="$git_dir/safe-push.log"
 
 branch="${1:-}"
 shift_count=0
