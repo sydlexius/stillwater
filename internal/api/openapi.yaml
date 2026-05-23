@@ -741,18 +741,10 @@ components:
           description: Filesystem root path of the library.
         type:
           type: string
-          enum: [regular, classical]
-          description: >
-            Library classification. The "classical" value is deprecated and
-            will be removed in v1.3.0. Use "regular" for all new libraries.
-            Responses that contain a Classical library carry
-            Deprecation: true and Sunset headers.
+          enum: [regular]
+          description: Library classification. Only "regular" is supported as of v1.3.0.
           x-enum-descriptions:
-            regular: Standard artist-centric library. Use for all new libraries.
-            classical: >
-              Deprecated. Scheduled for removal in v1.3.0. Use "regular"
-              instead. Existing Classical libraries can be converted via
-              PATCH /api/v1/libraries/{id} with type=regular.
+            regular: Standard artist-centric library.
         source:
           type: string
           enum: [manual, emby, jellyfin, lidarr]
@@ -4909,50 +4901,6 @@ paths:
                     type: boolean
                     description: Whether the automatic rule scheduler is enabled.
 
-  /rules/classical-mode:
-    get:
-      tags: [Rules]
-      summary: Get classical music handling mode
-      operationId: getClassicalMode
-      responses:
-        "200":
-          description: Current mode
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  mode:
-                    type: string
-                    enum: [skip, composer, performer]
-                    description: Classical mode setting (skip, composer, or performer).
-    put:
-      tags: [Rules]
-      summary: Set classical music handling mode
-      operationId: setClassicalMode
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                mode:
-                  type: string
-                  enum: [skip, composer, performer]
-              required: [mode]
-      responses:
-        "200":
-          description: Mode updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  mode:
-                    type: string
-                    description: Classical mode setting (skip, composer, or performer).
-
   /bulk/fetch-metadata:
     post:
       tags: [Bulk Operations]
@@ -6641,7 +6589,7 @@ paths:
                   type: string
                 type:
                   type: string
-                  enum: [regular, classical]
+                  enum: [regular]
                   default: regular
               required: [name]
           application/x-www-form-urlencoded:
@@ -6654,7 +6602,7 @@ paths:
                   type: string
                 type:
                   type: string
-                  enum: [regular, classical]
+                  enum: [regular]
                   default: regular
               required: [name]
       responses:
@@ -6730,7 +6678,7 @@ paths:
                   type: string
                 type:
                   type: string
-                  enum: [regular, classical]
+                  enum: [regular]
                 fs_watch:
                   type: integer
                 fs_poll_interval:
@@ -6749,7 +6697,7 @@ paths:
                   type: string
                 type:
                   type: string
-                  enum: [regular, classical]
+                  enum: [regular]
                 nfo_lock_data:
                   type: boolean
                   description: When true, NFOs written for artists in this library carry <lockdata>true</lockdata>. Off by default; opt-in per library (issue #1264). Accepts "true"/"false", "1"/"0" (parsed via strconv.ParseBool), and "on" (the default value a checked browser checkbox submits when no explicit value attribute is set). Omit the key entirely to preserve the current setting; an unchecked HTML checkbox simply omits the field.
@@ -6820,8 +6768,7 @@ paths:
       description: >
         Applies a partial update to an existing library. Only the fields
         present in the request body are modified; omitted fields are
-        preserved. Currently supports the "type" field, which is used by
-        the Convert to Regular action for Classical libraries.
+        preserved. Currently supports the "type" field.
       operationId: patchLibrary
       parameters:
         - name: id
@@ -6840,11 +6787,8 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [regular, classical]
-                  description: >
-                    New library type. Set to "regular" to convert a
-                    Classical (legacy) library. Setting to "classical"
-                    will return Deprecation and Sunset headers.
+                  enum: [regular]
+                  description: New library type. Only "regular" is accepted.
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -6853,26 +6797,10 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [regular, classical]
+                  enum: [regular]
       responses:
         "200":
           description: Library updated
-          headers:
-            Deprecation:
-              schema:
-                type: string
-                enum: ["true"]
-              description: >
-                Present when the returned library type is "classical".
-                Signals that the Classical type is deprecated and
-                scheduled for removal.
-            Sunset:
-              schema:
-                type: string
-              description: >
-                Present when the returned library type is "classical".
-                An HTTP-date value indicating the planned removal date
-                for the Classical library type.
           content:
             application/json:
               schema:

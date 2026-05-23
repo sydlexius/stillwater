@@ -22,7 +22,7 @@ import (
 type LibraryExport struct {
 	Name           string `json:"name"`
 	Path           string `json:"path"`
-	Type           string `json:"type"`                      // "regular" | "classical"
+	Type           string `json:"type"`                      // always "regular" as of v1.3.0
 	Source         string `json:"source"`                    // "manual" | "emby" | "jellyfin" | "lidarr"
 	ConnectionType string `json:"connection_type,omitempty"` // for remap on import
 	ConnectionURL  string `json:"connection_url,omitempty"`  // for remap on import
@@ -222,17 +222,15 @@ func (s *Service) importLibraries(ctx context.Context, libs []LibraryExport, res
 	return nil
 }
 
-// validLibraryType clamps an inbound type to one of the schema's allowed
-// values. The CHECK constraint on libraries.type would otherwise reject
-// payloads carrying unrecognized values from a tampered or future-version
-// export.
+// validLibraryType clamps an inbound type to the only allowed value.
+// Any unknown type (including the removed "classical") is normalised to
+// "regular". Migration 010 has already converted all classical rows in
+// the live DB; this guard ensures imports from old exports are safe.
 func validLibraryType(t string) string {
-	switch t {
-	case "regular", "classical":
+	if t == "regular" {
 		return t
-	default:
-		return "regular"
 	}
+	return "regular"
 }
 
 // validLibrarySource clamps an inbound source value to one of the recognized

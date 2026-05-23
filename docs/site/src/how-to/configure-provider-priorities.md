@@ -24,7 +24,7 @@ The order is **most-trusted at the top**. For first-match-wins fields, only the 
 
 ## Per-library override
 
-When one library deserves a different priority list from another (a classical-music library that prefers Discogs over Last.fm, say):
+When one library deserves a different priority list from another (a library of classical recordings that prefers Discogs over Last.fm, say):
 
 1. Go to **Settings > Libraries**.
 2. Find the library you want to customize.

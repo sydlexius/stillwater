@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+
+	"github.com/pressly/goose/v3"
 )
 
 // openMigratedDB opens an in-memory SQLite database, runs the 001 migration
@@ -1667,5 +1669,96 @@ func TestMigration011_SortCoveringIndex(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("idx_artists_name_id count = %d after re-migrate, want 1 (idempotent)", count)
+	}
+}
+
+// TestMigration010_ConvertsClassicalToRegular verifies that migration 010
+// actually fires when `Migrate(db)` is called on a pre-010 database. The test
+// stages a database at version 009 (using `goose.UpTo`), seeds a legacy
+// `type='classical'` library row, then calls the real `Migrate(db)` function
+// and asserts the row was converted to `type='regular'`. This guards against
+// a regression where 010 stops being registered or its ordering changes.
+//
+// Idempotency: running `Migrate(db)` a second time on a DB already at 010
+// must succeed without error and must not re-convert anything.
+func TestMigration010_ConvertsClassicalToRegular(t *testing.T) {
+	// Open a raw DB that will receive the seed before Migrate runs.
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Stage a pre-010 state: configure goose against the embedded migrations
+	// FS and apply through version 009 only. `Migrate(db)` will then pick up
+	// where this leaves off and apply 010.
+	goose.SetBaseFS(migrations)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatalf("goose SetDialect: %v", err)
+	}
+	if err := goose.UpTo(db, "migrations", 9); err != nil {
+		t.Fatalf("goose UpTo 9: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Seed a `type='classical'` library row at version 009 (before 010 has
+	// touched the DB). The initial schema's CHECK constraint accepts
+	// `classical`, which is precisely the legacy state migration 010 exists
+	// to clean up.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
+		VALUES ('lib-classic', 'Old Classical', '/classical', 'classical', 'manual', datetime('now'), datetime('now'))
+	`); err != nil {
+		t.Fatalf("seeding classical library at version 009: %v", err)
+	}
+
+	// Apply pending migrations (010+) via the real Migrate path so a
+	// regression in migration ordering or registration would surface here.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate after seed: %v", err)
+	}
+
+	var typ string
+	if err := db.QueryRowContext(ctx,
+		`SELECT type FROM libraries WHERE id = 'lib-classic'`).Scan(&typ); err != nil {
+		t.Fatalf("querying converted library: %v", err)
+	}
+	if typ != "regular" {
+		t.Errorf("type after Migrate = %q, want %q (migration 010 must convert classical -> regular)", typ, "regular")
+	}
+
+	// Idempotency: re-running Migrate on a DB already at the latest version
+	// must succeed and must leave the converted row alone.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("re-running Migrate after 010: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT type FROM libraries WHERE id = 'lib-classic'`).Scan(&typ); err != nil {
+		t.Fatalf("re-querying converted library: %v", err)
+	}
+	if typ != "regular" {
+		t.Errorf("type after re-Migrate = %q, want %q (idempotent)", typ, "regular")
+	}
+}
+
+// TestMigration010_NoClassicalRowsAfterMigrate verifies the post-migration
+// invariant that a fresh-from-zero `Migrate(db)` run produces a database with
+// zero `type='classical'` library rows. This complements
+// TestServiceCreate_RejectsClassical (in internal/library/service_test.go),
+// which exercises the service-layer guard that is the authoritative source
+// of the rejection; this test guards the DB-state side of the same contract.
+func TestMigration010_NoClassicalRowsAfterMigrate(t *testing.T) {
+	t.Parallel()
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	var count int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE type = 'classical'`).Scan(&count); err != nil {
+		t.Fatalf("querying classical libraries: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("classical library count on fresh migrated db = %d, want 0", count)
 	}
 }

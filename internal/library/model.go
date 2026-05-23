@@ -4,19 +4,8 @@ import "time"
 
 // Library type constants.
 const (
-	TypeRegular   = "regular"
-	TypeClassical = "classical"
+	TypeRegular = "regular"
 )
-
-// SunsetClassicalType is the planned removal date for the Classical library
-// type, expressed as an HTTP-date value for the Sunset response header
-// (RFC 8594). The date is a placeholder until v1.3.0 has a firm release date;
-// update this constant once the milestone is scheduled.
-//
-// This constant is intentionally used only for the Deprecation/Sunset headers
-// on POST /api/v1/libraries and PATCH /api/v1/libraries/{id} responses that
-// create or return a Classical library. Do not use it for any other purpose.
-const SunsetClassicalType = "Tue, 01 Sep 2026 00:00:00 GMT"
 
 // Library source constants.
 const (
@@ -49,7 +38,7 @@ type Library struct {
 	ID                     string    `json:"id"`
 	Name                   string    `json:"name"`
 	Path                   string    `json:"path"`
-	Type                   string    `json:"type"`                          // "regular" or "classical"
+	Type                   string    `json:"type"`                          // always "regular" as of v1.3.0
 	Source                 string    `json:"source"`                        // "manual", "emby", "jellyfin", "lidarr"
 	ConnectionID           string    `json:"connection_id"`                 // FK to connections.id (empty for manual)
 	ExternalID             string    `json:"external_id"`                   // Platform-specific library ID
@@ -69,9 +58,6 @@ func (lib Library) FSWatchEnabled() bool { return lib.FSWatch&FSModeWatch != 0 }
 
 // FSPollEnabled reports whether polling is enabled.
 func (lib Library) FSPollEnabled() bool { return lib.FSWatch&FSModePoll != 0 }
-
-// IsClassical reports whether the library uses the deprecated Classical type.
-func (lib Library) IsClassical() bool { return lib.Type == TypeClassical }
 
 // IsPathless reports whether the library has no filesystem path configured.
 // Pathless libraries support API-only operations; filesystem operations

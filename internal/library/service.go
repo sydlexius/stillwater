@@ -30,8 +30,8 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	if lib.Name == "" {
 		return fmt.Errorf("library name is required")
 	}
-	if lib.Type != TypeRegular && lib.Type != TypeClassical {
-		return fmt.Errorf("library type must be %q or %q", TypeRegular, TypeClassical)
+	if lib.Type != TypeRegular {
+		return fmt.Errorf("library type must be %q", TypeRegular)
 	}
 	if lib.Source == "" {
 		lib.Source = SourceManual
@@ -147,8 +147,8 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	if lib.Name == "" {
 		return fmt.Errorf("library name is required")
 	}
-	if lib.Type != TypeRegular && lib.Type != TypeClassical {
-		return fmt.Errorf("library type must be %q or %q", TypeRegular, TypeClassical)
+	if lib.Type != TypeRegular {
+		return fmt.Errorf("library type must be %q", TypeRegular)
 	}
 	if lib.Source == "" {
 		lib.Source = SourceManual

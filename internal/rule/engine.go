@@ -349,15 +349,6 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 	e.sharedFSCache = nil
 	e.sharedFSMu.Unlock()
 
-	// Classical artists in skip mode get a perfect score with no evaluation
-	if a.IsClassical && GetClassicalMode(ctx, e.db) == ClassicalModeSkip {
-		return &EvaluationResult{
-			ArtistID:    a.ID,
-			ArtistName:  a.Name,
-			HealthScore: 100.0,
-		}, nil
-	}
-
 	rules, err := e.cachedRules(ctx)
 	if err != nil {
 		return nil, err

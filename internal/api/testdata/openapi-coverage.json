@@ -504,13 +504,6 @@
     "covered": true
   },
   {
-    "operationId": "getClassicalMode",
-    "method": "GET",
-    "path": "/rules/classical-mode",
-    "handler": "handleGetClassicalMode",
-    "covered": false
-  },
-  {
     "operationId": "getComplianceReport",
     "method": "GET",
     "path": "/reports/compliance",
@@ -1356,13 +1349,6 @@
     "path": "/artists/{id}/images/{type}/file",
     "handler": "handleServeImage",
     "covered": true
-  },
-  {
-    "operationId": "setClassicalMode",
-    "method": "PUT",
-    "path": "/rules/classical-mode",
-    "handler": "handleSetClassicalMode",
-    "covered": false
   },
   {
     "operationId": "setPlatformID",

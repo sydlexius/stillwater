@@ -192,7 +192,7 @@ A connection is a credentialed link to an external media server (Emby, Jellyfin,
 
 ### Music Libraries  {#settings-libraries-libraries}
 
-A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. New libraries use the Regular type; Classical is a legacy type scheduled for removal in v1.3.0, with a Convert to Regular action on each Classical library row. Filesystem watch mode is configured per entry below.
+A library is a top-level directory containing one folder per artist; that is the layout Emby, Jellyfin, and Kodi all expect. Add a library entry for each such directory you want Stillwater to scan and write into. Filesystem watch mode is configured per entry below.
 
 - **Connection**
 {: #settings-libraries-libraries-connection-badge }
@@ -204,20 +204,12 @@ A library is a top-level directory containing one folder per artist; that is the
 {: #settings-libraries-libraries-resync }
 - **Scan Library**
 {: #settings-libraries-libraries-scan }
-- **Legacy**
-{: #settings-libraries-libraries-classical-legacy-badge }
-- **This changes only the library classification stored in Stillwater. No files are moved, renamed, or deleted. Artists in this library continue to be scanned and written exactly as before.**
-{: #settings-libraries-libraries-classical-convert-body }
 - **Add Library**
 {: #settings-libraries-libraries-add }
 - **Library Name**
 {: #settings-libraries-libraries-name }
 - **Library Path**
 {: #settings-libraries-libraries-path }
-- **Library Type**
-{: #settings-libraries-libraries-type }
-- **Regular** -- Standard music library where the artist folder maps to the performing artist.
-{: #settings-libraries-libraries-type-regular }
 - **Off** -- Stillwater does not monitor this library's filesystem. New files are picked up only by manual scans.
 {: #settings-libraries-libraries-fs-off }
 - **Watch** -- Subscribe to native filesystem events so changes are picked up immediately. Recommended for local disks.

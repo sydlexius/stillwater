@@ -42,15 +42,6 @@ func TestLibrary_FSPollEnabled(t *testing.T) {
 	}
 }
 
-func TestLibrary_IsClassical(t *testing.T) {
-	if !(Library{Type: TypeClassical}).IsClassical() {
-		t.Error("IsClassical() = false for a classical library, want true")
-	}
-	if (Library{Type: TypeRegular}).IsClassical() {
-		t.Error("IsClassical() = true for a regular library, want false")
-	}
-}
-
 func TestLibrary_SourceDisplayName(t *testing.T) {
 	cases := []struct {
 		name   string
