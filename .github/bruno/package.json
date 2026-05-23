@@ -8,6 +8,7 @@
     "@usebruno/cli": "3.3.0"
   },
   "overrides": {
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "axios": "^1.15.2"
   }
 }
