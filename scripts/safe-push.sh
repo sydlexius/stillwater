@@ -47,6 +47,11 @@ if [ -z "$git_dir" ]; then
   exit 2
 fi
 LOG="$git_dir/safe-push.log"
+# Truncate and lock down permissions before any write so the transcript is
+# private to the current user even on shared systems. .git/ inherits 0755
+# from git defaults, so the file's own mode is what protects it.
+: >"$LOG"
+chmod 600 "$LOG"
 
 branch="${1:-}"
 shift_count=0
