@@ -31,7 +31,7 @@ bash scripts/safe-push.sh "$branch"        # push named branch
 bash scripts/safe-push.sh "$branch" --force-with-lease   # extra flags forwarded
 ```
 
-It writes the full push transcript to `$SW_RUN_DIR/safe-push.log`, queries `git ls-remote origin <branch>` after the push returns, and exits non-zero with a clear message if the remote SHA does not match the local HEAD. Catches silent failures that `cmd | tail` would have swallowed.
+It writes the full push transcript to `<git-dir>/safe-push.log` (`.git/safe-push.log` for the main worktree, or the worktree-specific `.git/worktrees/<name>/safe-push.log` for linked worktrees), with mode `0600` so the transcript is private to the current user. The wrapper then queries `git ls-remote origin <branch>` after the push returns and exits non-zero with a clear message if the remote SHA does not match the local HEAD. Catches silent failures that `cmd | tail` would have swallowed.
 
 ## Squash before first push
 
