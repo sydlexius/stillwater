@@ -40,7 +40,7 @@ func TestBulkAction_Cancel_Running(t *testing.T) {
 	canceled := false
 	cancel := func() { canceled = true }
 	r.bulkActionMu.Lock()
-	r.bulkActionProgress = &BulkActionProgress{Status: "running", Action: "run_rules", Total: 1, cancelFn: cancel}
+	r.bulkActionProgress = &BulkActionProgress{Status: bulkActionRunning, Action: "run_rules", Total: 1, cancelFn: cancel}
 	r.bulkActionMu.Unlock()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
@@ -60,7 +60,7 @@ func TestBulkAction_Cancel_StaleProgress(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	r.bulkActionMu.Lock()
-	r.bulkActionProgress = &BulkActionProgress{Status: "completed", Action: "run_rules", Total: 1}
+	r.bulkActionProgress = &BulkActionProgress{Status: bulkActionCompleted, Action: "run_rules", Total: 1}
 	r.bulkActionMu.Unlock()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
 	w := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestBulkAction_ConcurrentReject(t *testing.T) {
 
 	// Simulate an in-flight run by claiming the progress slot directly.
 	r.bulkActionMu.Lock()
-	r.bulkActionProgress = &BulkActionProgress{Status: "running", Action: "run_rules", Total: 5}
+	r.bulkActionProgress = &BulkActionProgress{Status: bulkActionRunning, Action: "run_rules", Total: 5}
 	r.bulkActionMu.Unlock()
 
 	body := strings.NewReader(`{"action":"run_rules","ids":["abc123"]}`)

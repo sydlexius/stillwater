@@ -41,19 +41,32 @@ const (
 // the character class conservative so arbitrary input cannot leak through.
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
+// bulkActionStatus enumerates the terminal and in-flight lifecycle states a
+// BulkActionProgress can occupy. The underlying string type preserves the
+// existing JSON wire format ("running", "completed", "failed", "canceled")
+// while preventing typo-driven drift at call sites.
+type bulkActionStatus string
+
+const (
+	bulkActionRunning   bulkActionStatus = "running"
+	bulkActionCompleted bulkActionStatus = "completed"
+	bulkActionFailed    bulkActionStatus = "failed"
+	bulkActionCanceled  bulkActionStatus = "canceled"
+)
+
 // BulkActionProgress tracks the state of an in-flight bulk action. It is
 // mutex-protected and shared between the request handler and the background
 // goroutine processing the IDs.
 type BulkActionProgress struct {
 	mu          sync.RWMutex
-	Action      string `json:"action"`
-	Status      string `json:"status"` // "running", "completed", "failed", "canceled"
-	Total       int    `json:"total"`
-	Processed   int    `json:"processed"`
-	Succeeded   int    `json:"succeeded"`
-	Skipped     int    `json:"skipped"`
-	Failed      int    `json:"failed"`
-	CurrentName string `json:"current_name"`
+	Action      string           `json:"action"`
+	Status      bulkActionStatus `json:"status"`
+	Total       int              `json:"total"`
+	Processed   int              `json:"processed"`
+	Succeeded   int              `json:"succeeded"`
+	Skipped     int              `json:"skipped"`
+	Failed      int              `json:"failed"`
+	CurrentName string           `json:"current_name"`
 	// Re-identify-specific breakdown. These remain zero for other actions,
 	// so the bulk-completion toast can detect the re_identify_auto path by
 	// checking whether any of them are non-zero. Populated in addition to
@@ -70,13 +83,16 @@ type BulkActionProgress struct {
 	cancelFn context.CancelFunc
 }
 
-// snapshot copies the progress state for safe JSON marshaling.
+// snapshot copies the progress state for safe JSON marshaling. Status is
+// down-cast to its underlying string so external consumers (HTTP clients,
+// test assertions reading the map) compare against plain string literals
+// without needing to know the bulkActionStatus type.
 func (p *BulkActionProgress) snapshot() map[string]any {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return map[string]any{
 		"action":       p.Action,
-		"status":       p.Status,
+		"status":       string(p.Status),
 		"total":        p.Total,
 		"processed":    p.Processed,
 		"succeeded":    p.Succeeded,
@@ -180,14 +196,14 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 	// a legitimately running job.
 	progress := &BulkActionProgress{
 		Action:    body.Action,
-		Status:    "running",
+		Status:    bulkActionRunning,
 		Total:     len(ids),
 		StartedAt: time.Now().UTC(),
 	}
 	r.bulkActionMu.Lock()
 	if r.bulkActionProgress != nil {
 		r.bulkActionProgress.mu.RLock()
-		running := r.bulkActionProgress.Status == "running"
+		running := r.bulkActionProgress.Status == bulkActionRunning
 		r.bulkActionProgress.mu.RUnlock()
 		if running {
 			r.bulkActionMu.Unlock()
@@ -289,7 +305,7 @@ func (r *Router) handleBulkActionCancel(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 	progress.mu.Lock()
-	running := progress.Status == "running"
+	running := progress.Status == bulkActionRunning
 	cancel := progress.cancelFn
 	progress.mu.Unlock()
 	if !running || cancel == nil {
@@ -439,9 +455,9 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 		// processed but before this epilogue runs. In that race ctx.Err()
 		// is non-nil yet every item is complete; reporting "canceled" here
 		// lies to /status and the completion event. Gate on remaining work.
-		finalStatus := "completed"
+		finalStatus := bulkActionCompleted
 		if ctx.Err() != nil && progress.Processed < progress.Total {
-			finalStatus = "canceled"
+			finalStatus = bulkActionCanceled
 		}
 		progress.Status = finalStatus
 		progress.CurrentName = ""
