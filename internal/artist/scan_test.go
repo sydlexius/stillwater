@@ -712,6 +712,56 @@ func TestBuildWhereClause_HasViolations(t *testing.T) {
 	})
 }
 
+// TestValidatedOrderClause_AllSortKeys verifies that every accepted sort key
+// produces a SQL ORDER BY expression containing the expected column name, and
+// that the id tiebreaker is always appended for stable pagination.
+func TestValidatedOrderClause_AllSortKeys(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		sort    string
+		wantCol string
+	}{
+		{"name", "name"},
+		{"sort_name", "sort_name"},
+		{"type", "type"},
+		{"origin", "origin"},
+		{"health_score", "health_score"},
+		{"updated_at", "updated_at"},
+		{"created_at", "created_at"},
+		// Empty/unknown keys normalize to name (Validate() defense-in-depth).
+		{"", "name"},
+		{"totally_unknown", "name"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run("sort="+tc.sort, func(t *testing.T) {
+			t.Parallel()
+			clause := validatedOrderClause(ListParams{Sort: tc.sort, Order: "asc"})
+			if !strings.Contains(clause, tc.wantCol) {
+				t.Errorf("sort=%q: expected column %q in ORDER BY %q", tc.sort, tc.wantCol, clause)
+			}
+			// Stable pagination requires an id tiebreaker on every sort path.
+			if !strings.Contains(clause, "id ASC") {
+				t.Errorf("sort=%q: expected id ASC tiebreaker in ORDER BY %q", tc.sort, clause)
+			}
+		})
+	}
+}
+
+// TestValidatedOrderClause_Direction verifies that "asc" and "desc" map to the
+// correct SQL direction keyword for an arbitrary column.
+func TestValidatedOrderClause_Direction(t *testing.T) {
+	t.Parallel()
+	asc := validatedOrderClause(ListParams{Sort: "name", Order: "asc"})
+	if !strings.HasPrefix(asc, "name ASC,") {
+		t.Errorf("order=asc: expected primary direction ASC in %q", asc)
+	}
+	desc := validatedOrderClause(ListParams{Sort: "name", Order: "desc"})
+	if !strings.HasPrefix(desc, "name DESC,") {
+		t.Errorf("order=desc: expected primary direction DESC in %q", desc)
+	}
+}
+
 // TestBuildWhereClause_NewFilters_AllHavePredicates verifies that every key
 // added in issue #1125 is registered in artistFilterPredicates and that both
 // include and exclude states produce a non-empty WHERE clause. This is a

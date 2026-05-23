@@ -14,6 +14,8 @@ import (
 var allowedArtistSort = map[string]string{
 	"name":         "name",
 	"sort_name":    "sort_name",
+	"type":         "type",
+	"origin":       "origin",
 	"health_score": "health_score",
 	"updated_at":   "updated_at",
 	"created_at":   "created_at",

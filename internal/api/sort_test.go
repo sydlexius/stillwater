@@ -107,6 +107,16 @@ func TestSortAllowlist_AcceptsKnown(t *testing.T) {
 			handler: (*Router).handleListArtists,
 		},
 		{
+			name:    "list artists with type",
+			url:     "/api/v1/artists?sort=type&order=asc",
+			handler: (*Router).handleListArtists,
+		},
+		{
+			name:    "list artists with origin",
+			url:     "/api/v1/artists?sort=origin&order=desc",
+			handler: (*Router).handleListArtists,
+		},
+		{
 			name:    "list artists empty sort uses default",
 			url:     "/api/v1/artists",
 			handler: (*Router).handleListArtists,

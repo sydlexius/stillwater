@@ -191,6 +191,10 @@ func sortLabel(ctx context.Context, sort string) string {
 	switch sort {
 	case "sort_name":
 		return t(ctx, "artists.sort.sort_name")
+	case "type":
+		return t(ctx, "artists.sort.type")
+	case "origin":
+		return t(ctx, "artists.sort.origin")
 	case "health_score":
 		return t(ctx, "artists.sort.health")
 	case "updated_at":
@@ -201,6 +205,7 @@ func sortLabel(ctx context.Context, sort string) string {
 		return t(ctx, "artists.sort.name")
 	}
 }
+
 
 // orderLabel returns a short label for the sort order.
 func orderLabel(ctx context.Context, order string) string {
@@ -485,6 +490,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "artists.sort_by") }</div>
 							<button type="button" onclick="setSort('name')" class={ sortDropdownItem(data.Sort == "name") }>{ t(ctx, "artists.sort.name") }</button>
 							<button type="button" onclick="setSort('sort_name')" class={ sortDropdownItem(data.Sort == "sort_name") }>{ t(ctx, "artists.sort.sort_name") }</button>
+							<button type="button" onclick="setSort('type')" class={ sortDropdownItem(data.Sort == "type") }>{ t(ctx, "artists.sort.type") }</button>
+							<button type="button" onclick="setSort('origin')" class={ sortDropdownItem(data.Sort == "origin") }>{ t(ctx, "artists.sort.origin") }</button>
 							<button type="button" onclick="setSort('health_score')" class={ sortDropdownItem(data.Sort == "health_score") }>{ t(ctx, "artists.sort.health_score") }</button>
 							<button type="button" onclick="setSort('updated_at')" class={ sortDropdownItem(data.Sort == "updated_at") }>{ t(ctx, "artists.sort.last_updated") }</button>
 							<button type="button" onclick="setSort('created_at')" class={ sortDropdownItem(data.Sort == "created_at") }>{ t(ctx, "artists.sort.date_added") }</button>
@@ -498,6 +505,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 						@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
 							{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+							{Key: "type", Label: t(ctx, "artists.sort.type")},
+							{Key: "origin", Label: t(ctx, "artists.sort.origin")},
 							{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
 							{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
 							{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
@@ -645,6 +654,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			var _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';
 			var _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';
 
+			// All sortable field keys -- used by updateSortUI to refresh dropdown
+			// and column header indicators in one sweep.
+			var _sortFields = ['name', 'sort_name', 'type', 'origin', 'health_score', 'updated_at', 'created_at'];
+
 			function updateSortUI(sort, order) {
 				var fieldLabel = document.getElementById('sort-field-label');
 				var orderLabel = document.getElementById('sort-order-label');
@@ -656,13 +669,64 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var activeOrder = document.querySelector('#sort-dropdown button[onclick="setOrder(\'' + order + '\')"]');
 					orderLabel.textContent = activeOrder ? activeOrder.textContent.trim() : order;
 				}
-				['name', 'sort_name', 'health_score', 'updated_at', 'created_at'].forEach(function(f) {
+				_sortFields.forEach(function(f) {
 					var btn = document.querySelector('#sort-dropdown button[onclick="setSort(\'' + f + '\')"]');
 					if (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;
 				});
 				['asc', 'desc'].forEach(function(d) {
 					var btn = document.querySelector('#sort-dropdown button[onclick="setOrder(\'' + d + '\')"]');
 					if (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;
+				});
+				// Update column header sort indicators. Each sortable <th> has a
+				// data-sort-col attribute matching the sort key. The active column
+				// shows an arrow (data-dir="asc" or "desc"); all others are hidden.
+				document.querySelectorAll('th[data-sort-col]').forEach(function(th) {
+					var col = th.getAttribute('data-sort-col');
+					var asc = th.querySelector('.sw-sort-asc');
+					var desc = th.querySelector('.sw-sort-desc');
+					if (!asc || !desc) return;
+					if (col === sort) {
+						asc.style.display = order === 'asc' ? '' : 'none';
+						desc.style.display = order === 'desc' ? '' : 'none';
+					} else {
+						asc.style.display = 'none';
+						desc.style.display = 'none';
+					}
+				});
+			}
+
+			// setSortColumn is called by table column header buttons. It implements
+			// a three-state cycle: off -> asc -> desc -> off (revert to name asc).
+			// The first click on an inactive column activates it ascending; a second
+			// click on the same column flips to descending; a third click removes
+			// the explicit sort and returns to the default (name, asc).
+			function setSortColumn(field) {
+				var sortInput = document.getElementById('artist-sort-input');
+				var orderInput = document.getElementById('artist-order-input');
+				if (!sortInput || !orderInput) return;
+				var newSort, newOrder;
+				if (sortInput.value === field) {
+					if (orderInput.value === 'asc') {
+						// Second click: flip to descending.
+						newSort = field;
+						newOrder = 'desc';
+					} else {
+						// Third click: remove explicit sort, revert to default.
+						newSort = 'name';
+						newOrder = 'asc';
+					}
+				} else {
+					// First click on this column: activate ascending.
+					newSort = field;
+					newOrder = 'asc';
+				}
+				sortInput.value = newSort;
+				orderInput.value = newOrder;
+				updateSortUI(newSort, newOrder);
+				htmx.ajax('GET', '/artists', {
+					target: '#artist-content',
+					swap: 'outerHTML',
+					values: buildArtistParams({page: '1'})
 				});
 			}
 
@@ -1916,21 +1980,43 @@ templ ArtistTable(data ArtistListData) {
 						<th scope="col" class="px-3 py-3 w-8">
 							<span class="sr-only">{ t(ctx, "artists.bulk.select_column") }</span>
 						</th>
-						<th scope="col" data-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<!-- Name column: three-state sort cycle (asc -> desc -> off) -->
+						<th scope="col" data-col="name" data-sort-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							<button
 								type="button"
-								onclick="setSort('name')"
+								onclick="setSortColumn('name')"
 								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
 								title={ t(ctx, "artists.sort_by_name") }
 							>
 								{ t(ctx, "artists.col.name") }
-								if data.Sort == "name" {
-									if data.Order == "asc" {
-										<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
-									} else {
-										<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
-									}
-								}
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "name" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+							</button>
+						</th>
+						<!-- Type column: sortable, hidden by default via column toggle -->
+						<th scope="col" data-col="type" data-sort-col="type" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								onclick="setSortColumn('type')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title={ t(ctx, "artists.sort_by_type") }
+							>
+								{ t(ctx, "artists.sort.type") }
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "type" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+							</button>
+						</th>
+						<!-- Origin/Country column: sortable, hidden by default via column toggle -->
+						<th scope="col" data-col="origin" data-sort-col="origin" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								onclick="setSortColumn('origin')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title={ t(ctx, "artists.sort_by_origin") }
+							>
+								{ t(ctx, "artists.sort.origin") }
+								<svg class="sw-sort-asc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "asc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+								<svg class="sw-sort-desc h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style={ func() string { if data.Sort == "origin" && data.Order == "desc" { return "" }; return "display:none" }() }><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
 							</button>
 						</th>
 						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -1953,7 +2039,7 @@ templ ArtistTable(data ArtistListData) {
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 					if len(data.Artists) == 0 {
 						<tr>
-							<td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 								{ t(ctx, "artists.empty_state") }
 							</td>
 						</tr>
@@ -2004,6 +2090,12 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "artists.excluded") }</span>
 				}
 			</div>
+		</td>
+		<td data-col="type" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+			{ a.Type }
+		</td>
+		<td data-col="origin" class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+			{ a.Origin }
 		</td>
 		<td data-col="metadata" class="px-4 py-3 text-center">
 			@components.StatusBadge(a.NFOExists, t(ctx, "artists.col.metadata"))
