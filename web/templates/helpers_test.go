@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/i18n"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -389,5 +390,68 @@ func TestRoundTripOverlapHTML(t *testing.T) {
 	}
 	if !strings.Contains(fallback, "Emby") || !strings.Contains(fallback, "Jellyfin") {
 		t.Errorf("roundTripOverlapHTML fallback dropped the connection names: %s", fallback)
+	}
+}
+
+func TestLibraryDropdownLabel(t *testing.T) {
+	lib := func(id, name string) library.Library {
+		return library.Library{ID: id, Name: name}
+	}
+	srcWith := func(libID, connName string) map[string]LibrarySourceInfo {
+		return map[string]LibrarySourceInfo{
+			libID: {Source: "jellyfin", ConnectionName: connName},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		lib     library.Library
+		sources map[string]LibrarySourceInfo
+		want    string
+	}{
+		{
+			name:    "nil sources returns bare name",
+			lib:     lib("l1", "Music"),
+			sources: nil,
+			want:    "Music",
+		},
+		{
+			name:    "library not in sources returns bare name",
+			lib:     lib("l1", "Music"),
+			sources: map[string]LibrarySourceInfo{"other": {Source: "emby", ConnectionName: "Emby UAT"}},
+			want:    "Music",
+		},
+		{
+			name:    "empty source returns bare name",
+			lib:     lib("l1", "Music"),
+			sources: map[string]LibrarySourceInfo{"l1": {Source: "", ConnectionName: "Jellyfin"}},
+			want:    "Music",
+		},
+		{
+			name:    "imported library appends connection name",
+			lib:     lib("l1", "Music"),
+			sources: srcWith("l1", "Jellyfin UAT"),
+			want:    "Music (Jellyfin UAT)",
+		},
+		{
+			name:    "library name already ending in suffix is not doubled (#1617)",
+			lib:     lib("l1", "Music (Jellyfin UAT)"),
+			sources: srcWith("l1", "Jellyfin UAT"),
+			want:    "Music (Jellyfin UAT)",
+		},
+		{
+			name:    "library name contains suffix mid-string still gets appended",
+			lib:     lib("l1", "(Jellyfin UAT) Music"),
+			sources: srcWith("l1", "Jellyfin UAT"),
+			want:    "(Jellyfin UAT) Music (Jellyfin UAT)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := libraryDropdownLabel(tt.lib, tt.sources)
+			if got != tt.want {
+				t.Errorf("libraryDropdownLabel(%q, %+v) = %q, want %q", tt.lib.Name, tt.sources, got, tt.want)
+			}
+		})
 	}
 }
