@@ -424,6 +424,8 @@ func applyDecision(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, ne
 		if sess.Declined > 0 {
 			sess.Declined--
 		}
+	case wizardDecisionNone:
+		// No prior decision to decrement; counters stay as-is.
 	}
 	step.Decision = next
 	switch next {
@@ -433,6 +435,9 @@ func applyDecision(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, ne
 		sess.Skipped++
 	case wizardDecisionDeclined:
 		sess.Declined++
+	case wizardDecisionNone:
+		// Callers do not pass None as the next decision; the type permits
+		// it so the exhaustive linter is satisfied without a default arm.
 	}
 }
 

@@ -35,30 +35,3 @@ const (
 	FieldDisbanded      FieldName = "disbanded"
 	FieldYearsActive    FieldName = "years_active"
 )
-
-// AllLockableFields returns the canonical Stillwater-domain set of fields
-// that can be locked against provider override. Useful for tests asserting
-// the platform-side canonicalizer maps cover every named field, and for
-// input validation at the lock-update endpoint.
-func AllLockableFields() []FieldName {
-	return []FieldName{
-		FieldArtistName, FieldSortName, FieldBiography,
-		FieldGenres, FieldStyles, FieldMoods,
-		FieldMembers,
-		FieldType, FieldGender, FieldOrigin, FieldDisambiguation,
-		FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
-		FieldYearsActive,
-	}
-}
-
-// IsValidLockableField returns true when f is one of the AllLockableFields
-// values. The comparison is exact (case-sensitive): callers normalise
-// user input before calling this helper.
-func IsValidLockableField(f FieldName) bool {
-	for _, known := range AllLockableFields() {
-		if f == known {
-			return true
-		}
-	}
-	return false
-}
