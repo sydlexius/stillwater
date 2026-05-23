@@ -66,7 +66,13 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		body.PlatformArtistID = stored
 	}
 
-	data := publish.BuildArtistPushData(a)
+	members, memberErr := r.artistService.ListMembersByArtistID(req.Context(), artistID)
+	if memberErr != nil {
+		r.logger.Warn("listing band members for push", "artist_id", artistID, "error", memberErr)
+		members = nil
+	}
+
+	data := publish.BuildArtistPushData(a, members)
 
 	pusher, ok := publish.NewMetadataPusher(conn, r.logger)
 	if !ok {

@@ -214,7 +214,7 @@ fi
 
 echo ""
 echo "=== Patch coverage ==="
-# Matches codecov.yml's 70% patch threshold. The script approximates the
+# Matches codecov.yml's 75% patch threshold. The script approximates the
 # same semantics locally so we catch gaps before push instead of learning
 # about them from a failing codecov check.
 #
@@ -240,7 +240,7 @@ if [ ! -x "$PATCH_COVERAGE_HELPER" ]; then
   echo "pre-push-gate: patch-coverage.sh not found in scripts/ or ~/.claude/scripts/" >&2
   exit 1
 fi
-if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=70 \
+if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=75 \
     PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
     bash "$PATCH_COVERAGE_HELPER"; then
   :

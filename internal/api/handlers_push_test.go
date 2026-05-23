@@ -610,7 +610,7 @@ func TestBuildArtistPushData_TypeAwareDates(t *testing.T) {
 				Died:      "2016",
 				Disbanded: "2010",
 			}
-			data := publish.BuildArtistPushData(a)
+			data := publish.BuildArtistPushData(a, nil)
 			if data.Born != tt.wantBorn {
 				t.Errorf("Born = %q, want %q", data.Born, tt.wantBorn)
 			}

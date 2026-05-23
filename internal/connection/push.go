@@ -16,7 +16,33 @@ type ArtistPushData struct {
 	Died           string   `json:"died"`
 	Disbanded      string   `json:"disbanded"`
 	YearsActive    string   `json:"years_active"`
-	MusicBrainzID  string   `json:"musicbrainz_id"`
+
+	// External provider IDs to publish into the platform's ProviderIds
+	// dictionary. The platform push code maps these to its own canonical
+	// dictionary keys (e.g. "MusicBrainzArtist", "TheAudioDb", "Discogs",
+	// "Spotify"). Empty strings are not published.
+	MusicBrainzID string `json:"musicbrainz_id"`
+	AudioDBID     string `json:"audiodb_id"`
+	DiscogsID     string `json:"discogs_id"`
+	SpotifyID     string `json:"spotify_id"`
+
+	// BandMembers carries the artist's member list in a platform-agnostic
+	// shape so the push layer can map it into Jellyfin's People array. Empty
+	// when the artist has no members or when the caller did not fetch them.
+	BandMembers []ArtistPersonRef `json:"band_members,omitempty"`
+}
+
+// ArtistPersonRef is a platform-agnostic representation of a band member
+// suitable for translating into Jellyfin's People entries. Defined in the
+// connection package (rather than embedding artist.BandMember directly) so
+// the connection layer does not depend on the artist domain package.
+type ArtistPersonRef struct {
+	// Name is the member's display name.
+	Name string `json:"name"`
+	// Role is a short human-readable role string (e.g. "Guitarist",
+	// "Vocals (Lead)"). Producers compose this from instruments + vocal
+	// type. Optional.
+	Role string `json:"role,omitempty"`
 }
 
 // MetadataPusher pushes artist metadata to an external platform.

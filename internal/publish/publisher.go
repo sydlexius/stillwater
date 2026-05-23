@@ -64,6 +64,7 @@ type Publisher struct {
 
 type artistPlatformLister interface {
 	GetPlatformIDs(ctx context.Context, artistID string) ([]artist.PlatformID, error)
+	ListMembersByArtistID(ctx context.Context, artistID string) ([]artist.BandMember, error)
 }
 
 type connectionGetter interface {
@@ -211,9 +212,21 @@ func (p *Publisher) PushMetadataAsync(ctx context.Context, a *artist.Artist) {
 		return
 	}
 
+	// Best-effort fetch of the artist's band members so the platform push
+	// can map them to Jellyfin's People array. A failure here is logged but
+	// does not abort the push -- the member list is enrichment, not
+	// authoritative metadata.
+	members, memberErr := p.artistService.ListMembersByArtistID(ctx, a.ID)
+	if memberErr != nil {
+		p.logger.Warn("auto-push: listing band members",
+			slog.String("artist_id", a.ID),
+			slog.String("error", memberErr.Error()))
+		members = nil
+	}
+
 	// a is a freshly-allocated struct from GetByID with no shared mutable
 	// references; reading its fields from goroutines is safe.
-	data := BuildArtistPushData(a)
+	data := BuildArtistPushData(a, members)
 
 	for _, pid := range platformIDs {
 		go func() {
