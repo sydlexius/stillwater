@@ -1320,9 +1320,12 @@ func (s *Service) SetImageLock(ctx context.Context, imageID string, locked bool)
 
 // IsFieldLocked returns true when the artist has the given field marked as
 // locked. Comparison is case-insensitive and ignores leading/trailing
-// whitespace on the input. The typed FieldName parameter forces callers to
-// reference an artist.FieldX constant; passing a bare string is a
-// compile-time error -- closing the silent-unlock class of bug from #1087.
+// whitespace on the input. The typed FieldName parameter encourages
+// constants-first usage at call sites (prefer artist.FieldArtistName /
+// artist.FieldSortName / etc. over inline string literals); Go still
+// allows untyped string literals to coerce to FieldName, so this is a
+// readability and refactor-safety improvement rather than an absolute
+// compile-time guarantee against typo bugs.
 func (s *Service) IsFieldLocked(a *Artist, field FieldName) bool {
 	if a == nil {
 		return false

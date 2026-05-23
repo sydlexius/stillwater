@@ -3,9 +3,13 @@ package artist
 // FieldName is a typed identifier for an artist metadata field. The
 // constants below cover every field that Stillwater allows a user to lock
 // against provider-driven overwrite. Using a named type (rather than bare
-// strings) at IsFieldLocked / SetLockedFields call sites turns typos at
-// those callers into compile-time errors, closing the silent-unlock class
-// of bug captured in #1087.
+// strings) at IsFieldLocked / SetLockedFields call sites encourages a
+// constants-first style that grep, refactor tools, and (where the caller
+// holds a typed string variable) the compiler can all reason about. Note
+// that Go still permits an untyped string literal to be passed where a
+// FieldName is expected -- the type catches typed-string mismatches and
+// renames, not raw-literal typos -- so callers should prefer the
+// artist.FieldX constants below over inline string literals.
 //
 // The underlying type is string and the constant values match the
 // lowercase keys Stillwater has historically stored in Artist.LockedFields.
@@ -15,8 +19,9 @@ type FieldName string
 
 // FieldArtistName through FieldYearsActive enumerate Stillwater's full
 // lockable-field vocabulary. The string values match the lowercase keys
-// historically stored in the database; new fields must be added here AND
-// surfaced in AllLockableFields() so the validator stays in sync.
+// historically stored in the database. When adding a field, keep this
+// constant set and any validation/canonicalization paths (notably the
+// platform-side canonicalizer maps in internal/connection/emby) in sync.
 const (
 	FieldArtistName     FieldName = "name"
 	FieldSortName       FieldName = "sort_name"

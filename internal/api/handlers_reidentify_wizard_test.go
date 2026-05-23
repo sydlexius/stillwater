@@ -786,6 +786,47 @@ func TestEnsureWizardCandidates_NoOrchestrator(t *testing.T) {
 	}
 }
 
+// TestEnsureWizardCandidates_RetryClearsPriorError locks in the refactor
+// invariant that a step in wizardStepFailed is retryable: a fresh call to
+// ensureWizardCandidates must not short-circuit on the failed state, and
+// it must clear the prior errMsg before attempting the new fetch. The
+// orchestrator is nil here so the retry fails identically (state lands
+// back at wizardStepFailed with the standard sanitized errMsg), but the
+// distinct seeded errMsg lets us prove the reclaim path ran (i.e. the
+// claim block at the top of ensureWizardCandidates fired, which is
+// otherwise indistinguishable from a no-op early-return when start and
+// end states are both Failed).
+func TestEnsureWizardCandidates_RetryClearsPriorError(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithIdentify(t)
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Seed a Failed step with an unmistakable prior error message so the
+	// retry path's errMsg-clearing behavior is observable.
+	const seededErrMsg = "PRIOR error message from earlier attempt"
+	sess.mu.Lock()
+	sess.Steps[0].state = wizardStepFailed
+	sess.Steps[0].errMsg = seededErrMsg
+	sess.mu.Unlock()
+
+	r.ensureWizardCandidates(context.Background(), sess, 0)
+
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	step := sess.Steps[0]
+	if step.state != wizardStepFailed {
+		t.Errorf("state = %d, want wizardStepFailed (orchestrator nil so retry also fails)", step.state)
+	}
+	if step.errMsg == seededErrMsg {
+		t.Error("errMsg still carries the seeded prior message; retry path did not clear it before re-fetching")
+	}
+	if step.errMsg == "" {
+		t.Error("errMsg empty; retry-then-fail must reset to the standard sanitized message, not leave blank")
+	}
+}
+
 func TestEnsureWizardCandidates_OutOfRange(t *testing.T) {
 	t.Parallel()
 	// idx < 0 or >= len(Steps) is a silent no-op; safe to call from
