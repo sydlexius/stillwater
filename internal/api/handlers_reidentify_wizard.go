@@ -156,7 +156,15 @@ func (s *reIdentifyWizardStore) delete(id string) {
 // the background fetch has not yet populated the step, so the template's
 // "loading" branch renders. Caller must hold sess.mu.
 func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandidateView {
-	if step.state != wizardStepReady {
+	// A step in either the Ready (succeeded) or Failed (errored) terminal
+	// states must render the "no more loading" branch of the template -- in
+	// the pre-refactor code this was a single `ready=true` flag set on both
+	// success and error paths, and Candidates being nil/empty drove the
+	// "no candidates" render. Treat both terminal states the same here so
+	// that semantic is preserved; the proper Failed-state UI surface
+	// (retry / skip affordance, sanitized errMsg) is tracked separately in
+	// #1090 and lives outside this refactor's scope.
+	if step.state != wizardStepReady && step.state != wizardStepFailed {
 		return nil
 	}
 	out := make([]templates.WizardCandidateView, 0, len(step.Candidates))
