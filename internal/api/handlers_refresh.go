@@ -533,8 +533,8 @@ func (r *Router) applyProviderName(ctx context.Context, a *artist.Artist, meta *
 	// a provider refresh. ApplyMetadata skips these intentionally so the
 	// user's display name is not clobbered mid-refresh, but applyProviderName
 	// runs on a separate path and must enforce the same rule.
-	nameLocked := r.artistService.IsFieldLocked(a, "name")
-	sortLocked := r.artistService.IsFieldLocked(a, "sort_name")
+	nameLocked := r.artistService.IsFieldLocked(a, artist.FieldArtistName)
+	sortLocked := r.artistService.IsFieldLocked(a, artist.FieldSortName)
 	if nameLocked {
 		newName = ""
 	}

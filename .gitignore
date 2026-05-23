@@ -64,6 +64,15 @@ docs/site/site/
 tests/load/results/*.bin
 tests/load/results/*.txt
 
+# UAT artifacts -- Playwright screenshots and ad-hoc snapshots from
+# interactive UAT sessions that occasionally land in the repo root.
+# Standard Playwright MCP output already lives under .playwright-mcp/
+# (ignored above); these patterns catch the "screenshot to uat-*.png"
+# convention used during local verification.
+uat-*.png
+uat-*.jpg
+uat-*.jpeg
+
 # Temp
 *.tmp
 *.log

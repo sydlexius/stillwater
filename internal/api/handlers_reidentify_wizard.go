@@ -25,6 +25,31 @@ import (
 // table or migration is required for this RC blocker.
 const reIdentifyWizardSessionTTL = 30 * time.Minute
 
+// wizardStepState tracks the lifecycle of a single re-identify wizard step's
+// provider lookup. The single-field enum replaces the prior tri-state booleans
+// (inFlight / ready / errored), which permitted representable-but-invalid
+// combinations like ready=true with inFlight=true.
+type wizardStepState int
+
+const (
+	wizardStepPending wizardStepState = iota // no fetch attempted yet
+	wizardStepLoading                        // provider lookup in flight
+	wizardStepReady                          // lookup completed; Candidates is authoritative
+	wizardStepFailed                         // provider lookup returned an error; errMsg carries the sanitized text
+)
+
+// wizardDecision captures the user's choice on a single step. Empty string
+// means "no decision yet"; the named values match the three terminal actions
+// the wizard UI exposes.
+type wizardDecision string
+
+const (
+	wizardDecisionNone     wizardDecision = ""
+	wizardDecisionAccepted wizardDecision = "accepted"
+	wizardDecisionSkipped  wizardDecision = "skipped"
+	wizardDecisionDeclined wizardDecision = "declined"
+)
+
 // reIdentifyWizardStep captures the per-artist state of a wizard session.
 // Candidates is populated lazily when the UI advances to this step (or when
 // the previous step pre-fetches its successor) so that listing 200 artists
@@ -33,23 +58,17 @@ type reIdentifyWizardStep struct {
 	ArtistID   string
 	ArtistName string
 	ArtistPath string
-	// Decision is one of "", "accepted", "skipped", "declined". Written when
-	// the user advances off a step so Save-and-exit can classify remaining
-	// artists as "left in review".
-	Decision string
+	// Decision records the user's action on this step. Written when the user
+	// advances off a step so Save-and-exit can classify remaining artists as
+	// "left in review".
+	Decision wizardDecision
 	// Candidates is the top-N provider matches for the artist. Nil means
 	// "not fetched yet"; an empty slice means "fetched, no results".
 	Candidates []ScoredCandidate
-	// inFlight prevents concurrent pre-fetch and on-demand fetch from
-	// double-calling the provider for the same step. ready is flipped once
-	// the fetch either succeeds or fails so the template can distinguish
-	// "still loading" from "fetched, no results". errored carries a terminal
-	// error message so the UI can surface retry affordances instead of
-	// rendering an ambiguous "no matches" state.
-	inFlight bool
-	ready    bool
-	errored  bool
-	errMsg   string
+	// state tracks the lifecycle of this step's provider lookup; errMsg is
+	// only meaningful when state == wizardStepFailed.
+	state  wizardStepState
+	errMsg string
 }
 
 // reIdentifyWizardSession holds the server-side state for one interactive
@@ -137,7 +156,15 @@ func (s *reIdentifyWizardStore) delete(id string) {
 // the background fetch has not yet populated the step, so the template's
 // "loading" branch renders. Caller must hold sess.mu.
 func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandidateView {
-	if !step.ready {
+	// A step in either the Ready (succeeded) or Failed (errored) terminal
+	// states must render the "no more loading" branch of the template -- in
+	// the pre-refactor code this was a single `ready=true` flag set on both
+	// success and error paths, and Candidates being nil/empty drove the
+	// "no candidates" render. Treat both terminal states the same here so
+	// that semantic is preserved; the proper Failed-state UI surface
+	// (retry / skip affordance, sanitized errMsg) is tracked separately in
+	// #1090 and lives outside this refactor's scope.
+	if step.state != wizardStepReady && step.state != wizardStepFailed {
 		return nil
 	}
 	out := make([]templates.WizardCandidateView, 0, len(step.Candidates))
@@ -347,7 +374,7 @@ func (r *Router) handleReIdentifyWizardAccept(w http.ResponseWriter, req *http.R
 		return
 	}
 	sess.mu.Lock()
-	applyDecision(sess, step, "accepted")
+	applyDecision(sess, step, wizardDecisionAccepted)
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
@@ -361,7 +388,7 @@ func (r *Router) handleReIdentifyWizardSkip(w http.ResponseWriter, req *http.Req
 		return
 	}
 	sess.mu.Lock()
-	applyDecision(sess, step, "skipped")
+	applyDecision(sess, step, wizardDecisionSkipped)
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
@@ -378,7 +405,7 @@ func (r *Router) handleReIdentifyWizardDecline(w http.ResponseWriter, req *http.
 		return
 	}
 	sess.mu.Lock()
-	applyDecision(sess, step, "declined")
+	applyDecision(sess, step, wizardDecisionDeclined)
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
@@ -388,32 +415,37 @@ func (r *Router) handleReIdentifyWizardDecline(w http.ResponseWriter, req *http.
 // session mutex must be held. Revisiting a step with the same decision is a
 // no-op; changing decisions normalizes counters so the totals always match
 // the set of step.Decision values.
-func applyDecision(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, next string) {
+func applyDecision(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, next wizardDecision) {
 	if step.Decision == next {
 		return
 	}
 	switch step.Decision {
-	case "accepted":
+	case wizardDecisionAccepted:
 		if sess.Accepted > 0 {
 			sess.Accepted--
 		}
-	case "skipped":
+	case wizardDecisionSkipped:
 		if sess.Skipped > 0 {
 			sess.Skipped--
 		}
-	case "declined":
+	case wizardDecisionDeclined:
 		if sess.Declined > 0 {
 			sess.Declined--
 		}
+	case wizardDecisionNone:
+		// No prior decision to decrement; counters stay as-is.
 	}
 	step.Decision = next
 	switch next {
-	case "accepted":
+	case wizardDecisionAccepted:
 		sess.Accepted++
-	case "skipped":
+	case wizardDecisionSkipped:
 		sess.Skipped++
-	case "declined":
+	case wizardDecisionDeclined:
 		sess.Declined++
+	case wizardDecisionNone:
+		// Callers do not pass None as the next decision; the type permits
+		// it so the exhaustive linter is satisfied without a default arm.
 	}
 }
 
@@ -442,7 +474,7 @@ func (r *Router) handleReIdentifyWizardSaveExit(w http.ResponseWriter, req *http
 	sess.mu.Lock()
 	leftover := 0
 	for _, step := range sess.Steps {
-		if step.Decision != "" {
+		if step.Decision != wizardDecisionNone {
 			continue
 		}
 		// Push every undecided artist onto the leftover queue, regardless
@@ -576,11 +608,12 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 		return
 	}
 	step := sess.Steps[idx]
-	if step.ready || step.inFlight {
+	if step.state == wizardStepReady || step.state == wizardStepLoading {
 		sess.mu.Unlock()
 		return
 	}
-	step.inFlight = true // claim first so concurrent callers bail out
+	step.state = wizardStepLoading // claim first so concurrent callers bail out
+	step.errMsg = ""               // clear any prior error so retry shows a clean state
 	artistID := step.ArtistID
 	artistName := step.ArtistName
 	artistPath := step.ArtistPath
@@ -639,19 +672,18 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 		}
 	}
 
-	// Commit the result atomically with the ready flip. Store only a
+	// Commit the result atomically with the state transition. Store only a
 	// sanitized, client-safe message on the step; full errors are logged
-	// server-side via slog.Warn above. A surface for the errored flag in
-	// the wizard template is tracked as an M46.5 follow-up.
+	// server-side via slog.Warn above. A surface for wizardStepFailed in the
+	// wizard template is tracked separately as #1090.
 	sess.mu.Lock()
-	step.inFlight = false
 	if fetchErr != nil {
-		step.errored = true
+		step.state = wizardStepFailed
 		step.errMsg = "candidate lookup failed; retry or skip this artist"
 	} else {
 		step.Candidates = candidates
+		step.state = wizardStepReady
 	}
-	step.ready = true
 	sess.touch()
 	sess.mu.Unlock()
 }

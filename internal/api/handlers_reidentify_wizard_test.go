@@ -25,8 +25,8 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 	t.Run("no_prior_decision", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{}
 		step := &reIdentifyWizardStep{}
-		applyDecision(sess, step, "accepted")
-		if step.Decision != "accepted" {
+		applyDecision(sess, step, wizardDecisionAccepted)
+		if step.Decision != wizardDecisionAccepted {
 			t.Errorf("Decision = %q, want accepted", step.Decision)
 		}
 		if sess.Accepted != 1 || sess.Skipped != 0 || sess.Declined != 0 {
@@ -37,8 +37,8 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 
 	t.Run("resubmit_same_is_noop", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{Accepted: 1}
-		step := &reIdentifyWizardStep{Decision: "accepted"}
-		applyDecision(sess, step, "accepted")
+		step := &reIdentifyWizardStep{Decision: wizardDecisionAccepted}
+		applyDecision(sess, step, wizardDecisionAccepted)
 		if sess.Accepted != 1 {
 			t.Errorf("Accepted = %d, want 1 (resubmit must no-op)", sess.Accepted)
 		}
@@ -46,8 +46,8 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 
 	t.Run("change_accepted_to_skipped", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{Accepted: 1}
-		step := &reIdentifyWizardStep{Decision: "accepted"}
-		applyDecision(sess, step, "skipped")
+		step := &reIdentifyWizardStep{Decision: wizardDecisionAccepted}
+		applyDecision(sess, step, wizardDecisionSkipped)
 		if sess.Accepted != 0 {
 			t.Errorf("Accepted = %d, want 0 after change", sess.Accepted)
 		}
@@ -58,8 +58,8 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 
 	t.Run("change_skipped_to_declined", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{Skipped: 1}
-		step := &reIdentifyWizardStep{Decision: "skipped"}
-		applyDecision(sess, step, "declined")
+		step := &reIdentifyWizardStep{Decision: wizardDecisionSkipped}
+		applyDecision(sess, step, wizardDecisionDeclined)
 		if sess.Skipped != 0 || sess.Declined != 1 {
 			t.Errorf("counters = (s=%d d=%d), want (0, 1)", sess.Skipped, sess.Declined)
 		}
@@ -68,9 +68,9 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 	t.Run("accept_to_accept_is_noop", func(t *testing.T) {
 		// Extra invariant: repeated accept decisions must not double-count.
 		sess := &reIdentifyWizardSession{Accepted: 3}
-		step := &reIdentifyWizardStep{Decision: "accepted"}
-		applyDecision(sess, step, "accepted")
-		applyDecision(sess, step, "accepted")
+		step := &reIdentifyWizardStep{Decision: wizardDecisionAccepted}
+		applyDecision(sess, step, wizardDecisionAccepted)
+		applyDecision(sess, step, wizardDecisionAccepted)
 		if sess.Accepted != 3 {
 			t.Errorf("Accepted = %d, want 3", sess.Accepted)
 		}
@@ -78,8 +78,8 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 
 	t.Run("declined_to_accepted", func(t *testing.T) {
 		sess := &reIdentifyWizardSession{Declined: 1}
-		step := &reIdentifyWizardStep{Decision: "declined"}
-		applyDecision(sess, step, "accepted")
+		step := &reIdentifyWizardStep{Decision: wizardDecisionDeclined}
+		applyDecision(sess, step, wizardDecisionAccepted)
 		if sess.Declined != 0 || sess.Accepted != 1 {
 			t.Errorf("counters = (a=%d d=%d), want (1, 0)", sess.Accepted, sess.Declined)
 		}
@@ -90,9 +90,9 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 		// reflecting only the final state.
 		sess := &reIdentifyWizardSession{}
 		step := &reIdentifyWizardStep{}
-		applyDecision(sess, step, "accepted")
-		applyDecision(sess, step, "skipped")
-		applyDecision(sess, step, "declined")
+		applyDecision(sess, step, wizardDecisionAccepted)
+		applyDecision(sess, step, wizardDecisionSkipped)
+		applyDecision(sess, step, wizardDecisionDeclined)
 		if sess.Accepted != 0 || sess.Skipped != 0 || sess.Declined != 1 {
 			t.Errorf("counters = (a=%d s=%d d=%d), want (0, 0, 1)",
 				sess.Accepted, sess.Skipped, sess.Declined)
@@ -106,9 +106,9 @@ func TestApplyDecision_Idempotent(t *testing.T) {
 		// post-state so a future drift bug (e.g. skipping the increment
 		// whenever the previous counter was zero) is caught.
 		sess := &reIdentifyWizardSession{Accepted: 0}
-		step := &reIdentifyWizardStep{Decision: "accepted"}
-		applyDecision(sess, step, "skipped")
-		if step.Decision != "skipped" {
+		step := &reIdentifyWizardStep{Decision: wizardDecisionAccepted}
+		applyDecision(sess, step, wizardDecisionSkipped)
+		if step.Decision != wizardDecisionSkipped {
 			t.Errorf("Decision = %q, want skipped", step.Decision)
 		}
 		if sess.Accepted != 0 || sess.Skipped != 1 || sess.Declined != 0 {
@@ -209,14 +209,14 @@ func TestWizardStore(t *testing.T) {
 func TestProjectWizardCandidates(t *testing.T) {
 	t.Parallel()
 	t.Run("not_ready_returns_nil", func(t *testing.T) {
-		step := &reIdentifyWizardStep{ready: false, Candidates: []ScoredCandidate{{}}}
+		step := &reIdentifyWizardStep{state: wizardStepPending, Candidates: []ScoredCandidate{{}}}
 		if got := projectWizardCandidates(step); got != nil {
 			t.Errorf("got %v, want nil when !ready", got)
 		}
 	})
 
 	t.Run("ready_empty_returns_empty_slice", func(t *testing.T) {
-		step := &reIdentifyWizardStep{ready: true}
+		step := &reIdentifyWizardStep{state: wizardStepReady}
 		got := projectWizardCandidates(step)
 		if got == nil || len(got) != 0 {
 			t.Errorf("got %v, want non-nil empty slice", got)
@@ -225,7 +225,7 @@ func TestProjectWizardCandidates(t *testing.T) {
 
 	t.Run("confidence_maps_to_percent", func(t *testing.T) {
 		step := &reIdentifyWizardStep{
-			ready: true,
+			state: wizardStepReady,
 			Candidates: []ScoredCandidate{{
 				ArtistSearchResult: provider.ArtistSearchResult{
 					Name:           "Pink Floyd",
@@ -251,7 +251,7 @@ func TestProjectWizardCandidates(t *testing.T) {
 
 	t.Run("album_comparison_overrides_confidence", func(t *testing.T) {
 		step := &reIdentifyWizardStep{
-			ready: true,
+			state: wizardStepReady,
 			Candidates: []ScoredCandidate{{
 				ArtistSearchResult: provider.ArtistSearchResult{Name: "A"},
 				AlbumComparison:    &artist.AlbumComparison{MatchPercent: 92},
@@ -677,9 +677,9 @@ func TestHandleReIdentifyWizardSaveExit(t *testing.T) {
 	t.Parallel()
 	r, _, _ := testRouterWithIdentify(t)
 	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{
-		{ArtistID: "a1", ArtistName: "A One", Decision: ""},
-		{ArtistID: "a2", ArtistName: "A Two", Decision: "accepted"},
-		{ArtistID: "a3", ArtistName: "A Three", Decision: ""},
+		{ArtistID: "a1", ArtistName: "A One", Decision: wizardDecisionNone},
+		{ArtistID: "a2", ArtistName: "A Two", Decision: wizardDecisionAccepted},
+		{ArtistID: "a3", ArtistName: "A Three", Decision: wizardDecisionNone},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -774,17 +774,56 @@ func TestEnsureWizardCandidates_NoOrchestrator(t *testing.T) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	step := sess.Steps[0]
-	if !step.ready {
-		t.Error("step.ready should be true after fetch terminates")
-	}
-	if !step.errored {
-		t.Error("step.errored should be true when orchestrator is nil")
+	// Orchestrator is nil so fetchErr is set; the step must land in the
+	// Failed terminal state with a sanitized message. The state enum makes
+	// Loading/Ready/Failed mutually exclusive, so confirming Failed also
+	// proves Loading was cleared.
+	if step.state != wizardStepFailed {
+		t.Errorf("step.state = %d, want wizardStepFailed when orchestrator is nil", step.state)
 	}
 	if step.errMsg == "" {
-		t.Error("step.errMsg should be populated")
+		t.Error("step.errMsg should be populated on failure")
 	}
-	if step.inFlight {
-		t.Error("step.inFlight should be cleared after fetch terminates")
+}
+
+// TestEnsureWizardCandidates_RetryClearsPriorError locks in the refactor
+// invariant that a step in wizardStepFailed is retryable: a fresh call to
+// ensureWizardCandidates must not short-circuit on the failed state, and
+// it must clear the prior errMsg before attempting the new fetch. The
+// orchestrator is nil here so the retry fails identically (state lands
+// back at wizardStepFailed with the standard sanitized errMsg), but the
+// distinct seeded errMsg lets us prove the reclaim path ran (i.e. the
+// claim block at the top of ensureWizardCandidates fired, which is
+// otherwise indistinguishable from a no-op early-return when start and
+// end states are both Failed).
+func TestEnsureWizardCandidates_RetryClearsPriorError(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithIdentify(t)
+	sess, err := r.reIdentifyWizardStore.create([]*reIdentifyWizardStep{{ArtistID: "a1"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Seed a Failed step with an unmistakable prior error message so the
+	// retry path's errMsg-clearing behavior is observable.
+	const seededErrMsg = "PRIOR error message from earlier attempt"
+	sess.mu.Lock()
+	sess.Steps[0].state = wizardStepFailed
+	sess.Steps[0].errMsg = seededErrMsg
+	sess.mu.Unlock()
+
+	r.ensureWizardCandidates(context.Background(), sess, 0)
+
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	step := sess.Steps[0]
+	if step.state != wizardStepFailed {
+		t.Errorf("state = %d, want wizardStepFailed (orchestrator nil so retry also fails)", step.state)
+	}
+	if step.errMsg == seededErrMsg {
+		t.Error("errMsg still carries the seeded prior message; retry path did not clear it before re-fetching")
+	}
+	if step.errMsg == "" {
+		t.Error("errMsg empty; retry-then-fail must reset to the standard sanitized message, not leave blank")
 	}
 }
 
@@ -801,8 +840,8 @@ func TestEnsureWizardCandidates_OutOfRange(t *testing.T) {
 	r.ensureWizardCandidates(context.Background(), sess, -1)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
-	if sess.Steps[0].ready || sess.Steps[0].errored {
-		t.Error("out-of-range idx should not touch step state")
+	if sess.Steps[0].state != wizardStepPending {
+		t.Errorf("state = %d, want wizardStepPending (out-of-range idx must not touch step state)", sess.Steps[0].state)
 	}
 }
 
