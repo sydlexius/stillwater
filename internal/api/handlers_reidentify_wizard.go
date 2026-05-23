@@ -811,7 +811,7 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 	sess.mu.Lock()
 	if fetchErr != nil {
 		step.state = wizardStepFailed
-		step.errMsg = "candidate lookup failed; retry or skip this artist"
+		step.errMsg = "Candidate lookup failed; retry or skip this artist"
 	} else {
 		step.Candidates = candidates
 		step.state = wizardStepReady

@@ -1026,7 +1026,7 @@ func TestWizardErroredStepRendersBanner(t *testing.T) {
 		ArtistID:   "a1",
 		ArtistName: "Test Artist",
 		Errored:    true,
-		ErrMsg:     "candidate lookup failed; retry or skip this artist",
+		ErrMsg:     "Candidate lookup failed; retry or skip this artist",
 	}
 	var buf bytes.Buffer
 	if err := templates.ReIdentifyWizardStep(data).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
