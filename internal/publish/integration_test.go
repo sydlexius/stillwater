@@ -251,6 +251,24 @@ func TestBuildArtistPushData(t *testing.T) {
 			t.Errorf("Dee should have empty Role, got %+v", got.BandMembers[3])
 		}
 	})
+
+	t.Run("all-empty-name members collapse to nil BandMembers", func(t *testing.T) {
+		// When every input member is filtered out (e.g. all empty names),
+		// BandMembers must be nil -- NOT a non-nil empty slice. The Jellyfin
+		// push path uses non-nil-ness as the signal to overwrite People; a
+		// zero-length slice would silently wipe Jellyfin-side People.
+		a := *common
+		a.Type = "group"
+		members := []artist.BandMember{
+			{MemberName: ""},
+			{MemberName: ""},
+		}
+		got := BuildArtistPushData(&a, members)
+		if got.BandMembers != nil {
+			t.Errorf("expected nil BandMembers when every input was filtered, got %+v",
+				got.BandMembers)
+		}
+	})
 }
 
 // --- WriteBackNFO ---

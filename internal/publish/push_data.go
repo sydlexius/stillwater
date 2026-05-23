@@ -72,6 +72,14 @@ func buildMemberRefs(members []artist.BandMember) []connection.ArtistPersonRef {
 			Role: memberRoleString(m),
 		})
 	}
+	// Return nil rather than a non-nil empty slice when every input was
+	// filtered out (e.g. all members had empty names). The Jellyfin push
+	// path uses a non-nil BandMembers slice as the signal to overwrite
+	// People, so collapsing all-filtered to nil preserves the no-clobber
+	// invariant for downstream consumers.
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
