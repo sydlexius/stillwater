@@ -40,16 +40,43 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	tags = append(tags, data.Moods...)
 	existing["Tags"] = tags
 
-	if data.MusicBrainzID != "" {
-		// Merge into existing ProviderIds to preserve IDs managed by Jellyfin
-		// (e.g. TheAudioDb, Discogs). The fetched JSON deserializes inner maps
-		// as map[string]any, not map[string]string.
-		providerIds, _ := existing["ProviderIds"].(map[string]any)
-		if providerIds == nil {
-			providerIds = make(map[string]any)
+	// Merge every external ID Stillwater has into ProviderIds, preserving any
+	// IDs Jellyfin already manages (the fetched JSON deserializes inner maps
+	// as map[string]any). Empty IDs are not written so a clear on the
+	// Stillwater side does not silently overwrite a Jellyfin-side value;
+	// explicit ID removal lives outside this push path.
+	providerUpdates := buildProviderIDUpdates(data)
+	if len(providerUpdates) > 0 {
+		// Capture the type-assertion ok bool so a malformed fetch (Jellyfin
+		// returning ProviderIds as something other than a JSON object) is
+		// surfaced as an error instead of silently allocating a fresh map
+		// and wiping every Jellyfin-managed ID.
+		existingProviderIds := existing["ProviderIds"]
+		var providerIds map[string]any
+		if existingProviderIds == nil {
+			providerIds = make(map[string]any, len(providerUpdates))
+		} else {
+			var ok bool
+			providerIds, ok = existingProviderIds.(map[string]any)
+			if !ok {
+				return fmt.Errorf("jellyfin returned ProviderIds in an unexpected shape (%T); refusing to overwrite", existingProviderIds)
+			}
 		}
-		providerIds["MusicBrainzArtist"] = data.MusicBrainzID
+		for k, v := range providerUpdates {
+			providerIds[k] = v
+		}
 		existing["ProviderIds"] = providerIds
+	}
+
+	// Map band members into Jellyfin's People array. Each entry becomes a
+	// PersonInfo with Type=Person and a Role summarizing vocal type +
+	// instruments. The write is gated on a non-nil BandMembers slice, which
+	// only happens when the caller actually fetched members AND at least one
+	// has a non-empty name; an empty Stillwater member list does NOT clear
+	// the Jellyfin-side People array (same no-clobber invariant as
+	// ProviderIds above -- explicit removal lives outside this push path).
+	if data.BandMembers != nil {
+		existing["People"] = buildPeopleEntries(data.BandMembers)
 	}
 
 	// Normalize dates to yyyy-MM-dd so Jellyfin does not silently discard.
@@ -96,6 +123,51 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 
 	c.Logger.Debug("metadata pushed to jellyfin", "artist_id", platformArtistID)
 	return nil
+}
+
+// buildProviderIDUpdates builds the set of external-ID key/value pairs
+// Stillwater wants merged into Jellyfin's ProviderIds map. Empty IDs are
+// omitted so a missing-in-Stillwater value does not overwrite an
+// existing-in-Jellyfin value. Key naming matches Jellyfin's metadata
+// fetcher conventions: MusicBrainzArtist, TheAudioDb, Discogs, Spotify.
+func buildProviderIDUpdates(data connection.ArtistPushData) map[string]string {
+	ids := make(map[string]string, 4)
+	if data.MusicBrainzID != "" {
+		ids["MusicBrainzArtist"] = data.MusicBrainzID
+	}
+	if data.AudioDBID != "" {
+		ids["TheAudioDb"] = data.AudioDBID
+	}
+	if data.DiscogsID != "" {
+		ids["Discogs"] = data.DiscogsID
+	}
+	if data.SpotifyID != "" {
+		ids["Spotify"] = data.SpotifyID
+	}
+	return ids
+}
+
+// buildPeopleEntries maps Stillwater's band members into Jellyfin's People
+// array shape. Each entry is a map[string]any (matching how the fetched
+// item body deserializes) with Name, Role, and Type=Person; Jellyfin
+// treats Type=Person as a generic credited contributor, which is the
+// closest existing match for a band member.
+func buildPeopleEntries(members []connection.ArtistPersonRef) []map[string]any {
+	out := make([]map[string]any, 0, len(members))
+	for _, m := range members {
+		if m.Name == "" {
+			continue
+		}
+		entry := map[string]any{
+			"Name": m.Name,
+			"Type": "Person",
+		}
+		if m.Role != "" {
+			entry["Role"] = m.Role
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // UpdateArtistLocks persists the overall lock state for the given Jellyfin

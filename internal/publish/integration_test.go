@@ -101,6 +101,10 @@ func (errPlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]artist.P
 	return nil, errors.New("listing platform ids failed")
 }
 
+func (errPlatformLister) ListMembersByArtistID(_ context.Context, _ string) ([]artist.BandMember, error) {
+	return nil, nil
+}
+
 // --- BuildArtistPushData ---
 
 // TestBuildArtistPushData exercises every branch of the type switch and
@@ -126,7 +130,7 @@ func TestBuildArtistPushData(t *testing.T) {
 	t.Run("group propagates Formed/Disbanded only", func(t *testing.T) {
 		a := *common
 		a.Type = "group"
-		got := BuildArtistPushData(&a)
+		got := BuildArtistPushData(&a, nil)
 		if got.Name != "Test" || got.SortName != "Test, The" {
 			t.Errorf("common field propagation broken: %+v", got)
 		}
@@ -142,7 +146,7 @@ func TestBuildArtistPushData(t *testing.T) {
 		for _, ty := range []string{"orchestra", "choir"} {
 			a := *common
 			a.Type = ty
-			got := BuildArtistPushData(&a)
+			got := BuildArtistPushData(&a, nil)
 			if got.Born != "" || got.Died != "" {
 				t.Errorf("%s must not set Born/Died", ty)
 			}
@@ -155,7 +159,7 @@ func TestBuildArtistPushData(t *testing.T) {
 	t.Run("solo propagates Born/Died only", func(t *testing.T) {
 		a := *common
 		a.Type = "solo"
-		got := BuildArtistPushData(&a)
+		got := BuildArtistPushData(&a, nil)
 		if got.Born != a.Born || got.Died != a.Died {
 			t.Errorf("solo must propagate Born/Died, got %+v", got)
 		}
@@ -168,7 +172,7 @@ func TestBuildArtistPushData(t *testing.T) {
 	t.Run("unknown type propagates all four dates (fallback chain)", func(t *testing.T) {
 		a := *common
 		a.Type = "" // empty -> default case
-		got := BuildArtistPushData(&a)
+		got := BuildArtistPushData(&a, nil)
 		if got.Born != a.Born || got.Died != a.Died {
 			t.Errorf("default must set Born/Died, got %+v", got)
 		}
@@ -180,7 +184,7 @@ func TestBuildArtistPushData(t *testing.T) {
 	t.Run("slices and identifiers propagate", func(t *testing.T) {
 		a := *common
 		a.Type = "solo"
-		got := BuildArtistPushData(&a)
+		got := BuildArtistPushData(&a, nil)
 		if len(got.Genres) != 1 || got.Genres[0] != "rock" {
 			t.Errorf("Genres not propagated: %v", got.Genres)
 		}
@@ -189,6 +193,80 @@ func TestBuildArtistPushData(t *testing.T) {
 		}
 		if got.Disambiguation != "the band" {
 			t.Errorf("Disambiguation not propagated: %q", got.Disambiguation)
+		}
+	})
+
+	t.Run("external provider IDs propagate (#1084)", func(t *testing.T) {
+		a := *common
+		a.Type = "group"
+		a.AudioDBID = "adb-99"
+		a.DiscogsID = "dsc-42"
+		a.SpotifyID = "spo-xyz"
+		got := BuildArtistPushData(&a, nil)
+		if got.AudioDBID != "adb-99" {
+			t.Errorf("AudioDBID not propagated: %q", got.AudioDBID)
+		}
+		if got.DiscogsID != "dsc-42" {
+			t.Errorf("DiscogsID not propagated: %q", got.DiscogsID)
+		}
+		if got.SpotifyID != "spo-xyz" {
+			t.Errorf("SpotifyID not propagated: %q", got.SpotifyID)
+		}
+	})
+
+	t.Run("nil members yields nil BandMembers (#1085)", func(t *testing.T) {
+		a := *common
+		a.Type = "group"
+		got := BuildArtistPushData(&a, nil)
+		if got.BandMembers != nil {
+			t.Errorf("nil members should yield nil BandMembers, got %+v", got.BandMembers)
+		}
+	})
+
+	t.Run("members map to ArtistPersonRef with composed role (#1085)", func(t *testing.T) {
+		a := *common
+		a.Type = "group"
+		members := []artist.BandMember{
+			{MemberName: "Ann", Instruments: []string{"Guitar", "Bass"}, VocalType: "lead"},
+			{MemberName: "Bob", Instruments: []string{"Drums"}},
+			{MemberName: "Cara", VocalType: "backing"},
+			{MemberName: "Dee"}, // no role data -> Role omitted
+			{MemberName: ""},    // empty name dropped entirely
+		}
+		got := BuildArtistPushData(&a, members)
+		if len(got.BandMembers) != 4 {
+			t.Fatalf("expected 4 mapped members (empty-name dropped), got %d: %+v",
+				len(got.BandMembers), got.BandMembers)
+		}
+		if got.BandMembers[0].Name != "Ann" || got.BandMembers[0].Role != "Vocals (lead); Guitar, Bass" {
+			t.Errorf("Ann role mismatch: %+v", got.BandMembers[0])
+		}
+		if got.BandMembers[1].Name != "Bob" || got.BandMembers[1].Role != "Drums" {
+			t.Errorf("Bob role mismatch: %+v", got.BandMembers[1])
+		}
+		if got.BandMembers[2].Name != "Cara" || got.BandMembers[2].Role != "Vocals (backing)" {
+			t.Errorf("Cara role mismatch: %+v", got.BandMembers[2])
+		}
+		if got.BandMembers[3].Name != "Dee" || got.BandMembers[3].Role != "" {
+			t.Errorf("Dee should have empty Role, got %+v", got.BandMembers[3])
+		}
+	})
+
+	t.Run("all-empty-name members collapse to nil BandMembers", func(t *testing.T) {
+		// When every input member is filtered out (e.g. all empty names),
+		// BandMembers must be nil -- NOT a non-nil empty slice. The Jellyfin
+		// push path uses non-nil-ness as the signal to overwrite People; a
+		// zero-length slice would silently wipe Jellyfin-side People.
+		a := *common
+		a.Type = "group"
+		members := []artist.BandMember{
+			{MemberName: ""},
+			{MemberName: ""},
+		}
+		got := BuildArtistPushData(&a, members)
+		if got.BandMembers != nil {
+			t.Errorf("expected nil BandMembers when every input was filtered, got %+v",
+				got.BandMembers)
 		}
 	})
 }
@@ -498,6 +576,47 @@ func TestPushMetadataAsync_HappyPath(t *testing.T) {
 		for i, b := range all {
 			t.Errorf("  [%d] %s", i, string(b))
 		}
+	}
+}
+
+// TestPushMetadataAsync_MemberListErrorContinues verifies that a failure
+// from ListMembersByArtistID is logged but does NOT abort the push. The
+// member list is enrichment metadata; losing it must not prevent the
+// platform-side update of the artist's primary fields.
+func TestPushMetadataAsync_MemberListErrorContinues(t *testing.T) {
+	hits := &pushHits{}
+	srv := newEmbyTestServer(hits)
+	defer srv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{
+			ids: []artist.PlatformID{
+				{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+			},
+			membersErr: errors.New("simulated member-list failure"),
+		},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "MemberFail", Type: "group", Formed: "1970-01-01"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	waitForPosts(t, &hits.posts, 1)
+
+	deadline := time.Now().Add(2 * time.Second)
+	var body []byte
+	for time.Now().Before(deadline) {
+		body = hits.findPostBody(`"Name":"MemberFail"`)
+		if body != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if body == nil {
+		t.Fatal("expected the metadata POST to fire even when member-list lookup failed")
 	}
 }
 

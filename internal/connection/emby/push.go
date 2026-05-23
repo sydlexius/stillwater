@@ -54,10 +54,13 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	if data.SortName != "" {
 		body.ForcedSortName = data.SortName
 	}
-	if data.MusicBrainzID != "" {
-		body.ProviderIds = map[string]string{
-			"MusicBrainzArtist": data.MusicBrainzID,
-		}
+	// Populate ProviderIds with every external ID Stillwater has. Empty IDs
+	// are omitted so we never overwrite an existing platform-side value with
+	// "". Key naming matches the convention used by Emby's metadata fetcher
+	// plugins.
+	providerIDs := buildProviderIDs(data)
+	if len(providerIDs) > 0 {
+		body.ProviderIds = providerIDs
 	}
 	// Use Born for persons, Formed for groups as premiere date.
 	// Normalize to yyyy-MM-dd so Emby does not silently discard partial dates.
@@ -125,6 +128,30 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	c.refreshItem(ctx, platformArtistID)
 
 	return nil
+}
+
+// buildProviderIDs assembles the ProviderIds map for the Emby push payload
+// from the platform-agnostic ArtistPushData. Only non-empty IDs are
+// included; the map is keyed using Emby's canonical metadata-fetcher names
+// (MusicBrainzArtist, TheAudioDb, Discogs, Spotify) so the values land in
+// the fields Emby's MetadataFields enum already understands. Returns an
+// empty (non-nil) map if no IDs are set; the caller decides whether to
+// attach it to the body.
+func buildProviderIDs(data connection.ArtistPushData) map[string]string {
+	ids := make(map[string]string, 4)
+	if data.MusicBrainzID != "" {
+		ids["MusicBrainzArtist"] = data.MusicBrainzID
+	}
+	if data.AudioDBID != "" {
+		ids["TheAudioDb"] = data.AudioDBID
+	}
+	if data.DiscogsID != "" {
+		ids["Discogs"] = data.DiscogsID
+	}
+	if data.SpotifyID != "" {
+		ids["Spotify"] = data.SpotifyID
+	}
+	return ids
 }
 
 // refreshItem triggers a metadata refresh for a single item on the Emby server.
