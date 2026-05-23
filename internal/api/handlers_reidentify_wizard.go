@@ -84,7 +84,35 @@ type reIdentifyWizardSession struct {
 	Accepted int
 	Skipped  int
 	Declined int
+	// SkippedAtStart records IDs the start handler had to drop because the
+	// underlying artist record was missing or could not be loaded. The
+	// wizard page renders a banner from these so a user who selected 50
+	// artists and gets a wizard with 47 steps can see which 3 dropped and
+	// why, instead of silently losing them.
+	SkippedAtStart []SkippedWizardArtist
 }
+
+// SkippedWizardArtist names one artist the wizard start endpoint had to
+// drop, together with a coarse reason classification suitable for client
+// rendering. Reason is one of skippedReasonNotFound or skippedReasonLoadError
+// so the UI can pick localized copy without parsing free-form text.
+type SkippedWizardArtist struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+const (
+	// skippedReasonNotFound is the SkippedWizardArtist.Reason value used
+	// when the artist ID resolved cleanly to "no such record" (the request
+	// referenced a stale ID or one the user no longer has permission to
+	// see). The UI may treat this as benign.
+	skippedReasonNotFound = "not_found"
+	// skippedReasonLoadError is used for any other GetByID failure (DB
+	// outage, decryption error, etc.). The UI should surface this more
+	// loudly because it implies an environmental problem rather than a
+	// stale selection.
+	skippedReasonLoadError = "load_error"
+)
 
 // touch marks the session as recently used. Callers must hold s.mu.
 func (s *reIdentifyWizardSession) touch() { s.Updated = time.Now() }
@@ -160,10 +188,10 @@ func projectWizardCandidates(step *reIdentifyWizardStep) []templates.WizardCandi
 	// states must render the "no more loading" branch of the template -- in
 	// the pre-refactor code this was a single `ready=true` flag set on both
 	// success and error paths, and Candidates being nil/empty drove the
-	// "no candidates" render. Treat both terminal states the same here so
-	// that semantic is preserved; the proper Failed-state UI surface
-	// (retry / skip affordance, sanitized errMsg) is tracked separately in
-	// #1090 and lives outside this refactor's scope.
+	// "no candidates" render. Treat both terminal states the same here; the
+	// Failed-state branch is then rendered by the dedicated error banner
+	// path in the template (driven by buildWizardStepData populating
+	// Errored / ErrMsg from the step state).
 	if step.state != wizardStepReady && step.state != wizardStepFailed {
 		return nil
 	}
@@ -217,30 +245,10 @@ func (r *Router) handleReIdentifyWizardStart(w http.ResponseWriter, req *http.Re
 		writeError(w, req, http.StatusBadRequest, "too many ids")
 		return
 	}
-	seen := make(map[string]struct{}, len(body.IDs))
-	steps := make([]*reIdentifyWizardStep, 0, len(body.IDs))
-	for _, id := range body.IDs {
-		if !idPattern.MatchString(id) {
-			writeError(w, req, http.StatusBadRequest, "invalid id format")
-			return
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		a, err := r.artistService.GetByID(req.Context(), id)
-		if err != nil {
-			if errors.Is(err, artist.ErrNotFound) {
-				continue
-			}
-			r.logger.Warn("reidentify wizard: load artist failed", "id", id, "error", err)
-			continue
-		}
-		steps = append(steps, &reIdentifyWizardStep{
-			ArtistID:   a.ID,
-			ArtistName: a.Name,
-			ArtistPath: a.Path,
-		})
+	steps, skipped, badID := r.buildWizardStartSteps(req.Context(), body.IDs)
+	if badID {
+		writeError(w, req, http.StatusBadRequest, "invalid id format")
+		return
 	}
 	if len(steps) == 0 {
 		writeError(w, req, http.StatusBadRequest, "no valid artists")
@@ -253,6 +261,15 @@ func (r *Router) handleReIdentifyWizardStart(w http.ResponseWriter, req *http.Re
 		writeError(w, req, http.StatusInternalServerError, "failed to start wizard")
 		return
 	}
+	// Persist the skipped set on the session so the wizard page can render
+	// a banner when the user lands on step 0. The JSON response below is
+	// for API consumers; the browser flow currently fetch()es then
+	// redirects so it never displays the response body itself.
+	if len(skipped) > 0 {
+		sess.mu.Lock()
+		sess.SkippedAtStart = skipped
+		sess.mu.Unlock()
+	}
 
 	// Pre-fetch the first step's candidates synchronously-ish so the
 	// initial render does not show a spinner. A background goroutine
@@ -261,11 +278,61 @@ func (r *Router) handleReIdentifyWizardStart(w http.ResponseWriter, req *http.Re
 	r.ensureWizardCandidates(bgCtx, sess, 0)
 	go r.ensureWizardCandidates(bgCtx, sess, 1)
 
+	// skipped_ids carries the bare ID list for callers that only need to
+	// know "what disappeared"; skipped_errors pairs each ID with a coarse
+	// reason class so a richer client can render distinct messaging for
+	// "not found" vs "load failed".
+	skippedIDs := make([]string, 0, len(skipped))
+	for _, s := range skipped {
+		skippedIDs = append(skippedIDs, s.ID)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"session_id": sess.ID,
-		"total":      len(steps),
-		"index":      0,
+		"session_id":     sess.ID,
+		"total":          len(steps),
+		"index":          0,
+		"skipped_ids":    skippedIDs,
+		"skipped_errors": skipped,
 	})
+}
+
+// buildWizardStartSteps validates and resolves the requested artist IDs into
+// wizard steps. Invalid IDs (failing idPattern) abort with badID=true so the
+// caller can return 400; otherwise IDs that resolve to ErrNotFound or any
+// other GetByID error are accumulated into skipped with a reason class. The
+// loop is extracted so the per-ID classification can be unit-tested without
+// standing up the full HTTP handler.
+func (r *Router) buildWizardStartSteps(ctx context.Context, ids []string) (steps []*reIdentifyWizardStep, skipped []SkippedWizardArtist, badID bool) {
+	seen := make(map[string]struct{}, len(ids))
+	steps = make([]*reIdentifyWizardStep, 0, len(ids))
+	// Pre-allocate skipped as an empty slice (not nil) so the JSON response
+	// always serializes an array, satisfying the OpenAPI `required` contract
+	// for skipped_ids and skipped_errors on the start response.
+	skipped = make([]SkippedWizardArtist, 0, len(ids))
+	for _, id := range ids {
+		if !idPattern.MatchString(id) {
+			return nil, nil, true
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		a, err := r.artistService.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, artist.ErrNotFound) {
+				skipped = append(skipped, SkippedWizardArtist{ID: id, Reason: skippedReasonNotFound})
+				continue
+			}
+			r.logger.Warn("reidentify wizard: load artist failed", "id", id, "error", err)
+			skipped = append(skipped, SkippedWizardArtist{ID: id, Reason: skippedReasonLoadError})
+			continue
+		}
+		steps = append(steps, &reIdentifyWizardStep{
+			ArtistID:   a.ID,
+			ArtistName: a.Name,
+			ArtistPath: a.Path,
+		})
+	}
+	return steps, skipped, false
 }
 
 // handleReIdentifyWizardStep returns the HTML fragment for a single step in
@@ -302,6 +369,29 @@ func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Req
 
 	sess.mu.Lock()
 	step := sess.Steps[idx]
+	data := buildWizardStepData(sess, step, idx, total)
+	// Only surface the start-time skipped list on the initial full-page
+	// landing. Subsequent HTMX swaps replace just #wizard-body so showing
+	// the banner there would be inert; suppress it on intra-wizard
+	// navigation too so the user does not see the same warning on every
+	// step.
+	if !isHTMXRequest(req) && idx == 0 {
+		data.SkippedAtStart = projectSkippedAtStart(sess.SkippedAtStart)
+	}
+	sess.mu.Unlock()
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
+		return
+	}
+	renderTempl(w, req, templates.ReIdentifyWizardPage(r.assets(), data))
+}
+
+// buildWizardStepData assembles the per-step view model from a step's
+// terminal state. Failed steps populate Errored + ErrMsg so the template
+// renders the error banner instead of the ambiguous "no candidates" line;
+// Ready steps populate Candidates via the existing projection. Caller must
+// hold sess.mu.
+func buildWizardStepData(sess *reIdentifyWizardSession, step *reIdentifyWizardStep, idx, total int) templates.ReIdentifyWizardStepData {
 	data := templates.ReIdentifyWizardStepData{
 		SessionID:  sess.ID,
 		Index:      idx,
@@ -310,12 +400,34 @@ func (r *Router) handleReIdentifyWizardStep(w http.ResponseWriter, req *http.Req
 		ArtistName: step.ArtistName,
 		Candidates: projectWizardCandidates(step),
 	}
-	sess.mu.Unlock()
-	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
-		return
+	if step.state == wizardStepFailed {
+		data.Errored = true
+		data.ErrMsg = step.errMsg
+		if data.ErrMsg == "" {
+			// Defensive fallback: a future code path that flips state to
+			// Failed without populating errMsg would otherwise render the
+			// banner heading with no body text. Mirror the canonical
+			// sanitized message that ensureWizardCandidates writes on
+			// fetch failure today so the banner always carries usable copy.
+			data.ErrMsg = "candidate lookup failed; retry or skip this artist"
+		}
 	}
-	renderTempl(w, req, templates.ReIdentifyWizardPage(r.assets(), data))
+	return data
+}
+
+// projectSkippedAtStart converts the handler-owned SkippedWizardArtist slice
+// into the flat view type the template consumes. Returns nil for the empty
+// case so the template's len() guard short-circuits cleanly. Caller must
+// hold sess.mu.
+func projectSkippedAtStart(skipped []SkippedWizardArtist) []templates.SkippedArtistView {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]templates.SkippedArtistView, 0, len(skipped))
+	for _, s := range skipped {
+		out = append(out, templates.SkippedArtistView{ID: s.ID, Reason: s.Reason})
+	}
+	return out
 }
 
 // wizardDecisionRequest is the JSON body for accept/decline actions.
@@ -392,6 +504,32 @@ func (r *Router) handleReIdentifyWizardSkip(w http.ResponseWriter, req *http.Req
 	sess.touch()
 	sess.mu.Unlock()
 	r.advanceWizard(w, req, sess, idx)
+}
+
+// handleReIdentifyWizardRetry re-issues the provider lookup for a step the
+// user retried from the error banner, then renders the step fragment back
+// into #wizard-body. ensureWizardCandidates already treats a Failed step as
+// re-fetchable (it only short-circuits on Ready or Loading) and clears the
+// prior errMsg as part of claiming the work, so this handler is a thin
+// orchestration wrapper: trigger the fetch, render the new state.
+// POST /api/v1/artists/re-identify/wizard/{sid}/step/{idx}/retry
+func (r *Router) handleReIdentifyWizardRetry(w http.ResponseWriter, req *http.Request) {
+	sess, step, idx, ok := r.wizardStepFromRequest(w, req)
+	if !ok {
+		return
+	}
+	sess.mu.Lock()
+	sess.touch()
+	sess.mu.Unlock()
+
+	bgCtx := context.WithoutCancel(req.Context())
+	r.ensureWizardCandidates(bgCtx, sess, idx)
+
+	sess.mu.Lock()
+	total := len(sess.Steps)
+	data := buildWizardStepData(sess, step, idx, total)
+	sess.mu.Unlock()
+	renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 }
 
 // handleReIdentifyWizardDecline marks the artist as explicitly unmatched
@@ -564,14 +702,7 @@ func (r *Router) advanceWizard(w http.ResponseWriter, req *http.Request, sess *r
 		go r.ensureWizardCandidates(bgCtx, sess, next+1)
 		sess.mu.Lock()
 		step := sess.Steps[next]
-		data := templates.ReIdentifyWizardStepData{
-			SessionID:  sess.ID,
-			Index:      next,
-			Total:      total,
-			ArtistID:   step.ArtistID,
-			ArtistName: step.ArtistName,
-			Candidates: projectWizardCandidates(step),
-		}
+		data := buildWizardStepData(sess, step, next, total)
 		sess.mu.Unlock()
 		renderTempl(w, req, templates.ReIdentifyWizardStep(data))
 		return
@@ -674,8 +805,8 @@ func (r *Router) ensureWizardCandidates(ctx context.Context, sess *reIdentifyWiz
 
 	// Commit the result atomically with the state transition. Store only a
 	// sanitized, client-safe message on the step; full errors are logged
-	// server-side via slog.Warn above. A surface for wizardStepFailed in the
-	// wizard template is tracked separately as #1090.
+	// server-side via slog.Warn above. The Failed-state UI surface is
+	// rendered by the dedicated error banner branch in the wizard template.
 	sess.mu.Lock()
 	if fetchErr != nil {
 		step.state = wizardStepFailed

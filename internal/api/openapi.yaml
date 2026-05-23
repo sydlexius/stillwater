@@ -5410,11 +5410,32 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [session_id, total, index]
+                required: [session_id, total, index, skipped_ids, skipped_errors]
                 properties:
                   session_id: {type: string}
                   total:      {type: integer}
                   index:      {type: integer}
+                  skipped_ids:
+                    type: array
+                    description: |
+                      IDs the start endpoint had to drop because the
+                      underlying artist record was missing or could not be
+                      loaded. Always present; empty when no IDs were skipped.
+                    items: {type: string}
+                  skipped_errors:
+                    type: array
+                    description: |
+                      Per-skipped-ID reason classification. Reason is
+                      "not_found" when the ID resolved to no such record,
+                      or "load_error" for any other backend failure.
+                    items:
+                      type: object
+                      required: [id, reason]
+                      properties:
+                        id:     {type: string}
+                        reason:
+                          type: string
+                          enum: [not_found, load_error]
         "400": {description: Invalid request body}
         "503": {description: Artist service not configured}
 
@@ -5552,6 +5573,33 @@ paths:
                 discriminator:
                   propertyName: status
         "404": {description: Wizard session not found}
+
+  /artists/re-identify/wizard/{sid}/step/{idx}/retry:
+    post:
+      tags: [Bulk Operations]
+      summary: Retry candidate lookup for a wizard step whose previous fetch failed
+      operationId: retryReIdentifyWizardStep
+      parameters:
+        - in: path
+          name: sid
+          required: true
+          schema: {type: string}
+        - in: path
+          name: idx
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: |
+            Step fragment HTML re-rendered after the retry. The body is
+            an HTMX swap-ready partial: the candidate list when the retry
+            succeeded, the error banner again when it failed.
+          content:
+            text/html:
+              schema: {type: string}
+        "400": {description: Invalid step index}
+        "404": {description: Wizard session not found}
+        "503": {description: Artist service not configured}
 
   /artists/re-identify/wizard/{sid}/save-exit:
     post:
