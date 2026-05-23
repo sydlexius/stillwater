@@ -1320,12 +1320,14 @@ func (s *Service) SetImageLock(ctx context.Context, imageID string, locked bool)
 
 // IsFieldLocked returns true when the artist has the given field marked as
 // locked. Comparison is case-insensitive and ignores leading/trailing
-// whitespace on the input.
-func (s *Service) IsFieldLocked(a *Artist, field string) bool {
+// whitespace on the input. The typed FieldName parameter forces callers to
+// reference an artist.FieldX constant; passing a bare string is a
+// compile-time error -- closing the silent-unlock class of bug from #1087.
+func (s *Service) IsFieldLocked(a *Artist, field FieldName) bool {
 	if a == nil {
 		return false
 	}
-	target := strings.TrimSpace(field)
+	target := strings.TrimSpace(string(field))
 	for _, f := range a.LockedFields {
 		if strings.EqualFold(f, target) {
 			return true

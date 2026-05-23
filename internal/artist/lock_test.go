@@ -282,10 +282,10 @@ func TestFieldLocks(t *testing.T) {
 		t.Fatalf("AddLockedField: %v", err)
 	}
 	got, _ = svc.GetByID(ctx, a.ID)
-	if !svc.IsFieldLocked(got, "biography") {
+	if !svc.IsFieldLocked(got, FieldBiography) {
 		t.Errorf("expected biography to be locked, got %v", got.LockedFields)
 	}
-	if !svc.IsFieldLocked(got, "BIOGRAPHY") {
+	if !svc.IsFieldLocked(got, FieldName("BIOGRAPHY")) {
 		t.Error("IsFieldLocked should be case-insensitive")
 	}
 
@@ -303,7 +303,7 @@ func TestFieldLocks(t *testing.T) {
 		t.Fatalf("RemoveLockedField: %v", err)
 	}
 	got, _ = svc.GetByID(ctx, a.ID)
-	if svc.IsFieldLocked(got, "biography") {
+	if svc.IsFieldLocked(got, FieldBiography) {
 		t.Errorf("expected biography unlocked, got %v", got.LockedFields)
 	}
 
