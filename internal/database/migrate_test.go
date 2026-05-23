@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+
+	"github.com/pressly/goose/v3"
 )
 
 // openMigratedDB opens an in-memory SQLite database, runs the 001 migration
@@ -1671,13 +1673,14 @@ func TestMigration011_SortCoveringIndex(t *testing.T) {
 }
 
 // TestMigration010_ConvertsClassicalToRegular verifies that migration 010
-// converts any library rows with type='classical' to type='regular'. On a
-// freshly migrated database no classical rows exist; the test seeds one
-// directly (bypassing the service-level type guard that already enforces
-// the removal) to simulate a pre-v1.3.0 database and then re-runs Migrate
-// to apply migration 010.
+// actually fires when `Migrate(db)` is called on a pre-010 database. The test
+// stages a database at version 009 (using `goose.UpTo`), seeds a legacy
+// `type='classical'` library row, then calls the real `Migrate(db)` function
+// and asserts the row was converted to `type='regular'`. This guards against
+// a regression where 010 stops being registered or its ordering changes.
 //
-// Idempotency: running Migrate a second time must not error.
+// Idempotency: running `Migrate(db)` a second time on a DB already at 010
+// must succeed without error and must not re-convert anything.
 func TestMigration010_ConvertsClassicalToRegular(t *testing.T) {
 	// Open a raw DB that will receive the seed before Migrate runs.
 	db, err := Open(":memory:")
@@ -1686,31 +1689,34 @@ func TestMigration010_ConvertsClassicalToRegular(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Run migrations up through 009 by first calling Migrate, which applies
-	// all migrations up to current. Then insert the legacy classical row
-	// BEFORE 010 is recorded: we must bypass the goose version tracker to
-	// simulate a pre-010 state. Since goose applies all migrations in a
-	// single Migrate call we seed the classical row after the fact and
-	// verify the SQL statement from 010 works.
-	if err := Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
+	// Stage a pre-010 state: configure goose against the embedded migrations
+	// FS and apply through version 009 only. `Migrate(db)` will then pick up
+	// where this leaves off and apply 010.
+	goose.SetBaseFS(migrations)
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatalf("goose SetDialect: %v", err)
+	}
+	if err := goose.UpTo(db, "migrations", 9); err != nil {
+		t.Fatalf("goose UpTo 9: %v", err)
 	}
 
 	ctx := context.Background()
 
-	// Seed a library with type='classical' directly into the DB, bypassing the
-	// service layer. This simulates a row that existed before migration 010.
+	// Seed a `type='classical'` library row at version 009 (before 010 has
+	// touched the DB). The initial schema's CHECK constraint accepts
+	// `classical`, which is precisely the legacy state migration 010 exists
+	// to clean up.
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO libraries (id, name, path, type, source, created_at, updated_at)
 		VALUES ('lib-classic', 'Old Classical', '/classical', 'classical', 'manual', datetime('now'), datetime('now'))
 	`); err != nil {
-		t.Fatalf("seeding classical library: %v", err)
+		t.Fatalf("seeding classical library at version 009: %v", err)
 	}
 
-	// Run the migration 010 SQL statement directly to verify it converts the row.
-	if _, err := db.ExecContext(ctx,
-		`UPDATE libraries SET type = 'regular' WHERE type = 'classical'`); err != nil {
-		t.Fatalf("running migration 010 UPDATE: %v", err)
+	// Apply pending migrations (010+) via the real Migrate path so a
+	// regression in migration ordering or registration would surface here.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate after seed: %v", err)
 	}
 
 	var typ string
@@ -1719,22 +1725,20 @@ func TestMigration010_ConvertsClassicalToRegular(t *testing.T) {
 		t.Fatalf("querying converted library: %v", err)
 	}
 	if typ != "regular" {
-		t.Errorf("type after migration = %q, want %q", typ, "regular")
+		t.Errorf("type after Migrate = %q, want %q (migration 010 must convert classical -> regular)", typ, "regular")
 	}
 
-	// Idempotency: running the UPDATE again when no classical rows exist must
-	// be a no-op (zero rows affected, no error).
-	res, err := db.ExecContext(ctx,
-		`UPDATE libraries SET type = 'regular' WHERE type = 'classical'`)
-	if err != nil {
-		t.Fatalf("idempotent re-run: %v", err)
+	// Idempotency: re-running Migrate on a DB already at the latest version
+	// must succeed and must leave the converted row alone.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("re-running Migrate after 010: %v", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		t.Fatalf("RowsAffected after idempotent UPDATE: %v", err)
+	if err := db.QueryRowContext(ctx,
+		`SELECT type FROM libraries WHERE id = 'lib-classic'`).Scan(&typ); err != nil {
+		t.Fatalf("re-querying converted library: %v", err)
 	}
-	if n != 0 {
-		t.Errorf("idempotent run affected %d rows, want 0", n)
+	if typ != "regular" {
+		t.Errorf("type after re-Migrate = %q, want %q (idempotent)", typ, "regular")
 	}
 }
 
