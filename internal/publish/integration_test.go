@@ -561,6 +561,47 @@ func TestPushMetadataAsync_HappyPath(t *testing.T) {
 	}
 }
 
+// TestPushMetadataAsync_MemberListErrorContinues verifies that a failure
+// from ListMembersByArtistID is logged but does NOT abort the push. The
+// member list is enrichment metadata; losing it must not prevent the
+// platform-side update of the artist's primary fields.
+func TestPushMetadataAsync_MemberListErrorContinues(t *testing.T) {
+	hits := &pushHits{}
+	srv := newEmbyTestServer(hits)
+	defer srv.Close()
+
+	p := New(Deps{
+		Logger: silentLogger(),
+		ArtistService: &fakePlatformLister{
+			ids: []artist.PlatformID{
+				{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+			},
+			membersErr: errors.New("simulated member-list failure"),
+		},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "MemberFail", Type: "group", Formed: "1970-01-01"}
+	p.PushMetadataAsync(context.Background(), a)
+
+	waitForPosts(t, &hits.posts, 1)
+
+	deadline := time.Now().Add(2 * time.Second)
+	var body []byte
+	for time.Now().Before(deadline) {
+		body = hits.findPostBody(`"Name":"MemberFail"`)
+		if body != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if body == nil {
+		t.Fatal("expected the metadata POST to fire even when member-list lookup failed")
+	}
+}
+
 // TestPushMetadataAsync_ListerErrorReturnsEarly verifies that an error from
 // GetPlatformIDs short-circuits before any goroutine is spawned.
 func TestPushMetadataAsync_ListerErrorReturnsEarly(t *testing.T) {

@@ -21,8 +21,9 @@ import (
 // --- test doubles ---
 
 type fakePlatformLister struct {
-	ids     []artist.PlatformID
-	members []artist.BandMember
+	ids        []artist.PlatformID
+	members    []artist.BandMember
+	membersErr error
 }
 
 func (f *fakePlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]artist.PlatformID, error) {
@@ -30,6 +31,9 @@ func (f *fakePlatformLister) GetPlatformIDs(_ context.Context, _ string) ([]arti
 }
 
 func (f *fakePlatformLister) ListMembersByArtistID(_ context.Context, _ string) ([]artist.BandMember, error) {
+	if f.membersErr != nil {
+		return nil, f.membersErr
+	}
 	return f.members, nil
 }
 
