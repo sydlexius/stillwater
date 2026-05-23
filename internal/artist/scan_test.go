@@ -728,8 +728,9 @@ func TestValidatedOrderClause_AllSortKeys(t *testing.T) {
 		{"health_score", "health_score"},
 		{"updated_at", "updated_at"},
 		{"created_at", "created_at"},
-		// Unknown key normalizes to name (Validate() defense-in-depth).
+		// Empty/unknown keys normalize to name (Validate() defense-in-depth).
 		{"", "name"},
+		{"totally_unknown", "name"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -752,12 +753,12 @@ func TestValidatedOrderClause_AllSortKeys(t *testing.T) {
 func TestValidatedOrderClause_Direction(t *testing.T) {
 	t.Parallel()
 	asc := validatedOrderClause(ListParams{Sort: "name", Order: "asc"})
-	if !strings.Contains(asc, "ASC") {
-		t.Errorf("order=asc: expected ASC in %q", asc)
+	if !strings.HasPrefix(asc, "name ASC,") {
+		t.Errorf("order=asc: expected primary direction ASC in %q", asc)
 	}
 	desc := validatedOrderClause(ListParams{Sort: "name", Order: "desc"})
-	if !strings.Contains(desc, "DESC") {
-		t.Errorf("order=desc: expected DESC in %q", desc)
+	if !strings.HasPrefix(desc, "name DESC,") {
+		t.Errorf("order=desc: expected primary direction DESC in %q", desc)
 	}
 }
 

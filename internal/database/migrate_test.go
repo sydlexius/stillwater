@@ -1632,3 +1632,40 @@ func TestMigration009_OrphanArtistCleanup(t *testing.T) {
 		t.Errorf("residual orphan count = %d after sweep, want 0 (idempotent)", residual)
 	}
 }
+
+// TestMigration011_SortCoveringIndex verifies that migration 011 creates the
+// idx_artists_name_id covering index and that Migrate is idempotent (re-running
+// must not error even when the index already exists).
+func TestMigration011_SortCoveringIndex(t *testing.T) {
+	t.Parallel()
+	db := openMigratedDB(t)
+	ctx := context.Background()
+
+	// Verify the index exists in sqlite_master after Migrate.
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'index' AND name = 'idx_artists_name_id'
+	`).Scan(&count); err != nil {
+		t.Fatalf("querying sqlite_master for idx_artists_name_id: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("idx_artists_name_id count = %d, want 1 (migration 011 must create covering index)", count)
+	}
+
+	// Idempotency: re-running Migrate must succeed (CREATE INDEX IF NOT EXISTS).
+	if err := Migrate(db); err != nil {
+		t.Fatalf("re-running Migrate after 011: %v", err)
+	}
+
+	// Index must still be present and exactly once (no duplication).
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'index' AND name = 'idx_artists_name_id'
+	`).Scan(&count); err != nil {
+		t.Fatalf("querying sqlite_master after re-migrate: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("idx_artists_name_id count = %d after re-migrate, want 1 (idempotent)", count)
+	}
+}
