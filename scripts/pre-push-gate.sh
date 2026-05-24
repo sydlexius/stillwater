@@ -143,6 +143,34 @@ if ! command -v golangci-lint >/dev/null 2>&1; then
   exit 1
 fi
 golangci-lint run --new-from-rev="$BASE" ./...
+
+# Second pass: re-lint the touched Go files with measurement linters that
+# `--new-from-rev` can silently dedup. `--new-from-rev` keys on
+# file:line:linter:message, so a pre-existing function whose body changes
+# enough to push gocognit/cyclop/funlen past their threshold reports the
+# same message string at the same file:line and gets dedup'd away. CI runs
+# the full lint without `--new-from-rev` and surfaces the bump as a failure;
+# this pass closes that local-vs-CI gap.
+#
+# Scoped to changed files (not ./...) so the cost is bounded; excludes
+# _templ.go because generated code is excluded from the configured ruleset
+# elsewhere and we don't want to drag templ noise into a focused gate. Only
+# gocognit is enabled in .golangci.yml today among the measurement linters;
+# if cyclop/funlen are added later, extend --enable-only to match.
+#
+# Motivation: M52 PR #1644 bumped SSEHub.SubscribeToEventBus from
+# cog=28 to cog=34 (cap 30); local gate PASS, CI FAIL. Issue #1645.
+MODIFIED_GO=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
+  | grep -v '_templ\.go$' || true)
+if [ -n "$MODIFIED_GO" ]; then
+  echo "--- measurement-linter re-pass on $(echo "$MODIFIED_GO" | wc -l | tr -d ' ') changed file(s) ---"
+  # --default=none + --enable=gocognit narrows the active linter set to just
+  # gocognit while still reading .golangci.yml for settings (so the
+  # min-complexity: 30 threshold is honored). _test.go files inherit the
+  # `_test\.go -> gocognit` exclusion in .golangci.yml.
+  # shellcheck disable=SC2086  # word-splitting on newlines is intentional
+  golangci-lint run --default=none --enable=gocognit $MODIFIED_GO
+fi
 echo "OK"
 
 echo ""
