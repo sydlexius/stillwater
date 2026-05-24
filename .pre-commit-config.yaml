@@ -65,9 +65,15 @@ repos:
       - id: tailwind-generate
         name: tailwind-generate
         language: system
+        # always_run + an inline git diff gate is required (instead of the
+        # usual files: regex) because pre-commit's files: matcher excludes
+        # deleted paths from the candidate set even when pass_filenames is
+        # false. Without always_run, deleting the last consumer of a Tailwind
+        # class set would slip past this hook while the canonical
+        # .githooks/pre-commit catches it. See pre-commit/pre-commit#749.
+        always_run: true
         entry: |
-          bash -c 'set -e; if ! command -v tailwindcss >/dev/null 2>&1; then echo "tailwindcss not found on PATH. Install it (see README) so staged .templ / input.css changes can regenerate web/static/css/styles.css before commit."; exit 1; fi; tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify; dirty=$(git diff --name-only -- web/static/css/styles.css); if [ -n "$dirty" ]; then echo "tailwind styles.css is stale; run make tailwind && git add web/static/css/styles.css"; exit 1; fi' --
-        files: '\.templ$|^web/static/css/input\.css$'
+          bash -c 'set -e; staged=$(git diff --cached --name-only --diff-filter=ACMRD -- "*.templ" "web/static/css/input.css"); if [ -z "$staged" ]; then exit 0; fi; if ! command -v tailwindcss >/dev/null 2>&1; then echo "tailwindcss not found on PATH. Install it (see README) so staged .templ / input.css changes can regenerate web/static/css/styles.css before commit."; exit 1; fi; tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify; dirty=$(git diff --name-only -- web/static/css/styles.css); if [ -n "$dirty" ]; then echo "tailwind styles.css is stale; run make tailwind && git add web/static/css/styles.css"; exit 1; fi' --
         pass_filenames: false
 
       - id: gofmt
