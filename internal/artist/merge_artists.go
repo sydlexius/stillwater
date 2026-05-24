@@ -151,8 +151,12 @@ type MergeResult struct {
 	// any FS mutation and returned ErrMergeCollisions.
 	Conflicts []ConflictItem
 
-	// Removed lists every loser directory path that was unlinked after
-	// its children were moved.
+	// Removed lists the loser artist IDs whose directories were actually
+	// unlinked from the filesystem during the merge. An ID appears here
+	// only when executeLoserMerge confirmed the loser dir was empty after
+	// the rename loop AND os.Remove succeeded. A loser whose dir was left
+	// in place (loose-file collision, destination-appeared-race) is
+	// recorded in Warnings instead and does NOT appear here.
 	Removed []string
 
 	// Warnings collects non-fatal observations the user should see (loose
@@ -174,7 +178,7 @@ type MergeResult struct {
 // status. A nil error means the merge committed (or the dry run completed)
 // and the *MergeResult carries the full picture.
 func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeResult, error) {
-	if err := validateMergeRequest(req); err != nil {
+	if err := validateMergeRequest(&req); err != nil {
 		return nil, err
 	}
 
@@ -249,12 +253,19 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 	// Commit phase: per-loser, move each album subdir, move each
 	// non-colliding loose file, then unlink the now-empty loser dir. A
 	// failure mid-loop returns whatever has already been moved in
-	// result.Moved so the caller can reason about partial state.
+	// result.Moved so the caller can reason about partial state. We only
+	// record a loser ID in result.Removed when executeLoserMerge confirms
+	// the loser directory was actually unlinked (loose-file collision and
+	// destination-appeared-race leave the dir in place; those are
+	// surfaced via result.Warnings).
 	for _, loser := range losers {
-		if err := executeLoserMerge(loser, survivor.Path, result); err != nil {
+		removed, err := executeLoserMerge(loser, survivor.Path, result)
+		if err != nil {
 			return result, fmt.Errorf("merging loser %s: %w", loser.ID, err)
 		}
-		result.Removed = append(result.Removed, loser.Path)
+		if removed {
+			result.Removed = append(result.Removed, loser.ID)
+		}
 	}
 
 	// DB phase: fill-empty MBID forward, then delete loser rows. FKs
@@ -282,26 +293,33 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 
 // validateMergeRequest enforces the structural request shape (non-empty
 // survivor, at least one loser, no survivor ID in losers) before the
-// orchestrator takes any locks or hits the DB.
-func validateMergeRequest(req MergeRequest) error {
-	if strings.TrimSpace(req.SurvivorID) == "" {
+// orchestrator takes any locks or hits the DB. IDs are trimmed in place so
+// downstream comparisons (against DB rows from DetectDuplicates) cannot be
+// fooled by stray whitespace -- a request like {"survivor_id": " abc "}
+// would otherwise pass structural validation and then fail with the less
+// helpful ErrMergeStaleGroup downstream.
+func validateMergeRequest(req *MergeRequest) error {
+	req.SurvivorID = strings.TrimSpace(req.SurvivorID)
+	if req.SurvivorID == "" {
 		return fmt.Errorf("%w: survivor_id is required", ErrMergeInvalidRequest)
 	}
 	if len(req.LoserIDs) == 0 {
 		return fmt.Errorf("%w: at least one loser_id is required", ErrMergeInvalidRequest)
 	}
 	seen := make(map[string]struct{}, len(req.LoserIDs))
-	for _, id := range req.LoserIDs {
-		if strings.TrimSpace(id) == "" {
+	for i, id := range req.LoserIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
 			return fmt.Errorf("%w: loser_id must not be empty", ErrMergeInvalidRequest)
 		}
-		if id == req.SurvivorID {
+		if trimmed == req.SurvivorID {
 			return fmt.Errorf("%w: survivor_id must not appear in loser_ids", ErrMergeInvalidRequest)
 		}
-		if _, dup := seen[id]; dup {
-			return fmt.Errorf("%w: loser_ids contains duplicate %s", ErrMergeInvalidRequest, id)
+		if _, dup := seen[trimmed]; dup {
+			return fmt.Errorf("%w: loser_ids contains duplicate %s", ErrMergeInvalidRequest, trimmed)
 		}
-		seen[id] = struct{}{}
+		seen[trimmed] = struct{}{}
+		req.LoserIDs[i] = trimmed
 	}
 	return nil
 }
@@ -439,6 +457,11 @@ func chooseSurvivor(members []NearDuplicateArtist, articleMode string) (id, reas
 	// Precedence c: most album-directory content under the artist path.
 	// (See doc comment for why the platform-mapped precedence collapses
 	// into the alphabetic tiebreak at this layer.)
+	//
+	// albumDirCount returns -1 for a path it cannot read (real I/O error,
+	// not ENOENT); such members are excluded from the content tiebreak
+	// entirely so a temporarily-unreadable survivor candidate cannot
+	// silently lose to a candidate with worse data.
 	bestID := ""
 	bestCount := -1
 	for _, m := range members {
@@ -446,6 +469,11 @@ func chooseSurvivor(members []NearDuplicateArtist, articleMode string) (id, reas
 			continue
 		}
 		count := albumDirCount(m.Path)
+		if count < 0 {
+			// Read error already logged in albumDirCount; skip this
+			// member so it cannot win or tiebreak.
+			continue
+		}
 		switch {
 		case count > bestCount:
 			bestCount = count
@@ -467,12 +495,21 @@ func chooseSurvivor(members []NearDuplicateArtist, articleMode string) (id, reas
 }
 
 // albumDirCount counts immediate album-style subdirectories under path,
-// filtering out loose files and dotfiles. Returns 0 on stat or read errors
-// (the caller treats a non-readable path as "no content").
+// filtering out loose files and dotfiles. Returns 0 for a missing
+// directory (ENOENT) and -1 for any other read error so the caller can
+// exclude the candidate from precedence-c selection rather than letting a
+// temporarily-unreadable path silently lose to a candidate with worse
+// data. The non-ENOENT case is logged at warn so the operator can
+// investigate (permissions, filesystem issues).
 func albumDirCount(path string) int {
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return 0
+		if os.IsNotExist(err) {
+			return 0
+		}
+		slog.Warn("merge survivor candidate path unreadable; excluded from content tiebreak",
+			"path", path, "error", err)
+		return -1
 	}
 	n := 0
 	for _, e := range entries {
@@ -533,8 +570,16 @@ func preflightAllLosers(losers []NearDuplicateArtist, survivorPath string, resul
 
 // preflightOneLoser populates result.Conflicts and result.Warnings for one
 // loser. Returns a non-nil error only on filesystem-read failures (e.g.
-// missing loser directory); collision findings flow through result.
+// permission denied); a missing loser directory (ENOENT) is silently
+// tolerated as the crash-recovery path -- a previous attempt unlinked
+// the dir but failed before the DB tx committed, leaving an orphan
+// loser row. executeLoserMerge handles the corresponding ENOENT case
+// during the commit phase and returns removed=true so the DB cleanup
+// still runs.
 func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *MergeResult) error {
+	if _, statErr := os.Lstat(loser.Path); os.IsNotExist(statErr) {
+		return nil
+	}
 	subdirs, files, symlinks, err := enumerateChildren(loser.Path)
 	if err != nil {
 		return err
@@ -574,10 +619,38 @@ func preflightOneLoser(loser NearDuplicateArtist, survivorPath string, result *M
 // abort the loop and leave the partially-moved state on disk -- the next
 // merge attempt will pick up where this one stopped (the loser dir still
 // exists and DetectDuplicates still groups it with the survivor).
-func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *MergeResult) error {
-	subdirs, files, _, err := enumerateChildren(loser.Path)
+//
+// Returns removed=true ONLY when the loser directory was actually unlinked
+// (rename loop drained the directory AND os.Remove succeeded). The two
+// skip cases that leave the dir on disk (loose-file survivor-wins collision
+// and destination-appeared-race) return removed=false with a warning
+// recorded in result.Warnings; the caller MUST NOT report the loser as
+// "removed" in those cases.
+//
+// Returns removed=true with no work performed if the loser directory does
+// not exist at all (ENOENT). This is the crash-recovery path: a previous
+// merge attempt unlinked the dir but failed before committing the DB tx,
+// leaving an orphan loser row whose .Path points at a now-missing dir. The
+// caller can proceed to delete the loser row.
+func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *MergeResult) (removed bool, err error) {
+	if _, statErr := os.Lstat(loser.Path); os.IsNotExist(statErr) {
+		// Crash-recovery: dir was unlinked by a previous attempt; nothing
+		// to move, nothing to remove, nothing to warn about. The DB tx
+		// below will clean up the orphan row.
+		return true, nil
+	}
+
+	subdirs, files, symlinks, err := enumerateChildren(loser.Path)
 	if err != nil {
-		return err
+		return false, err
+	}
+	// Re-warn on symlinks that appeared between pre-flight and execute:
+	// the pre-flight pass warned about whatever was there at the time,
+	// but a symlink added after pre-flight would otherwise be silently
+	// skipped without acknowledgment.
+	for _, sym := range symlinks {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("skipped symlink %q under %s during execute (not following symlinks during merge)", sym, loser.Path))
 	}
 
 	for _, sd := range subdirs {
@@ -594,7 +667,7 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 			continue
 		}
 		if err := filesystem.RenameDirAtomic(src, dst); err != nil {
-			return fmt.Errorf("moving %s to %s: %w", src, dst, err)
+			return false, fmt.Errorf("moving %s to %s: %w", src, dst, err)
 		}
 		result.Moved = append(result.Moved, MovedItem{Name: sd.Name(), From: src, To: dst})
 	}
@@ -604,12 +677,15 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		dst := filepath.Join(survivorPath, f.Name())
 		if _, statErr := os.Lstat(dst); statErr == nil {
 			// Survivor wins; loose file stays in the loser dir. The loser
-			// directory removal below will fail if any loose file
-			// remains, so we leave Removed unappended for this loser.
+			// directory removal below will skip because the dir is
+			// non-empty; the caller will see Removed unappended.
 			continue
 		}
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("moving loose file %s to %s: %w", src, dst, err)
+		// RenameFileAtomic mirrors RenameDirAtomic's EXDEV fallback so a
+		// loose-file move across mount boundaries (bind mount, per-letter
+		// NAS share) completes via copy+remove instead of failing.
+		if err := filesystem.RenameFileAtomic(src, dst); err != nil {
+			return false, fmt.Errorf("moving loose file %s to %s: %w", src, dst, err)
 		}
 		result.Moved = append(result.Moved, MovedItem{Name: f.Name(), From: src, To: dst})
 	}
@@ -620,7 +696,7 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 	// pre-flight + survivor-wins loose-file policy above).
 	remaining, err := os.ReadDir(loser.Path)
 	if err != nil {
-		return fmt.Errorf("re-reading loser dir %s before removal: %w", loser.Path, err)
+		return false, fmt.Errorf("re-reading loser dir %s before removal: %w", loser.Path, err)
 	}
 	if len(remaining) > 0 {
 		var names []string
@@ -629,12 +705,12 @@ func executeLoserMerge(loser NearDuplicateArtist, survivorPath string, result *M
 		}
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("loser directory %s still contains %d entries (%s); not removed", loser.Path, len(remaining), strings.Join(names, ", ")))
-		return nil
+		return false, nil
 	}
 	if err := os.Remove(loser.Path); err != nil {
-		return fmt.Errorf("removing empty loser dir %s: %w", loser.Path, err)
+		return false, fmt.Errorf("removing empty loser dir %s: %w", loser.Path, err)
 	}
-	return nil
+	return true, nil
 }
 
 // commitMergeDB runs the final DB transaction: fill-empty MBID forward from
@@ -659,32 +735,53 @@ func (s *Service) commitMergeDB(ctx context.Context, survivor *NearDuplicateArti
 
 	// MBID fill-empty: if survivor has no MBID and any loser does, copy
 	// the first loser MBID onto the survivor before deleting the losers.
+	// UPSERT (not INSERT OR IGNORE) so the fill works even when the
+	// survivor already has a row with an EMPTY provider_id -- which is
+	// the exact condition that triggers fill-empty in the first place.
+	// The WHERE guard on the UPDATE makes the UPSERT a no-op if the row
+	// already has a non-empty value (the survivor's existing MBID wins).
+	//
+	// Warning string is deferred to a local variable; we only append it to
+	// result.Warnings AFTER tx.Commit() succeeds so a failed commit does
+	// not record a false-positive inheritance.
+	var inheritedMBIDWarning string
 	if survivor.MBID == "" {
 		for _, l := range losers {
 			if l.MBID == "" {
 				continue
 			}
 			if _, err := tx.ExecContext(ctx,
-				`INSERT OR IGNORE INTO artist_provider_ids (artist_id, provider, provider_id) VALUES (?, 'musicbrainz', ?)`,
+				`INSERT INTO artist_provider_ids (artist_id, provider, provider_id)
+				 VALUES (?, 'musicbrainz', ?)
+				 ON CONFLICT(artist_id, provider) DO UPDATE SET provider_id = excluded.provider_id
+				 WHERE artist_provider_ids.provider_id = ''`,
 				survivor.ID, l.MBID); err != nil {
 				return fmt.Errorf("filling survivor mbid: %w", err)
 			}
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("survivor %s inherited MusicBrainz ID %s from loser %s", survivor.ID, l.MBID, l.ID))
+			inheritedMBIDWarning = fmt.Sprintf(
+				"survivor %s inherited MusicBrainz ID %s from loser %s", survivor.ID, l.MBID, l.ID)
 			break
 		}
 	}
 
+	// Collect deleted IDs locally; only assign to result.LosersDeleted on
+	// successful commit so a failed commit does not falsely advertise
+	// loser-row deletions that never persisted.
+	var deletedIDs []string
 	for _, l := range losers {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, l.ID); err != nil {
 			return fmt.Errorf("deleting loser %s: %w", l.ID, err)
 		}
-		result.LosersDeleted = append(result.LosersDeleted, l.ID)
+		deletedIDs = append(deletedIDs, l.ID)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing merge tx: %w", err)
 	}
 	committed = true
+	result.LosersDeleted = append(result.LosersDeleted, deletedIDs...)
+	if inheritedMBIDWarning != "" {
+		result.Warnings = append(result.Warnings, inheritedMBIDWarning)
+	}
 	return nil
 }

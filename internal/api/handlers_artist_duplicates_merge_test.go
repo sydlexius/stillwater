@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -287,6 +288,155 @@ func TestHandleArtistsMerge_InvalidRequest(t *testing.T) {
 	r.handleArtistsMerge(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRespondMergeError_SurvivorMissing exercises the 422 split: the
+// handler distinguishes ErrMergeSurvivorMissing from ErrMergeStaleGroup
+// so the UI can show a specific message ("pick a different survivor")
+// instead of conflating both as "stale group". The orchestrator never
+// reaches ErrMergeSurvivorMissing through the public path because
+// resolveGroupMembers already verifies every requested ID (including
+// survivor) is in the group, so we test the handler branch directly.
+//
+// TG7 in the PR #1654 triage doc.
+func TestRespondMergeError_SurvivorMissing(t *testing.T) {
+	t.Parallel()
+	r, _, _ := mergeTestRouter(t)
+
+	rec := httptest.NewRecorder()
+	r.respondMergeError(rec, artist.ErrMergeSurvivorMissing, nil)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	var got map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got["error"] != "survivor_missing" {
+		t.Errorf("error = %q, want survivor_missing (must NOT conflate with stale_group)", got["error"])
+	}
+}
+
+// TestRespondMergeError_StaleGroupDistinct mirrors TestRespondMergeError_SurvivorMissing:
+// the original stale_group code stays untouched after the survivor_missing
+// split, so we pin both branches to guard the dispatcher against future
+// regressions that re-merge the cases.
+func TestRespondMergeError_StaleGroupDistinct(t *testing.T) {
+	t.Parallel()
+	r, _, _ := mergeTestRouter(t)
+
+	rec := httptest.NewRecorder()
+	r.respondMergeError(rec, artist.ErrMergeStaleGroup, nil)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	var got map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if got["error"] != "stale_group" {
+		t.Errorf("error = %q, want stale_group", got["error"])
+	}
+}
+
+// TestRespondMergeError_CollisionsAlwaysHasConflicts pins the 409
+// collisions contract: the `conflicts` array MUST be present even when
+// the orchestrator returns a nil result. The schema's oneOf requires
+// `conflicts` on the collisions variant.
+func TestRespondMergeError_CollisionsAlwaysHasConflicts(t *testing.T) {
+	t.Parallel()
+	r, _, _ := mergeTestRouter(t)
+
+	// Case 1: nil result.
+	rec := httptest.NewRecorder()
+	r.respondMergeError(rec, artist.ErrMergeCollisions, nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	var got map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := got["conflicts"]; !ok {
+		t.Errorf("conflicts key missing when result is nil; got %v", got)
+	}
+	conflicts, ok := got["conflicts"].([]any)
+	if !ok {
+		t.Errorf("conflicts must be an array, got %T", got["conflicts"])
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("conflicts should be empty array when result is nil, got %v", conflicts)
+	}
+
+	// Case 2: result with conflicts.
+	rec = httptest.NewRecorder()
+	r.respondMergeError(rec, artist.ErrMergeCollisions, &artist.MergeResult{
+		SurvivorID:   "sid",
+		SurvivorPath: "/x/y",
+		Conflicts: []artist.ConflictItem{
+			{Name: "Disintegration", SurvivorPath: "/x/y/Disintegration", LoserPath: "/x/z/Disintegration"},
+		},
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (with result)", rec.Code)
+	}
+	got = nil
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode (with result): %v", err)
+	}
+	conflicts, ok = got["conflicts"].([]any)
+	if !ok || len(conflicts) != 1 {
+		t.Errorf("expected 1 conflict, got %v", got["conflicts"])
+	}
+	if got["survivor_id"] != "sid" {
+		t.Errorf("survivor_id missing or wrong: %v", got["survivor_id"])
+	}
+}
+
+// TestRespondMergeError_SanitizedMessages verifies the handler does not
+// leak raw err.Error() to the client for the four sentinel branches that
+// previously did. Each branch must respond with a fixed human message
+// and the documented stable error code.
+func TestRespondMergeError_SanitizedMessages(t *testing.T) {
+	t.Parallel()
+	r, _, _ := mergeTestRouter(t)
+
+	// Wrap each sentinel with a noisy internal-looking suffix the
+	// handler must NOT propagate to the client.
+	cases := []struct {
+		name        string
+		err         error
+		wantStatus  int
+		wantError   string
+		mustNotLeak string
+	}{
+		{"invalid_request", fmt.Errorf("%w: secret/internal/path", artist.ErrMergeInvalidRequest),
+			http.StatusBadRequest, "invalid_request", "secret/internal/path"},
+		{"stale_group", fmt.Errorf("%w: internal-detail", artist.ErrMergeStaleGroup),
+			http.StatusUnprocessableEntity, "stale_group", "internal-detail"},
+		{"survivor_missing", fmt.Errorf("%w: internal-detail", artist.ErrMergeSurvivorMissing),
+			http.StatusUnprocessableEntity, "survivor_missing", "internal-detail"},
+		{"locked", fmt.Errorf("%w: id-a,id-b", artist.ErrMergeLocked),
+			http.StatusLocked, "locked", "id-a,id-b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			r.respondMergeError(rec, tc.err, nil)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, `"error":"`+tc.wantError+`"`) {
+				t.Errorf("body missing error=%s: %s", tc.wantError, body)
+			}
+			if strings.Contains(body, tc.mustNotLeak) {
+				t.Errorf("body leaked internal detail %q: %s", tc.mustNotLeak, body)
+			}
+		})
 	}
 }
 

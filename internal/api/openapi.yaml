@@ -233,20 +233,28 @@ components:
             $ref: "#/components/schemas/MergeMovedItem"
           description: >-
             Every filesystem rename performed (album subdirs first, then
-            loose files). Empty on dry-run or when a collision halted the
-            merge.
+            loose files). Empty on dry-run. Collisions return HTTP 409
+            with the MergeCollisionsResponse shape and are not represented
+            in this payload.
         conflicts:
           type: array
           items:
             $ref: "#/components/schemas/MergeConflict"
           description: >-
-            Pre-flight collisions found, when non-empty implies the merge
-            halted before any filesystem mutation.
+            Always empty on the 200 success body; collisions return HTTP
+            409 with the MergeCollisionsResponse shape. The field is kept
+            here so dry-run callers that share a single payload decoder
+            still see a consistent schema.
         removed:
           type: array
           items:
             type: string
-          description: Loser directory paths unlinked after their children moved.
+          description: >-
+            Loser artist IDs whose on-disk directories were actually
+            unlinked by the merge. A loser whose directory was left in
+            place (loose-file survivor-wins collision or a
+            destination-appeared race) is NOT listed here; see warnings
+            for the reason.
         warnings:
           type: array
           items:
@@ -263,26 +271,40 @@ components:
           description: Loser artist IDs whose rows were deleted by the merge transaction.
       required: [survivor_id, survivor_path]
     MergeCollisionsResponse:
-      type: object
       description: >-
         409 response body returned when the orchestrator refused to merge.
-        The error field is either `collisions` (pre-flight walk found
-        same-name conflicts; conflicts list is populated) or
-        `merge_in_progress` (another merge is running; conflicts list is
-        absent).
-      properties:
-        error:
-          type: string
-          enum: [collisions, merge_in_progress]
-        survivor_id:
-          type: string
-        survivor_path:
-          type: string
-        conflicts:
-          type: array
-          items:
-            $ref: "#/components/schemas/MergeConflict"
-      required: [error]
+        Discriminated by the `error` field. The `collisions` variant
+        always carries a `conflicts` array (possibly empty); the
+        `merge_in_progress` variant never carries `conflicts`.
+      oneOf:
+        - type: object
+          description: >-
+            Pre-flight walk found same-name album collisions; nothing was
+            moved. The conflicts list enumerates each one with both the
+            survivor-side existing path and the would-be loser source.
+          properties:
+            error:
+              type: string
+              enum: [collisions]
+            survivor_id:
+              type: string
+            survivor_path:
+              type: string
+            conflicts:
+              type: array
+              items:
+                $ref: "#/components/schemas/MergeConflict"
+          required: [error, conflicts]
+        - type: object
+          description: >-
+            Another merge is already in flight for some group; the caller
+            should back off and retry shortly. No filesystem or database
+            state was touched by this request.
+          properties:
+            error:
+              type: string
+              enum: [merge_in_progress]
+          required: [error]
     ConflictWriteBlock:
       type: object
       description: >
@@ -2639,8 +2661,13 @@ paths:
         "422":
           description: >-
             The supplied IDs no longer co-resolve into a single duplicate
-            group (likely a concurrent edit between page load and submit).
-            Reload the duplicates view and resubmit.
+            group. The `error` field distinguishes the two recovery paths:
+            `stale_group` (the loser/survivor combination no longer forms
+            a group, typically a concurrent edit between page load and
+            submit; reload the duplicates view and resubmit) and
+            `survivor_missing` (the survivor_id is not a member of the
+            resolved group; pick a different survivor from the
+            reloaded group).
           content:
             application/json:
               schema:

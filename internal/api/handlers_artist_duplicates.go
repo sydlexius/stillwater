@@ -132,12 +132,22 @@ func (r *Router) handleArtistsMerge(w http.ResponseWriter, req *http.Request) {
 // rule engine would. Best-effort: a missing rule, a missing rule service,
 // or any lookup failure falls back to the empty string, which
 // CanonicalDirName treats as "prefix" (the rule's own default).
+//
+// A real DB error is logged at warn (distinguishing it from "rule not
+// configured" which is the silent rl==nil branch); the operator gets an
+// observable signal when article-mode drives survivor selection in an
+// unexpected direction because the lookup transiently failed.
 func (r *Router) lookupArticleMode(req *http.Request) string {
 	if r.ruleService == nil {
 		return ""
 	}
 	rl, err := r.ruleService.GetByID(req.Context(), rule.RuleDirectoryNameMismatch)
-	if err != nil || rl == nil {
+	if err != nil {
+		r.logger.Warn("merge: directory-rename rule lookup failed; defaulting article mode to prefix",
+			"error", err)
+		return ""
+	}
+	if rl == nil {
 		return ""
 	}
 	return rl.Config.ArticleMode
@@ -146,27 +156,61 @@ func (r *Router) lookupArticleMode(req *http.Request) string {
 // respondMergeError maps an orchestrator sentinel to the documented HTTP
 // status. The MergeResult is included on 409 (collisions) so the caller
 // gets the conflict list.
+//
+// Client-facing messages are fixed human strings; the raw err.Error() is
+// logged via r.logger so operators can debug without leaking internal
+// detail (wrapped error chains, file paths, etc.) to API callers. The
+// 422 case splits ErrMergeStaleGroup and ErrMergeSurvivorMissing into
+// separate error codes so the UI can show a specific message instead of
+// conflating both as "stale group".
 func (r *Router) respondMergeError(w http.ResponseWriter, err error, result *artist.MergeResult) {
 	switch {
 	case errors.Is(err, artist.ErrMergeInvalidRequest):
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": err.Error()})
+		r.logger.Info("artist merge: invalid request", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "invalid_request",
+			"message": "invalid merge request",
+		})
 	case errors.Is(err, artist.ErrMergeInProgress):
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "merge_in_progress"})
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "merge_in_progress"})
 	case errors.Is(err, artist.ErrMergeCollisions):
-		payload := map[string]any{"error": "collisions"}
+		// API contract: when error=collisions, the conflicts array MUST
+		// be present (even if empty). Initialize the payload with an
+		// empty slice so the shape stays stable when result is nil.
+		payload := map[string]any{
+			"error":     "collisions",
+			"conflicts": []mergeConflictPayload{},
+		}
 		if result != nil {
 			payload["conflicts"] = toMergeConflictPayloads(result.Conflicts)
 			payload["survivor_id"] = result.SurvivorID
 			payload["survivor_path"] = result.SurvivorPath
 		}
 		writeJSON(w, http.StatusConflict, payload)
-	case errors.Is(err, artist.ErrMergeStaleGroup), errors.Is(err, artist.ErrMergeSurvivorMissing):
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "stale_group", "message": err.Error()})
+	case errors.Is(err, artist.ErrMergeSurvivorMissing):
+		r.logger.Info("artist merge: survivor missing from group", "error", err)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error":   "survivor_missing",
+			"message": "survivor id is not a member of the duplicate group; refresh duplicates and retry",
+		})
+	case errors.Is(err, artist.ErrMergeStaleGroup):
+		r.logger.Info("artist merge: stale group", "error", err)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error":   "stale_group",
+			"message": "merge target is stale; refresh duplicates and retry",
+		})
 	case errors.Is(err, artist.ErrMergeLocked):
-		writeJSON(w, http.StatusLocked, map[string]string{"error": "locked", "message": err.Error()})
+		r.logger.Info("artist merge: locked member", "error", err)
+		writeJSON(w, http.StatusLocked, map[string]string{
+			"error":   "locked",
+			"message": "one or more artists are locked; unlock and retry",
+		})
 	default:
 		r.logger.Error("merging near-duplicate artists", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal", "message": "see server logs"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error":   "internal",
+			"message": "see server logs",
+		})
 	}
 }
 
