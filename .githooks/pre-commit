@@ -140,7 +140,7 @@ fi
 #     templ-generate check at section 3 so contributors get a fail-fast
 #     instead of finding out via CI's Gate / Generated Files job (#1656).
 # --------------------------------------------------------------------------
-STAGED_TAILWIND_SRC=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' 'web/static/css/input.css' || true)
+STAGED_TAILWIND_SRC=$(git diff --cached --name-only --diff-filter=ACMRD -- '*.templ' 'web/static/css/input.css' || true)
 if [ -n "$STAGED_TAILWIND_SRC" ]; then
     if ! command -v tailwindcss >/dev/null 2>&1; then
         echo -e "${RED}${BOLD}FAIL${RESET} tailwind: 'tailwindcss' binary not on PATH."
