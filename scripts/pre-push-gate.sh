@@ -152,24 +152,43 @@ golangci-lint run --new-from-rev="$BASE" ./...
 # the full lint without `--new-from-rev` and surfaces the bump as a failure;
 # this pass closes that local-vs-CI gap.
 #
-# Scoped to changed files (not ./...) so the cost is bounded; excludes
+# Scoped to changed packages (not ./...) so the cost is bounded; excludes
 # _templ.go because generated code is excluded from the configured ruleset
 # elsewhere and we don't want to drag templ noise into a focused gate. Only
 # gocognit is enabled in .golangci.yml today among the measurement linters;
 # if cyclop/funlen are added later, extend --enable-only to match.
 #
+# Package directories (not individual file paths) are passed to
+# golangci-lint so the typechecker can resolve cross-file symbols defined
+# in sibling files of the same package. Feeding bare *.go file paths
+# breaks typecheck and silently suppresses gocognit findings (issue #1650).
+# Trade-off: lints the whole touched package(s), not just touched
+# functions; still avoids the full-repo cost of dropping --new-from-rev
+# entirely. For most PRs the package set is 1-3 directories.
+#
 # Motivation: M52 PR #1644 bumped SSEHub.SubscribeToEventBus from
 # cog=28 to cog=34 (cap 30); local gate PASS, CI FAIL. Issue #1645.
-MODIFIED_GO=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
+MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
   | grep -v '_templ\.go$' || true)
-if [ -n "$MODIFIED_GO" ]; then
-  echo "--- measurement-linter re-pass on $(echo "$MODIFIED_GO" | wc -l | tr -d ' ') changed file(s) ---"
+# Guard against BSD xargs (macOS) running `dirname` with zero args when the
+# input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
+# file list -> empty package list -> the `if` block below skips cleanly.
+if [ -n "$MODIFIED_GO_FILES" ]; then
+  MODIFIED_GO_PKGS=$(printf '%s\n' "$MODIFIED_GO_FILES" \
+    | xargs -n1 dirname \
+    | sort -u \
+    | sed 's|^|./|; s|$|/...|')
+else
+  MODIFIED_GO_PKGS=""
+fi
+if [ -n "$MODIFIED_GO_PKGS" ]; then
+  echo "--- measurement-linter re-pass on $(echo "$MODIFIED_GO_PKGS" | wc -l | tr -d ' ') changed package(s) ---"
   # --default=none + --enable=gocognit narrows the active linter set to just
   # gocognit while still reading .golangci.yml for settings (so the
   # min-complexity: 30 threshold is honored). _test.go files inherit the
   # `_test\.go -> gocognit` exclusion in .golangci.yml.
   # shellcheck disable=SC2086  # word-splitting on newlines is intentional
-  golangci-lint run --default=none --enable=gocognit $MODIFIED_GO
+  golangci-lint run --default=none --enable=gocognit $MODIFIED_GO_PKGS
 fi
 echo "OK"
 
