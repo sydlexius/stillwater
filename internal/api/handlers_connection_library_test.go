@@ -3556,7 +3556,7 @@ func TestRunPopulate_EmitsStartAndCompletedEvents(t *testing.T) {
 			}
 		}
 		return false
-	}, time.Second, "completed event for "+wantOpID)
+	}, "completed event for "+wantOpID)
 	var sawStart, sawCompleted bool
 	for _, e := range evts {
 		if e.Data["op_id"] != wantOpID {
@@ -3578,5 +3578,200 @@ func TestRunPopulate_EmitsStartAndCompletedEvents(t *testing.T) {
 	}
 	if !sawCompleted {
 		t.Errorf("expected a completed event for op_id=%s; events=%+v", wantOpID, evts)
+	}
+}
+
+// TestRunPopulate_UnsupportedConnectionType_EmitsFailed exercises the
+// default branch of runPopulate's type switch + the failure-status
+// terminal-event path: an unknown connection.Type should produce a
+// "failed" op record and a "failed" pill event rather than silently
+// finishing successfully. Covers the failure-write under libraryOpsMu
+// plus the terminal r.publishOpProgress(..., "failed", "") call.
+func TestRunPopulate_UnsupportedConnectionType_EmitsFailed(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Unsupported Type Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby, // library.Source only constrains storage; runPopulate dispatches on conn.Type
+		ExternalID: "unsupported-lib-1",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	// A bogus connection type drops runPopulate into the default branch
+	// which sets popErr without calling any populateFrom*Ctx helper.
+	conn := &connection.Connection{
+		ID:   "conn-unsupported-1",
+		Type: "bogus-platform",
+		URL:  "http://127.0.0.1:1",
+	}
+	op := &LibraryOpResult{
+		LibraryID:   lib.ID,
+		LibraryName: lib.Name,
+		Operation:   "populate",
+		Status:      "running",
+		StartedAt:   time.Now().UTC(),
+	}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	// 1) op record reflects failure.
+	r.libraryOpsMu.Lock()
+	gotStatus := op.Status
+	r.libraryOpsMu.Unlock()
+	if gotStatus != "failed" {
+		t.Errorf("op.Status = %q, want \"failed\"", gotStatus)
+	}
+
+	// 2) terminal pill event carries status=failed for this op_id.
+	wantOpID := populateOpID(lib.ID)
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "failed" {
+				return true
+			}
+		}
+		return false
+	}, "failed event for "+wantOpID)
+	// Sanity: at least the kickoff + terminal landed.
+	if len(evts) < 2 {
+		t.Errorf("expected >= 2 events (kickoff + terminal failed); got %d: %+v", len(evts), evts)
+	}
+}
+
+// TestRunPopulate_TypeJellyfin_DispatchesJellyfinPath confirms the
+// TypeJellyfin branch of runPopulate's type switch is taken (covers the
+// populateFromJellyfinCtx wire-up that the original PR diff added but
+// no test exercised). The fake server returns an empty Jellyfin payload
+// so the populate completes cleanly without coupling the assertion to
+// Jellyfin's full pagination schema.
+func TestRunPopulate_TypeJellyfin_DispatchesJellyfinPath(t *testing.T) {
+	t.Parallel()
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[],"TotalRecordCount":0}`))
+	}))
+	defer jfSrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Jellyfin Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	conn := &connection.Connection{
+		ID:     "conn-jf-1",
+		Type:   connection.TypeJellyfin,
+		URL:    jfSrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	wantOpID := populateOpID(lib.ID)
+	rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, "completed event for "+wantOpID)
+}
+
+// TestRunPopulate_TypeLidarr_DispatchesLidarrPath: same coverage rationale
+// as the Jellyfin variant above, for the TypeLidarr branch. Lidarr's
+// /api/v1/artist endpoint returns a JSON array (no Items wrapper); the
+// fake server returns an empty array so the populate exits cleanly.
+func TestRunPopulate_TypeLidarr_DispatchesLidarrPath(t *testing.T) {
+	t.Parallel()
+	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer lidarrSrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Lidarr Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeLidarr,
+		ExternalID: "lidarr-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	conn := &connection.Connection{
+		ID:     "conn-lidarr-1",
+		Type:   connection.TypeLidarr,
+		URL:    lidarrSrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	wantOpID := populateOpID(lib.ID)
+	rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, "completed event for "+wantOpID)
+}
+
+// TestHandleLibraryOpStatus_UnknownLibraryReturnsIdle pins the
+// libraryOps-miss contract: a library ID the router has never seen an
+// op for returns 200 with status="idle" (not 404). The JS pill poller
+// depends on this -- a 404 would surface as a fetch error in the
+// client, while "idle" is the canonical "nothing is happening" signal.
+func TestHandleLibraryOpStatus_UnknownLibraryReturnsIdle(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries/never-existed/operation/status", nil)
+	req.SetPathValue("libId", "never-existed")
+	w := httptest.NewRecorder()
+
+	r.handleLibraryOpStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v; raw: %s", err, w.Body.String())
+	}
+	if body["status"] != "idle" {
+		t.Errorf("status field = %q, want \"idle\"; body: %s", body["status"], w.Body.String())
 	}
 }
