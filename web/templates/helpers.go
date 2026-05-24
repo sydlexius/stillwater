@@ -218,6 +218,80 @@ func membersJSON(members []provider.MemberInfo) string {
 	return string(b)
 }
 
+// recommendedReasonLabel returns the localized tooltip text for the
+// "Recommended" badge on the duplicates page. The reason values come from
+// artist.ChooseSurvivor's second return.
+func recommendedReasonLabel(ctx context.Context, reason string) string {
+	switch reason {
+	case "canonical_basename":
+		return t(ctx, "artist_duplicates.recommended_reason.canonical_basename")
+	case "most_content":
+		return t(ctx, "artist_duplicates.recommended_reason.most_content")
+	case "fallback":
+		return t(ctx, "artist_duplicates.recommended_reason.fallback")
+	}
+	return ""
+}
+
+// mergeI18nJSON builds the JSON blob the merge modal's JS reads at runtime
+// for all user-facing strings. Embedded once in artist_duplicates.templ via
+// the hidden #merge-i18n div, mirroring the layoutI18nJSON pattern.
+func mergeI18nJSON(ctx context.Context) string {
+	m := map[string]string{
+		"preview_loading":           t(ctx, "artist_duplicates.merge_modal.preview_loading"),
+		"preview_empty":             t(ctx, "artist_duplicates.merge_modal.preview_empty"),
+		"preview_network_error":     t(ctx, "artist_duplicates.merge_modal.preview_network_error"),
+		"moves_heading":             t(ctx, "artist_duplicates.merge_modal.moves_heading"),
+		"warnings_heading":          t(ctx, "artist_duplicates.merge_modal.warnings_heading"),
+		"warning_override":          t(ctx, "artist_duplicates.merge_modal.warning_override"),
+		"platform_rescan_note":      t(ctx, "artist_duplicates.merge_modal.platform_rescan_note"),
+		"conflicts_heading":         t(ctx, "artist_duplicates.merge_modal.conflicts_heading"),
+		"conflicts_help":            t(ctx, "artist_duplicates.merge_modal.conflicts_help"),
+		"recommended_badge":         t(ctx, "artist_duplicates.recommended_badge"),
+		"reason_canonical_basename": t(ctx, "artist_duplicates.recommended_reason.canonical_basename"),
+		"reason_most_content":       t(ctx, "artist_duplicates.recommended_reason.most_content"),
+		"reason_fallback":           t(ctx, "artist_duplicates.recommended_reason.fallback"),
+		"error_merge_in_progress":   t(ctx, "artist_duplicates.merge_modal.error_merge_in_progress"),
+		"error_locked":              t(ctx, "artist_duplicates.merge_modal.error_locked"),
+		"error_stale_group":         t(ctx, "artist_duplicates.merge_modal.error_stale_group"),
+		"error_survivor_missing":    t(ctx, "artist_duplicates.merge_modal.error_survivor_missing"),
+		"error_unknown":             t(ctx, "artist_duplicates.merge_modal.error_unknown"),
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+// duplicateGroupMembersJSON serializes a near-duplicate group's members to a
+// JSON array for embedding as a data attribute on the group card. The merge
+// modal's JS reads the blob when the user clicks "Merge..." so it can render
+// survivor radios without an extra round-trip to the server.
+//
+// Field names are lowercased and match what the JS expects; only the subset
+// the modal needs is serialized (locked state is not surfaced here -- the
+// 423 error response handles that case at submit time).
+func duplicateGroupMembersJSON(members []ArtistDuplicateMember) string {
+	type wire struct {
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		Path              string `json:"path"`
+		MBID              string `json:"mbid"`
+		Recommended       bool   `json:"recommended"`
+		RecommendedReason string `json:"recommended_reason"`
+	}
+	out := make([]wire, 0, len(members))
+	for _, m := range members {
+		out = append(out, wire(m))
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // layoutI18nJSON builds a JSON object of translated strings used by the
 // global toast, modal, and undo infrastructure in layout.templ. The JS
 // reads the blob at startup so no English literals remain in the script block.

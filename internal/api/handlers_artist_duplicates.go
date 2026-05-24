@@ -43,7 +43,7 @@ func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	view := buildArtistDuplicatesView(groups)
+	view := buildArtistDuplicatesView(groups, r.lookupArticleMode(req))
 	renderTempl(w, req, templates.ArtistDuplicatesPage(r.assetsFor(req), view))
 }
 
@@ -250,17 +250,28 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 // buildArtistDuplicatesView converts the detection result into the view model
 // used by the template.  Extracted as a named function so tests can exercise
 // the conversion logic independently.
-func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup) templates.ArtistDuplicatesPageView {
+//
+// articleMode is the directory-rename rule's configured article handling
+// ("prefix" / "suffix" / ""); it must match what the merge endpoint computes
+// at submit time so the recommendation badge agrees with the server's
+// survivor-override flag.
+func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup, articleMode string) templates.ArtistDuplicatesPageView {
 	rows := make([]templates.ArtistDuplicateGroupRow, 0, len(groups))
 	for _, g := range groups {
+		recommendedID, recommendedReason := artist.ChooseSurvivor(g.Members, articleMode)
 		members := make([]templates.ArtistDuplicateMember, 0, len(g.Members))
 		for _, m := range g.Members {
-			members = append(members, templates.ArtistDuplicateMember{
+			mem := templates.ArtistDuplicateMember{
 				ID:   m.ID,
 				Name: m.Name,
 				Path: m.Path,
 				MBID: m.MBID,
-			})
+			}
+			if m.ID == recommendedID {
+				mem.Recommended = true
+				mem.RecommendedReason = recommendedReason
+			}
+			members = append(members, mem)
 		}
 		rows = append(rows, templates.ArtistDuplicateGroupRow{
 			Key:     g.Key,
