@@ -53,7 +53,12 @@ package-lock.json
 !.github/bruno/package-lock.json
 
 # Ephemeral docs (plans, specs)
+# Milestone plans, design prototypes, and similar working notes live
+# out-of-repo under ~/.claude/plans/ (see docs/milestone-protocol.md).
 docs/plans/
+docs/milestone-*/
+docs/milestone-*.md
+docs/prototypes/
 docs/superpowers/
 .planning/
 
@@ -68,10 +73,14 @@ tests/load/results/*.txt
 # interactive UAT sessions that occasionally land in the repo root.
 # Standard Playwright MCP output already lives under .playwright-mcp/
 # (ignored above); these patterns catch the "screenshot to uat-*.png"
-# convention used during local verification.
+# or "screenshot to m<N>-*.png" conventions used during local verification.
+# The m*-*.png pattern is root-anchored so deeper tracked assets are safe.
 uat-*.png
 uat-*.jpg
 uat-*.jpeg
+/m*-*.png
+/m*-*.jpg
+/m*-*.jpeg
 
 # Temp
 *.tmp

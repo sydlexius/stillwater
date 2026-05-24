@@ -32,7 +32,7 @@ Check last-modified timestamp before writing. If changed externally, warn instea
 
 ## Scanner exclusions
 
-Default skip list: "Various Artists", "Various", "VA", "Soundtrack", "OST". Excluded directories appear greyed out and unfetchable. Classical music directories get special handling.
+Default skip list: "Various Artists", "Various", "VA", "Soundtrack", "OST". Excluded directories appear greyed out and unfetchable.
 
 ## Portable settings contract
 
