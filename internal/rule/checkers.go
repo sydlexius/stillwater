@@ -973,59 +973,13 @@ func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, l
 	return merged
 }
 
-// commonArticles are English articles stripped, suffixed, or kept as-is
-// depending on ArticleMode.
-var commonArticles = []string{"The", "A", "An"}
-
-// canonicalDirName returns the expected directory name for an artist given
-// the article handling mode. Returns empty string if the name is empty or
-// results in an unsafe path element.
+// canonicalDirName is a thin alias around artist.CanonicalDirName so the
+// rule checker and fixer share a single source of truth with the merge
+// orchestrator (see internal/artist/merge_artists.go). The artist package
+// owns the implementation because rule already imports artist; the inverse
+// import would not compile.
 func canonicalDirName(name, articleMode string) string {
-	if articleMode == "" {
-		articleMode = "prefix"
-	}
-
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ""
-	}
-
-	// Replace characters not allowed in directory names on common filesystems.
-	name = strings.NewReplacer(
-		"/", "_",
-		"\\", "_",
-		":", "_",
-		"*", "_",
-		"?", "_",
-		"\"", "_",
-		"<", "_",
-		">", "_",
-		"|", "_",
-	).Replace(name)
-
-	switch articleMode {
-	case "suffix":
-		for _, art := range commonArticles {
-			prefix := art + " "
-			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
-				return name[len(prefix):] + ", " + name[:len(art)]
-			}
-		}
-	case "strip":
-		for _, art := range commonArticles {
-			prefix := art + " "
-			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
-				name = name[len(prefix):]
-				break // strip at most one leading article
-			}
-		}
-	}
-
-	// Reject unsafe path elements.
-	if name == "" || name == "." || name == ".." {
-		return ""
-	}
-	return name
+	return artist.CanonicalDirName(name, articleMode)
 }
 
 func checkDirectoryNameMismatch(_ context.Context, a *artist.Artist, cfg RuleConfig) *Violation {

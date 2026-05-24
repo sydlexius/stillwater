@@ -268,6 +268,59 @@ func TestDetectDuplicates_MixedGroup(t *testing.T) {
 	}
 }
 
+// TestDetectDuplicates_AbsentAfterMerge is the "result survives the next
+// scan" acceptance criterion checked at the detection layer: after a clean
+// MergeArtists call, the next DetectDuplicates call must not surface the
+// merged group. Detection is the source of truth the UI reads, so this
+// closes the loop that motivated the merge endpoint (#1615): a DB-only
+// merge would still see the loser path on disk via a re-scan and re-promote
+// it back into a fresh artist row.
+func TestDetectDuplicates_AbsentAfterMerge(t *testing.T) {
+	t.Parallel()
+	svc, db, survivorID, loserID := mergeSetup(t)
+	ctx := context.Background()
+
+	// Sanity: detection reports the group before merge.
+	before, err := DetectDuplicates(ctx, db)
+	if err != nil {
+		t.Fatalf("pre-merge DetectDuplicates: %v", err)
+	}
+	foundBefore := false
+	for _, g := range before {
+		ids := make(map[string]bool, len(g.Members))
+		for _, m := range g.Members {
+			ids[m.ID] = true
+		}
+		if ids[survivorID] && ids[loserID] {
+			foundBefore = true
+			break
+		}
+	}
+	if !foundBefore {
+		t.Fatalf("pre-merge group not detected; setup bug")
+	}
+
+	if _, err := svc.MergeArtists(ctx, MergeRequest{
+		SurvivorID:  survivorID,
+		LoserIDs:    []string{loserID},
+		ArticleMode: "prefix",
+	}); err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+
+	after, err := DetectDuplicates(ctx, db)
+	if err != nil {
+		t.Fatalf("post-merge DetectDuplicates: %v", err)
+	}
+	for _, g := range after {
+		for _, m := range g.Members {
+			if m.ID == loserID {
+				t.Errorf("post-merge group still references loser %s: %+v", loserID, g)
+			}
+		}
+	}
+}
+
 // TestDetectDuplicates_NFCvsNFD checks that an NFC-named and NFD-named artist
 // (both with non-empty paths) produce the same key and end up in one group.
 func TestDetectDuplicates_NFCvsNFD(t *testing.T) {

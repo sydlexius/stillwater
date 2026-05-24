@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 )
 
-// renameFunc is the function used by RenameDirAtomic for the initial rename
-// attempt. It defaults to os.Rename and can be overridden in tests to
-// simulate cross-device (EXDEV) errors.
+// renameFunc is the function used by RenameDirAtomic and RenameFileAtomic
+// for the initial rename attempt. It defaults to os.Rename and can be
+// overridden in tests to simulate cross-device (EXDEV) errors.
 var renameFunc = os.Rename
 
 // RenameDirAtomic renames src to dst using os.Rename. If that fails (e.g.
@@ -33,6 +33,38 @@ func RenameDirAtomic(src, dst string) error {
 	}
 
 	if err := os.RemoveAll(src); err != nil {
+		return fmt.Errorf("removing source after copy: %w", err)
+	}
+	return nil
+}
+
+// RenameFileAtomic renames a single file from src to dst using os.Rename.
+// If that fails (e.g. cross-device move with EXDEV), it falls back to
+// copyFile followed by removal of the source. The caller must ensure dst
+// does not already exist; the merge orchestrator's loose-file path checks
+// for that collision before calling here.
+//
+// This mirrors RenameDirAtomic but is specialized for files: it avoids the
+// recursive directory walk overhead and uses copyFile directly so a single
+// loose-file move on a cross-device setup (bind mount, per-letter NAS
+// share) completes instead of returning EXDEV up the stack.
+func RenameFileAtomic(src, dst string) error {
+	if err := renameFunc(src, dst); err == nil {
+		return nil
+	}
+
+	// Snapshot dst state so we only clean up our own partial copy on failure.
+	_, statErr := os.Stat(dst)
+
+	if err := copyFile(src, dst); err != nil {
+		if os.IsNotExist(statErr) {
+			// dst was created by us; safe to clean up.
+			_ = os.Remove(dst)
+		}
+		return fmt.Errorf("copy fallback failed: %w", err)
+	}
+
+	if err := os.Remove(src); err != nil {
 		return fmt.Errorf("removing source after copy: %w", err)
 	}
 	return nil

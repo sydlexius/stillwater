@@ -1092,6 +1092,13 @@
     "covered": false
   },
   {
+    "operationId": "mergeArtists",
+    "method": "POST",
+    "path": "/artists/merge",
+    "handler": "handleArtistsMerge",
+    "covered": true
+  },
+  {
     "operationId": "oidcCallback",
     "method": "GET",
     "path": "/auth/oidc/callback",

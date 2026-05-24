@@ -153,6 +153,158 @@ components:
             type: string
           description: Validation error details. Present when validation fails, containing one or more error messages.
       required: [error]
+    MergeRequest:
+      type: object
+      description: Body for POST /artists/merge.
+      properties:
+        survivor_id:
+          type: string
+          description: Artist ID that survives the merge.
+        loser_ids:
+          type: array
+          items:
+            type: string
+          description: >-
+            Artist IDs to fold into the survivor. At least one entry. Must
+            not contain survivor_id or duplicates.
+          minItems: 1
+        dry_run:
+          type: boolean
+          description: >-
+            When true, perform the pre-flight collision walk and return the
+            would-be result without touching the filesystem or the
+            database. Use this to populate a confirmation UI before
+            committing the merge.
+          default: false
+      required: [survivor_id, loser_ids]
+    MergeMovedItem:
+      type: object
+      description: One filesystem rename performed by the merge.
+      properties:
+        name:
+          type: string
+          description: Child basename (album subdir or loose file).
+        from:
+          type: string
+          description: Absolute source path under the loser.
+        to:
+          type: string
+          description: Absolute destination path under the survivor.
+      required: [name, from, to]
+    MergeConflict:
+      type: object
+      description: >-
+        One would-be filesystem collision found by the pre-flight walk.
+        Populated alongside HTTP 409 collisions; nothing has been moved.
+      properties:
+        name:
+          type: string
+          description: Conflicting child basename.
+        survivor_path:
+          type: string
+          description: Existing entry under the survivor directory.
+        loser_path:
+          type: string
+          description: Conflicting entry under the loser directory.
+      required: [name, survivor_path, loser_path]
+    MergeResult:
+      type: object
+      description: Structured outcome of a merge call (dry-run or committed).
+      properties:
+        dry_run:
+          type: boolean
+          description: Mirrors the request's dry_run flag.
+        survivor_id:
+          type: string
+          description: ID of the surviving artist.
+        survivor_path:
+          type: string
+          description: Filesystem path of the surviving artist directory.
+        survivor_override:
+          type: boolean
+          description: >-
+            True when the caller chose a survivor that did not match the
+            precedence recommendation (MB-canonical basename > most
+            content). The merge proceeds; the flag exists so the UI can
+            surface the deviation.
+        moved:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeMovedItem"
+          description: >-
+            Every filesystem rename performed (album subdirs first, then
+            loose files). Empty on dry-run. Collisions return HTTP 409
+            with the MergeCollisionsResponse shape and are not represented
+            in this payload.
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergeConflict"
+          description: >-
+            Always empty on the 200 success body; collisions return HTTP
+            409 with the MergeCollisionsResponse shape. The field is kept
+            here so dry-run callers that share a single payload decoder
+            still see a consistent schema.
+        removed:
+          type: array
+          items:
+            type: string
+          description: >-
+            Loser artist IDs whose on-disk directories were actually
+            unlinked by the merge. A loser whose directory was left in
+            place (loose-file survivor-wins collision or a
+            destination-appeared race) is NOT listed here; see warnings
+            for the reason.
+        warnings:
+          type: array
+          items:
+            type: string
+          description: >-
+            Non-fatal observations (loose-file collisions skipped per
+            "survivor wins", symlinks skipped, the standing reminder that
+            connected platforms still index the loser path until the
+            operator triggers a refresh).
+        losers_deleted:
+          type: array
+          items:
+            type: string
+          description: Loser artist IDs whose rows were deleted by the merge transaction.
+      required: [survivor_id, survivor_path]
+    MergeCollisionsResponse:
+      description: >-
+        409 response body returned when the orchestrator refused to merge.
+        Discriminated by the `error` field. The `collisions` variant
+        always carries a `conflicts` array (possibly empty); the
+        `merge_in_progress` variant never carries `conflicts`.
+      oneOf:
+        - type: object
+          description: >-
+            Pre-flight walk found same-name album collisions; nothing was
+            moved. The conflicts list enumerates each one with both the
+            survivor-side existing path and the would-be loser source.
+          properties:
+            error:
+              type: string
+              enum: [collisions]
+            survivor_id:
+              type: string
+            survivor_path:
+              type: string
+            conflicts:
+              type: array
+              items:
+                $ref: "#/components/schemas/MergeConflict"
+          required: [error, conflicts]
+        - type: object
+          description: >-
+            Another merge is already in flight for some group; the caller
+            should back off and retry shortly. No filesystem or database
+            state was touched by this request.
+          properties:
+            error:
+              type: string
+              enum: [merge_in_progress]
+          required: [error]
     ConflictWriteBlock:
       type: object
       description: >
@@ -2448,6 +2600,84 @@ paths:
                         Human-readable explanation of why these artists are considered
                         duplicates (e.g. "shared MusicBrainz ID: abc123",
                         "shared alias: The Beatles").
+
+  /artists/merge:
+    post:
+      tags: [Artists]
+      summary: Merge near-duplicate artists
+      description: >-
+        Consolidate two or more near-duplicate artists (as surfaced by the
+        near-duplicate detector that backs the duplicates settings view) by
+        moving each loser's album subdirectories under the survivor's
+        directory and then deleting the loser artist rows. A pre-flight
+        collision walk catches same-name album-subdir conflicts before any
+        filesystem mutation, so a halt leaves zero half-state on disk.
+
+        Admin-only. A process-wide serializer rejects concurrent merge
+        requests with 409 merge_in_progress so a stuck or slow merge cannot
+        pile callers up behind it.
+      operationId: mergeArtists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeRequest"
+      responses:
+        "200":
+          description: Merge committed (or dry-run completed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeResult"
+        "400":
+          description: Malformed body, missing IDs, or survivor in loser list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Either another merge is in progress (error: merge_in_progress)
+            or the pre-flight walk detected one or more collisions (error:
+            collisions, body carries a conflicts array). Nothing has been
+            moved in either case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeCollisionsResponse"
+        "422":
+          description: >-
+            The supplied IDs no longer co-resolve into a single duplicate
+            group. The `error` field distinguishes the two recovery paths:
+            `stale_group` (the loser/survivor combination no longer forms
+            a group, typically a concurrent edit between page load and
+            submit; reload the duplicates view and resubmit) and
+            `survivor_missing` (the survivor_id is not a member of the
+            resolved group; pick a different survivor from the
+            reloaded group).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "423":
+          description: One or more group members are locked; merge refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/locked:
     get:
