@@ -6,6 +6,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,6 +24,11 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
+
+// pushOpLockToggle is the operation slug emitted on connection.push_failed
+// events from PushLocks. Other push surfaces (PushMetadataAsync) will gain
+// their own slugs as the notifier path is extended to them.
+const pushOpLockToggle = "lock_toggle"
 
 const (
 	// pushTimeout is the per-connection timeout for async metadata pushes.
@@ -42,6 +48,25 @@ type Deps struct {
 	ExpectedWrites     expectedWritesTracker
 	ImageCacheDir      string
 	Logger             *slog.Logger
+	// Notifier surfaces fire-and-forget goroutine errors (per-connection
+	// push failures) so the operator can see them as SSE-driven toasts.
+	// Optional; nil leaves notification disabled and the goroutine logs
+	// the error as before.
+	Notifier Notifier
+}
+
+// Notifier reports per-connection push failures from detached goroutines.
+// The publish package depends on this narrow interface rather than the
+// concrete event.Bus so tests can use a slice-backed fake without pulling
+// in the bus's start/stop lifecycle.
+//
+// artistID / artistName / operation give the toast enough context to
+// disambiguate a single failure from a fan-out (one PushLocks call can
+// produce N failures for the same artist if N platforms reject the
+// write); operation is a stable slug ("lock_toggle" today) so future push
+// surfaces can be filtered without churning the interface.
+type Notifier interface {
+	NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error)
 }
 
 // Publisher coordinates writing artist metadata and images to local files
@@ -58,6 +83,7 @@ type Publisher struct {
 	expectedWrites     expectedWritesTracker
 	imageCacheDir      string
 	logger             *slog.Logger
+	notifier           Notifier
 }
 
 // Narrow interfaces keep the publish package decoupled from concrete types.
@@ -101,7 +127,19 @@ func New(d Deps) *Publisher {
 		expectedWrites:     d.ExpectedWrites,
 		imageCacheDir:      d.ImageCacheDir,
 		logger:             d.Logger,
+		notifier:           d.Notifier,
 	}
+}
+
+// notifyPushFailure forwards a per-connection goroutine error to the
+// configured Notifier when one is wired up. Safe to call with a nil
+// publisher field; tests that omit Notifier still exercise the error
+// path through the logger without panicking on the nil check.
+func (p *Publisher) notifyPushFailure(connectionName, errorClass, artistID, artistName, operation string, err error) {
+	if p == nil || p.notifier == nil {
+		return
+	}
+	p.notifier.NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation, err)
 }
 
 // resolveLockNFO returns the per-library NFOLockData setting for the artist's
@@ -320,6 +358,12 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_id", a.ID),
 					slog.String("connection_id", pid.ConnectionID),
 					slog.String("error", connErr.Error()))
+				// No connection name available here. Publisher has no
+				// access to api.connectionIndex (it lives in package api
+				// and would create an import cycle), so fall back to a
+				// short UUID prefix the operator can recognize against
+				// the settings page connection list.
+				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), "connection lookup failed", a.ID, artistDisplayName(a), pushOpLockToggle, connErr)
 				return
 			}
 			if !conn.Enabled {
@@ -342,6 +386,12 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 					slog.String("artist_id", a.ID),
 					slog.String("connection", conn.Name),
 					slog.String("error", err.Error()))
+				// classifyPushErr converts the raw transport / status
+				// error into a stable taxonomy (auth_failed, timeout,
+				// unreachable, ...) so the toast tells the operator what
+				// kind of intervention is needed instead of collapsing
+				// every failure to "lock sync failed".
+				p.notifyPushFailure(conn.Name, classifyPushErr(err), a.ID, artistDisplayName(a), pushOpLockToggle, err)
 			} else {
 				p.logger.Info("lock-push: locks synchronized",
 					slog.String("artist_id", a.ID),
@@ -620,4 +670,74 @@ func truncateWarning(msg string) string {
 		return string(runes[:maxWarningRunes]) + " (truncated)"
 	}
 	return msg
+}
+
+// classifyPushErr maps a push error to a stable user-facing class so the
+// toast surface can tell auth from network from timeout. The taxonomy is
+// intentionally small: each class is something the operator can act on
+// (re-auth, check network, retry later) rather than a one-to-one mirror
+// of every Go error type. The fallback "rejected" covers anything that
+// doesn't pattern-match so a future provider error path can't surface as
+// an empty string.
+//
+// String matching is necessary because the platform clients (emby,
+// jellyfin, lidarr) currently wrap raw "HTTP %d" errors rather than
+// exposing sentinel types; the test suite locks in the substring contract
+// so a client refactor cannot silently break the taxonomy.
+func classifyPushErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "dial tcp"):
+		return "unreachable"
+	case strings.Contains(msg, "status 401"),
+		strings.Contains(msg, "status 403"),
+		strings.Contains(msg, "HTTP 401"),
+		strings.Contains(msg, "HTTP 403"):
+		return "auth_failed"
+	case strings.Contains(msg, "status 404"),
+		strings.Contains(msg, "HTTP 404"):
+		return "not_found"
+	case strings.Contains(msg, "status 5"),
+		strings.Contains(msg, "HTTP 5"):
+		return "server_error"
+	default:
+		return "rejected"
+	}
+}
+
+// shortConnLabel formats an unknown-connection-id fallback used when the
+// publisher cannot resolve a connection name (the GetByID hop itself
+// failed). Eight hex chars are enough for the operator to correlate with
+// the settings page connection list without dumping the full UUID into a
+// toast.
+func shortConnLabel(connectionID string) string {
+	if connectionID == "" {
+		return "unknown connection"
+	}
+	short := connectionID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return "unknown connection (id=" + short + ")"
+}
+
+// artistDisplayName returns the artist's user-facing label for toast
+// context, falling back to the ID when the name is empty so the operator
+// always has something to correlate.
+func artistDisplayName(a *artist.Artist) string {
+	if a == nil {
+		return ""
+	}
+	if a.Name != "" {
+		return a.Name
+	}
+	return a.ID
 }

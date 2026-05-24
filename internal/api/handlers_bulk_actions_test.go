@@ -4,14 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -566,5 +571,336 @@ func TestBulkAction_StatusAfterCompletion(t *testing.T) {
 	}
 	if snap["action"] != "run_rules" {
 		t.Errorf("action = %v, want run_rules", snap["action"])
+	}
+}
+
+// opEventRecorder collects every event.OperationProgress event the bus
+// receives so runBulkAction's emit schedule can be asserted exactly.
+// Concurrent appends from the bus's dispatch worker are serialized by mu.
+type opEventRecorder struct {
+	mu     sync.Mutex
+	events []event.Event
+}
+
+func (r *opEventRecorder) handle(e event.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Defensive copy: the bus owns the Data map and could mutate it.
+	dataCopy := make(map[string]any, len(e.Data))
+	for k, v := range e.Data {
+		dataCopy[k] = v
+	}
+	cp := e
+	cp.Data = dataCopy
+	r.events = append(r.events, cp)
+}
+
+func (r *opEventRecorder) snapshot() []event.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]event.Event, len(r.events))
+	copy(out, r.events)
+	return out
+}
+
+// attachBusRecorder swaps in a fresh event bus on the router and wires
+// an opEventRecorder subscriber for event.OperationProgress. The
+// returned cleanup stops the bus. Tests that need to assert on the
+// emission schedule call this immediately after testRouterWithStubPipeline.
+func attachBusRecorder(t *testing.T, r *Router) (*opEventRecorder, func()) {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// Generous buffer so a tight throttle loop never drops events the
+	// assertions depend on.
+	bus := event.NewBus(logger, 1024)
+	rec := &opEventRecorder{}
+	bus.Subscribe(event.OperationProgress, rec.handle)
+	go bus.Start()
+	r.eventBus = bus
+	return rec, func() {
+		bus.Stop()
+		// Give the dispatch goroutine a moment to drain in-flight events.
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// extractProgressEvents filters the recorder to just the running-status
+// events so assertions about throttle indices don't have to special-case
+// the start event (always processed=0) vs the terminal event.
+func extractProcessedIndices(evts []event.Event) []int {
+	out := []int{}
+	for _, e := range evts {
+		if e.Data["status"] != "running" {
+			continue
+		}
+		switch p := e.Data["processed"].(type) {
+		case int:
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// TestRunBulkAction_StartEmit verifies that even a 1-artist bulk action
+// fires a "running" event with processed=0 before any per-artist work,
+// followed by a terminal completion. This is the affordance that makes
+// the ProgressPill appear immediately on click instead of after the
+// first throttled tick.
+func TestRunBulkAction_StartEmit(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	a := addTestArtist(t, artistSvc, "Single Artist")
+	payload := `{"action":"run_rules","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+	waitBulkActionCompleted(t, r)
+	// Allow the terminal publish to drain through the bus's worker.
+	time.Sleep(50 * time.Millisecond)
+
+	evts := rec.snapshot()
+	if len(evts) < 2 {
+		t.Fatalf("emitted events = %d, want at least 2 (start + terminal); got %+v", len(evts), evts)
+	}
+	if evts[0].Data["status"] != "running" {
+		t.Errorf("first event status = %v, want running (start emit)", evts[0].Data["status"])
+	}
+	if evts[0].Data["processed"] != 0 {
+		t.Errorf("first event processed = %v, want 0 (start emit)", evts[0].Data["processed"])
+	}
+	last := evts[len(evts)-1]
+	if last.Data["status"] != "completed" {
+		t.Errorf("last event status = %v, want completed", last.Data["status"])
+	}
+}
+
+// TestRunBulkAction_ThrottleBoundaries pins the throttle math
+// (step := total/20, capped at >=1) so a refactor cannot silently change
+// the emit cadence the ProgressPill animation depends on. Each case
+// asserts the exact sequence of running-status processed indices.
+func TestRunBulkAction_ThrottleBoundaries(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		total int
+		want  []int // expected running-status processed indices in order
+	}{
+		// total=1: step=1; emits start(0), then per-artist=1, then terminal.
+		{total: 1, want: []int{0, 1}},
+		// total=20: step=1; start(0) + 1..20.
+		{total: 20, want: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}},
+		// total=21: step=1 (21/20=1); start(0) + 1..21.
+		{total: 21, want: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}},
+		// total=40: step=2; start(0) + 2,4,...,40.
+		{total: 40, want: []int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40}},
+		// total=100: step=5; start(0) + 5,10,...,100.
+		{total: 100, want: []int{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100}},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("total=%d", tc.total), func(t *testing.T) {
+			t.Parallel()
+			stub := &stubPipeline{}
+			r, artistSvc := testRouterWithStubPipeline(t, stub)
+			rec, stop := attachBusRecorder(t, r)
+			defer stop()
+			ids := make([]string, 0, tc.total)
+			for i := 0; i < tc.total; i++ {
+				a := addTestArtist(t, artistSvc, fmt.Sprintf("Throttle Artist %d-%d", tc.total, i))
+				ids = append(ids, a.ID)
+			}
+			idsJSON, _ := json.Marshal(ids)
+			payload := `{"action":"run_rules","ids":` + string(idsJSON) + `}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.handleBulkAction(w, req)
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+			}
+			waitBulkActionCompleted(t, r)
+			time.Sleep(100 * time.Millisecond)
+			got := extractProcessedIndices(rec.snapshot())
+			if !equalInts(got, tc.want) {
+				t.Errorf("running indices = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestRunBulkAction_TerminalCompleted locks in the success terminal: when
+// every artist succeeds the final emit must carry status=completed
+// (driving the green check + auto-dismiss in the pill).
+func TestRunBulkAction_TerminalCompleted(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+	a := addTestArtist(t, artistSvc, "Completed Artist")
+	payload := `{"action":"run_rules","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	waitBulkActionCompleted(t, r)
+	time.Sleep(50 * time.Millisecond)
+	evts := rec.snapshot()
+	last := evts[len(evts)-1]
+	if last.Data["status"] != "completed" {
+		t.Errorf("terminal status = %v, want completed; events=%+v", last.Data["status"], evts)
+	}
+}
+
+// TestRunBulkAction_TerminalFailed: when at least one artist fails the
+// terminal status must be "failed" (driving the red sticky pill the user
+// has to manually dismiss). The cancel-after-failed precedence test
+// below verifies cancel still wins; this test pins the failure default.
+func TestRunBulkAction_TerminalFailed(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{
+		runForArtistFn: func(_ context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			return nil, errBulkPipelineTest
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+	a := addTestArtist(t, artistSvc, "Failed Artist")
+	payload := `{"action":"run_rules","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	// The progress reaches Status=completed even when every per-artist
+	// run failed (the goroutine fully processed every ID). Wait on that.
+	waitBulkActionCompleted(t, r)
+	time.Sleep(50 * time.Millisecond)
+	evts := rec.snapshot()
+	last := evts[len(evts)-1]
+	if last.Data["status"] != "failed" {
+		t.Errorf("terminal status = %v, want failed; events=%+v", last.Data["status"], evts)
+	}
+}
+
+// TestRunBulkAction_TerminalCanceledWithFailures pins the cancel-after-
+// failed precedence the current code (lines 519-530 of
+// handlers_bulk_actions.go) implements: when a cancel lands mid-run AND
+// some artists have already failed, the terminal status is "canceled",
+// not "failed". This avoids the misleading red sticky pill for a run
+// the user explicitly aborted. A future change that flipped this
+// precedence would silently degrade the UX, so the test acts as a pin.
+func TestRunBulkAction_TerminalCanceledWithFailures(t *testing.T) {
+	t.Parallel()
+
+	// Stub that fails the first artist, then blocks indefinitely on the
+	// second so the test can cancel between the two.
+	var firstDone sync.WaitGroup
+	firstDone.Add(1)
+	var seen atomic.Int32
+	cancelGate := make(chan struct{})
+	stub := &stubPipeline{
+		runForArtistFn: func(ctx context.Context, _ *artist.Artist) (*rule.RunResult, error) {
+			n := seen.Add(1)
+			if n == 1 {
+				firstDone.Done()
+				return nil, errBulkPipelineTest // first artist fails
+			}
+			// Subsequent artists block until the test cancels, then
+			// return promptly so the loop's cancel-check on the next
+			// iteration finalizes as "canceled".
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-cancelGate:
+				return &rule.RunResult{}, nil
+			}
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+	a1 := addTestArtist(t, artistSvc, "Cancel-Mix Artist A")
+	a2 := addTestArtist(t, artistSvc, "Cancel-Mix Artist B")
+	a3 := addTestArtist(t, artistSvc, "Cancel-Mix Artist C")
+	payload := `{"action":"run_rules","ids":["` + a1.ID + `","` + a2.ID + `","` + a3.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	// Wait for the first artist's failure to land before canceling so
+	// progress.Failed is non-zero when the cancel observes.
+	firstDone.Wait()
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions/cancel", nil)
+	cancelW := httptest.NewRecorder()
+	r.handleBulkActionCancel(cancelW, cancelReq)
+	if cancelW.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, want 200; body: %s", cancelW.Code, cancelW.Body.String())
+	}
+
+	// Release any blocked stub goroutines so the run can finalize.
+	close(cancelGate)
+
+	// Wait for the canceled terminal state. waitBulkActionCompleted polls
+	// for Status=="completed" which won't fire here; spin manually.
+	deadline := time.Now().Add(5 * time.Second)
+	var finalStatus bulkActionStatus
+	var failed int
+	for time.Now().Before(deadline) {
+		r.bulkActionMu.RLock()
+		p := r.bulkActionProgress
+		r.bulkActionMu.RUnlock()
+		if p != nil {
+			p.mu.RLock()
+			s := p.Status
+			f := p.Failed
+			p.mu.RUnlock()
+			if s != bulkActionRunning {
+				finalStatus = s
+				failed = f
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if finalStatus != bulkActionCanceled {
+		t.Errorf("final progress status = %q, want %q (cancel must supersede failed)", finalStatus, bulkActionCanceled)
+	}
+	if failed < 1 {
+		t.Errorf("progress.Failed = %d, want >= 1 (first artist failed before cancel)", failed)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	evts := rec.snapshot()
+	if len(evts) == 0 {
+		t.Fatal("no events recorded")
+	}
+	last := evts[len(evts)-1]
+	if last.Data["status"] != "canceled" {
+		t.Errorf("terminal event status = %v, want canceled (cancel supersedes failed); events=%+v", last.Data["status"], evts)
 	}
 }

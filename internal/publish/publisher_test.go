@@ -3,6 +3,7 @@ package publish
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -302,4 +303,213 @@ func TestResolveLockNFO(t *testing.T) {
 			t.Error("matched library with NFOLockData=false must return false")
 		}
 	})
+}
+
+// recordingNotifier captures every NotifyConnectionPushFailed call so
+// PushLocks tests can assert on the (connection, error_class) pair the
+// publisher hands the SSE bridge. Concurrent calls from per-connection
+// goroutines are serialized by mu.
+type recordingNotifier struct {
+	mu    sync.Mutex
+	calls []notifyCall
+}
+
+type notifyCall struct {
+	connection string
+	errorClass string
+	artistID   string
+	artistName string
+	operation  string
+	err        error
+}
+
+func (r *recordingNotifier) NotifyConnectionPushFailed(connectionName, errorClass, artistID, artistName, operation string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, notifyCall{
+		connection: connectionName,
+		errorClass: errorClass,
+		artistID:   artistID,
+		artistName: artistName,
+		operation:  operation,
+		err:        err,
+	})
+}
+
+func (r *recordingNotifier) snapshot() []notifyCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]notifyCall, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+// TestPushLocks_NotifierFiresOnSyncFailure verifies the goroutine path
+// invokes the Notifier exactly once with the connection name and a
+// non-empty error class when the platform PUT returns a non-2xx
+// response. The toast pipeline depends on this for the per-connection
+// failure surface (#1088): without this hook the user gets a green
+// success path on the originating lock toggle while the platform
+// silently rejected the write.
+func TestPushLocks_NotifierFiresOnSyncFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// Emby fetch shape; LockSyncer needs the current item before issuing the PUT.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"p1","LockData":false,"LockedFields":[]}`))
+			return
+		}
+		// Reject every PUT so UpdateArtistLocks returns an error.
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Locked: true, LockedFields: []string{"biography"}}
+	p.PushLocks(context.Background(), a)
+
+	// PushLocks dispatches its work in a goroutine; spin briefly until
+	// the notifier observes the failure. The 401 path is synchronous
+	// inside UpdateArtistLocks so a short deadline is sufficient.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(notifier.snapshot()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	if got[0].connection != "my-emby" {
+		t.Errorf("connection = %q, want %q", got[0].connection, "my-emby")
+	}
+	// classifyPushErr should map the 401 response to "auth_failed" so
+	// the toast tells the operator the specific intervention needed
+	// instead of the generic "lock sync failed" pre-fix string.
+	if got[0].errorClass != "auth_failed" {
+		t.Errorf("errorClass = %q, want %q (401 should classify as auth_failed)", got[0].errorClass, "auth_failed")
+	}
+	if got[0].artistID != "a1" {
+		t.Errorf("artistID = %q, want %q", got[0].artistID, "a1")
+	}
+	if got[0].artistName != "Test Artist" {
+		t.Errorf("artistName = %q, want %q", got[0].artistName, "Test Artist")
+	}
+	if got[0].operation != "lock_toggle" {
+		t.Errorf("operation = %q, want %q", got[0].operation, "lock_toggle")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want a non-nil error so logs can correlate")
+	}
+}
+
+// TestPushLocks_NotifierNotCalledOnSuccess verifies the success path
+// does not invoke the notifier; only failed pushes should surface to
+// the operator via toast.
+func TestPushLocks_NotifierNotCalledOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"p1","LockData":false,"LockedFields":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "my-emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+		}},
+		Logger:   silentLogger(),
+		Notifier: notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Locked: true}
+	p.PushLocks(context.Background(), a)
+
+	// Give the goroutine time to complete a successful PUT.
+	time.Sleep(200 * time.Millisecond)
+	if got := notifier.snapshot(); len(got) != 0 {
+		t.Errorf("notifier calls on success = %d, want 0; calls=%+v", len(got), got)
+	}
+}
+
+// TestClassifyPushErr pins the error-class taxonomy that drives the
+// per-connection failure toast. The categories are intentionally small
+// (each maps to a distinct operator response); adding a new one is fine
+// but renaming an existing one breaks i18n keys in en.json once the
+// front-end maps them, so every category gets a representative test.
+func TestClassifyPushErr(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"context deadline", context.DeadlineExceeded, "timeout"},
+		{"wrapped deadline", fmt.Errorf("pushing locks: %w", context.DeadlineExceeded), "timeout"},
+		{"connection refused", errors.New("Post \"http://emby/\": dial tcp 1.2.3.4:8096: connect: connection refused"), "unreachable"},
+		{"no such host", errors.New("Post \"http://emby/\": dial tcp: lookup emby.lan: no such host"), "unreachable"},
+		{"401 status", errors.New("update locks: status 401"), "auth_failed"},
+		{"403 status", errors.New("update locks: status 403"), "auth_failed"},
+		{"HTTP 401", errors.New("authentication failed: HTTP 401"), "auth_failed"},
+		{"404 status", errors.New("update locks: status 404"), "not_found"},
+		{"HTTP 404", errors.New("item missing: HTTP 404"), "not_found"},
+		{"503 status", errors.New("update locks: status 503"), "server_error"},
+		{"HTTP 500", errors.New("plain: HTTP 500"), "server_error"},
+		{"unknown", errors.New("something weird happened"), "rejected"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyPushErr(tc.err)
+			if got != tc.want {
+				t.Errorf("classifyPushErr(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestShortConnLabel covers the GetByID-error fallback path: when the
+// publisher cannot resolve a connection name, the operator still needs
+// something correlatable. Eight hex chars is the minimum that
+// disambiguates the typical 2-4 connections an install has.
+func TestShortConnLabel(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", "unknown connection"},
+		{"short", "abc", "unknown connection (id=abc)"},
+		{"uuid", "01234567-89ab-cdef-0123-456789abcdef", "unknown connection (id=01234567)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shortConnLabel(tc.in)
+			if got != tc.want {
+				t.Errorf("shortConnLabel(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
 }

@@ -368,11 +368,16 @@ func (a *Application) buildServices() error {
 	if err := a.wireProviders(ctx); err != nil {
 		return err
 	}
+	// wireEventBus must run before wireRuleEngine: publish.New stores the
+	// Notifier adapter that wraps a.eventBus, so the bus pointer has to
+	// exist at construction time. A nil bus there silently no-ops every
+	// connection.push_failed event (busNotifier.NotifyConnectionPushFailed
+	// returns early on n.bus == nil), so the operator never sees the toast.
+	wireEventBus(a, logger)
 	if err := a.wireRuleEngine(ctx, logger); err != nil {
 		return err
 	}
 
-	wireEventBus(a, logger)
 	wireInfraServices(ctx, a, db, cfg, logger)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
@@ -668,6 +673,13 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.fsCheck = rule.NewSharedFSCheck(a.libraryService, logger)
 	a.expectedWrites = watcher.NewExpectedWrites()
 
+	// Guard the ordering invariant: wireEventBus must run first so the
+	// Notifier adapter captures a non-nil bus. Without the bus, every
+	// connection.push_failed event silently no-ops in the notifier guard,
+	// which we hit live during M52 PR6 UAT.
+	if a.eventBus == nil {
+		panic("wireRuleEngine: a.eventBus is nil; wireEventBus must run first (see main.go phase ordering)")
+	}
 	a.publisher = publish.New(publish.Deps{
 		ArtistService:      a.artistService,
 		ConnectionService:  a.connectionService,
@@ -678,6 +690,9 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		ExpectedWrites:     a.expectedWrites,
 		ImageCacheDir:      a.imageCacheDir,
 		Logger:             logger,
+		// Bridge per-connection push errors from detached goroutines onto
+		// the event bus so the SSE hub can surface them as toasts.
+		Notifier: publish.NewBusNotifier(a.eventBus),
 	})
 	// Wire the rename-time platform syncer so Service.RenameDirectory
 	// re-issues the artist path on Emby/Jellyfin/Lidarr after a successful

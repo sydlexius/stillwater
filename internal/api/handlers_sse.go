@@ -171,6 +171,36 @@ func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
 			}
 			return "Conflict banner: " + state
 		}},
+		// OperationProgress carries its own structured fields (op_id, label,
+		// processed, total, status) for the ProgressPill renderer. The
+		// Title/Message text is only used as a fallback for clients that
+		// surface unknown events as plain toasts.
+		{event.OperationProgress, "Operation progress", func(data map[string]any) string {
+			return strVal(data, "label")
+		}},
+		// ConnectionPushFailed names the connection, a short error class,
+		// and (when present) the originating artist so the operator can
+		// tell a single failure apart from a fan-out (one PushLocks call
+		// produces one event per platform). The raw transport error is
+		// deliberately NOT in Data; see internal/publish/notifier.go.
+		{event.ConnectionPushFailed, "Platform push failed", func(data map[string]any) string {
+			conn := strVal(data, "connection")
+			class := strVal(data, "error_class")
+			artist := strVal(data, "artist_name")
+			var base string
+			switch {
+			case conn != "" && class != "":
+				base = conn + ": " + class
+			case conn != "":
+				base = conn + ": push failed"
+			default:
+				return "A platform push failed"
+			}
+			if artist != "" {
+				return base + " (artist: " + artist + ")"
+			}
+			return base
+		}},
 	}
 
 	for _, m := range mappings {

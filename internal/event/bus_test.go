@@ -1,8 +1,10 @@
 package event
 
 import (
+	"bytes"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -125,6 +127,63 @@ func TestBufferFull(t *testing.T) {
 	// Third event should be dropped (buffer full)
 	bus.Publish(Event{Type: ScanCompleted})
 	// No panic or deadlock expected
+}
+
+// TestBufferFullEscalatesConnectionPushFailed verifies that a dropped
+// ConnectionPushFailed event lands in the log at ERROR with its Data
+// payload preserved, so an operator can recover the platform failure
+// from the log when SSE backpressure ate the event. All other event
+// types stay at WARN with just the type name.
+func TestBufferFullEscalatesConnectionPushFailed(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bus := NewBus(logger, 1)
+	// Do NOT start the bus; first Publish fills the buffer, second drops.
+
+	bus.Publish(Event{Type: ConnectionPushFailed, Data: map[string]any{"connection": "fill", "error_class": "auth_failed"}})
+	bus.Publish(Event{
+		Type: ConnectionPushFailed,
+		Data: map[string]any{
+			"connection":  "my-emby",
+			"error_class": "auth_failed",
+			"artist_id":   "a1",
+			"artist_name": "Test Artist",
+		},
+	})
+
+	out := buf.String()
+	// The dropped event must log at ERROR, not WARN, and include the
+	// connection + artist context so the failure is recoverable from the
+	// log alone.
+	if !strings.Contains(out, "level=ERROR") {
+		t.Errorf("expected ERROR-level log for dropped ConnectionPushFailed, got:\n%s", out)
+	}
+	if !strings.Contains(out, "my-emby") {
+		t.Errorf("expected connection name in log, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Test Artist") {
+		t.Errorf("expected artist_name in log, got:\n%s", out)
+	}
+}
+
+// TestBufferFullKeepsWarnForOtherTypes verifies the escalation does not
+// over-fire: a dropped non-failure event (the common case) still logs at
+// WARN with just the type name, not a Data dump.
+func TestBufferFullKeepsWarnForOtherTypes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bus := NewBus(logger, 1)
+
+	bus.Publish(Event{Type: ScanCompleted, Data: map[string]any{"scan_id": "x"}})
+	bus.Publish(Event{Type: ScanCompleted, Data: map[string]any{"scan_id": "y"}})
+
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") {
+		t.Errorf("expected WARN-level log for dropped ScanCompleted, got:\n%s", out)
+	}
+	if strings.Contains(out, "level=ERROR") {
+		t.Errorf("ScanCompleted drops must not log at ERROR, got:\n%s", out)
+	}
 }
 
 func TestHandlerPanicRecovery(t *testing.T) {
