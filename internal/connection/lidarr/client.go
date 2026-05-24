@@ -512,6 +512,9 @@ func setConsumerArtistField(m map[string]any, fieldName string, value bool) map[
 // Lidarr stops looking for files at the old path and resumes import / refresh
 // against the new one (#1231).
 func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return fmt.Errorf("platformArtistID is required")
+	}
 	// PathEscape the platform ID so an ID containing reserved characters
 	// (slashes, percent signs, etc.) cannot break out of the URL segment.
 	// Jellyfin's push.go already does this; bringing Lidarr into parity

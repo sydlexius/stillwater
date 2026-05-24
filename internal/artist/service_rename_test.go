@@ -588,7 +588,9 @@ func TestRenameDirectory_PlatformSyncerInvoked(t *testing.T) {
 // rename itself to surface an error: the rename already committed on disk
 // and in the DB, and burying the user's successful rename behind an HTTP
 // 500 because the platform-mapping lookup failed would be a regression.
-// We accept the empty platforms slice and log the syncer issue.
+// The service synthesizes a single failed PlatformRemapResult entry when
+// the syncer returned (nil, err) so the HTTP response always carries a
+// concrete signal instead of an empty slice that hides a backend error.
 func TestRenameDirectory_PlatformSyncerErrorDoesNotFail(t *testing.T) {
 	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-syncer-err")
@@ -604,8 +606,53 @@ func TestRenameDirectory_PlatformSyncerErrorDoesNotFail(t *testing.T) {
 	if !strings.HasSuffix(got, "Should Still Succeed") {
 		t.Errorf("newPath = %q, want trailing 'Should Still Succeed'", got)
 	}
-	if len(platforms) != 0 {
-		t.Errorf("platforms = %v, want empty on syncer error", platforms)
+	// Defensive synthesis: the syncer returned (nil, err); the service
+	// belt-and-braces synthesizes a single failed entry so callers see a
+	// concrete signal. ConnectionID is empty to flag this as a
+	// synthesized enumeration-failure marker rather than a real
+	// per-platform result.
+	if len(platforms) != 1 {
+		t.Fatalf("platforms = %v, want one synthesized failed entry on syncer error", platforms)
+	}
+	if platforms[0].Result != PlatformRemapFailed {
+		t.Errorf("synthesized entry Result = %q, want %q", platforms[0].Result, PlatformRemapFailed)
+	}
+	if platforms[0].ConnectionID != "" {
+		t.Errorf("synthesized entry ConnectionID = %q, want empty (marker for synthesized enum-failure)", platforms[0].ConnectionID)
+	}
+	if platforms[0].Error == "" {
+		t.Error("synthesized entry Error is empty; expected a non-empty diagnostic")
+	}
+}
+
+// TestRenameDirectory_PlatformSyncerReturnsResultsAndErrorPreservesResults
+// guards the "syncer returned both results AND a non-nil err" branch: in
+// that case the service should log the error but NOT overwrite the
+// syncer-provided results with a synthesized stub. The production publisher
+// self-synthesizes its own failure entry in this path, and a service-side
+// double-synthesis would clobber that richer detail.
+func TestRenameDirectory_PlatformSyncerReturnsResultsAndErrorPreservesResults(t *testing.T) {
+	t.Parallel()
+	svc, a, _ := renameTestArtist(t, "lib-rename-syncer-both")
+	ctx := context.Background()
+
+	syncer := &fakeSyncer{
+		results: []PlatformRemapResult{
+			{ConnectionID: "", Result: PlatformRemapFailed, Error: "self-synthesized by syncer"},
+		},
+		err: errors.New("simulated enumeration failure"),
+	}
+	svc.SetPlatformRenameSyncer(syncer)
+
+	_, platforms, err := svc.RenameDirectory(ctx, a.ID, "Should Still Succeed Too")
+	if err != nil {
+		t.Fatalf("RenameDirectory should not fail on syncer enum error: %v", err)
+	}
+	if len(platforms) != 1 {
+		t.Fatalf("platforms = %v, want one entry (the syncer-provided synthesized result)", platforms)
+	}
+	if platforms[0].Error != "self-synthesized by syncer" {
+		t.Errorf("platforms[0].Error = %q, want syncer-provided message (service-side synthesis should NOT clobber)", platforms[0].Error)
 	}
 }
 

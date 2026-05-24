@@ -484,6 +484,9 @@ func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string)
 // longer matches a real directory makes Jellyfin drop the item on its next
 // scan, which orphans Stillwater's platform_id row.
 func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return fmt.Errorf("platformArtistID is required")
+	}
 	existing, err := c.fetchItem(ctx, platformArtistID)
 	if err != nil {
 		return fmt.Errorf("fetching artist for path update: %w", err)

@@ -862,12 +862,36 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		// response always carries a concrete signal. We still escalate to
 		// Error here so operators tailing logs catch the failure even when
 		// the response slice is consumed asynchronously.
-		results, syncErr := s.platformSyncer.SyncRename(ctx, a.ID, oldPath, newPath)
+		//
+		// Use context.WithoutCancel(ctx) so a mid-rename client disconnect
+		// does not also cancel the platform sync. The rename has already
+		// committed on disk and in the DB; we want every platform reached
+		// to learn the new path even if the originating HTTP request goes
+		// away. The per-platform 30s timeout inside publish/rename_sync.go
+		// (renameSyncTimeout, applied via WithTimeout on this syncCtx) is
+		// now a fixed bound independent of request lifetime, which matches
+		// the intent: rename is rare and operator-driven, so the absolute
+		// wall time matters less than predictable per-call decoupling.
+		syncCtx := context.WithoutCancel(ctx)
+		results, syncErr := s.platformSyncer.SyncRename(syncCtx, a.ID, oldPath, newPath)
 		if syncErr != nil {
 			slog.Error("rename directory: platform sync enumeration failed",
 				"artist_id", artistID,
 				"new_path", newPath,
 				"error", syncErr.Error())
+			// Belt-and-braces: the PlatformRenameSyncer interface contract
+			// permits an implementation to return (nil, err) on enumeration
+			// failure. The production publisher self-synthesizes a failed
+			// entry, but a custom or test syncer might not, which would
+			// leave the HTTP response with an empty platforms slice that is
+			// indistinguishable from "no mappings". Synthesize one here so
+			// callers always have a concrete signal when something failed.
+			if len(results) == 0 {
+				results = []PlatformRemapResult{{
+					Result: PlatformRemapFailed,
+					Error:  "platform mapping lookup failed",
+				}}
+			}
 		}
 		platforms = results
 	}

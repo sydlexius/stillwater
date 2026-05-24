@@ -31,20 +31,33 @@ const (
 // publish.Publisher; the indirection keeps the artist package free of
 // connection/HTTP-client imports.
 //
-// SyncRename MUST NOT return an error for a per-platform failure: failures
-// land in the returned slice with Result == PlatformRemapFailed. A non-nil
-// error from SyncRename indicates a problem looking up the artist's platform
-// mappings (i.e. the DB read itself failed), which the caller surfaces as a
-// 500 since the rename has already committed.
+// SyncRename MUST NOT return an error for a per-platform HTTP failure:
+// per-platform failures land in the returned slice with Result ==
+// PlatformRemapFailed and Error filled in. A non-nil error from SyncRename
+// signals an enumeration-step failure (e.g. listing the artist's platform
+// mappings from the DB failed); the rename has already committed on disk
+// and in the artist row, so RenameDirectory does NOT surface it as an
+// HTTP error. Instead it logs the error and, as a defensive belt-and-braces,
+// synthesizes a single failed PlatformRemapResult entry when the
+// implementation returned no results of its own so the HTTP response body
+// always carries a concrete signal. The production publisher
+// (publish.Publisher.SyncRename) self-synthesizes that entry too; the
+// service-side synthesis exists for implementations that do not.
+//
+// See Service.RenameDirectory in service.go for the call site and
+// Service.platformSyncer for where the configured implementation lives.
 type PlatformRenameSyncer interface {
 	SyncRename(ctx context.Context, artistID, oldPath, newPath string) ([]PlatformRemapResult, error)
 }
 
-// SetPlatformRenameSyncer attaches a syncer to the Service. Nil disables
-// platform syncing (the rename then returns an empty platforms slice). This
-// is a setter rather than a constructor parameter so existing NewService /
-// NewServiceWithRepos call sites do not have to thread a publisher; tests
-// that do not care about platform sync leave the syncer unset.
+// SetPlatformRenameSyncer attaches a syncer to the Service. Passing nil
+// disables platform syncing: RenameDirectory then returns a nil platforms
+// slice (not an empty []PlatformRemapResult{}). This is a setter rather
+// than a constructor parameter so existing NewService / NewServiceWithRepos
+// call sites do not have to thread a publisher; tests that do not care
+// about platform sync leave the syncer unset and rely on the nil-slice
+// shape to confirm the no-op path. See RenameDirectory in service.go for
+// the conditional that gates on s.platformSyncer != nil.
 func (s *Service) SetPlatformRenameSyncer(syncer PlatformRenameSyncer) {
 	s.platformSyncer = syncer
 }

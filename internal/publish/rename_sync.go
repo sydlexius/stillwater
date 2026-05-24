@@ -53,10 +53,16 @@ var renamePathUpdaterFactory = func(conn *connection.Connection, logger *slog.Lo
 // successful Service.RenameDirectory. Implements artist.PlatformRenameSyncer
 // so the artist service can call it without importing internal/connection.
 //
-// Synchronous and best-effort: per-platform HTTP errors are recorded in the
-// returned slice (Result == PlatformRemapFailed, Error filled in) so the
-// HTTP handler can surface them in the rename response. A non-nil error is
-// returned only when enumerating platform mappings itself fails (DB read).
+// Synchronous and best-effort. BOTH enumeration failure (looking up the
+// artist's platform_ids rows from the DB) AND per-platform HTTP failures
+// are represented as entries in the returned slice with Result ==
+// PlatformRemapFailed and Error filled in: the enumeration-failure case
+// emits a single synthesized entry with an empty ConnectionID, and each
+// per-platform failure emits one entry keyed by its real connection_id.
+// A non-nil outer error is reserved for catastrophic failures outside
+// per-platform handling (none today; the contract leaves the slot open
+// for a future implementation that could fail before producing any entry).
+// In short: today this method always returns (results, nil).
 //
 // oldPath is accepted for symmetry with the rename call and to support
 // future audit-log enrichment; it is currently not used by the per-platform
@@ -106,10 +112,14 @@ func (p *Publisher) syncOne(ctx context.Context, artistID, newPath string, pid a
 		Result:       artist.PlatformRemapFailed,
 	}
 
-	// Per-platform deadline. Inherits cancellation from the request context
-	// so a canceled rename request stops further fan-out (unlike PushLocks
-	// which uses WithoutCancel because it runs asynchronously and must
-	// outlive the originating request).
+	// Per-platform deadline. The caller (Service.RenameDirectory) passes a
+	// context detached from the originating HTTP request via
+	// context.WithoutCancel, so this WithTimeout is a fixed 30s bound that
+	// does NOT shorten if the client disconnects mid-rename. That matches
+	// the intent: the on-disk rename has already committed, so reaching
+	// every platform with the new path is more important than honoring
+	// request cancellation. PushLocks uses the same WithoutCancel pattern
+	// at the publisher.go call site for the same reason.
 	callCtx, cancel := context.WithTimeout(ctx, renameSyncTimeout)
 	defer cancel()
 

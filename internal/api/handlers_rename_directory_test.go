@@ -20,6 +20,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 )
 
+// mapKeys returns the keys of a map[string]any in unspecified iteration
+// order. Used only by the stub assertions below to render a useful
+// diagnostic when a required key is missing from a decoded request body.
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // renameHandlerFixture seeds an artist whose directory exists on a temp
 // filesystem path, then returns the router, the artist row, and the path
 // root so individual cases can construct collision targets.
@@ -309,27 +320,65 @@ func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
 	ctx := context.Background()
 
 	// Emby stub: GET /Users/{u}/Items/emby-pid returns minimal item;
-	// POST /Items/emby-pid returns 204 (success).
+	// POST /Items/emby-pid returns 204 (success). The stub validates the
+	// request URL contains the expected platform_artist_id, that POSTs
+	// carry a JSON body with a "Path" key (the field the client mutates
+	// before writing back), and that every call carries Emby's
+	// X-Emby-Token auth header. Without these assertions a wrong
+	// URL/body/auth wiring could pass a method-only stub silently.
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("X-Emby-Token") == "" {
+			t.Errorf("emby stub: missing X-Emby-Token auth header on %s %s", req.Method, req.URL.Path)
+		}
+		if !strings.Contains(req.URL.Path, "emby-pid") {
+			t.Errorf("emby stub: URL path %q does not contain expected platform_artist_id 'emby-pid'", req.URL.Path)
+		}
 		switch req.Method {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Id":"emby-pid","Name":"X","Path":"/old"}`))
 		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				t.Errorf("emby stub: decoding POST body: %v", err)
+			} else if _, ok := body["Path"]; !ok {
+				t.Errorf("emby stub: POST body missing required 'Path' key; got keys: %v", mapKeys(body))
+			}
 			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	}))
 	defer embySrv.Close()
 
 	// Lidarr stub: GET /api/v1/artist/lid-42 returns minimal artist; PUT
 	// returns 500 so the per-platform failure path is exercised end-to-end.
+	// The stub also asserts the URL contains "artist", PUTs carry a body
+	// with a "path" key (the field the client mutates), and every call
+	// carries Lidarr's X-Api-Key auth header.
 	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method == http.MethodGet {
+		if req.Header.Get("X-Api-Key") == "" {
+			t.Errorf("lidarr stub: missing X-Api-Key auth header on %s %s", req.Method, req.URL.Path)
+		}
+		if !strings.Contains(req.URL.Path, "artist") {
+			t.Errorf("lidarr stub: URL path %q does not contain expected 'artist' segment", req.URL.Path)
+		}
+		switch req.Method {
+		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":42,"artistName":"X","path":"/old"}`))
 			return
+		case http.MethodPut:
+			var body map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				t.Errorf("lidarr stub: decoding PUT body: %v", err)
+			} else if _, ok := body["path"]; !ok {
+				t.Errorf("lidarr stub: PUT body missing required 'path' key; got keys: %v", mapKeys(body))
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
-		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer lidarrSrv.Close()
 

@@ -461,6 +461,9 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 // which orphans Stillwater's platform_id row; this call avoids that
 // reconciliation drift.
 func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return fmt.Errorf("platformArtistID is required")
+	}
 	if c.userID == "" {
 		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
