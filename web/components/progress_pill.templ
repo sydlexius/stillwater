@@ -40,6 +40,8 @@ templ ProgressPill() {
 		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
 		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
 		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+		data-i18n-verb-lock={ t(ctx, "artists.bulk.progress.lock") }
+		data-i18n-verb-unlock={ t(ctx, "artists.bulk.progress.unlock") }
 	></div>
 	<script>
 		// ProgressPill controller.
@@ -277,7 +279,12 @@ templ ProgressPill() {
 			}
 
 			function onProgress(evt) {
-				var data = evt && evt.detail;
+				// sse.js wraps every server frame in the notification envelope
+				// (.type/.title/.message/.timestamp/.data); the actual publisher
+				// payload lives under .data. Fall back to the top-level shape so
+				// programmatic tests + window.swProgressPill.push (flat) keep working.
+				var detail = evt && evt.detail;
+				var data = (detail && detail.data) ? detail.data : detail;
 				if (!data || !data.op_id) return;
 				var opID = String(data.op_id);
 				var pill = pills[opID];

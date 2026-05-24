@@ -34,6 +34,12 @@ const (
 	BulkActionReIdentifyAuto = "re_identify_auto" // silent auto-link + queue path
 	BulkActionScan           = "scan"
 	BulkActionFetchImages    = "fetch_images"
+	// Lock / unlock are the bulk-equivalent of POST/DELETE /api/v1/artists/{id}/lock.
+	// Both set source="user" via artist.Service.Lock / Unlock; idempotent (a
+	// no-op call counts the artist as Skipped). They never invoke the rule
+	// pipeline so they require only the artist service to be configured.
+	BulkActionLock   = "lock"
+	BulkActionUnlock = "unlock"
 )
 
 // idPattern accepts UUIDs and other plausible artist ID encodings used in the
@@ -119,7 +125,9 @@ func validActions(s string) bool {
 		BulkActionReIdentify,
 		BulkActionReIdentifyAuto,
 		BulkActionScan,
-		BulkActionFetchImages:
+		BulkActionFetchImages,
+		BulkActionLock,
+		BulkActionUnlock:
 		return true
 	}
 	return false
@@ -131,6 +139,59 @@ func validActions(s string) bool {
 // bulk-identify so callers get consistent semantics.
 //
 // POST /api/v1/artists/bulk-actions
+// requireServicesForBulkAction returns the operator-facing message that
+// belongs in a 503 response when the router is not configured to run
+// the given action, or "" when every required dependency is wired.
+//
+// Lives outside handleBulkAction so the per-action switch is not folded
+// into the request handler's cognitive complexity budget -- the inline
+// version of this gate pushed handleBulkAction over the gocognit cap
+// after BulkActionLock / BulkActionUnlock were added in PR7.
+//
+// Action gate semantics:
+//
+//   - run_rules, fetch_images: pipeline + artist service (runBulkAction
+//     reads each artist via GetByID before dispatch; a missing pipeline
+//     would silently skip every artist).
+//   - re_identify_auto: artist service only (identify flow rehydrates
+//     each candidate; orchestrator presence is checked deeper down).
+//   - lock, unlock: artist service only (no rule pipeline hop).
+//   - scan: artist service + pipeline (scan reuses RunForArtist).
+//
+// Unknown actions return "" because validActions() upstream already
+// rejected them with a 400 before this gate runs.
+func (r *Router) requireServicesForBulkAction(action string) string {
+	const (
+		msgArtistMissing   = "artist service not configured"
+		msgPipelineMissing = "rule pipeline not configured"
+	)
+	switch action {
+	case BulkActionRunRules, BulkActionFetchImages:
+		if r.pipeline == nil {
+			return msgPipelineMissing
+		}
+		if r.artistService == nil {
+			return msgArtistMissing
+		}
+	case BulkActionReIdentifyAuto:
+		if r.artistService == nil {
+			return msgArtistMissing
+		}
+	case BulkActionLock, BulkActionUnlock:
+		if r.artistService == nil {
+			return msgArtistMissing
+		}
+	case BulkActionScan:
+		if r.artistService == nil {
+			return msgArtistMissing
+		}
+		if r.pipeline == nil {
+			return msgPipelineMissing
+		}
+	}
+	return ""
+}
+
 func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 	// Parse and validate the request body before claiming the singleton slot
 	// so a malformed request cannot lock out legitimate ones. The 1 MiB cap
@@ -217,7 +278,6 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 	r.bulkActionProgress = progress
 	r.bulkActionMu.Unlock()
 
-	// Service availability gates depend on which action we were asked to run.
 	// Release the slot if a required service is missing so the next caller
 	// is not blocked by a failed start.
 	releaseSlot := func() {
@@ -227,42 +287,10 @@ func (r *Router) handleBulkAction(w http.ResponseWriter, req *http.Request) {
 		}
 		r.bulkActionMu.Unlock()
 	}
-	switch body.Action {
-	case BulkActionRunRules, BulkActionFetchImages:
-		if r.pipeline == nil {
-			releaseSlot()
-			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
-			return
-		}
-		// runBulkAction calls r.artistService.GetByID per artist before
-		// dispatch; a partially configured router would accept the request
-		// and then panic in the background goroutine. Gate up front.
-		if r.artistService == nil {
-			releaseSlot()
-			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
-			return
-		}
-	case BulkActionReIdentifyAuto:
-		if r.artistService == nil {
-			releaseSlot()
-			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
-			return
-		}
-	case BulkActionScan:
-		// scan reuses the rule pipeline to refresh derived artist state,
-		// so both the artist service and the pipeline must be configured.
-		// Gate both upfront; otherwise applyBulkAction would silently skip
-		// and the caller would see a misleading 202 + completed snapshot.
-		if r.artistService == nil {
-			releaseSlot()
-			writeError(w, req, http.StatusServiceUnavailable, "artist service not configured")
-			return
-		}
-		if r.pipeline == nil {
-			releaseSlot()
-			writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
-			return
-		}
+	if msg := r.requireServicesForBulkAction(body.Action); msg != "" {
+		releaseSlot()
+		writeError(w, req, http.StatusServiceUnavailable, msg)
+		return
 	}
 
 	bulkCtx := r.injectMetadataLanguages(req.Context())
@@ -600,6 +628,42 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 		// by the upfront service gate in handleBulkAction.
 		if _, err := r.pipeline.RunForArtist(ctx, a); err != nil {
 			r.logger.Warn("bulk action: scan RunForArtist failed", "artist_id", a.ID, "error", err)
+			return bulkOutcomeFailed
+		}
+		return bulkOutcomeSucceeded
+
+	case BulkActionLock:
+		// Idempotent: already-locked counts as Skipped so the operator
+		// sees a faithful "N changed / M skipped" summary instead of an
+		// inflated success count. source="user" mirrors the per-artist
+		// POST /api/v1/artists/{id}/lock handler.
+		if a.Locked {
+			return bulkOutcomeSkipped
+		}
+		if err := r.artistService.Lock(ctx, a.ID, "user"); err != nil {
+			// a.Locked is a snapshot; the artist's lock state can flip
+			// between the snapshot read and this write. Treat that race
+			// as Skipped (the bulk action's contract is "make it so",
+			// not "make it so by my hand") rather than inflating the
+			// failure count.
+			if errors.Is(err, artist.ErrAlreadyLocked) {
+				return bulkOutcomeSkipped
+			}
+			r.logger.Warn("bulk action: Lock failed", "artist_id", a.ID, "error", err)
+			return bulkOutcomeFailed
+		}
+		return bulkOutcomeSucceeded
+
+	case BulkActionUnlock:
+		if !a.Locked {
+			return bulkOutcomeSkipped
+		}
+		if err := r.artistService.Unlock(ctx, a.ID); err != nil {
+			// Same race-Skipped treatment as Lock above.
+			if errors.Is(err, artist.ErrNotLocked) {
+				return bulkOutcomeSkipped
+			}
+			r.logger.Warn("bulk action: Unlock failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed
 		}
 		return bulkOutcomeSucceeded

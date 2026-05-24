@@ -25,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -3446,5 +3447,331 @@ func TestPopulate_EmbyAndJellyfin_CollapsesIntoOneArtist(t *testing.T) {
 	}
 	if gotSources[jfLib.ID] != "jellyfin" {
 		t.Errorf("jellyfin membership source = %q, want jellyfin", gotSources[jfLib.ID])
+	}
+}
+
+// TestPublishPopulateProgress_ThrottlesAtFivePercent locks in the
+// throttling math added in PR7 for #1216. We call publishPopulateProgress
+// once per processed count and then assert only the 5%-step indices
+// (plus the final tick) made it onto the event bus.
+func TestPublishPopulateProgress_ThrottlesAtFivePercent(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	lib := &library.Library{ID: "lib-tp-1", Name: "Throttle Test"}
+	total := 100
+	for processed := 1; processed <= total; processed++ {
+		r.publishPopulateProgress(lib, processed, total)
+	}
+	// 5%-throttle on total=100 yields 20 events; deadline-poll so we
+	// don't race the bus worker on slow CI.
+	evts := rec.waitForCount(t, 20, time.Second)
+	indices := extractProcessedIndices(evts)
+	// With total=100, step=5, so we expect 5, 10, ... 100 == 20 events.
+	if len(indices) != 20 {
+		t.Errorf("running events = %d, want 20 (5%% throttle on total=100); indices=%v", len(indices), indices)
+	}
+	if len(indices) > 0 && indices[len(indices)-1] != 100 {
+		t.Errorf("last running index = %d, want 100", indices[len(indices)-1])
+	}
+}
+
+// TestPublishPopulateProgress_IndeterminateEmitsEachCall covers the
+// total<=0 branch where the first paginated response has not landed yet.
+// The throttle short-circuits and every call emits so the pill shows
+// movement even without a known total.
+func TestPublishPopulateProgress_IndeterminateEmitsEachCall(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	lib := &library.Library{ID: "lib-tp-2", Name: "Indeterminate"}
+	for processed := 1; processed <= 4; processed++ {
+		r.publishPopulateProgress(lib, processed, 0)
+	}
+	// Indeterminate emits one event per call; wait for all 4.
+	evts := rec.waitForCount(t, 4, time.Second)
+	if got := len(extractProcessedIndices(evts)); got != 4 {
+		t.Errorf("indeterminate emits = %d, want 4 (one per call)", got)
+	}
+}
+
+// TestRunPopulate_EmitsStartAndCompletedEvents drives runPopulate
+// end-to-end against a fake Emby server returning a single artist. The
+// resulting event stream must include a "running" start event (processed=0)
+// and a terminal "completed" event.
+func TestRunPopulate_EmitsStartAndCompletedEvents(t *testing.T) {
+	t.Parallel()
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{"Name":"Progress Pill Artist","Id":"emby-pp-1","Path":"/music/PP"}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Populate Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Real connection for the type switch in runPopulate to find Emby; the
+	// URL points at the fake server we just stood up so no real network
+	// dependency is introduced.
+	conn := &connection.Connection{
+		ID:     "conn-pp-1",
+		Type:   connection.TypeEmby,
+		URL:    embySrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+	// runPopulate emits kickoff + page ticks + a terminal "completed"
+	// event. Wait on the terminal event landing rather than a fixed
+	// count: page-tick rate varies with library size, so a count-based
+	// wait would short-circuit before "completed" dispatches.
+	wantOpID := populateOpID(lib.ID)
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, "completed event for "+wantOpID)
+	var sawStart, sawCompleted bool
+	for _, e := range evts {
+		if e.Data["op_id"] != wantOpID {
+			continue
+		}
+		// Kickoff event is the only one with total=0 (publishOpProgress
+		// is called with 0,0 at the top of runPopulate before any page
+		// fetch). A page tick can carry processed=0 too if the first
+		// page is empty, so total=0 is the distinguishing field.
+		if e.Data["status"] == "running" && e.Data["processed"] == 0 && e.Data["total"] == 0 {
+			sawStart = true
+		}
+		if e.Data["status"] == "completed" {
+			sawCompleted = true
+		}
+	}
+	if !sawStart {
+		t.Errorf("expected a running event with processed=0 for op_id=%s; events=%+v", wantOpID, evts)
+	}
+	if !sawCompleted {
+		t.Errorf("expected a completed event for op_id=%s; events=%+v", wantOpID, evts)
+	}
+}
+
+// TestRunPopulate_UnsupportedConnectionType_EmitsFailed exercises the
+// default branch of runPopulate's type switch + the failure-status
+// terminal-event path: an unknown connection.Type should produce a
+// "failed" op record and a "failed" pill event rather than silently
+// finishing successfully. Covers the failure-write under libraryOpsMu
+// plus the terminal r.publishOpProgress(..., "failed", "") call.
+func TestRunPopulate_UnsupportedConnectionType_EmitsFailed(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Unsupported Type Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby, // library.Source only constrains storage; runPopulate dispatches on conn.Type
+		ExternalID: "unsupported-lib-1",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	// A bogus connection type drops runPopulate into the default branch
+	// which sets popErr without calling any populateFrom*Ctx helper.
+	conn := &connection.Connection{
+		ID:   "conn-unsupported-1",
+		Type: "bogus-platform",
+		URL:  "http://127.0.0.1:1",
+	}
+	op := &LibraryOpResult{
+		LibraryID:   lib.ID,
+		LibraryName: lib.Name,
+		Operation:   "populate",
+		Status:      "running",
+		StartedAt:   time.Now().UTC(),
+	}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	// 1) op record reflects failure.
+	r.libraryOpsMu.Lock()
+	gotStatus := op.Status
+	r.libraryOpsMu.Unlock()
+	if gotStatus != "failed" {
+		t.Errorf("op.Status = %q, want \"failed\"", gotStatus)
+	}
+
+	// 2) terminal pill event carries status=failed for this op_id.
+	wantOpID := populateOpID(lib.ID)
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "failed" {
+				return true
+			}
+		}
+		return false
+	}, "failed event for "+wantOpID)
+	// Sanity: at least the kickoff + terminal landed.
+	if len(evts) < 2 {
+		t.Errorf("expected >= 2 events (kickoff + terminal failed); got %d: %+v", len(evts), evts)
+	}
+}
+
+// TestRunPopulate_TypeJellyfin_DispatchesJellyfinPath confirms the
+// TypeJellyfin branch of runPopulate's type switch is taken (covers the
+// populateFromJellyfinCtx wire-up that the original PR diff added but
+// no test exercised). The fake server returns an empty Jellyfin payload
+// so the populate completes cleanly without coupling the assertion to
+// Jellyfin's full pagination schema.
+func TestRunPopulate_TypeJellyfin_DispatchesJellyfinPath(t *testing.T) {
+	t.Parallel()
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[],"TotalRecordCount":0}`))
+	}))
+	defer jfSrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Jellyfin Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	conn := &connection.Connection{
+		ID:     "conn-jf-1",
+		Type:   connection.TypeJellyfin,
+		URL:    jfSrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	wantOpID := populateOpID(lib.ID)
+	rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, "completed event for "+wantOpID)
+}
+
+// TestRunPopulate_TypeLidarr_DispatchesLidarrPath: same coverage rationale
+// as the Jellyfin variant above, for the TypeLidarr branch. Lidarr's
+// /api/v1/artist endpoint returns a JSON array (no Items wrapper); the
+// fake server returns an empty array so the populate exits cleanly.
+func TestRunPopulate_TypeLidarr_DispatchesLidarrPath(t *testing.T) {
+	t.Parallel()
+	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer lidarrSrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	rec, stop := attachBusRecorder(t, r)
+	defer stop()
+
+	ctx := context.Background()
+	lib := &library.Library{
+		Name:       "Lidarr Pill Library",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeLidarr,
+		ExternalID: "lidarr-lib-pp",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	conn := &connection.Connection{
+		ID:     "conn-lidarr-1",
+		Type:   connection.TypeLidarr,
+		URL:    lidarrSrv.URL,
+		APIKey: "k",
+	}
+	op := &LibraryOpResult{LibraryID: lib.ID, LibraryName: lib.Name, Operation: "populate", Status: "running", StartedAt: time.Now().UTC()}
+	r.libraryOpsMu.Lock()
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	r.runPopulate(ctx, conn, lib, op)
+
+	wantOpID := populateOpID(lib.ID)
+	rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, "completed event for "+wantOpID)
+}
+
+// TestHandleLibraryOpStatus_UnknownLibraryReturnsIdle pins the
+// libraryOps-miss contract: a library ID the router has never seen an
+// op for returns 200 with status="idle" (not 404). The JS pill poller
+// depends on this -- a 404 would surface as a fetch error in the
+// client, while "idle" is the canonical "nothing is happening" signal.
+func TestHandleLibraryOpStatus_UnknownLibraryReturnsIdle(t *testing.T) {
+	t.Parallel()
+	r := testRouterForLibraryOps(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries/never-existed/operation/status", nil)
+	req.SetPathValue("libId", "never-existed")
+	w := httptest.NewRecorder()
+
+	r.handleLibraryOpStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v; raw: %s", err, w.Body.String())
+	}
+	if body["status"] != "idle" {
+		t.Errorf("status field = %q, want \"idle\"; body: %s", body["status"], w.Body.String())
 	}
 }

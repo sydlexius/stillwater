@@ -603,6 +603,50 @@ func (r *opEventRecorder) snapshot() []event.Event {
 	return out
 }
 
+// waitForCount polls the recorder until at least `want` events have
+// landed or `timeout` elapses, returning the final snapshot. The bus
+// dispatches on a worker goroutine, so a fixed time.Sleep races slow
+// CI; this gives each test a deterministic deadline instead.
+func (r *opEventRecorder) waitForCount(t *testing.T, want int, timeout time.Duration) []event.Event {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		evts := r.snapshot()
+		if len(evts) >= want {
+			return evts
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waitForCount: got %d events, want >= %d after %s", len(evts), want, timeout)
+			return evts
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// waitUntil polls the recorder until pred returns true on a snapshot
+// or a fixed 1-second deadline elapses. Use this when the exact event
+// count isn't fixed (e.g. waiting for a specific terminal state to
+// land while page ticks accumulate at an unpredictable rate). Timeout
+// is hardcoded because every current call site exercises a single-page
+// fake server that completes in milliseconds; if a slower path appears
+// it should get its own helper rather than parameterising this one.
+func (r *opEventRecorder) waitUntil(t *testing.T, pred func([]event.Event) bool, what string) []event.Event {
+	t.Helper()
+	const timeout = time.Second
+	deadline := time.Now().Add(timeout)
+	for {
+		evts := r.snapshot()
+		if pred(evts) {
+			return evts
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waitUntil(%s): predicate not satisfied after %s; events=%+v", what, timeout, evts)
+			return evts
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // attachBusRecorder swaps in a fresh event bus on the router and wires
 // an opEventRecorder subscriber for event.OperationProgress. The
 // returned cleanup stops the bus. Tests that need to assert on the
@@ -903,4 +947,281 @@ func TestRunBulkAction_TerminalCanceledWithFailures(t *testing.T) {
 	if last.Data["status"] != "canceled" {
 		t.Errorf("terminal event status = %v, want canceled (cancel supersedes failed); events=%+v", last.Data["status"], evts)
 	}
+}
+
+// TestBulkAction_Lock_Success exercises the lock branch end-to-end. A freshly
+// created artist is unlocked; one bulk-lock request must mark it locked,
+// land Succeeded=1 on the snapshot, and persist the change in the artist
+// service.
+func TestBulkAction_Lock_Success(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Lock Artist A")
+
+	payload := `{"action":"lock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	if p == nil {
+		t.Fatalf("expected progress snapshot, got nil")
+	}
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	failed := p.Failed
+	p.mu.RUnlock()
+
+	if succeeded != 1 || skipped != 0 || failed != 0 {
+		t.Errorf("counts = (succeeded=%d skipped=%d failed=%d), want (1,0,0)", succeeded, skipped, failed)
+	}
+
+	// Verify the lock landed on the persisted record.
+	got, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-fetching artist: %v", err)
+	}
+	if !got.Locked {
+		t.Errorf("artist.Locked = false after bulk lock; want true")
+	}
+}
+
+// TestBulkAction_Lock_Idempotent verifies that locking an already-locked
+// artist counts as Skipped, not Succeeded. This matches the per-artist
+// POST /artists/{id}/lock idempotency and prevents a misleading
+// "N artists locked" toast when the operator picked a mix of locked +
+// unlocked.
+func TestBulkAction_Lock_Idempotent(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Already Locked")
+	// Pre-lock the artist so the bulk path sees Locked=true.
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("pre-locking: %v", err)
+	}
+
+	payload := `{"action":"lock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 0 || skipped != 1 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (0,1) for already-locked", succeeded, skipped)
+	}
+}
+
+// TestBulkAction_Unlock_Success exercises the unlock branch end-to-end on
+// a previously-locked artist.
+func TestBulkAction_Unlock_Success(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Unlock Artist")
+	if err := artistSvc.Lock(context.Background(), a.ID, "user"); err != nil {
+		t.Fatalf("pre-locking: %v", err)
+	}
+
+	payload := `{"action":"unlock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 1 || skipped != 0 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (1,0)", succeeded, skipped)
+	}
+
+	got, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("re-fetching artist: %v", err)
+	}
+	if got.Locked {
+		t.Errorf("artist.Locked = true after bulk unlock; want false")
+	}
+}
+
+// TestBulkAction_Unlock_Idempotent verifies that unlocking a not-locked
+// artist counts as Skipped.
+func TestBulkAction_Unlock_Idempotent(t *testing.T) {
+	t.Parallel()
+	r, _, artistSvc := testRouterWithIdentify(t)
+	a := addTestArtist(t, artistSvc, "Already Unlocked")
+
+	payload := `{"action":"unlock","ids":["` + a.ID + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+
+	waitBulkActionCompleted(t, r)
+
+	r.bulkActionMu.RLock()
+	p := r.bulkActionProgress
+	r.bulkActionMu.RUnlock()
+	p.mu.RLock()
+	succeeded := p.Succeeded
+	skipped := p.Skipped
+	p.mu.RUnlock()
+	if succeeded != 0 || skipped != 1 {
+		t.Errorf("counts = (succeeded=%d skipped=%d), want (0,1) for already-unlocked", succeeded, skipped)
+	}
+}
+
+// TestBulkAction_LockUnlock_ConcurrentReject confirms a lock request returns
+// 409 when another bulk action is already in flight, matching the existing
+// singleton-slot semantics that fix-all also follows.
+func TestBulkAction_LockUnlock_ConcurrentReject(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithIdentify(t)
+	r.bulkActionMu.Lock()
+	r.bulkActionProgress = &BulkActionProgress{Status: bulkActionRunning, Action: "lock", Total: 5}
+	r.bulkActionMu.Unlock()
+
+	body := strings.NewReader(`{"action":"unlock","ids":["abc123"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-actions", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleBulkAction(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestApplyBulkAction_LockUnlockIdempotency covers both branches of the
+// race-Skipped contract added in PR7 (#1191): when a.Locked is a stale
+// snapshot, the artist service returns ErrAlreadyLocked / ErrNotLocked
+// and the bulk action must report Skipped rather than inflating the
+// failure count.
+//
+// Also pins down the early-return Skipped paths (a.Locked already in the
+// target state) and the success paths so applyBulkAction's full Lock /
+// Unlock switch is exercised.
+func TestApplyBulkAction_LockUnlockIdempotency(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	ctx := context.Background()
+
+	// Helper: clone an artist so we can pass a Locked-field snapshot
+	// independent of the service's true state, mirroring the race the
+	// bulk-action snapshot can hit.
+	withLocked := func(a *artist.Artist, locked bool) *artist.Artist {
+		cp := *a
+		cp.Locked = locked
+		return &cp
+	}
+
+	t.Run("Lock_AlreadyLocked_EarlyReturnSkipped", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Lock Already Locked Snapshot")
+		got := r.applyBulkAction(ctx, BulkActionLock, withLocked(a, true), nil)
+		if got != bulkOutcomeSkipped {
+			t.Errorf("outcome = %v, want bulkOutcomeSkipped (early return path)", got)
+		}
+	})
+
+	t.Run("Lock_Success", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Lock Success")
+		got := r.applyBulkAction(ctx, BulkActionLock, withLocked(a, false), nil)
+		if got != bulkOutcomeSucceeded {
+			t.Errorf("outcome = %v, want bulkOutcomeSucceeded", got)
+		}
+		// Service state confirms the write landed.
+		reloaded, err := artistSvc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if !reloaded.Locked {
+			t.Errorf("artist locked = false after Lock success; want true")
+		}
+	})
+
+	t.Run("Lock_RaceErrAlreadyLocked_Skipped", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Lock Race Already Locked")
+		// Lock via the service first; the service now refuses repeat Lock
+		// with artist.ErrAlreadyLocked.
+		if err := artistSvc.Lock(ctx, a.ID, "user"); err != nil {
+			t.Fatalf("priming Lock: %v", err)
+		}
+		// Pass a stale snapshot (Locked=false) so the early-return path
+		// does not short-circuit; the second service call returns
+		// ErrAlreadyLocked and must map to Skipped.
+		got := r.applyBulkAction(ctx, BulkActionLock, withLocked(a, false), nil)
+		if got != bulkOutcomeSkipped {
+			t.Errorf("outcome = %v, want bulkOutcomeSkipped (race-skipped path)", got)
+		}
+	})
+
+	t.Run("Unlock_NotLocked_EarlyReturnSkipped", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unlock Not Locked Snapshot")
+		got := r.applyBulkAction(ctx, BulkActionUnlock, withLocked(a, false), nil)
+		if got != bulkOutcomeSkipped {
+			t.Errorf("outcome = %v, want bulkOutcomeSkipped (early return path)", got)
+		}
+	})
+
+	t.Run("Unlock_Success", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unlock Success")
+		if err := artistSvc.Lock(ctx, a.ID, "user"); err != nil {
+			t.Fatalf("priming Lock: %v", err)
+		}
+		got := r.applyBulkAction(ctx, BulkActionUnlock, withLocked(a, true), nil)
+		if got != bulkOutcomeSucceeded {
+			t.Errorf("outcome = %v, want bulkOutcomeSucceeded", got)
+		}
+		reloaded, err := artistSvc.GetByID(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if reloaded.Locked {
+			t.Errorf("artist locked = true after Unlock success; want false")
+		}
+	})
+
+	t.Run("Unlock_RaceErrNotLocked_Skipped", func(t *testing.T) {
+		a := addTestArtist(t, artistSvc, "Unlock Race Not Locked")
+		// Artist is not locked. Pass a stale snapshot (Locked=true) so
+		// the early-return path does not short-circuit; the service
+		// returns ErrNotLocked which must map to Skipped.
+		got := r.applyBulkAction(ctx, BulkActionUnlock, withLocked(a, true), nil)
+		if got != bulkOutcomeSkipped {
+			t.Errorf("outcome = %v, want bulkOutcomeSkipped (race-skipped path)", got)
+		}
+	})
 }

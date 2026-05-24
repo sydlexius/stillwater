@@ -214,7 +214,6 @@ func sortLabel(ctx context.Context, sort string) string {
 	}
 }
 
-
 // orderLabel returns a short label for the sort order.
 func orderLabel(ctx context.Context, order string) string {
 	if order == "desc" {
@@ -1911,6 +1910,8 @@ templ BulkActionBar(data ArtistListData) {
 				<option value="re_identify_review">{ t(ctx, "artists.bulk.action.re_identify_review") }</option>
 				<option value="scan">{ t(ctx, "artists.bulk.action.scan") }</option>
 				<option value="fetch_images">{ t(ctx, "artists.bulk.action.fetch_images") }</option>
+				<option value="lock">{ t(ctx, "artists.bulk.action.lock") }</option>
+				<option value="unlock">{ t(ctx, "artists.bulk.action.unlock") }</option>
 			</select>
 			<button
 				id="bulk-action-apply"
@@ -2307,6 +2308,8 @@ templ BulkProgressPill() {
 		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
 		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
 		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+		data-i18n-verb-lock={ t(ctx, "artists.bulk.progress.lock") }
+		data-i18n-verb-unlock={ t(ctx, "artists.bulk.progress.unlock") }
 		data-i18n-template={ t(ctx, "artists.bulk.progress.template") }
 		data-i18n-single={ t(ctx, "artists.bulk.progress.single") }
 		data-i18n-summary={ t(ctx, "artists.bulk.summary") }
