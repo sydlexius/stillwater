@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/api/filterparams"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -25,14 +26,23 @@ type dashboardFilterParams struct {
 }
 
 // parseDashboardFilters reads search and filter parameters from the request
-// query string. Keys: search, severity, category, library, rule, fixable.
+// query string. Keys: search, severity, category, library_id, rule, fixable.
+//
+// `library_id` is the canonical key (matches the artists and compliance
+// pages); `library` is accepted as a parse-time alias so existing bookmarks
+// from the old dashboard URL form keep working. library_id wins when both
+// are present.
 func parseDashboardFilters(req *http.Request) dashboardFilterParams {
 	q := req.URL.Query()
+	libraryID := q.Get("library_id")
+	if libraryID == "" {
+		libraryID = q.Get("library")
+	}
 	return dashboardFilterParams{
 		Search:    strings.TrimSpace(q.Get("search")),
 		Severity:  q.Get("severity"),
 		Category:  q.Get("category"),
-		LibraryID: q.Get("library"),
+		LibraryID: libraryID,
 		RuleID:    q.Get("rule"),
 		Fixable:   q.Get("fixable"),
 	}
@@ -196,25 +206,16 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	// at template render time. Only set on HTMX requests (non-HTMX callers
 	// already have the correct URL in their bar).
 	if req.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Push-Url", dashboardPushURLFromFilters(r.basePath, filters))
+		filterparams.WriteHXPushURL(w, r.basePath, urlValuesFromFilters(filters))
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }
 
-// dashboardPushURLFromFilters builds the user-facing URL (rooted at basePath
-// + "/") reflecting the current filter state. The basePath prefix matters
-// when Stillwater is reverse-proxied under a sub-path.
-func dashboardPushURLFromFilters(basePath string, f dashboardFilterParams) string {
-	q := urlValuesFromFilters(f)
-	base := basePath + "/"
-	if len(q) == 0 {
-		return base
-	}
-	return base + "?" + q.Encode()
-}
-
 // urlValuesFromFilters converts a filter struct into url.Values, skipping
-// empty fields. Kept small and dedicated so the test can exercise it.
+// empty fields. Always writes the canonical `library_id` key so the URL
+// reflects the post-rename form; the legacy `library` alias is only honored
+// on parse (parseDashboardFilters). Kept small and dedicated so the test
+// can exercise it.
 func urlValuesFromFilters(f dashboardFilterParams) url.Values {
 	q := url.Values{}
 	if f.Search != "" {
@@ -227,7 +228,7 @@ func urlValuesFromFilters(f dashboardFilterParams) url.Values {
 		q.Set("category", f.Category)
 	}
 	if f.LibraryID != "" {
-		q.Set("library", f.LibraryID)
+		q.Set("library_id", f.LibraryID)
 	}
 	if f.RuleID != "" {
 		q.Set("rule", f.RuleID)

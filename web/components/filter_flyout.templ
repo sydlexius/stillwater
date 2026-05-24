@@ -240,3 +240,164 @@ script DismissFilterChip(key string, targetSel string) {
 	var sel = targetSel || '#artist-content';
 	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
 }
+
+// FilterItemSingle renders a single-select chip for filters where exactly one
+// value (or none) is active across the section. Selecting an item clears any
+// other selection sharing the same data-filter-key, then writes the chosen
+// value to the URL as `?<key>=<value>` (bare key, not the +y/-y tri-state
+// encoding used by FilterItem).
+//
+// Parameters:
+//   - flyoutID: id of the containing FilterFlyout panel
+//   - key:      URL query-param key (e.g. "severity", "library_id")
+//   - value:    URL query-param value (e.g. "error", "<lib-uuid>")
+//   - label:    human-readable label (e.g. "Error", "Music")
+//   - selected: true when this chip is the current selection
+//   - count:    optional facet count rendered as a muted badge; omit when zero
+templ FilterItemSingle(flyoutID, key, value, label string, selected bool, count int) {
+	<button
+		type="button"
+		class={ "sw-filter-item", templ.KV("include", selected) }
+		data-filter-flyout={ flyoutID }
+		data-filter-key={ key }
+		data-filter-value={ value }
+		data-filter-mode="single"
+		data-filter-selected={ filterItemSelectedAttr(selected) }
+		aria-pressed={ filterItemSelectedAttr(selected) }
+		onclick="swFilterFlyout.selectSingle(this)"
+	>
+		if selected {
+			<span class="sw-filter-item-icon" aria-hidden="true">
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+			</span>
+		}
+		<span class="sw-filter-item-label">{ label }</span>
+		if count > 0 {
+			<span class="ml-1 text-xs opacity-60">{ strconv.Itoa(count) }</span>
+		}
+	</button>
+}
+
+// filterItemSelectedAttr returns "true"/"false" for the data-filter-selected
+// and aria-pressed attributes on a single-select chip.
+func filterItemSelectedAttr(selected bool) string {
+	if selected {
+		return "true"
+	}
+	return "false"
+}
+
+// FilterRange renders a paired min/max number-input control inside the flyout.
+// The min input writes `?<key>_min`, the max input writes `?<key>_max` on apply.
+// Empty inputs clear the corresponding URL param.
+//
+// Parameters:
+//   - flyoutID: id of the containing FilterFlyout panel
+//   - key:      URL query-param key prefix (e.g. "health" writes health_min / health_max)
+//   - label:    visible label rendered above the input pair
+//   - min:      current min value; 0 renders as empty
+//   - max:      current max value; 0 renders as empty
+templ FilterRange(flyoutID, key, label string, min, max int) {
+	<div class="sw-filter-section">
+		<div class="sw-filter-section-legend">{ label }</div>
+		<div class="flex items-center gap-2"
+			data-filter-flyout={ flyoutID }
+			data-filter-range-key={ key }
+		>
+			<input
+				type="number"
+				min="0"
+				max="100"
+				class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				data-filter-range-bound="min"
+				data-filter-key={ key + "_min" }
+				value={ filterRangeValue(min) }
+				aria-label={ label + " min" }
+			/>
+			<span class="text-gray-400 text-sm">-</span>
+			<input
+				type="number"
+				min="0"
+				max="100"
+				class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				data-filter-range-bound="max"
+				data-filter-key={ key + "_max" }
+				value={ filterRangeValue(max) }
+				aria-label={ label + " max" }
+			/>
+		</div>
+	</div>
+}
+
+// filterRangeValue renders an int as its decimal string, or empty for zero
+// (the "no bound" sentinel) so blank inputs do not pre-populate with "0".
+func filterRangeValue(v int) string {
+	if v <= 0 {
+		return ""
+	}
+	return strconv.Itoa(v)
+}
+
+// FilterChipSpec describes one active filter chip. Label is the visible text;
+// Key is the URL query-param key the dismiss button removes; TargetSel is the
+// CSS selector for the HTMX content region to reload on dismiss.
+type FilterChipSpec struct {
+	Label     string
+	Key       string
+	TargetSel string
+}
+
+// ActiveFilters renders the row of removable filter chips that sits below the
+// search bar. Empty when chips is empty (caller may still wrap conditionally).
+// clearAllHref is an href used by the "Clear all" anchor when set; an empty
+// string omits the link. targetSel routes the HTMX reload triggered by each
+// chip's dismiss button.
+templ ActiveFilters(targetSel, clearAllHref, clearAllLabel, headerLabel string, chips []FilterChipSpec) {
+	if len(chips) > 0 {
+		<div class="flex flex-wrap items-center gap-1.5 mt-2 px-1" aria-label={ headerLabel }>
+			if headerLabel != "" {
+				<span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">{ headerLabel }</span>
+			}
+			for _, c := range chips {
+				@FilterChip(c.Label, c.Key, targetSelOr(c.TargetSel, targetSel))
+			}
+			if clearAllHref != "" && clearAllLabel != "" {
+				<a
+					href={ templ.SafeURL(clearAllHref) }
+					class="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-1"
+				>
+					{ clearAllLabel }
+				</a>
+			}
+		</div>
+	}
+}
+
+// targetSelOr returns chipTarget when non-empty, otherwise fallback. Lets a
+// FilterChipSpec override the row-wide default on a per-chip basis.
+func targetSelOr(chipTarget, fallback string) string {
+	if chipTarget != "" {
+		return chipTarget
+	}
+	return fallback
+}
+
+// FilterChip renders one removable chip. Clicking the X dismisses by removing
+// the named URL key and re-fetching targetSel via HTMX. label is the visible
+// text. The DismissFilterChip script (in this package) handles URL surgery
+// plus the htmx.ajax call.
+templ FilterChip(label, key, targetSel string) {
+	<span class="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300">
+		{ label }
+		<button
+			type="button"
+			class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+			aria-label={ "Remove filter: " + label }
+			onclick={ DismissFilterChip(key, targetSel) }
+		>
+			<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+				<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
+			</svg>
+		</button>
+	</span>
+}

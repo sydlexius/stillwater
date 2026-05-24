@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -210,84 +211,28 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					/>
 				</div>
 				<div class="flex flex-wrap items-center gap-3">
-					if len(data.Libraries) > 1 {
-						<select
-							name="library_id"
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="" selected?={ data.LibraryID == "" }>{ t(ctx, "common.all_libraries") }</option>
-							for _, lib := range data.Libraries {
-								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
-							}
-						</select>
-					}
-					<select
-						name="status"
-						hx-get="/reports/compliance"
-						hx-trigger="change"
-						hx-target="#compliance-table"
-						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					<button
+						id="compliance-filter-trigger"
+						type="button"
+						class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600", complianceActiveFilterCount(data) > 0), templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700", complianceActiveFilterCount(data) == 0) }
+						data-active-classes="border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
+						data-neutral-classes="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+						data-badge-classes="sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
+						aria-label={ t(ctx, "common.open_filter_panel") }
+						aria-expanded="false"
+						aria-controls="compliance-filter-flyout"
+						onclick={ components.OpenFilterFlyout("compliance-filter-flyout") }
 					>
-						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>{ t(ctx, "report.all_artists") }</option>
-						<option value="compliant" selected?={ data.Status == "compliant" }>{ t(ctx, "report.compliant") }</option>
-						<option value="non_compliant" selected?={ data.Status == "non_compliant" }>{ t(ctx, "report.non_compliant") }</option>
-					</select>
-					<select
-						name="filter"
-						hx-get="/reports/compliance"
-						hx-trigger="change"
-						hx-target="#compliance-table"
-						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='status'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						<option value="" selected?={ data.Filter == "" }>{ t(ctx, "report.no_filter") }</option>
-						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>{ t(ctx, "report.missing_metadata") }</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("thumb", data.ProfileName)) }</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("fanart", data.ProfileName)) }</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("logo", data.ProfileName)) }</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("banner", data.ProfileName)) }</option>
-						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>{ t(ctx, "report.missing_mbid") }</option>
-					</select>
-					<!-- Health score range -->
-					<div class="flex items-center gap-1">
-						<input
-							type="number"
-							name="health_min"
-							min="0"
-							max="100"
-							placeholder={ t(ctx, "report.min_pct") }
-							value={ intOrEmpty(data.HealthScoreMin) }
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_max']"
-							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-						<span class="text-gray-400 text-sm">-</span>
-						<input
-							type="number"
-							name="health_max"
-							min="0"
-							max="100"
-							placeholder={ t(ctx, "report.max_pct") }
-							value={ intOrEmpty(data.HealthScoreMax) }
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min']"
-							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-					</div>
+						<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+						</svg>
+						<span>{ t(ctx, "common.filters") }</span>
+						if complianceActiveFilterCount(data) > 0 {
+							<span class="sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900">
+								{ fmt.Sprintf("%d", complianceActiveFilterCount(data)) }
+							</span>
+						}
+					</button>
 					@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
 						{Key: "artist", Label: "Artist", Required: true},
 						{Key: "score", Label: "Score"},
@@ -309,10 +254,17 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					</a>
 				</div>
 			</div>
+			<!-- Hidden inputs carry filter state so the search input's hx-include can forward it -->
+			<input type="hidden" name="status" value={ data.Status }/>
+			<input type="hidden" name="filter" value={ data.Filter }/>
+			<input type="hidden" name="library_id" value={ data.LibraryID }/>
+			<input type="hidden" name="health_min" value={ intOrEmpty(data.HealthScoreMin) }/>
+			<input type="hidden" name="health_max" value={ intOrEmpty(data.HealthScoreMax) }/>
 			<!-- Hidden sort inputs -->
 			<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
 			<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
 			@ComplianceTable(data)
+			@ComplianceFilterFlyout(data)
 		</div>
 		<!-- Bulk action bar (hidden until selections exist) -->
 		<div
@@ -406,6 +358,8 @@ func intOrEmpty(v int) string {
 // ComplianceTable is the HTMX-swappable table fragment.
 templ ComplianceTable(data ComplianceData) {
 	<div id="compliance-table">
+		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
+		@components.ActiveFilters("#compliance-table", complianceClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), complianceActiveChips(ctx, data))
 		<div class="overflow-x-auto">
 			<table id="compliance-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -976,5 +930,149 @@ templ complianceScript() {
 		document.body.addEventListener('htmx:afterSettle', function() {
 			updateBulkBar();
 		});
+
+		// Reload the compliance table when the filter flyout applies filters.
+		// The shared swFilterFlyout dispatches sw:filter-applied on the target
+		// but does not itself issue the HTMX request.
+		document.body.addEventListener('sw:filter-applied', function(evt) {
+			if (!evt.target || evt.target.id !== 'compliance-table') return;
+			htmx.ajax('GET', '/reports/compliance' + window.location.search, {target: '#compliance-table', swap: 'outerHTML'});
+		});
+
+		// Hydrate filter flyout state from URL on first paint.
+		document.addEventListener('DOMContentLoaded', function() {
+			if (window.swFilterFlyout) {
+				swFilterFlyout.initFromURL('compliance-filter-flyout');
+			}
+		});
 	</script>
+}
+
+// complianceActiveFilterCount counts how many compliance filter dimensions
+// currently have a value set. Counted: status (when not empty/all), filter,
+// library_id, and each present health bound. Search is not counted because it
+// renders as the search input, not a chip.
+func complianceActiveFilterCount(data ComplianceData) int {
+	n := 0
+	if data.Status != "" && data.Status != "all" {
+		n++
+	}
+	if data.Filter != "" {
+		n++
+	}
+	if data.LibraryID != "" {
+		n++
+	}
+	if data.HealthScoreMin > 0 {
+		n++
+	}
+	if data.HealthScoreMax > 0 {
+		n++
+	}
+	return n
+}
+
+// complianceActiveChips returns the slice of FilterChipSpec entries that
+// reflect the currently active compliance filters. Each chip's Key matches
+// the URL query param the shared DismissFilterChip script removes on click.
+func complianceActiveChips(ctx context.Context, data ComplianceData) []components.FilterChipSpec {
+	chips := make([]components.FilterChipSpec, 0, 5)
+	if data.Status != "" && data.Status != "all" {
+		chips = append(chips, components.FilterChipSpec{Key: "status", Label: complianceStatusLabel(ctx, data.Status)})
+	}
+	if data.Filter != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "filter", Label: complianceFilterLabel(ctx, data.Filter, data.ProfileName)})
+	}
+	if data.LibraryID != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "library_id", Label: complianceLibraryName(data.Libraries, data.LibraryID)})
+	}
+	if data.HealthScoreMin > 0 {
+		chips = append(chips, components.FilterChipSpec{Key: "health_min", Label: tf(ctx, "report.health_min_chip", data.HealthScoreMin)})
+	}
+	if data.HealthScoreMax > 0 {
+		chips = append(chips, components.FilterChipSpec{Key: "health_max", Label: tf(ctx, "report.health_max_chip", data.HealthScoreMax)})
+	}
+	return chips
+}
+
+// complianceClearAllHref returns the href for the Clear All anchor in the
+// active-filters row. Empty when no filters are active so the link is omitted.
+func complianceClearAllHref(data ComplianceData) string {
+	if complianceActiveFilterCount(data) == 0 {
+		return ""
+	}
+	return data.BasePath + "/reports/compliance"
+}
+
+// complianceStatusLabel returns the localized label for a status chip.
+func complianceStatusLabel(ctx context.Context, status string) string {
+	switch status {
+	case "compliant":
+		return t(ctx, "report.compliant")
+	case "non_compliant":
+		return t(ctx, "report.non_compliant")
+	default:
+		return status
+	}
+}
+
+// complianceFilterLabel returns the localized label for a filter chip.
+// profileName picks the correct image-term wording per platform profile.
+func complianceFilterLabel(ctx context.Context, filter, profileName string) string {
+	switch filter {
+	case "missing_nfo":
+		return t(ctx, "report.missing_metadata")
+	case "missing_thumb":
+		return tf(ctx, "report.missing_type", img.ImageTermFor("thumb", profileName))
+	case "missing_fanart":
+		return tf(ctx, "report.missing_type", img.ImageTermFor("fanart", profileName))
+	case "missing_logo":
+		return tf(ctx, "report.missing_type", img.ImageTermFor("logo", profileName))
+	case "missing_banner":
+		return tf(ctx, "report.missing_type", img.ImageTermFor("banner", profileName))
+	case "missing_mbid":
+		return t(ctx, "report.missing_mbid")
+	default:
+		return filter
+	}
+}
+
+// complianceLibraryName resolves a library ID to its display name. Falls back
+// to the ID when the library is unknown (e.g. deleted after the URL was bookmarked).
+func complianceLibraryName(libs []library.Library, id string) string {
+	for _, l := range libs {
+		if l.ID == id {
+			return l.Name
+		}
+	}
+	return id
+}
+
+// ComplianceFilterFlyout renders the slide-in filter panel for the compliance
+// report. Single-select dimensions (status, filter, library_id) use the
+// shared FilterItemSingle component; the health score range uses FilterRange.
+// URL state is written on Apply by the shared filter-flyout.js.
+templ ComplianceFilterFlyout(data ComplianceData) {
+	@components.FilterFlyout("compliance-filter-flyout", t(ctx, "report.filters_title"), "compliance-filter-trigger", complianceActiveFilterCount(data), "#compliance-table") {
+		@components.FilterSection(t(ctx, "report.status_legend")) {
+			@components.FilterItemSingle("compliance-filter-flyout", "status", "compliant", t(ctx, "report.compliant"), data.Status == "compliant", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "status", "non_compliant", t(ctx, "report.non_compliant"), data.Status == "non_compliant", 0)
+		}
+		@components.FilterSection(t(ctx, "report.filter_legend")) {
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_nfo", t(ctx, "report.missing_metadata"), data.Filter == "missing_nfo", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_thumb", tf(ctx, "report.missing_type", img.ImageTermFor("thumb", data.ProfileName)), data.Filter == "missing_thumb", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_fanart", tf(ctx, "report.missing_type", img.ImageTermFor("fanart", data.ProfileName)), data.Filter == "missing_fanart", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_logo", tf(ctx, "report.missing_type", img.ImageTermFor("logo", data.ProfileName)), data.Filter == "missing_logo", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_banner", tf(ctx, "report.missing_type", img.ImageTermFor("banner", data.ProfileName)), data.Filter == "missing_banner", 0)
+			@components.FilterItemSingle("compliance-filter-flyout", "filter", "missing_mbid", t(ctx, "report.missing_mbid"), data.Filter == "missing_mbid", 0)
+		}
+		if len(data.Libraries) > 1 {
+			@components.FilterSection(t(ctx, "common.library")) {
+				for _, lib := range data.Libraries {
+					@components.FilterItemSingle("compliance-filter-flyout", "library_id", lib.ID, lib.Name, data.LibraryID == lib.ID, 0)
+				}
+			}
+		}
+		@components.FilterRange("compliance-filter-flyout", "health", t(ctx, "report.health_range_legend"), data.HealthScoreMin, data.HealthScoreMax)
+	}
 }

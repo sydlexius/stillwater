@@ -151,74 +151,76 @@ templ IndexPage(assets AssetPaths, initialQuery string) {
 				</div>
 			</div>
 		</aside>
-		// Dashboard panels controller: single mutex for the filter flyout and
-		// activity drawer, plus the initial-load query-param forwarder. Both
-		// panels reuse the sw-filter-flyout CSS for the slide-in animation.
+		// Dashboard panels controller. The filter flyout itself is managed by
+		// the shared filter-flyout.js (open/close/apply/clearAll/initFromURL);
+		// this controller layers on the activity-drawer (a separate slideout
+		// reusing the sw-filter-flyout CSS) and the mutual-exclusion
+		// behavior: opening one closes the other.
 		<script>
 			(function() {
 				var FILTER_ID = 'dashboard-filter-flyout';
 				var ACTIVITY_ID = 'activity-drawer';
-				var FILTER_TRIGGER = 'dashboard-filters-trigger';
 				var ACTIVITY_TRIGGER = 'activity-drawer-trigger';
 
 				function panel(id) { return document.getElementById(id); }
 				function isOpen(el) { return el && el.classList.contains('sw-filter-flyout--open'); }
 
-				function openPanel(id, triggerID) {
-					closeAll();
-					var el = panel(id);
+				function openActivity() {
+					closeFilter();
+					var el = panel(ACTIVITY_ID);
 					if (!el) return;
 					el.classList.add('sw-filter-flyout--open');
 					el.setAttribute('aria-hidden', 'false');
 					el.removeAttribute('inert');
-					var trigger = document.getElementById(triggerID);
+					var trigger = document.getElementById(ACTIVITY_TRIGGER);
 					if (trigger) trigger.setAttribute('aria-expanded', 'true');
-					if (id === ACTIVITY_ID) {
-						document.body.dispatchEvent(new CustomEvent('sw:activity-drawer-open'));
-					}
+					document.body.dispatchEvent(new CustomEvent('sw:activity-drawer-open'));
 				}
 
-				function closePanel(id, triggerID) {
-					var el = panel(id);
+				function closeActivity() {
+					var el = panel(ACTIVITY_ID);
 					if (!el) return;
 					el.classList.remove('sw-filter-flyout--open');
 					el.setAttribute('aria-hidden', 'true');
 					el.setAttribute('inert', '');
-					var trigger = document.getElementById(triggerID);
+					var trigger = document.getElementById(ACTIVITY_TRIGGER);
 					if (trigger) trigger.setAttribute('aria-expanded', 'false');
 				}
 
-				function closeAll() {
-					closePanel(FILTER_ID, FILTER_TRIGGER);
-					closePanel(ACTIVITY_ID, ACTIVITY_TRIGGER);
-				}
-
-				function togglePanel(id, triggerID) {
-					if (isOpen(panel(id))) {
-						closePanel(id, triggerID);
-					} else {
-						openPanel(id, triggerID);
+				function closeFilter() {
+					if (window.swFilterFlyout && typeof window.swFilterFlyout.close === 'function') {
+						window.swFilterFlyout.close(FILTER_ID);
 					}
 				}
 
-				// Escape key closes whichever panel is open.
-				document.addEventListener('keydown', function(e) {
-					if (e.key === 'Escape') {
-						if (isOpen(panel(FILTER_ID)) || isOpen(panel(ACTIVITY_ID))) closeAll();
+				function openFilter() {
+					closeActivity();
+					if (window.swFilterFlyout && typeof window.swFilterFlyout.open === 'function') {
+						window.swFilterFlyout.open(FILTER_ID);
 					}
-				});
+				}
 
 				window.swDashboardPanels = {
-					toggleFilters: function() { togglePanel(FILTER_ID, FILTER_TRIGGER); },
-					toggleActivity: function() { togglePanel(ACTIVITY_ID, ACTIVITY_TRIGGER); },
-					close: closeAll
+					toggleFilters: function() {
+						if (isOpen(panel(FILTER_ID))) closeFilter(); else openFilter();
+					},
+					toggleActivity: function() {
+						if (isOpen(panel(ACTIVITY_ID))) closeActivity(); else openActivity();
+					},
+					close: function() { closeFilter(); closeActivity(); }
 				};
 
+				// Escape on activity drawer (the shared filter flyout JS handles
+				// its own Escape).
+				document.addEventListener('keydown', function(e) {
+					if (e.key === 'Escape' && isOpen(panel(ACTIVITY_ID))) closeActivity();
+				});
+
 				// The filter flyout is rendered inside the #action-queue swap
-				// target, so clicking a filter chip would otherwise close the
-				// panel when the fresh HTML is rendered in its closed state.
-				// Capture the open state before each swap and re-apply it
-				// after so the panel remains open while filtering.
+				// target, so a chip-driven swap would otherwise lose its open
+				// state when fresh closed HTML renders. Capture the open state
+				// before each swap and re-apply it (plus re-hydrate URL state)
+				// after so the panel stays open while filtering.
 				var filterWasOpen = false;
 				document.body.addEventListener('htmx:beforeSwap', function(evt) {
 					var target = evt.detail && evt.detail.target;
@@ -228,8 +230,32 @@ templ IndexPage(assets AssetPaths, initialQuery string) {
 				document.body.addEventListener('htmx:afterSettle', function(evt) {
 					var target = evt.detail && evt.detail.target;
 					if (!target || target.id !== 'action-queue') return;
-					if (filterWasOpen) openPanel(FILTER_ID, FILTER_TRIGGER);
+					if (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {
+						window.swFilterFlyout.initFromURL(FILTER_ID);
+					}
+					if (filterWasOpen) openFilter();
 					filterWasOpen = false;
+				});
+
+				// Reload the action queue when the filter flyout applies filters.
+				// The shared swFilterFlyout dispatches sw:filter-applied on the
+				// target element but does not itself issue the HTMX request, so
+				// the listener fetches the URL and swaps #action-queue's contents.
+				document.body.addEventListener('sw:filter-applied', function(evt) {
+					if (!evt.target || evt.target.id !== 'action-queue') return;
+					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = bpMeta ? bpMeta.content : '';
+					// The dashboard endpoint is /dashboard/actions, not the
+					// user-facing /?... route. window.location.search is the
+					// filter params; map them onto the actions endpoint.
+					htmx.ajax('GET', '/dashboard/actions' + window.location.search, {target: '#action-queue', swap: 'innerHTML'});
+				});
+
+				// Hydrate single-select / range state from URL on first paint.
+				document.addEventListener('DOMContentLoaded', function() {
+					if (window.swFilterFlyout && typeof window.swFilterFlyout.initFromURL === 'function') {
+						window.swFilterFlyout.initFromURL(FILTER_ID);
+					}
 				});
 
 				// Poll the activity feed every 10 seconds while the drawer is

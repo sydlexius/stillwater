@@ -4,12 +4,15 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -535,9 +538,13 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		totalPages++
 	}
 
-	libs, err := r.libraryService.List(ctx)
-	if err != nil {
-		r.logger.Warn("listing libraries for compliance page", "error", err)
+	var libs []library.Library
+	if r.libraryService != nil {
+		var err error
+		libs, err = r.libraryService.List(ctx)
+		if err != nil {
+			r.logger.Warn("listing libraries for compliance page", "error", err)
+		}
 	}
 
 	data := templates.ComplianceData{
@@ -572,10 +579,48 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if isHTMXRequest(req) {
+		vals := complianceURLValues(params, status, req.URL.Query().Get("filter"))
+		pushURL := r.basePath + "/reports/compliance"
+		if len(vals) > 0 {
+			pushURL += "?" + vals.Encode()
+		}
+		w.Header().Set("HX-Push-Url", pushURL)
 		renderTempl(w, req, templates.ComplianceTable(data))
 		return
 	}
 	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
+}
+
+// complianceURLValues converts the compliance list params + raw status/filter
+// query values into url.Values for HX-Push-Url. Only writes the canonical
+// keys the compliance page reads back on next load.
+func complianceURLValues(params artist.ListParams, status, filter string) url.Values {
+	q := url.Values{}
+	if params.Search != "" {
+		q.Set("search", params.Search)
+	}
+	if status != "" && status != "all" {
+		q.Set("status", status)
+	}
+	if filter != "" {
+		q.Set("filter", filter)
+	}
+	if params.LibraryID != "" {
+		q.Set("library_id", params.LibraryID)
+	}
+	if params.HealthScoreMin > 0 {
+		q.Set("health_min", strconv.Itoa(params.HealthScoreMin))
+	}
+	if params.HealthScoreMax > 0 {
+		q.Set("health_max", strconv.Itoa(params.HealthScoreMax))
+	}
+	if params.Sort != "" && params.Sort != "name" {
+		q.Set("sort", params.Sort)
+	}
+	if params.Order != "" && params.Order != "asc" {
+		q.Set("order", params.Order)
+	}
+	return q
 }
 
 func toTemplateViolations(vs []violationSummary) []templates.ViolationSummaryData {
