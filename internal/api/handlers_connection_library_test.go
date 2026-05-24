@@ -25,6 +25,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -3464,10 +3465,9 @@ func TestPublishPopulateProgress_ThrottlesAtFivePercent(t *testing.T) {
 	for processed := 1; processed <= total; processed++ {
 		r.publishPopulateProgress(lib, processed, total)
 	}
-	// Allow the bus worker to drain.
-	time.Sleep(50 * time.Millisecond)
-
-	evts := rec.snapshot()
+	// 5%-throttle on total=100 yields 20 events; deadline-poll so we
+	// don't race the bus worker on slow CI.
+	evts := rec.waitForCount(t, 20, time.Second)
 	indices := extractProcessedIndices(evts)
 	// With total=100, step=5, so we expect 5, 10, ... 100 == 20 events.
 	if len(indices) != 20 {
@@ -3492,9 +3492,8 @@ func TestPublishPopulateProgress_IndeterminateEmitsEachCall(t *testing.T) {
 	for processed := 1; processed <= 4; processed++ {
 		r.publishPopulateProgress(lib, processed, 0)
 	}
-	time.Sleep(50 * time.Millisecond)
-
-	evts := rec.snapshot()
+	// Indeterminate emits one event per call; wait for all 4.
+	evts := rec.waitForCount(t, 4, time.Second)
 	if got := len(extractProcessedIndices(evts)); got != 4 {
 		t.Errorf("indeterminate emits = %d, want 4 (one per call)", got)
 	}
@@ -3545,20 +3544,29 @@ func TestRunPopulate_EmitsStartAndCompletedEvents(t *testing.T) {
 	r.libraryOpsMu.Unlock()
 
 	r.runPopulate(ctx, conn, lib, op)
-	// scheduleOpCleanup launches; pause briefly so the bus dispatches.
-	time.Sleep(100 * time.Millisecond)
-
-	evts := rec.snapshot()
-	if len(evts) == 0 {
-		t.Fatal("no operation.progress events recorded")
-	}
+	// runPopulate emits kickoff + page ticks + a terminal "completed"
+	// event. Wait on the terminal event landing rather than a fixed
+	// count: page-tick rate varies with library size, so a count-based
+	// wait would short-circuit before "completed" dispatches.
 	wantOpID := populateOpID(lib.ID)
+	evts := rec.waitUntil(t, func(evts []event.Event) bool {
+		for _, e := range evts {
+			if e.Data["op_id"] == wantOpID && e.Data["status"] == "completed" {
+				return true
+			}
+		}
+		return false
+	}, time.Second, "completed event for "+wantOpID)
 	var sawStart, sawCompleted bool
 	for _, e := range evts {
 		if e.Data["op_id"] != wantOpID {
 			continue
 		}
-		if e.Data["status"] == "running" && e.Data["processed"] == 0 {
+		// Kickoff event is the only one with total=0 (publishOpProgress
+		// is called with 0,0 at the top of runPopulate before any page
+		// fetch). A page tick can carry processed=0 too if the first
+		// page is empty, so total=0 is the distinguishing field.
+		if e.Data["status"] == "running" && e.Data["processed"] == 0 && e.Data["total"] == 0 {
 			sawStart = true
 		}
 		if e.Data["status"] == "completed" {

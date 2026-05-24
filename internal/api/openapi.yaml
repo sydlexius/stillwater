@@ -5144,7 +5144,7 @@ paths:
                     enum: [idle, running, completed, failed, canceled]
                   action:
                     type: string
-                    enum: [run_rules, re_identify_auto, scan, fetch_images]
+                    enum: [run_rules, re_identify_auto, scan, fetch_images, lock, unlock]
                     description: >
                       Canonical emitted action value. The legacy alias
                       re_identify is normalized on entry by

@@ -603,6 +603,46 @@ func (r *opEventRecorder) snapshot() []event.Event {
 	return out
 }
 
+// waitForCount polls the recorder until at least `want` events have
+// landed or `timeout` elapses, returning the final snapshot. The bus
+// dispatches on a worker goroutine, so a fixed time.Sleep races slow
+// CI; this gives each test a deterministic deadline instead.
+func (r *opEventRecorder) waitForCount(t *testing.T, want int, timeout time.Duration) []event.Event {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		evts := r.snapshot()
+		if len(evts) >= want {
+			return evts
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waitForCount: got %d events, want >= %d after %s", len(evts), want, timeout)
+			return evts
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// waitUntil polls the recorder until pred returns true on a snapshot
+// or timeout elapses. Use this when the exact event count isn't fixed
+// (e.g. waiting for a specific terminal state to land while page
+// ticks accumulate at an unpredictable rate).
+func (r *opEventRecorder) waitUntil(t *testing.T, pred func([]event.Event) bool, timeout time.Duration, what string) []event.Event {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		evts := r.snapshot()
+		if pred(evts) {
+			return evts
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waitUntil(%s): predicate not satisfied after %s; events=%+v", what, timeout, evts)
+			return evts
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // attachBusRecorder swaps in a fresh event bus on the router and wires
 // an opEventRecorder subscriber for event.OperationProgress. The
 // returned cleanup stops the bus. Tests that need to assert on the

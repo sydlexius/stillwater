@@ -630,6 +630,14 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 			return bulkOutcomeSkipped
 		}
 		if err := r.artistService.Lock(ctx, a.ID, "user"); err != nil {
+			// a.Locked is a snapshot; the artist's lock state can flip
+			// between the snapshot read and this write. Treat that race
+			// as Skipped (the bulk action's contract is "make it so",
+			// not "make it so by my hand") rather than inflating the
+			// failure count.
+			if errors.Is(err, artist.ErrAlreadyLocked) {
+				return bulkOutcomeSkipped
+			}
 			r.logger.Warn("bulk action: Lock failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed
 		}
@@ -640,6 +648,10 @@ func (r *Router) applyBulkAction(ctx context.Context, action string, a *artist.A
 			return bulkOutcomeSkipped
 		}
 		if err := r.artistService.Unlock(ctx, a.ID); err != nil {
+			// Same race-Skipped treatment as Lock above.
+			if errors.Is(err, artist.ErrNotLocked) {
+				return bulkOutcomeSkipped
+			}
 			r.logger.Warn("bulk action: Unlock failed", "artist_id", a.ID, "error", err)
 			return bulkOutcomeFailed
 		}
