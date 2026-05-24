@@ -31,7 +31,7 @@ The scan starts in the background. The library row shows a spinner; an event ban
 A manual library row has no per-row **Scan Library** button. The supported triggers for a manual library today are:
 
 - **Filesystem watching.** Turn the row's **Filesystem monitoring mode** dropdown on (Watch, Poll, or Watch + Poll). Stillwater scans automatically when the watcher detects a new or removed artist directory -- see [Schedule recurring scans](#schedule-recurring-scans) below.
-- **Per-artist bulk scan.** Open **Artists** in the sidebar, optionally filter to a subset, select the artists you want to (re)scan, then pick **Scan** in the bulk-action menu. This re-scans the selected artists' directories.
+- **Per-artist bulk scan.** Open **Artists** in the sidebar, optionally filter to a subset, select the artists you want to (re)scan, then pick **Scan** in the bulk-action menu. This re-scans the selected artists' directories. The same menu also offers **Lock** and **Unlock** for changing the artist-lock state in bulk.
 
 The scan is **structure-incremental** in both cases -- it walks every artist directory in the library, but it only does the expensive metadata-detect work on directories that don't already have an artist record. So a library with 4,000 artists where nothing has moved still gets walked, but the per-directory work collapses to "look up the existing artist by path" and finishes quickly. New or moved directories pay the full detect cost; existing ones are essentially free.
 
