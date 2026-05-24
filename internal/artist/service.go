@@ -149,6 +149,14 @@ type Service struct {
 	// user-driven operation, so the coarse single-mutex contention cost is
 	// negligible.
 	renameMu sync.Mutex
+
+	// platformSyncer, when non-nil, is invoked after a successful directory
+	// rename so connected platforms (Emby/Jellyfin/Lidarr) pick up the new
+	// path. Wired via SetPlatformRenameSyncer at startup; tests that do not
+	// exercise platform sync leave it nil and the rename returns an empty
+	// platforms slice. The artist package owns only the interface so it
+	// does not need to import internal/connection or internal/publish.
+	platformSyncer PlatformRenameSyncer
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that
@@ -698,22 +706,26 @@ var (
 // in-memory Artist passed in to the caller is not mutated; callers should
 // re-fetch via GetByID if they need the updated value.
 //
-// Side effects intentionally NOT performed here (caller's responsibility):
-//   - Re-issuing platform-id mappings on Emby/Jellyfin so connected platforms
-//     pick up the new directory. The API handler (or a future workflow)
-//     drives that step.
-//   - Rule re-evaluation. The caller's normal Update path stamps dirty_since;
-//     for a path-only change we do the same so the rule pipeline picks it up
-//     on the next sweep.
-func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName string) (newPath string, err error) {
+// After the on-disk + DB rename commits, the configured PlatformRenameSyncer
+// (if any) is invoked to re-issue the artist's path on every connected
+// platform (Emby/Jellyfin/Lidarr). Per-platform failures land in the
+// returned platforms slice as Result == PlatformRemapFailed and do NOT roll
+// back the rename: the local FS + DB are already consistent, and a stale
+// item-to-path mapping on a peer is a recoverable condition (#1222, #1231).
+// A nil syncer yields a nil platforms slice. When err is non-nil platforms
+// is always nil; callers do not need to inspect both.
+//
+// Rule re-evaluation: stamps dirty_since via markDirtyBestEffort so the rule
+// pipeline picks up the path change on the next sweep.
+func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName string) (newPath string, platforms []PlatformRemapResult, err error) {
 	newDirName = strings.TrimSpace(newDirName)
 	if newDirName == "" || newDirName == "." || newDirName == ".." {
-		return "", ErrRenameInvalidName
+		return "", nil, ErrRenameInvalidName
 	}
 	// Reject any path separator (forward or back slash) so callers cannot
 	// escape the parent directory by smuggling a relative path through.
 	if strings.ContainsAny(newDirName, `/\`) {
-		return "", ErrRenameInvalidName
+		return "", nil, ErrRenameInvalidName
 	}
 	// filepath.IsLocal is the canonical path-traversal sanitizer (Go 1.20+):
 	// it rejects absolute paths, paths containing "..", and reserved Windows
@@ -722,7 +734,7 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// from this user input through filesystem.RenameDirAtomic into the
 	// downstream os.Stat / os.Rename / copyFile sinks.
 	if !filepath.IsLocal(newDirName) {
-		return "", ErrRenameInvalidName
+		return "", nil, ErrRenameInvalidName
 	}
 
 	// Path-only rename: only Locked, Path, and Name are read from the
@@ -733,13 +745,13 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// reads and two failure points per rename.
 	a, err := s.artists.GetByID(ctx, artistID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if a.Locked {
-		return "", ErrRenameLocked
+		return "", nil, ErrRenameLocked
 	}
 	if strings.TrimSpace(a.Path) == "" {
-		return "", ErrRenameNoPath
+		return "", nil, ErrRenameNoPath
 	}
 
 	parent := filepath.Dir(a.Path)
@@ -752,7 +764,7 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// explicitly here satisfies the path-traversal lint and guards against
 	// any future regression of those input-validation steps.
 	if filepath.Dir(newPath) != parent {
-		return "", ErrRenameInvalidName
+		return "", nil, ErrRenameInvalidName
 	}
 
 	// Short-circuit when the names match exactly. We do not attempt a
@@ -760,7 +772,7 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 	// canonical-name workflow); this endpoint is user-driven and the user
 	// asked for an exact name.
 	if newPath == a.Path {
-		return "", ErrRenameNoChange
+		return "", nil, ErrRenameNoChange
 	}
 
 	// Refuse to clobber an existing directory. The fixer does the same
@@ -828,7 +840,7 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		}
 		return nil
 	}(); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	s.markDirtyBestEffort(ctx, a.ID)
 
@@ -837,7 +849,54 @@ func (s *Service) RenameDirectory(ctx context.Context, artistID, newDirName stri
 		"artist", a.Name,
 		"new_path", newPath)
 
-	return newPath, nil
+	// Re-issue the artist's path on every connected platform. Best-effort:
+	// a syncer error here only signals "could not enumerate platform
+	// mappings" (e.g. DB read failed); per-platform HTTP failures are
+	// recorded inside the returned slice with Result == PlatformRemapFailed
+	// and never bubble out. The rename has already committed, so we always
+	// return the new path and nil-error even when the slice is empty.
+	if s.platformSyncer != nil {
+		// SyncRename now self-reports enumeration failure in-band via a
+		// synthesized PlatformRemapResult (empty ConnectionID,
+		// Result=failed, Error explaining the step that failed) so the HTTP
+		// response always carries a concrete signal. We still escalate to
+		// Error here so operators tailing logs catch the failure even when
+		// the response slice is consumed asynchronously.
+		//
+		// Use context.WithoutCancel(ctx) so a mid-rename client disconnect
+		// does not also cancel the platform sync. The rename has already
+		// committed on disk and in the DB; we want every platform reached
+		// to learn the new path even if the originating HTTP request goes
+		// away. The per-platform 30s timeout inside publish/rename_sync.go
+		// (renameSyncTimeout, applied via WithTimeout on this syncCtx) is
+		// now a fixed bound independent of request lifetime, which matches
+		// the intent: rename is rare and operator-driven, so the absolute
+		// wall time matters less than predictable per-call decoupling.
+		syncCtx := context.WithoutCancel(ctx)
+		results, syncErr := s.platformSyncer.SyncRename(syncCtx, a.ID, oldPath, newPath)
+		if syncErr != nil {
+			slog.Error("rename directory: platform sync enumeration failed",
+				"artist_id", artistID,
+				"new_path", newPath,
+				"error", syncErr.Error())
+			// Belt-and-braces: the PlatformRenameSyncer interface contract
+			// permits an implementation to return (nil, err) on enumeration
+			// failure. The production publisher self-synthesizes a failed
+			// entry, but a custom or test syncer might not, which would
+			// leave the HTTP response with an empty platforms slice that is
+			// indistinguishable from "no mappings". Synthesize one here so
+			// callers always have a concrete signal when something failed.
+			if len(results) == 0 {
+				results = []PlatformRemapResult{{
+					Result: PlatformRemapFailed,
+					Error:  "platform mapping lookup failed",
+				}}
+			}
+		}
+		platforms = results
+	}
+
+	return newPath, platforms, nil
 }
 
 // persistNormalized writes provider IDs and image metadata to the normalized

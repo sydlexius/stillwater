@@ -473,6 +473,31 @@ func (c *Client) RestoreLibraryOptions(ctx context.Context, snapshotJSON string)
 	return mediabrowser.RestoreLibraryOptions(ctx, c, c.Logger, "jellyfin", snapshotJSON)
 }
 
+// UpdateArtistPath rewrites the Path property on the given Jellyfin artist
+// item. Jellyfin's POST /Items/{id} requires the full item body (same as
+// Emby's), so this fetches the current item via fetchItem, overwrites only
+// Path, strips read-only fields, and POSTs the merged payload back through
+// the shared postFullItem helper.
+//
+// Used by publish.Publisher.SyncRename after a successful directory rename to
+// keep the Jellyfin item-to-path mapping consistent (#1222). A path that no
+// longer matches a real directory makes Jellyfin drop the item on its next
+// scan, which orphans Stillwater's platform_id row.
+func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return fmt.Errorf("platformArtistID is required")
+	}
+	if strings.TrimSpace(newPath) == "" {
+		return fmt.Errorf("newPath is required")
+	}
+	existing, err := c.fetchItem(ctx, platformArtistID)
+	if err != nil {
+		return fmt.Errorf("fetching artist for path update: %w", err)
+	}
+	existing["Path"] = newPath
+	return c.postFullItem(ctx, platformArtistID, existing, "path update")
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, c.APIKey))
 }

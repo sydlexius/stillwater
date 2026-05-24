@@ -54,6 +54,10 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		NFOSnapshotService: nfoSnapSvc,
 		Logger:             logger,
 	})
+	// Match production wiring so tests exercise the rename->platform-sync
+	// hook on Service.RenameDirectory. Tests without platform mappings
+	// see an empty platforms slice, so this is safe to enable by default.
+	artistSvc.SetPlatformRenameSyncer(pub)
 
 	i18nBundle, err := i18n.LoadEmbedded()
 	if err != nil {

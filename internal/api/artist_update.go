@@ -32,7 +32,23 @@ import (
 //
 // Body (JSON or form-encoded): { "new_dirname": "Some Artist" }
 //
-// Response (200): { "status": "renamed", "new_path": "..." }
+// Response (200):
+//
+//	{
+//	  "status": "renamed",
+//	  "new_path": "...",
+//	  "platforms": [
+//	    {"connection_id": "...", "result": "ok"},
+//	    {"connection_id": "...", "result": "failed", "error": "..."}
+//	  ]
+//	}
+//
+// The platforms array carries one entry per artist_platform_ids row found
+// for this artist (Emby/Jellyfin/Lidarr). A single platform failure does
+// NOT roll back the rename: the local filesystem + DB are already
+// consistent, and a stale item-to-path mapping on a peer is recoverable.
+// The array is empty when the artist has no platform mappings (#1222,
+// #1231).
 //
 // Status codes:
 //   - 400 invalid input (empty / contains separator / no change)
@@ -57,7 +73,7 @@ func (r *Router) handleArtistRenameDirectory(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	newPath, err := r.artistService.RenameDirectory(req.Context(), artistID, newName)
+	newPath, platforms, err := r.artistService.RenameDirectory(req.Context(), artistID, newName)
 	if err != nil {
 		logRejected := func(status int) {
 			r.logger.Warn("rename artist directory rejected",
@@ -102,9 +118,17 @@ func (r *Router) handleArtistRenameDirectory(w http.ResponseWriter, req *http.Re
 	}
 	r.InvalidateHealthCache()
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":   "renamed",
-		"new_path": newPath,
+	// Always emit a non-nil platforms slice so the response shape is stable
+	// across "no mappings" (omitting the field would force every client to
+	// nil-check) and "platforms present" cases. JSON serializes a nil slice
+	// as null and an empty slice as []; clients can range over [] safely.
+	if platforms == nil {
+		platforms = []artist.PlatformRemapResult{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "renamed",
+		"new_path":  newPath,
+		"platforms": platforms,
 	})
 }
 

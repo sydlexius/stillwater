@@ -1308,6 +1308,7 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 		usedFallback = true
 	}
 
+	// Does NOT invoke PlatformRenameSyncer; tracked separately by #1221.
 	if err := filesystem.RenameDirAtomic(a.Path, target); err != nil {
 		return nil, fmt.Errorf("renaming %q to %q: %w", a.Path, target, err)
 	}

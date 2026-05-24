@@ -1446,3 +1446,162 @@ func TestUpdateArtistLocks_NoUserID(t *testing.T) {
 		t.Errorf("error = %v, want user ID message", err)
 	}
 }
+
+// TestUpdateArtistPath_RoundTrip exercises the fetch-mutate-POST cycle used
+// by publish.Publisher.SyncRename (#1222). Mirrors TestUpdateArtistLocks'
+// shape so a future refactor of either method that breaks the shared
+// pattern is caught by both tests.
+func TestUpdateArtistPath_RoundTrip(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			// Existing item carries the OLD Path plus unrelated fields
+			// (Genres, LockData) so the test can assert preservation.
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Radiohead","Path":"/old/Radiohead","Genres":["Rock"],"LockData":true}`))
+		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "a1", "/new/Radiohead"); err != nil {
+		t.Fatalf("UpdateArtistPath: %v", err)
+	}
+	got := <-bodyCh
+	if got["Path"] != "/new/Radiohead" {
+		t.Errorf("Path = %v, want /new/Radiohead", got["Path"])
+	}
+	if got["Name"] != "Radiohead" {
+		t.Errorf("Name preservation failed: %v", got["Name"])
+	}
+	// LockData and Genres are not Path; they must survive the round-trip
+	// untouched so a path remap does not collaterally clear other metadata.
+	if lock, _ := got["LockData"].(bool); !lock {
+		t.Errorf("LockData preservation failed: %v", got["LockData"])
+	}
+}
+
+// TestUpdateArtistPath_NoUserID mirrors TestUpdateArtistLocks_NoUserID:
+// without a userID the Get path cannot be constructed, so the call must
+// fail fast with a non-empty error message.
+func TestUpdateArtistPath_NoUserID(t *testing.T) {
+	c := NewWithHTTPClient("http://invalid", "test-key", "", http.DefaultClient, testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error when userID missing")
+	}
+	if !strings.Contains(err.Error(), "user ID") {
+		t.Errorf("error = %v, want user ID message", err)
+	}
+}
+
+// TestUpdateArtistPath_NullBody covers the defensive branch where the
+// server returns a JSON null (mapping decodes to a nil map) instead of an
+// item object. Without the nil-check the subsequent map write would
+// panic; with it the call constructs a minimal {Path: ...} payload.
+func TestUpdateArtistPath_NullBody(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`null`))
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodyCh <- body
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "a1", "/new"); err != nil {
+		t.Fatalf("UpdateArtistPath on null body: %v", err)
+	}
+	got := <-bodyCh
+	if got["Path"] != "/new" {
+		t.Errorf("Path = %v, want /new (nil-body fallback should still POST a minimal body)", got["Path"])
+	}
+}
+
+// TestUpdateArtistPath_GetError covers the fetch-step failure path: when
+// the initial GET returns a non-2xx, UpdateArtistPath must wrap the error
+// with the "fetching artist for path update" prefix and never issue the
+// POST. Mirrors the PeerError test which exercises the POST-step failure
+// so both error-wrap branches are covered.
+func TestUpdateArtistPath_GetError(t *testing.T) {
+	var postCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		postCount++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500 GET response")
+	}
+	if !strings.Contains(err.Error(), "fetching artist for path update") {
+		t.Errorf("error = %v, want wrap mentioning the fetch step", err)
+	}
+	if postCount != 0 {
+		t.Errorf("POST was issued %d times despite GET failure; should fail fast", postCount)
+	}
+}
+
+// TestUpdateArtistPath_PeerError verifies the wrapped-error branch when
+// the POST returns a non-2xx status. The caller (publish.SyncRename)
+// surfaces this string into the rename response's per-platform Error
+// field, so the wrap must include enough context to diagnose.
+func TestUpdateArtistPath_PeerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"a1","Name":"Radiohead"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-1", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "a1", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+	if !strings.Contains(err.Error(), "posting artist path update") {
+		t.Errorf("error = %v, want wrap mentioning the operation", err)
+	}
+}
+
+// TestUpdateArtistPath_EmptyNewPath rejects a blank target path before any
+// fetch / POST so we never silently overwrite the peer record with "".
+func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "user", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "emby-pid", "   "); err == nil {
+		t.Fatal("expected error on whitespace-only newPath")
+	}
+}

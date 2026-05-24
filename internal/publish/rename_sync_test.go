@@ -1,0 +1,444 @@
+package publish
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
+)
+
+// fakePathUpdater records the calls SyncRename routes to it and can be
+// rigged to fail. Lets the rename-sync tests cover both ok and failed
+// branches without standing up real HTTP fixtures for each platform type;
+// the actual emby/jellyfin/lidarr per-client HTTP marshaling is covered
+// in their own packages.
+type fakePathUpdater struct {
+	called  int
+	gotID   string
+	gotPath string
+	err     error
+}
+
+func (f *fakePathUpdater) UpdateArtistPath(_ context.Context, platformArtistID, newPath string) error {
+	f.called++
+	f.gotID = platformArtistID
+	f.gotPath = newPath
+	return f.err
+}
+
+// withFakePathUpdater swaps renamePathUpdaterFactory for the duration of a
+// test. The factory is a package-level var so a test can inject a single
+// fake for every connection by capturing it in the closure. Restoring on
+// cleanup keeps tests parallel-safe relative to one another only when they
+// do not actually run in parallel; the rename-sync tests serialize.
+func withFakePathUpdater(t *testing.T, fake *fakePathUpdater) {
+	t.Helper()
+	orig := renamePathUpdaterFactory
+	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		return fake, true
+	}
+	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+}
+
+// TestSyncRename_AllPlatformsOK is the happy path: three connections
+// (Emby+Jellyfin+Lidarr) each return ok. The handler test
+// (handlers_rename_directory_test.go) covers the empty-mappings case
+// separately so we focus here on the multi-platform fan-out.
+func TestSyncRename_AllPlatformsOK(t *testing.T) {
+	fake := &fakePathUpdater{}
+	withFakePathUpdater(t, fake)
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p-emby"},
+			{ArtistID: "a1", ConnectionID: "c-jf", PlatformArtistID: "p-jf"},
+			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "42"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: "http://emby", Enabled: true},
+			"c-jf":   {ID: "c-jf", Name: "jf", Type: connection.TypeJellyfin, URL: "http://jf", Enabled: true},
+			"c-lid":  {ID: "c-lid", Name: "lid", Type: connection.TypeLidarr, URL: "http://lid", Enabled: true},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("results: got %d, want 3", len(results))
+	}
+	for _, r := range results {
+		if r.Result != artist.PlatformRemapOK {
+			t.Errorf("connection %s: got %q (err=%q), want ok", r.ConnectionID, r.Result, r.Error)
+		}
+	}
+	if fake.called != 3 {
+		t.Errorf("fake called %d times, want 3", fake.called)
+	}
+}
+
+// TestSyncRename_PartialFailureDoesNotStopFanout is the regression guard for
+// the per-platform best-effort contract from #1222: one platform's HTTP
+// failure must NOT block the remaining platforms or roll back anything.
+// The error string lands inside the failed entry; the loop keeps going.
+func TestSyncRename_PartialFailureDoesNotStopFanout(t *testing.T) {
+	// Per-connection fakes so we can rig one to fail while the other
+	// succeeds. The factory dispatches by conn.ID rather than conn.Type
+	// because Type alone is not unique across the test connections.
+	okFake := &fakePathUpdater{}
+	failFake := &fakePathUpdater{err: errors.New("simulated 500 from peer")}
+
+	orig := renamePathUpdaterFactory
+	renamePathUpdaterFactory = func(c *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		if c.ID == "c-fail" {
+			return failFake, true
+		}
+		return okFake, true
+	}
+	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-fail", PlatformArtistID: "p1"},
+			{ArtistID: "a1", ConnectionID: "c-ok", PlatformArtistID: "p2"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-fail": {ID: "c-fail", Name: "fail", Type: connection.TypeEmby, URL: "http://fail", Enabled: true},
+			"c-ok":   {ID: "c-ok", Name: "ok", Type: connection.TypeJellyfin, URL: "http://ok", Enabled: true},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results: got %d, want 2 (failure must not short-circuit)", len(results))
+	}
+	byConn := map[string]artist.PlatformRemapResult{}
+	for _, r := range results {
+		byConn[r.ConnectionID] = r
+	}
+	if got := byConn["c-fail"].Result; got != artist.PlatformRemapFailed {
+		t.Errorf("c-fail Result = %q, want failed", got)
+	}
+	if byConn["c-fail"].Error == "" {
+		t.Error("c-fail Error empty; expected wrapped peer error string")
+	}
+	if got := byConn["c-ok"].Result; got != artist.PlatformRemapOK {
+		t.Errorf("c-ok Result = %q, want ok (failure on c-fail must not skip it)", got)
+	}
+	if okFake.called != 1 {
+		t.Errorf("c-ok updater called %d times, want 1", okFake.called)
+	}
+}
+
+// TestSyncRename_NoPlatformIDs covers the early-return when the artist has
+// no mappings: nil slice, nil error, no factory invocation.
+func TestSyncRename_NoPlatformIDs(t *testing.T) {
+	fake := &fakePathUpdater{}
+	withFakePathUpdater(t, fake)
+
+	p := New(Deps{
+		ArtistService:     &fakePlatformLister{ids: nil},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if results != nil {
+		t.Errorf("results = %v, want nil for no-mappings case", results)
+	}
+	if fake.called != 0 {
+		t.Errorf("updater called %d times, want 0", fake.called)
+	}
+}
+
+// TestSyncRename_ConnectionFetchError covers the GetByID-failure branch:
+// when the connections table is missing an ID the platform_ids row
+// references, the per-platform result must surface the lookup error
+// without panicking or short-circuiting the rest of the fan-out.
+func TestSyncRename_ConnectionFetchError(t *testing.T) {
+	fake := &fakePathUpdater{}
+	withFakePathUpdater(t, fake)
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-missing", PlatformArtistID: "p1"},
+		}},
+		// fakeConnectionGetter returns "no connection <id>" when the map
+		// lookup misses; the empty map produces that error for c-missing.
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results))
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Errorf("Result = %q, want failed for missing-connection branch", results[0].Result)
+	}
+	if !strings.Contains(results[0].Error, "fetching connection") {
+		t.Errorf("Error = %q, want wrap mentioning the failed step", results[0].Error)
+	}
+	if fake.called != 0 {
+		t.Errorf("updater called %d times when connection lookup failed, want 0", fake.called)
+	}
+}
+
+// TestSyncRename_UnsupportedConnectionType covers the factory miss branch:
+// a connection type that no factory knows about (here, a made-up "kodi"
+// string) must record Result=failed with an error mentioning the type, so
+// a future connection-type addition that forgets to extend the factory is
+// caught in the rename response instead of silently passing.
+func TestSyncRename_UnsupportedConnectionType(t *testing.T) {
+	// Override the factory to return (nil, false) so this test exercises
+	// the production miss branch instead of standing up a real new type.
+	orig := renamePathUpdaterFactory
+	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		return nil, false
+	}
+	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-mystery", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-mystery": {ID: "c-mystery", Name: "kodi", Type: "kodi", URL: "http://k", Enabled: true},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results))
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Errorf("Result = %q, want failed for unsupported type", results[0].Result)
+	}
+	if !strings.Contains(results[0].Error, "does not support") {
+		t.Errorf("Error = %q, want mention of unsupported type", results[0].Error)
+	}
+}
+
+// TestSyncRename_EnumerationFailureInBand verifies that when the artist
+// service's GetPlatformIDs lookup itself fails (e.g. DB read error),
+// SyncRename surfaces the failure IN BAND via a synthesized
+// PlatformRemapResult rather than returning a nil slice + non-nil error.
+// An empty slice is indistinguishable from "no platforms exist" in the
+// HTTP response, so the in-band signal is what lets the user see that the
+// rename succeeded but the post-rename platform reconciliation could not
+// even start. ConnectionID is empty to mark the synthesized entry; the
+// Error string names the failed step ("platform mappings unavailable").
+func TestSyncRename_EnumerationFailureInBand(t *testing.T) {
+	withFakePathUpdater(t, &fakePathUpdater{})
+
+	p := New(Deps{
+		ArtistService:     &errPlatformLister{},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: want nil outer error (failure surfaces in-band), got %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d, want 1 synthesized entry for enumeration failure", len(results))
+	}
+	if results[0].ConnectionID != "" {
+		t.Errorf("ConnectionID = %q, want empty (sentinel for synthesized enumeration-failure entry)", results[0].ConnectionID)
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Errorf("Result = %q, want failed", results[0].Result)
+	}
+	if !strings.Contains(results[0].Error, "platform mappings unavailable") {
+		t.Errorf("Error = %q, want contains \"platform mappings unavailable\"", results[0].Error)
+	}
+}
+
+// TestSyncRename_NilPublisher covers the early-return guard at the top of
+// SyncRename: callers (artist.Service) check the syncer for nil but the
+// method itself also self-guards, so a future caller that passes a typed
+// nil does not panic. Method on a nil pointer is intentional here -- Go
+// allows it as long as the body returns before any field access.
+func TestSyncRename_NilPublisher(t *testing.T) {
+	var p *Publisher
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename on nil publisher: %v", err)
+	}
+	if results != nil {
+		t.Errorf("results = %v, want nil from nil publisher", results)
+	}
+}
+
+// TestSyncRename_FactoryProductionDispatch exercises the production
+// renamePathUpdaterFactory (not the fake) by pointing a real connection at
+// a closed httptest server. The factory must hand back a non-nil updater
+// for each of the three supported types; the HTTP call then fails fast on
+// the closed URL, producing a failed result with a meaningful error. This
+// keeps the production factory body covered without needing real Emby /
+// Jellyfin / Lidarr peers in the test environment.
+func TestSyncRename_FactoryProductionDispatch(t *testing.T) {
+	// Run a server then close it so any HTTP request to its URL fails
+	// immediately with "connection refused". Closed URLs are how we drive
+	// the GET-error branch in each per-client UpdateArtistPath from the
+	// rename-sync orchestrator's vantage point.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Close()
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-emby", PlatformArtistID: "p1"},
+			{ArtistID: "a1", ConnectionID: "c-jf", PlatformArtistID: "p2"},
+			{ArtistID: "a1", ConnectionID: "c-lid", PlatformArtistID: "42"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-emby": {ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-jf":   {ID: "c-jf", Name: "jf", Type: connection.TypeJellyfin, URL: srv.URL, Enabled: true, PlatformUserID: "u1"},
+			"c-lid":  {ID: "c-lid", Name: "lid", Type: connection.TypeLidarr, URL: srv.URL, Enabled: true},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("results: got %d, want 3 (one per platform mapping)", len(results))
+	}
+	// Each platform should land in failed (the server is dead) but with a
+	// non-empty error string sourced from its own client's wrap.
+	for _, r := range results {
+		if r.Result != artist.PlatformRemapFailed {
+			t.Errorf("connection %s: Result = %q, want failed", r.ConnectionID, r.Result)
+		}
+		if r.Error == "" {
+			t.Errorf("connection %s: Error empty, want non-empty diagnostic", r.ConnectionID)
+		}
+	}
+}
+
+// TestSyncRename_DisabledConnectionSkipped: a disabled connection records
+// Result=ok with an "disabled" note instead of attempting the HTTP call.
+// Mirrors PushLocks' disabled-connection semantics so a user opting a peer
+// out via the Enabled flag does not surface a noisy rename failure.
+func TestSyncRename_DisabledConnectionSkipped(t *testing.T) {
+	fake := &fakePathUpdater{}
+	withFakePathUpdater(t, fake)
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-off", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-off": {ID: "c-off", Name: "off", Type: connection.TypeEmby, URL: "http://off", Enabled: false},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results))
+	}
+	if results[0].Result != artist.PlatformRemapOK {
+		t.Errorf("Result = %q, want ok for disabled connection", results[0].Result)
+	}
+	// OpenAPI documents `error` as present only when result is "failed";
+	// the disabled-skip path therefore must not populate it. Asserting on
+	// the struct field is sufficient because PlatformRemapResult.Error has
+	// `omitempty` on its JSON tag, so empty here implies absent in the
+	// rendered response.
+	if results[0].Error != "" {
+		t.Errorf("Error = %q, want empty for disabled connection (OpenAPI: error present only when result=failed)", results[0].Error)
+	}
+	if fake.called != 0 {
+		t.Errorf("updater called %d times on disabled connection, want 0", fake.called)
+	}
+}
+
+// blockingPathUpdater holds UpdateArtistPath open until ctx is canceled.
+// Lets the deadline test exercise the per-platform timeout branch without
+// depending on real HTTP behavior or network conditions.
+type blockingPathUpdater struct{}
+
+func (blockingPathUpdater) UpdateArtistPath(ctx context.Context, _, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestSyncRename_PerPlatformTimeoutFires guards the renameSyncTimeout
+// constant from a "perf tweak" silently lowering it to a value that breaks
+// healthy peers. We swap the package-level renameSyncTimeout var down to a
+// short duration, rig an updater that blocks on the context, and assert the
+// per-platform result lands in failed with an error mentioning the deadline.
+// Without this test the timeout has no behavioral coverage and a future
+// edit to the constant would only be caught by manual UAT.
+func TestSyncRename_PerPlatformTimeoutFires(t *testing.T) {
+	// Restore the production timeout after the test so siblings keep their
+	// real-world wait semantics. Not parallel: the swap is package-global.
+	origTimeout := renameSyncTimeout
+	renameSyncTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { renameSyncTimeout = origTimeout })
+
+	orig := renamePathUpdaterFactory
+	renamePathUpdaterFactory = func(_ *connection.Connection, _ *slog.Logger) (pathUpdater, bool) {
+		return blockingPathUpdater{}, true
+	}
+	t.Cleanup(func() { renamePathUpdaterFactory = orig })
+
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-slow", PlatformArtistID: "p1"},
+		}},
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{
+			"c-slow": {ID: "c-slow", Name: "slow", Type: connection.TypeEmby, URL: "http://slow", Enabled: true},
+		}},
+		Logger: silentLogger(),
+	})
+
+	results, err := p.SyncRename(context.Background(), "a1", "/old", "/new")
+	if err != nil {
+		t.Fatalf("SyncRename: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results))
+	}
+	if results[0].Result != artist.PlatformRemapFailed {
+		t.Errorf("Result = %q, want failed after deadline", results[0].Result)
+	}
+	// context.DeadlineExceeded stringifies as "context deadline exceeded"; we
+	// accept either substring so the test does not depend on the precise
+	// wrapping any future per-client wrapper might apply.
+	if !strings.Contains(results[0].Error, "deadline") {
+		t.Errorf("Error = %q, want substring \"deadline\" (context.DeadlineExceeded)", results[0].Error)
+	}
+}

@@ -299,3 +299,151 @@ func TestDisableMetadataConsumer(t *testing.T) {
 		t.Error("expected Enable to be false")
 	}
 }
+
+// TestUpdateArtistPath_RoundTrip exercises the GET-modify-PUT cycle used by
+// publish.Publisher.SyncRename (#1231). Lidarr's PUT must include the
+// moveFiles=false query parameter so the peer treats the call as "the
+// files already moved, just record the new path" rather than trying to
+// move them itself (which would race the on-disk rename Stillwater just
+// performed). The test asserts both the path overwrite and the query
+// parameter on the outbound request.
+func TestUpdateArtistPath_RoundTrip(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	queryCh := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			// Existing artist with extra fields (qualityProfileId, monitored,
+			// statistics) so the test can assert preservation through the
+			// raw-map round-trip.
+			_, _ = w.Write([]byte(`{
+				"id": 42,
+				"artistName": "Pink Floyd",
+				"path": "/old/Pink Floyd",
+				"foreignArtistId": "abc-mbid",
+				"qualityProfileId": 1,
+				"metadataProfileId": 1,
+				"monitored": true,
+				"statistics": {"trackCount": 100}
+			}`))
+		case http.MethodPut:
+			queryCh <- r.URL.RawQuery
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "42", "/new/Pink Floyd"); err != nil {
+		t.Fatalf("UpdateArtistPath: %v", err)
+	}
+
+	q := <-queryCh
+	if q != "moveFiles=false" {
+		t.Errorf("query = %q, want moveFiles=false (rename already happened on disk)", q)
+	}
+	got := <-bodyCh
+	if got["path"] != "/new/Pink Floyd" {
+		t.Errorf("path = %v, want /new/Pink Floyd", got["path"])
+	}
+	if got["artistName"] != "Pink Floyd" {
+		t.Errorf("artistName preservation failed: %v", got["artistName"])
+	}
+	// Unknown / unmodeled fields (statistics) must survive: the typed
+	// Artist struct in types.go does not include them, so the raw-map
+	// round-trip is the only thing keeping them intact.
+	if _, present := got["statistics"]; !present {
+		t.Errorf("statistics field lost; raw-map round-trip should preserve unknown fields")
+	}
+}
+
+// TestUpdateArtistPath_PeerError verifies that a non-2xx PUT surfaces a
+// wrapped error including the operation label. Mirrors the Emby test so a
+// regression in either client's error wrap is caught by the matching
+// publish.SyncRename per-platform Error assertions.
+func TestUpdateArtistPath_PeerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"artistName":"X","path":"/old/X"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+}
+
+// TestUpdateArtistPath_GetError covers the fetch-step failure path: when
+// the initial GET returns 500, UpdateArtistPath must wrap with the
+// "fetching artist for path update" prefix and never issue the PUT.
+func TestUpdateArtistPath_GetError(t *testing.T) {
+	var putCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		putCount++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new")
+	if err == nil {
+		t.Fatal("expected error on 500 GET")
+	}
+	if putCount != 0 {
+		t.Errorf("PUT issued %d times despite GET failure; should fail fast", putCount)
+	}
+}
+
+// TestUpdateArtistPath_EmptyBody guards against an empty / null Lidarr GET
+// response. The map-based round-trip would otherwise PUT {"path":"/new"}
+// with all the other required ArtistResource fields missing, which Lidarr
+// rejects in confusing ways. Fast-fail at the boundary is clearer.
+func TestUpdateArtistPath_EmptyBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// "null" decodes to a nil map[string]any
+		_, _ = w.Write([]byte(`null`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	err := c.UpdateArtistPath(context.Background(), "42", "/new/X")
+	if err == nil {
+		t.Fatal("expected error on empty body")
+	}
+}
+
+// TestUpdateArtistPath_EmptyNewPath rejects a blank target path before any
+// GET / PUT so we never silently overwrite the Lidarr artist row with "".
+func TestUpdateArtistPath_EmptyNewPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "42", ""); err == nil {
+		t.Fatal("expected error on empty newPath")
+	}
+}

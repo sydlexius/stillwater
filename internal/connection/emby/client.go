@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -444,6 +445,53 @@ func (c *Client) UpdateArtistLocks(ctx context.Context, platformArtistID string,
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
 	if err := c.PostJSON(ctx, path, bytes.NewReader(body), nil); err != nil {
 		return fmt.Errorf("posting artist lock update: %w", err)
+	}
+	return nil
+}
+
+// UpdateArtistPath rewrites the Path property on the given Emby artist item.
+// Emby's POST /Items/{id} treats the body as a full replacement, so this
+// fetches the current item first (via the user-scoped endpoint), mutates only
+// the Path field, and POSTs the merged payload back. Same round-trip shape as
+// UpdateArtistLocks so unrelated properties survive untouched.
+//
+// Used by publish.Publisher.SyncRename after a successful directory rename to
+// keep the Emby item-to-path mapping consistent (#1222). A path that no
+// longer matches a real directory makes Emby drop the item on its next scan,
+// which orphans Stillwater's platform_id row; this call avoids that
+// reconciliation drift.
+func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	if strings.TrimSpace(platformArtistID) == "" {
+		return fmt.Errorf("platformArtistID is required")
+	}
+	if strings.TrimSpace(newPath) == "" {
+		return fmt.Errorf("newPath is required")
+	}
+	if c.userID == "" {
+		return fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
+	}
+	// PathEscape the platform ID so an ID containing reserved characters
+	// (slashes, percent signs, etc.) cannot break out of the URL segment.
+	// Jellyfin's push.go already does this; bringing Emby into parity
+	// closes the same class of bug here.
+	escapedID := url.PathEscape(platformArtistID)
+	getPath := fmt.Sprintf("/Users/%s/Items/%s", url.PathEscape(c.userID), escapedID)
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return fmt.Errorf("fetching artist for path update: %w", err)
+	}
+	if item == nil {
+		item = make(map[string]any)
+	}
+	item["Path"] = newPath
+
+	body, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("encoding path update body: %w", err)
+	}
+	postPath := fmt.Sprintf("/Items/%s", escapedID)
+	if err := c.PostJSON(ctx, postPath, bytes.NewReader(body), nil); err != nil {
+		return fmt.Errorf("posting artist path update: %w", err)
 	}
 	return nil
 }

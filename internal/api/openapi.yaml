@@ -10077,18 +10077,45 @@ paths:
               required: [new_dirname]
       responses:
         "200":
-          description: Directory renamed
+          description: >
+            Directory renamed. The platforms array carries one entry per
+            artist_platform_ids mapping found for the artist (Emby /
+            Jellyfin / Lidarr), plus a synthesized failure entry (with
+            an empty connection_id) when the platform-mapping enumeration
+            itself fails so the response always carries a concrete signal
+            instead of an empty slice that hides a backend error. A single
+            per-platform failure does NOT roll back the rename; the local
+            filesystem + database are already consistent and a stale
+            item-to-path mapping on a peer is recoverable. An empty array
+            means the artist has no platform mappings, but does NOT mean
+            "no issues": clients should treat any entry whose connection_id
+            is empty specially (it is the synthesized enumeration-failure
+            marker, not a real per-platform result).
           content:
             application/json:
               schema:
                 type: object
-                required: [status, new_path]
+                required: [status, new_path, platforms]
                 properties:
                   status:
                     type: string
                     enum: [renamed]
                   new_path:
                     type: string
+                  platforms:
+                    type: array
+                    items:
+                      type: object
+                      required: [connection_id, result]
+                      properties:
+                        connection_id:
+                          type: string
+                        result:
+                          type: string
+                          enum: [ok, failed]
+                        error:
+                          type: string
+                          description: User-safe summary of the failure. Present only when result is "failed".
         "400":
           description: Invalid directory name (empty, ".", "..", contains a separator, or matches the current directory name).
           content:

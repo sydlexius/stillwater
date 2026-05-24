@@ -54,7 +54,7 @@ func TestRenameDirectory_Happy(t *testing.T) {
 	svc, a, root := renameTestArtist(t, "lib-rename-happy")
 	ctx := context.Background()
 
-	got, err := svc.RenameDirectory(ctx, a.ID, "New Name")
+	got, _, err := svc.RenameDirectory(ctx, a.ID, "New Name")
 	if err != nil {
 		t.Fatalf("RenameDirectory: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestRenameDirectory_PreservesProviderIDs(t *testing.T) {
 		t.Fatalf("seed verify GetImagesForArtist: err=%v len=%d", err, len(imgsBefore))
 	}
 
-	if _, err := svc.RenameDirectory(ctx, a.ID, "Renamed With Provider"); err != nil {
+	if _, _, err := svc.RenameDirectory(ctx, a.ID, "Renamed With Provider"); err != nil {
 		t.Fatalf("RenameDirectory: %v", err)
 	}
 	after, err := svc.GetByID(ctx, a.ID)
@@ -175,7 +175,7 @@ func TestRenameDirectory_RollbackOnDBFailure(t *testing.T) {
 	failingArtists := &updateFailingRepo{Repository: artists}
 	svc := NewServiceWithRepos(failingArtists, providers, members, aliases, images, platformIDs, completeness)
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "Should Roll Back")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "Should Roll Back")
 	if err == nil {
 		t.Fatal("RenameDirectory: expected error from forced Update failure, got nil")
 	}
@@ -298,7 +298,7 @@ func TestRenameDirectory_PreservesConcurrentMetadataEdit(t *testing.T) {
 	}
 	svc := NewServiceWithRepos(racingArtists, providers, members, aliases, images, platformIDs, completeness)
 
-	if _, err := svc.RenameDirectory(ctx, a.ID, "Renamed Dir"); err != nil {
+	if _, _, err := svc.RenameDirectory(ctx, a.ID, "Renamed Dir"); err != nil {
 		t.Fatalf("RenameDirectory: %v", err)
 	}
 	if !racingArtists.fired {
@@ -343,7 +343,7 @@ func TestRenameDirectory_RenameError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "Cannot Rename Here")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "Cannot Rename Here")
 	if err == nil {
 		t.Fatal("RenameDirectory: expected filesystem error, got nil")
 	}
@@ -401,7 +401,7 @@ func TestRenameDirectory_RollbackAlsoFails(t *testing.T) {
 	failingArtists := &updateAndDestroyRepo{Repository: artists}
 	svc := NewServiceWithRepos(failingArtists, providers, members, aliases, images, platformIDs, completeness)
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "New Name Lost")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "New Name Lost")
 	if err == nil {
 		t.Fatal("expected wrapped DB error, got nil")
 	}
@@ -432,7 +432,7 @@ func TestRenameDirectory_InvalidName(t *testing.T) {
 	cases := []string{"", " ", ".", "..", "with/slash", "with\\back"}
 	for _, in := range cases {
 		t.Run(in, func(t *testing.T) {
-			_, err := svc.RenameDirectory(ctx, a.ID, in)
+			_, _, err := svc.RenameDirectory(ctx, a.ID, in)
 			if !errors.Is(err, ErrRenameInvalidName) {
 				t.Errorf("input %q: got err %v, want ErrRenameInvalidName", in, err)
 			}
@@ -445,7 +445,7 @@ func TestRenameDirectory_NotFound(t *testing.T) {
 	svc, _, _ := renameTestArtist(t, "lib-rename-notfound")
 	ctx := context.Background()
 
-	_, err := svc.RenameDirectory(ctx, "no-such-artist-id", "Anything")
+	_, _, err := svc.RenameDirectory(ctx, "no-such-artist-id", "Anything")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("got err %v, want ErrNotFound", err)
 	}
@@ -459,7 +459,7 @@ func TestRenameDirectory_Locked(t *testing.T) {
 	if err := svc.Lock(ctx, a.ID, "user"); err != nil {
 		t.Fatalf("Lock: %v", err)
 	}
-	_, err := svc.RenameDirectory(ctx, a.ID, "New Name")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "New Name")
 	if !errors.Is(err, ErrRenameLocked) {
 		t.Errorf("got err %v, want ErrRenameLocked", err)
 	}
@@ -483,7 +483,7 @@ func TestRenameDirectory_NoPath(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "New Name")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "New Name")
 	if !errors.Is(err, ErrRenameNoPath) {
 		t.Errorf("got err %v, want ErrRenameNoPath", err)
 	}
@@ -495,7 +495,7 @@ func TestRenameDirectory_NoChange(t *testing.T) {
 	ctx := context.Background()
 
 	current := filepath.Base(a.Path)
-	_, err := svc.RenameDirectory(ctx, a.ID, current)
+	_, _, err := svc.RenameDirectory(ctx, a.ID, current)
 	if !errors.Is(err, ErrRenameNoChange) {
 		t.Errorf("got err %v, want ErrRenameNoChange", err)
 	}
@@ -511,13 +511,167 @@ func TestRenameDirectory_DestExists(t *testing.T) {
 		t.Fatalf("pre-creating collision target: %v", err)
 	}
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "Already Here")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "Already Here")
 	if !errors.Is(err, ErrRenameDestExists) {
 		t.Errorf("got err %v, want ErrRenameDestExists", err)
 	}
 	// The original directory should not have been moved.
 	if _, statErr := os.Stat(a.Path); statErr != nil {
 		t.Errorf("original path missing after refused rename: %v", statErr)
+	}
+}
+
+// fakeSyncer captures SyncRename calls and lets a test rig either an empty
+// or non-empty platforms slice plus an optional enumeration error. Lives
+// here (not in rename_platforms.go) because it is only used by tests.
+type fakeSyncer struct {
+	results []PlatformRemapResult
+	err     error
+	called  bool
+	gotID   string
+	gotOld  string
+	gotNew  string
+}
+
+func (f *fakeSyncer) SyncRename(_ context.Context, artistID, oldPath, newPath string) ([]PlatformRemapResult, error) {
+	f.called = true
+	f.gotID = artistID
+	f.gotOld = oldPath
+	f.gotNew = newPath
+	return f.results, f.err
+}
+
+// TestRenameDirectory_PlatformSyncerInvoked is the regression guard that the
+// service calls into the configured PlatformRenameSyncer after a successful
+// rename and threads through the returned slice. Without this test, a
+// refactor that drops the syncer call (or returns nil unconditionally)
+// would still pass every pre-existing rename test in this file (#1222).
+func TestRenameDirectory_PlatformSyncerInvoked(t *testing.T) {
+	t.Parallel()
+	svc, a, _ := renameTestArtist(t, "lib-rename-syncer")
+	ctx := context.Background()
+
+	syncer := &fakeSyncer{
+		results: []PlatformRemapResult{
+			{ConnectionID: "c-1", Result: PlatformRemapOK},
+			{ConnectionID: "c-2", Result: PlatformRemapFailed, Error: "peer down"},
+		},
+	}
+	svc.SetPlatformRenameSyncer(syncer)
+
+	_, platforms, err := svc.RenameDirectory(ctx, a.ID, "Synced Name")
+	if err != nil {
+		t.Fatalf("RenameDirectory: %v", err)
+	}
+	if !syncer.called {
+		t.Fatal("syncer SyncRename was not called after successful rename")
+	}
+	if syncer.gotID != a.ID {
+		t.Errorf("syncer gotID = %q, want %q", syncer.gotID, a.ID)
+	}
+	if syncer.gotOld != a.Path {
+		t.Errorf("syncer gotOld = %q, want %q (old path)", syncer.gotOld, a.Path)
+	}
+	if !strings.HasSuffix(syncer.gotNew, "Synced Name") {
+		t.Errorf("syncer gotNew = %q, want trailing 'Synced Name'", syncer.gotNew)
+	}
+	if len(platforms) != 2 {
+		t.Fatalf("platforms: got %d, want 2", len(platforms))
+	}
+	if platforms[0].Result != PlatformRemapOK || platforms[1].Result != PlatformRemapFailed {
+		t.Errorf("platforms results threaded incorrectly: %+v", platforms)
+	}
+}
+
+// TestRenameDirectory_PlatformSyncerErrorDoesNotFail asserts that a syncer
+// returning a non-nil err (e.g. DB enumeration failed) does NOT cause the
+// rename itself to surface an error: the rename already committed on disk
+// and in the DB, and burying the user's successful rename behind an HTTP
+// 500 because the platform-mapping lookup failed would be a regression.
+// The service synthesizes a single failed PlatformRemapResult entry when
+// the syncer returned (nil, err) so the HTTP response always carries a
+// concrete signal instead of an empty slice that hides a backend error.
+func TestRenameDirectory_PlatformSyncerErrorDoesNotFail(t *testing.T) {
+	t.Parallel()
+	svc, a, _ := renameTestArtist(t, "lib-rename-syncer-err")
+	ctx := context.Background()
+
+	syncer := &fakeSyncer{err: errors.New("simulated DB lookup failure")}
+	svc.SetPlatformRenameSyncer(syncer)
+
+	got, platforms, err := svc.RenameDirectory(ctx, a.ID, "Should Still Succeed")
+	if err != nil {
+		t.Fatalf("RenameDirectory should not fail on syncer enum error: %v", err)
+	}
+	if !strings.HasSuffix(got, "Should Still Succeed") {
+		t.Errorf("newPath = %q, want trailing 'Should Still Succeed'", got)
+	}
+	// Defensive synthesis: the syncer returned (nil, err); the service
+	// belt-and-braces synthesizes a single failed entry so callers see a
+	// concrete signal. ConnectionID is empty to flag this as a
+	// synthesized enumeration-failure marker rather than a real
+	// per-platform result.
+	if len(platforms) != 1 {
+		t.Fatalf("platforms = %v, want one synthesized failed entry on syncer error", platforms)
+	}
+	if platforms[0].Result != PlatformRemapFailed {
+		t.Errorf("synthesized entry Result = %q, want %q", platforms[0].Result, PlatformRemapFailed)
+	}
+	if platforms[0].ConnectionID != "" {
+		t.Errorf("synthesized entry ConnectionID = %q, want empty (marker for synthesized enum-failure)", platforms[0].ConnectionID)
+	}
+	if platforms[0].Error == "" {
+		t.Error("synthesized entry Error is empty; expected a non-empty diagnostic")
+	}
+}
+
+// TestRenameDirectory_PlatformSyncerReturnsResultsAndErrorPreservesResults
+// guards the "syncer returned both results AND a non-nil err" branch: in
+// that case the service should log the error but NOT overwrite the
+// syncer-provided results with a synthesized stub. The production publisher
+// self-synthesizes its own failure entry in this path, and a service-side
+// double-synthesis would clobber that richer detail.
+func TestRenameDirectory_PlatformSyncerReturnsResultsAndErrorPreservesResults(t *testing.T) {
+	t.Parallel()
+	svc, a, _ := renameTestArtist(t, "lib-rename-syncer-both")
+	ctx := context.Background()
+
+	syncer := &fakeSyncer{
+		results: []PlatformRemapResult{
+			{ConnectionID: "", Result: PlatformRemapFailed, Error: "self-synthesized by syncer"},
+		},
+		err: errors.New("simulated enumeration failure"),
+	}
+	svc.SetPlatformRenameSyncer(syncer)
+
+	_, platforms, err := svc.RenameDirectory(ctx, a.ID, "Should Still Succeed Too")
+	if err != nil {
+		t.Fatalf("RenameDirectory should not fail on syncer enum error: %v", err)
+	}
+	if len(platforms) != 1 {
+		t.Fatalf("platforms = %v, want one entry (the syncer-provided synthesized result)", platforms)
+	}
+	if platforms[0].Error != "self-synthesized by syncer" {
+		t.Errorf("platforms[0].Error = %q, want syncer-provided message (service-side synthesis should NOT clobber)", platforms[0].Error)
+	}
+}
+
+// TestRenameDirectory_NilSyncerReturnsEmptyPlatforms confirms that the
+// no-syncer-configured case (e.g. older tests that never wire the syncer)
+// works and returns a nil platforms slice without panicking. Belt-and-
+// braces against a syncer-required regression.
+func TestRenameDirectory_NilSyncerReturnsEmptyPlatforms(t *testing.T) {
+	t.Parallel()
+	svc, a, _ := renameTestArtist(t, "lib-rename-nilsyncer")
+	ctx := context.Background()
+	// Explicitly leave the syncer unset.
+
+	_, platforms, err := svc.RenameDirectory(ctx, a.ID, "Renamed Quiet")
+	if err != nil {
+		t.Fatalf("RenameDirectory: %v", err)
+	}
+	if platforms != nil {
+		t.Errorf("platforms = %v, want nil when no syncer configured", platforms)
 	}
 }
 
@@ -540,7 +694,7 @@ func TestRenameDirectory_DestExistsDanglingSymlink(t *testing.T) {
 		t.Fatalf("creating dangling symlink: %v", err)
 	}
 
-	_, err := svc.RenameDirectory(ctx, a.ID, "Already Here")
+	_, _, err := svc.RenameDirectory(ctx, a.ID, "Already Here")
 	if !errors.Is(err, ErrRenameDestExists) {
 		t.Errorf("got err %v, want ErrRenameDestExists (dangling symlink should trip the conflict guard)", err)
 	}
