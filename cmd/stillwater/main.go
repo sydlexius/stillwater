@@ -679,6 +679,12 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		ImageCacheDir:      a.imageCacheDir,
 		Logger:             logger,
 	})
+	// Wire the rename-time platform syncer so Service.RenameDirectory
+	// re-issues the artist path on Emby/Jellyfin/Lidarr after a successful
+	// directory rename (#1222, #1231). The publisher already owns
+	// per-platform clients and connection-service access, so it is the
+	// natural home for this orchestration.
+	a.artistService.SetPlatformRenameSyncer(a.publisher)
 
 	logoPaddingFixer := rule.NewLogoPaddingFixer(a.platformService, a.fsCheck, logger)
 	logoPaddingFixer.SetImageFetcher(a.imageBridge, a.ruleEngine.ConsumeAPIImage)

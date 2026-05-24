@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -492,6 +493,55 @@ func setConsumerArtistField(m map[string]any, fieldName string, value bool) map[
 	fields = append(fields, map[string]any{"name": fieldName, "value": value})
 	m["fields"] = fields
 	return m
+}
+
+// UpdateArtistPath rewrites the Path on the given Lidarr artist by GET-modify-
+// PUT round-tripping the full ArtistResource. Lidarr's PUT /api/v1/artist/{id}
+// accepts a moveFiles query parameter; we pass moveFiles=false because
+// Stillwater has already moved the directory on disk -- asking Lidarr to also
+// move would either fail (source no longer exists) or race against our own
+// rename.
+//
+// Uses map[string]any rather than the typed Artist struct so unknown fields
+// (Lidarr's ArtistResource is large and evolves between minor versions)
+// survive the round-trip. The Lidarr REST surface is operator-supplied and
+// runs on loopback or LAN; see the New() rationale for why httpsafe is not
+// applied.
+//
+// Used by publish.Publisher.SyncRename after a successful directory rename so
+// Lidarr stops looking for files at the old path and resumes import / refresh
+// against the new one (#1231).
+func (c *Client) UpdateArtistPath(ctx context.Context, platformArtistID, newPath string) error {
+	// PathEscape the platform ID so an ID containing reserved characters
+	// (slashes, percent signs, etc.) cannot break out of the URL segment.
+	// Jellyfin's push.go already does this; bringing Lidarr into parity
+	// closes the same class of bug here. Lidarr IDs are numeric in the
+	// happy path but the value flows in from the platform_ids table, so a
+	// future migration or import path that loaded a non-numeric ID would
+	// still produce a well-formed URL.
+	escapedID := url.PathEscape(platformArtistID)
+	getPath := fmt.Sprintf("/api/v1/artist/%s", escapedID)
+	var item map[string]any
+	if err := c.Get(ctx, getPath, &item); err != nil {
+		return fmt.Errorf("fetching artist for path update: %w", err)
+	}
+	if item == nil {
+		return fmt.Errorf("lidarr returned empty artist body for id %s", platformArtistID)
+	}
+	item["path"] = newPath
+
+	body, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("encoding path update body: %w", err)
+	}
+	// moveFiles=false: the on-disk move has already happened; we are only
+	// updating Lidarr's record of where the files live. Letting Lidarr try
+	// to move them would either fail (source gone) or race our own rename.
+	putPath := fmt.Sprintf("/api/v1/artist/%s?moveFiles=false", escapedID)
+	if err := c.PutJSON(ctx, putPath, bytes.NewReader(body), nil); err != nil {
+		return fmt.Errorf("putting artist path update: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) setAuth(req *http.Request) {

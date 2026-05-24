@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/event"
 )
 
@@ -62,16 +63,27 @@ func TestHandleArtistRenameDirectory_Happy(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	var resp map[string]string
+	// Use map[string]any because the response now carries a platforms
+	// slice alongside the two string fields (#1222, #1231). The slice is
+	// empty on this fixture (no platform mappings seeded) but the field
+	// is always emitted so clients can range over it unconditionally.
+	var resp map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	wantPath := filepath.Join(root, "Renamed")
-	if resp["new_path"] != wantPath {
-		t.Errorf("new_path = %q, want %q", resp["new_path"], wantPath)
+	if got, _ := resp["new_path"].(string); got != wantPath {
+		t.Errorf("new_path = %q, want %q", got, wantPath)
 	}
-	if resp["status"] != "renamed" {
-		t.Errorf("status = %q, want \"renamed\"", resp["status"])
+	if got, _ := resp["status"].(string); got != "renamed" {
+		t.Errorf("status = %q, want \"renamed\"", got)
+	}
+	platforms, ok := resp["platforms"].([]any)
+	if !ok {
+		t.Fatalf("platforms key missing or wrong type: %v", resp["platforms"])
+	}
+	if len(platforms) != 0 {
+		t.Errorf("platforms = %v, want empty slice (no mappings seeded)", platforms)
 	}
 }
 
@@ -282,6 +294,173 @@ func TestHandleArtistRenameDirectory_FilesystemError500(t *testing.T) {
 	}
 	if logged.Load() == 0 {
 		t.Errorf("expected handler to log unmapped error in the default 500 branch")
+	}
+}
+
+// TestHandleArtistRenameDirectory_PlatformsInResponse drives the full
+// happy-path through the publish.Publisher.SyncRename hook with a real
+// httptest Emby peer + a Lidarr peer that simulates a 500. Confirms the
+// handler emits one entry per artist_platform_ids row with the right
+// (connection_id, result, error) shape and that a single platform failure
+// does NOT cause the rename itself to fail or roll back (#1222, #1231).
+func TestHandleArtistRenameDirectory_PlatformsInResponse(t *testing.T) {
+	t.Parallel()
+	r, a, _ := renameHandlerFixture(t)
+	ctx := context.Background()
+
+	// Emby stub: GET /Users/{u}/Items/emby-pid returns minimal item;
+	// POST /Items/emby-pid returns 204 (success).
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"emby-pid","Name":"X","Path":"/old"}`))
+		case http.MethodPost:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer embySrv.Close()
+
+	// Lidarr stub: GET /api/v1/artist/lid-42 returns minimal artist; PUT
+	// returns 500 so the per-platform failure path is exercised end-to-end.
+	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"artistName":"X","path":"/old"}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer lidarrSrv.Close()
+
+	// Seed both connections and the platform-id mappings. The connection
+	// service decrypts api_key at read time, so use Create which encrypts.
+	for _, c := range []*connection.Connection{
+		{ID: "c-emby", Name: "emby", Type: connection.TypeEmby, URL: embySrv.URL, APIKey: "k", Enabled: true, PlatformUserID: "u1"},
+		{ID: "c-lid", Name: "lid", Type: connection.TypeLidarr, URL: lidarrSrv.URL, APIKey: "k", Enabled: true},
+	} {
+		if err := r.connectionService.Create(ctx, c); err != nil {
+			t.Fatalf("seed connection %s: %v", c.ID, err)
+		}
+	}
+	if err := r.artistService.SetPlatformID(ctx, a.ID, "c-emby", "emby-pid"); err != nil {
+		t.Fatalf("set emby platform id: %v", err)
+	}
+	if err := r.artistService.SetPlatformID(ctx, a.ID, "c-lid", "42"); err != nil {
+		t.Fatalf("set lidarr platform id: %v", err)
+	}
+
+	req, w := renameRequest(t, a.ID, "Renamed With Platforms")
+	r.handleArtistRenameDirectory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Status    string                       `json:"status"`
+		NewPath   string                       `json:"new_path"`
+		Platforms []artist.PlatformRemapResult `json:"platforms"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Status != "renamed" {
+		t.Errorf("status = %q, want \"renamed\"", resp.Status)
+	}
+	if len(resp.Platforms) != 2 {
+		t.Fatalf("platforms: got %d, want 2 (one per seeded mapping)", len(resp.Platforms))
+	}
+	byConn := map[string]artist.PlatformRemapResult{}
+	for _, p := range resp.Platforms {
+		byConn[p.ConnectionID] = p
+	}
+	if byConn["c-emby"].Result != artist.PlatformRemapOK {
+		t.Errorf("emby: got %q (err=%q), want ok", byConn["c-emby"].Result, byConn["c-emby"].Error)
+	}
+	if byConn["c-lid"].Result != artist.PlatformRemapFailed {
+		t.Errorf("lidarr: got %q, want failed (peer returned 500)", byConn["c-lid"].Result)
+	}
+	if byConn["c-lid"].Error == "" {
+		t.Error("lidarr Error empty; expected wrapped 500 message")
+	}
+
+	// Lock the omitempty contract: a successful (Emby) entry's JSON must
+	// have NO `error` field. We re-decode the raw body into map[string]any
+	// because the typed decode above can't distinguish "absent" from
+	// "present but empty"; the OpenAPI contract is the former.
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("re-decode raw: %v", err)
+	}
+	rawPlatforms, _ := raw["platforms"].([]any)
+	for _, p := range rawPlatforms {
+		entry, _ := p.(map[string]any)
+		if entry["connection_id"] == "c-emby" {
+			if _, present := entry["error"]; present {
+				t.Errorf("emby entry has error field present; want absent on ok result (omitempty contract): %v", entry)
+			}
+		}
+	}
+}
+
+// TestHandleArtistRenameDirectory_DisabledConnectionOmitsError seeds a
+// disabled connection mapped to the artist, exercises the rename, and
+// asserts the response (HTTP 200) lists the disabled connection with
+// result=ok AND no `error` field. The raw map decode (vs typed
+// PlatformRemapResult struct) is load-bearing: the OpenAPI contract is
+// "error present only when result is failed", so an empty-string `error`
+// would be a regression. omitempty on the struct tag enforces this, and
+// this test guards the wire contract against a future tag drop.
+func TestHandleArtistRenameDirectory_DisabledConnectionOmitsError(t *testing.T) {
+	t.Parallel()
+	r, a, _ := renameHandlerFixture(t)
+	ctx := context.Background()
+
+	// Seed a single disabled Emby connection mapped to the artist. The
+	// peer URL is intentionally bogus: the disabled-skip branch returns
+	// before any HTTP call so the URL never matters.
+	c := &connection.Connection{
+		ID: "c-off", Name: "off", Type: connection.TypeEmby,
+		URL: "http://disabled.invalid", APIKey: "k",
+		Enabled: false, PlatformUserID: "u1",
+	}
+	if err := r.connectionService.Create(ctx, c); err != nil {
+		t.Fatalf("seed disabled connection: %v", err)
+	}
+	if err := r.artistService.SetPlatformID(ctx, a.ID, "c-off", "emby-pid"); err != nil {
+		t.Fatalf("set platform id: %v", err)
+	}
+
+	req, w := renameRequest(t, a.ID, "Renamed With Disabled Peer")
+	r.handleArtistRenameDirectory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// Raw decode (not typed) so we can distinguish absent vs empty-string
+	// for the `error` field; the typed PlatformRemapResult always
+	// materializes Error as "" even when the JSON omits it.
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	rawPlatforms, ok := raw["platforms"].([]any)
+	if !ok {
+		t.Fatalf("platforms key missing or wrong type: %v", raw["platforms"])
+	}
+	if len(rawPlatforms) != 1 {
+		t.Fatalf("platforms: got %d, want 1 (single disabled mapping)", len(rawPlatforms))
+	}
+	entry, _ := rawPlatforms[0].(map[string]any)
+	if got := entry["connection_id"]; got != "c-off" {
+		t.Errorf("connection_id = %v, want c-off", got)
+	}
+	if got := entry["result"]; got != "ok" {
+		t.Errorf("result = %v, want ok (disabled connection is a no-op success)", got)
+	}
+	if _, present := entry["error"]; present {
+		t.Errorf("error field present on disabled-skip entry; want absent per OpenAPI \"present only when result is failed\": %v", entry)
 	}
 }
 

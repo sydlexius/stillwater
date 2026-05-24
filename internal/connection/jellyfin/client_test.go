@@ -665,6 +665,66 @@ func TestUpdateArtistLocks_EmptyItemID(t *testing.T) {
 	}
 }
 
+// TestUpdateArtistPath_RoundTrip exercises the fetch-mutate-POST cycle used
+// by publish.Publisher.SyncRename (#1222). Jellyfin's POST /Items/{id} is a
+// full replacement so the read-only field strip and the unrelated-field
+// preservation both need to fire; the test asserts both.
+func TestUpdateArtistPath_RoundTrip(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"jf-a1","Name":"Bjork","Path":"/old/Bjork","Genres":["Pop"],"ImageTags":{"Primary":"abc"}}]}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/Items/jf-a1" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decoding body: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "jf-a1", "/new/Bjork"); err != nil {
+		t.Fatalf("UpdateArtistPath: %v", err)
+	}
+	got := <-bodyCh
+	if got["Path"] != "/new/Bjork" {
+		t.Errorf("Path = %v, want /new/Bjork", got["Path"])
+	}
+	if got["Name"] != "Bjork" {
+		t.Errorf("Name preservation failed: %v", got["Name"])
+	}
+	// Read-only fields must be stripped by postFullItem before POST.
+	if _, present := got["ImageTags"]; present {
+		t.Errorf("read-only ImageTags should have been stripped, got %v", got["ImageTags"])
+	}
+}
+
+// TestUpdateArtistPath_EmptyItemID mirrors the lock test's guard: an empty
+// platformArtistID would build /Items?Ids= and silently target the wrong
+// item. The fetch must reject before issuing the request.
+func TestUpdateArtistPath_EmptyItemID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UpdateArtistPath(context.Background(), "", "/new"); err == nil {
+		t.Fatal("expected error on empty item id")
+	}
+}
+
 // TestPushMetadata_ClearsFields verifies that empty values in the push data
 // overwrite existing Jellyfin values, allowing field clears to propagate.
 func TestPushMetadata_ClearsFields(t *testing.T) {
