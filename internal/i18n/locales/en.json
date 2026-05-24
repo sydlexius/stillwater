@@ -1918,6 +1918,7 @@
   "settings.tab.rules": "Rules",
   "settings.tab.updates": "Updates",
   "settings.tab.users": "Users",
+  "settings.search_placeholder": "Search settings...",
   "settings.tabs_label": "Settings tabs",
   "settings.tag_sources.caps.description": "Set to 0 to allow an unlimited number of tags. When a cap is set, the highest-priority provider's tags fill the slots first.",
   "settings.tag_sources.caps.label": "Tag Count Caps",

@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,6 +33,30 @@ func profileEditable(p *platform.Profile) bool {
 		return false
 	}
 	return !p.IsBuiltin || p.ID == "custom"
+}
+
+// SettingsSearchEntry is one searchable item in the settings in-page search index.
+// The index is built server-side and emitted as inline JSON so the client-side
+// filter can run without any API call.
+type SettingsSearchEntry struct {
+	ID       string `json:"id"`    // DOM id of the ContextHelp span (e.g. "help-platform-profile")
+	Label    string `json:"label"` // Human-readable control label
+	HelpText string `json:"help"`  // Short help text for the control
+	TabID    string `json:"tab"`   // Tab the control lives on (e.g. "general")
+}
+
+// jsonSearchIndex serializes a search index slice to a JSON string for inline
+// script emission. Falls back to "[]" on marshal error so the page never breaks;
+// the failure is logged so operators see it instead of just a silently empty
+// search box.
+func jsonSearchIndex(index []SettingsSearchEntry) string {
+	b, err := json.Marshal(index)
+	if err != nil {
+		slog.Error("settings search index: json.Marshal failed; emitting empty index",
+			"err", err, "entry_count", len(index))
+		return "[]"
+	}
+	return string(b)
 }
 
 // SettingsData holds the data for the settings page.
@@ -226,6 +251,100 @@ func settingsTabs() []settingsTab {
 	}
 }
 
+// BuildSettingsSearchIndex returns the static search index for the settings
+// in-page search feature. Each entry maps a ContextHelp anchor id to a
+// human-readable label, short help text, and the tab the control lives on.
+// Entries use the English strings directly; the search feature is not
+// translated (the labels are the same text the user reads in the UI).
+func BuildSettingsSearchIndex() []SettingsSearchEntry {
+	return []SettingsSearchEntry{
+		// General tab
+		{ID: "help-platform-profile", Label: "Platform Profile", HelpText: "Profiles bundle the NFO format and image filename conventions for a specific media platform.", TabID: "general"},
+		{ID: "help-active-profile", Label: "Active Profile Details", HelpText: "Override the filenames used for poster, banner, logo, and other image types in the active platform profile.", TabID: "general"},
+		{ID: "help-symlinks", Label: "Use symlinks for duplicates", HelpText: "When a platform profile maps multiple filenames to the same image type, Stillwater writes one real file and creates symlinks.", TabID: "general"},
+		{ID: "help-tls-status", Label: "TLS Status", HelpText: "Stillwater can serve over HTTPS using a certificate you provide or an ACME-issued cert.", TabID: "general"},
+		{ID: "help-base-path", Label: "Base Path", HelpText: "Set this when Stillwater lives at a sub-path behind a reverse proxy.", TabID: "general"},
+		{ID: "help-behavior", Label: "Behavior", HelpText: "Defaults applied when Stillwater fetches and writes metadata: which fields auto-fill, which require confirmation.", TabID: "general"},
+		{ID: "help-platform-debug", Label: "Platform Debug", HelpText: "When on, a Debug tab appears on each artist detail page showing the raw API payload from connected servers.", TabID: "general"},
+		{ID: "help-image-cache", Label: "Image Cache", HelpText: "Stillwater caches downloaded images locally. Set a maximum size to keep disk usage bounded.", TabID: "general"},
+		{ID: "help-cache-max-size", Label: "Cache Max Size", HelpText: "Maximum disk space for the image cache in megabytes. 0 means unlimited.", TabID: "general"},
+		{ID: "help-cache-clear", Label: "Clear Cache", HelpText: "Deletes all cached images, freeing disk space. Stillwater re-downloads images as needed.", TabID: "general"},
+		// Providers tab
+		{ID: "help-provider-keys", Label: "Provider API Keys", HelpText: "Some metadata providers require an API key. Add the key issued by the provider here.", TabID: "providers"},
+		{ID: "help-web-search", Label: "Web Image Search", HelpText: "Falls back to general-purpose web image search when authoritative providers return nothing.", TabID: "providers"},
+		{ID: "help-provider-priorities", Label: "Provider Priorities", HelpText: "When multiple providers return data for the same field, Stillwater uses the first enabled provider in the priority list.", TabID: "providers"},
+		{ID: "help-metadata-languages", Label: "Metadata Language Preferences", HelpText: "Controls which language metadata providers return for artist names, biographies, and other text.", TabID: "providers"},
+		{ID: "help-advanced", Label: "Advanced Provider Settings", HelpText: "Tuning knobs for how Stillwater decides whether a provider response matches the local artist.", TabID: "providers"},
+		{ID: "help-name-similarity", Label: "Name Similarity Threshold", HelpText: "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches.", TabID: "providers"},
+		{ID: "help-tag-sources", Label: "Tag Sources", HelpText: "Controls which genre, style, and mood tags reach your NFO files. Exclude patterns drop any tag matching a substring.", TabID: "providers"},
+		{ID: "help-tag-sources-exclude", Label: "Tag Exclude Patterns", HelpText: "Comma-separated substrings; any tag containing one of these strings is dropped before writing to NFO.", TabID: "providers"},
+		// Connections tab
+		{ID: "help-connections", Label: "Server Connections", HelpText: "Each connection links Stillwater to one media server. Connections drive library imports, NFO writes, and image pushes.", TabID: "connections"},
+		// Libraries tab
+		{ID: "help-libraries", Label: "Music Libraries", HelpText: "A library is a directory full of artist folders that Stillwater scans, watches, and writes NFO/image files into.", TabID: "libraries"},
+		{ID: "help-lib-add-name", Label: "Library Name", HelpText: "A short label for this library shown in the UI and used in log messages.", TabID: "libraries"},
+		{ID: "help-lib-add-path", Label: "Library Path", HelpText: "Absolute path on disk to the root folder containing artist subdirectories.", TabID: "libraries"},
+		// Automation tab
+		{ID: "help-webhooks", Label: "Webhooks", HelpText: "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.).", TabID: "automation"},
+		{ID: "help-notif-badges", Label: "Notification Badges", HelpText: "Controls the violation count badge shown on the Reports link in the sidebar.", TabID: "automation"},
+		{ID: "help-notif-enable-badge", Label: "Enable Notification Badge", HelpText: "Show a count badge on the sidebar Reports link when rules find violations.", TabID: "automation"},
+		{ID: "help-notif-count-severity", Label: "Badge Count by Severity", HelpText: "Choose which violation severity levels contribute to the badge count.", TabID: "automation"},
+		{ID: "help-api-tokens", Label: "API Tokens", HelpText: "Bearer tokens that let scripts and external integrations call the Stillwater API.", TabID: "automation"},
+		{ID: "help-token-scope-read", Label: "API Token Scope: Read", HelpText: "Read-only access to artists, libraries, rules, and settings.", TabID: "automation"},
+		{ID: "help-token-scope-write", Label: "API Token Scope: Write", HelpText: "Create and modify artists, run rules, and queue background work.", TabID: "automation"},
+		{ID: "help-token-scope-webhook", Label: "API Token Scope: Webhook", HelpText: "Lets the token receive inbound webhook deliveries from external systems.", TabID: "automation"},
+		{ID: "help-token-scope-admin", Label: "API Token Scope: Admin", HelpText: "Combines read, write, and webhook scopes. Admin-gated routes still require the owning user account to be an admin.", TabID: "automation"},
+		// Rules tab
+		{ID: "help-rules-nfo", Label: "NFO Rules", HelpText: "Rules that check and fix NFO metadata files written alongside artist folders.", TabID: "rules"},
+		{ID: "help-rules-image", Label: "Image Rules", HelpText: "Rules that check and fix image files: posters, banners, logos, fanart, and backdrops.", TabID: "rules"},
+		{ID: "help-rules-metadata", Label: "Metadata Rules", HelpText: "Rules that check and fix provider-sourced metadata fields.", TabID: "rules"},
+		{ID: "help-rule-schedule", Label: "Scheduled Rule Evaluation", HelpText: "Periodically evaluates all enabled rules across your library. Rules set to auto-fix correct violations automatically.", TabID: "rules"},
+		// Users tab
+		{ID: "help-multi-user-toggle", Label: "Multi-User Mode", HelpText: "Enables multiple user accounts on this Stillwater instance, each with their own roles and preferences.", TabID: "users"},
+		{ID: "help-users", Label: "Users", HelpText: "Manage user accounts: invite new members, change roles, or deactivate accounts.", TabID: "users"},
+		{ID: "help-invite-role", Label: "Invite Role", HelpText: "The role assigned to users who accept this invite link: viewer or admin.", TabID: "users"},
+		{ID: "help-invite-expires", Label: "Invite Expiry", HelpText: "How long the invite link remains valid before it expires and new signups are rejected.", TabID: "users"},
+		{ID: "help-pending-invites", Label: "Pending Invites", HelpText: "Active invite links that have not yet been accepted. Revoke a link to prevent new signups from using it.", TabID: "users"},
+		// Auth Providers tab
+		{ID: "help-auth", Label: "Authentication Providers", HelpText: "Auth providers control who can sign in to Stillwater. Local accounts are always on as a break-glass fallback.", TabID: "auth_providers"},
+		{ID: "help-local-always-on", Label: "Local Accounts", HelpText: "Local username/password accounts are always enabled and cannot be turned off.", TabID: "auth_providers"},
+		{ID: "help-auth-enable-emby", Label: "Emby SSO", HelpText: "Allow users to sign in with their Emby server credentials.", TabID: "auth_providers"},
+		{ID: "help-auth-enable-jellyfin", Label: "Jellyfin SSO", HelpText: "Allow users to sign in with their Jellyfin server credentials.", TabID: "auth_providers"},
+		{ID: "help-auth-enable-oidc", Label: "OIDC / OAuth2", HelpText: "Allow users to sign in via an external OpenID Connect identity provider.", TabID: "auth_providers"},
+		{ID: "help-oidc-issuer", Label: "OIDC Issuer URL", HelpText: "The base URL of the OpenID Connect provider (e.g. https://accounts.google.com).", TabID: "auth_providers"},
+		{ID: "help-oidc-client-id", Label: "OIDC Client ID", HelpText: "The client ID registered with the OIDC provider for this Stillwater instance.", TabID: "auth_providers"},
+		{ID: "help-oidc-client-secret", Label: "OIDC Client Secret", HelpText: "The client secret issued by the OIDC provider. Stored encrypted at rest.", TabID: "auth_providers"},
+		// Maintenance tab
+		{ID: "help-confirm-dialogs", Label: "Confirmation Dialogs", HelpText: "Some destructive actions open a confirmation dialog before proceeding. This controls whether those dialogs appear.", TabID: "maintenance"},
+		{ID: "help-db-maintenance", Label: "Database Maintenance", HelpText: "SQLite reclaims space and rebuilds indexes through PRAGMA optimize and VACUUM.", TabID: "maintenance"},
+		{ID: "help-db-auto-schedule", Label: "Auto-Schedule DB Maintenance", HelpText: "Automatically run VACUUM and PRAGMA optimize on a schedule to keep the database compact.", TabID: "maintenance"},
+		{ID: "help-backup", Label: "Database Backup", HelpText: "Timestamped copies of the Stillwater SQLite database written to disk.", TabID: "maintenance"},
+		{ID: "help-backup-keep", Label: "Backups to Keep", HelpText: "Maximum number of backup files to retain. Older backups are deleted when this limit is reached.", TabID: "maintenance"},
+		{ID: "help-backup-max-age", Label: "Backup Max Age", HelpText: "Delete backups older than this many days.", TabID: "maintenance"},
+		{ID: "help-export-import", Label: "Settings Export / Import", HelpText: "Export bundles provider keys, connections, profiles, libraries, webhooks, and API tokens into an encrypted archive.", TabID: "maintenance"},
+		{ID: "help-export-passphrase", Label: "Export Passphrase", HelpText: "Passphrase used to encrypt the settings export archive. Required to import on another instance.", TabID: "maintenance"},
+		{ID: "help-import-file", Label: "Import File", HelpText: "Select a previously exported Stillwater settings archive (.swbak) to restore.", TabID: "maintenance"},
+		{ID: "help-import-passphrase", Label: "Import Passphrase", HelpText: "The passphrase that was used when the archive was exported.", TabID: "maintenance"},
+		// Logs tab
+		{ID: "help-log-settings", Label: "Log Settings", HelpText: "Configure the Stillwater log level, format, and file output.", TabID: "logs"},
+		{ID: "help-log-level", Label: "Log Level", HelpText: "Minimum severity to write to the log. Debug emits the most; Error the least.", TabID: "logs"},
+		{ID: "help-log-format", Label: "Log Format", HelpText: "JSON is machine-readable for log aggregators. Text is human-readable for local development.", TabID: "logs"},
+		{ID: "help-log-to-file", Label: "Log to File", HelpText: "When on, Stillwater also writes logs to a file on disk in addition to stdout.", TabID: "logs"},
+		{ID: "help-log-file-path", Label: "Log File Path", HelpText: "Absolute path to the log file. Defaults to /config/logs/stillwater.log.", TabID: "logs"},
+		{ID: "help-log-max-size", Label: "Log Max Size", HelpText: "Rotate the log file when it reaches this size in megabytes.", TabID: "logs"},
+		{ID: "help-log-files-to-keep", Label: "Log Files to Keep", HelpText: "Maximum number of rotated log files to retain on disk.", TabID: "logs"},
+		{ID: "help-log-max-age", Label: "Log Max Age", HelpText: "Delete rotated log files older than this many days.", TabID: "logs"},
+		{ID: "help-log-viewer", Label: "Log Viewer", HelpText: "Live tail of the most recent Stillwater log entries with filter controls.", TabID: "logs"},
+		// Updates tab
+		{ID: "help-updates", Label: "Application Updates", HelpText: "Stillwater checks GitHub Releases for new versions and can install them in place on non-Docker hosts.", TabID: "updates"},
+		{ID: "help-updates-enabled", Label: "Enable Updates", HelpText: "Master switch for the update checker. When off, Stillwater never contacts GitHub for version information.", TabID: "updates"},
+		{ID: "help-updates-channel", Label: "Update Channel", HelpText: "Stable receives only tagged releases. Prerelease also receives release candidates.", TabID: "updates"},
+		{ID: "help-updates-auto-check", Label: "Auto-Check for Updates", HelpText: "Automatically check for new versions in the background on the configured interval.", TabID: "updates"},
+		{ID: "help-updates-auto-update", Label: "Auto-Update", HelpText: "Automatically download and apply updates without manual confirmation. Not available on Docker installs.", TabID: "updates"},
+		{ID: "help-updates-config", Label: "Updates Configuration", HelpText: "Check interval and other update behavior settings.", TabID: "updates"},
+	}
+}
+
 // rulesForCategory filters rules by category.
 func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
 	var result []rule.Rule
@@ -235,6 +354,56 @@ func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
 		}
 	}
 	return result
+}
+
+// imageSubtypeLabel maps a rule ID to a human-readable image sub-type label
+// used as a sub-group heading inside the Images category card.
+func imageSubtypeLabel(ruleID string) string {
+	switch {
+	case strings.HasPrefix(ruleID, "thumb_"):
+		return "Thumbnail"
+	case strings.HasPrefix(ruleID, "fanart_"):
+		return "Fanart"
+	case strings.HasPrefix(ruleID, "logo_"):
+		return "Logo"
+	case strings.HasPrefix(ruleID, "banner_"):
+		return "Banner"
+	case strings.HasPrefix(ruleID, "backdrop_"):
+		return "Backdrop"
+	default:
+		return "General"
+	}
+}
+
+// rulesForImageSubtype returns rules whose ID starts with the given prefix.
+func rulesForImageSubtype(rules []rule.Rule, prefix string) []rule.Rule {
+	var out []rule.Rule
+	for _, r := range rules {
+		if strings.HasPrefix(r.ID, prefix) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// rulesForImageSubtypeFallback returns rules whose ID does not start with any
+// recognized image sub-type prefix. These are grouped under a "General" heading.
+func rulesForImageSubtypeFallback(rules []rule.Rule) []rule.Rule {
+	recognized := []string{"thumb_", "fanart_", "logo_", "banner_", "backdrop_"}
+	var out []rule.Rule
+	for _, r := range rules {
+		matched := false
+		for _, pfx := range recognized {
+			if strings.HasPrefix(r.ID, pfx) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // ruleCatalogueURL returns the absolute URL of a rule's section in the rules
@@ -650,6 +819,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@metadataLanguagesScript()
 		@romanizationFallbackScript()
 		@components.ContextHelpScript()
+		@settingsSearchIndexScript(BuildSettingsSearchIndex())
+		@settingsSearchScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
@@ -1858,17 +2029,57 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
 								// Each row inspects the page-level flags (declared above)
 								// before flipping them so the help icon emits exactly once.
-								for _, rl := range catRules {
-									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
-									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
-									{{ showSeverityHelp := !severityHelpShown }}
-									if showFsHelp {
-										{{ fsHelpShown = true }}
+								// The fsHelpShown and severityHelpShown flags are shared across
+								// all sub-groups within this card so they still fire exactly once.
+								if cat == "image" {
+									{{ subtypeOrder := []string{"thumb_", "fanart_", "logo_", "banner_", "backdrop_"} }}
+									for _, pfx := range subtypeOrder {
+										{{ sub := rulesForImageSubtype(catRules, pfx) }}
+										if len(sub) > 0 {
+											<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(sub[0].ID) }</h3>
+											for _, rl := range sub {
+												{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+												{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+												{{ showSeverityHelp := !severityHelpShown }}
+												if showFsHelp {
+													{{ fsHelpShown = true }}
+												}
+												if showSeverityHelp {
+													{{ severityHelpShown = true }}
+												}
+												@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+											}
+										}
 									}
-									if showSeverityHelp {
-										{{ severityHelpShown = true }}
+									{{ generalRules := rulesForImageSubtypeFallback(catRules) }}
+									if len(generalRules) > 0 {
+										<h3 class="px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{ imageSubtypeLabel(generalRules[0].ID) }</h3>
+										for _, rl := range generalRules {
+											{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+											{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+											{{ showSeverityHelp := !severityHelpShown }}
+											if showFsHelp {
+												{{ fsHelpShown = true }}
+											}
+											if showSeverityHelp {
+												{{ severityHelpShown = true }}
+											}
+											@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+										}
 									}
-									@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+								} else {
+									for _, rl := range catRules {
+										{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
+										{{ showFsHelp := isFsUnavail && !fsHelpShown }}
+										{{ showSeverityHelp := !severityHelpShown }}
+										if showFsHelp {
+											{{ fsHelpShown = true }}
+										}
+										if showSeverityHelp {
+											{{ severityHelpShown = true }}
+										}
+										@ruleRow(rl, data.HasLocalLibrary, showSeverityHelp, showFsHelp)
+									}
 								}
 							</div>
 						</div>
@@ -2550,6 +2761,15 @@ templ resetConfirmPrefsScript() {
 
 templ settingsTabBar(activeTab string, basePath string) {
 	<div class="sw-card rounded-lg p-1.5">
+		<div class="px-2 pb-1.5">
+			<input
+				type="search"
+				id="settings-search-input"
+				placeholder={ t(ctx, "settings.search_placeholder") }
+				aria-label={ t(ctx, "settings.search_placeholder") }
+				class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+			/>
+		</div>
 		<nav class="flex overflow-x-auto gap-0.5" aria-label={ t(ctx, "settings.tabs_label") }>
 			for _, tab := range settingsTabs() {
 				<a
@@ -3540,6 +3760,84 @@ templ profileNamingEditorScript() {
 			}).catch(function() {
 				status.textContent = 'Network error.';
 			});
+		}
+	</script>
+}
+
+// settingsSearchIndexScript emits the search index as a window-global JSON
+// variable. Using @templ.Raw avoids HTML-attribute escaping that would corrupt
+// the JSON; this is safe because json.Marshal produces only ASCII-safe output
+// with no unescaped angle brackets or ampersands.
+templ settingsSearchIndexScript(index []SettingsSearchEntry) {
+	@templ.Raw(`<script>window.swSettingsSearchIndex = ` + jsonSearchIndex(index) + `;</script>`)
+}
+
+// settingsSearchScript emits the client-side in-page search behavior:
+//   - Reads from window.swSettingsSearchIndex (emitted by settingsSearchIndexScript).
+//   - Filters tabs by match count and greys out non-matching tabs.
+//   - '/' keyboard shortcut focuses the search box from anywhere on the page.
+//   - Empty query restores normal tab state.
+templ settingsSearchScript() {
+	<script>
+		// Defer wiring until the input + tab nav exist; this script may be emitted
+		// before the elements it queries are parsed by the browser.
+		function swInitSettingsSearch() {
+			var input = document.getElementById('settings-search-input');
+			if (!input) return;
+			var index = window.swSettingsSearchIndex || [];
+
+			function clearFilter() {
+				document.querySelectorAll('[data-tab]').forEach(function (t) {
+					t.classList.remove('opacity-40', 'pointer-events-none');
+					t.removeAttribute('data-match-count');
+				});
+			}
+
+			function applyFilter(query) {
+				var q = query.trim().toLowerCase();
+				if (!q) { clearFilter(); return; }
+
+				var matchCountByTab = {};
+				index.forEach(function (e) {
+					if (e.label.toLowerCase().indexOf(q) !== -1 || e.help.toLowerCase().indexOf(q) !== -1) {
+						matchCountByTab[e.tab] = (matchCountByTab[e.tab] || 0) + 1;
+					}
+				});
+
+				document.querySelectorAll('[data-tab]').forEach(function (t) {
+					var tabId = t.getAttribute('data-tab');
+					var count = matchCountByTab[tabId] || 0;
+					if (count === 0) {
+						t.classList.add('opacity-40', 'pointer-events-none');
+						t.removeAttribute('data-match-count');
+					} else {
+						t.classList.remove('opacity-40', 'pointer-events-none');
+						t.setAttribute('data-match-count', String(count));
+					}
+				});
+			}
+
+			input.addEventListener('input', function (e) { applyFilter(e.target.value); });
+
+			// '/' shortcut: focus the search box when pressed outside an editable element.
+			// Guard against synthetic events where e.target may be null so an
+			// uncaught TypeError does not break the entire keydown chain.
+			document.addEventListener('keydown', function (e) {
+				if (e.key !== '/') return;
+				if (e.ctrlKey || e.metaKey || e.altKey) return;
+				var t = e.target;
+				if (!t) return;
+				var tag = (t.tagName || '').toLowerCase();
+				if (tag === 'input' || tag === 'textarea' || t.isContentEditable) return;
+				e.preventDefault();
+				input.focus();
+				input.select();
+			});
+		}
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', swInitSettingsSearch);
+		} else {
+			swInitSettingsSearch();
 		}
 	</script>
 }
