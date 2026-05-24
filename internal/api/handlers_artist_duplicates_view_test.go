@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -63,5 +66,30 @@ func TestBuildArtistDuplicatesView_EmptyGroups(t *testing.T) {
 	}
 	if len(view.Groups) != 0 {
 		t.Errorf("expected 0 groups, got %d", len(view.Groups))
+	}
+}
+
+// TestHandleDuplicates_Empty wires handleDuplicates and confirms it returns
+// a 200 with an empty JSON array when no near-duplicate groups exist. The
+// handler powers both /api/v1/artists/duplicates (deprecated alias) and
+// /api/v1/reports/duplicates (canonical after the #1615 IA move) -- this
+// single call covers both operationIds in the openapi coverage gate.
+func TestHandleDuplicates_Empty(t *testing.T) {
+	r, _, _ := mergeTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/duplicates", nil)
+	rec := httptest.NewRecorder()
+
+	r.handleDuplicates(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	var got []artist.DuplicateGroup
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal body: %v\nraw: %s", err, rec.Body.String())
+	}
+	if len(got) != 0 {
+		t.Errorf("len(groups) = %d, want 0 (empty DB)", len(got))
 	}
 }

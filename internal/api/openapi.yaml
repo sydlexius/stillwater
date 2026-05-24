@@ -30,6 +30,25 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    DuplicateGroup:
+      type: object
+      description: >-
+        One detected near-duplicate group. Returned by the duplicates
+        report (both the canonical /reports/duplicates path and the
+        deprecated /artists/duplicates alias).
+      properties:
+        artists:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artist"
+          description: Artists in this duplicate group.
+        reason:
+          type: string
+          description: >-
+            Human-readable explanation of why these artists are considered
+            duplicates (e.g. "shared MusicBrainz ID: abc123",
+            "shared alias: The Beatles").
+      required: [artists, reason]
     VocabConfig:
       type: object
       additionalProperties: false
@@ -2591,19 +2610,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    artists:
-                      type: array
-                      items:
-                        $ref: "#/components/schemas/Artist"
-                      description: Artists in this duplicate group.
-                    reason:
-                      type: string
-                      description: >-
-                        Human-readable explanation of why these artists are considered
-                        duplicates (e.g. "shared MusicBrainz ID: abc123",
-                        "shared alias: The Beatles").
+                  $ref: "#/components/schemas/DuplicateGroup"
 
   /artists/duplicates:
     get:
@@ -2623,19 +2630,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    artists:
-                      type: array
-                      items:
-                        $ref: "#/components/schemas/Artist"
-                      description: Artists in this duplicate group.
-                    reason:
-                      type: string
-                      description: >-
-                        Human-readable explanation of why these artists are considered
-                        duplicates (e.g. "shared MusicBrainz ID: abc123",
-                        "shared alias: The Beatles").
+                  $ref: "#/components/schemas/DuplicateGroup"
 
   /artists/merge:
     post:

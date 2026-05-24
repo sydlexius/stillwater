@@ -120,4 +120,10 @@ To see which artist records were flagged, open the **Possible duplicate artists*
 - **MBID match** -- every member shares the same MusicBrainz artist ID. This is the higher-confidence signal.
 - **Name key match** -- the members' names normalize to the same value. Review these manually; an exact MusicBrainz ID match is not present.
 
-Each group offers a **Merge** action. Click it to open a confirmation modal that previews which album subdirectories would be moved into the surviving artist's folder. The recommended survivor is pre-selected based on which record's directory basename matches the MusicBrainz canonical name (so connected tools like Lidarr do not re-fork the artist). Confirming the merge consolidates the directories on disk and collapses the artist records into one.
+Each group offers a **Merge** action. Click it to open a confirmation modal that previews which album subdirectories would be moved into the surviving artist's folder. The recommended survivor is pre-selected using the following precedence:
+
+1. The record whose directory basename matches the MusicBrainz canonical name (so connected tools like Lidarr do not re-fork the artist).
+2. The record with the most album subdirectories on disk, if no member matches the canonical name.
+3. Lowest artist ID as a deterministic fallback if neither rule applies.
+
+You can override the recommendation by selecting a different survivor in the modal; the orchestrator will flag the deviation in the response but the merge still runs. Confirming the merge consolidates the directories on disk and collapses the artist records into one.
