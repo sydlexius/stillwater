@@ -391,10 +391,6 @@ func (a *Application) buildServices() error {
 	wireInfraServices(ctx, a, db, cfg, logger)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
-	// Hand ownership to run(): the caller's deferred Stop now owns
-	// the bus lifecycle. Clearing the flag prevents the deferred
-	// Stop above from firing on the success path.
-	busOwned = false
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
@@ -465,6 +461,13 @@ func (a *Application) buildServices() error {
 		Encryptor:          a.encryptor,
 	})
 
+	// Hand ownership to run(): the caller's deferred Stop now owns the
+	// bus lifecycle. Clearing the flag prevents the deferred Stop above
+	// from firing on the success path. Must be the LAST thing before
+	// `return nil` so every fallible step in buildServices (i18n bundle
+	// load, router construction, etc.) is still guarded by the deferred
+	// Stop if it errors.
+	busOwned = false
 	return nil
 }
 
