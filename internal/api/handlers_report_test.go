@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -985,5 +986,134 @@ func TestHandleReportHealthByLibrary(t *testing.T) {
 		if lib.TotalArtists != 1 {
 			t.Errorf("library %q TotalArtists = %d, want 1", lib.LibraryName, lib.TotalArtists)
 		}
+	}
+}
+
+// TestHandleCompliancePage_HXPushURL verifies that an HTMX request to the
+// compliance HTML page emits HX-Push-Url carrying every active filter param
+// so the address bar reflects the post-swap state. The header is the
+// load-bearing piece for shareable filtered URLs, so each canonical key
+// must round-trip without renaming or dropping.
+func TestHandleCompliancePage_HXPushURL(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/reports/compliance?status=non_compliant&filter=missing_nfo&library_id=lib-1&health_min=40&health_max=80",
+		nil,
+	)
+	req.Header.Set("HX-Request", "true")
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+
+	r.handleCompliancePage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	push := w.Header().Get("HX-Push-Url")
+	if push == "" {
+		t.Fatalf("expected HX-Push-Url on HTMX request")
+	}
+	// Every active filter must appear in the pushed URL so the address bar
+	// can be copy-pasted and re-loaded.
+	wantSubs := []string{
+		"status=non_compliant",
+		"filter=missing_nfo",
+		"library_id=lib-1",
+		"health_min=40",
+		"health_max=80",
+	}
+	for _, s := range wantSubs {
+		if !strings.Contains(push, s) {
+			t.Errorf("HX-Push-Url missing %q; got %q", s, push)
+		}
+	}
+}
+
+// TestComplianceURLValues verifies the per-param URL-encoding behavior:
+// empty / default values are dropped, non-defaults are written, and the
+// status `all` synonym is treated as a no-op (matches the rest of the page).
+func TestComplianceURLValues(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		params   artist.ListParams
+		status   string
+		filter   string
+		wantKeys map[string]string
+	}{
+		{
+			name:     "all defaults",
+			params:   artist.ListParams{},
+			status:   "",
+			filter:   "",
+			wantKeys: map[string]string{},
+		},
+		{
+			name:   "status all is treated as default",
+			params: artist.ListParams{},
+			status: "all",
+			filter: "",
+			// `all` means "no filter" so we must not echo it.
+			wantKeys: map[string]string{},
+		},
+		{
+			name:   "full set",
+			params: artist.ListParams{Search: "indie", LibraryID: "lib-1", HealthScoreMin: 40, HealthScoreMax: 80, Sort: "health_score", Order: "desc"},
+			status: "non_compliant",
+			filter: "missing_nfo",
+			wantKeys: map[string]string{
+				"search":     "indie",
+				"status":     "non_compliant",
+				"filter":     "missing_nfo",
+				"library_id": "lib-1",
+				"health_min": "40",
+				"health_max": "80",
+				"sort":       "health_score",
+				"order":      "desc",
+			},
+		},
+		{
+			name:     "sort=name and order=asc are default and dropped",
+			params:   artist.ListParams{Sort: "name", Order: "asc"},
+			status:   "",
+			filter:   "",
+			wantKeys: map[string]string{},
+		},
+		{
+			// Regression for CR finding on PR #1653: pagination must survive
+			// HTMX swaps so the address bar reflects the current page when a
+			// chip is dismissed mid-listing.
+			name:   "non-default pagination is preserved",
+			params: artist.ListParams{Page: 3, PageSize: 100},
+			status: "",
+			filter: "",
+			wantKeys: map[string]string{
+				"page":      "3",
+				"page_size": "100",
+			},
+		},
+		{
+			name:     "page=1 and default page_size are dropped",
+			params:   artist.ListParams{Page: 1, PageSize: compliancePageSizeDefault},
+			status:   "",
+			filter:   "",
+			wantKeys: map[string]string{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := complianceURLValues(tc.params, tc.status, tc.filter)
+			if len(got) != len(tc.wantKeys) {
+				t.Errorf("len = %d, want %d (got=%v)", len(got), len(tc.wantKeys), got)
+			}
+			for k, v := range tc.wantKeys {
+				if g := got.Get(k); g != v {
+					t.Errorf("key %q = %q, want %q", k, g, v)
+				}
+			}
+		})
 	}
 }

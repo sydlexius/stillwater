@@ -10,6 +10,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // ActionQueueData holds data for the dashboard action queue fragment.
@@ -190,7 +191,7 @@ func dashboardLoadMoreURL(data ActionQueueData) string {
 	addIfSet(q, "search", data.Search)
 	addIfSet(q, "severity", data.Severity)
 	addIfSet(q, "category", data.Category)
-	addIfSet(q, "library", data.LibraryID)
+	addIfSet(q, "library_id", data.LibraryID)
 	addIfSet(q, "rule", data.RuleID)
 	addIfSet(q, "fixable", data.Fixable)
 	return "/dashboard/actions?" + q.Encode()
@@ -208,8 +209,8 @@ func dashboardFilterQuery(data ActionQueueData, key, value string) string {
 	if key != "category" {
 		addIfSet(q, "category", data.Category)
 	}
-	if key != "library" {
-		addIfSet(q, "library", data.LibraryID)
+	if key != "library_id" {
+		addIfSet(q, "library_id", data.LibraryID)
 	}
 	if key != "rule" {
 		addIfSet(q, "rule", data.RuleID)
@@ -255,19 +256,23 @@ func addIfSet(q url.Values, key, value string) {
 	}
 }
 
-// hasActiveFilters reports whether any filter (search or dimension) is currently applied.
+// hasActiveFilters reports whether any chip-controllable filter dimension is
+// currently applied. Search is intentionally excluded -- it has its own input
+// above the chip row and is not represented as a removable chip, so counting
+// it would show an active-filter badge / clear-all affordance with nothing
+// individually removable (CR feedback on PR #1653).
 func hasActiveFilters(data ActionQueueData) bool {
-	return data.Search != "" || data.Severity != "" || data.Category != "" ||
+	return data.Severity != "" || data.Category != "" ||
 		data.LibraryID != "" || data.RuleID != "" || data.Fixable != ""
 }
 
-// dashboardActiveFilterCount returns the number of distinct filter dimensions applied,
-// counting search as one dimension.
+// dashboardActiveFilterCount returns the number of distinct chip-controllable
+// filter dimensions applied. Search is intentionally excluded from the count
+// (see hasActiveFilters) so the count, the badge, and the visible chips stay
+// aligned: every counted dimension has a corresponding chip the user can
+// dismiss individually.
 func dashboardActiveFilterCount(data ActionQueueData) int {
 	n := 0
-	if data.Search != "" {
-		n++
-	}
 	if data.Severity != "" {
 		n++
 	}
@@ -375,6 +380,7 @@ templ DashboardActionHeader(data ActionQueueData) {
 						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						aria-expanded="false"
 						aria-controls="dashboard-filter-flyout"
+						data-badge-classes="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-1.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 sw-filter-trigger-badge"
 						onclick="swDashboardPanels && swDashboardPanels.toggleFilters()"
 					>
 						<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
@@ -427,14 +433,14 @@ templ DashboardSearchBar(data ActionQueueData) {
 				hx-trigger="input changed delay:300ms, keyup[key=='Enter']"
 				hx-target="#action-queue"
 				hx-swap="innerHTML"
-				hx-include="[name='severity'],[name='category'],[name='library'],[name='rule'],[name='fixable']"
+				hx-include="[name='severity'],[name='category'],[name='library_id'],[name='rule'],[name='fixable']"
 				hx-preserve="true"
 				class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 py-1.5 pl-9 pr-8 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 			/>
 			// Hidden inputs carry the current filter state so hx-include above can forward it.
 			<input type="hidden" name="severity" value={ data.Severity }/>
 			<input type="hidden" name="category" value={ data.Category }/>
-			<input type="hidden" name="library" value={ data.LibraryID }/>
+			<input type="hidden" name="library_id" value={ data.LibraryID }/>
 			<input type="hidden" name="rule" value={ data.RuleID }/>
 			<input type="hidden" name="fixable" value={ data.Fixable }/>
 		</div>
@@ -442,229 +448,81 @@ templ DashboardSearchBar(data ActionQueueData) {
 }
 
 // DashboardActiveFilters renders a removable chip for each active filter so
-// users can clear individual filters without opening the flyout. The filter
-// trigger button (in the header) shows the total count as a badge.
+// users can clear individual filters without opening the flyout. Delegates
+// chip surface + dismiss behavior to the shared ActiveFilters component so
+// every page (dashboard, artists, reports) shows visually identical chips.
 templ DashboardActiveFilters(data ActionQueueData) {
-	if hasActiveFilters(data) {
-		<div class="flex flex-wrap items-center gap-1.5 mt-2 px-1">
-			<span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "dashboard.active_filters_label") }</span>
-			if data.Severity != "" {
-				@dashboardActiveChip(data, "severity", severityLabel(ctx, data.Severity))
-			}
-			if data.Category != "" {
-				@dashboardActiveChip(data, "category", dashboardCategoryLabel(ctx, data.Category))
-			}
-			if data.LibraryID != "" {
-				@dashboardActiveChip(data, "library", libraryNameByID(data.Libraries, data.LibraryID))
-			}
-			if data.RuleID != "" {
-				@dashboardActiveChip(data, "rule", ruleNameByID(data.RuleCounts, data.RuleID))
-			}
-			if data.Fixable != "" {
-				@dashboardActiveChip(data, "fixable", fixableLabel(ctx, data.Fixable))
-			}
-			<button
-				type="button"
-				hx-get="/dashboard/actions"
-				hx-target="#action-queue"
-				hx-swap="innerHTML"
-				hx-push-url={ data.BasePath + "/" }
-				class="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-1"
-			>
-				{ t(ctx, "common.clear_all") }
-			</button>
-		</div>
+	@components.ActiveFilters("#action-queue", dashboardClearAllHref(data), t(ctx, "common.clear_all"), t(ctx, "dashboard.active_filters_label"), dashboardActiveChips(ctx, data))
+}
+
+// dashboardActiveChips returns the slice of FilterChipSpec entries that
+// reflect the currently active dashboard filters. Each chip's Key matches
+// the URL query param the shared DismissFilterChip script strips on click.
+func dashboardActiveChips(ctx context.Context, data ActionQueueData) []components.FilterChipSpec {
+	chips := make([]components.FilterChipSpec, 0, 5)
+	if data.Severity != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "severity", Label: severityLabel(ctx, data.Severity)})
 	}
-}
-
-// dashboardActiveChip renders a single removable filter chip. Clicking the X
-// fires an hx-get that drops only that filter while preserving the others.
-templ dashboardActiveChip(data ActionQueueData, key, label string) {
-	<span class="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300">
-		{ label }
-		<button
-			type="button"
-			aria-label={ tf(ctx, "dashboard.remove_filter", label) }
-			hx-get={ dashboardFilterURL(data, key, "") }
-			hx-target="#action-queue"
-			hx-swap="innerHTML"
-			hx-push-url={ dashboardPushURL(data, key, "") }
-			class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
-		>
-			<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-				<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
-			</svg>
-		</button>
-	</span>
-}
-
-// DashboardFilterFlyout renders the right-side filter panel. Single-select per
-// dimension: clicking an item sets that filter (or clears it if already on).
-// Mutually exclusive with the activity drawer; opening this closes that.
-templ DashboardFilterFlyout(data ActionQueueData) {
-	<aside
-		id="dashboard-filter-flyout"
-		class="sw-filter-flyout bg-white dark:bg-gray-800"
-		role="region"
-		aria-label={ t(ctx, "dashboard.filters_title") }
-		aria-hidden="true"
-		inert
-	>
-		<div class="sw-filter-flyout-header">
-			<h2 class="sw-filter-flyout-title">{ t(ctx, "dashboard.filters_title") }</h2>
-			<button
-				type="button"
-				class="sw-filter-flyout-close"
-				aria-label={ t(ctx, "common.close") }
-				onclick="swDashboardPanels && swDashboardPanels.close()"
-			>
-				<svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-					<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
-				</svg>
-			</button>
-		</div>
-		<div class="sw-filter-flyout-body sw-scroll">
-			@dashboardFilterSection(data, "severity", t(ctx, "common.severity"), []dashboardFilterOption{
-				{Value: "error", Label: t(ctx, "common.severity_error"), Count: data.SeverityCounts["error"]},
-				{Value: "warning", Label: t(ctx, "common.severity_warning"), Count: data.SeverityCounts["warning"]},
-				{Value: "info", Label: t(ctx, "common.severity_info"), Count: data.SeverityCounts["info"]},
-			})
-			@dashboardFilterSection(data, "category", t(ctx, "common.category"), []dashboardFilterOption{
-				{Value: "metadata", Label: dashboardCategoryLabel(ctx, "metadata"), Count: data.CategoryCounts["metadata"]},
-				{Value: "image", Label: dashboardCategoryLabel(ctx, "image"), Count: data.CategoryCounts["image"]},
-				{Value: "nfo", Label: dashboardCategoryLabel(ctx, "nfo"), Count: data.CategoryCounts["nfo"]},
-			})
-			if len(data.Libraries) > 0 {
-				@dashboardFilterSection(data, "library", t(ctx, "common.library"), libraryFilterOptions(data))
-			}
-			if len(data.RuleCounts) > 0 {
-				@dashboardFilterSection(data, "rule", t(ctx, "common.rule"), ruleFilterOptions(data))
-			}
-			@dashboardFilterSection(data, "fixable", t(ctx, "dashboard.filter.fixable"), []dashboardFilterOption{
-				{Value: "yes", Label: t(ctx, "dashboard.filter.fixable_yes"), Count: data.FixableYes},
-				{Value: "no", Label: t(ctx, "dashboard.filter.fixable_no"), Count: data.FixableNo},
-			})
-		</div>
-		<div class="sw-filter-flyout-footer">
-			if dashboardActiveFilterCount(data) > 0 {
-				<span class="sw-filter-active-badge" aria-live="polite">
-					{ fmt.Sprintf("%d", dashboardActiveFilterCount(data)) } { t(ctx, "common.active") }
-				</span>
-			} else {
-				<span class="sw-filter-active-badge" aria-live="polite"></span>
-			}
-			<div class="sw-filter-flyout-actions">
-				<button
-					type="button"
-					class="sw-filter-btn-ghost"
-					hx-get="/dashboard/actions"
-					hx-target="#action-queue"
-					hx-swap="innerHTML"
-					hx-push-url={ data.BasePath + "/" }
-					onclick="swDashboardPanels && swDashboardPanels.close()"
-				>
-					{ t(ctx, "common.clear_all") }
-				</button>
-			</div>
-		</div>
-	</aside>
-}
-
-// dashboardFilterOption is a single clickable option inside a filter section.
-type dashboardFilterOption struct {
-	Value string
-	Label string
-	Count int
-}
-
-// libraryFilterOptions maps the data's library list to filter options with counts.
-func libraryFilterOptions(data ActionQueueData) []dashboardFilterOption {
-	opts := make([]dashboardFilterOption, 0, len(data.Libraries))
-	for _, l := range data.Libraries {
-		opts = append(opts, dashboardFilterOption{
-			Value: l.ID,
-			Label: l.Name,
-			Count: data.LibraryCounts[l.ID],
-		})
+	if data.Category != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "category", Label: dashboardCategoryLabel(ctx, data.Category)})
 	}
-	return opts
-}
-
-// ruleFilterOptions maps the data's rule counts to filter options. Already
-// sorted by count desc in the service query.
-func ruleFilterOptions(data ActionQueueData) []dashboardFilterOption {
-	opts := make([]dashboardFilterOption, 0, len(data.RuleCounts))
-	for _, rc := range data.RuleCounts {
-		opts = append(opts, dashboardFilterOption{
-			Value: rc.RuleID,
-			Label: rc.RuleName,
-			Count: rc.Count,
-		})
+	if data.LibraryID != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "library_id", Label: libraryNameByID(data.Libraries, data.LibraryID)})
 	}
-	return opts
-}
-
-// dashboardFilterSection renders one filter dimension inside the flyout body.
-// Clicking a selected option clears the filter; clicking an unselected option
-// sets the filter to that value. Each click immediately reloads the action
-// queue via HTMX and pushes the URL state.
-templ dashboardFilterSection(data ActionQueueData, key, title string, options []dashboardFilterOption) {
-	<fieldset class="sw-filter-section">
-		<legend class="sw-filter-section-legend">{ title }</legend>
-		<div class="sw-filter-section-items">
-			for _, opt := range options {
-				@dashboardFilterChip(data, key, opt)
-			}
-		</div>
-	</fieldset>
-}
-
-// dashboardFilterChip renders a single clickable chip inside a filter section.
-templ dashboardFilterChip(data ActionQueueData, key string, opt dashboardFilterOption) {
-	<button
-		type="button"
-		hx-get={ dashboardFilterURL(data, key, dashboardChipValue(data, key, opt.Value)) }
-		hx-target="#action-queue"
-		hx-swap="innerHTML"
-		hx-push-url={ dashboardPushURL(data, key, dashboardChipValue(data, key, opt.Value)) }
-		class={ "sw-filter-item", templ.KV("include", dashboardIsSelected(data, key, opt.Value)) }
-		aria-pressed={ fmt.Sprintf("%t", dashboardIsSelected(data, key, opt.Value)) }
-	>
-		if dashboardIsSelected(data, key, opt.Value) {
-			<span class="sw-filter-item-icon" aria-hidden="true">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
-			</span>
-		}
-		<span class="sw-filter-item-label">{ opt.Label }</span>
-		<span class="ml-1 text-xs opacity-60">{ fmt.Sprint(opt.Count) }</span>
-	</button>
-}
-
-// dashboardIsSelected reports whether the given dimension/value is the
-// currently active filter.
-func dashboardIsSelected(data ActionQueueData, key, value string) bool {
-	switch key {
-	case "severity":
-		return data.Severity == value
-	case "category":
-		return data.Category == value
-	case "library":
-		return data.LibraryID == value
-	case "rule":
-		return data.RuleID == value
-	case "fixable":
-		return data.Fixable == value
+	if data.RuleID != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "rule", Label: ruleNameByID(data.RuleCounts, data.RuleID)})
 	}
-	return false
+	if data.Fixable != "" {
+		chips = append(chips, components.FilterChipSpec{Key: "fixable", Label: fixableLabel(ctx, data.Fixable)})
+	}
+	return chips
 }
 
-// dashboardChipValue returns the value to send for a chip click: the option's
-// value when the chip is not selected, or empty string (clear) when it is.
-func dashboardChipValue(data ActionQueueData, key, value string) string {
-	if dashboardIsSelected(data, key, value) {
+// dashboardClearAllHref returns the href for the Clear All anchor in the
+// active-filters row. Empty when no filters are active so the link is
+// omitted by the shared ActiveFilters component.
+func dashboardClearAllHref(data ActionQueueData) string {
+	if !hasActiveFilters(data) {
 		return ""
 	}
-	return value
+	return data.BasePath + "/"
+}
+
+// DashboardFilterFlyout renders the right-side filter panel using the shared
+// FilterFlyout component. Single-select per dimension: clicking an item
+// selects (or deselects) within that dimension. URL state is written on Apply
+// by the shared filter-flyout.js (key=value form, no +y/-y prefix).
+templ DashboardFilterFlyout(data ActionQueueData) {
+	@components.FilterFlyout("dashboard-filter-flyout", t(ctx, "dashboard.filters_title"), "dashboard-filters-trigger", dashboardActiveFilterCount(data), "#action-queue") {
+		@components.FilterSection(t(ctx, "common.severity")) {
+			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "error", t(ctx, "common.severity_error"), data.Severity == "error", data.SeverityCounts["error"])
+			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "warning", t(ctx, "common.severity_warning"), data.Severity == "warning", data.SeverityCounts["warning"])
+			@components.FilterItemSingle("dashboard-filter-flyout", "severity", "info", t(ctx, "common.severity_info"), data.Severity == "info", data.SeverityCounts["info"])
+		}
+		@components.FilterSection(t(ctx, "common.category")) {
+			@components.FilterItemSingle("dashboard-filter-flyout", "category", "metadata", dashboardCategoryLabel(ctx, "metadata"), data.Category == "metadata", data.CategoryCounts["metadata"])
+			@components.FilterItemSingle("dashboard-filter-flyout", "category", "image", dashboardCategoryLabel(ctx, "image"), data.Category == "image", data.CategoryCounts["image"])
+			@components.FilterItemSingle("dashboard-filter-flyout", "category", "nfo", dashboardCategoryLabel(ctx, "nfo"), data.Category == "nfo", data.CategoryCounts["nfo"])
+		}
+		if len(data.Libraries) > 0 {
+			@components.FilterSection(t(ctx, "common.library")) {
+				for _, lib := range data.Libraries {
+					@components.FilterItemSingle("dashboard-filter-flyout", "library_id", lib.ID, lib.Name, data.LibraryID == lib.ID, data.LibraryCounts[lib.ID])
+				}
+			}
+		}
+		if len(data.RuleCounts) > 0 {
+			@components.FilterSection(t(ctx, "common.rule")) {
+				for _, rc := range data.RuleCounts {
+					@components.FilterItemSingle("dashboard-filter-flyout", "rule", rc.RuleID, rc.RuleName, data.RuleID == rc.RuleID, rc.Count)
+				}
+			}
+		}
+		@components.FilterSection(t(ctx, "dashboard.filter.fixable")) {
+			@components.FilterItemSingle("dashboard-filter-flyout", "fixable", "yes", t(ctx, "dashboard.filter.fixable_yes"), data.Fixable == "yes", data.FixableYes)
+			@components.FilterItemSingle("dashboard-filter-flyout", "fixable", "no", t(ctx, "dashboard.filter.fixable_no"), data.Fixable == "no", data.FixableNo)
+		}
+	}
 }
 
 // DashboardActionCard renders a single violation card in the action queue.

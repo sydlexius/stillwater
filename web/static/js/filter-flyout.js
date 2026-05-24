@@ -252,6 +252,14 @@
       var s = item.getAttribute('data-filter-state');
       if (s === 'include' || s === 'exclude') count++;
     });
+    // Count single-select chips that are currently selected.
+    var singles = panel.querySelectorAll('[data-filter-mode="single"][data-filter-selected="true"]');
+    count += singles.length;
+    // Count range inputs that have a non-empty value (min + max counted separately).
+    var ranges = panel.querySelectorAll('input[data-filter-range-bound]');
+    Array.prototype.forEach.call(ranges, function (input) {
+      if ((input.value || '').trim() !== '') count++;
+    });
 
     // Update the footer badge inside the flyout panel.
     var badge = panel.querySelector('.sw-filter-active-badge');
@@ -324,6 +332,67 @@
     return params;
   }
 
+  // selectSingle handles a click on a FilterItemSingle chip. Clears any other
+  // selected chip sharing the same data-filter-key in the panel, then toggles
+  // the clicked chip. The actual URL write happens in apply(); this only
+  // updates the in-DOM selected state so the panel reflects the choice
+  // before the user clicks Apply.
+  function selectSingle(el) {
+    var key = el.getAttribute('data-filter-key');
+    var flyoutID = el.getAttribute('data-filter-flyout');
+    var panel = flyoutID ? getPanel(flyoutID) : el.closest('.sw-filter-flyout');
+    if (!panel || !key) return;
+
+    var wasSelected = el.getAttribute('data-filter-selected') === 'true';
+
+    // Clear every sibling sharing this key. Skip the clicked element so its
+    // toggle below decides the final state.
+    var siblings = panel.querySelectorAll(
+      '[data-filter-mode="single"][data-filter-key="' + cssEscape(key) + '"]'
+    );
+    Array.prototype.forEach.call(siblings, function (s) {
+      if (s === el) return;
+      s.setAttribute('data-filter-selected', 'false');
+      s.setAttribute('aria-pressed', 'false');
+      s.classList.remove('include');
+      var icon = s.querySelector('.sw-filter-item-icon');
+      if (icon) icon.parentNode.removeChild(icon);
+    });
+
+    var nextSelected = !wasSelected;
+    el.setAttribute('data-filter-selected', nextSelected ? 'true' : 'false');
+    el.setAttribute('aria-pressed', nextSelected ? 'true' : 'false');
+    if (nextSelected) {
+      el.classList.add('include');
+      if (!el.querySelector('.sw-filter-item-icon')) {
+        var icon = document.createElement('span');
+        icon.className = 'sw-filter-item-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = iconHTML('include');
+        el.insertBefore(icon, el.firstChild);
+      }
+    } else {
+      el.classList.remove('include');
+      var icon2 = el.querySelector('.sw-filter-item-icon');
+      if (icon2) icon2.parentNode.removeChild(icon2);
+    }
+
+    if (flyoutID) refreshActiveCount(flyoutID);
+  }
+
+  // cssEscape backports CSS.escape for legacy browsers used in headless tests.
+  // The keys we feed it are server-generated identifiers (severity, library_id,
+  // rule, fixable, etc.) so a minimal allowlist-style escape covers them; for
+  // anything else we fall back to JSON.stringify-like double-quote escaping.
+  function cssEscape(s) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(s);
+    }
+    return String(s).replace(/[^a-zA-Z0-9_-]/g, function (c) {
+      return '\\' + c;
+    });
+  }
+
   // apply writes the current filter state to the URL query string and triggers
   // an HTMX reload of the target element identified by data-target-sel.
   function apply(id) {
@@ -345,11 +414,28 @@
     );
     Object.keys(allKeys).forEach(function (k) { url.searchParams.delete(k); });
 
-    // Write new params.
+    // Write new params (tri-state FilterItem).
     Object.keys(params).forEach(function (key) {
       params[key].forEach(function (val) {
         url.searchParams.append(key, val);
       });
+    });
+
+    // Write single-select FilterItemSingle params (bare key=value, no prefix).
+    var singles = panel.querySelectorAll('[data-filter-mode="single"][data-filter-selected="true"]');
+    Array.prototype.forEach.call(singles, function (el) {
+      var key = el.getAttribute('data-filter-key');
+      var value = el.getAttribute('data-filter-value');
+      if (key && value) url.searchParams.append(key, value);
+    });
+
+    // Write FilterRange params (key_min / key_max). Empty inputs clear.
+    var ranges = panel.querySelectorAll('input[data-filter-range-bound][data-filter-key]');
+    Array.prototype.forEach.call(ranges, function (input) {
+      var key = input.getAttribute('data-filter-key');
+      if (!key) return;
+      var v = (input.value || '').trim();
+      if (v !== '') url.searchParams.set(key, v);
     });
 
     history.pushState(null, '', url.toString());
@@ -385,6 +471,24 @@
       }
     );
 
+    // Clear single-select chips.
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-mode="single"]'),
+      function (item) {
+        item.setAttribute('data-filter-selected', 'false');
+        item.setAttribute('aria-pressed', 'false');
+        item.classList.remove('include');
+        var icon = item.querySelector('.sw-filter-item-icon');
+        if (icon) icon.parentNode.removeChild(icon);
+      }
+    );
+
+    // Clear range inputs.
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('input[data-filter-range-bound]'),
+      function (input) { input.value = ''; }
+    );
+
     refreshActiveCount(id);
 
     // Remove filter params from the URL.
@@ -414,8 +518,14 @@
     if (!panel) return;
 
     var url = new URL(window.location.href);
+    // Scope this hydration loop to tri-state items only. FilterItemSingle
+    // chips share the [data-filter-key][data-filter-value] attribute pair but
+    // do NOT carry data-filter-state -- they use data-filter-selected and are
+    // hydrated by the single-select block below. Including them here would
+    // overwrite their icon and aria-label with tri-state values before that
+    // block runs.
     Array.prototype.forEach.call(
-      panel.querySelectorAll('[data-filter-key][data-filter-value]'),
+      panel.querySelectorAll('[data-filter-key][data-filter-value][data-filter-state]'),
       function (item) {
         var key = item.getAttribute('data-filter-key');
         var value = item.getAttribute('data-filter-value');
@@ -441,6 +551,43 @@
     // states just read from the URL (issue #1217). This overrides the plain
     // aria-label set above for any out-of-scope library pill.
     refreshLibraryScope(id);
+
+    // Initialize single-select chips from URL.
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-mode="single"]'),
+      function (item) {
+        var key = item.getAttribute('data-filter-key');
+        var value = item.getAttribute('data-filter-value');
+        var vals = url.searchParams.getAll(key);
+        var selected = vals.indexOf(value) !== -1;
+        item.setAttribute('data-filter-selected', selected ? 'true' : 'false');
+        item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        var icon = item.querySelector('.sw-filter-item-icon');
+        if (selected) {
+          item.classList.add('include');
+          if (!icon) {
+            var newIcon = document.createElement('span');
+            newIcon.className = 'sw-filter-item-icon';
+            newIcon.setAttribute('aria-hidden', 'true');
+            newIcon.innerHTML = iconHTML('include');
+            item.insertBefore(newIcon, item.firstChild);
+          }
+        } else {
+          item.classList.remove('include');
+          if (icon) icon.parentNode.removeChild(icon);
+        }
+      }
+    );
+
+    // Initialize range inputs from URL.
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('input[data-filter-range-bound][data-filter-key]'),
+      function (input) {
+        var key = input.getAttribute('data-filter-key');
+        var v = url.searchParams.get(key);
+        if (v !== null) input.value = v;
+      }
+    );
 
     refreshActiveCount(id);
   }
@@ -487,6 +634,7 @@
     open: open,
     close: close,
     cycleItem: cycleItem,
+    selectSingle: selectSingle,
     apply: apply,
     clearAll: clearAll,
     initFromURL: initFromURL,

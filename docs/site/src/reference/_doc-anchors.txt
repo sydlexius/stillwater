@@ -246,6 +246,7 @@ how-to/filter-artists#filter-the-artists-list
 how-to/filter-artists#open-the-flyout
 how-to/filter-artists#select-every-matching-artist
 how-to/filter-artists#the-library-filter
+how-to/filter-artists#the-same-flyout-on-the-dashboard-and-reports
 how-to/filter-artists#tri-state-filters
 how-to/filter-artists#what-you-can-filter-on
 how-to/http-redirect#enabling-the-redirect-listener-http-redirect-enable

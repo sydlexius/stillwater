@@ -62,11 +62,24 @@ libraries left at Any do not affect the list.
 ## Active filters and sharing a view
 
 The **Filters** button shows a count badge once one or more filters are active,
-so you always know the list is narrowed. The filter state is also written into
-the page URL: bookmark the page, or copy the link, to return to or share the
-exact same filtered view.
+so you always know the list is narrowed. Each active filter also appears as a
+chip above the list; click the chip to drop just that filter. The filter state
+is written into the page URL: bookmark the page, or copy the link, to return
+to or share the exact same filtered view.
 
-To clear everything, open the flyout and use **Clear all**.
+To clear everything, open the flyout and use **Clear all**. Clear all leaves
+the search box and the current sort untouched, so you can switch filter sets
+without retyping or re-sorting.
+
+## The same flyout on the Dashboard and Reports
+
+The Dashboard and the Reports/Compliance page use the same Filters flyout and
+the same chip row, so the behaviour above carries over: the chips show what is
+currently narrowing the view, dismissing a chip preserves the current page,
+search, and sort, and the URL stays shareable. The Dashboard's search box is
+not counted as a chip, because it has its own dedicated input. On the
+Compliance page, the **Export CSV** link respects the active filters so the
+download reflects what you are looking at.
 
 ## Select every matching artist
 

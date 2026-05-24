@@ -385,12 +385,12 @@ func TestUrlValuesFromFilters(t *testing.T) {
 				Fixable:   "yes",
 			},
 			want: map[string]string{
-				"search":   "indie",
-				"severity": "error",
-				"category": "image",
-				"library":  "lib-1",
-				"rule":     "rule-1",
-				"fixable":  "yes",
+				"search":     "indie",
+				"severity":   "error",
+				"category":   "image",
+				"library_id": "lib-1",
+				"rule":       "rule-1",
+				"fixable":    "yes",
 			},
 		},
 		{
@@ -427,56 +427,86 @@ func TestUrlValuesFromFilters(t *testing.T) {
 	}
 }
 
-func TestDashboardPushURLFromFilters(t *testing.T) {
+// TestParseDashboardFiltersLibraryAlias verifies the legacy `library` query
+// param is accepted by parseDashboardFilters as an alias for `library_id` so
+// old bookmarks keep working after the rename. When both keys are present,
+// `library_id` (the canonical key) wins.
+func TestParseDashboardFiltersLibraryAlias(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name     string
-		basePath string
-		input    dashboardFilterParams
-		want     string
+	cases := []struct {
+		name string
+		raw  string
+		want string
 	}{
-		{
-			name:     "no filters at root base path",
-			basePath: "",
-			input:    dashboardFilterParams{},
-			want:     "/",
-		},
-		{
-			name:     "no filters under sub-path base",
-			basePath: "/stillwater",
-			input:    dashboardFilterParams{},
-			want:     "/stillwater/",
-		},
-		{
-			name:     "single filter at root",
-			basePath: "",
-			input:    dashboardFilterParams{Severity: "warning"},
-			want:     "/?severity=warning",
-		},
-		{
-			name:     "single filter under sub-path preserves base",
-			basePath: "/stillwater",
-			input:    dashboardFilterParams{Category: "image"},
-			want:     "/stillwater/?category=image",
-		},
-		{
-			name:     "multi-filter encoding is deterministic",
-			basePath: "",
-			input: dashboardFilterParams{
-				Search:   "bad artist",
-				Severity: "error",
-			},
-			want: "/?search=bad+artist&severity=error",
-		},
+		{name: "canonical key", raw: "library_id=lib-1", want: "lib-1"},
+		{name: "legacy alias", raw: "library=lib-2", want: "lib-2"},
+		{name: "canonical wins when both", raw: "library=legacy&library_id=canonical", want: "canonical"},
+		{name: "neither set", raw: "", want: ""},
 	}
-
-	for _, tc := range tests {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := dashboardPushURLFromFilters(tc.basePath, tc.input)
+			req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?"+tc.raw, nil)
+			got := parseDashboardFilters(req).LibraryID
 			if got != tc.want {
-				t.Errorf("dashboardPushURLFromFilters(%q, %+v) = %q, want %q",
-					tc.basePath, tc.input, got, tc.want)
+				t.Errorf("LibraryID = %q, want %q (raw=%q)", got, tc.want, tc.raw)
 			}
 		})
+	}
+}
+
+// TestHandleDashboardActionQueue_HXPushURL_LibraryID verifies that an HTMX
+// request carrying the canonical `library_id` param triggers an HX-Push-Url
+// response header that also uses `library_id` (not the legacy `library`
+// key). The address-bar URL should always reflect the post-rename canonical
+// key so users bookmark the new form.
+func TestHandleDashboardActionQueue_HXPushURL_LibraryID(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?library_id=lib-xyz&severity=error", nil)
+	req.Header.Set("HX-Request", "true")
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+	r.handleDashboardActionQueue(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	push := w.Header().Get("HX-Push-Url")
+	if push == "" {
+		t.Fatalf("expected HX-Push-Url to be set on HTMX request")
+	}
+	if !strings.Contains(push, "library_id=lib-xyz") {
+		t.Errorf("HX-Push-Url should carry canonical library_id; got %q", push)
+	}
+	if strings.Contains(push, "library=") && !strings.Contains(push, "library_id=") {
+		t.Errorf("HX-Push-Url must not emit the legacy `library` key; got %q", push)
+	}
+}
+
+// TestHandleDashboardActionQueue_HXPushURL_LegacyLibraryAlias confirms that
+// even when the request arrives with the legacy `library` query param, the
+// handler normalizes it to `library_id` in the address-bar URL it pushes
+// back. Old bookmarks keep working, but the canonical key replaces them on
+// the next interaction.
+func TestHandleDashboardActionQueue_HXPushURL_LegacyLibraryAlias(t *testing.T) {
+	t.Parallel()
+	r := testDashboardRouter(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/actions?library=lib-legacy", nil)
+	req.Header.Set("HX-Request", "true")
+	req = withTestUser(req)
+	w := httptest.NewRecorder()
+	r.handleDashboardActionQueue(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	push := w.Header().Get("HX-Push-Url")
+	if !strings.Contains(push, "library_id=lib-legacy") {
+		t.Errorf("HX-Push-Url must rewrite `library` alias to `library_id`; got %q", push)
+	}
+	if strings.Contains(push, "library=lib-legacy") {
+		t.Errorf("HX-Push-Url must NOT echo the legacy `library` key; got %q", push)
 	}
 }
