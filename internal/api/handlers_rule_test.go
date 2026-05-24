@@ -293,12 +293,27 @@ func TestHandleRunAllRules_InvalidScope400(t *testing.T) {
 }
 
 // TestHandleRunAllRules_Returns202 covers the happy-path acknowledgment on
-// POST /rules/run-all. Uses the stub pipeline so the background goroutine
-// returns immediately and the test does not race on real evaluation work.
+// POST /rules/run-all. Uses a blocking stub so the background goroutine
+// does not race ahead of the synchronous 202 response and mutate
+// r.ruleRun.Status to "completed" before writeJSON reads it (CI flake
+// observed on round 5 of M52 PR #1644).
 func TestHandleRunAllRules_Returns202(t *testing.T) {
 	t.Parallel()
-	stub := &stubPipeline{}
-	r, _ := testRouterWithStubPipeline(t, stub)
+	blockCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	stub := &blockingStubPipeline{
+		stubPipeline: stubPipeline{},
+		block:        blockCh,
+		done:         doneCh,
+	}
+	r, _ := testRouterWithStubPipeline(t, &stub.stubPipeline)
+	r.pipeline = stub
+	// Release the goroutine after we've inspected w.Body, and join so it
+	// cannot mutate router state during test teardown.
+	t.Cleanup(func() {
+		close(blockCh)
+		<-doneCh
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/run-all", nil)
 	w := httptest.NewRecorder()
