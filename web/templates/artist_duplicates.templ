@@ -5,10 +5,12 @@ package templates
 // the artist domain package -- the handler constructs these from the
 // detection results and passes them in.
 type ArtistDuplicateMember struct {
-	ID   string
-	Name string
-	Path string
-	MBID string // empty when no MusicBrainz ID is known
+	ID                string
+	Name              string
+	Path              string
+	MBID              string // empty when no MusicBrainz ID is known
+	Recommended       bool   // true on exactly one member per group; mirrors artist.ChooseSurvivor
+	RecommendedReason string // "canonical_basename" | "most_content" | "fallback" | ""
 }
 
 // ArtistDuplicateGroupRow is one near-duplicate group displayed in the table.
@@ -20,15 +22,16 @@ type ArtistDuplicateGroupRow struct {
 	Members []ArtistDuplicateMember
 }
 
-// ArtistDuplicatesPageView is the full-page view model for
-// /settings/artist-duplicates.
+// ArtistDuplicatesPageView is the full-page view model for /reports/duplicates.
 type ArtistDuplicatesPageView struct {
 	Groups []ArtistDuplicateGroupRow
 }
 
 // ArtistDuplicatesPage renders the "Possible duplicate artists" list page.
-// Read-only: displays detected groups with links to each artist detail page.
-// The filesystem-consolidating merge action is tracked separately in #1615.
+// Each group exposes a "Merge..." action that opens the consolidation modal
+// (#1615 -- API in PR #1654, UI in PR12b). The modal runs a dry-run preflight
+// via POST /api/v1/artists/merge so the user previews the would-be moves +
+// collisions before committing.
 templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 	@Layout(t(ctx, "artist_duplicates.page_title"), assets) {
 		<div class="space-y-6">
@@ -40,11 +43,13 @@ templ ArtistDuplicatesPage(assets AssetPaths, view ArtistDuplicatesPageView) {
 			</div>
 			@ArtistDuplicatesTable(assets, view)
 		</div>
+		@ArtistMergeModal()
 	}
 }
 
 // ArtistDuplicatesTable is the content section rendered inside
-// ArtistDuplicatesPage.  Each group is an expandable card listing its members.
+// ArtistDuplicatesPage.  Each group is a card listing its members with a
+// per-group "Merge..." button.
 templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 	<div id="artist-duplicates-table" class="space-y-4">
 		if len(view.Groups) == 0 {
@@ -53,7 +58,12 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 			</div>
 		} else {
 			for _, group := range view.Groups {
-				<div class="sw-card rounded-lg overflow-hidden">
+				<div
+					class="sw-card rounded-lg overflow-hidden"
+					data-duplicate-group
+					data-group-key={ group.Key }
+					data-members={ duplicateGroupMembersJSON(group.Members) }
+				>
 					<div class="px-4 py-3 flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50">
 						if group.Reason == "mbid" {
 							<span class="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">
@@ -65,6 +75,14 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 							</span>
 						}
 						<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{ group.Key }</span>
+						<button
+							type="button"
+							class="ml-auto inline-flex items-center gap-1 rounded bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors"
+							data-merge-open
+							data-group-key={ group.Key }
+						>
+							{ t(ctx, "artist_duplicates.action_merge") }
+						</button>
 					</div>
 					<table class="min-w-full text-sm">
 						<thead class="bg-gray-50 dark:bg-gray-800/30">
@@ -82,6 +100,14 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 											class="text-blue-600 dark:text-blue-400 hover:underline underline-offset-2"
 											href={ templ.SafeURL(assets.BasePath + "/artists/" + m.ID) }
 										>{ m.Name }</a>
+										if m.Recommended {
+											<span
+												class="ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300"
+												title={ recommendedReasonLabel(ctx, m.RecommendedReason) }
+											>
+												{ t(ctx, "artist_duplicates.recommended_badge") }
+											</span>
+										}
 									</td>
 									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">{ m.Path }</td>
 									<td class="px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-400">
@@ -99,4 +125,427 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 			}
 		}
 	</div>
+}
+
+// ArtistMergeModal renders the per-group merge confirmation dialog. The
+// modal markup is shared across groups: the JS in artistMergeScript reads
+// the current group's members from the card's data-members JSON blob and
+// rebuilds the survivor radio list each time the modal opens.
+//
+// Hidden by default; #merge-modal toggles the "hidden" class.
+templ ArtistMergeModal() {
+	<div id="merge-i18n" hidden data-i18n={ mergeI18nJSON(ctx) }></div>
+	<div
+		id="merge-modal"
+		class="fixed inset-0 z-50 hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="merge-modal-title"
+	>
+		<div class="fixed inset-0 bg-black/50 transition-opacity" id="merge-backdrop"></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="relative w-full max-w-2xl max-h-[85vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col">
+				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h3 id="merge-modal-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+						{ t(ctx, "artist_duplicates.merge_modal.title") }
+					</h3>
+					<button
+						type="button"
+						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						data-merge-close
+						aria-label={ t(ctx, "common.close") }
+					>
+						<svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+						</svg>
+					</button>
+				</div>
+				<div class="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+					<p class="text-sm text-gray-600 dark:text-gray-400">
+						{ t(ctx, "artist_duplicates.merge_modal.description") }
+					</p>
+					<fieldset>
+						<legend class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							{ t(ctx, "artist_duplicates.merge_modal.survivor_legend") }
+						</legend>
+						<div id="merge-survivor-options" class="space-y-2"></div>
+					</fieldset>
+					<div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+						<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							{ t(ctx, "artist_duplicates.merge_modal.preview_heading") }
+						</h4>
+						<div id="merge-preview-body" class="text-sm text-gray-600 dark:text-gray-400">
+							<p class="italic">{ t(ctx, "artist_duplicates.merge_modal.preview_loading") }</p>
+						</div>
+					</div>
+				</div>
+				<div class="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3">
+					<button
+						type="button"
+						class="rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+						data-merge-close
+					>
+						{ t(ctx, "common.cancel") }
+					</button>
+					<button
+						type="button"
+						id="merge-modal-confirm"
+						class="rounded bg-blue-600 hover:bg-blue-700 px-3 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-600"
+						disabled
+					>
+						{ t(ctx, "artist_duplicates.merge_modal.confirm_button") }
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	// artistMergeScript is rendered as a literal <script> tag inside the modal
+	// templ so it can read i18n strings from the #merge-i18n data attribute and
+	// the base path from the htmx-base-path meta tag the layout already emits.
+	// Mirrors the inline-script convention in field_provider_modal.templ and
+	// path_picker.templ.
+	<script>
+		(function() {
+		var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+		var basePath = bpMeta ? bpMeta.content : '';
+		var endpoint = basePath + '/api/v1/artists/merge';
+		var modal = document.getElementById('merge-modal');
+		var backdrop = document.getElementById('merge-backdrop');
+		var optionsRoot = document.getElementById('merge-survivor-options');
+		var previewBody = document.getElementById('merge-preview-body');
+		var confirmBtn = document.getElementById('merge-modal-confirm');
+
+		var current = { members: [], survivorId: null, dryRunOK: false };
+		// lastFocused tracks the element that had focus when the modal opened
+		// so closeModal can restore keyboard focus to the triggering control
+		// (the Merge button or whatever the user tabbed to next). Mirrors the
+		// path_picker.templ _ppOpener pattern; see CR feedback on PR1655.
+		var lastFocused = null;
+		var i18nKeys = (function() {
+			var el = document.getElementById('merge-i18n');
+			if (!el) return {};
+			try { return JSON.parse(el.dataset.i18n || '{}'); } catch (e) { return {}; }
+		})();
+
+		function tx(key) {
+			return (i18nKeys[key] !== undefined) ? i18nKeys[key] : key;
+		}
+
+		// Use the canonical CSRF cookie reader exposed by preferences.js
+		// (loaded on every page via layout.templ). Falling back to a local
+		// reader only if the global is somehow absent so the fetch still has
+		// a header to send rather than throwing.
+		function csrfToken() {
+			if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
+			var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+			return match ? decodeURIComponent(match[1]) : '';
+		}
+
+		function openModal(groupKey) {
+			var card = document.querySelector('[data-duplicate-group][data-group-key="' + cssEscape(groupKey) + '"]');
+			if (!card) return;
+			var raw = card.getAttribute('data-members') || '[]';
+			var members = [];
+			try { members = JSON.parse(raw); } catch (e) { members = []; }
+			if (members.length < 2) return;
+
+			lastFocused = document.activeElement;
+			current.members = members;
+			var rec = members.find(function(m) { return m.recommended; });
+			current.survivorId = rec ? rec.id : members[0].id;
+			current.dryRunOK = false;
+
+			renderSurvivorOptions();
+			modal.classList.remove('hidden');
+			// Move keyboard focus into the dialog so screen readers announce
+			// the new context and Tab/Shift+Tab don't begin behind the
+			// backdrop. The Confirm button is the highest-affordance control
+			// inside the modal, so focus lands there once the dry-run enables
+			// it; until then the close button is the next-best focus target.
+			var initial = document.querySelector('[data-merge-close][aria-label]') || confirmBtn;
+			if (initial && typeof initial.focus === 'function') initial.focus();
+			runDryRun();
+		}
+
+		function closeModal() {
+			modal.classList.add('hidden');
+			optionsRoot.innerHTML = '';
+			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
+			confirmBtn.disabled = true;
+			current = { members: [], survivorId: null, dryRunOK: false };
+			// Restore focus to the element that opened the modal so keyboard
+			// users land back where they started (typically the group's
+			// Merge button), not at the top of the document.
+			if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+			lastFocused = null;
+		}
+
+		function renderSurvivorOptions() {
+			optionsRoot.innerHTML = '';
+			current.members.forEach(function(m) {
+				var label = document.createElement('label');
+				label.className = 'flex items-start gap-3 rounded p-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer';
+				var radio = document.createElement('input');
+				radio.type = 'radio';
+				radio.name = 'merge-survivor';
+				radio.value = m.id;
+				radio.className = 'mt-1';
+				radio.checked = (m.id === current.survivorId);
+				radio.addEventListener('change', function() {
+					current.survivorId = m.id;
+					current.dryRunOK = false;
+					confirmBtn.disabled = true;
+					runDryRun();
+				});
+				var body = document.createElement('div');
+				body.className = 'flex-1 min-w-0';
+				var name = document.createElement('div');
+				name.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';
+				name.textContent = m.name;
+				if (m.recommended) {
+					var badge = document.createElement('span');
+					badge.className = 'ml-2 inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/40 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300';
+					badge.textContent = tx('recommended_badge');
+					badge.title = recommendedReasonLabel(m.recommended_reason);
+					name.appendChild(badge);
+				}
+				var path = document.createElement('div');
+				path.className = 'text-xs font-mono text-gray-600 dark:text-gray-400 truncate';
+				path.textContent = m.path;
+				body.appendChild(name);
+				body.appendChild(path);
+				label.appendChild(radio);
+				label.appendChild(body);
+				optionsRoot.appendChild(label);
+			});
+		}
+
+		function recommendedReasonLabel(reason) {
+			switch (reason) {
+				case 'canonical_basename': return tx('reason_canonical_basename');
+				case 'most_content':       return tx('reason_most_content');
+				case 'fallback':           return tx('reason_fallback');
+				default:                   return '';
+			}
+		}
+
+		function loserIDs() {
+			return current.members
+				.filter(function(m) { return m.id !== current.survivorId; })
+				.map(function(m) { return m.id; });
+		}
+
+		function runDryRun() {
+			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
+			confirmBtn.disabled = true;
+			postMerge(true).then(function(out) {
+				if (out.kind === 'success') {
+					renderPreview(out.body);
+					current.dryRunOK = true;
+					confirmBtn.disabled = false;
+				} else if (out.kind === 'collisions') {
+					renderConflicts(out.body);
+					current.dryRunOK = false;
+					confirmBtn.disabled = true;
+				} else {
+					renderError(out.body);
+					current.dryRunOK = false;
+					confirmBtn.disabled = true;
+				}
+			}).catch(function() {
+				renderError({ message: tx('preview_network_error') });
+			});
+		}
+
+		function commitMerge() {
+			if (!current.dryRunOK) return;
+			confirmBtn.disabled = true;
+			postMerge(false).then(function(out) {
+				if (out.kind === 'success') {
+					closeModal();
+					window.location.reload();
+					return;
+				}
+				if (out.kind === 'collisions') {
+					// Pre-flight was clean but the filesystem changed
+					// between dry-run and commit (race). Treat as terminal:
+					// the conflict list is now stale, the user should
+					// re-open from a refreshed list.
+					renderConflicts(out.body);
+					return;
+				}
+				// Transient or operator-fixable errors (merge_in_progress,
+				// locked, stale_group, ...) -- show the message but re-
+				// enable Confirm so the user can retry without re-opening
+				// the modal. dryRunOK is still true from the preflight, so
+				// the gate at the top of commitMerge passes.
+				renderError(out.body);
+				confirmBtn.disabled = false;
+			}).catch(function() {
+				renderError({ message: tx('preview_network_error') });
+				confirmBtn.disabled = false;
+			});
+		}
+
+		function postMerge(dryRun) {
+			return fetch(endpoint, {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken()
+				},
+				body: JSON.stringify({
+					survivor_id: current.survivorId,
+					loser_ids: loserIDs(),
+					dry_run: dryRun
+				})
+			}).then(function(resp) {
+				return resp.json().then(function(body) {
+					if (resp.ok) return { kind: 'success', body: body };
+					if (resp.status === 409 && body.error === 'collisions') {
+						return { kind: 'collisions', body: body };
+					}
+					return { kind: 'error', body: body };
+				});
+			});
+		}
+
+		function renderPreview(body) {
+			previewBody.innerHTML = '';
+			var moved = body.moved || [];
+			var warnings = body.warnings || [];
+			if (moved.length === 0 && warnings.length === 0) {
+				var none = document.createElement('p');
+				none.className = 'text-sm';
+				none.textContent = tx('preview_empty');
+				previewBody.appendChild(none);
+				return;
+			}
+			if (moved.length > 0) {
+				var movedHeading = document.createElement('p');
+				movedHeading.className = 'text-sm font-medium text-gray-700 dark:text-gray-300';
+				movedHeading.textContent = tx('moves_heading').replace('%d', moved.length);
+				previewBody.appendChild(movedHeading);
+				var ul = document.createElement('ul');
+				ul.className = 'mt-1 list-disc list-inside space-y-1 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';
+				moved.forEach(function(m) {
+					var li = document.createElement('li');
+					li.textContent = m.name;
+					ul.appendChild(li);
+				});
+				previewBody.appendChild(ul);
+			}
+			if (body.survivor_override) {
+				var override = document.createElement('p');
+				override.className = 'mt-2 text-xs text-amber-700 dark:text-amber-300';
+				override.textContent = tx('warning_override');
+				previewBody.appendChild(override);
+			}
+			if (warnings.length > 0) {
+				var warnHeading = document.createElement('p');
+				warnHeading.className = 'mt-3 text-sm font-medium text-amber-700 dark:text-amber-300';
+				warnHeading.textContent = tx('warnings_heading');
+				previewBody.appendChild(warnHeading);
+				var wul = document.createElement('ul');
+				wul.className = 'mt-1 list-disc list-inside space-y-1 text-xs text-amber-700 dark:text-amber-300';
+				warnings.forEach(function(w) {
+					var li = document.createElement('li');
+					li.textContent = w;
+					wul.appendChild(li);
+				});
+				previewBody.appendChild(wul);
+			}
+			var platformNote = document.createElement('p');
+			platformNote.className = 'mt-3 text-xs text-gray-500 dark:text-gray-400';
+			platformNote.textContent = tx('platform_rescan_note');
+			previewBody.appendChild(platformNote);
+		}
+
+		function renderConflicts(body) {
+			previewBody.innerHTML = '';
+			var heading = document.createElement('p');
+			heading.className = 'text-sm font-medium text-red-700 dark:text-red-300';
+			heading.textContent = tx('conflicts_heading');
+			previewBody.appendChild(heading);
+			var help = document.createElement('p');
+			help.className = 'mt-1 text-xs text-gray-600 dark:text-gray-400';
+			help.textContent = tx('conflicts_help');
+			previewBody.appendChild(help);
+			var conflicts = (body && body.conflicts) || [];
+			if (conflicts.length > 0) {
+				var ul = document.createElement('ul');
+				ul.className = 'mt-2 list-disc list-inside space-y-2 text-xs font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto';
+				conflicts.forEach(function(c) {
+					var li = document.createElement('li');
+					li.textContent = c.name;
+					var sub = document.createElement('div');
+					sub.className = 'ml-5 text-gray-500 dark:text-gray-400';
+					sub.textContent = c.survivor_path + '  <->  ' + c.loser_path;
+					li.appendChild(sub);
+					ul.appendChild(li);
+				});
+				previewBody.appendChild(ul);
+			}
+		}
+
+		function renderError(body) {
+			previewBody.innerHTML = '';
+			var msg = '';
+			if (body && body.error === 'merge_in_progress') {
+				msg = tx('error_merge_in_progress');
+			} else if (body && body.error === 'locked') {
+				msg = tx('error_locked');
+			} else if (body && body.error === 'stale_group') {
+				msg = tx('error_stale_group');
+			} else if (body && body.error === 'survivor_missing') {
+				msg = tx('error_survivor_missing');
+			} else if (body && body.message) {
+				msg = body.message;
+			} else {
+				msg = tx('error_unknown');
+			}
+			var p = document.createElement('p');
+			p.className = 'text-sm text-red-700 dark:text-red-300';
+			p.textContent = msg;
+			previewBody.appendChild(p);
+		}
+
+		function cssEscape(s) {
+			if (window.CSS && window.CSS.escape) return window.CSS.escape(s);
+			return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+		}
+
+		function escapeHTML(s) {
+			return String(s)
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		document.addEventListener('click', function(e) {
+			var open = e.target.closest('[data-merge-open]');
+			if (open) {
+				e.preventDefault();
+				openModal(open.getAttribute('data-group-key'));
+				return;
+			}
+			if (e.target.closest('[data-merge-close]')) {
+				closeModal();
+				return;
+			}
+			if (e.target === backdrop) {
+				closeModal();
+			}
+		});
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+				closeModal();
+			}
+		});
+		confirmBtn.addEventListener('click', commitMerge);
+		})();
+	</script>
 }

@@ -12,13 +12,13 @@ import (
 	"testing"
 )
 
-// --- chooseSurvivor: pure-Go table-driven coverage ---------------------------
+// --- ChooseSurvivor: pure-Go table-driven coverage ---------------------------
 
 func TestChooseSurvivor(t *testing.T) {
 	t.Parallel()
 
 	// A small disk tree for the "most content" precedence cases. The path
-	// values in the chooseSurvivor inputs point under this root.
+	// values in the ChooseSurvivor inputs point under this root.
 	root := t.TempDir()
 	mkDirWithChildren := func(name string, childCount int) string {
 		p := filepath.Join(root, name)
@@ -140,12 +140,12 @@ func TestChooseSurvivor(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotID, gotReason := chooseSurvivor(tc.members, tc.articleMode)
+			gotID, gotReason := ChooseSurvivor(tc.members, tc.articleMode)
 			if gotID != tc.wantID {
-				t.Errorf("chooseSurvivor id = %q, want %q", gotID, tc.wantID)
+				t.Errorf("ChooseSurvivor id = %q, want %q", gotID, tc.wantID)
 			}
 			if gotReason != tc.wantReason {
-				t.Errorf("chooseSurvivor reason = %q, want %q", gotReason, tc.wantReason)
+				t.Errorf("ChooseSurvivor reason = %q, want %q", gotReason, tc.wantReason)
 			}
 		})
 	}
@@ -537,7 +537,7 @@ func TestMergeArtists_SurvivorOverride(t *testing.T) {
 	ctx := context.Background()
 
 	// In the seeded data, both artists are named "The Cure" but only the
-	// survivor's path is "The Cure" (canonical). chooseSurvivor will
+	// survivor's path is "The Cure" (canonical). ChooseSurvivor will
 	// recommend the survivor; if we flip the call and pass the loser as
 	// survivor, override should fire.
 	res, err := svc.MergeArtists(ctx, MergeRequest{

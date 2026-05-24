@@ -543,7 +543,14 @@
     "method": "GET",
     "path": "/artists/duplicates",
     "handler": "handleDuplicates",
-    "covered": false
+    "covered": true
+  },
+  {
+    "operationId": "getDuplicatesReport",
+    "method": "GET",
+    "path": "/reports/duplicates",
+    "handler": "handleDuplicates",
+    "covered": true
   },
   {
     "operationId": "getEventStream",

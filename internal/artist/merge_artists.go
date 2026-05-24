@@ -91,7 +91,7 @@ type MergeRequest struct {
 	DryRun bool
 
 	// ArticleMode controls how CanonicalDirName resolves the
-	// MB-canonical basename used by chooseSurvivor's first precedence
+	// MB-canonical basename used by ChooseSurvivor's first precedence
 	// rule. Empty string defaults to "prefix" (the same default the rule
 	// engine uses). Callers that want to honor the configured rule
 	// setting should pass the rule's ArticleMode here; tests can leave
@@ -224,10 +224,10 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		return nil, ErrMergeSurvivorMissing
 	}
 
-	// Survivor-override detection: chooseSurvivor returns the
+	// Survivor-override detection: ChooseSurvivor returns the
 	// precedence-recommended ID; if the caller picked something else,
 	// flag it so the response makes the deviation explicit.
-	recommended, _ := chooseSurvivor(members, req.ArticleMode)
+	recommended, _ := ChooseSurvivor(members, req.ArticleMode)
 	override := recommended != "" && recommended != survivor.ID
 
 	result := &MergeResult{
@@ -415,7 +415,7 @@ func lookupLosers(members []NearDuplicateArtist, loserIDs []string) []NearDuplic
 	return out
 }
 
-// chooseSurvivor returns the recommended survivor ID from a group along
+// ChooseSurvivor returns the recommended survivor ID from a group along
 // with the reason and an override flag. Precedence:
 //
 //	a. MB-canonical basename: filepath.Base(path) == CanonicalDirName(name, articleMode).
@@ -430,7 +430,7 @@ func lookupLosers(members []NearDuplicateArtist, loserIDs []string) []NearDuplic
 //
 // Returns ("", "") when the group is empty. The caller computes override
 // by comparing the recommended ID against the user-supplied SurvivorID.
-func chooseSurvivor(members []NearDuplicateArtist, articleMode string) (id, reason string) {
+func ChooseSurvivor(members []NearDuplicateArtist, articleMode string) (id, reason string) {
 	if len(members) == 0 {
 		return "", ""
 	}

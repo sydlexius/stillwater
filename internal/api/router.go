@@ -397,6 +397,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Grouped with the other literal /artists/* routes.
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/matching-ids", wrapAuth(r.handleArtistMatchingIDs, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
+	// Near-duplicate detection report. Canonical path is
+	// /api/v1/reports/duplicates so it groups with the other report
+	// endpoints (health, compliance, metadata-completeness). The old
+	// /api/v1/artists/duplicates alias is kept for one release per the
+	// deprecation note in #1615; remove in M53.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/merge", wrapAuth(r.handleArtistsMerge, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))
@@ -715,9 +721,22 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /settings/{section} redirect so the more-specific routes win.
 	mux.HandleFunc("GET "+bp+"/settings/foreign-files", wrapAuth(r.handleForeignFilesPage, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/foreign-files/allowlist", wrapAuth(r.handleForeignAllowlistPage, authMw))
-	// Near-duplicate artist detection page (#1614). Registered before the
-	// catch-all so the specific path wins over the section redirect.
-	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapAuth(r.handleArtistDuplicatesPage, authMw))
+	// Near-duplicate artist detection page (#1614). Canonical path is
+	// /reports/duplicates so it sits alongside /reports/compliance under
+	// the Reports hub. The old /settings/artist-duplicates path 301s to
+	// the new one so bookmarks and external links still resolve (#1615 IA
+	// move). Registered before the catch-all so the specific paths win
+	// over the /settings/{section} section redirect.
+	mux.HandleFunc("GET "+bp+"/reports/duplicates", wrapAuth(r.handleArtistDuplicatesPage, authMw))
+	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
+		target := r.basePath + "/reports/duplicates"
+		if raw := req.URL.RawQuery; raw != "" {
+			target += "?" + raw
+		}
+		// gosec G710: path is server-built (r.basePath + /reports/duplicates);
+		// only the query string flows from req, which cannot redirect off-origin.
+		http.Redirect(w, req, target, http.StatusMovedPermanently) //nolint:gosec // G710: path is server-built; only the query string flows from req.
+	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings/{section}", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query()
 		q.Set("tab", req.PathValue("section"))

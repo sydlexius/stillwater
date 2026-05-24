@@ -1,16 +1,16 @@
 package api
 
 // handlers_artist_duplicates.go -- handler for the "Possible duplicate artists"
-// settings page.
+// detection report.
 //
-// Route: GET {basePath}/settings/artist-duplicates
-// Registered BEFORE the catch-all /settings/{section} redirect so it wins on
-// a direct path match.  Admin-only (reuses requireForeignAdmin).
+// Route: GET {basePath}/reports/duplicates (canonical; was
+// /settings/artist-duplicates pre-#1615, which now 301s here).
+// Admin-only (reuses requireForeignAdmin).
 //
-// The page is read-only: it lists detected near-duplicate groups but does not
-// provide a merge button.  The filesystem-consolidating merge is tracked
-// separately in #1615.  Detection runs fully in-memory (no stored column, no
-// migration) via artist.DetectDuplicates.
+// The page lists detected near-duplicate groups and exposes a per-group
+// merge action that calls POST /api/v1/artists/merge (#1615). Detection
+// runs fully in-memory (no stored column, no migration) via
+// artist.DetectDuplicates.
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// handleArtistDuplicatesPage renders /settings/artist-duplicates.  Admin-only.
+// handleArtistDuplicatesPage renders /reports/duplicates. Admin-only.
 func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
@@ -43,7 +43,7 @@ func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Req
 		return
 	}
 
-	view := buildArtistDuplicatesView(groups)
+	view := buildArtistDuplicatesView(groups, r.lookupArticleMode(req))
 	renderTempl(w, req, templates.ArtistDuplicatesPage(r.assetsFor(req), view))
 }
 
@@ -250,17 +250,28 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 // buildArtistDuplicatesView converts the detection result into the view model
 // used by the template.  Extracted as a named function so tests can exercise
 // the conversion logic independently.
-func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup) templates.ArtistDuplicatesPageView {
+//
+// articleMode is the directory-rename rule's configured article handling
+// ("prefix" / "suffix" / ""); it must match what the merge endpoint computes
+// at submit time so the recommendation badge agrees with the server's
+// survivor-override flag.
+func buildArtistDuplicatesView(groups []artist.NearDuplicateGroup, articleMode string) templates.ArtistDuplicatesPageView {
 	rows := make([]templates.ArtistDuplicateGroupRow, 0, len(groups))
 	for _, g := range groups {
+		recommendedID, recommendedReason := artist.ChooseSurvivor(g.Members, articleMode)
 		members := make([]templates.ArtistDuplicateMember, 0, len(g.Members))
 		for _, m := range g.Members {
-			members = append(members, templates.ArtistDuplicateMember{
+			mem := templates.ArtistDuplicateMember{
 				ID:   m.ID,
 				Name: m.Name,
 				Path: m.Path,
 				MBID: m.MBID,
-			})
+			}
+			if m.ID == recommendedID {
+				mem.Recommended = true
+				mem.RecommendedReason = recommendedReason
+			}
+			members = append(members, mem)
 		}
 		rows = append(rows, templates.ArtistDuplicateGroupRow{
 			Key:     g.Key,
