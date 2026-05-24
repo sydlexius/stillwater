@@ -4,12 +4,15 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -459,7 +462,7 @@ func complianceListParams(w http.ResponseWriter, req *http.Request) (artist.List
 
 	params := artist.ListParams{
 		Page:           intQuery(req, "page", 1),
-		PageSize:       intQuery(req, "page_size", 50),
+		PageSize:       intQuery(req, "page_size", compliancePageSizeDefault),
 		Sort:           sortKey,
 		Order:          order,
 		Search:         req.URL.Query().Get("search"),
@@ -535,9 +538,13 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		totalPages++
 	}
 
-	libs, err := r.libraryService.List(ctx)
-	if err != nil {
-		r.logger.Warn("listing libraries for compliance page", "error", err)
+	var libs []library.Library
+	if r.libraryService != nil {
+		var err error
+		libs, err = r.libraryService.List(ctx)
+		if err != nil {
+			r.logger.Warn("listing libraries for compliance page", "error", err)
+		}
 	}
 
 	data := templates.ComplianceData{
@@ -554,7 +561,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 			Search:         params.Search,
 			Filter:         params.Filter,
 			LibraryID:      params.LibraryID,
-			TargetID:       "compliance-table",
+			TargetID:       "compliance-results",
 			Status:         status,
 			HealthScoreMin: params.HealthScoreMin,
 			HealthScoreMax: params.HealthScoreMax,
@@ -572,10 +579,67 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.ComplianceTable(data))
+		vals := complianceURLValues(params, status, req.URL.Query().Get("filter"))
+		pushURL := r.basePath + "/reports/compliance"
+		if len(vals) > 0 {
+			pushURL += "?" + vals.Encode()
+		}
+		w.Header().Set("HX-Push-Url", pushURL)
+		// Render the full results shell (hidden carriers + chips + table) so
+		// the search input's hx-include reads fresh hidden values after a
+		// chip dismiss or Apply/Clear cycle (CR feedback on PR #1653).
+		renderTempl(w, req, templates.ComplianceResults(data))
 		return
 	}
 	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
+}
+
+// compliancePageSizeDefault matches the default applied by intQuery in
+// complianceListParams; both must stay in sync so HX-Push-Url drops the
+// query param when it equals the implicit default.
+const compliancePageSizeDefault = 50
+
+// complianceURLValues converts the compliance list params + raw status/filter
+// query values into url.Values for HX-Push-Url. Only writes the canonical
+// keys the compliance page reads back on next load. Default values (page 1,
+// the default page size, "all" status, "name" sort, "asc" order) are dropped
+// so the pushed URL stays minimal.
+func complianceURLValues(params artist.ListParams, status, filter string) url.Values {
+	q := url.Values{}
+	if params.Search != "" {
+		q.Set("search", params.Search)
+	}
+	if status != "" && status != "all" {
+		q.Set("status", status)
+	}
+	if filter != "" {
+		q.Set("filter", filter)
+	}
+	if params.LibraryID != "" {
+		q.Set("library_id", params.LibraryID)
+	}
+	if params.HealthScoreMin > 0 {
+		q.Set("health_min", strconv.Itoa(params.HealthScoreMin))
+	}
+	if params.HealthScoreMax > 0 {
+		q.Set("health_max", strconv.Itoa(params.HealthScoreMax))
+	}
+	if params.Sort != "" && params.Sort != "name" {
+		q.Set("sort", params.Sort)
+	}
+	if params.Order != "" && params.Order != "asc" {
+		q.Set("order", params.Order)
+	}
+	// Preserve pagination so HTMX navigation that lands on page N keeps the
+	// address bar pointed at page N. Without this, a user on page 3 who
+	// applies/clears a chip lands back on page 1 after a manual refresh.
+	if params.Page > 1 {
+		q.Set("page", strconv.Itoa(params.Page))
+	}
+	if params.PageSize > 0 && params.PageSize != compliancePageSizeDefault {
+		q.Set("page_size", strconv.Itoa(params.PageSize))
+	}
+	return q
 }
 
 func toTemplateViolations(vs []violationSummary) []templates.ViolationSummaryData {
