@@ -10080,17 +10080,15 @@ paths:
           description: >
             Directory renamed. The platforms array carries one entry per
             artist_platform_ids mapping found for the artist (Emby /
-            Jellyfin / Lidarr), plus a synthesized failure entry (with
-            an empty connection_id) when the platform-mapping enumeration
-            itself fails so the response always carries a concrete signal
-            instead of an empty slice that hides a backend error. A single
-            per-platform failure does NOT roll back the rename; the local
-            filesystem + database are already consistent and a stale
-            item-to-path mapping on a peer is recoverable. An empty array
-            means the artist has no platform mappings, but does NOT mean
-            "no issues": clients should treat any entry whose connection_id
-            is empty specially (it is the synthesized enumeration-failure
-            marker, not a real per-platform result).
+            Jellyfin / Lidarr). When the platform-mapping enumeration
+            itself fails, the array also contains one synthesized failure
+            entry whose connection_id is the empty string, so the response
+            always carries a concrete signal instead of an empty slice that
+            hides a backend error. An empty array therefore means exactly
+            "this artist has no platform mappings" with no ambiguity. A
+            single per-platform failure does NOT roll back the rename; the
+            local filesystem + database are already consistent and a stale
+            item-to-path mapping on a peer is recoverable.
           content:
             application/json:
               schema:
@@ -10110,6 +10108,7 @@ paths:
                       properties:
                         connection_id:
                           type: string
+                          description: Platform connection ID. Empty only for the synthesized enumeration-failure entry (result will be "failed" with an explanatory error).
                         result:
                           type: string
                           enum: [ok, failed]

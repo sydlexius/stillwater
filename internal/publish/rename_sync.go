@@ -166,11 +166,15 @@ func (p *Publisher) syncOne(ctx context.Context, artistID, newPath string, pid a
 		// string flows into the JSON response and into operator log lines.
 		// 256 bytes keeps the diagnostic useful without flooding either.
 		res.Error = truncErr(err)
+		// Truncate the log error too: Jellyfin's postFullItem can wrap up
+		// to 1 MB of peer response body into err, and the raw string would
+		// otherwise still flood operator logs even though res.Error is
+		// bounded. truncErr keeps both surfaces in lockstep.
 		p.logger.Error("rename-sync: path update failed",
 			slog.String("artist_id", artistID),
 			slog.String("connection", conn.Name),
 			slog.String("type", conn.Type),
-			slog.String("error", err.Error()))
+			slog.String("error", truncErr(err)))
 		return res
 	}
 

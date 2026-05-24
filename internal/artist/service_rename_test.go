@@ -656,11 +656,12 @@ func TestRenameDirectory_PlatformSyncerReturnsResultsAndErrorPreservesResults(t 
 	}
 }
 
-// TestRenameDirectory_NilSyncerReturnsEmptyPlatforms confirms that the
+// TestRenameDirectory_NilSyncerReturnsNilPlatforms confirms that the
 // no-syncer-configured case (e.g. older tests that never wire the syncer)
-// works and returns a nil platforms slice without panicking. Belt-and-
-// braces against a syncer-required regression.
-func TestRenameDirectory_NilSyncerReturnsEmptyPlatforms(t *testing.T) {
+// works and returns a nil platforms slice (NOT empty) without panicking.
+// Name matches the assertion below; the nil vs empty distinction is
+// load-bearing per the SetPlatformRenameSyncer doc.
+func TestRenameDirectory_NilSyncerReturnsNilPlatforms(t *testing.T) {
 	t.Parallel()
 	svc, a, _ := renameTestArtist(t, "lib-rename-nilsyncer")
 	ctx := context.Background()
