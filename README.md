@@ -9,7 +9,7 @@
 
 Stillwater is a self-hosted web app for keeping your music library's artist
 and composer metadata clean and consistent. It reads and writes NFO files,
-manages artwork, and pulls metadata from MusicBrainz and Fanart.tv — all
+manages artwork, and pulls metadata from MusicBrainz and Fanart.tv, all
 from one web UI that works alongside Emby, Jellyfin, and Kodi.
 
 **Full documentation:** <https://sydlexius.github.io/stillwater/>
@@ -53,7 +53,7 @@ Then open <http://localhost:1973>.
 
 Looking for a different install path, configuration knobs, or details on
 how Stillwater plays with media-server NFO write-back? It's all on the
-**[project site](https://sydlexius.github.io/stillwater/)** — install
+**[project site](https://sydlexius.github.io/stillwater/)**: install
 guides (Docker, binary, Unraid Community Applications, reverse proxy),
 environment-variable reference, encryption-key handling, the
 round-trip-conflict gate, and the full OpenAPI reference.
@@ -61,7 +61,7 @@ round-trip-conflict gate, and the full OpenAPI reference.
 Binary downloads live on the
 [Releases](https://github.com/sydlexius/stillwater/releases) page.
 Nightly builds (`nightly-YYYYMMDD`) ship from `main` each day there are
-new commits — see the
+new commits. See the
 [self-update guide](https://sydlexius.github.io/stillwater/how-to/self-update/)
 for the nightly channel.
 
