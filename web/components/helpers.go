@@ -38,5 +38,8 @@ func tf(ctx context.Context, key string, args ...any) string {
 	if tmpl == key {
 		return key
 	}
+	if len(args) == 0 {
+		return tmpl
+	}
 	return fmt.Sprintf(tmpl, args...)
 }

@@ -245,7 +245,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					})
 					<a
 						id="compliance-export-link"
-						href={ templ.SafeURL(basePath() + complianceExportURL(data)) }
+						href={ templ.SafeURL(complianceExportURL(data)) }
 						data-export-base={ basePath() + "/api/v1/reports/compliance/export" }
 						onclick="rewriteComplianceExport(this)"
 						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
