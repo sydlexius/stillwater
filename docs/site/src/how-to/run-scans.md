@@ -115,9 +115,9 @@ During a filesystem scan, Stillwater compares each newly discovered artist's nam
 
 When a collision is detected, the scan log records a warning and the scan result count includes the number of suspected duplicates found.
 
-To see which artist records were flagged, open **Settings > Possible duplicate artists** (direct URL: `/settings/artist-duplicates`). The page groups artists that appear to be the same entity. Each group shows the reason the match was made:
+To see which artist records were flagged, open the **Possible duplicate artists** report (direct URL: `/reports/duplicates`). The page groups artists that appear to be the same entity. Each group shows the reason the match was made:
 
 - **MBID match** -- every member shares the same MusicBrainz artist ID. This is the higher-confidence signal.
 - **Name key match** -- the members' names normalize to the same value. Review these manually; an exact MusicBrainz ID match is not present.
 
-The page is read-only. Resolving duplicates requires choosing which artist record to keep and moving or removing the others on disk; a dedicated merge workflow is tracked separately.
+Each group offers a **Merge** action. Click it to open a confirmation modal that previews which album subdirectories would be moved into the surviving artist's folder. The recommended survivor is pre-selected based on which record's directory basename matches the MusicBrainz canonical name (so connected tools like Lidarr do not re-fork the artist). Confirming the merge consolidates the directories on disk and collapses the artist records into one.

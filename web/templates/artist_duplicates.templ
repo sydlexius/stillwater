@@ -22,8 +22,7 @@ type ArtistDuplicateGroupRow struct {
 	Members []ArtistDuplicateMember
 }
 
-// ArtistDuplicatesPageView is the full-page view model for
-// /settings/artist-duplicates.
+// ArtistDuplicatesPageView is the full-page view model for /reports/duplicates.
 type ArtistDuplicatesPageView struct {
 	Groups []ArtistDuplicateGroupRow
 }
@@ -217,6 +216,11 @@ templ ArtistMergeModal() {
 		var confirmBtn = document.getElementById('merge-modal-confirm');
 
 		var current = { members: [], survivorId: null, dryRunOK: false };
+		// lastFocused tracks the element that had focus when the modal opened
+		// so closeModal can restore keyboard focus to the triggering control
+		// (the Merge button or whatever the user tabbed to next). Mirrors the
+		// path_picker.templ _ppOpener pattern; see CR feedback on PR1655.
+		var lastFocused = null;
 		var i18nKeys = (function() {
 			var el = document.getElementById('merge-i18n');
 			if (!el) return {};
@@ -227,10 +231,14 @@ templ ArtistMergeModal() {
 			return (i18nKeys[key] !== undefined) ? i18nKeys[key] : key;
 		}
 
+		// Use the canonical CSRF cookie reader exposed by preferences.js
+		// (loaded on every page via layout.templ). Falling back to a local
+		// reader only if the global is somehow absent so the fetch still has
+		// a header to send rather than throwing.
 		function csrfToken() {
-			return document.cookie.replace(
-				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
-			);
+			if (typeof window.swCsrfToken === 'function') return window.swCsrfToken();
+			var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+			return match ? decodeURIComponent(match[1]) : '';
 		}
 
 		function openModal(groupKey) {
@@ -241,6 +249,7 @@ templ ArtistMergeModal() {
 			try { members = JSON.parse(raw); } catch (e) { members = []; }
 			if (members.length < 2) return;
 
+			lastFocused = document.activeElement;
 			current.members = members;
 			var rec = members.find(function(m) { return m.recommended; });
 			current.survivorId = rec ? rec.id : members[0].id;
@@ -248,6 +257,13 @@ templ ArtistMergeModal() {
 
 			renderSurvivorOptions();
 			modal.classList.remove('hidden');
+			// Move keyboard focus into the dialog so screen readers announce
+			// the new context and Tab/Shift+Tab don't begin behind the
+			// backdrop. The Confirm button is the highest-affordance control
+			// inside the modal, so focus lands there once the dry-run enables
+			// it; until then the close button is the next-best focus target.
+			var initial = document.querySelector('[data-merge-close][aria-label]') || confirmBtn;
+			if (initial && typeof initial.focus === 'function') initial.focus();
 			runDryRun();
 		}
 
@@ -257,6 +273,11 @@ templ ArtistMergeModal() {
 			previewBody.innerHTML = '<p class="italic">' + escapeHTML(tx('preview_loading')) + '</p>';
 			confirmBtn.disabled = true;
 			current = { members: [], survivorId: null, dryRunOK: false };
+			// Restore focus to the element that opened the modal so keyboard
+			// users land back where they started (typically the group's
+			// Merge button), not at the top of the document.
+			if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+			lastFocused = null;
 		}
 
 		function renderSurvivorOptions() {
@@ -343,14 +364,26 @@ templ ArtistMergeModal() {
 				if (out.kind === 'success') {
 					closeModal();
 					window.location.reload();
-				} else if (out.kind === 'collisions') {
-					renderConflicts(out.body);
-				} else {
-					renderError(out.body);
+					return;
 				}
+				if (out.kind === 'collisions') {
+					// Pre-flight was clean but the filesystem changed
+					// between dry-run and commit (race). Treat as terminal:
+					// the conflict list is now stale, the user should
+					// re-open from a refreshed list.
+					renderConflicts(out.body);
+					return;
+				}
+				// Transient or operator-fixable errors (merge_in_progress,
+				// locked, stale_group, ...) -- show the message but re-
+				// enable Confirm so the user can retry without re-opening
+				// the modal. dryRunOK is still true from the preflight, so
+				// the gate at the top of commitMerge passes.
+				renderError(out.body);
+				confirmBtn.disabled = false;
 			}).catch(function() {
 				renderError({ message: tx('preview_network_error') });
-				confirmBtn.disabled = !current.dryRunOK;
+				confirmBtn.disabled = false;
 			});
 		}
 

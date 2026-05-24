@@ -1,16 +1,16 @@
 package api
 
 // handlers_artist_duplicates.go -- handler for the "Possible duplicate artists"
-// settings page.
+// detection report.
 //
-// Route: GET {basePath}/settings/artist-duplicates
-// Registered BEFORE the catch-all /settings/{section} redirect so it wins on
-// a direct path match.  Admin-only (reuses requireForeignAdmin).
+// Route: GET {basePath}/reports/duplicates (canonical; was
+// /settings/artist-duplicates pre-#1615, which now 301s here).
+// Admin-only (reuses requireForeignAdmin).
 //
-// The page is read-only: it lists detected near-duplicate groups but does not
-// provide a merge button.  The filesystem-consolidating merge is tracked
-// separately in #1615.  Detection runs fully in-memory (no stored column, no
-// migration) via artist.DetectDuplicates.
+// The page lists detected near-duplicate groups and exposes a per-group
+// merge action that calls POST /api/v1/artists/merge (#1615). Detection
+// runs fully in-memory (no stored column, no migration) via
+// artist.DetectDuplicates.
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// handleArtistDuplicatesPage renders /settings/artist-duplicates.  Admin-only.
+// handleArtistDuplicatesPage renders /reports/duplicates. Admin-only.
 func (r *Router) handleArtistDuplicatesPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return

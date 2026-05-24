@@ -2574,10 +2574,46 @@ paths:
               schema:
                 type: string
 
+  /reports/duplicates:
+    get:
+      tags: [Reports]
+      summary: Find duplicate artists
+      description: >-
+        Detects near-duplicate artist groups (shared MusicBrainz ID or
+        identity-key collision). Canonical path; replaces the legacy
+        /artists/duplicates alias which is kept for one release per #1615.
+      operationId: getDuplicatesReport
+      responses:
+        "200":
+          description: List of duplicate groups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    artists:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/Artist"
+                      description: Artists in this duplicate group.
+                    reason:
+                      type: string
+                      description: >-
+                        Human-readable explanation of why these artists are considered
+                        duplicates (e.g. "shared MusicBrainz ID: abc123",
+                        "shared alias: The Beatles").
+
   /artists/duplicates:
     get:
       tags: [Artists]
-      summary: Find duplicate artists
+      deprecated: true
+      summary: Find duplicate artists (deprecated alias)
+      description: >-
+        Deprecated alias for /reports/duplicates kept for one release per
+        the #1615 IA move; remove in M53. Returns an identical payload to
+        the canonical endpoint.
       operationId: getDuplicates
       responses:
         "200":

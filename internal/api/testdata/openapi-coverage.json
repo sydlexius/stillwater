@@ -546,6 +546,13 @@
     "covered": false
   },
   {
+    "operationId": "getDuplicatesReport",
+    "method": "GET",
+    "path": "/reports/duplicates",
+    "handler": "handleDuplicates",
+    "covered": false
+  },
+  {
     "operationId": "getEventStream",
     "method": "GET",
     "path": "/events/stream",

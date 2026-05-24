@@ -3,6 +3,7 @@ package templates
 import (
 	"bytes"
 	"encoding/json"
+	"html"
 	"strings"
 	"testing"
 )
@@ -55,10 +56,10 @@ func TestArtistDuplicatesTable_MergeButtonAndMembers(t *testing.T) {
 	if endIdx < 0 {
 		t.Fatalf("data-members attribute not closed")
 	}
-	raw := body[startIdx : startIdx+endIdx]
-	// templ HTML-escapes the JSON inside the attribute; decode entities.
-	raw = strings.ReplaceAll(raw, "&#34;", `"`)
-	raw = strings.ReplaceAll(raw, "&amp;", "&")
+	// templ HTML-escapes the JSON inside the attribute; html.UnescapeString
+	// handles every named/numeric entity templ might emit (&#34;, &amp;,
+	// &#x22;, etc.) so the test isn't brittle to escape-policy changes.
+	raw := html.UnescapeString(body[startIdx : startIdx+endIdx])
 	var members []map[string]any
 	if err := json.Unmarshal([]byte(raw), &members); err != nil {
 		t.Fatalf("data-members not valid JSON after unescape: %v\nraw: %s", err, raw)
