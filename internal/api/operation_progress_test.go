@@ -207,6 +207,58 @@ func TestPublishOpProgress_ProcessedClampedToTotal(t *testing.T) {
 	}
 }
 
+// TestPublishOpProgress_InvalidStatusDropped: an unknown status string
+// would render a pill stuck in an unknown state because the JS only
+// branches on the canonical four (running, completed, failed, canceled).
+// The guard drops the event entirely rather than emit a malformed one.
+func TestPublishOpProgress_InvalidStatusDropped(t *testing.T) {
+	t.Parallel()
+	r, snap, stop := newRecorderRouter(t)
+	defer stop()
+	r.publishOpProgress("bulk_action", "run_rules", 10, 3, "weird", "/cancel")
+	time.Sleep(50 * time.Millisecond)
+	if got := snap(); len(got) != 0 {
+		t.Errorf("invalid status should be dropped, got %d events: %+v", len(got), got)
+	}
+}
+
+// TestPublishOpProgress_TerminalCompletedOmitsCancelURL: a terminal
+// status with a non-empty cancelURL must still strip the cancel link
+// from the event so the pill cannot render a stale Cancel button after
+// the op finished. The pre-fix code only checked cancelURL, not status.
+func TestPublishOpProgress_TerminalCompletedOmitsCancelURL(t *testing.T) {
+	t.Parallel()
+	r, snap, stop := newRecorderRouter(t)
+	defer stop()
+	r.publishOpProgress("bulk_action", "run_rules", 10, 10, "completed", "/api/v1/artists/bulk-actions/cancel")
+	time.Sleep(50 * time.Millisecond)
+	got := snap()
+	if len(got) != 1 {
+		t.Fatalf("events = %d, want 1", len(got))
+	}
+	if _, present := got[0].Data["cancel_url"]; present {
+		t.Errorf("cancel_url should be stripped on terminal events even when caller passes one, got %v", got[0].Data["cancel_url"])
+	}
+}
+
+// TestPublishOpProgress_RunningKeepsCancelURL: the happy path -- a
+// running event with a non-empty cancelURL must carry it so the pill
+// renders the Cancel button. Complements the terminal-strip test above.
+func TestPublishOpProgress_RunningKeepsCancelURL(t *testing.T) {
+	t.Parallel()
+	r, snap, stop := newRecorderRouter(t)
+	defer stop()
+	r.publishOpProgress("bulk_action", "run_rules", 10, 3, "running", "/api/v1/artists/bulk-actions/cancel")
+	time.Sleep(50 * time.Millisecond)
+	got := snap()
+	if len(got) != 1 {
+		t.Fatalf("events = %d, want 1", len(got))
+	}
+	if got[0].Data["cancel_url"] != "/api/v1/artists/bulk-actions/cancel" {
+		t.Errorf("cancel_url = %v, want the URL passed for the running state", got[0].Data["cancel_url"])
+	}
+}
+
 // TestPublishOpProgress_ZeroTotalAllowsAnyProcessed: total=0 is the
 // indeterminate signal; processed is passed through unchanged in that
 // case (used by future callers that can't precompute total).

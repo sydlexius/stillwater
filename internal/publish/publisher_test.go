@@ -453,6 +453,62 @@ func TestPushLocks_NotifierNotCalledOnSuccess(t *testing.T) {
 	}
 }
 
+// TestPushLocks_NotifierUsesStableClassOnConnectionLookupFailure verifies
+// that when GetByID itself fails (connection deleted between platform-ID
+// resolution and lock push), the notifier receives a value from the
+// classifyPushErr taxonomy rather than a free-form "connection lookup
+// failed" string. The toast bridge maps error_class to localized copy, so
+// any string outside the enum falls through to a generic "push failed"
+// rendering and the operator loses the actionable hint.
+func TestPushLocks_NotifierUsesStableClassOnConnectionLookupFailure(t *testing.T) {
+	notifier := &recordingNotifier{}
+	p := New(Deps{
+		ArtistService: &fakePlatformLister{ids: []artist.PlatformID{
+			{ArtistID: "a1", ConnectionID: "c-gone", PlatformArtistID: "p1"},
+		}},
+		// Empty map -> fakeConnectionGetter.GetByID returns an error;
+		// classifyPushErr does not recognize the substring so the fallback
+		// "rejected" class is what the notifier should observe.
+		ConnectionService: &fakeConnectionGetter{conns: map[string]*connection.Connection{}},
+		Logger:            silentLogger(),
+		Notifier:          notifier,
+	})
+
+	a := &artist.Artist{ID: "a1", Name: "Test Artist", Locked: true}
+	p.PushLocks(context.Background(), a)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(notifier.snapshot()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	got := notifier.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("notifier calls = %d, want 1; calls=%+v", len(got), got)
+	}
+	// The fake's "no connection <id>" error has no substring classifyPushErr
+	// matches, so the fallback "rejected" applies. The critical contract is
+	// that errorClass is one of the taxonomy values, not the pre-fix
+	// free-form "connection lookup failed" string.
+	if got[0].errorClass != "rejected" {
+		t.Errorf("errorClass = %q, want %q (classifyPushErr fallback)", got[0].errorClass, "rejected")
+	}
+	if got[0].errorClass == "connection lookup failed" {
+		t.Error("errorClass leaked the pre-fix free-form string; should use classifyPushErr taxonomy")
+	}
+	// The connection name should fall back to the short-UUID label since
+	// GetByID never returned a usable name.
+	if got[0].connection == "" {
+		t.Error("connection label is empty; expected shortConnLabel fallback")
+	}
+	if got[0].err == nil {
+		t.Error("err = nil, want the wrapped GetByID error so logs can correlate")
+	}
+}
+
 // TestClassifyPushErr pins the error-class taxonomy that drives the
 // per-connection failure toast. The categories are intentionally small
 // (each maps to a distinct operator response); adding a new one is fine

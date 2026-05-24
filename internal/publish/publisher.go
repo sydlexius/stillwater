@@ -363,7 +363,18 @@ func (p *Publisher) PushLocks(ctx context.Context, a *artist.Artist) {
 				// and would create an import cycle), so fall back to a
 				// short UUID prefix the operator can recognize against
 				// the settings page connection list.
-				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), "connection lookup failed", a.ID, artistDisplayName(a), pushOpLockToggle, connErr)
+				// Route the lookup failure through classifyPushErr so the
+				// toast surface uses the same stable taxonomy as the push
+				// itself; a free-form "connection lookup failed" string
+				// bypasses any client-side mapping/localization. The "" ->
+				// "rejected" fallback only triggers if classifyPushErr
+				// returns empty (nil err or unmatched), which is a defense
+				// in depth rather than an expected branch on this path.
+				class := classifyPushErr(connErr)
+				if class == "" {
+					class = "rejected"
+				}
+				p.notifyPushFailure(shortConnLabel(pid.ConnectionID), class, a.ID, artistDisplayName(a), pushOpLockToggle, connErr)
 				return
 			}
 			if !conn.Enabled {

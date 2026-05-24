@@ -61,6 +61,22 @@ func (r *Router) publishOpProgress(opID, label string, total, processed int, sta
 			slog.Int("total", total))
 		processed = total
 	}
+	// Reject unknown status strings. The canonical enum mirrors the
+	// terminal-state precedence in handlers_sse.go (running, completed,
+	// failed, canceled); a typo would render a pill stuck in an unknown
+	// state because the JS only branches on these four.
+	validStatus := map[string]bool{
+		"running":   true,
+		"completed": true,
+		"failed":    true,
+		"canceled":  true,
+	}
+	if !validStatus[status] {
+		r.logger.Warn("publishOpProgress called with invalid status; dropping event",
+			slog.String("op_id", opID),
+			slog.String("status", status))
+		return
+	}
 	data := map[string]any{
 		"op_id":     opID,
 		"label":     label,
@@ -68,7 +84,10 @@ func (r *Router) publishOpProgress(opID, label string, total, processed int, sta
 		"total":     total,
 		"status":    status,
 	}
-	if cancelURL != "" {
+	// Only the running state has a meaningful cancel target; terminal
+	// states must not carry one or the pill would render a stale Cancel
+	// button after the op finished.
+	if status == "running" && cancelURL != "" {
 		data["cancel_url"] = cancelURL
 	}
 	r.eventBus.Publish(event.Event{

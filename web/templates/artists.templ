@@ -1315,7 +1315,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					if (window.swProgressPill && typeof window.swProgressPill.push === 'function') {
 						window.swProgressPill.push({
 							op_id: 'bulk_action',
-							label: action,
+							// Pass the localized verb (e.g. "Running rules")
+							// rather than the raw action key ("run_rules") so
+							// the fallback pill push reads consistently with
+							// the SSE-driven path, which already runs every
+							// label through the pill's data-i18n-verb-* map.
+							label: actionVerb(action),
 							processed: processed,
 							total: total,
 							status: 'running',
@@ -1366,7 +1371,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						if (window.swProgressPill && typeof window.swProgressPill.push === 'function') {
 							window.swProgressPill.push({
 								op_id: 'bulk_action',
-								label: data.action || initialAction || '',
+								// Same localization as the running-state push
+								// above: the layout pill's data-i18n-verb-*
+								// map only fires on its own SSE path, so the
+								// fallback push must hand it a localized
+								// string directly.
+								label: actionVerb(data.action || initialAction || ''),
 								processed: data.processed || 0,
 								total: data.total || 0,
 								status: data.status

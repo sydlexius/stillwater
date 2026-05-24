@@ -94,113 +94,153 @@ func (h *SSEHub) ClientCount() int {
 	return len(h.clients)
 }
 
+// sseEventMapping pairs an internal event type with the title and message
+// builder used to project it into an SSEEvent. Promoted from a local
+// struct so the named buildMsg helpers below can declare their argument
+// type without re-binding to a closure.
+type sseEventMapping struct {
+	eventType event.Type
+	title     string
+	buildMsg  func(data map[string]any) string
+}
+
+// strVal safely extracts a string value from an event data map. Promoted
+// from a closure inside SubscribeToEventBus so the file-level buildMsg
+// helpers can share it; this is the only shape used by every consumer of
+// event.Event.Data in this file.
+func strVal(data map[string]any, key string) string {
+	if v, ok := data[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// fmtInt safely formats an integer-like value from an event data map.
+// Promoted from a closure for the same reason as strVal above. JSON
+// round-trips through float64, so the float branch covers events that
+// have already passed through the SSE marshal/unmarshal hop.
+func fmtInt(data map[string]any, key string) string {
+	if v, ok := data[key]; ok {
+		switch n := v.(type) {
+		case int:
+			return fmt.Sprintf("%d", n)
+		case int64:
+			return fmt.Sprintf("%d", n)
+		case float64:
+			return fmt.Sprintf("%d", int64(n))
+		}
+	}
+	return ""
+}
+
+// buildScanCompletedMsg formats a scan-completed event into a human-readable
+// summary. Extracted from an inline closure to keep SubscribeToEventBus
+// under the gocognit threshold (was 34, lint cap is 30).
+func buildScanCompletedMsg(data map[string]any) string {
+	status := strVal(data, "status")
+	newArtists := fmtInt(data, "new_artists")
+	totalDirs := fmtInt(data, "total_directories")
+	if status != "" && newArtists != "" && totalDirs != "" {
+		return "Scan " + status + ": " + newArtists + " new artists from " + totalDirs + " directories"
+	}
+	if status != "" {
+		return "Scan " + status
+	}
+	return ""
+}
+
+// buildRuleViolationMsg lifts the single-field projection out so the
+// mappings slice in SubscribeToEventBus stays flat.
+func buildRuleViolationMsg(data map[string]any) string {
+	return strVal(data, "message")
+}
+
+// buildBulkCompletedMsg formats a bulk-operation summary. Extracted to
+// drop gocognit complexity.
+func buildBulkCompletedMsg(data map[string]any) string {
+	opType := strVal(data, "type")
+	status := strVal(data, "status")
+	if opType != "" && status != "" {
+		return "Bulk " + opType + " " + status
+	}
+	if status != "" {
+		return "Bulk operation " + status
+	}
+	return ""
+}
+
+// buildMetadataFixedMsg lifts the single-field projection out.
+func buildMetadataFixedMsg(data map[string]any) string {
+	return strVal(data, "message")
+}
+
+// buildConflictChangedMsg formats the banner-state transition into a
+// human-readable line for the toast fallback.
+func buildConflictChangedMsg(data map[string]any) string {
+	state := strVal(data, "banner_state")
+	if state == "" {
+		return ""
+	}
+	return "Conflict banner: " + state
+}
+
+// buildOperationProgressMsg exposes the label string for clients that
+// render OperationProgress as a plain toast. The pill consumer reads the
+// structured Data fields directly and ignores this message.
+func buildOperationProgressMsg(data map[string]any) string {
+	return strVal(data, "label")
+}
+
+// buildConnectionPushFailedMsg names the connection, the short error
+// class, and (when present) the originating artist so the operator can
+// tell a single failure apart from a fan-out. Extracted to drop gocognit
+// complexity in SubscribeToEventBus.
+func buildConnectionPushFailedMsg(data map[string]any) string {
+	conn := strVal(data, "connection")
+	class := strVal(data, "error_class")
+	artistName := strVal(data, "artist_name")
+	var base string
+	switch {
+	case conn != "" && class != "":
+		base = conn + ": " + class
+	case conn != "":
+		base = conn + ": push failed"
+	default:
+		return "A platform push failed"
+	}
+	if artistName != "" {
+		return base + " (artist: " + artistName + ")"
+	}
+	return base
+}
+
 // SubscribeToEventBus registers event bus handlers that convert internal events
 // into SSE events and broadcast them to all connected clients.
+//
+// The mappings slice is flat by design: every per-event message builder
+// lives at file scope (buildScanCompletedMsg etc.) so this function stays
+// under the gocognit lint threshold. Adding a new event type means
+// declaring a build*Msg helper and appending one entry below.
 func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
-	// Map internal event types to human-readable notification messages.
-	// Each mapping has a buildMsg function that constructs a useful message
-	// from the actual fields published in the event data. If buildMsg is nil
-	// or returns an empty string, the title is used as the message.
-	type eventMapping struct {
-		eventType event.Type
-		title     string
-		buildMsg  func(data map[string]any) string
-	}
-
-	// strVal safely extracts a string value from the event data map.
-	strVal := func(data map[string]any, key string) string {
-		if v, ok := data[key]; ok {
-			if s, ok := v.(string); ok {
-				return s
-			}
-		}
-		return ""
-	}
-
-	// fmtInt safely formats an integer-like value from the event data map.
-	fmtInt := func(data map[string]any, key string) string {
-		if v, ok := data[key]; ok {
-			switch n := v.(type) {
-			case int:
-				return fmt.Sprintf("%d", n)
-			case int64:
-				return fmt.Sprintf("%d", n)
-			case float64:
-				return fmt.Sprintf("%d", int64(n))
-			}
-		}
-		return ""
-	}
-
-	mappings := []eventMapping{
-		{event.ScanCompleted, "Scan completed", func(data map[string]any) string {
-			status := strVal(data, "status")
-			newArtists := fmtInt(data, "new_artists")
-			totalDirs := fmtInt(data, "total_directories")
-			if status != "" && newArtists != "" && totalDirs != "" {
-				return "Scan " + status + ": " + newArtists + " new artists from " + totalDirs + " directories"
-			}
-			if status != "" {
-				return "Scan " + status
-			}
-			return ""
-		}},
-		{event.RuleViolation, "New rule violation", func(data map[string]any) string {
-			return strVal(data, "message")
-		}},
-		{event.BulkCompleted, "Bulk operation completed", func(data map[string]any) string {
-			opType := strVal(data, "type")
-			status := strVal(data, "status")
-			if opType != "" && status != "" {
-				return "Bulk " + opType + " " + status
-			}
-			if status != "" {
-				return "Bulk operation " + status
-			}
-			return ""
-		}},
+	mappings := []sseEventMapping{
+		{event.ScanCompleted, "Scan completed", buildScanCompletedMsg},
+		{event.RuleViolation, "New rule violation", buildRuleViolationMsg},
+		{event.BulkCompleted, "Bulk operation completed", buildBulkCompletedMsg},
 		{event.ArtistNew, "New artist discovered", nil},
 		{event.ArtistUpdated, "Artist updated", nil},
-		{event.MetadataFixed, "Metadata fixed", func(data map[string]any) string {
-			return strVal(data, "message")
-		}},
-		{event.ConflictChanged, "Conflict state changed", func(data map[string]any) string {
-			state := strVal(data, "banner_state")
-			if state == "" {
-				return ""
-			}
-			return "Conflict banner: " + state
-		}},
+		{event.MetadataFixed, "Metadata fixed", buildMetadataFixedMsg},
+		{event.ConflictChanged, "Conflict state changed", buildConflictChangedMsg},
 		// OperationProgress carries its own structured fields (op_id, label,
 		// processed, total, status) for the ProgressPill renderer. The
 		// Title/Message text is only used as a fallback for clients that
 		// surface unknown events as plain toasts.
-		{event.OperationProgress, "Operation progress", func(data map[string]any) string {
-			return strVal(data, "label")
-		}},
-		// ConnectionPushFailed names the connection, a short error class,
-		// and (when present) the originating artist so the operator can
-		// tell a single failure apart from a fan-out (one PushLocks call
-		// produces one event per platform). The raw transport error is
-		// deliberately NOT in Data; see internal/publish/notifier.go.
-		{event.ConnectionPushFailed, "Platform push failed", func(data map[string]any) string {
-			conn := strVal(data, "connection")
-			class := strVal(data, "error_class")
-			artist := strVal(data, "artist_name")
-			var base string
-			switch {
-			case conn != "" && class != "":
-				base = conn + ": " + class
-			case conn != "":
-				base = conn + ": push failed"
-			default:
-				return "A platform push failed"
-			}
-			if artist != "" {
-				return base + " (artist: " + artist + ")"
-			}
-			return base
-		}},
+		{event.OperationProgress, "Operation progress", buildOperationProgressMsg},
+		// ConnectionPushFailed Data carries the structured connection +
+		// error_class + artist_name fields; the raw transport error is
+		// deliberately NOT in Data. See internal/publish/notifier.go.
+		{event.ConnectionPushFailed, "Platform push failed", buildConnectionPushFailedMsg},
 	}
 
 	for _, m := range mappings {

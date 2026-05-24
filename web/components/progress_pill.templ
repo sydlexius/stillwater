@@ -80,9 +80,18 @@ templ ProgressPill() {
 				return v || raw;
 			}
 
+			// csrfToken delegates to the canonical reader exposed by
+			// preferences.js (window.swCsrfToken). Inlining the cookie regex
+			// here would silently drift if the cookie name ever changed.
+			// The function call is deferred to the Cancel click moment, so
+			// preferences.js (loaded later in the layout) is guaranteed to
+			// have run by then. The empty-string fallback keeps the cancel
+			// fetch from crashing if preferences.js failed to load.
 			function csrfToken() {
-				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-				return m ? m[1] : "";
+				if (typeof window.swCsrfToken === "function") {
+					return window.swCsrfToken();
+				}
+				return "";
 			}
 
 			function basePath() {
@@ -205,11 +214,30 @@ templ ProgressPill() {
 				};
 			}
 
+			// markRunning resets every piece of visual state that markFailed
+			// or markCompleted might have mutated, so a reused op_id that
+			// transitions back to running (rare today; possible once the
+			// same emitter rerun pattern lands in PR7) renders as a clean
+			// blue spinner pill instead of a stale red/green one. Keep this
+			// function in sync with markFailed/markCompleted whenever a new
+			// terminal-state mutation is added.
+			function markRunning(pill) {
+				pill.el.classList.remove("bg-red-600", "dark:bg-red-500", "bg-emerald-600", "dark:bg-emerald-500");
+				pill.el.classList.add("bg-blue-600", "dark:bg-blue-500");
+				pill.el.removeAttribute("role");
+				pill.dismiss.classList.add("hidden");
+				pill.spinner.innerHTML = '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+			}
+
 			function markCompleted(pill, label) {
 				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-red-600", "dark:bg-red-500");
 				pill.el.classList.add("bg-emerald-600", "dark:bg-emerald-500");
 				pill.spinner.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 				pill.cancel.classList.add("hidden");
+				// Explicitly drop role="alert" in case the prior state was
+				// failed; otherwise screen readers re-announce the success
+				// text with the more urgent alert semantics.
+				pill.el.removeAttribute("role");
 				renderText(pill, label, 0, 0, i18n("completed") || "completed");
 			}
 
@@ -256,7 +284,12 @@ templ ProgressPill() {
 					removePill(opID);
 					return;
 				}
-				// status === "running" (or any future running-like value)
+				// status === "running" (or any future running-like value).
+				// markRunning resets any prior terminal-state visuals so a
+				// reused op_id (rare today; possible once future emitters
+				// rerun under the same key) doesn't render as a stale
+				// red-failed or green-completed pill.
+				markRunning(pill);
 				renderText(pill, label, data.processed, data.total);
 				wireCancel(pill, data.cancel_url);
 			}
