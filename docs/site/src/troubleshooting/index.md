@@ -26,6 +26,8 @@ A few things to try before deeper diagnostics:
 2. __Check the Logs tab.__ Recent errors are visible without leaving the UI. Filter by level (warn / error) to skip the chatter.
 3. __Look at conflict-gated chips.__ Amber chips in Settings > Rules indicate the conflict gate is blocking writes for that category. Resolve the underlying conflict first.
 4. __Verify the connection cards.__ Settings > Connections shows live status for Emby / Jellyfin / Lidarr. A red status means the connection itself is failing -- fix that before suspecting Stillwater of misbehaving downstream.
+5. __Watch the progress pill.__ Long-running operations (bulk run rules, populate, scans) report progress in a pill at the bottom-right of every page. It survives navigation, so you can start an action and keep working. A red pill means the operation failed -- click it to dismiss after reading the error.
+6. __Watch for platform push toasts.__ When a write to Emby / Jellyfin / Lidarr fails (lock toggle, metadata push, image sync), a red toast classifies the failure (`auth_failed`, `unreachable`, `timeout`, etc.). See [platform-auth](platform-auth.md#platform-push-failed-toasts) for what each class means.
 
 ## Installation
 
