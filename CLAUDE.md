@@ -134,7 +134,7 @@ Use git worktrees for concurrent issue/agent work. Naming: `../stillwater-{issue
 
 ## Milestone Work
 
-See `docs/milestone-protocol.md`. Start with scope assessment, create `docs/plans/m<N>-plan.md`, use per-issue worktrees, ship docs in the same PR, run cleanup after all merges.
+See `docs/milestone-protocol.md`. Start with scope assessment, create `~/.claude/plans/m<N>-<slug>-plan.md` (out-of-repo; `.gitignore` backstops `docs/plans/`, `docs/milestone-*/`, `docs/milestone-*.md`, `docs/prototypes/`), use per-issue worktrees, ship docs in the same PR, run cleanup after all merges.
 
 ## CI/CD
 
