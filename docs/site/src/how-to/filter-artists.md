@@ -8,7 +8,7 @@ description: Narrow the Artists list with the Filters flyout: tri-state field, i
 
 The Artists page can hold thousands of entries. The Filters flyout narrows that
 list to just the artists you want to act on, which is useful before a bulk scan,
-a metadata refresh, or an image fetch.
+a metadata refresh, an image fetch, or a bulk **Lock** or **Unlock**.
 
 ## Open the flyout
 
@@ -78,8 +78,11 @@ select more than one page of results at once:
    matching** button appears in the bulk action bar. Click it to extend the
    selection to every artist the filter matches, across all pages.
 
-You can then run a bulk scan, metadata refresh, or image fetch on the whole
-matching set at once.
+You can then run a bulk scan, metadata refresh, image fetch, or **Lock** or
+**Unlock** on the whole matching set at once. The bulk-action menu lists each
+verb; **Lock** and **Unlock** are short-circuited for any selected artist that
+is already in the target state, and the completion summary reports those as
+skipped.
 
 The cross-page selection is capped at 1000 artists. If the filter matches more
 than that, Stillwater selects the first 1000 and tells you so, and any bulk
