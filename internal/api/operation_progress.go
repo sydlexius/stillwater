@@ -72,9 +72,11 @@ func (r *Router) publishOpProgress(opID, label string, total, processed int, sta
 		"canceled":  true,
 	}
 	if !validStatus[status] {
-		r.logger.Warn("publishOpProgress called with invalid status; dropping event",
-			slog.String("op_id", opID),
-			slog.String("status", status))
+		if r.logger != nil {
+			r.logger.Warn("publishOpProgress called with invalid status; dropping event",
+				slog.String("op_id", opID),
+				slog.String("status", status))
+		}
 		return
 	}
 	data := map[string]any{

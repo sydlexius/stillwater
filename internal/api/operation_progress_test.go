@@ -180,8 +180,7 @@ func TestPublishOpProgress_NegativeTotalNormalized(t *testing.T) {
 	r, snap, stop := newRecorderRouter(t)
 	defer stop()
 	r.publishOpProgress("bulk_action", "run_rules", -5, 0, "running", "")
-	time.Sleep(50 * time.Millisecond)
-	got := snap()
+	got := waitForEventCount(t, snap, 1, time.Second)
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
@@ -197,8 +196,7 @@ func TestPublishOpProgress_ProcessedClampedToTotal(t *testing.T) {
 	r, snap, stop := newRecorderRouter(t)
 	defer stop()
 	r.publishOpProgress("bulk_action", "run_rules", 10, 99, "running", "")
-	time.Sleep(50 * time.Millisecond)
-	got := snap()
+	got := waitForEventCount(t, snap, 1, time.Second)
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
@@ -231,8 +229,7 @@ func TestPublishOpProgress_TerminalCompletedOmitsCancelURL(t *testing.T) {
 	r, snap, stop := newRecorderRouter(t)
 	defer stop()
 	r.publishOpProgress("bulk_action", "run_rules", 10, 10, "completed", "/api/v1/artists/bulk-actions/cancel")
-	time.Sleep(50 * time.Millisecond)
-	got := snap()
+	got := waitForEventCount(t, snap, 1, time.Second)
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
@@ -249,8 +246,7 @@ func TestPublishOpProgress_RunningKeepsCancelURL(t *testing.T) {
 	r, snap, stop := newRecorderRouter(t)
 	defer stop()
 	r.publishOpProgress("bulk_action", "run_rules", 10, 3, "running", "/api/v1/artists/bulk-actions/cancel")
-	time.Sleep(50 * time.Millisecond)
-	got := snap()
+	got := waitForEventCount(t, snap, 1, time.Second)
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
@@ -267,12 +263,38 @@ func TestPublishOpProgress_ZeroTotalAllowsAnyProcessed(t *testing.T) {
 	r, snap, stop := newRecorderRouter(t)
 	defer stop()
 	r.publishOpProgress("bulk_action", "run_rules", 0, 7, "running", "")
-	time.Sleep(50 * time.Millisecond)
-	got := snap()
+	got := waitForEventCount(t, snap, 1, time.Second)
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
 	if got[0].Data["processed"] != 7 {
 		t.Errorf("processed = %v, want 7 (no clamp when total=0)", got[0].Data["processed"])
 	}
+}
+
+// waitForEventCount polls the recorder snapshot until at least `want`
+// events have arrived or `timeout` elapses, returning the final snapshot.
+// Replaces fixed time.Sleep(50ms) gates in the >=1-event tests so loaded
+// CI runs no longer false-fail (and also returns early when the event
+// arrives well before the deadline, cutting wall-clock time on the happy
+// path). Drop-case tests (expect 0 events) still use a fixed sleep — the
+// helper would return early on `want=0` and defeat the purpose.
+//
+// `want` is parameterized even though every current caller passes 1
+// because future emit-throttled tests (PR7's bulk-lock + populate-progress
+// consumers will batch events) will need to wait for N>1. Inlining would
+// force a rewrite then.
+//
+//nolint:unparam // see comment above; current callers all pass 1, future ones won't.
+func waitForEventCount(t *testing.T, snap func() []event.Event, want int, timeout time.Duration) []event.Event {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		got := snap()
+		if len(got) >= want {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return snap()
 }
