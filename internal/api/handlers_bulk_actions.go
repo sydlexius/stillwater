@@ -329,6 +329,15 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 	progress.cancelFn = cancel
 	progress.mu.Unlock()
 
+	// opID is the stable identifier used by the ProgressPill to coalesce
+	// repeated progress events into a single pill. Bulk actions are
+	// singleton (the handler 409s on concurrent starts), so a per-action
+	// constant works without collision risk.
+	const opID = "bulk_action"
+	// Emit a "running" event up-front so the pill appears immediately
+	// even before the first per-artist tick lands.
+	r.publishOpProgress(opID, action, progress.Total, 0, "running", "/api/v1/artists/bulk-actions/cancel")
+
 	go func() {
 		defer cancel()
 
@@ -426,7 +435,16 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 				case outcomeFailed:
 					progress.Failed++
 				}
+				processed := progress.Processed
+				total := progress.Total
 				progress.mu.Unlock()
+				step := total / 20
+				if step < 1 {
+					step = 1
+				}
+				if processed%step == 0 || processed == total {
+					r.publishOpProgress(opID, action, total, processed, "running", "/api/v1/artists/bulk-actions/cancel")
+				}
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
@@ -443,7 +461,21 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 			default:
 				progress.Failed++
 			}
+			processed := progress.Processed
+			total := progress.Total
 			progress.mu.Unlock()
+
+			// Throttle ProgressPill updates: one event per artist is fine
+			// at 10ms cadence (100/s) for small runs, but big batches
+			// would flood the SSE hub. Emit every event for the first
+			// few then every 5% (rounded up) once the run is large.
+			step := total / 20
+			if step < 1 {
+				step = 1
+			}
+			if processed%step == 0 || processed == total {
+				r.publishOpProgress(opID, action, total, processed, "running", "/api/v1/artists/bulk-actions/cancel")
+			}
 
 			// Yield between artists so HTTP handlers can acquire the SQLite
 			// write lock. Matches the fix-all / bulk-identify cadence.
@@ -484,6 +516,17 @@ func (r *Router) runBulkAction(reqCtx context.Context, action string, ids []stri
 				},
 			})
 		}
+		// Terminal ProgressPill event. ProgressPill JS auto-dismisses
+		// completed pills and keeps failed pills sticky until dismissed,
+		// so we just relay the final status string.
+		pillStatus := "completed"
+		if failed > 0 {
+			pillStatus = "failed"
+		}
+		if finalStatus == bulkActionCanceled {
+			pillStatus = "canceled"
+		}
+		r.publishOpProgress(opID, action, total, total, pillStatus, "")
 
 		// Bulk actions change artist state, which invalidates health and
 		// badge caches for the dashboard.

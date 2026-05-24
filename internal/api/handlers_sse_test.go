@@ -269,3 +269,109 @@ func TestHandleSSEStream_NoHub(t *testing.T) {
 		t.Errorf("expected 503, got %d", w.Code)
 	}
 }
+
+// TestSSEHub_BroadcastsOperationProgress verifies the new OperationProgress
+// event type is mapped through SubscribeToEventBus and reaches connected
+// clients with the structured Data payload the ProgressPill renderer
+// expects (op_id, label, processed, total, status, cancel_url all
+// preserved verbatim in the SSEEvent.Data map).
+func TestSSEHub_BroadcastsOperationProgress(t *testing.T) {
+	t.Parallel()
+	logger := slog.Default()
+	hub := NewSSEHub(logger)
+	bus := event.NewBus(logger, 64)
+	hub.SubscribeToEventBus(bus)
+
+	c := hub.Register("user-1")
+	defer hub.Unregister(c)
+
+	go bus.Start()
+	defer bus.Stop()
+
+	bus.Publish(event.Event{
+		Type: event.OperationProgress,
+		Data: map[string]any{
+			"op_id":      "bulk_action",
+			"label":      "run_rules",
+			"processed":  5,
+			"total":      10,
+			"status":     "running",
+			"cancel_url": "/api/v1/artists/bulk-actions/cancel",
+		},
+	})
+
+	select {
+	case got := <-c.ch:
+		if got.Type != string(event.OperationProgress) {
+			t.Errorf("got type %q, want %q", got.Type, string(event.OperationProgress))
+		}
+		// Data must round-trip so the JS renderer can read every field
+		// it needs to render a pill (op_id is the dedupe key, cancel_url
+		// drives the Cancel button visibility).
+		if got.Data["op_id"] != "bulk_action" {
+			t.Errorf("op_id = %v, want bulk_action", got.Data["op_id"])
+		}
+		if got.Data["label"] != "run_rules" {
+			t.Errorf("label = %v, want run_rules", got.Data["label"])
+		}
+		if got.Data["status"] != "running" {
+			t.Errorf("status = %v, want running", got.Data["status"])
+		}
+		if got.Data["cancel_url"] != "/api/v1/artists/bulk-actions/cancel" {
+			t.Errorf("cancel_url = %v, want /api/v1/artists/bulk-actions/cancel", got.Data["cancel_url"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive operation.progress event within timeout")
+	}
+}
+
+// TestSSEHub_BroadcastsConnectionPushFailed verifies the new
+// ConnectionPushFailed event type renders a toast-shaped SSEEvent that
+// names the connection and an error class. The publish package fires
+// this from PushLocks goroutine errors; the SSE hub is the public
+// surface, so the test mirrors the same event shape.
+func TestSSEHub_BroadcastsConnectionPushFailed(t *testing.T) {
+	t.Parallel()
+	logger := slog.Default()
+	hub := NewSSEHub(logger)
+	bus := event.NewBus(logger, 64)
+	hub.SubscribeToEventBus(bus)
+
+	c := hub.Register("user-1")
+	defer hub.Unregister(c)
+
+	go bus.Start()
+	defer bus.Stop()
+
+	bus.Publish(event.Event{
+		Type: event.ConnectionPushFailed,
+		Data: map[string]any{
+			"connection":  "my-emby",
+			"error_class": "auth_failed",
+			"artist_id":   "a1",
+			"artist_name": "Pink Floyd",
+			"operation":   "lock_toggle",
+		},
+	})
+
+	select {
+	case got := <-c.ch:
+		if got.Type != string(event.ConnectionPushFailed) {
+			t.Errorf("got type %q, want %q", got.Type, string(event.ConnectionPushFailed))
+		}
+		// Message must name connection + class + artist so an operator
+		// can distinguish a single failure from a same-artist fan-out.
+		wantMsg := "my-emby: auth_failed (artist: Pink Floyd)"
+		if got.Message != wantMsg {
+			t.Errorf("got message %q, want %q", got.Message, wantMsg)
+		}
+		if got.Data["connection"] != "my-emby" {
+			t.Errorf("connection = %v, want my-emby", got.Data["connection"])
+		}
+		if got.Data["artist_name"] != "Pink Floyd" {
+			t.Errorf("artist_name = %v, want Pink Floyd", got.Data["artist_name"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive connection.push_failed event within timeout")
+	}
+}

@@ -1294,8 +1294,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				});
 
 				// Build the localized verb label for a bulk action from the
-				// data attributes on the progress pill. Falls back to the
-				// raw action key if a verb is missing.
+				// data attributes on the progress pill data carrier. Falls
+				// back to the raw action key if a verb is missing.
 				function actionVerb(action) {
 					var pill = document.getElementById('bulk-progress-pill');
 					if (!pill) return action;
@@ -1303,29 +1303,42 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					return pill.getAttribute(key) || action;
 				}
 
-				// Render the progress pill with the current snapshot. Called
-				// from both the initial 202 response and the poll callback.
+				// Render delegates to the layout-level ProgressPill so this
+				// page-level controller no longer owns the pill DOM. The
+				// server publishes operation.progress SSE events from
+				// runBulkAction which the pill already handles; the local
+				// fallback push covers the 202-response-before-first-SSE
+				// window and the DOMContentLoaded recovery path so a page
+				// reload mid-action still surfaces the pill from the next
+				// /status snapshot.
 				function renderProgressPill(action, processed, total) {
-					var pill = document.getElementById('bulk-progress-pill');
-					var txt = document.getElementById('bulk-progress-text');
-					if (!pill || !txt) return;
-					var tpl = pill.getAttribute('data-i18n-template') || '{verb}: {processed} of {total} artists';
-					var verb = actionVerb(action);
-					txt.textContent = tpl
-						.replace('{verb}', verb)
-						.replace('{processed}', String(processed))
-						.replace('{total}', String(total));
-					pill.classList.remove('hidden');
-					// Re-enable the cancel button each render tick so a prior
-					// canceled run does not leave the button disabled on the
-					// next action.
-					var cancelBtn = document.getElementById('bulk-progress-cancel');
-					if (cancelBtn) cancelBtn.disabled = false;
+					if (window.swProgressPill && typeof window.swProgressPill.push === 'function') {
+						window.swProgressPill.push({
+							op_id: 'bulk_action',
+							// Pass the localized verb (e.g. "Running rules")
+							// rather than the raw action key ("run_rules") so
+							// the fallback pill push reads consistently with
+							// the SSE-driven path, which already runs every
+							// label through the pill's data-i18n-verb-* map.
+							label: actionVerb(action),
+							processed: processed,
+							total: total,
+							status: 'running',
+							cancel_url: '/api/v1/artists/bulk-actions/cancel'
+						});
+					}
 				}
 
 				function hideProgressPill() {
-					var pill = document.getElementById('bulk-progress-pill');
-					if (pill) pill.classList.add('hidden');
+					// Local poll drives terminal state directly; the layout
+					// pill's de-dup by op_id makes a duplicate terminal push
+					// from SSE harmless. Without this push, a server crash
+					// mid-op (no terminal SSE event ever fires) or the SSE
+					// path lagging the local poll leaves a stale pill on
+					// screen indefinitely.
+					if (window.swProgressPill && typeof window.swProgressPill.push === 'function') {
+						window.swProgressPill.push({op_id: 'bulk_action', status: 'canceled', processed: 0, total: 0});
+					}
 				}
 
 				// Start polling bulk-actions/status every 2s. Stops on terminal
@@ -1339,20 +1352,44 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				// surfaces the summary toast from the terminal snapshot.
 				function handleProgressSnapshot(data, initialAction) {
 					if (!data || data.status === 'idle') {
-						hideProgressPill();
+						// Only synthesize the terminal-canceled push when we
+						// previously observed a running action. Without this
+						// guard, every page load that hits an idle /status
+						// (the normal no-op state) fires a synthetic canceled
+						// event, which can produce false cancel-state UI in
+						// future consumers that latch on the canceled status.
+						if (bulkActionRunning) {
+							hideProgressPill();
+						}
 						bulkActionRunning = false;
 						updateBar();
 						return true;
 					}
 					renderProgressPill(data.action || initialAction || '', data.processed || 0, data.total || 0);
-					// Reveal the cancel button only for bulk-actions runs.
-					// The pill is reused by single-artist flows (e.g. the
-					// detail-page run-rules) that do not go through /bulk-
-					// actions/cancel and have no cancel affordance.
-					var _cancelBtn = document.getElementById('bulk-progress-cancel');
-					if (_cancelBtn) _cancelBtn.classList.remove('hidden');
+					// The global ProgressPill renders its own Cancel button
+					// when the operation.progress event carries cancel_url;
+					// the local controller no longer needs to toggle one.
 					if (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {
-						hideProgressPill();
+						// Push the matching terminal state to the layout pill
+						// directly: the local /status poll observes terminal
+						// status before the next throttled SSE tick lands, and
+						// on a server crash mid-op the SSE terminal event may
+						// never fire at all. The pill de-dupes by op_id, so a
+						// subsequent duplicate terminal SSE push is harmless.
+						if (window.swProgressPill && typeof window.swProgressPill.push === 'function') {
+							window.swProgressPill.push({
+								op_id: 'bulk_action',
+								// Same localization as the running-state push
+								// above: the layout pill's data-i18n-verb-*
+								// map only fires on its own SSE path, so the
+								// fallback push must hand it a localized
+								// string directly.
+								label: actionVerb(data.action || initialAction || ''),
+								processed: data.processed || 0,
+								total: data.total || 0,
+								status: data.status
+							});
+						}
 						bulkActionRunning = false;
 						updateBar();
 						var pill = document.getElementById('bulk-progress-pill');
@@ -1422,19 +1459,18 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					hide: hideProgressPill
 				};
 
-				// Cancel the in-flight bulk action. The button is wired via
-				// onclick on the pill; the poll loop picks up the terminal
-				// "canceled" status on the next tick and clears the pill.
+				// Cancel the in-flight bulk action. The layout-level
+				// ProgressPill renders its own Cancel button driven by the
+				// cancel_url on each operation.progress SSE event, so this
+				// programmatic entrypoint is retained only for callers
+				// (tests, the artist-detail run-rules controller) that
+				// still trigger cancellation explicitly.
 				window.swCancelBulkAction = function() {
-					var btn = document.getElementById('bulk-progress-cancel');
-					if (btn) btn.disabled = true;
 					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 					fetch(_artistsBp + '/api/v1/artists/bulk-actions/cancel', {
 						method: 'POST',
 						credentials: 'same-origin',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken}
-					}).catch(function() {
-						if (btn) btn.disabled = false;
 					});
 				};
 
@@ -2253,18 +2289,18 @@ templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySource
 	}
 }
 
-// BulkProgressPill renders the persistent in-flight action notification used
-// by bulk actions and single-artist run-rules. The pill is hidden until
-// bulk-controller JS populates and reveals it, and is attached at the
-// ArtistsPage root so it stays visible during HTMX swaps of #artist-content.
-// The progress text is composed in JS from the verb + processed + total
-// counters returned by /api/v1/artists/bulk-actions/status.
+// BulkProgressPill is now a hidden i18n data carrier: the actual pill
+// visual moved to the layout-level components.ProgressPill so it can
+// survive HTMX swaps and full page navigations and stack with other
+// long-running operations. This element only persists the i18n strings
+// the local bulk-controller JS still needs for the size-aware confirm
+// dialog and the per-action completion toast. Removing the element
+// would silently fall the JS back to its English hard-coded defaults
+// (see the `|| 'Apply ... artists?'` patterns in the bulk controller).
 templ BulkProgressPill() {
 	<div
 		id="bulk-progress-pill"
-		class="hidden fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-lg"
-		role="status"
-		aria-live="polite"
+		hidden
 		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
 		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
 		data-i18n-verb-re-identify-auto={ t(ctx, "artists.bulk.progress.re_identify_auto") }
@@ -2277,20 +2313,5 @@ templ BulkProgressPill() {
 		data-i18n-reidentify-summary={ t(ctx, "artists.bulk.reidentify.summary") }
 		data-i18n-confirm-small={ t(ctx, "artists.bulk.confirm.small") }
 		data-i18n-confirm-large={ t(ctx, "artists.bulk.confirm.large") }
-	>
-		<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-		</svg>
-		<span id="bulk-progress-text">...</span>
-		<button
-			type="button"
-			id="bulk-progress-cancel"
-			class="hidden ml-2 inline-flex items-center rounded-full bg-white/15 hover:bg-white/25 px-3 py-0.5 text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-white/60 disabled:opacity-50 disabled:cursor-not-allowed"
-			aria-label={ t(ctx, "artists.bulk.cancel") }
-			onclick="swCancelBulkAction()"
-		>
-			{ t(ctx, "artists.bulk.cancel") }
-		</button>
-	</div>
+	></div>
 }

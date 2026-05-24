@@ -32,6 +32,20 @@ const (
 	// Subscribed by the SSE hub so the banner refetches and by any tests
 	// verifying gate state changes are observable.
 	ConflictChanged Type = "conflict.changed"
+	// OperationProgress fires for long-running operations whose state is
+	// surfaced by the global ProgressPill. Each event carries an op_id, a
+	// human-readable label, processed/total counters, a status (running /
+	// completed / failed / canceled), and an optional cancel_url. One pill
+	// is rendered per distinct op_id; subsequent events update it in place
+	// until a terminal status is observed.
+	OperationProgress Type = "operation.progress"
+	// ConnectionPushFailed fires when a fire-and-forget push to an external
+	// platform connection (Emby/Jellyfin lock-sync, metadata push) returns
+	// an error from its goroutine. The SSE hub broadcasts it as a toast
+	// because the originating handler has already returned success to the
+	// caller, so there is no other way for the operator to learn that the
+	// platform write failed.
+	ConnectionPushFailed Type = "connection.push_failed"
 )
 
 // Event represents something that happened in the system.
@@ -74,7 +88,15 @@ func (b *Bus) Subscribe(t Type, h Handler) {
 	b.subs[t] = append(b.subs[t], h)
 }
 
-// Publish sends an event to the bus. Non-blocking; drops with a warning if the buffer is full.
+// Publish sends an event to the bus. Non-blocking; drops with a warning
+// if the buffer is full.
+//
+// ConnectionPushFailed is escalated to slog.Error with the full Data
+// payload because it is low-volume + high-importance: a silent drop under
+// backpressure means the operator misses platform write failures during
+// exactly the worst time (a push storm during heavy bulk activity). The
+// Data dump preserves the artist + connection context so the failure is
+// recoverable from logs even when the SSE pipe was overrun.
 func (b *Bus) Publish(e Event) {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
@@ -82,6 +104,13 @@ func (b *Bus) Publish(e Event) {
 	select {
 	case b.ch <- e:
 	default:
+		if e.Type == ConnectionPushFailed {
+			b.logger.Error("event bus full, dropping connection push failure",
+				"type", string(e.Type),
+				"data", e.Data,
+			)
+			return
+		}
 		b.logger.Warn("event bus full, dropping event", "type", string(e.Type))
 	}
 }

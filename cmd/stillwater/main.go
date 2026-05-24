@@ -362,17 +362,30 @@ func (a *Application) buildServices() error {
 	logger := a.logger
 	ctx := context.Background()
 
-	if err := a.wireAuth(ctx); err != nil {
-		return err
-	}
+	a.wireAuth(ctx)
 	if err := a.wireProviders(ctx); err != nil {
 		return err
 	}
+	// wireEventBus must run before wireRuleEngine: publish.New stores the
+	// Notifier adapter that wraps a.eventBus, so the bus pointer has to
+	// exist at construction time. A nil bus there silently no-ops every
+	// connection.push_failed event (busNotifier.NotifyConnectionPushFailed
+	// returns early on n.bus == nil), so the operator never sees the toast.
+	wireEventBus(a, logger)
+	// Track the goroutine so we can stop it if any phase below fails.
+	// run() registers its own Stop only after buildServices returns
+	// successfully; without this guard a wireRuleEngine error would
+	// orphan the event-bus goroutine until process exit.
+	busOwned := true
+	defer func() {
+		if busOwned {
+			a.eventBus.Stop()
+		}
+	}()
 	if err := a.wireRuleEngine(ctx, logger); err != nil {
 		return err
 	}
 
-	wireEventBus(a, logger)
 	wireInfraServices(ctx, a, db, cfg, logger)
 	applyPersistedBasePath(ctx, db, cfg, logger)
 	wireEventSubscriptions(a)
@@ -446,6 +459,13 @@ func (a *Application) buildServices() error {
 		Encryptor:          a.encryptor,
 	})
 
+	// Hand ownership to run(): the caller's deferred Stop now owns the
+	// bus lifecycle. Clearing the flag prevents the deferred Stop above
+	// from firing on the success path. Must be the LAST thing before
+	// `return nil` so every fallible step in buildServices (i18n bundle
+	// load, router construction, etc.) is still guarded by the deferred
+	// Stop if it errors.
+	busOwned = false
 	return nil
 }
 
@@ -538,9 +558,13 @@ func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
 	}
 }
 
-// wireAuth wires the authentication service, registry, and any external auth
-// provider configured in the settings table (emby / jellyfin).
-func (a *Application) wireAuth(ctx context.Context) error {
+// wireAuth wires library, artist, history, platform, connection, and the
+// authentication service / registry (plus any external auth provider
+// configured in the settings table -- emby / jellyfin). All failure modes
+// today are log-and-degrade: external auth provider construction Warns on
+// error and skips that provider, so the function never returns a non-nil
+// error and the signature has no error return (per unparam).
+func (a *Application) wireAuth(ctx context.Context) {
 	db := a.db
 	logger := a.logger
 	cfg := a.cfg
@@ -580,7 +604,6 @@ func (a *Application) wireAuth(ctx context.Context) error {
 			}
 		}
 	}
-	return nil
 }
 
 // wireProviders wires the metadata provider registry (MusicBrainz, Fanart.tv,
@@ -668,6 +691,13 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	a.fsCheck = rule.NewSharedFSCheck(a.libraryService, logger)
 	a.expectedWrites = watcher.NewExpectedWrites()
 
+	// Guard the ordering invariant: wireEventBus must run first so the
+	// Notifier adapter captures a non-nil bus. Without the bus, every
+	// connection.push_failed event silently no-ops in the notifier guard,
+	// which we hit live during M52 PR6 UAT.
+	if a.eventBus == nil {
+		panic("wireRuleEngine: a.eventBus is nil; wireEventBus must run first (see main.go phase ordering)")
+	}
 	a.publisher = publish.New(publish.Deps{
 		ArtistService:      a.artistService,
 		ConnectionService:  a.connectionService,
@@ -678,6 +708,9 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		ExpectedWrites:     a.expectedWrites,
 		ImageCacheDir:      a.imageCacheDir,
 		Logger:             logger,
+		// Bridge per-connection push errors from detached goroutines onto
+		// the event bus so the SSE hub can surface them as toasts.
+		Notifier: publish.NewBusNotifier(a.eventBus),
 	})
 	// Wire the rename-time platform syncer so Service.RenameDirectory
 	// re-issues the artist path on Emby/Jellyfin/Lidarr after a successful

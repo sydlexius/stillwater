@@ -110,6 +110,25 @@ You connected the platform, you clicked **Re-sync Artists** on the library row, 
 
 **Fix:** correct the mapping or wait for the refresh to finish. If the refresh actually errored, the event banner shows the cause.
 
+## Platform push failed toasts
+
+When Stillwater pushes a lock change to a connected platform and the platform rejects it, a red toast appears in the bottom-right of every page. The toast names the connection, classifies the failure, and includes the artist when known. Example:
+
+> **my-emby: auth_failed (artist: Beyoncé)**
+
+The error class tells you what to act on:
+
+| Class            | Cause                                                              | Next step                                                                 |
+|------------------|--------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `auth_failed`    | API key revoked, rotated, or never had write scope                 | Settings > Connections > the card > re-test; rotate the key if needed     |
+| `unreachable`    | DNS, TCP, or TLS handshake to the platform failed                  | Confirm the platform is running on the URL Stillwater has stored          |
+| `timeout`        | Platform accepted the connection but didn't respond within 30 s    | Platform may be under load; retry the lock toggle later                   |
+| `not_found`      | Platform returned 404 for the artist item                          | Stillwater's mapping is stale; re-run the library populate for that side  |
+| `server_error`   | Platform returned 5xx                                              | Platform-side bug or overload; check the platform's own logs              |
+| `rejected`       | Anything else (4xx other than 401/403/404, or a decode failure)    | The detailed error is in Stillwater's logs under `lock-push: update failed` |
+
+The lock state in Stillwater is already correct -- the toast is reporting that the platform write didn't go through. Once you fix the underlying cause, toggle the lock again to re-push.
+
 ## "Restart the platform's library service after revoking" hint
 
 When you change credentials on the platform side, the platform sometimes caches the old token. If Stillwater shows green but the actions still fail with 401, restart the platform's library service (Emby Server, Jellyfin) to flush. This is a platform behavior, not a Stillwater bug.

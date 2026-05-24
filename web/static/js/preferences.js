@@ -8,6 +8,9 @@
 //   set(key, value)   -- PUT single preference, update cache, apply to DOM
 //   applyAll(prefs)   -- apply a full preferences object to the DOM
 //   getCache()        -- return cached preferences from sessionStorage (or null)
+//
+// Also exposes window.swCsrfToken() -- canonical csrf_token cookie reader
+// for inline scripts that need the same value (progress_pill, etc.).
 (function () {
   'use strict';
 
@@ -70,6 +73,11 @@
   }
 
   // --- CSRF token helper ---
+  //
+  // Promoted to window.swCsrfToken (below) so inline scripts elsewhere
+  // (e.g. components/progress_pill.templ) can reuse the canonical reader
+  // instead of duplicating the cookie regex. Keeping the local alias
+  // means the existing preferences PUT path stays terse.
 
   function csrfToken() {
     var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
@@ -310,6 +318,14 @@
     getCache: getCache,
     clearCache: clearCache
   };
+
+  // Canonical CSRF cookie reader. Other inline scripts (progress_pill,
+  // future POST emitters) read window.swCsrfToken to avoid drift in the
+  // cookie-name / regex pair. Guarded so an already-defined override in
+  // a test or browser extension is not clobbered on reload.
+  if (typeof window.swCsrfToken !== 'function') {
+    window.swCsrfToken = csrfToken;
+  }
 
   // --- Auto-initialize on page load ---
   // Step 1 (synchronous): Apply cached preferences immediately so the first

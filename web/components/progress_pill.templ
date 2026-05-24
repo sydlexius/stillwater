@@ -1,0 +1,336 @@
+package components
+
+// ProgressPill renders the global stack of in-flight operation pills that
+// surfaces long-running work (bulk artist actions today; populate-progress
+// and bulk-lock are wired in PR7). The component is layout-level so it
+// survives HTMX swaps and full page navigations: the SSE stream
+// re-subscribes on every page load and any still-running operation will
+// re-publish its next throttled tick within a couple of seconds.
+//
+// Pill lifecycle (driven by JS reacting to "operation.progress" SSE events):
+//
+//   - First event for a given op_id creates a pill.
+//   - Subsequent events update the same pill's processed / total counters.
+//   - status="completed" shows a check briefly then removes the pill.
+//   - status="failed" turns the pill red and keeps it until dismissed.
+//   - status="canceled" removes the pill immediately.
+//   - When the event carries cancel_url, a Cancel button is rendered that
+//     POSTs to that URL with the standard CSRF token cookie.
+//
+// All copy here is rendered once into data-i18n-* attributes on the
+// container so the inline JS can pull the localized strings without a
+// network round trip.
+templ ProgressPill() {
+	<div
+		id="sw-progress-pill-stack"
+		class="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end"
+		role="status"
+		aria-live="polite"
+		aria-label={ t(ctx, "progress_pill.aria_label") }
+		data-i18n-cancel={ t(ctx, "progress_pill.cancel") }
+		data-i18n-dismiss={ t(ctx, "progress_pill.dismiss") }
+		data-i18n-template={ t(ctx, "progress_pill.template") }
+		data-i18n-completed={ t(ctx, "progress_pill.completed") }
+		data-i18n-failed={ t(ctx, "progress_pill.failed") }
+		data-i18n-canceled={ t(ctx, "progress_pill.canceled") }
+		data-i18n-verb-bulk-action={ t(ctx, "progress_pill.verb.bulk_action") }
+		data-i18n-verb-run-rules={ t(ctx, "artists.bulk.progress.run_rules") }
+		data-i18n-verb-re-identify={ t(ctx, "artists.bulk.progress.re_identify") }
+		data-i18n-verb-re-identify-auto={ t(ctx, "artists.bulk.progress.re_identify_auto") }
+		data-i18n-verb-re-identify-review={ t(ctx, "artists.bulk.progress.re_identify_review") }
+		data-i18n-verb-scan={ t(ctx, "artists.bulk.progress.scan") }
+		data-i18n-verb-fetch-images={ t(ctx, "artists.bulk.progress.fetch_images") }
+	></div>
+	<script>
+		// ProgressPill controller.
+		//
+		// Renders a stack of pills in #sw-progress-pill-stack driven by SSE
+		// "operation.progress" events. sse.js fans every server-sent event
+		// out as a "sse:<type>" CustomEvent on document.body; we listen for
+		// "sse:operation.progress" and either create or update the pill
+		// keyed by data.op_id.
+		//
+		// ES5-only and dependency-free per the project's minimal-JS rule.
+		(function () {
+			"use strict";
+
+			var stack = document.getElementById("sw-progress-pill-stack");
+			if (!stack) return;
+
+			// AUTO_DISMISS_MS controls how long a successfully completed
+			// pill stays visible with its check before fading out.
+			var AUTO_DISMISS_MS = 2500;
+
+			// Held per op_id so update ticks land on the existing pill
+			// instead of stacking a new one for every event.
+			var pills = {};
+
+			function i18n(key) {
+				return stack.getAttribute("data-i18n-" + key) || "";
+			}
+
+			// resolveLabel maps a raw action key (e.g. "run_rules") to its
+			// localized verb when one is wired up on the container.
+			// Unknown labels fall back to the raw string so future op types
+			// surface readably without an immediate i18n drop.
+			function resolveLabel(raw) {
+				if (!raw) return i18n("verb-bulk-action") || "Working";
+				var key = "verb-" + String(raw).replace(/_/g, "-");
+				var v = stack.getAttribute("data-i18n-" + key);
+				return v || raw;
+			}
+
+			// csrfToken delegates to the canonical reader exposed by
+			// preferences.js (window.swCsrfToken). Inlining the cookie regex
+			// here would silently drift if the cookie name ever changed.
+			// The function call is deferred to the Cancel click moment, so
+			// preferences.js (loaded later in the layout) is guaranteed to
+			// have run by then. The empty-string fallback keeps the cancel
+			// fetch from crashing if preferences.js failed to load.
+			function csrfToken() {
+				if (typeof window.swCsrfToken === "function") {
+					return window.swCsrfToken();
+				}
+				return "";
+			}
+
+			function basePath() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : "";
+			}
+
+			function createPill(opID) {
+				var wrap = document.createElement("div");
+				wrap.className = "sw-pill flex items-center gap-3 rounded-full bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-lg transition-colors";
+				wrap.setAttribute("data-op-id", opID);
+				// The parent #sw-progress-pill-stack already carries
+				// role="status" + aria-live="polite"; nesting another
+				// role="status" here would cause NVDA/JAWS to announce
+				// each update twice. The aria-label still names the pill
+				// for screen-reader users navigating the stack. Failure
+				// promotion escalates role="alert" on this individual
+				// pill (markFailed below) so the urgent path keeps the
+				// stronger announcement.
+
+				var spinner = document.createElement("span");
+				spinner.className = "sw-pill-spinner inline-flex h-4 w-4";
+				spinner.innerHTML = '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+
+				var txt = document.createElement("span");
+				txt.className = "sw-pill-text";
+
+				var cancelBtn = document.createElement("button");
+				cancelBtn.type = "button";
+				// Display utility is toggled by JS as a pair: when hiding, add
+				// "hidden" + remove "inline-flex"; when showing, the inverse.
+				// Stacking both at construction breaks cascade order (later
+				// wins, defeating the hide); see feedback_css_cascade_display_utilities.
+				cancelBtn.className = "sw-pill-cancel hidden ml-2 items-center rounded-full bg-white/15 hover:bg-white/25 px-3 py-0.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-white/60 disabled:opacity-50 disabled:cursor-not-allowed";
+				cancelBtn.textContent = i18n("cancel") || "Cancel";
+				cancelBtn.setAttribute("aria-label", i18n("cancel") || "Cancel");
+
+				var dismissBtn = document.createElement("button");
+				dismissBtn.type = "button";
+				dismissBtn.className = "sw-pill-dismiss hidden ml-2 items-center justify-center h-5 w-5 rounded-full hover:bg-white/15 text-white";
+				dismissBtn.textContent = "×";
+				dismissBtn.setAttribute("aria-label", i18n("dismiss") || "Dismiss");
+				dismissBtn.onclick = function () { removePill(opID); };
+
+				wrap.appendChild(spinner);
+				wrap.appendChild(txt);
+				wrap.appendChild(cancelBtn);
+				wrap.appendChild(dismissBtn);
+
+				stack.appendChild(wrap);
+				return {
+					el: wrap,
+					txt: txt,
+					spinner: spinner,
+					cancel: cancelBtn,
+					dismiss: dismissBtn,
+					autoDismissTimer: null
+				};
+			}
+
+			function removePill(opID) {
+				var pill = pills[opID];
+				if (!pill) return;
+				if (pill.autoDismissTimer) {
+					clearTimeout(pill.autoDismissTimer);
+				}
+				if (pill.el && pill.el.parentNode) {
+					pill.el.parentNode.removeChild(pill.el);
+				}
+				delete pills[opID];
+			}
+
+			function renderText(pill, label, processed, total, terminalText) {
+				if (terminalText) {
+					pill.txt.textContent = label + ": " + terminalText;
+					return;
+				}
+				var tpl = i18n("template") || "{verb}: {processed} of {total}";
+				pill.txt.textContent = tpl
+					.replace("{verb}", label)
+					.replace("{processed}", String(processed || 0))
+					.replace("{total}", String(total || 0));
+			}
+
+			// SAFE_CANCEL_PATH gates cancel_url against same-origin API
+			// paths only. A buggy or hostile emitter passing an absolute
+			// URL ("https://attacker.example/x") would otherwise cause
+			// the Cancel button to fire a CSRF-protected POST to a
+			// third-party host. Only same-origin /api/vN/ paths are
+			// allowed.
+			var SAFE_CANCEL_PATH = /^\/api\/v[0-9]+\//;
+
+			// Paired display-utility toggles: cancel + dismiss buttons were
+			// constructed with "hidden" only (no "inline-flex"); JS owns
+			// the inline-flex side so cascade order never decides
+			// visibility. Helper keeps the pair in sync at every call site.
+			function showButton(el) {
+				el.classList.remove("hidden");
+				el.classList.add("inline-flex");
+			}
+			function hideButton(el) {
+				el.classList.add("hidden");
+				el.classList.remove("inline-flex");
+			}
+
+			function wireCancel(pill, cancelURL) {
+				if (!cancelURL) {
+					hideButton(pill.cancel);
+					pill.cancel.onclick = null;
+					return;
+				}
+				if (!SAFE_CANCEL_PATH.test(cancelURL)) {
+					// Console-warn so a developer chasing a missing Cancel
+					// button can see why; never throw because this code
+					// runs on every progress tick.
+					if (window.console && console.warn) {
+						console.warn("ProgressPill: rejecting unsafe cancel_url:", cancelURL);
+					}
+					hideButton(pill.cancel);
+					pill.cancel.onclick = null;
+					return;
+				}
+				showButton(pill.cancel);
+				pill.cancel.disabled = false;
+				pill.cancel.onclick = function () {
+					pill.cancel.disabled = true;
+					fetch(basePath() + cancelURL, {
+						method: "POST",
+						credentials: "same-origin",
+						headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken()}
+					}).then(function (resp) {
+						// Re-enable on non-OK so the user can retry. .catch
+						// only fires on network failures; an HTTP 4xx/5xx
+						// resolves the promise and would otherwise leave
+						// the button permanently disabled.
+						if (!resp || !resp.ok) {
+							pill.cancel.disabled = false;
+						}
+					}).catch(function () {
+						// Re-enable so the user can retry; the terminal
+						// "canceled" status event will remove the pill once
+						// the backend goroutine actually stops.
+						pill.cancel.disabled = false;
+					});
+				};
+			}
+
+			// markRunning resets every piece of visual state that markFailed
+			// or markCompleted might have mutated, so a reused op_id that
+			// transitions back to running (rare today; possible once the
+			// same emitter rerun pattern lands in PR7) renders as a clean
+			// blue spinner pill instead of a stale red/green one. Keep this
+			// function in sync with markFailed/markCompleted whenever a new
+			// terminal-state mutation is added.
+			function markRunning(pill) {
+				pill.el.classList.remove("bg-red-600", "dark:bg-red-500", "bg-emerald-600", "dark:bg-emerald-500");
+				pill.el.classList.add("bg-blue-600", "dark:bg-blue-500");
+				pill.el.removeAttribute("role");
+				hideButton(pill.dismiss);
+				pill.spinner.innerHTML = '<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+			}
+
+			function markCompleted(pill, label) {
+				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-red-600", "dark:bg-red-500");
+				pill.el.classList.add("bg-emerald-600", "dark:bg-emerald-500");
+				pill.spinner.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+				hideButton(pill.cancel);
+				// Explicitly drop role="alert" in case the prior state was
+				// failed; otherwise screen readers re-announce the success
+				// text with the more urgent alert semantics.
+				pill.el.removeAttribute("role");
+				renderText(pill, label, 0, 0, i18n("completed") || "completed");
+			}
+
+			function markFailed(pill, label) {
+				pill.el.classList.remove("bg-blue-600", "dark:bg-blue-500", "bg-emerald-600", "dark:bg-emerald-500");
+				pill.el.classList.add("bg-red-600", "dark:bg-red-500");
+				pill.spinner.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 9v3.75M9.401 19.401h5.198c1.61 0 2.616-1.741 1.812-3.135l-2.598-4.5a2.092 2.092 0 00-3.624 0l-2.598 4.5c-.804 1.394.203 3.135 1.812 3.135zM12 16.5h.008v.008H12V16.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+				hideButton(pill.cancel);
+				showButton(pill.dismiss);
+				pill.el.setAttribute("role", "alert");
+				renderText(pill, label, 0, 0, i18n("failed") || "failed");
+			}
+
+			function onProgress(evt) {
+				var data = evt && evt.detail;
+				if (!data || !data.op_id) return;
+				var opID = String(data.op_id);
+				var pill = pills[opID];
+				if (!pill) {
+					pill = createPill(opID);
+					pills[opID] = pill;
+				}
+				// Pre-empt any pending auto-dismiss if the same op_id is
+				// re-used (e.g. a new bulk action started right after the
+				// previous one's success pill faded).
+				if (pill.autoDismissTimer) {
+					clearTimeout(pill.autoDismissTimer);
+					pill.autoDismissTimer = null;
+				}
+				var label = resolveLabel(data.label);
+				var status = data.status || "running";
+				if (status === "completed") {
+					markCompleted(pill, label);
+					pill.autoDismissTimer = setTimeout(function () {
+						removePill(opID);
+					}, AUTO_DISMISS_MS);
+					return;
+				}
+				if (status === "failed") {
+					markFailed(pill, label);
+					return;
+				}
+				if (status === "canceled") {
+					removePill(opID);
+					return;
+				}
+				// status === "running" (or any future running-like value).
+				// markRunning resets any prior terminal-state visuals so a
+				// reused op_id (rare today; possible once future emitters
+				// rerun under the same key) doesn't render as a stale
+				// red-failed or green-completed pill.
+				markRunning(pill);
+				renderText(pill, label, data.processed, data.total);
+				wireCancel(pill, data.cancel_url);
+			}
+
+			document.body.addEventListener("sse:operation.progress", onProgress);
+
+			// Expose for tests / external triggers so a screenshot or
+			// programmatic UAT can render the pill without an SSE stream.
+			window.swProgressPill = {
+				push: function (data) {
+					onProgress({detail: data});
+				},
+				clear: function () {
+					Object.keys(pills).forEach(removePill);
+				}
+			};
+		})();
+	</script>
+}

@@ -33,6 +33,15 @@
     "artist.updated": "success"
   };
 
+  // Structured events do not surface a toast on their own -- they carry
+  // data the page-level scripts (the layout-level ProgressPill, the
+  // connection-push-failure handler below) consume via the dispatched
+  // CustomEvent. EventSource silently discards frames whose `event:`
+  // name has no addEventListener registration, so each new server-side
+  // event type must appear here or its sse:<name> CustomEvent never
+  // fires.
+  var structuredEvents = ["operation.progress", "connection.push_failed"];
+
   function connect() {
     if (source) {
       try { source.close(); } catch (e) { /* ignore */ }
@@ -53,6 +62,19 @@
           handleEvent(eventType, evt);
         });
       })(types[i]);
+    }
+
+    // Register structured events through a separate path that dispatches
+    // the CustomEvent (so the pill JS sees it) without firing a generic
+    // toast. connection.push_failed gets a dedicated toast below because
+    // it is the user-visible surface from #1088; operation.progress is
+    // rendered by the ProgressPill and must not also surface a toast.
+    for (var j = 0; j < structuredEvents.length; j++) {
+      (function (eventType) {
+        source.addEventListener(eventType, function (evt) {
+          handleStructuredEvent(eventType, evt);
+        });
+      })(structuredEvents[j]);
     }
 
     source.onerror = function () {
@@ -97,6 +119,48 @@
     // document only reached document-level listeners because CustomEvents
     // do not propagate downward, leaving body-targeted HTMX triggers
     // (including the conflict banner) silent on server push.
+    document.body.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data, bubbles: true}));
+  }
+
+  // handleStructuredEvent dispatches the sse:<type> CustomEvent for events
+  // that carry their own structured renderer (the ProgressPill, the
+  // per-connection failure toast). It mirrors handleEvent's CustomEvent
+  // shape so listeners do not have to special-case the path, but skips
+  // the toastEvents lookup -- structured events render themselves.
+  function handleStructuredEvent(eventType, evt) {
+    var data;
+    try {
+      data = JSON.parse(evt.data);
+    } catch (e) {
+      return;
+    }
+
+    // connection.push_failed is the user-visible surface from #1088; the
+    // backend has already returned success to the originating handler, so
+    // an inline toast is the only signal the operator gets that a platform
+    // write actually failed. The connection name + error class come from
+    // the publish.busNotifier event data; an optional artist context lets
+    // the message disambiguate when N platforms failed for the same item.
+    if (eventType === "connection.push_failed" && typeof window.showToast === "function") {
+      var conn = (data && data.connection) || "";
+      var errClass = (data && data.error_class) || "push failed";
+      var artist = (data && data.artist_name) || "";
+      var message;
+      if (conn && artist) {
+        message = conn + ": " + errClass + " (artist: " + artist + ")";
+      } else if (conn) {
+        message = conn + ": " + errClass;
+      } else {
+        message = errClass;
+      }
+      // window.showToast is the error-level toast (red); see layout.templ
+      // (enqueueToast('error', ...)) -- it is the right surface for a
+      // failed platform write.
+      window.showToast(message);
+    }
+
+    // Always dispatch the CustomEvent so the ProgressPill (and any
+    // future structured-event consumer) sees the payload.
     document.body.dispatchEvent(new CustomEvent("sse:" + eventType, {detail: data, bubbles: true}));
   }
 
