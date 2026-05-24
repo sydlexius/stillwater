@@ -57,6 +57,19 @@ repos:
         files: '\.templ$'
         pass_filenames: false
 
+      # Mirrors the tailwind-generate section in .githooks/pre-commit (the
+      # canonical hook). When a .templ or input.css change lands in a commit,
+      # styles.css must be regenerated; this hook fails if it drifts so
+      # contributors don't ship a commit that CI's Gate / Generated Files job
+      # will reject (#1656).
+      - id: tailwind-generate
+        name: tailwind-generate
+        language: system
+        entry: |
+          bash -c 'set -e; tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify; dirty=$(git diff --name-only -- web/static/css/styles.css); if [ -n "$dirty" ]; then echo "tailwind styles.css is stale; run: make tailwind && git add web/static/css/styles.css"; exit 1; fi' --
+        files: '\.templ$|^web/static/css/input\.css$'
+        pass_filenames: false
+
       - id: gofmt
         name: gofmt
         language: system

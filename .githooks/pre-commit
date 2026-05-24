@@ -134,6 +134,38 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# 3a. tailwind freshness -- if any .templ or input.css file is staged, the
+#     Tailwind class set the page references may have changed; regenerate
+#     styles.css and require the new output to be staged. Mirrors the
+#     templ-generate check at section 3 so contributors get a fail-fast
+#     instead of finding out via CI's Gate / Generated Files job (#1656).
+# --------------------------------------------------------------------------
+STAGED_TAILWIND_SRC=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' 'web/static/css/input.css' || true)
+if [ -n "$STAGED_TAILWIND_SRC" ]; then
+    if ! command -v tailwindcss >/dev/null 2>&1; then
+        echo -e "${RED}${BOLD}FAIL${RESET} tailwind: 'tailwindcss' binary not on PATH."
+        echo "      Install it (see README) so staged .templ / input.css changes"
+        echo "      can regenerate web/static/css/styles.css before commit."
+        exit 1
+    fi
+    if ! tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify 2>/tmp/pre-commit-tailwind.log; then
+        echo -e "${RED}${BOLD}FAIL${RESET} tailwind regenerate:"
+        cat /tmp/pre-commit-tailwind.log | head -20
+        exit 1
+    fi
+    DIRTY_CSS=$(git diff --name-only -- web/static/css/styles.css || true)
+    if [ -n "$DIRTY_CSS" ]; then
+        echo -e "${RED}${BOLD}FAIL${RESET} tailwind: web/static/css/styles.css is out of date."
+        echo "      The regenerated output differs from what is committed."
+        echo "      Run: make tailwind && git add web/static/css/styles.css"
+        exit 1
+    fi
+    pass "tailwind regenerate"
+else
+    warn "tailwind (no staged .templ / input.css files)"
+fi
+
+# --------------------------------------------------------------------------
 # 3b. OpenAPI spec reminder -- warn if API handlers changed without the spec
 # --------------------------------------------------------------------------
 STAGED_API_GO=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
