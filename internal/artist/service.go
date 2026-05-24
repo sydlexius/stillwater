@@ -150,6 +150,15 @@ type Service struct {
 	// negligible.
 	renameMu sync.Mutex
 
+	// mergeMu serializes Service.MergeArtists across the whole Service. A
+	// second concurrent merge gets ErrMergeInProgress immediately
+	// (TryLock, not Lock) so a stuck or slow merge cannot pile callers
+	// up behind it. The production binary has exactly one Service
+	// instance per process, so per-Service is equivalent to per-process
+	// for the deployed surface while letting parallel test
+	// goroutines run with their own Service constructions.
+	mergeMu sync.Mutex
+
 	// platformSyncer, when non-nil, is invoked after a successful directory
 	// rename so connected platforms (Emby/Jellyfin/Lidarr) pick up the new
 	// path. Wired via SetPlatformRenameSyncer at startup; tests that do not
